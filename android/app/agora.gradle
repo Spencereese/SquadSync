@@ -1,0 +1,8 @@
+android {
+    // Ensure Agora’s native libs work with Flutter’s NDK
+    defaultConfig {
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
+    }
+}

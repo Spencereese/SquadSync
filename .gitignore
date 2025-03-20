@@ -49,3 +49,4 @@ app.*.map.json
 *.txt                # For logs like emulator_logs.txt, if temporary
 ios/build/           # For future iOS builds
 android/app/google-services.json  # If present and sensitive
+C:\Users\PC\cod_squad_app>echo android/app/google-services.json >> .gitignoreandroid/app/google-services.json 

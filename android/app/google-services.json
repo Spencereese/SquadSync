@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "756172684661",
+    "firebase_url": "https://cod-squad-a4c62-default-rtdb.firebaseio.com",
+    "project_id": "cod-squad-a4c62",
+    "storage_bucket": "cod-squad-a4c62.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:756172684661:android:3466d7ce686fff4a70e73c",
+        "android_client_info": {
+          "package_name": "com.example.cod_squad_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC_K87UWA2dhOwThO6LLW_vO2akuYA_2W0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

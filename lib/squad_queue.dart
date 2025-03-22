@@ -1,15 +1,16 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:cod_squad_app/utils.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'squad_manager.dart'; // Ensure this import matches your file name
 import 'setup_screen.dart';
 import 'chat/chat_screen.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'notification_service.dart';
 import 'squad_tab.dart';
 import 'availability_tab.dart';
-import 'utils.dart';
 import 'performance_hub_tab.dart';
 import 'rating_dialog.dart';
 
@@ -45,22 +46,49 @@ class SquadQueuePageState extends State<SquadQueuePage> {
   Map<String, Map<String, List<int>>> dailyRatings = {};
   Map<String, Map<String, List<int>>> allTimeRatings = {};
   List<Map<String, dynamic>> scheduledTimes = [];
-  int _selectedIndex = 2; // Start on Squad tab (Peacock)
+  int _selectedIndex = 2;
   static const int _firestoreUpdateInterval = 5;
   DateTime _lastFirestoreUpdate = DateTime.now();
   final AudioPlayer _audioPlayer = AudioPlayer();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late SquadManager squadManager;
+  Timer? _timer; // Add this line here
 
   @override
   void initState() {
     super.initState();
     _initializeAuth();
     _initializeData();
-    _syncWithFirestore(); // Firestore handles everything now
+    _syncWithFirestore();
+
+    // Delay SquadManager initialization until after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      squadManager = SquadManager(
+        squadSpots: squadSpots,
+        spotTimers: spotTimers,
+        statuses: statuses,
+        peacockTimers: peacockTimers,
+        peacockQueue: peacockQueue,
+        squadMembers: squadMembers,
+        updateFirestore: () => updateFirestore(force: false),
+        context: context, // Now safe to use
+        yourName: widget.yourName,
+      );
+
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          print('Before update: spotTimers=$spotTimers');
+          squadManager.updateSpotTimers();
+          squadManager.updatePeacockTimers();
+          print('After update: spotTimers=$spotTimers');
+        });
+      });
+    });
   }
 
   @override
   void dispose() {
+    _timer?.cancel(); // Cancel the timer here
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -210,9 +238,7 @@ class SquadQueuePageState extends State<SquadQueuePage> {
       if (snapshot.exists) {
         setState(() {
           var data = snapshot.data()!;
-          squadSpots = List<String?>.from(
-              data['squadSpots'] ?? [null, null, null, null]);
-          spotTimers =
+          var remoteSpotTimers =
               List<int?>.from(data['spotTimers'] ?? [null, null, null, null]);
           statuses = Map<String, String>.from(data['statuses'] ?? statuses);
           currentStreaks =
@@ -222,8 +248,11 @@ class SquadQueuePageState extends State<SquadQueuePage> {
           gameHistory =
               List<Map<String, dynamic>>.from(data['gameHistory'] ?? []);
           complaints = Map<String, int>.from(data['complaints'] ?? complaints);
-          achievements = (data['achievements'] ?? {})
-              .map((k, v) => MapEntry(k, Set<String>.from(v ?? [])));
+          achievements = (data['achievements'] ?? {}).map((k, v) {
+            final value = v is Iterable ? v : [];
+            return MapEntry(k as String,
+                Set<String>.from(value.map((item) => item.toString())));
+          });
           dailyRatings = (data['dailyRatings'] ?? {})
               .map((k, v) => MapEntry(k, Map<String, List<int>>.from(v)));
           allTimeRatings = (data['allTimeRatings'] ?? {})
@@ -232,31 +261,8 @@ class SquadQueuePageState extends State<SquadQueuePage> {
               List<Map<String, dynamic>>.from(data['scheduledTimes'] ?? []);
           peacockQueue =
               List<String>.from(data['peacockQueue'] ?? peacockQueue);
-
-          // Sync peacockTimers and calculate remaining time
-          var rawPeacockTimers =
-              Map<String, dynamic>.from(data['peacockTimers'] ?? {});
-          peacockTimers = rawPeacockTimers.map((player, value) {
-            if (value != null) {
-              int startTime = value['startTime'] as int;
-              int duration = value['duration'] as int;
-              int elapsedSeconds =
-                  ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000)
-                      .floor();
-              int remainingTime = duration - elapsedSeconds;
-              if (remainingTime <= 0) {
-                statuses[player] = 'Ready';
-                return MapEntry(player, null); // Timer expired
-              }
-              return MapEntry(player, {
-                'startTime': startTime,
-                'duration': duration,
-                'mode': value['mode']
-              });
-            }
-            return MapEntry(player, null);
-          }).cast<String, Map<String, dynamic>?>();
-          peacockTimers.removeWhere((key, value) => value == null);
+          peacockTimers = (data['peacockTimers'] ?? {}).map((k, v) =>
+              MapEntry(k, v != null ? Map<String, dynamic>.from(v) : null));
         });
       }
     }, onError: (error) => print('Firestore sync error: $error'));
@@ -511,10 +517,6 @@ class SquadQueuePageState extends State<SquadQueuePage> {
   }
 
   void claimPeacockDialog(BuildContext context) {
-    print('PeacockTimers: $peacockTimers');
-    print('PeacockQueue: $peacockQueue');
-    print('SquadSpots: $squadSpots');
-    print('Statuses: $statuses');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -523,55 +525,28 @@ class SquadQueuePageState extends State<SquadQueuePage> {
         content: SingleChildScrollView(
           child: Column(
             children: squadMembers
+                .where((player) =>
+                    !peacockTimers.containsKey(player) && // Not Strutting
+                    !peacockQueue.contains(player) && // Not Waiting
+                    !squadSpots.contains(player)) // Not in squad
                 .map((player) => ListTile(
                       title: Text(player,
                           style: Theme.of(context).textTheme.bodyMedium),
                       onTap: () {
                         setState(() {
-                          print('Attempting to assign $player');
-                          // Block if actively Strutting or Waiting
-                          if ((peacockTimers.containsKey(player) &&
-                                  statuses[player] == 'Strutting') ||
-                              (peacockQueue.contains(player) &&
-                                  statuses[player] == 'Waiting')) {
-                            print(
-                                'Cannot assign $player: actively Strutting or Waiting');
+                          if (peacockTimers.length < 4) {
+                            peacockTimers[player] = {
+                              'startTime':
+                                  DateTime.now().millisecondsSinceEpoch,
+                              'duration': 3600,
+                              'mode': 'Quads'
+                            };
+                            statuses[player] = 'Strutting';
                           } else {
-                            // Clear stale Peacock/Queue entries if not Strutting/Waiting
-                            if (peacockTimers.containsKey(player)) {
-                              peacockTimers.remove(player);
-                              print('Cleared stale Peacock entry for $player');
-                            }
-                            if (peacockQueue.contains(player)) {
-                              peacockQueue.remove(player);
-                              print('Cleared stale Queue entry for $player');
-                            }
-                            // Pull from squadSpots if Walking or Ready
-                            int? spotIndex = squadSpots.indexOf(player);
-                            if (spotIndex != -1 &&
-                                (statuses[player] == 'Walking' ||
-                                    statuses[player] == 'Ready')) {
-                              squadSpots[spotIndex] = null;
-                              spotTimers[spotIndex] = null;
-                              print(
-                                  'Pulled $player from Spot ${spotIndex + 1} to Peacock');
-                            }
-                            // Assign to Peacock
-                            if (peacockTimers.length < 4) {
-                              peacockTimers[player] = {
-                                'time': 3600,
-                                'mode': 'Quads'
-                              };
-                              statuses[player] = 'Strutting';
-                              print('Assigned $player to Peacock as Strutting');
-                            } else {
-                              peacockQueue.add(player);
-                              statuses[player] = 'Waiting';
-                              print(
-                                  'Added $player to Peacock queue as Waiting');
-                            }
-                            updateFirestore(force: true);
+                            peacockQueue.add(player);
+                            statuses[player] = 'Waiting';
                           }
+                          updateFirestore(force: true);
                         });
                         Navigator.pop(context);
                       },
@@ -581,9 +556,8 @@ class SquadQueuePageState extends State<SquadQueuePage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
         ],
       ),
     );
@@ -601,29 +575,34 @@ class SquadQueuePageState extends State<SquadQueuePage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                ...peacockTimers.entries
-                    .where((entry) => entry.value != null)
-                    .map((entry) => ListTile(
-                          title: Text(
-                            '${entry.key} (Active: ${formatTimer(entry.value?['time'] as int?)})',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.remove_circle,
-                                color: Colors.redAccent),
-                            onPressed: () {
-                              setState(() {
-                                peacockTimers.remove(entry.key);
-                                statuses[entry.key] = 'Ready';
-                                _assignNextFromQueue();
-                                updateFirestore(force: true);
-                                print('Removed ${entry.key} from Peacock');
-                              });
-                              Navigator.pop(context);
-                              managePeacock();
-                            },
-                          ),
-                        )),
+                ...peacockTimers.entries.map((entry) {
+                  int startTime = entry.value!['startTime'] as int;
+                  int duration = entry.value!['duration'] as int;
+                  int remaining = duration -
+                      ((DateTime.now().millisecondsSinceEpoch - startTime) /
+                              1000)
+                          .floor();
+                  return ListTile(
+                    title: Text(
+                      '${entry.key} (Active: ${formatTimer(remaining > 0 ? remaining : 0)})',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.remove_circle,
+                          color: Colors.redAccent),
+                      onPressed: () {
+                        setState(() {
+                          peacockTimers.remove(entry.key);
+                          statuses[entry.key] = 'Ready';
+                          _assignNextFromQueue();
+                          updateFirestore(force: true);
+                        });
+                        Navigator.pop(context);
+                        managePeacock();
+                      },
+                    ),
+                  );
+                }),
                 ...peacockQueue.map((player) => ListTile(
                       title: Text('$player (Waiting)',
                           style: Theme.of(context).textTheme.bodyMedium),
@@ -635,7 +614,6 @@ class SquadQueuePageState extends State<SquadQueuePage> {
                             peacockQueue.remove(player);
                             statuses[player] = 'Offline';
                             updateFirestore(force: true);
-                            print('Removed $player from Peacock queue');
                           });
                           Navigator.pop(context);
                           managePeacock();

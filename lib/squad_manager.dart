@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SquadManager {
   final List<String?> squadSpots;
-  final List<int?> spotTimers;
+  final List<int?> spotTimers; // Keep as reference
   final Map<String, String> statuses;
   final Map<String, Map<String, dynamic>?> peacockTimers;
   final List<String> peacockQueue;
   final List<String> squadMembers;
-  final VoidCallback updateFirestore;
+  final VoidCallback updateFirestore; // Callback to update Firestore
   final BuildContext context;
   final String yourName;
 
@@ -187,7 +186,8 @@ class SquadManager {
                           }
                           if (peacockTimers.length < 4) {
                             peacockTimers[player] = {
-                              'startTime': DateTime.now().millisecondsSinceEpoch,
+                              'startTime':
+                                  DateTime.now().millisecondsSinceEpoch,
                               'duration': 3600,
                               'mode': 'Quads'
                             };
@@ -206,9 +206,8 @@ class SquadManager {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
         ],
       ),
     );
@@ -230,7 +229,7 @@ class SquadManager {
                     .where((entry) => entry.value != null)
                     .map((entry) => ListTile(
                           title: Text(
-                            '${entry.key} (Active: ${_formatTimer(entry.value?['duration'] as int?)})',
+                            '${entry.key} (Active: ${getPeacockTimerDisplay(entry.key)})',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           trailing: IconButton(
@@ -320,5 +319,49 @@ class SquadManager {
     int minutes = seconds ~/ 60;
     int remainingSeconds = seconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+
+  // Add these new methods for timer updates
+  void updateSpotTimers() {
+    for (int i = 0; i < spotTimers.length; i++) {
+      if (spotTimers[i] != null && spotTimers[i]! > 0) {
+        spotTimers[i] = spotTimers[i]! - 1;
+        if (spotTimers[i] == 0) {
+          removeSpot(i);
+          _assignNextFromQueue();
+        }
+      }
+    }
+    updateFirestore();
+  }
+
+  void updatePeacockTimers() {
+    peacockTimers.forEach((player, timer) {
+      if (timer != null) {
+        int startTime = timer['startTime'] as int;
+        int duration = timer['duration'] as int;
+        int elapsed =
+            ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000)
+                .floor();
+        int remaining = duration - elapsed;
+        if (remaining <= 0) {
+          peacockTimers[player] = null;
+          statuses[player] = 'Ready';
+          _assignNextFromQueue();
+        }
+      }
+    });
+    peacockTimers.removeWhere((key, value) => value == null);
+    updateFirestore();
+  }
+
+  String getPeacockTimerDisplay(String player) {
+    final timer = peacockTimers[player];
+    if (timer == null) return '00:00';
+    int startTime = timer['startTime'] as int;
+    int duration = timer['duration'] as int;
+    int remaining = duration -
+        ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000).floor();
+    return _formatTimer(remaining > 0 ? remaining : 0);
   }
 }

@@ -1,11 +1,34 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'squad_queue.dart';
+import 'squad_queue_logic.dart';
 import 'utils.dart';
 
-class SquadTab extends StatelessWidget {
-  final SquadQueuePageState state;
+class SquadTab extends StatefulWidget {
+  final SquadQueueLogic logic;
 
-  const SquadTab({super.key, required this.state});
+  const SquadTab({super.key, required this.logic});
+
+  @override
+  _SquadTabState createState() => _SquadTabState();
+}
+
+class _SquadTabState extends State<SquadTab> {
+  late Timer _uiTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start a timer to rebuild the UI every second
+    _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {}); // Trigger rebuild to update timers
+    });
+  }
+
+  @override
+  void dispose() {
+    _uiTimer.cancel(); // Clean up the timer
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,10 +39,10 @@ class SquadTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildHeader(context),
-            _buildSquadSpots(context),
-            _buildPeacockSpot(context),
-            _buildActionButtons(context),
+            _buildHeader(context, setState),
+            _buildSquadSpots(context, setState),
+            _buildPeacockSpot(context, setState),
+            _buildActionButtons(context, setState),
             _buildSquadMembersList(context),
           ],
         ),
@@ -27,7 +50,7 @@ class SquadTab extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, StateSetter setState) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Row(
@@ -41,7 +64,7 @@ class SquadTab extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () => _showSettingsDialog(context),
+            onPressed: () => _showSettingsDialog(context, setState),
             tooltip: 'Settings',
           ),
         ],
@@ -49,22 +72,23 @@ class SquadTab extends StatelessWidget {
     );
   }
 
-  Widget _buildSquadSpots(BuildContext context) {
+  Widget _buildSquadSpots(BuildContext context, StateSetter setState) {
     return Column(
       children: List.generate(
         4,
-        (index) => _buildSpotCard(context, index),
+        (index) => _buildSpotCard(context, index, setState),
       ),
     );
   }
 
-  Widget _buildSpotCard(BuildContext context, int index) {
-    final spotName = state.squadSpots[index];
+  Widget _buildSpotCard(BuildContext context, int index, StateSetter setState) {
+    final spotName = widget.logic.squadSpots[index];
     final hasOccupant = spotName != null;
 
     return GestureDetector(
-      onLongPress: () =>
-          hasOccupant ? state.removeSpot(index) : state.assignSpot(index),
+      onLongPress: () => hasOccupant
+          ? widget.logic.removeSpot(index, setState)
+          : widget.logic.assignSpot(index, setState),
       child: Card(
         elevation: 3,
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -75,7 +99,7 @@ class SquadTab extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildSpotInfo(context, index, spotName),
-              _buildSpotActions(index, hasOccupant),
+              _buildSpotActions(index, hasOccupant, setState),
             ],
           ),
         ),
@@ -107,22 +131,22 @@ class SquadTab extends StatelessWidget {
     );
   }
 
-  Widget _buildSpotActions(int index, bool hasOccupant) {
+  Widget _buildSpotActions(int index, bool hasOccupant, StateSetter setState) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!hasOccupant)
           ElevatedButton(
-            onPressed: () => state.claimSpot(index),
+            onPressed: () => widget.logic.claimSpot(index, setState),
             style: ElevatedButton.styleFrom(
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
             ),
             child: const Text('Claim'),
           ),
-        if (hasOccupant && state.spotTimers[index] != null)
+        if (hasOccupant && widget.logic.spotTimers[index] != null)
           ElevatedButton(
-            onPressed: () => state.lockSpot(index),
+            onPressed: () => widget.logic.lockSpot(index, setState),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blueGrey,
               shape: RoundedRectangleBorder(
@@ -134,10 +158,10 @@ class SquadTab extends StatelessWidget {
     );
   }
 
-  Widget _buildPeacockSpot(BuildContext context) {
+  Widget _buildPeacockSpot(BuildContext context, StateSetter setState) {
     return GestureDetector(
-      onTap: () => state.claimPeacockDialog(context),
-      onLongPress: () => state.managePeacock(),
+      onTap: () => widget.logic.claimPeacockDialog(setState),
+      onLongPress: () => widget.logic.managePeacock(setState),
       child: Card(
         elevation: 3,
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -149,7 +173,7 @@ class SquadTab extends StatelessWidget {
             children: [
               _buildPeacockInfo(context),
               ElevatedButton(
-                onPressed: () => state.claimPeacock(),
+                onPressed: () => widget.logic.claimPeacock(),
                 style: ElevatedButton.styleFrom(
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
@@ -181,7 +205,8 @@ class SquadTab extends StatelessWidget {
   }
 
   Widget _buildPeacockStatus(BuildContext context) {
-    if (state.peacockTimers.isEmpty && state.peacockQueue.isEmpty) {
+    if (widget.logic.peacockTimers.isEmpty &&
+        widget.logic.peacockQueue.isEmpty) {
       return const Text('Open', style: TextStyle(color: Colors.white));
     }
 
@@ -189,13 +214,11 @@ class SquadTab extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ...state.peacockTimers.entries
+        ...widget.logic.peacockTimers.entries
             .where((e) => e.value != null)
-            .map((entry) => _buildPeacockTimerRow(context, entry))
-            .toList(),
-        ...state.peacockQueue
-            .map((player) => _buildPeacockQueueRow(context, player))
-            .toList(),
+            .map((entry) => _buildPeacockTimerRow(context, entry)),
+        ...widget.logic.peacockQueue
+            .map((player) => _buildPeacockQueueRow(context, player)),
       ],
     );
   }
@@ -235,10 +258,10 @@ class SquadTab extends StatelessWidget {
   }
 
   Widget _buildPlayerStatusRow(BuildContext context, String player) {
-    final status = state.statuses[player] ?? 'Offline';
-    final timerIndex = state.squadSpots.indexOf(player);
-    final timer = timerIndex != -1 ? state.spotTimers[timerIndex] : null;
-    final streak = state.currentStreaks[player] ?? 0;
+    final status = widget.logic.statuses[player] ?? 'Offline';
+    final timerIndex = widget.logic.squadSpots.indexOf(player);
+    final timer = timerIndex != -1 ? widget.logic.spotTimers[timerIndex] : null;
+    final streak = widget.logic.currentStreaks[player] ?? 0;
 
     return Padding(
       padding: const EdgeInsets.only(top: 4),
@@ -264,7 +287,7 @@ class SquadTab extends StatelessWidget {
       label: Text(status, style: const TextStyle(fontSize: 12)),
       padding: const EdgeInsets.symmetric(horizontal: 6),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      backgroundColor: _getStatusColor(status).withOpacity(0.2),
+      backgroundColor: _getStatusColor(status).withValues(alpha: 0.2),
       labelStyle: TextStyle(color: _getStatusColor(status)),
     );
   }
@@ -284,14 +307,14 @@ class SquadTab extends StatelessWidget {
     }
   }
 
-  Widget _buildActionButtons(BuildContext context) {
+  Widget _buildActionButtons(BuildContext context, StateSetter setState) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           ElevatedButton.icon(
-            onPressed: () => state.recordWin(),
+            onPressed: () => widget.logic.recordWin(setState),
             icon: Image.asset('assets/images/check.png', width: 24, height: 24),
             label: const Text('Win'),
             style: ElevatedButton.styleFrom(
@@ -302,7 +325,7 @@ class SquadTab extends StatelessWidget {
             ),
           ),
           ElevatedButton.icon(
-            onPressed: () => state.recordLoss(),
+            onPressed: () => widget.logic.recordLoss(setState),
             icon: Image.asset('assets/images/close.png', width: 24, height: 24),
             label: const Text('Loss'),
             style: ElevatedButton.styleFrom(
@@ -326,14 +349,14 @@ class SquadTab extends StatelessWidget {
           child: Text('Squad Members:',
               style: Theme.of(context).textTheme.titleLarge),
         ),
-        if (state.squadMembers.isEmpty)
+        if (widget.logic.squadMembers.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.0),
             child: Text('No squad members yet',
                 style: TextStyle(color: Colors.grey)),
           )
         else
-          ...state.squadMembers
+          ...widget.logic.squadMembers
               .map((player) => _buildMemberCard(context, player)),
       ],
     );
@@ -357,7 +380,7 @@ class SquadTab extends StatelessWidget {
     );
   }
 
-  void _showSettingsDialog(BuildContext context) {
+  void _showSettingsDialog(BuildContext context, StateSetter setState) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -369,7 +392,7 @@ class SquadTab extends StatelessWidget {
               leading: const Icon(Icons.clear_all),
               title: const Text('Clear All Spots'),
               onTap: () {
-                state.clearAllSpots(); // Implement in state class
+                widget.logic.clearAllSpots(setState);
                 Navigator.pop(context);
               },
             ),
@@ -377,7 +400,7 @@ class SquadTab extends StatelessWidget {
               leading: const Icon(Icons.timer_off),
               title: const Text('Reset Timers'),
               onTap: () {
-                state.resetTimers(); // Implement in state class
+                widget.logic.resetTimers(setState);
                 Navigator.pop(context);
               },
             ),
@@ -385,7 +408,7 @@ class SquadTab extends StatelessWidget {
               leading: const Icon(Icons.people),
               title: const Text('Manage Members'),
               onTap: () {
-                // Add member management logic here
+                // Add member management logic here if needed
                 Navigator.pop(context);
               },
             ),

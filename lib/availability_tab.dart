@@ -7,7 +7,8 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'squad_queue.dart';
+import 'squad_queue_logic.dart';
+import 'squad_queue_ui.dart';
 
 class AvailabilityTab extends StatefulWidget {
   final SquadQueuePageState state;

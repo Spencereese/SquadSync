@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'squad_queue.dart';
+import 'squad_queue_logic.dart';
 
 class PerformanceHubTab extends StatelessWidget {
-  final SquadQueuePageState state;
+  final SquadQueueLogic logic;
 
-  const PerformanceHubTab({super.key, required this.state});
+  const PerformanceHubTab({super.key, required this.logic});
 
   @override
   Widget build(BuildContext context) {
@@ -28,10 +28,10 @@ class PerformanceHubTab extends StatelessWidget {
             ),
             Expanded(
               child: TabBarView(
-                physics: BouncingScrollPhysics(),
+                physics: const BouncingScrollPhysics(),
                 children: [
-                  PersonalStatsView(state: state),
-                  LeaderboardsView(state: state),
+                  PersonalStatsView(logic: logic),
+                  LeaderboardsView(logic: logic),
                 ],
               ),
             ),
@@ -64,12 +64,12 @@ class GameStats {
 }
 
 class PersonalStatsView extends StatelessWidget {
-  final SquadQueuePageState state;
+  final SquadQueueLogic logic;
 
-  const PersonalStatsView({super.key, required this.state});
+  const PersonalStatsView({super.key, required this.logic});
 
   GameStats _calculateStats() {
-    final gameHistory = state.gameHistory;
+    final gameHistory = logic.gameHistory;
     final totalGames = gameHistory.length;
     final wins = gameHistory.where((game) => game['result'] == 'Win').length;
     final winRate = totalGames > 0 ? wins / totalGames : 0.0;
@@ -109,11 +109,11 @@ class PersonalStatsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     debugPrint(
-        'PersonalStatsView building, gameHistory length: ${state.gameHistory.length}');
+        'PersonalStatsView building, gameHistory length: ${logic.gameHistory.length}');
     final stats = _calculateStats();
 
     return SingleChildScrollView(
-      physics: BouncingScrollPhysics(),
+      physics: const BouncingScrollPhysics(),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -230,7 +230,8 @@ class _Chart extends StatelessWidget {
                 show: true,
                 drawVerticalLine: false,
                 getDrawingHorizontalLine: (value) => FlLine(
-                  color: Colors.grey.withOpacity(0.2),
+                  color: Colors.grey
+                      .withValues(alpha: 0.2), // Updated from withOpacity
                   strokeWidth: 1,
                 ),
               ),
@@ -255,7 +256,9 @@ class _Chart extends StatelessWidget {
               ),
               borderData: FlBorderData(
                 show: true,
-                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                border: Border.all(
+                    color: Colors.grey
+                        .withValues(alpha: 0.2)), // Updated from withOpacity
               ),
               minY: 0,
               maxY: maxY,
@@ -267,7 +270,8 @@ class _Chart extends StatelessWidget {
                   dotData: FlDotData(show: false),
                   belowBarData: BarAreaData(
                     show: true,
-                    color: Colors.cyanAccent.withOpacity(0.1),
+                    color: Colors.cyanAccent
+                        .withValues(alpha: 0.1), // Updated from withOpacity
                   ),
                 ),
               ],
@@ -280,13 +284,13 @@ class _Chart extends StatelessWidget {
 }
 
 class LeaderboardsView extends StatelessWidget {
-  final SquadQueuePageState state;
+  final SquadQueueLogic logic;
 
-  const LeaderboardsView({super.key, required this.state});
+  const LeaderboardsView({super.key, required this.logic});
 
   List<Map<String, dynamic>> _calculateLeaderboard(List<String> members) {
     return members.map((member) {
-      final wins = state.gameHistory
+      final wins = logic.gameHistory
           .where((game) =>
               (game['players'] as List?)?.contains(member) == true &&
               game['result'] == 'Win')
@@ -299,13 +303,13 @@ class LeaderboardsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     debugPrint(
-        'LeaderboardsView building, squadMembers: ${state.squadMembers.length}');
-    final squadLeaderboard = _calculateLeaderboard(state.squadMembers);
+        'LeaderboardsView building, squadMembers: ${logic.squadMembers.length}');
+    final squadLeaderboard = _calculateLeaderboard(logic.squadMembers);
     // For demo purposes, global uses same data. In real app, fetch from server
     final globalLeaderboard = squadLeaderboard;
 
     return SingleChildScrollView(
-      physics: BouncingScrollPhysics(),
+      physics: const BouncingScrollPhysics(),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(

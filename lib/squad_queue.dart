@@ -516,6 +516,38 @@ class SquadQueuePageState extends State<SquadQueuePage> {
     startPeacockTimer();
   }
 
+  void clearAllSpots() {
+    setState(() {
+      // Clear all squad spots
+      squadSpots = List.filled(4, null);
+      // Clear all spot timers
+      spotTimers = List.filled(4, null);
+      // Clear peacock spot
+      peacockTimers.clear();
+      peacockQueue.clear();
+      // Reset statuses for members who were in spots
+      for (var member in squadMembers) {
+        if (statuses[member] == 'Strutting' || statuses[member] == 'Walking') {
+          statuses[member] = 'Ready';
+        }
+      }
+    });
+  }
+
+  void resetTimers() {
+    setState(() {
+      // Reset all spot timers
+      spotTimers = List.filled(4, null);
+      // Reset peacock timers
+      peacockTimers.clear();
+      // Move any peacock timer occupants to queue or reset their status
+      for (var player in peacockQueue) {
+        statuses[player] = 'Ready';
+      }
+      peacockQueue.clear();
+    });
+  }
+
   void claimPeacockDialog(BuildContext context) {
     showDialog(
       context: context,

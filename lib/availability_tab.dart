@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'squad_queue_logic.dart';
-import 'squad_queue_ui.dart';
 
 class AvailabilityTab extends StatefulWidget {
-  final SquadQueuePageState state;
+  final dynamic state;
 
   const AvailabilityTab({super.key, required this.state});
 
@@ -26,6 +24,7 @@ class AvailabilityTabState extends State<AvailabilityTab> {
   Map<DateTime, List<Map<String, dynamic>>> _events = {};
   late tz.Location _userTimeZone;
   bool _isLoading = false;
+
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
@@ -45,8 +44,6 @@ class AvailabilityTabState extends State<AvailabilityTab> {
   }
 
   Future<String> _getUserTimeZone() async {
-    // Implement logic to get user's actual timezone
-    // For now, defaulting to America/New_York
     return 'America/New_York';
   }
 
@@ -65,63 +62,237 @@ class AvailabilityTabState extends State<AvailabilityTab> {
       if (!mounted) return;
       setState(() {
         _events = {};
+        final currentUser = FirebaseAuth.instance.currentUser;
+        final currentUid = currentUser?.uid ?? 'anonymous';
+        final currentDisplayName = currentUser?.displayName ?? 'Anonymous';
+
         for (var doc in snapshot.docs) {
           final data = doc.data();
-          try {
-            final date = DateTime.parse(data['date']);
-            final event = {
-              'player': data['player'] ?? 'Unknown',
-              'available': data['available'] ?? false,
-              'time': data['time'] ?? '00:00',
-              'votes': data['votes'] ?? 0,
-              'id': doc.id,
-            };
-            _events.update(
-              DateTime(date.year, date.month, date.day),
-              (list) => [...list, event],
-              ifAbsent: () => [event],
-            );
-          } catch (e) {
-            debugPrint('Error parsing event: $e');
+          final date = DateTime.parse(data['date']);
+          final player = data['player'] ?? 'Unknown';
+          final event = {
+            'player': player,
+            'startTime': data['startTime'] ?? '00:00',
+            'endTime': data['endTime'] ?? '23:59',
+            'votes': data['votes'] ?? 0,
+            'id': doc.id,
+            'recurring': data['recurring'] ?? false,
+            'recurringDays': data['recurringDays'] ?? [],
+            'allDay': data['allDay'] ?? false,
+            'displayName': data['displayName'] ?? player,
+          };
+          _events.update(
+            DateTime(date.year, date.month, date.day),
+            (list) => [...list, event],
+            ifAbsent: () => [event],
+          );
+
+          // Migrate old data: if player is displayName and not UID, update it
+          if (player == currentDisplayName && player != currentUid) {
+            print(
+                'Migrating schedule ${doc.id}: player $player -> $currentUid');
+            doc.reference.update(
+                {'player': currentUid, 'displayName': currentDisplayName});
           }
         }
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('Error loading events: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load events: $e')),
+          SnackBar(content: Text('Error loading events: $e')),
         );
         setState(() => _isLoading = false);
       }
     }
   }
 
-  Future<void> _scheduleMatch(bool available) async {
-    if (!mounted) return;
+  Future<void> _scheduleAvailabilityDialog() async {
+    DateTime startTime = DateTime.now();
+    DateTime endTime = DateTime.now().add(const Duration(hours: 1));
+    bool isAllDay = false;
+    bool isRecurring = false;
+    List<bool> recurringDays = [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]; // Mon-Fri default
+    bool inviteSquad = false;
+    String? inviteMember;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Schedule Your Availability'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('All Day?',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Switch(
+                      value: isAllDay,
+                      onChanged: (value) =>
+                          setDialogState(() => isAllDay = value),
+                      activeColor: Colors.cyanAccent,
+                    ),
+                  ],
+                ),
+                if (!isAllDay) ...[
+                  const Text('Start Time',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  SizedBox(
+                    height: 100,
+                    child: CupertinoDatePicker(
+                      mode: CupertinoDatePickerMode.time,
+                      initialDateTime: startTime,
+                      onDateTimeChanged: (value) =>
+                          setDialogState(() => startTime = value),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('End Time',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  SizedBox(
+                    height: 100,
+                    child: CupertinoDatePicker(
+                      mode: CupertinoDatePickerMode.time,
+                      initialDateTime: endTime,
+                      onDateTimeChanged: (value) =>
+                          setDialogState(() => endTime = value),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Repeat Weekly?',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Switch(
+                      value: isRecurring,
+                      onChanged: (value) =>
+                          setDialogState(() => isRecurring = value),
+                      activeColor: Colors.cyanAccent,
+                    ),
+                  ],
+                ),
+                if (isRecurring || isAllDay)
+                  Wrap(
+                    spacing: 8,
+                    children: List.generate(
+                        7,
+                        (index) => ChoiceChip(
+                              label: Text(
+                                  ['S', 'M', 'T', 'W', 'T', 'F', 'S'][index]),
+                              selected: recurringDays[index],
+                              onSelected: (selected) => setDialogState(
+                                  () => recurringDays[index] = selected),
+                            )),
+                  ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Invite Squad?',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Switch(
+                      value: inviteSquad,
+                      onChanged: (value) =>
+                          setDialogState(() => inviteSquad = value),
+                    ),
+                  ],
+                ),
+                if (!inviteSquad)
+                  DropdownButton<String>(
+                    hint: const Text('Invite a Member'),
+                    value: inviteMember,
+                    items: [
+                      'Player1',
+                      'Player2',
+                      'Player3'
+                    ] // Replace with squad list
+                        .map((member) => DropdownMenuItem(
+                            value: member, child: Text(member)))
+                        .toList(),
+                    onChanged: (value) =>
+                        setDialogState(() => inviteMember = value),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Set'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
     setState(() => _isLoading = true);
     try {
-      final time = tz.TZDateTime.now(_userTimeZone);
-      final currentPlayer =
-          FirebaseAuth.instance.currentUser?.displayName ?? 'Anonymous';
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        throw Exception('You must be signed in to schedule availability.');
+      }
+      final playerUid = currentUser.uid;
+      final displayName = currentUser.displayName ?? 'Anonymous';
+      print(
+          'Scheduling as UID: $playerUid, DisplayName: $displayName'); // Debug
 
-      final event = {
-        'player': currentPlayer,
-        'available': available,
-        'time': DateFormat('HH:mm').format(time),
-        'date': _selectedDay.toIso8601String().split('T')[0],
-        'votes': 0,
-        'createdAt': FieldValue.serverTimestamp(),
-      };
+      final startTimeOfDay = TimeOfDay.fromDateTime(startTime);
+      final endTimeOfDay = TimeOfDay.fromDateTime(endTime);
 
-      await FirebaseFirestore.instance.collection('schedules').add(event);
+      if (isRecurring || isAllDay) {
+        final startDate = _selectedDay;
+        for (int i = 0; i < 30; i++) {
+          final date = startDate.add(Duration(days: i));
+          if (recurringDays[date.weekday % 7]) {
+            await _addEvent(
+                date,
+                playerUid,
+                displayName,
+                isAllDay ? null : startTimeOfDay,
+                isAllDay ? null : endTimeOfDay,
+                isRecurring,
+                recurringDays,
+                isAllDay);
+          }
+        }
+      } else {
+        await _addEvent(_selectedDay, playerUid, displayName, startTimeOfDay,
+            endTimeOfDay, false, [], isAllDay);
+      }
+
       await _loadEvents();
-      await _scheduleNotification(event);
+      if (!isAllDay) {
+        await _scheduleNotification(startTimeOfDay, endTimeOfDay);
+      }
+
+      if (inviteSquad || inviteMember != null) {
+        await _sendInvites(displayName, inviteSquad ? 'Squad' : inviteMember!,
+            isAllDay, startTimeOfDay, endTimeOfDay);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Availability scheduled successfully')),
+          const SnackBar(content: Text('Availability scheduled!')),
         );
       }
     } catch (e) {
@@ -133,6 +304,30 @@ class AvailabilityTabState extends State<AvailabilityTab> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _addEvent(
+      DateTime date,
+      String playerUid,
+      String displayName,
+      TimeOfDay? startTime,
+      TimeOfDay? endTime,
+      bool recurring,
+      List<bool> recurringDays,
+      bool allDay) async {
+    final event = {
+      'player': playerUid,
+      'displayName': displayName,
+      'startTime': allDay ? '00:00' : startTime?.format(context) ?? '00:00',
+      'endTime': allDay ? '23:59' : endTime?.format(context) ?? '23:59',
+      'date': date.toIso8601String().split('T')[0],
+      'votes': 0,
+      'recurring': recurring,
+      'recurringDays': recurring ? recurringDays : [],
+      'allDay': allDay,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    await FirebaseFirestore.instance.collection('schedules').add(event);
   }
 
   Future<void> _voteForEvent(Map<String, dynamic> event) async {
@@ -155,21 +350,87 @@ class AvailabilityTabState extends State<AvailabilityTab> {
     }
   }
 
-  Future<void> _scheduleNotification(Map<String, dynamic> event) async {
+  Future<void> _clearAllAvailabilities() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Please sign in to clear your availability.')),
+        );
+      }
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear All Your Availability'),
+        content: const Text(
+            'This will remove all your scheduled availability. Are you sure?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final playerUid = currentUser.uid;
+      print('Clearing for UID: $playerUid'); // Fixed log
+      final snapshot = await FirebaseFirestore.instance
+          .collection('schedules')
+          .where('player', isEqualTo: playerUid)
+          .get();
+
+      print('Found ${snapshot.docs.length} schedules to delete');
+      for (var doc in snapshot.docs) {
+        print(
+            'Deleting schedule ${doc.id} with player: ${doc.data()['player']}');
+        await doc.reference.delete();
+      }
+
+      await _loadEvents();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All your availability cleared!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to clear: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _scheduleNotification(
+      TimeOfDay startTime, TimeOfDay endTime) async {
     try {
       const androidDetails = AndroidNotificationDetails(
         'match_channel',
         'Match Notifications',
         importance: Importance.high,
         priority: Priority.high,
-        showWhen: true,
       );
       const platformDetails = NotificationDetails(android: androidDetails);
 
       await _notificationsPlugin.zonedSchedule(
-        event.hashCode,
-        'Match Scheduled',
-        '${event['player']} is ${event['available'] ? 'available' : 'unavailable'} at ${event['time']}',
+        DateTime.now().hashCode,
+        'Availability Set',
+        'You’re available from ${startTime.format(context)} to ${endTime.format(context)}',
         tz.TZDateTime.from(_selectedDay, _userTimeZone)
             .add(const Duration(minutes: 5)),
         platformDetails,
@@ -178,30 +439,57 @@ class AvailabilityTabState extends State<AvailabilityTab> {
             UILocalNotificationDateInterpretation.absoluteTime,
       );
     } catch (e) {
-      debugPrint('Notification scheduling failed: $e');
+      debugPrint('Notification error: $e');
     }
   }
 
-  List<FlSpot> _getHeatmapData() {
-    final Map<int, int> dayCounts = {};
-    final now = DateTime.now();
-    final startOfMonth = DateTime(now.year, now.month, 1);
+  Future<void> _sendInvites(String sender, String recipient, bool allDay,
+      TimeOfDay startTime, TimeOfDay endTime) async {
+    try {
+      final message = allDay
+          ? '$sender invited you to be available all day on ${DateFormat.yMMMd().format(_selectedDay)}'
+          : '$sender invited you to be available from ${startTime.format(context)} to ${endTime.format(context)} on ${DateFormat.yMMMd().format(_selectedDay)}';
+      await FirebaseFirestore.instance.collection('invites').add({
+        'sender': sender,
+        'recipient': recipient,
+        'message': message,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Invite error: $e');
+    }
+  }
 
-    _events.forEach((date, events) {
-      if (date.isAfter(startOfMonth)) {
-        final day = date.day;
-        dayCounts[day] = (dayCounts[day] ?? 0) + events.length;
-      }
-    });
+  String _getAvailabilitySummary() {
+    final events = _events[_selectedDay] ?? [];
+    if (events.isEmpty) return 'No one has set availability yet.';
+    final timeSlots = events
+        .map((e) =>
+            e['allDay'] ? 'All Day' : '${e['startTime']} - ${e['endTime']}')
+        .toSet();
+    return 'Time slots: ${timeSlots.join(', ')}';
+  }
 
-    return dayCounts.entries
-        .map((e) => FlSpot(e.key.toDouble(), e.value.toDouble()))
+  List<Map<String, dynamic>> _getTimeSlotSummary() {
+    final events = _events[_selectedDay] ?? [];
+    final Map<String, List<String>> slotMap = {};
+    for (var event in events) {
+      final slot = event['allDay']
+          ? 'All Day'
+          : '${event['startTime']} - ${event['endTime']}';
+      slotMap.update(slot, (list) => [...list, event['displayName']],
+          ifAbsent: () => [event['displayName']]);
+    }
+    return slotMap.entries
+        .map((e) => {'time': e.key, 'players': e.value})
         .toList()
-      ..sort((a, b) => a.x.compareTo(b.x));
+      ..sort((a, b) => (a['time'] as String).compareTo(b['time'] as String));
   }
 
   @override
   Widget build(BuildContext context) {
+    final timeSlots = _getTimeSlotSummary();
+
     return RefreshIndicator(
       onRefresh: _loadEvents,
       child: SingleChildScrollView(
@@ -212,7 +500,9 @@ class AvailabilityTabState extends State<AvailabilityTab> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Card(
-                elevation: 2,
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 child: TableCalendar(
                   firstDay: DateTime.utc(2020, 1, 1),
                   lastDay: DateTime.utc(2030, 12, 31),
@@ -232,79 +522,78 @@ class AvailabilityTabState extends State<AvailabilityTab> {
                   },
                   eventLoader: (day) =>
                       _events[DateTime(day.year, day.month, day.day)] ?? [],
-                  calendarStyle: const CalendarStyle(
+                  headerStyle: HeaderStyle(
+                    leftChevronIcon: Image.asset(
+                      'assets/images/prev_month.png',
+                      width: 24,
+                      height: 24,
+                      color: Colors.blue,
+                      colorBlendMode: BlendMode.srcIn,
+                    ),
+                    rightChevronIcon: Image.asset(
+                      'assets/images/next_month.png',
+                      width: 24,
+                      height: 24,
+                      color: Colors.blue,
+                      colorBlendMode: BlendMode.srcIn,
+                    ),
+                    titleCentered: true,
+                    formatButtonVisible: true,
+                  ),
+                  calendarStyle: CalendarStyle(
                     todayDecoration: BoxDecoration(
-                      color: Colors.cyanAccent,
-                      shape: BoxShape.circle,
-                    ),
-                    selectedDecoration: BoxDecoration(
-                      color: Colors.blueAccent,
-                      shape: BoxShape.circle,
-                    ),
-                    markerDecoration: BoxDecoration(
-                      color: Colors.redAccent,
-                      shape: BoxShape.circle,
-                    ),
+                        color: Color.fromRGBO(0, 255, 255, 0.5),
+                        shape: BoxShape.circle),
+                    selectedDecoration: const BoxDecoration(
+                        color: Colors.blueAccent, shape: BoxShape.circle),
+                    markerDecoration: const BoxDecoration(
+                        color: Colors.redAccent, shape: BoxShape.circle),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
-              SizedBox(
-                height: 200,
-                child: LineChart(
-                  LineChartData(
-                    gridData: FlGridData(
-                      show: true,
-                      drawHorizontalLine: true,
-                      drawVerticalLine: false,
-                      getDrawingHorizontalLine: (value) => FlLine(
-                        color: Colors.grey.withOpacity(0.2),
-                        strokeWidth: 1,
-                      ),
-                    ),
-                    titlesData: FlTitlesData(
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 30,
-                          getTitlesWidget: (value, meta) => Text(
-                            value.toInt().toString(),
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 40,
-                          getTitlesWidget: (value, meta) => Text(
-                            value.toInt().toString(),
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ),
-                      topTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
-                    ),
-                    borderData: FlBorderData(
-                      show: true,
-                      border: Border.all(color: Colors.grey.withOpacity(0.2)),
-                    ),
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: _getHeatmapData(),
-                        isCurved: true,
-                        color: Colors.cyanAccent,
-                        barWidth: 2,
-                        dotData: FlDotData(show: false),
-                        belowBarData: BarAreaData(
-                          show: true,
-                          color: Colors.cyanAccent.withOpacity(0.2),
-                        ),
-                      ),
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Who’s Available Today',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      if (timeSlots.isEmpty)
+                        const Text('No availability set yet.')
+                      else
+                        ...timeSlots.map((slot) => Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 4.0),
+                              child: Row(
+                                children: [
+                                  Text(slot['time'],
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                      child: Text(
+                                          '${slot['players'].length} player${slot['players'].length > 1 ? 's' : ''}')),
+                                ],
+                              ),
+                            )),
                     ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Text(
+                    'Summary: ${_getAvailabilitySummary()}',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -313,73 +602,138 @@ class AvailabilityTabState extends State<AvailabilityTab> {
                 const Center(child: CircularProgressIndicator())
               else if (_events[_selectedDay]?.isNotEmpty ?? false)
                 ..._events[_selectedDay]!.map((event) => Card(
-                      elevation: 1,
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                       child: ListTile(
-                        title: Text(
-                          '${event['player']} - ${event['available'] ? 'Available' : 'Unavailable'}',
-                          style: TextStyle(
-                            color:
-                                event['available'] ? Colors.green : Colors.red,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.green,
+                          child: Text(event['displayName'][0],
+                              style: const TextStyle(color: Colors.white)),
                         ),
-                        subtitle: Text(
-                          '${event['time']} | Votes: ${event['votes']}',
-                          style: const TextStyle(color: Colors.grey),
-                        ),
+                        title: Text('${event['displayName']}'),
+                        subtitle: Text(event['allDay']
+                            ? 'All Day'
+                            : '${event['startTime']} - ${event['endTime']} | Votes: ${event['votes']}'),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.thumb_up,
-                                  color: Colors.green),
-                              onPressed: () => _voteForEvent(event),
+                            GestureDetector(
+                              onTap: () => _voteForEvent(event),
+                              child: Image.asset(
+                                'assets/images/thumbs_up.png',
+                                width: 24,
+                                height: 24,
+                                color: Colors.blue,
+                                colorBlendMode: BlendMode.srcIn,
+                              ),
                             ),
-                            if (FirebaseAuth
-                                    .instance.currentUser?.displayName ==
+                            const SizedBox(width: 8),
+                            if (FirebaseAuth.instance.currentUser?.uid ==
                                 event['player'])
-                              IconButton(
-                                icon: const Icon(Icons.delete,
-                                    color: Colors.redAccent),
-                                onPressed: () async {
-                                  await FirebaseFirestore.instance
-                                      .collection('schedules')
-                                      .doc(event['id'])
-                                      .delete();
-                                  await _loadEvents();
+                              GestureDetector(
+                                onTap: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text(
+                                          'Remove This Availability'),
+                                      content: const Text(
+                                          'Are you sure you want to remove this time slot?'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context, true),
+                                          child: const Text('Remove'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed == true) {
+                                    await FirebaseFirestore.instance
+                                        .collection('schedules')
+                                        .doc(event['id'])
+                                        .delete();
+                                    await _loadEvents();
+                                  }
                                 },
+                                child: Image.asset(
+                                  'assets/images/clear_icon.png',
+                                  width: 24,
+                                  height: 24,
+                                  color: Colors.blue,
+                                  colorBlendMode: BlendMode.srcIn,
+                                ),
                               ),
                           ],
                         ),
                       ),
                     ))
               else
-                const Center(child: Text('No events scheduled for this day')),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : () => _scheduleMatch(true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                const Center(child: Text('No availability set for this day')),
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: _isLoading ? null : _scheduleAvailabilityDialog,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.green.shade700, Colors.green.shade400],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color.fromRGBO(0, 255, 0, 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
                       ),
-                      child: const Text('Set Available'),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Schedule My Availability',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed:
-                          _isLoading ? null : () => _scheduleMatch(false),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
+                ),
+              ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: _isLoading ? null : _clearAllAvailabilities,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade400,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color.fromRGBO(255, 0, 0, 0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
                       ),
-                      child: const Text('Set Unavailable'),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Clear All My Availability',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
-                ],
+                ),
               ),
             ],
           ),

@@ -57,6 +57,7 @@ class SquadQueueLogic {
         statuses: statuses,
         peacockTimers: peacockTimers,
         peacockQueue: peacockQueue,
+        currentStreaks: currentStreaks,
         squadMembers: squadMembers,
         updateFirestore: () => updateFirestore(force: false),
         context: context!,
@@ -307,8 +308,7 @@ class SquadQueueLogic {
   void recordWin(Function setStateCallback) {
     setStateCallback(() {
       List<String> walkingPlayers = squadSpots
-          .where((spot) =>
-              spot != null && spotTimers[squadSpots.indexOf(spot)] == null)
+          .where((spot) => spot != null && statuses[spot] == 'Walking')
           .cast<String>()
           .toList();
       Map<String, int> updatedStreaks = {};

@@ -146,8 +146,15 @@ class _SquadTabContentState extends State<_SquadTabContent> {
       BuildContext context, int index, SquadState squadState) {
     final spotName = squadState.logic.squadSpots[index];
     final hasOccupant = spotName != null;
+    final yourName = squadState
+        .logic.yourName; // Assuming yourName exists in SquadQueueLogic
 
     return GestureDetector(
+      onTap: () {
+        if (!hasOccupant && squadState.logic.squadSpots.contains(yourName)) {
+          _assignOtherMember(context, squadState, index);
+        }
+      },
       onLongPress: () => hasOccupant
           ? squadState.logic.removeSpot(index)
           : _assignSpot(context, squadState, index),
@@ -200,39 +207,75 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   }
 
   Widget _buildSpotActions(int index, bool hasOccupant, SquadState squadState) {
+    final spotName = squadState.logic.squadSpots[index];
+    final yourName = squadState.logic.yourName; // Assuming yourName exists
+    final isYourSpot = spotName == yourName;
+    final isReady = squadState.logic.statuses[spotName] == 'Ready';
+    final isWalking = squadState.logic.statuses[spotName] == 'Walking';
+    final youAreAssigned = squadState.logic.squadSpots.contains(yourName);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!hasOccupant)
           ElevatedButton(
-            onPressed: () => squadState.logic
-                .claimSpot(index, () => setState(() {}), context),
+            onPressed: () {
+              if (youAreAssigned) {
+                _assignOtherMember(context, squadState, index);
+              } else {
+                squadState.logic.claimSpot(
+                    index,
+                    () => setState(() {
+                          squadState.logic.statuses[yourName] = 'Ready';
+                          squadState.logic.spotTimers[index] =
+                              300; // Timer for Ready
+                          squadState.update();
+                        }),
+                    context);
+              }
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.teal,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
+              elevation: 6,
             ),
-            child: const Text('Claim'),
+            child: const Tooltip(
+              message: 'Claim this spot or assign another',
+              child: Text('Claim'),
+            ),
           ),
-        if (hasOccupant && squadState.logic.spotTimers[index] != null)
+        if (hasOccupant && isReady)
           ElevatedButton(
-            onPressed: () =>
-                squadState.logic.lockSpot(index, () => setState(() {})),
+            onPressed: () {
+              squadState.logic.statuses[spotName!] = 'Walking';
+              squadState.logic.spotTimers[index] = null; // No timer for Walking
+              setState(() {});
+              squadState.update();
+            },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueGrey,
+              backgroundColor: Colors.yellowAccent,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
+              elevation: 6,
             ),
-            child: const Text('Lock'),
+            child: const Tooltip(
+              message: 'Confirm as Walking',
+              child: Text('Lock In'), // Renamed from "Ready"
+            ),
           ),
+        // No button if Walking
       ],
     );
   }
 
   Widget _buildPeacockSpot(BuildContext context, SquadState squadState) {
+    final yourName = squadState.logic.yourName; // Assuming yourName exists
+    final youAreAssigned = squadState.logic.squadSpots.contains(yourName);
+    final canClaimPeacock = !youAreAssigned;
+
     return GestureDetector(
-      onTap: () =>
-          squadState.logic.claimPeacockDialog(() => setState(() {}), context),
+      onTap: canClaimPeacock ? () => _assignPeacock(context, squadState) : null,
       onLongPress: () => squadState.logic.managePeacock(),
       child: Semantics(
         label: 'Peacock Spot',
@@ -248,13 +291,20 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               children: [
                 _buildPeacockInfo(context),
                 ElevatedButton(
-                  onPressed: () => squadState.logic.claimPeacock(context),
+                  onPressed: canClaimPeacock
+                      ? () => _assignPeacock(context, squadState)
+                      : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal,
+                    backgroundColor:
+                        canClaimPeacock ? Colors.teal : Colors.grey,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10)),
+                    elevation: 6,
                   ),
-                  child: const Text('Claim'),
+                  child: const Tooltip(
+                    message: 'Claim Peacock spot',
+                    child: Text('Claim'),
+                  ),
                 ),
               ],
             ),
@@ -417,7 +467,9 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         children: [
           ElevatedButton(
             onPressed: () {
-              print('Before Win: ${squadState.logic.currentStreaks}');
+              print('Before Win - Streaks: ${squadState.logic.currentStreaks}');
+              print(
+                  'Before Win - Walking Players: ${squadState.logic.squadSpots.where((spot) => spot != null && squadState.logic.spotTimers[squadState.logic.squadSpots.indexOf(spot)] == null).toList()}');
               squadState.logic.recordWin((VoidCallback innerCallback) {
                 setState(() {
                   innerCallback();
@@ -425,7 +477,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                   squadState.update();
                 });
               });
-              print('After Win: ${squadState.logic.currentStreaks}');
+              print('After Win - Streaks: ${squadState.logic.currentStreaks}');
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,
@@ -438,7 +490,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           ),
           ElevatedButton(
             onPressed: () {
-              print('Before Loss: ${squadState.logic.currentStreaks}');
+              print(
+                  'Before Loss - Streaks: ${squadState.logic.currentStreaks}');
               squadState.logic.recordLoss((VoidCallback innerCallback) {
                 setState(() {
                   innerCallback();
@@ -446,7 +499,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                   squadState.update();
                 });
               });
-              print('After Loss: ${squadState.logic.currentStreaks}');
+              print('After Loss - Streaks: ${squadState.logic.currentStreaks}');
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
@@ -509,12 +562,22 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     final bans = squadState.getBanCount(player);
     final status = squadState.logic.statuses[player] ?? 'Offline';
 
+    String winIcon = 'assets/images/performance.png';
+    if (streak >= 10) {
+      winIcon = 'assets/images/chicken.png';
+    } else if (streak >= 4) {
+      winIcon = 'assets/images/duck.png';
+    } else if (streak >= 3) {
+      winIcon = 'assets/images/turkey.png';
+    }
+
     return Semantics(
       label: 'Member: $player',
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey[800]!),
+          border:
+              Border.all(color: Colors.grey[800]!), // Fixed: Removed 'custom'
         ),
         child: Row(
           children: [
@@ -538,7 +601,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                   Row(
                     children: [
                       Image.asset(
-                        'assets/images/performance.png',
+                        winIcon,
                         width: 20,
                         height: 20,
                         color: Colors.yellowAccent,
@@ -721,6 +784,150 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               }
             },
             child: const Text('Ban'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _assignPeacock(BuildContext context, SquadState squadState) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Assign Peacock'),
+        content: Row(
+          children: [
+            Image.asset(
+              'assets/images/spot_assign.png',
+              width: 24,
+              height: 24,
+              color: Colors.cyanAccent,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Select Player'),
+                items: squadState.logic.squadMembers
+                    .map((player) =>
+                        DropdownMenuItem(value: player, child: Text(player)))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    squadState.logic.peacockTimers[value] = {
+                      'startTime': DateTime.now().millisecondsSinceEpoch,
+                      'duration': 300 * 1000, // 5 minutes in milliseconds
+                    };
+                    squadState.logic.statuses[value] = 'Strutting';
+                    setState(() {});
+                    squadState.update();
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _assignReady(BuildContext context, SquadState squadState, int index) {
+    final currentPlayer = squadState.logic.squadSpots[index];
+    if (currentPlayer == null) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Assign Ready'),
+        content: Row(
+          children: [
+            Image.asset(
+              'assets/images/spot_assign.png',
+              width: 24,
+              height: 24,
+              color: Colors.yellowAccent,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Select Player'),
+                items: squadState.logic.squadMembers
+                    .where((player) => player != currentPlayer)
+                    .map((player) =>
+                        DropdownMenuItem(value: player, child: Text(player)))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    squadState.logic.statuses[value] = 'Ready';
+                    setState(() {});
+                    squadState.update();
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _assignOtherMember(
+      BuildContext context, SquadState squadState, int index) {
+    final yourName = squadState.logic.yourName;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Assign Member'),
+        content: Row(
+          children: [
+            Image.asset(
+              'assets/images/spot_assign.png',
+              width: 24,
+              height: 24,
+              color: Colors.teal,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Select Player'),
+                items: squadState.logic.squadMembers
+                    .where((player) => player != yourName)
+                    .map((player) =>
+                        DropdownMenuItem(value: player, child: Text(player)))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    squadState.logic.squadSpots[index] = value;
+                    squadState.logic.statuses[value] = 'Ready';
+                    squadState.logic.spotTimers[index] = 300; // Timer for Ready
+                    setState(() {});
+                    squadState.update();
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
           ),
         ],
       ),

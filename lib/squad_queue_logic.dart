@@ -389,37 +389,34 @@ class SquadQueueLogic {
     );
   }
 
-  void removeSpot(int index, Function setStateCallback) {
-    setStateCallback(() {
-      String? player = squadSpots[index];
-      if (player != null) {
-        squadSpots[index] = null;
-        spotTimers[index] = null;
-        statuses[player] = 'Offline';
-        updateFirestore(force: true);
-      }
-    });
+  void removeSpot(int index) {
+    String? player = squadSpots[index];
+    if (player != null) {
+      squadSpots[index] = null;
+      spotTimers[index] = null;
+      statuses[player] = 'Offline';
+      updateFirestore(force: true);
+    }
   }
 
-  void claimSpot(int index, Function setStateCallback) {
-    setStateCallback(() {
-      if (!squadSpots.contains(yourName)) {
-        squadSpots[index] = yourName;
-        spotTimers[index] = 300;
-        statuses[yourName] = 'Ready';
-        updateFirestore(force: true);
-      }
-    });
+  void claimSpot(
+      int index, VoidCallback setStateCallback, BuildContext context) {
+    setStateCallback();
+    if (!squadSpots.contains(yourName)) {
+      squadSpots[index] = yourName;
+      spotTimers[index] = 300;
+      statuses[yourName] = 'Ready';
+      updateFirestore(force: true);
+    }
   }
 
-  void lockSpot(int index, Function setStateCallback) {
-    setStateCallback(() {
-      if (spotTimers[index] != null) {
-        spotTimers[index] = null;
-        statuses[squadSpots[index]!] = 'Walking';
-        updateFirestore(force: true);
-      }
-    });
+  void lockSpot(int index, VoidCallback setStateCallback) {
+    setStateCallback();
+    if (spotTimers[index] != null) {
+      spotTimers[index] = null;
+      statuses[squadSpots[index]!] = 'Walking';
+      updateFirestore(force: true);
+    }
   }
 
   void reupPeacock(Function setStateCallback) {
@@ -432,7 +429,7 @@ class SquadQueueLogic {
     });
   }
 
-  void claimPeacock() {
+  void claimPeacock(BuildContext context) {
     startPeacockTimer();
   }
 
@@ -461,9 +458,9 @@ class SquadQueueLogic {
     });
   }
 
-  void claimPeacockDialog(Function setStateCallback) {
+  void claimPeacockDialog(Function setStateCallback, BuildContext context) {
     showDialog(
-      context: context!,
+      context: context,
       builder: (context) => AlertDialog(
         title: const Text('Assign Peacock',
             style: TextStyle(color: Colors.cyanAccent)),
@@ -507,7 +504,7 @@ class SquadQueueLogic {
     );
   }
 
-  void managePeacock(Function setStateCallback) {
+  void managePeacock() {
     showDialog(
       context: context!,
       builder: (context) => AlertDialog(
@@ -533,14 +530,12 @@ class SquadQueueLogic {
                       icon: const Icon(Icons.remove_circle,
                           color: Colors.redAccent),
                       onPressed: () {
-                        setStateCallback(() {
-                          peacockTimers.remove(entry.key);
-                          statuses[entry.key] = 'Ready';
-                          _assignNextFromQueue();
-                          updateFirestore(force: true);
-                        });
+                        peacockTimers.remove(entry.key);
+                        statuses[entry.key] = 'Ready';
+                        _assignNextFromQueue();
+                        updateFirestore(force: true);
                         Navigator.pop(context);
-                        managePeacock(setStateCallback);
+                        managePeacock();
                       },
                     ),
                   );
@@ -551,13 +546,11 @@ class SquadQueueLogic {
                         icon: const Icon(Icons.remove_circle,
                             color: Colors.redAccent),
                         onPressed: () {
-                          setStateCallback(() {
-                            peacockQueue.remove(player);
-                            statuses[player] = 'Offline';
-                            updateFirestore(force: true);
-                          });
+                          peacockQueue.remove(player);
+                          statuses[player] = 'Offline';
+                          updateFirestore(force: true);
                           Navigator.pop(context);
-                          managePeacock(setStateCallback);
+                          managePeacock();
                         },
                       ),
                     )),

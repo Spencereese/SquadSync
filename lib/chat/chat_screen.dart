@@ -708,8 +708,7 @@ class ChatScreenState extends State<ChatScreen>
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         GestureDetector(
-                          onTap:
-                              showChatOptions, // Trigger chat options when tapping the chat name
+                          onTap: showChatOptions,
                           child: Row(
                             children: [
                               if (_chatImageUrl != null)
@@ -779,8 +778,7 @@ class ChatScreenState extends State<ChatScreen>
                   ),
                   Expanded(
                     child: Padding(
-                      padding:
-                          const EdgeInsets.only(bottom: 60), // Adjust if needed
+                      padding: const EdgeInsets.only(bottom: 60),
                       child: StreamBuilder<QuerySnapshot>(
                         stream: _chatService.getChatMessages(),
                         builder: (context, snapshot) {
@@ -897,6 +895,11 @@ class ChatScreenState extends State<ChatScreen>
                     onMedia: _sendMedia,
                     onRecordStart: _startRecording,
                     onRecordStop: _stopRecording,
+                    onPlusMenu: () {
+                      // Placeholder for future menu
+                      debugPrint('Plus menu tapped');
+                      _showPlusMenu(context); // Call a method to show the menu
+                    },
                     onTextChanged: (value) => _chatService.updateTypingStatus(
                         widget.yourName, value.isNotEmpty),
                   ),
@@ -905,6 +908,45 @@ class ChatScreenState extends State<ChatScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+// Method to show the plus menu
+  void _showPlusMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.file_present),
+            title: const Text('Share a file'),
+            onTap: () {
+              Navigator.pop(context);
+              debugPrint('Share a file selected');
+              // Implement file sharing logic here
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.location_on),
+            title: const Text('Location'),
+            onTap: () {
+              Navigator.pop(context);
+              debugPrint('Location selected');
+              // Implement location sharing logic here
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.poll),
+            title: const Text('Poll'),
+            onTap: () {
+              Navigator.pop(context);
+              debugPrint('Poll selected');
+              // Implement poll creation logic here
+            },
+          ),
+        ],
       ),
     );
   }

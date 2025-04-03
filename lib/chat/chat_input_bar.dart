@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Added for SystemChannels
-import 'package:image_picker/image_picker.dart';
-import 'package:record/record.dart' as record_package;
-import 'dart:io';
 import '../../app_theme.dart';
 
 class ChatInputBar extends StatelessWidget {

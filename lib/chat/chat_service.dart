@@ -21,7 +21,7 @@ class ChatService {
         .doc('state')
         .snapshots()
         .map((snapshot) {
-      Map<String, dynamic>? data = snapshot.data() as Map<String, dynamic>?;
+      Map<String, dynamic>? data = snapshot.data();
       if (data == null || data['typing'] == null) return null;
       Map<String, dynamic> typing = data['typing'] as Map<String, dynamic>;
       String? typingUser = typing.entries

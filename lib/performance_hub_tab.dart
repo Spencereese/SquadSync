@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'squad_queue_logic.dart';
+import 'squad_tab/squad_queue_logic.dart';
 
 class PerformanceHubTab extends StatelessWidget {
   final SquadQueueLogic logic;

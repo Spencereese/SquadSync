@@ -7,8 +7,6 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'chat_service.dart';
-import 'chat_state.dart';
 import '../../app_theme.dart';
 
 class MessageBubble extends StatelessWidget {

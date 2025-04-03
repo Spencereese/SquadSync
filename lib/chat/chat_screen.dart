@@ -395,7 +395,7 @@ class ChatScreenState extends State<ChatScreen>
                     .collection('chat')
                     .orderBy('timestamp', descending: true)
                     .where('text', isGreaterThanOrEqualTo: _searchQuery)
-                    .where('text', isLessThan: _searchQuery + '\uf8ff')
+                    .where('text', isLessThan: '$_searchQuery\uf8ff')
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
@@ -736,8 +736,9 @@ class ChatScreenState extends State<ChatScreen>
                                   .doc('state')
                                   .snapshots(),
                               builder: (context, snapshot) {
-                                if (!snapshot.hasData)
+                                if (!snapshot.hasData) {
                                   return const SizedBox.shrink();
+                                }
                                 Map<String, dynamic>? data = snapshot.data!
                                     .data() as Map<String, dynamic>?;
                                 int onlineCount = data?['statuses'] != null
@@ -782,15 +783,18 @@ class ChatScreenState extends State<ChatScreen>
                       child: StreamBuilder<QuerySnapshot>(
                         stream: _chatService.getChatMessages(),
                         builder: (context, snapshot) {
-                          if (snapshot.hasError)
+                          if (snapshot.hasError) {
                             return const Center(
                                 child: Text('Error loading chat'));
-                          if (!snapshot.hasData)
+                          }
+                          if (!snapshot.hasData) {
                             return const Center(
                                 child: CircularProgressIndicator());
+                          }
                           var messages = snapshot.data!.docs;
-                          if (messages.isEmpty)
+                          if (messages.isEmpty) {
                             return const Center(child: Text('No messages yet'));
+                          }
 
                           Map<String, List<String>> lastReadBy = {};
                           for (var doc in messages) {
@@ -798,10 +802,12 @@ class ChatScreenState extends State<ChatScreen>
                             if (data['read'] == true) {
                               String sender = data['sender'];
                               String uid = _auth.currentUser!.uid;
-                              if (!lastReadBy.containsKey(sender))
+                              if (!lastReadBy.containsKey(sender)) {
                                 lastReadBy[sender] = [];
-                              if (!lastReadBy[sender]!.contains(uid))
+                              }
+                              if (!lastReadBy[sender]!.contains(uid)) {
                                 lastReadBy[sender]!.add(uid);
+                              }
                             }
                           }
 

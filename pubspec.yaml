@@ -39,11 +39,13 @@ dev_dependencies:
   flutter_launcher_icons: ^0.13.1
 
 flutter:
+  uses-material-design: true # Add this line
   assets:
     - assets/images/read_icon.png
     - assets/images/photo_icon.png
     - assets/images/next_month.png
     - assets/images/prev_month.png
+    - assets/images/dropdown_icon.png
     - assets/images/spot_assign.png
     - assets/images/signout_icon.png  # Note: You have signout_icon.png, but code uses signout.png
     - assets/images/send_icon.png

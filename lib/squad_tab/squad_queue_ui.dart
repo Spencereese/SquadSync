@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'squad_queue_logic.dart';
-import 'chat/chat_screen.dart';
+import '../chat/chat_screen.dart';
 import 'squad_tab.dart';
-import 'availability_tab.dart';
-import 'performance_hub_tab.dart';
+import '../Availability/availability_tab.dart';
 
 void main() {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(

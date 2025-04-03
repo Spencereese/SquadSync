@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'squad_queue_logic.dart';
-import 'squad_queue_ui.dart';
+import 'squad_tab/squad_queue_ui.dart';
 
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
@@ -53,12 +52,18 @@ class SetupScreenState extends State<SetupScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await _auth.signInAnonymously();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('yourName', name);
+      final userCredential = await _auth.signInAnonymously();
+      final user = userCredential.user;
+      if (user != null) {
+        await user.updateDisplayName(name);
+        await user.reload(); // Refresh user data
 
-      if (mounted) {
-        _navigateToSquadQueue(name);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('yourName', name);
+
+        if (mounted) {
+          _navigateToSquadQueue(name);
+        }
       }
     } on FirebaseAuthException catch (e) {
       _showSnackBar('Sign-in failed: ${e.message}');

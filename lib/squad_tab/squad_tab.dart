@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'squad_queue_logic.dart';
-import 'utils.dart';
+import '../utils.dart';
 
 class SquadState with ChangeNotifier {
   final SquadQueueLogic logic;

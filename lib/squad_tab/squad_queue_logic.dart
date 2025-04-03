@@ -6,8 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'squad_manager.dart';
-import 'notification_service.dart';
-import 'rating_dialog.dart';
+import '../notification_service.dart';
+import '../rating_dialog.dart';
 
 class SquadQueueLogic {
   List<String?> squadSpots = List.filled(4, null);

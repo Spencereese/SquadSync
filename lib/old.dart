@@ -15,10 +15,9 @@ class ScheduleDialog extends StatefulWidget {
 class _ScheduleDialogState extends State<ScheduleDialog> {
   late DateTime startTime;
   late DateTime endTime;
-  late DateTime scheduledDay;
   bool isAllDay = false;
   List<bool> recurringDays = List.filled(7, false); // Sun-Sat
-  String inviteOption = 'None';
+  String inviteOption = 'None'; // Default to "None"
   String alertOption = 'None';
   bool showStartPicker = false;
   bool showEndPicker = false;
@@ -37,6 +36,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
   ];
   late Future<List<String>> squadMembersFuture;
 
+  // Hardcoded list from SquadQueueLogic
   final List<String> defaultSquadMembers = [
     "Alex",
     "Spencer",
@@ -51,8 +51,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
   @override
   void initState() {
     super.initState();
-    scheduledDay = widget.selectedDay;
-    startTime = _roundToNearestFive(scheduledDay);
+    startTime = _roundToNearestFive(widget.selectedDay);
     endTime = startTime.add(const Duration(hours: 1));
     squadMembersFuture = _fetchSquadMembers();
   }
@@ -70,18 +69,31 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
       final snapshot = await docRef.get();
 
       if (!snapshot.exists) {
+        // If the document doesn't exist, create it with the default members
         await docRef.set({
           'members': defaultSquadMembers,
           'squadSpots': List.filled(4, null),
           'spotTimers': List.filled(4, null),
         }, SetOptions(merge: true));
+        debugPrint(
+            'Created squad/state with default members: $defaultSquadMembers');
         return defaultSquadMembers;
       }
 
       final data = snapshot.data()!;
-      final members = List<String>.from(
-          data['members'] as List<dynamic>? ?? defaultSquadMembers);
-      return members.isNotEmpty ? members : defaultSquadMembers;
+      if (!data.containsKey('members') ||
+          (data['members'] as List<dynamic>).isEmpty) {
+        // If members field is missing or empty, initialize it
+        await docRef.update({
+          'members': defaultSquadMembers,
+        });
+        debugPrint('Initialized members field with: $defaultSquadMembers');
+        return defaultSquadMembers;
+      }
+
+      final members = List<String>.from(data['members'] as List<dynamic>);
+      debugPrint('Fetched members: $members');
+      return members;
     } catch (e) {
       debugPrint('Error fetching squad members: $e');
       return defaultSquadMembers;
@@ -142,9 +154,9 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                         }),
                         onTimeChanged: (duration) => setState(() {
                           startTime = DateTime(
-                            scheduledDay.year,
-                            scheduledDay.month,
-                            scheduledDay.day,
+                            widget.selectedDay.year,
+                            widget.selectedDay.month,
+                            widget.selectedDay.day,
                             duration.inHours,
                             duration.inMinutes % 60,
                           );
@@ -161,9 +173,9 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                         }),
                         onTimeChanged: (duration) => setState(() {
                           endTime = DateTime(
-                            scheduledDay.year,
-                            scheduledDay.month,
-                            scheduledDay.day,
+                            widget.selectedDay.year,
+                            widget.selectedDay.month,
+                            widget.selectedDay.day,
                             duration.inHours,
                             duration.inMinutes % 60,
                           );
@@ -174,14 +186,8 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                 ),
                 const SizedBox(height: 20),
                 _buildSectionCard(
-                  title: 'Date & Repeat',
+                  title: 'Repeat',
                   children: [
-                    _buildTapRow(
-                      label: 'Scheduled Date',
-                      value: DateFormat('EEEE, MMMM d').format(scheduledDay),
-                      onTap: () => _showDatePicker(context),
-                    ),
-                    const SizedBox(height: 16),
                     _buildTapRow(
                       label: 'Repeat',
                       value: recurringDays.any((day) => day)
@@ -288,23 +294,15 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
         children: [
           Text(label,
               style: TextStyle(fontSize: 16, color: Colors.blueGrey[300])),
-          Flexible(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    value,
-                    style:
-                        TextStyle(fontSize: 16, color: Colors.cyanAccent[100]),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.arrow_drop_down,
-                    color: Colors.cyanAccent[100], size: 20),
-              ],
-            ),
+          Row(
+            children: [
+              Text(value,
+                  style:
+                      TextStyle(fontSize: 16, color: Colors.cyanAccent[100])),
+              const SizedBox(width: 8),
+              Icon(Icons.arrow_drop_down,
+                  color: Colors.cyanAccent[100], size: 20),
+            ],
           ),
         ],
       ),
@@ -349,53 +347,6 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
     );
   }
 
-  void _showDatePicker(BuildContext context) async {
-    final now = DateTime.now();
-    final List<String> days = [];
-    for (int i = 0; i < 7; i++) {
-      final day = now.add(Duration(days: i));
-      days.add(i == 0 && scheduledDay.day == now.day
-          ? 'Today'
-          : DateFormat('EEEE, MMMM d').format(day));
-    }
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.blueGrey[900],
-      builder: (context) => Container(
-        height: 250,
-        child: CupertinoPicker(
-          itemExtent: 40,
-          onSelectedItemChanged: (index) => setState(() {
-            scheduledDay = now.add(Duration(days: index));
-            startTime = DateTime(
-              scheduledDay.year,
-              scheduledDay.month,
-              scheduledDay.day,
-              startTime.hour,
-              startTime.minute,
-            );
-            endTime = DateTime(
-              scheduledDay.year,
-              scheduledDay.month,
-              scheduledDay.day,
-              endTime.hour,
-              endTime.minute,
-            );
-          }),
-          children: days
-              .map((day) => Center(
-                    child: Text(
-                      day,
-                      style: TextStyle(color: Colors.cyanAccent[100]),
-                    ),
-                  ))
-              .toList(),
-        ),
-      ),
-    );
-  }
-
   void _showRecurringDaysPicker(BuildContext context) async {
     final List<String> daysOfWeek = [
       'Sunday',
@@ -406,7 +357,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
       'Friday',
       'Saturday'
     ];
-    final int selectedDayIndex = scheduledDay.weekday % 7; // 0=Sun, 6=Sat
+    final int selectedDayIndex = widget.selectedDay.weekday % 7; // 0=Sun, 6=Sat
     final List<String> orderedDays = [
       daysOfWeek[selectedDayIndex],
       ...daysOfWeek.sublist(selectedDayIndex + 1),
@@ -497,7 +448,6 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
               value: inviteOption == 'All Members',
               onChanged: (value) {
                 setState(() => inviteOption = value ? 'All Members' : 'None');
-                Navigator.pop(context);
               },
               activeColor: Colors.cyanAccent[100],
               inactiveTrackColor: Colors.blueGrey[600],
@@ -511,10 +461,9 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                   },
                   children: members
                       .map((member) => Center(
-                            child: Text(
-                              member,
-                              style: TextStyle(color: Colors.cyanAccent[100]),
-                            ),
+                            child: Text(member,
+                                style:
+                                    TextStyle(color: Colors.cyanAccent[100])),
                           ))
                       .toList(),
                 ),
@@ -537,11 +486,8 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
               setState(() => alertOption = alertOptions[index]),
           children: alertOptions
               .map((option) => Center(
-                    child: Text(
-                      option,
-                      style: TextStyle(color: Colors.cyanAccent[100]),
-                    ),
-                  ))
+                  child: Text(option,
+                      style: TextStyle(color: Colors.cyanAccent[100]))))
               .toList(),
         ),
       ),
@@ -562,7 +508,6 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
             'startTime': startTime,
             'endTime': endTime,
             'isAllDay': isAllDay,
-            'scheduledDay': scheduledDay,
             'repeatOption':
                 recurringDays.any((day) => day) ? 'Weekly' : 'Never',
             'recurringDays': recurringDays,

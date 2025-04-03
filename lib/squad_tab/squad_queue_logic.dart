@@ -12,7 +12,7 @@ import '../rating_dialog.dart';
 class SquadQueueLogic {
   List<String?> squadSpots = List.filled(4, null);
   List<int?> spotTimers = List.filled(4, null);
-  final List<String> squadMembers = [
+  List<String> squadMembers = [
     "Alex",
     "Spencer",
     "Landon",
@@ -198,6 +198,8 @@ class SquadQueueLogic {
         var data = snapshot.data()!;
         var remoteSpotTimers =
             List<int?>.from(data['spotTimers'] ?? [null, null, null, null]);
+        // Update squadMembers from Firestore
+        squadMembers = List<String>.from(data['members'] ?? squadMembers);
         statuses = Map<String, String>.from(data['statuses'] ?? statuses);
         currentStreaks =
             Map<String, int>.from(data['currentStreaks'] ?? currentStreaks);
@@ -206,20 +208,26 @@ class SquadQueueLogic {
         gameHistory =
             List<Map<String, dynamic>>.from(data['gameHistory'] ?? []);
         complaints = Map<String, int>.from(data['complaints'] ?? complaints);
-        achievements = (data['achievements'] ?? {}).map((k, v) {
-          final value = v is Iterable ? v : [];
-          return MapEntry(k as String,
-              Set<String>.from(value.map((item) => item.toString())));
+        // Fix for achievements type mismatch
+        var rawAchievements =
+            data['achievements'] as Map<dynamic, dynamic>? ?? {};
+        achievements = rawAchievements.map<String, Set<String>>((k, v) {
+          final value = v is Iterable ? List<dynamic>.from(v) : <dynamic>[];
+          return MapEntry(
+            k.toString(),
+            Set<String>.from(value.map((item) => item?.toString() ?? '')),
+          );
         });
-        dailyRatings = (data['dailyRatings'] ?? {})
+        dailyRatings = Map<String, dynamic>.from(data['dailyRatings'] ?? {})
             .map((k, v) => MapEntry(k, Map<String, List<int>>.from(v)));
-        allTimeRatings = (data['allTimeRatings'] ?? {})
+        allTimeRatings = Map<String, dynamic>.from(data['allTimeRatings'] ?? {})
             .map((k, v) => MapEntry(k, Map<String, List<int>>.from(v)));
         scheduledTimes =
             List<Map<String, dynamic>>.from(data['scheduledTimes'] ?? []);
         peacockQueue = List<String>.from(data['peacockQueue'] ?? peacockQueue);
-        peacockTimers = (data['peacockTimers'] ?? {}).map((k, v) =>
-            MapEntry(k, v != null ? Map<String, dynamic>.from(v) : null));
+        peacockTimers = Map<String, dynamic>.from(data['peacockTimers'] ?? {})
+            .map((k, v) =>
+                MapEntry(k, v != null ? Map<String, dynamic>.from(v) : null));
       }
     }, onError: (error) => print('Firestore sync error: $error'));
   }
@@ -243,11 +251,12 @@ class SquadQueueLogic {
         'scheduledTimes': scheduledTimes,
         'peacockTimers': peacockTimers,
         'peacockQueue': peacockQueue,
+        'members': squadMembers, // Preserve the members field
       };
       _firestore
           .collection('squad')
           .doc('state')
-          .set(data)
+          .set(data, SetOptions(merge: true))
           .catchError((error) => print('Firestore update error: $error'));
       _lastFirestoreUpdate = now;
     }

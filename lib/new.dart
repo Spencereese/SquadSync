@@ -17,7 +17,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
   late DateTime endTime;
   late DateTime scheduledDay;
   bool isAllDay = false;
-  List<bool> recurringDays = List.filled(7, false); // Sun-Sat
+  bool shouldRepeat = false;
   String inviteOption = 'None';
   String alertOption = 'None';
   bool showStartPicker = false;
@@ -65,8 +65,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
 
   Future<List<String>> _fetchSquadMembers() async {
     try {
-      final docRef =
-          FirebaseFirestore.instance.collection('squad').doc('state');
+      final docRef = FirebaseFirestore.instance.collection('squad').doc('state');
       final snapshot = await docRef.get();
 
       if (!snapshot.exists) {
@@ -79,8 +78,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
       }
 
       final data = snapshot.data()!;
-      final members = List<String>.from(
-          data['members'] as List<dynamic>? ?? defaultSquadMembers);
+      final members = List<String>.from(data['members'] as List<dynamic>? ?? defaultSquadMembers);
       return members.isNotEmpty ? members : defaultSquadMembers;
     } catch (e) {
       debugPrint('Error fetching squad members: $e');
@@ -174,7 +172,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                 ),
                 const SizedBox(height: 20),
                 _buildSectionCard(
-                  title: 'Date & Repeat',
+                  title: 'Date',
                   children: [
                     _buildTapRow(
                       label: 'Scheduled Date',
@@ -182,18 +180,10 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                       onTap: () => _showDatePicker(context),
                     ),
                     const SizedBox(height: 16),
-                    _buildTapRow(
-                      label: 'Repeat',
-                      value: recurringDays.any((day) => day)
-                          ? recurringDays
-                              .asMap()
-                              .entries
-                              .where((e) => e.value)
-                              .map((e) =>
-                                  ['S', 'M', 'T', 'W', 'T', 'F', 'S'][e.key])
-                              .join(', ')
-                          : 'Never',
-                      onTap: () => _showRecurringDaysPicker(context),
+                    _buildSwitchRow(
+                      label: 'Repeat Weekly',
+                      value: shouldRepeat,
+                      onChanged: (value) => setState(() => shouldRepeat = value),
                     ),
                   ],
                 ),
@@ -264,8 +254,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label,
-            style: TextStyle(fontSize: 16, color: Colors.blueGrey[300])),
+        Text(label, style: TextStyle(fontSize: 16, color: Colors.blueGrey[300])),
         Switch(
           value: value,
           onChanged: onChanged,
@@ -286,8 +275,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
-              style: TextStyle(fontSize: 16, color: Colors.blueGrey[300])),
+          Text(label, style: TextStyle(fontSize: 16, color: Colors.blueGrey[300])),
           Flexible(
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -295,14 +283,12 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                 Flexible(
                   child: Text(
                     value,
-                    style:
-                        TextStyle(fontSize: 16, color: Colors.cyanAccent[100]),
+                    style: TextStyle(fontSize: 16, color: Colors.cyanAccent[100]),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(Icons.arrow_drop_down,
-                    color: Colors.cyanAccent[100], size: 20),
+                Icon(Icons.arrow_drop_down, color: Colors.cyanAccent[100], size: 20),
               ],
             ),
           ),
@@ -325,8 +311,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label,
-                  style: TextStyle(fontSize: 16, color: Colors.blueGrey[300])),
+              Text(label, style: TextStyle(fontSize: 16, color: Colors.blueGrey[300])),
               Text(
                 DateFormat('h:mm a').format(time),
                 style: TextStyle(fontSize: 16, color: Colors.cyanAccent[100]),
@@ -339,8 +324,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
             height: 150,
             child: CupertinoTimerPicker(
               mode: CupertinoTimerPickerMode.hm,
-              initialTimerDuration:
-                  Duration(hours: time.hour, minutes: time.minute),
+              initialTimerDuration: Duration(hours: time.hour, minutes: time.minute),
               minuteInterval: 5,
               onTimerDurationChanged: onTimeChanged,
             ),
@@ -354,8 +338,8 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
     final List<String> days = [];
     for (int i = 0; i < 7; i++) {
       final day = now.add(Duration(days: i));
-      days.add(i == 0 && scheduledDay.day == now.day
-          ? 'Today'
+      days.add(i == 0 && scheduledDay.day == now.day 
+          ? 'Today' 
           : DateFormat('EEEE, MMMM d').format(day));
     }
 
@@ -396,82 +380,6 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
     );
   }
 
-  void _showRecurringDaysPicker(BuildContext context) async {
-    final List<String> daysOfWeek = [
-      'Sunday',
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday'
-    ];
-    final int selectedDayIndex = scheduledDay.weekday % 7; // 0=Sun, 6=Sat
-    final List<String> orderedDays = [
-      daysOfWeek[selectedDayIndex],
-      ...daysOfWeek.sublist(selectedDayIndex + 1),
-      ...daysOfWeek.sublist(0, selectedDayIndex),
-    ];
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.blueGrey[900],
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        height: 300,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Select Days to Repeat',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.cyanAccent[100]),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: GridView.count(
-                crossAxisCount: 2,
-                childAspectRatio: 3,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                physics: const NeverScrollableScrollPhysics(),
-                children: List.generate(7, (index) {
-                  final dayIndex = (selectedDayIndex + index) % 7;
-                  return GestureDetector(
-                    onTap: () => setState(() =>
-                        recurringDays[dayIndex] = !recurringDays[dayIndex]),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: recurringDays[dayIndex]
-                            ? Colors.cyanAccent[100]
-                            : Colors.blueGrey[700],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Center(
-                        child: Text(
-                          orderedDays[index],
-                          style: TextStyle(
-                            color: recurringDays[dayIndex]
-                                ? Colors.blueGrey[900]
-                                : Colors.cyanAccent[100],
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showInvitePicker(BuildContext context) async {
     final members = await squadMembersFuture;
     if (!mounted) return;
@@ -486,14 +394,14 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
             Text(
               'Invite Members',
               style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.cyanAccent[100]),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.cyanAccent[100],
+              ),
             ),
             const SizedBox(height: 16),
             SwitchListTile(
-              title: Text('Invite All Members',
-                  style: TextStyle(color: Colors.blueGrey[300])),
+              title: Text('Invite All Members', style: TextStyle(color: Colors.blueGrey[300])),
               value: inviteOption == 'All Members',
               onChanged: (value) {
                 setState(() => inviteOption = value ? 'All Members' : 'None');
@@ -533,8 +441,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
         height: 250,
         child: CupertinoPicker(
           itemExtent: 40,
-          onSelectedItemChanged: (index) =>
-              setState(() => alertOption = alertOptions[index]),
+          onSelectedItemChanged: (index) => setState(() => alertOption = alertOptions[index]),
           children: alertOptions
               .map((option) => Center(
                     child: Text(
@@ -554,8 +461,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
       children: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text('Cancel',
-              style: TextStyle(color: Colors.red[400], fontSize: 16)),
+          child: Text('Cancel', style: TextStyle(color: Colors.red[400], fontSize: 16)),
         ),
         ElevatedButton(
           onPressed: () => Navigator.pop(context, {
@@ -563,20 +469,16 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
             'endTime': endTime,
             'isAllDay': isAllDay,
             'scheduledDay': scheduledDay,
-            'repeatOption':
-                recurringDays.any((day) => day) ? 'Weekly' : 'Never',
-            'recurringDays': recurringDays,
+            'shouldRepeat': shouldRepeat,
             'invitees': inviteOption,
             'alertOption': alertOption,
           }),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.green[600],
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           ),
-          child: const Text('Set',
-              style: TextStyle(color: Colors.white, fontSize: 16)),
+          child: const Text('Set', style: TextStyle(color: Colors.white, fontSize: 16)),
         ),
       ],
     );

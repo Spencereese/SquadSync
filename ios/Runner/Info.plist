@@ -43,6 +43,14 @@
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>&lt;key&gt;UIBackgroundModes&lt;/key&gt;
+&lt;array&gt;
+    &lt;string&gt;fetch&lt;/string&gt;
+    &lt;string&gt;remote-notification&lt;/string&gt;
+&lt;/array&gt;
+&lt;key&gt;FirebaseAppDelegateAutoRegister&lt;/key&gt;
+&lt;true/&gt;</key>
+	<string></string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 </dict>

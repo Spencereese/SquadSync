@@ -7,7 +7,9 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:provider/provider.dart';
 import '../../app_theme.dart';
+import '../../squad_state.dart'; // Optional: Import if integrating with SquadState
 
 class MessageBubble extends StatelessWidget {
   final DocumentSnapshot message;
@@ -37,6 +39,9 @@ class MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final data = message.data() as Map<String, dynamic>;
 
+    // Optional: Uncomment to integrate with SquadState
+    // return Consumer<SquadState>(
+    //   builder: (context, squadState, child) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
       child: Row(
@@ -62,6 +67,8 @@ class MessageBubble extends StatelessWidget {
         ],
       ),
     );
+    //   },
+    // );
   }
 
   Widget _buildAvatar() {
@@ -376,7 +383,7 @@ class ReactionsWidget extends StatelessWidget {
                 .map((entry) => ReactionChip(
                       emoji: entry.key,
                       count: entry.value,
-                      onTap: () => _addReaction(docId, entry.key),
+                      onTap: () => _addReaction(context, docId, entry.key),
                     ))
                 .toList(),
           ),
@@ -385,7 +392,11 @@ class ReactionsWidget extends StatelessWidget {
     );
   }
 
-  Future<void> _addReaction(String docId, String emoji) async {
+  Future<void> _addReaction(
+      BuildContext context, String docId, String emoji) async {
+    // Optional: Use SquadState for sender name if integrated
+    // final squadState = Provider.of<SquadState>(context, listen: false);
+    // final user = squadState.yourName;
     final user = FirebaseAuth.instance.currentUser!.displayName;
     final querySnapshot = await FirebaseFirestore.instance
         .collection('chat')

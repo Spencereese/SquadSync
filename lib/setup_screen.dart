@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../squad_state.dart'; // Import SquadState
 import 'squad_tab/squad_queue_ui.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -35,6 +37,8 @@ class SetupScreenState extends State<SetupScreen> {
           savedName.isNotEmpty &&
           _auth.currentUser != null) {
         if (mounted) {
+          // Initialize SquadState with saved name and context
+          Provider.of<SquadState>(context, listen: false).initState(context);
           _navigateToSquadQueue(savedName);
         }
       }
@@ -62,6 +66,9 @@ class SetupScreenState extends State<SetupScreen> {
         await prefs.setString('yourName', name);
 
         if (mounted) {
+          // Initialize SquadState with the new name and context
+          final squadState = Provider.of<SquadState>(context, listen: false);
+          squadState.initState(context);
           _navigateToSquadQueue(name);
         }
       }
@@ -97,7 +104,6 @@ class SetupScreenState extends State<SetupScreen> {
     }
   }
 
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(

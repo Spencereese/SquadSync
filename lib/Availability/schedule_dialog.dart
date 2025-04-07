@@ -362,7 +362,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.blueGrey[900],
-      builder: (context) => Container(
+      builder: (context) => SizedBox(
         height: 250,
         child: CupertinoPicker(
           itemExtent: 40,
@@ -529,7 +529,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.blueGrey[900],
-      builder: (context) => Container(
+      builder: (context) => SizedBox(
         height: 250,
         child: CupertinoPicker(
           itemExtent: 40,

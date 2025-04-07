@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'squad_queue_logic.dart';
+import 'package:provider/provider.dart';
+import '../squad_state.dart'; // Import SquadState
 import '../chat/chat_screen.dart';
 import 'squad_tab.dart';
 import '../Availability/availability_tab.dart';
+import 'package:cod_squad_app/performance_hub_tab.dart';
 
 void main() {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -22,7 +24,6 @@ class SquadQueuePage extends StatefulWidget {
 }
 
 class SquadQueuePageState extends State<SquadQueuePage> {
-  late SquadQueueLogic logic;
   late PageController _pageController;
   int _selectedIndex = 2;
   bool _isNavBarVisible = false;
@@ -32,8 +33,6 @@ class SquadQueuePageState extends State<SquadQueuePage> {
   @override
   void initState() {
     super.initState();
-    logic = SquadQueueLogic(yourName: widget.yourName);
-    logic.initState(context);
     _pageController = PageController(initialPage: _selectedIndex);
     _pageController.addListener(_handlePageChange);
   }
@@ -42,7 +41,6 @@ class SquadQueuePageState extends State<SquadQueuePage> {
   void dispose() {
     _pageController.removeListener(_handlePageChange);
     _pageController.dispose();
-    logic.dispose();
     super.dispose();
   }
 
@@ -55,7 +53,6 @@ class SquadQueuePageState extends State<SquadQueuePage> {
         _navBarBottomPosition = 16; // Slide in
       });
       HapticFeedback.lightImpact();
-      // Hide the nav bar after a 2-second delay
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted && !_isSwiping) {
           setState(() {
@@ -79,7 +76,6 @@ class SquadQueuePageState extends State<SquadQueuePage> {
       curve: Curves.easeInOut,
     );
     HapticFeedback.lightImpact();
-    // Hide the nav bar after a 2-second delay
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
         setState(() {
@@ -111,7 +107,6 @@ class SquadQueuePageState extends State<SquadQueuePage> {
     setState(() {
       _isSwiping = false;
     });
-    // Hide the nav bar after a 2-second delay
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted && !_isSwiping) {
         setState(() {
@@ -128,7 +123,6 @@ class SquadQueuePageState extends State<SquadQueuePage> {
       _navBarBottomPosition = 16; // Slide in
     });
     HapticFeedback.lightImpact();
-    // Hide the nav bar after a 2-second delay
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted && !_isSwiping) {
         setState(() {
@@ -166,10 +160,10 @@ class SquadQueuePageState extends State<SquadQueuePage> {
                 onHorizontalDragStart: _onDragStart,
                 onHorizontalDragUpdate: _onDragUpdate,
                 onHorizontalDragEnd: _onDragEnd,
-                onDoubleTap: _onDoubleTap, // Added double-tap gesture
+                onDoubleTap: _onDoubleTap,
                 child: PageView(
                   controller: _pageController,
-                  children: _buildPages(),
+                  children: _buildPages(context),
                 ),
               ),
             ),
@@ -231,11 +225,11 @@ class SquadQueuePageState extends State<SquadQueuePage> {
     );
   }
 
-  List<Widget> _buildPages() {
+  List<Widget> _buildPages(BuildContext context) {
     return [
-      PerformanceHubTabWrapper(logic: logic),
-      AvailabilityTab(state: this),
-      SquadTab(logic: logic),
+      const PerformanceHubTab(), // Already uses Consumer<SquadState>
+      const AvailabilityTab(), // Assuming it’s updated separately
+      const SquadTab(), // Assuming it’s updated separately
       ChatScreen(yourName: widget.yourName),
       const PlaceholderTab(),
     ];
@@ -326,123 +320,12 @@ class SquadQueuePageState extends State<SquadQueuePage> {
   }
 }
 
-// Wrapper for PerformanceHubTab to handle swipe conflicts
-class PerformanceHubTabWrapper extends StatefulWidget {
-  final SquadQueueLogic logic;
-  const PerformanceHubTabWrapper({super.key, required this.logic});
-
-  @override
-  State<PerformanceHubTabWrapper> createState() =>
-      _PerformanceHubTabWrapperState();
-}
-
-class _PerformanceHubTabWrapperState extends State<PerformanceHubTabWrapper> {
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      // Allow horizontal swipes to be handled by the parent PageView
-      onHorizontalDragStart: (details) {
-        // Do nothing here; let the parent handle it
-      },
-      onHorizontalDragUpdate: (details) {
-        // Do nothing here; let the parent handle it
-      },
-      onHorizontalDragEnd: (details) {
-        // Do nothing here; let the parent handle it
-      },
-      child: PerformanceHubTab(logic: widget.logic),
-    );
-  }
-}
-
-class PerformanceHubTab extends StatelessWidget {
-  final SquadQueueLogic logic;
-  const PerformanceHubTab({super.key, required this.logic});
-
-  List<Map<String, dynamic>> _calculateLeaderboard(List<dynamic> members) {
-    // Placeholder implementation; replace with actual logic
-    return members.map((member) {
-      return {
-        'name': member.toString(),
-        'wins': 0, // Replace with actual data
-      };
-    }).toList();
-  }
+class PerformanceHubTabWrapper extends StatelessWidget {
+  const PerformanceHubTabWrapper({super.key});
 
   @override
   Widget build(BuildContext context) {
-    debugPrint(
-        'LeaderboardsView building, squadMembers: ${logic.squadMembers.length}');
-    final squadLeaderboard = _calculateLeaderboard(logic.squadMembers);
-    // For demo purposes, global uses same data. In real app, fetch from server
-    final globalLeaderboard = squadLeaderboard;
-
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Squad Leaderboard',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(color: Colors.white),
-            ),
-            const SizedBox(height: 8),
-            if (squadLeaderboard.isEmpty)
-              const Center(
-                child: Text(
-                  'No data available',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              )
-            else
-              ...squadLeaderboard.map(
-                (entry) => ListTile(
-                  leading: const Icon(Icons.person, color: Colors.cyanAccent),
-                  title: Text(entry['name'],
-                      style: const TextStyle(color: Colors.white)),
-                  trailing: Text(
-                    '${entry['wins']} wins',
-                    style: const TextStyle(color: Colors.cyanAccent),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 24),
-            Text(
-              'Global Leaderboard',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(color: Colors.white),
-            ),
-            const SizedBox(height: 8),
-            if (globalLeaderboard.isEmpty)
-              const Center(
-                child: Text(
-                  'No data available',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              )
-            else
-              ...globalLeaderboard.map(
-                (entry) => ListTile(
-                  leading: const Icon(Icons.person, color: Colors.cyanAccent),
-                  title: Text(entry['name'],
-                      style: const TextStyle(color: Colors.white)),
-                  trailing: Text(
-                    '${entry['wins']} wins',
-                    style: const TextStyle(color: Colors.cyanAccent),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
+    return const PerformanceHubTab(); // Simplified, uses Consumer internally
   }
 }
 

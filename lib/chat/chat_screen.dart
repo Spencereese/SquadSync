@@ -10,12 +10,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
-import 'chat_service.dart'; // Updated to local import
-import 'chat_state.dart'; // Updated to local import
-import 'message_bubble.dart'; // Updated to local import
-import 'chat_input_bar.dart'; // Updated to local import
-import '../../app_theme.dart'; // Relative import (outside chat/)
-import '../../setup_screen.dart'; // Relative import (outside chat/)
+import 'chat_service.dart';
+import 'chat_state.dart';
+import 'message_bubble.dart';
+import 'chat_input_bar.dart';
+import '../../app_theme.dart';
+import '../../setup_screen.dart';
+import '../squad_state.dart';
 
 class ChatScreen extends StatefulWidget {
   final String yourName;
@@ -38,8 +39,8 @@ class ChatScreenState extends State<ChatScreen>
   late AnimationController _animationController;
   String? _audioPath;
   String _searchQuery = '';
-  String _chatName = 'Squad Chat'; // Default chat name
-  String? _chatImageUrl; // Store chat image URL
+  String _chatName = 'Squad Chat';
+  String? _chatImageUrl;
   final ChatService _chatService = ChatService();
 
   @override
@@ -50,15 +51,20 @@ class ChatScreenState extends State<ChatScreen>
       duration: const Duration(milliseconds: 300),
     );
     _updateOnlineStatus(true);
-    _loadChatDetails(); // Load chat name and image on init
+    _loadChatDetails();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    _chatService.getTypingUser().listen((user) {
+    Provider.of<SquadState>(context, listen: false).addListener(() {
       if (mounted) {
+        String? typingUser =
+            Provider.of<SquadState>(context, listen: false).getTypingUser();
         Provider.of<ChatState>(context, listen: false).setTypingUser(
-          user != null && user != widget.yourName ? user : null,
+          typingUser != null && typingUser != widget.yourName
+              ? typingUser
+              : null,
         );
       }
     });
+    Provider.of<SquadState>(context, listen: false).initState(context);
   }
 
   @override
@@ -67,6 +73,7 @@ class ChatScreenState extends State<ChatScreen>
     _scrollController.dispose();
     _messageController.dispose();
     _animationController.dispose();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
@@ -130,9 +137,11 @@ class ChatScreenState extends State<ChatScreen>
           'imageUrl': downloadUrl,
           'timestamp': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-        setState(() {
-          _chatImageUrl = downloadUrl;
-        });
+        if (mounted) {
+          setState(() {
+            _chatImageUrl = downloadUrl;
+          });
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -144,9 +153,7 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _sendMessage() async {
-    if (_messageController.text.isEmpty) {
-      return;
-    }
+    if (_messageController.text.isEmpty) return;
     final chatState = Provider.of<ChatState>(context, listen: false);
     String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     chatState.updateSendingStatus(tempId, true);
@@ -158,15 +165,15 @@ class ChatScreenState extends State<ChatScreen>
       );
       chatState.removeSendingStatus(tempId);
       _messageController.clear();
-      _chatService.updateTypingStatus(widget.yourName, false);
+      await _chatService.updateTypingStatus(context, widget.yourName, false);
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Send failed: $e')),
         );
+        chatState.updateSendingStatus(tempId, false);
       }
-      chatState.updateSendingStatus(tempId, false);
     }
   }
 
@@ -174,32 +181,28 @@ class ChatScreenState extends State<ChatScreen>
     final chatState = Provider.of<ChatState>(context, listen: false);
     try {
       final XFile? media = await _picker.pickMedia();
-      if (media == null) {
-        return;
-      }
-      {
-        chatState.setUploading(true);
-        File file = File(media.path);
-        bool isVideo = media.mimeType?.startsWith('video/') ?? false;
-        String fileName =
-            '${DateTime.now().millisecondsSinceEpoch}_${widget.yourName}.${isVideo ? 'mp4' : 'jpg'}';
-        String downloadUrl =
-            await _chatService.uploadMedia(file, fileName, isVideo);
-        await _chatService.sendMessage(
-          sender: _auth.currentUser!.displayName ?? widget.yourName,
-          text: '',
-          videoUrl: isVideo ? downloadUrl : null,
-          imageUrl: !isVideo ? downloadUrl : null,
-        );
-        chatState.setUploading(false);
-      }
+      if (media == null) return;
+      chatState.setUploading(true);
+      File file = File(media.path);
+      bool isVideo = media.mimeType?.startsWith('video/') ?? false;
+      String fileName =
+          '${DateTime.now().millisecondsSinceEpoch}_${widget.yourName}.${isVideo ? 'mp4' : 'jpg'}';
+      String downloadUrl =
+          await _chatService.uploadMedia(file, fileName, isVideo);
+      await _chatService.sendMessage(
+        sender: _auth.currentUser!.displayName ?? widget.yourName,
+        text: '',
+        videoUrl: isVideo ? downloadUrl : null,
+        imageUrl: !isVideo ? downloadUrl : null,
+      );
+      chatState.setUploading(false);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Media upload failed: $e')),
         );
+        chatState.setUploading(false);
       }
-      chatState.setUploading(false);
     }
   }
 
@@ -223,17 +226,13 @@ class ChatScreenState extends State<ChatScreen>
     chatState.setRecording(false);
     if (path != null) {
       _audioPath = path;
-      if (mounted) {
-        await _uploadAudio();
-      }
+      if (mounted) await _uploadAudio();
     }
   }
 
   Future<void> _uploadAudio() async {
     final chatState = Provider.of<ChatState>(context, listen: false);
-    if (_audioPath == null) {
-      return;
-    }
+    if (_audioPath == null) return;
     chatState.setUploading(true);
     try {
       File file = File(_audioPath!);
@@ -252,8 +251,8 @@ class ChatScreenState extends State<ChatScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Audio upload failed: $e')),
         );
+        chatState.setUploading(false);
       }
-      chatState.setUploading(false);
     }
   }
 
@@ -368,7 +367,7 @@ class ChatScreenState extends State<ChatScreen>
   void showSearchBar() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: AppTheme.backgroundColor, // Fixed typo
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -730,27 +729,14 @@ class ChatScreenState extends State<ChatScreen>
                         ),
                         Row(
                           children: [
-                            StreamBuilder<DocumentSnapshot>(
-                              stream: FirebaseFirestore.instance
-                                  .collection('squad')
-                                  .doc('state')
-                                  .snapshots(),
-                              builder: (context, snapshot) {
-                                if (!snapshot.hasData) {
-                                  return const SizedBox.shrink();
-                                }
-                                Map<String, dynamic>? data = snapshot.data!
-                                    .data() as Map<String, dynamic>?;
-                                int onlineCount = data?['statuses'] != null
-                                    ? (data!['statuses']
-                                            as Map<String, dynamic>)
-                                        .values
-                                        .where((status) =>
-                                            status == 'Strutting' ||
-                                            status == 'Walking' ||
-                                            status == 'Ready')
-                                        .length
-                                    : 0;
+                            Consumer<SquadState>(
+                              builder: (context, squadState, _) {
+                                int onlineCount = squadState.statuses.values
+                                    .where((status) =>
+                                        status == 'Strutting' ||
+                                        status == 'Walking' ||
+                                        status == 'Ready')
+                                    .length;
                                 return Text(
                                   'Online: $onlineCount',
                                   style: const TextStyle(
@@ -902,12 +888,11 @@ class ChatScreenState extends State<ChatScreen>
                     onRecordStart: _startRecording,
                     onRecordStop: _stopRecording,
                     onPlusMenu: () {
-                      // Placeholder for future menu
                       debugPrint('Plus menu tapped');
-                      _showPlusMenu(context); // Call a method to show the menu
+                      _showPlusMenu(context);
                     },
                     onTextChanged: (value) => _chatService.updateTypingStatus(
-                        widget.yourName, value.isNotEmpty),
+                        context, widget.yourName, value.isNotEmpty),
                   ),
                 ],
               ),
@@ -918,7 +903,6 @@ class ChatScreenState extends State<ChatScreen>
     );
   }
 
-// Method to show the plus menu
   void _showPlusMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -931,7 +915,6 @@ class ChatScreenState extends State<ChatScreen>
             onTap: () {
               Navigator.pop(context);
               debugPrint('Share a file selected');
-              // Implement file sharing logic here
             },
           ),
           ListTile(
@@ -940,7 +923,6 @@ class ChatScreenState extends State<ChatScreen>
             onTap: () {
               Navigator.pop(context);
               debugPrint('Location selected');
-              // Implement location sharing logic here
             },
           ),
           ListTile(
@@ -949,7 +931,6 @@ class ChatScreenState extends State<ChatScreen>
             onTap: () {
               Navigator.pop(context);
               debugPrint('Poll selected');
-              // Implement poll creation logic here
             },
           ),
         ],

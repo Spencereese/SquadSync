@@ -1,12 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart'; // Added for BuildContext
+import 'package:provider/provider.dart';
 import 'dart:io';
-import 'chat_state.dart'; // Updated to local import
+import '../squad_state.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Stream<QuerySnapshot> getChatMessages() {
     return _firestore
@@ -16,20 +16,8 @@ class ChatService {
   }
 
   Stream<String?> getTypingUser() {
-    return _firestore
-        .collection('squad')
-        .doc('state')
-        .snapshots()
-        .map((snapshot) {
-      Map<String, dynamic>? data = snapshot.data();
-      if (data == null || data['typing'] == null) return null;
-      Map<String, dynamic> typing = data['typing'] as Map<String, dynamic>;
-      String? typingUser = typing.entries
-          .where((entry) => entry.value == true)
-          .map((entry) => entry.key)
-          .firstOrNull;
-      return typingUser;
-    });
+    throw UnimplementedError(
+        'Use Provider.of<SquadState>.getTypingUser() instead');
   }
 
   Future<void> sendMessage({
@@ -69,9 +57,9 @@ class ChatService {
     await _firestore.collection('chat').doc(docId).update({'delivered': true});
   }
 
-  Future<void> updateTypingStatus(String user, bool isTyping) async {
-    await _firestore.collection('squad').doc('state').set({
-      'typing': {user: isTyping},
-    }, SetOptions(merge: true));
+  Future<void> updateTypingStatus(
+      BuildContext context, String user, bool isTyping) async {
+    Provider.of<SquadState>(context, listen: false)
+        .updateTypingStatus(user, isTyping);
   }
 }

@@ -1,0 +1,63 @@
+name: Deploy iOS to TestFlight
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.x' # Adjust to your Flutter version
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Increment Build Number in pubspec.yaml
+        run: |
+          # Extract current version and build number
+          VERSION_LINE=$(grep "version:" pubspec.yaml)
+          CURRENT_VERSION=$(echo "$VERSION_LINE" | sed 's/version: //')
+          VERSION_NAME=$(echo "$CURRENT_VERSION" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$CURRENT_VERSION" | cut -d'+' -f2)
+          NEW_BUILD_NUMBER=$((BUILD_NUMBER + 1))
+          NEW_VERSION="$VERSION_NAME+$NEW_BUILD_NUMBER"
+          
+          # Update pubspec.yaml
+          sed -i '' "s/version: $CURRENT_VERSION/version: $NEW_VERSION/" pubspec.yaml
+          
+          # Commit and push the change
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git add pubspec.yaml
+          git commit -m "Increment build number to $NEW_BUILD_NUMBER"
+          git push
+
+      - name: Build iOS
+        run: |
+          flutter build ios --release --no-codesign
+        working-directory: .
+
+      - name: Archive and Export
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+        run: |
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release archive -archivePath build/Runner.xcarchive
+          xcodebuild -exportArchive -archivePath build/Runner.xcarchive -exportOptionsPlist ../export_options.plist -exportPath build/output -allowProvisioningUpdates -authenticationKeyIssuerID "$APPLE_ID" -authenticationKeyID "$APP_SPECIFIC_PASSWORD"
+
+      - name: Upload to TestFlight
+        run: |
+          xcrun altool --upload-app -f build/output/Runner.ipa -t ios -u "$APPLE_ID" -p "$APP_SPECIFIC_PASSWORD"
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}

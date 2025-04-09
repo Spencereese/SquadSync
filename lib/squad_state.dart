@@ -7,7 +7,7 @@ import '../notification_service.dart';
 
 class SquadState with ChangeNotifier {
   List<String?> squadSpots = List.filled(4, null);
-  List<int?> spotTimers = List.filled(4, null);
+  List<Map<String, dynamic>?> spotTimers = List.filled(4, null);
   List<String> squadMembers = [
     "Alex",
     "Spencer",
@@ -27,7 +27,8 @@ class SquadState with ChangeNotifier {
   Map<String, int> complaints = {};
   Map<String, Set<String>> achievements = {};
   Map<String, Map<String, List<int>>> dailyRatings = {};
-  Map<String, Map<String, List<int>>> allTimeRatings = {};
+  Map<String, Map<String, List<int>>> allTimeRatings =
+      {}; // Fixed: Changed [] to {}
   List<Map<String, dynamic>> scheduledTimes = [];
   Map<String, List<Map<String, dynamic>>> bans = {};
   Map<String, bool> typing = {};
@@ -54,6 +55,7 @@ class SquadState with ChangeNotifier {
     await _initState();
     _initializeData();
     _syncWithFirestore();
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       updateSpotTimers();
       updatePeacockTimers();
@@ -109,7 +111,8 @@ class SquadState with ChangeNotifier {
       if (snapshot.exists) {
         var data = snapshot.data()!;
         squadSpots = List<String?>.from(data['squadSpots'] ?? squadSpots);
-        spotTimers = List<int?>.from(data['spotTimers'] ?? spotTimers);
+        spotTimers =
+            List<Map<String, dynamic>?>.from(data['spotTimers'] ?? spotTimers);
         squadMembers = List<String>.from(data['members'] ?? squadMembers);
         statuses = Map<String, String>.from(data['statuses'] ?? statuses);
         currentStreaks =
@@ -132,8 +135,6 @@ class SquadState with ChangeNotifier {
             Map<String, dynamic>.from(data['allTimeRatings'] ?? {}).map(
           (k, v) => MapEntry(k, Map<String, List<int>>.from(v)),
         );
-        scheduledTimes =
-            List<Map<String, dynamic>>.from(data['scheduledTimes'] ?? []);
         peacockQueue = List<String>.from(data['peacockQueue'] ?? peacockQueue);
         peacockTimers =
             Map<String, dynamic>.from(data['peacockTimers'] ?? {}).map(
@@ -145,6 +146,16 @@ class SquadState with ChangeNotifier {
             Map<String, String?>.from(data['preferredModes'] ?? preferredModes);
         notifyListeners();
       }
+    });
+
+    _firestore.collection('schedules').snapshots().listen((snapshot) {
+      scheduledTimes = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+      debugPrint('Synced scheduledTimes from schedules: $scheduledTimes');
+      notifyListeners();
     });
 
     _firestore.collection('users').snapshots().listen((snapshot) {
@@ -181,7 +192,6 @@ class SquadState with ChangeNotifier {
         'achievements': achievements.map((k, v) => MapEntry(k, v.toList())),
         'dailyRatings': dailyRatings,
         'allTimeRatings': allTimeRatings,
-        'scheduledTimes': scheduledTimes,
         'peacockTimers': peacockTimers,
         'peacockQueue': peacockQueue,
         'members': squadMembers,
@@ -241,9 +251,11 @@ class SquadState with ChangeNotifier {
   void claimSpot(int index) {
     if (_displayName != null && !squadSpots.contains(_displayName)) {
       squadSpots[index] = _displayName;
-      spotTimers[index] = 300;
+      spotTimers[index] = {
+        'startTime': DateTime.now().millisecondsSinceEpoch,
+        'duration': 300,
+      };
       statuses[_displayName!] = 'Ready';
-      // Remove from peacock if present
       if (peacockTimers.containsKey(_displayName)) {
         peacockTimers.remove(_displayName);
       } else if (peacockQueue.contains(_displayName)) {
@@ -273,7 +285,6 @@ class SquadState with ChangeNotifier {
       updateFirestore(force: true);
       notifyListeners();
     } else if (_displayName != null && squadSpots.contains(_displayName)) {
-      // Move from spot to peacock
       int spotIndex = squadSpots.indexOf(_displayName);
       if (spotIndex != -1) {
         squadSpots[spotIndex] = null;
@@ -341,7 +352,10 @@ class SquadState with ChangeNotifier {
       int? freeSpot = squadSpots.indexOf(null);
       if (freeSpot != -1) {
         squadSpots[freeSpot] = player;
-        spotTimers[freeSpot] = 300;
+        spotTimers[freeSpot] = {
+          'startTime': DateTime.now().millisecondsSinceEpoch,
+          'duration': 300,
+        };
         statuses[player] = 'Ready';
         peacockQueue.remove(player);
       }
@@ -365,47 +379,20 @@ class SquadState with ChangeNotifier {
         .firstOrNull;
   }
 
-  void assignSpot(int index) {
-    showDialog(
-      context: context!,
-      builder: (context) {
-        String? selectedPlayer;
-        return AlertDialog(
-          title: const Text('Assign Spot'),
-          content: DropdownButton<String>(
-            hint: const Text('Select Player'),
-            value: selectedPlayer,
-            items: squadMembers
-                .where((player) => !squadSpots.contains(player))
-                .map((player) =>
-                    DropdownMenuItem(value: player, child: Text(player)))
-                .toList(),
-            onChanged: (value) {
-              selectedPlayer = value;
-              if (selectedPlayer != null) {
-                squadSpots[index] = selectedPlayer;
-                spotTimers[index] = 300;
-                statuses[selectedPlayer!] = 'Ready';
-                // Remove from peacock if present
-                if (peacockTimers.containsKey(selectedPlayer)) {
-                  peacockTimers.remove(selectedPlayer);
-                } else if (peacockQueue.contains(selectedPlayer)) {
-                  peacockQueue.remove(selectedPlayer);
-                }
-                updateFirestore(force: true);
-                notifyListeners();
-                Navigator.pop(context);
-              }
-            },
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'))
-          ],
-        );
-      },
-    );
+  void assignSpot(int index, String player) {
+    squadSpots[index] = player;
+    spotTimers[index] = {
+      'startTime': DateTime.now().millisecondsSinceEpoch,
+      'duration': 300,
+    };
+    statuses[player] = 'Ready';
+    if (peacockTimers.containsKey(player)) {
+      peacockTimers.remove(player);
+    } else if (peacockQueue.contains(player)) {
+      peacockQueue.remove(player);
+    }
+    updateFirestore(force: true);
+    notifyListeners();
   }
 
   void removeSpot(int index) {
@@ -489,7 +476,10 @@ class SquadState with ChangeNotifier {
   void resetTimers() {
     for (int i = 0; i < spotTimers.length; i++) {
       if (spotTimers[i] != null && squadSpots[i] != null) {
-        spotTimers[i] = 300;
+        spotTimers[i] = {
+          'startTime': DateTime.now().millisecondsSinceEpoch,
+          'duration': 300,
+        };
       }
     }
     peacockTimers.forEach((player, timer) {
@@ -660,9 +650,14 @@ class SquadState with ChangeNotifier {
 
   void updateSpotTimers() {
     for (int i = 0; i < spotTimers.length; i++) {
-      if (spotTimers[i] != null && spotTimers[i]! > 0) {
-        spotTimers[i] = spotTimers[i]! - 1;
-        if (spotTimers[i] == 0) {
+      if (spotTimers[i] != null) {
+        int startTime = spotTimers[i]!['startTime'] as int;
+        int duration = spotTimers[i]!['duration'] as int;
+        int elapsed =
+            ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000)
+                .floor();
+        int remaining = duration - elapsed;
+        if (remaining <= 0) {
           removeSpot(i);
           _assignNextFromQueue();
         }
@@ -701,6 +696,15 @@ class SquadState with ChangeNotifier {
     return _formatTimer(remaining > 0 ? remaining : 0);
   }
 
+  String getSpotTimerDisplay(int index) {
+    if (spotTimers[index] == null) return '00:00';
+    int startTime = spotTimers[index]!['startTime'] as int;
+    int duration = spotTimers[index]!['duration'] as int;
+    int remaining = duration -
+        ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000).floor();
+    return _formatTimer(remaining > 0 ? remaining : 0);
+  }
+
   String _formatTimer(int? seconds) {
     if (seconds == null) return '00:00';
     int minutes = seconds ~/ 60;
@@ -724,7 +728,10 @@ class SquadState with ChangeNotifier {
           int? freeSpot = squadSpots.indexOf(null);
           if (freeSpot != -1) {
             squadSpots[freeSpot] = player;
-            spotTimers[freeSpot] = 300;
+            spotTimers[freeSpot] = {
+              'startTime': DateTime.now().millisecondsSinceEpoch,
+              'duration': 300,
+            };
             statuses[player] = 'Ready';
             peacockTimers.remove(player);
           }
@@ -738,7 +745,10 @@ class SquadState with ChangeNotifier {
             if (!squadSpots.contains(nextPlayer) &&
                 !peacockTimers.containsKey(nextPlayer)) {
               squadSpots[freeSpot] = nextPlayer;
-              spotTimers[freeSpot] = 300;
+              spotTimers[freeSpot] = {
+                'startTime': DateTime.now().millisecondsSinceEpoch,
+                'duration': 300,
+              };
               statuses[nextPlayer] = 'Ready';
             }
           }

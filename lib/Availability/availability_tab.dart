@@ -10,8 +10,23 @@ import 'package:provider/provider.dart';
 import 'package:cod_squad_app/Availability/schedule_dialog.dart';
 import 'package:cod_squad_app/squad_state.dart';
 
-class AvailabilityTab extends StatelessWidget {
+class AvailabilityTab extends StatefulWidget {
   const AvailabilityTab({super.key});
+
+  @override
+  _AvailabilityTabState createState() => _AvailabilityTabState();
+}
+
+class _AvailabilityTabState extends State<AvailabilityTab> {
+  late DateTime _selectedDay;
+  late DateTime _focusedDay;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDay = DateTime.now();
+    _focusedDay = DateTime.now();
+  }
 
   Future<void> _scheduleAvailabilityDialog(
       BuildContext context, DateTime selectedDay) async {
@@ -33,6 +48,7 @@ class AvailabilityTab extends StatelessWidget {
 
       final startTime = result['startTime'] as DateTime;
       final endTime = result['endTime'] as DateTime;
+      final scheduledDay = result['scheduledDay'] as DateTime;
       final isAllDay = result['isAllDay'] as bool;
       final repeatOption = result['repeatOption'] as String;
       final recurringDays = result['recurringDays'] as List<bool>;
@@ -43,13 +59,15 @@ class AvailabilityTab extends StatelessWidget {
       final endTimeOfDay = TimeOfDay.fromDateTime(endTime);
       final isRecurring = repeatOption != 'Never';
 
-      if (isRecurring || isAllDay) {
-        final startDate = selectedDay;
+      debugPrint('Scheduling for $scheduledDay, isRecurring: $isRecurring');
+
+      if (isRecurring) {
+        final startDate = scheduledDay;
         for (int i = 0; i < 30; i++) {
           final date = startDate.add(Duration(days: i));
           if (repeatOption == 'Daily' ||
               (repeatOption == 'Weekly' && recurringDays[date.weekday % 7]) ||
-              (repeatOption == 'Monthly' && date.day == selectedDay.day)) {
+              (repeatOption == 'Monthly' && date.day == scheduledDay.day)) {
             await _addEvent(
                 date,
                 playerUid,
@@ -64,13 +82,22 @@ class AvailabilityTab extends StatelessWidget {
           }
         }
       } else {
-        await _addEvent(selectedDay, playerUid, displayName, startTimeOfDay,
-            endTimeOfDay, false, [], isAllDay, alertOption, squadState);
+        await _addEvent(
+            scheduledDay,
+            playerUid,
+            displayName,
+            isAllDay ? null : startTimeOfDay,
+            isAllDay ? null : endTimeOfDay,
+            false,
+            [],
+            isAllDay,
+            alertOption,
+            squadState);
       }
 
       if (!isAllDay && alertOption != 'None') {
         await _scheduleNotification(
-            selectedDay, startTimeOfDay, endTimeOfDay, alertOption);
+            scheduledDay, startTimeOfDay, endTimeOfDay, alertOption);
       }
       if (invitees != 'None') {
         await _sendInvites(
@@ -79,13 +106,14 @@ class AvailabilityTab extends StatelessWidget {
             isAllDay,
             startTimeOfDay,
             endTimeOfDay,
-            selectedDay);
+            scheduledDay);
       }
 
       messenger.showSnackBar(
         const SnackBar(content: Text('Availability scheduled!')),
       );
     } catch (e) {
+      debugPrint('Error in _scheduleAvailabilityDialog: $e');
       messenger.showSnackBar(
         SnackBar(content: Text('Failed to schedule: $e')),
       );
@@ -103,13 +131,18 @@ class AvailabilityTab extends StatelessWidget {
       bool allDay,
       String alertOption,
       SquadState squadState) async {
+    String formatTimeOfDay(TimeOfDay? time) {
+      if (time == null) return '00:00';
+      final hour = time.hour.toString().padLeft(2, '0');
+      final minute = time.minute.toString().padLeft(2, '0');
+      return '$hour:$minute';
+    }
+
     final event = {
       'player': playerUid,
       'displayName': displayName,
-      'startTime':
-          allDay ? '00:00' : startTime?.format(squadState.context!) ?? '00:00',
-      'endTime':
-          allDay ? '23:59' : endTime?.format(squadState.context!) ?? '23:59',
+      'startTime': allDay ? '00:00' : formatTimeOfDay(startTime),
+      'endTime': allDay ? '23:59' : formatTimeOfDay(endTime),
       'date': date.toIso8601String().split('T')[0],
       'votes': 0,
       'recurring': recurring,
@@ -118,11 +151,17 @@ class AvailabilityTab extends StatelessWidget {
       'alert': alertOption,
       'createdAt': FieldValue.serverTimestamp(),
     };
-    final docRef =
-        await FirebaseFirestore.instance.collection('schedules').add(event);
-    event['id'] = docRef.id; // Add ID for later removal
-    squadState.scheduledTimes.add(event);
-    squadState.updateFirestore();
+
+    debugPrint('Adding event to Firestore schedules collection: $event');
+
+    try {
+      final docRef =
+          await FirebaseFirestore.instance.collection('schedules').add(event);
+      debugPrint('Event added with ID: ${docRef.id}');
+    } catch (e) {
+      debugPrint('Failed to add event to Firestore: $e');
+      rethrow;
+    }
   }
 
   Future<void> _voteForEvent(BuildContext context, String eventId) async {
@@ -180,9 +219,6 @@ class AvailabilityTab extends StatelessWidget {
       for (var doc in snapshot.docs) {
         await doc.reference.delete();
       }
-      squadState.scheduledTimes
-          .removeWhere((event) => event['player'] == playerUid);
-      squadState.updateFirestore();
       messenger.showSnackBar(
         const SnackBar(content: Text('All availability cleared!')),
       );
@@ -287,7 +323,7 @@ class AvailabilityTab extends StatelessWidget {
         return Scaffold(
           body: RefreshIndicator(
             onRefresh: () async {
-              squadState.updateFirestore(force: true);
+              // No need to force updateFirestore here; schedules listener will refresh
             },
             child: CustomScrollView(
               slivers: [
@@ -310,8 +346,7 @@ class AvailabilityTab extends StatelessWidget {
             ),
           ),
           floatingActionButton: FloatingActionButton(
-            onPressed: () =>
-                _scheduleAvailabilityDialog(context, DateTime.now()),
+            onPressed: () => _scheduleAvailabilityDialog(context, _selectedDay),
             backgroundColor: Colors.green.shade600,
             tooltip: 'Schedule Availability',
             child: const Icon(Icons.add, color: Colors.white),
@@ -325,22 +360,30 @@ class AvailabilityTab extends StatelessWidget {
       List<Map<String, dynamic>> scheduledTimes) {
     final Map<DateTime, List<Map<String, dynamic>>> events = {};
     for (var event in scheduledTimes) {
-      final date = DateTime.parse(event['date']);
-      final eventDate = DateTime(date.year, date.month, date.day);
-      events.update(
-        eventDate,
-        (list) => [...list, event],
-        ifAbsent: () => [event],
-      );
+      final dateString = event['date'];
+      if (dateString == null) {
+        debugPrint('Skipping event with null date: $event');
+        continue; // Skip events with no date
+      }
+      try {
+        final date = DateTime.parse(dateString as String);
+        final eventDate = DateTime(date.year, date.month, date.day);
+        events.update(
+          eventDate,
+          (list) => [...list, event],
+          ifAbsent: () => [event],
+        );
+      } catch (e) {
+        debugPrint(
+            'Failed to parse date "$dateString" in event: $event, error: $e');
+        continue; // Skip events with invalid dates
+      }
     }
     return events;
   }
 
   Widget _buildCalendar(
       BuildContext context, Map<DateTime, List<Map<String, dynamic>>> events) {
-    DateTime focusedDay = DateTime.now();
-    DateTime selectedDay = focusedDay;
-
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -356,13 +399,14 @@ class AvailabilityTab extends StatelessWidget {
       child: TableCalendar(
         firstDay: DateTime.utc(2020, 1, 1),
         lastDay: DateTime.utc(2030, 12, 31),
-        focusedDay: focusedDay,
+        focusedDay: _focusedDay,
         calendarFormat: CalendarFormat.month,
-        selectedDayPredicate: (day) => isSameDay(selectedDay, day),
+        selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
         onDaySelected: (newSelectedDay, newFocusedDay) {
-          selectedDay = newSelectedDay;
-          focusedDay = newFocusedDay;
-          (context as Element).markNeedsBuild();
+          setState(() {
+            _selectedDay = newSelectedDay;
+            _focusedDay = newFocusedDay;
+          });
         },
         eventLoader: (day) =>
             events[DateTime(day.year, day.month, day.day)] ?? [],
@@ -390,9 +434,8 @@ class AvailabilityTab extends StatelessWidget {
 
   Widget _buildDayBreakdown(
       BuildContext context, Map<DateTime, List<Map<String, dynamic>>> events) {
-    final selectedDay = DateTime.now();
-    final dayEvents = events[
-            DateTime(selectedDay.year, selectedDay.month, selectedDay.day)] ??
+    final dayEvents = events[DateTime(
+            _selectedDay.year, _selectedDay.month, _selectedDay.day)] ??
         [];
 
     if (dayEvents.isEmpty) {
@@ -421,7 +464,7 @@ class AvailabilityTab extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Text(
-            'Availability for ${DateFormat.yMMMd().format(selectedDay)}',
+            'Availability for ${DateFormat.yMMMd().format(_selectedDay)}',
             style: Theme.of(context)
                 .textTheme
                 .titleLarge
@@ -534,11 +577,6 @@ class AvailabilityTab extends StatelessWidget {
                           .collection('schedules')
                           .doc(event['id'])
                           .delete();
-                      final squadState =
-                          Provider.of<SquadState>(context, listen: false);
-                      squadState.scheduledTimes
-                          .removeWhere((e) => e['id'] == event['id']);
-                      squadState.updateFirestore();
                       messenger.showSnackBar(
                         const SnackBar(content: Text('Availability removed!')),
                       );

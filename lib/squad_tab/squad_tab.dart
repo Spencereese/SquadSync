@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../squad_state.dart';
@@ -110,8 +109,6 @@ class _SquadTabContentState extends State<_SquadTabContent> {
       onLongPress: () {
         if (hasOccupant) {
           squadState.removeSpot(index);
-          squadState.updateFirestore(force: true);
-          squadState.notifyListeners();
         } else {
           _showSpotAssignmentMenu(context, squadState, index);
         }
@@ -247,17 +244,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               ...availablePlayers.map((player) => ListTile(
                     title: Text(player),
                     onTap: () {
-                      squadState.squadSpots[index] = player;
-                      squadState.spotTimers[index] = 300;
-                      squadState.statuses[player] = 'Ready';
-                      if (squadState.peacockTimers.containsKey(player)) {
-                        squadState.peacockTimers.remove(player);
-                      } else if (squadState.peacockQueue.contains(player)) {
-                        squadState.peacockQueue.remove(player);
-                      }
-                      squadState.updateFirestore(force: true);
-                      squadState.notifyListeners();
-                      Navigator.pop(dialogContext);
+                      squadState.assignSpot(index, player); // Assign directly
+                      Navigator.pop(dialogContext); // Close bottom sheet
                     },
                   )),
             ],
@@ -435,7 +423,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
       BuildContext context, String player, SquadState squadState) {
     final status = squadState.statuses[player] ?? 'Offline';
     final timerIndex = squadState.squadSpots.indexOf(player);
-    final timer = timerIndex != -1 ? squadState.spotTimers[timerIndex] : null;
+    final timerDisplay =
+        timerIndex != -1 ? squadState.getSpotTimerDisplay(timerIndex) : null;
     final streak = squadState.currentStreaks[player] ?? 0;
     final banCount = squadState.getBanCount(player);
 
@@ -445,8 +434,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         spacing: 8,
         children: [
           _buildStatusChip(status),
-          if (timer != null)
-            Text('(${formatTimer(timer)})',
+          if (timerDisplay != null && status == 'Ready')
+            Text('($timerDisplay)',
                 style: Theme.of(context).textTheme.bodySmall),
           if (streak > 0) ...[
             Image.asset(
@@ -586,11 +575,13 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     final status = squadState.statuses[player] ?? 'Offline';
 
     String winIcon = 'assets/images/performance.png';
-    if (streak >= 10)
+    if (streak >= 10) {
       winIcon = 'assets/images/chicken.png';
-    else if (streak >= 4)
+    } else if (streak >= 4) {
       winIcon = 'assets/images/duck.png';
-    else if (streak >= 3) winIcon = 'assets/images/turkey.png';
+    } else if (streak >= 3) {
+      winIcon = 'assets/images/turkey.png';
+    }
 
     return Semantics(
       label: 'Member: $player',
@@ -813,15 +804,6 @@ extension PeacockManagement on SquadState {
         statuses[player] = 'Waiting';
       }
       updateFirestore(force: true);
-      notifyListeners();
-    }
-  }
-
-  void removeSpot(int index) {
-    if (squadSpots[index] != null) {
-      statuses[squadSpots[index]!] = 'Offline';
-      squadSpots[index] = null;
-      spotTimers[index] = null;
       notifyListeners();
     }
   }

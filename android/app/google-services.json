@@ -13,7 +13,20 @@
           "package_name": "com.example.cod_squad_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "756172684661-mou8bnl7dukukdl1e0urdodug0k9t1nf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.cod_squad_app",
+            "certificate_hash": "06f4d4d2a0c2e789359b09b27da3ad260458247d"
+          }
+        },
+        {
+          "client_id": "756172684661-pv3rscsdd548cb5r6orrs6u2bvu1oi6e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC_K87UWA2dhOwThO6LLW_vO2akuYA_2W0"
@@ -21,7 +34,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "756172684661-pv3rscsdd548cb5r6orrs6u2bvu1oi6e.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "756172684661-99ecq9sd74qvt9ufs28os52j9g33h1v9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.codSquadApp"
+              }
+            }
+          ]
         }
       }
     }

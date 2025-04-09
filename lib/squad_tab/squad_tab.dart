@@ -1,104 +1,62 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'squad_queue_logic.dart';
+import '../squad_state.dart';
 import '../utils.dart';
 
-class SquadState with ChangeNotifier {
-  final SquadQueueLogic logic;
-  Map<String, List<Map<String, dynamic>>> bans = {};
-
-  SquadState(this.logic);
-
-  void addBan(String player, String voter) {
-    bans[player] ??= [];
-    if (bans[player]!.any((ban) => ban['voter'] == voter)) return;
-    bans[player]!.add(
-        {'voter': voter, 'timestamp': DateTime.now().millisecondsSinceEpoch});
-    notifyListeners();
-    _startBanTimer(player);
-  }
-
-  void _startBanTimer(String player) async {
-    await Future.delayed(Duration(hours: 4));
-    if (bans[player] != null) {
-      bans[player]!.removeWhere((ban) =>
-          DateTime.now().millisecondsSinceEpoch - ban['timestamp'] >=
-          4 * 3600 * 1000);
-      if (bans[player]!.isEmpty) bans.remove(player);
-      notifyListeners();
-    }
-  }
-
-  int getBanCount(String player) => bans[player]?.length ?? 0;
-
-  bool isBanned(String player) => getBanCount(player) >= 5;
-
-  int getBanDuration(String player) {
-    final count = getBanCount(player);
-    if (count >= 7) return 48 * 3600 * 1000;
-    if (count >= 5) return 24 * 3600 * 1000;
-    return 0;
-  }
-
-  void update() {
-    notifyListeners();
-  }
-}
-
 class SquadTab extends StatelessWidget {
-  final SquadQueueLogic logic;
-  const SquadTab({super.key, required this.logic});
+  const SquadTab({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => SquadState(logic),
-      child: _SquadTabContent(),
-    );
+    return const _SquadTabContent();
   }
 }
 
 class _SquadTabContent extends StatefulWidget {
+  const _SquadTabContent();
+
   @override
   _SquadTabContentState createState() => _SquadTabContentState();
 }
 
 class _SquadTabContentState extends State<_SquadTabContent> {
-  late Timer _uiTimer;
+  bool _showPeacockMembers = false;
+  late BuildContext _currentContext;
 
   @override
-  void initState() {
-    super.initState();
-    _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _uiTimer.cancel();
-    super.dispose();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _currentContext = context;
+    final squadState = Provider.of<SquadState>(_currentContext, listen: false);
+    if (squadState.context == null) {
+      squadState.initialize(_currentContext);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context);
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(context),
-            _buildSquadSpots(context, squadState),
-            _buildPeacockSpot(context, squadState),
-            _buildActionButtons(context, squadState),
-            _buildSquadMembersList(context, squadState),
-          ],
-        ),
-      ),
+    return Consumer<SquadState>(
+      builder: (context, squadState, child) {
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(context),
+                _buildSquadSpots(context, squadState),
+                _buildPeacockSpot(context, squadState),
+                if (_showPeacockMembers)
+                  _buildPeacockMembersList(context, squadState),
+                _buildActionButtons(context, squadState),
+                _buildSquadMembersList(context, squadState),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -144,20 +102,25 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
   Widget _buildSpotCard(
       BuildContext context, int index, SquadState squadState) {
-    final spotName = squadState.logic.squadSpots[index];
+    final spotName = squadState.squadSpots[index];
     final hasOccupant = spotName != null;
-    final yourName = squadState
-        .logic.yourName; // Assuming yourName exists in SquadQueueLogic
+    final yourName = squadState.displayName;
 
     return GestureDetector(
+      onLongPress: () {
+        if (hasOccupant) {
+          squadState.removeSpot(index);
+          squadState.updateFirestore(force: true);
+          squadState.notifyListeners();
+        } else {
+          _showSpotAssignmentMenu(context, squadState, index);
+        }
+      },
       onTap: () {
-        if (!hasOccupant && squadState.logic.squadSpots.contains(yourName)) {
+        if (!hasOccupant && squadState.squadSpots.contains(yourName)) {
           _assignOtherMember(context, squadState, index);
         }
       },
-      onLongPress: () => hasOccupant
-          ? squadState.logic.removeSpot(index)
-          : _assignSpot(context, squadState, index),
       child: Semantics(
         label: 'Spot ${index + 1}: ${spotName ?? 'Open'}',
         child: Card(
@@ -170,8 +133,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildSpotInfo(context, index, spotName),
-                _buildSpotActions(index, hasOccupant, squadState),
+                _buildSpotInfo(context, index, spotName, squadState),
+                _buildSpotActions(context, index, hasOccupant, squadState),
               ],
             ),
           ),
@@ -180,14 +143,16 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     );
   }
 
-  Widget _buildSpotInfo(BuildContext context, int index, String? spotName) {
+  Widget _buildSpotInfo(BuildContext context, int index, String? spotName,
+      SquadState squadState) {
     return Expanded(
       child: Row(
         children: [
           Text('Spot ${index + 1}: ',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  )),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold)),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -197,7 +162,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                   style: Theme.of(context).textTheme.bodyMedium,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (spotName != null) _buildPlayerStatusRow(context, spotName),
+                if (spotName != null)
+                  _buildPlayerStatusRow(context, spotName, squadState),
               ],
             ),
           ),
@@ -206,53 +172,44 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     );
   }
 
-  Widget _buildSpotActions(int index, bool hasOccupant, SquadState squadState) {
-    final spotName = squadState.logic.squadSpots[index];
-    final yourName = squadState.logic.yourName; // Assuming yourName exists
-    final isYourSpot = spotName == yourName;
-    final isReady = squadState.logic.statuses[spotName] == 'Ready';
-    final isWalking = squadState.logic.statuses[spotName] == 'Walking';
-    final youAreAssigned = squadState.logic.squadSpots.contains(yourName);
+  Widget _buildSpotActions(BuildContext context, int index, bool hasOccupant,
+      SquadState squadState) {
+    final spotName = squadState.squadSpots[index];
+    final yourName = squadState.displayName;
+    final isReady = squadState.statuses[spotName] == 'Ready';
+    final youAreAssigned = squadState.squadSpots.contains(yourName);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!hasOccupant)
-          ElevatedButton(
-            onPressed: () {
-              if (youAreAssigned) {
-                _assignOtherMember(context, squadState, index);
-              } else {
-                squadState.logic.claimSpot(
-                    index,
-                    () => setState(() {
-                          squadState.logic.statuses[yourName] = 'Ready';
-                          squadState.logic.spotTimers[index] =
-                              300; // Timer for Ready
-                          squadState.update();
-                        }),
-                    context);
-              }
+          GestureDetector(
+            onLongPress: () {
+              _showSpotAssignmentMenu(context, squadState, index);
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              elevation: 6,
-            ),
-            child: const Tooltip(
-              message: 'Claim this spot or assign another',
-              child: Text('Claim'),
+            child: ElevatedButton(
+              onPressed: () {
+                if (youAreAssigned) {
+                  _assignOtherMember(context, squadState, index);
+                } else {
+                  squadState.claimSpot(index);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                elevation: 6,
+              ),
+              child: const Tooltip(
+                message: 'Tap to claim, hold to assign others',
+                child: Text('Claim'),
+              ),
             ),
           ),
         if (hasOccupant && isReady)
           ElevatedButton(
-            onPressed: () {
-              squadState.logic.statuses[spotName!] = 'Walking';
-              squadState.logic.spotTimers[index] = null; // No timer for Walking
-              setState(() {});
-              squadState.update();
-            },
+            onPressed: () => squadState.lockSpot(index),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.yellowAccent,
               shape: RoundedRectangleBorder(
@@ -261,22 +218,67 @@ class _SquadTabContentState extends State<_SquadTabContent> {
             ),
             child: const Tooltip(
               message: 'Confirm as Walking',
-              child: Text('Lock In'), // Renamed from "Ready"
+              child: Text('Lock In'),
             ),
           ),
-        // No button if Walking
       ],
     );
   }
 
+  void _showSpotAssignmentMenu(
+      BuildContext context, SquadState squadState, int index) {
+    final availablePlayers = squadState.squadMembers
+        .where((player) => !squadState.squadSpots.contains(player))
+        .toList();
+
+    if (availablePlayers.isEmpty) return;
+
+    showModalBottomSheet(
+      context: _currentContext,
+      builder: (dialogContext) => SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Assign Spot ${index + 1}',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 16),
+              ...availablePlayers.map((player) => ListTile(
+                    title: Text(player),
+                    onTap: () {
+                      squadState.squadSpots[index] = player;
+                      squadState.spotTimers[index] = 300;
+                      squadState.statuses[player] = 'Ready';
+                      if (squadState.peacockTimers.containsKey(player)) {
+                        squadState.peacockTimers.remove(player);
+                      } else if (squadState.peacockQueue.contains(player)) {
+                        squadState.peacockQueue.remove(player);
+                      }
+                      squadState.updateFirestore(force: true);
+                      squadState.notifyListeners();
+                      Navigator.pop(dialogContext);
+                    },
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPeacockSpot(BuildContext context, SquadState squadState) {
-    final yourName = squadState.logic.yourName; // Assuming yourName exists
-    final youAreAssigned = squadState.logic.squadSpots.contains(yourName);
-    final canClaimPeacock = !youAreAssigned;
+    final yourName = squadState.displayName;
+    final youAreAssigned = squadState.squadSpots.contains(yourName);
+    final youArePeacock = squadState.peacockTimers.containsKey(yourName) ||
+        squadState.peacockQueue.contains(yourName);
 
     return GestureDetector(
-      onTap: canClaimPeacock ? () => _assignPeacock(context, squadState) : null,
-      onLongPress: () => squadState.logic.managePeacock(),
+      onLongPress: () {
+        setState(() {
+          _showPeacockMembers = !_showPeacockMembers;
+        });
+      },
       child: Semantics(
         label: 'Peacock Spot',
         child: Card(
@@ -290,20 +292,40 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildPeacockInfo(context),
-                ElevatedButton(
-                  onPressed: canClaimPeacock
-                      ? () => _assignPeacock(context, squadState)
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        canClaimPeacock ? Colors.teal : Colors.grey,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                    elevation: 6,
-                  ),
-                  child: const Tooltip(
-                    message: 'Claim Peacock spot',
-                    child: Text('Claim'),
+                GestureDetector(
+                  onLongPress: () {
+                    setState(() {
+                      _showPeacockMembers = !_showPeacockMembers;
+                    });
+                  },
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (youArePeacock) {
+                        setState(() {
+                          _showPeacockMembers = !_showPeacockMembers;
+                        });
+                      } else if (youAreAssigned) {
+                        final currentSpotIndex =
+                            squadState.squadSpots.indexOf(yourName);
+                        if (currentSpotIndex != -1) {
+                          squadState.removeSpot(currentSpotIndex);
+                        }
+                        squadState.startPeacockTimer(_currentContext);
+                      } else {
+                        squadState.startPeacockTimer(_currentContext);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      elevation: 6,
+                    ),
+                    child: const Tooltip(
+                      message:
+                          'Tap to claim/toggle members, hold to toggle members',
+                      child: Text('Claim'),
+                    ),
                   ),
                 ),
               ],
@@ -333,8 +355,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
   Widget _buildPeacockStatus(BuildContext context) {
     final squadState = Provider.of<SquadState>(context);
-    if (squadState.logic.peacockTimers.isEmpty &&
-        squadState.logic.peacockQueue.isEmpty) {
+    if (squadState.peacockTimers.isEmpty && squadState.peacockQueue.isEmpty) {
       return const Text('Open', style: TextStyle(color: Colors.white));
     }
 
@@ -342,22 +363,20 @@ class _SquadTabContentState extends State<_SquadTabContent> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ...squadState.logic.peacockTimers.entries
+        ...squadState.peacockTimers.entries
             .where((e) => e.value != null)
-            .map((entry) => _buildPeacockTimerRow(context, entry)),
-        ...squadState.logic.peacockQueue
+            .map((entry) => _buildPeacockTimerRow(context, entry, squadState)),
+        ...squadState.peacockQueue
             .map((player) => _buildPeacockQueueRow(context, player)),
       ],
     );
   }
 
-  Widget _buildPeacockTimerRow(
-      BuildContext context, MapEntry<String, dynamic> entry) {
-    final startTime = entry.value['startTime'] as int;
-    final duration = entry.value['duration'] as int;
-    final elapsedSeconds =
-        ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000).floor();
-    final remainingTime = duration - elapsedSeconds;
+  Widget _buildPeacockTimerRow(BuildContext context,
+      MapEntry<String, Map<String, dynamic>?> entry, SquadState squadState) {
+    final timer = entry.value;
+    if (timer == null) return const SizedBox.shrink();
+    final remainingTime = squadState.getPeacockTimerDisplay(entry.key);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -366,10 +385,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         const SizedBox(width: 8),
         _buildStatusChip('Strutting'),
         const SizedBox(width: 8),
-        Text(
-          remainingTime > 0 ? '(${formatTimer(remainingTime)})' : '(Expired)',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        Text('($remainingTime)', style: Theme.of(context).textTheme.bodySmall),
       ],
     );
   }
@@ -385,13 +401,43 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     );
   }
 
-  Widget _buildPlayerStatusRow(BuildContext context, String player) {
-    final squadState = Provider.of<SquadState>(context);
-    final status = squadState.logic.statuses[player] ?? 'Offline';
-    final timerIndex = squadState.logic.squadSpots.indexOf(player);
-    final timer =
-        timerIndex != -1 ? squadState.logic.spotTimers[timerIndex] : null;
-    final streak = squadState.logic.currentStreaks[player] ?? 0;
+  Widget _buildPeacockMembersList(BuildContext context, SquadState squadState) {
+    final allMembers = squadState.squadMembers;
+
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Column(
+        children: allMembers.map((member) {
+          final isInPeacock = squadState.peacockTimers.containsKey(member) ||
+              squadState.peacockQueue.contains(member);
+          return ListTile(
+            title: Text(member),
+            trailing: Icon(
+              isInPeacock ? Icons.remove_circle : Icons.add_circle,
+              color: isInPeacock ? Colors.red : Colors.green,
+            ),
+            onTap: () {
+              if (isInPeacock) {
+                squadState.removeFromPeacock(member);
+              } else {
+                squadState.addToPeacock(member);
+              }
+              setState(() {});
+            },
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildPlayerStatusRow(
+      BuildContext context, String player, SquadState squadState) {
+    final status = squadState.statuses[player] ?? 'Offline';
+    final timerIndex = squadState.squadSpots.indexOf(player);
+    final timer = timerIndex != -1 ? squadState.spotTimers[timerIndex] : null;
+    final streak = squadState.currentStreaks[player] ?? 0;
+    final banCount = squadState.getBanCount(player);
 
     return Padding(
       padding: const EdgeInsets.only(top: 4),
@@ -413,11 +459,11 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                 style:
                     const TextStyle(color: Colors.yellowAccent, fontSize: 12)),
           ],
-          if (squadState.getBanCount(player) > 0)
+          if (banCount > 0)
             Row(
               mainAxisSize: MainAxisSize.min,
               children: List.generate(
-                squadState.getBanCount(player),
+                banCount,
                 (_) => Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: Image.asset(
@@ -466,19 +512,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           ElevatedButton(
-            onPressed: () {
-              print('Before Win - Streaks: ${squadState.logic.currentStreaks}');
-              print(
-                  'Before Win - Walking Players: ${squadState.logic.squadSpots.where((spot) => spot != null && squadState.logic.spotTimers[squadState.logic.squadSpots.indexOf(spot)] == null).toList()}');
-              squadState.logic.recordWin((VoidCallback innerCallback) {
-                setState(() {
-                  innerCallback();
-                  print('Win recorded');
-                  squadState.update();
-                });
-              });
-              print('After Win - Streaks: ${squadState.logic.currentStreaks}');
-            },
+            onPressed: squadState.recordWin,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
@@ -489,18 +523,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
             child: const Text('Win'),
           ),
           ElevatedButton(
-            onPressed: () {
-              print(
-                  'Before Loss - Streaks: ${squadState.logic.currentStreaks}');
-              squadState.logic.recordLoss((VoidCallback innerCallback) {
-                setState(() {
-                  innerCallback();
-                  print('Loss recorded');
-                  squadState.update();
-                });
-              });
-              print('After Loss - Streaks: ${squadState.logic.currentStreaks}');
-            },
+            onPressed: squadState.recordLoss,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
@@ -532,7 +555,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
             ),
           ),
         ),
-        if (squadState.logic.squadMembers.isEmpty)
+        if (squadState.squadMembers.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.0),
             child: Text('No squad members yet',
@@ -546,7 +569,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               color: Colors.grey[900],
             ),
             child: Column(
-              children: squadState.logic.squadMembers
+              children: squadState.squadMembers
                   .map(
                       (player) => _buildMemberCard(context, player, squadState))
                   .toList(),
@@ -558,27 +581,22 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
   Widget _buildMemberCard(
       BuildContext context, String player, SquadState squadState) {
-    final streak = squadState.logic.currentStreaks[player] ?? 0;
-    final bans = squadState.getBanCount(player);
-    final status = squadState.logic.statuses[player] ?? 'Offline';
+    final streak = squadState.currentStreaks[player] ?? 0;
+    final banCount = squadState.getBanCount(player);
+    final status = squadState.statuses[player] ?? 'Offline';
 
     String winIcon = 'assets/images/performance.png';
-    if (streak >= 10) {
+    if (streak >= 10)
       winIcon = 'assets/images/chicken.png';
-    } else if (streak >= 4) {
+    else if (streak >= 4)
       winIcon = 'assets/images/duck.png';
-    } else if (streak >= 3) {
-      winIcon = 'assets/images/turkey.png';
-    }
+    else if (streak >= 3) winIcon = 'assets/images/turkey.png';
 
     return Semantics(
       label: 'Member: $player',
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border:
-              Border.all(color: Colors.grey[800]!), // Fixed: Removed 'custom'
-        ),
+        decoration: BoxDecoration(border: Border.all(color: Colors.grey[800]!)),
         child: Row(
           children: [
             Expanded(
@@ -600,29 +618,21 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                 if (streak > 0)
                   Row(
                     children: [
-                      Image.asset(
-                        winIcon,
-                        width: 20,
-                        height: 20,
-                        color: Colors.yellowAccent,
-                      ),
+                      Image.asset(winIcon,
+                          width: 20, height: 20, color: Colors.yellowAccent),
                       const SizedBox(width: 4),
                       Text('$streak',
                           style: const TextStyle(color: Colors.yellowAccent)),
                     ],
                   ),
-                if (bans > 0) ...[
+                if (banCount > 0) ...[
                   const SizedBox(width: 12),
                   Row(
                     children: [
-                      Image.asset(
-                        'assets/images/sword.png',
-                        width: 20,
-                        height: 20,
-                        color: Colors.redAccent,
-                      ),
+                      Image.asset('assets/images/swordMail.png',
+                          width: 20, height: 20, color: Colors.redAccent),
                       const SizedBox(width: 4),
-                      Text('$bans',
+                      Text('$banCount',
                           style: const TextStyle(color: Colors.redAccent)),
                     ],
                   ),
@@ -638,7 +648,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   void _showSettingsDialog(BuildContext context) {
     final squadState = Provider.of<SquadState>(context, listen: false);
     showDialog(
-      context: context,
+      context: _currentContext,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Squad Settings'),
@@ -646,38 +656,26 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Image.asset(
-                'assets/images/clear_all.png',
-                width: 24,
-                height: 24,
-                color: Colors.redAccent,
-              ),
+              leading: Image.asset('assets/images/clear_all.png',
+                  width: 24, height: 24, color: Colors.redAccent),
               title: const Text('Clear All Spots'),
               onTap: () {
-                squadState.logic.clearAllSpots(() => setState(() {}));
+                squadState.clearAllSpots();
                 Navigator.pop(context);
               },
             ),
             ListTile(
-              leading: Image.asset(
-                'assets/images/timer_off.png',
-                width: 24,
-                height: 24,
-                color: Colors.blueGrey,
-              ),
+              leading: Image.asset('assets/images/timer_off.png',
+                  width: 24, height: 24, color: Colors.blueGrey),
               title: const Text('Reset Timers'),
               onTap: () {
-                squadState.logic.resetTimers(() => setState(() {}));
+                squadState.resetTimers();
                 Navigator.pop(context);
               },
             ),
             ListTile(
-              leading: Image.asset(
-                'assets/images/people_group.png',
-                width: 24,
-                height: 24,
-                color: Colors.cyanAccent,
-              ),
+              leading: Image.asset('assets/images/people_group.png',
+                  width: 24, height: 24, color: Colors.cyanAccent),
               title: const Text('Manage Members'),
               onTap: () {
                 Navigator.pop(context);
@@ -685,12 +683,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               },
             ),
             ListTile(
-              leading: Image.asset(
-                'assets/images/sword.png',
-                width: 24,
-                height: 24,
-                color: Colors.redAccent,
-              ),
+              leading: Image.asset('assets/images/sword.png',
+                  width: 24, height: 24, color: Colors.redAccent),
               title: const Text('Ban Member'),
               onTap: () {
                 Navigator.pop(context);
@@ -701,9 +695,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close')),
         ],
       ),
     );
@@ -712,7 +705,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   void _showMemberManagementDialog(
       BuildContext context, SquadState squadState) {
     showDialog(
-      context: context,
+      context: _currentContext,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Manage Members'),
@@ -735,9 +728,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close')),
         ],
       ),
     );
@@ -746,23 +738,19 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   void _showBanDialog(BuildContext context, SquadState squadState) {
     String? selectedPlayer;
     showDialog(
-      context: context,
+      context: _currentContext,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Ban a Member'),
         content: Row(
           children: [
-            Image.asset(
-              'assets/images/sword.png',
-              width: 24,
-              height: 24,
-              color: Colors.redAccent,
-            ),
+            Image.asset('assets/images/sword.png',
+                width: 24, height: 24, color: Colors.redAccent),
             const SizedBox(width: 8),
             Expanded(
               child: DropdownButtonFormField<String>(
                 decoration: const InputDecoration(labelText: 'Select Member'),
-                items: squadState.logic.squadMembers
+                items: squadState.squadMembers
                     .map((player) =>
                         DropdownMenuItem(value: player, child: Text(player)))
                     .toList(),
@@ -773,13 +761,12 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () {
-              if (selectedPlayer != null) {
-                squadState.addBan(selectedPlayer!, squadState.logic.yourName);
+              if (selectedPlayer != null && squadState.displayName != null) {
+                squadState.addBan(selectedPlayer!, squadState.displayName!);
                 Navigator.pop(context);
               }
             },
@@ -790,193 +777,52 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     );
   }
 
-  void _assignPeacock(BuildContext context, SquadState squadState) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Assign Peacock'),
-        content: Row(
-          children: [
-            Image.asset(
-              'assets/images/spot_assign.png',
-              width: 24,
-              height: 24,
-              color: Colors.cyanAccent,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Select Player'),
-                items: squadState.logic.squadMembers
-                    .map((player) =>
-                        DropdownMenuItem(value: player, child: Text(player)))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    squadState.logic.peacockTimers[value] = {
-                      'startTime': DateTime.now().millisecondsSinceEpoch,
-                      'duration': 300 * 1000, // 5 minutes in milliseconds
-                    };
-                    squadState.logic.statuses[value] = 'Strutting';
-                    setState(() {});
-                    squadState.update();
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _assignReady(BuildContext context, SquadState squadState, int index) {
-    final currentPlayer = squadState.logic.squadSpots[index];
-    if (currentPlayer == null) return;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Assign Ready'),
-        content: Row(
-          children: [
-            Image.asset(
-              'assets/images/spot_assign.png',
-              width: 24,
-              height: 24,
-              color: Colors.yellowAccent,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Select Player'),
-                items: squadState.logic.squadMembers
-                    .where((player) => player != currentPlayer)
-                    .map((player) =>
-                        DropdownMenuItem(value: player, child: Text(player)))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    squadState.logic.statuses[value] = 'Ready';
-                    setState(() {});
-                    squadState.update();
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _assignOtherMember(
       BuildContext context, SquadState squadState, int index) {
-    final yourName = squadState.logic.yourName;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Assign Member'),
-        content: Row(
-          children: [
-            Image.asset(
-              'assets/images/spot_assign.png',
-              width: 24,
-              height: 24,
-              color: Colors.teal,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Select Player'),
-                items: squadState.logic.squadMembers
-                    .where((player) => player != yourName)
-                    .map((player) =>
-                        DropdownMenuItem(value: player, child: Text(player)))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    squadState.logic.squadSpots[index] = value;
-                    squadState.logic.statuses[value] = 'Ready';
-                    squadState.logic.spotTimers[index] = 300; // Timer for Ready
-                    setState(() {});
-                    squadState.update();
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
+    final yourName = squadState.displayName;
+    final availablePlayers = squadState.squadMembers
+        .where((player) =>
+            player != yourName && !squadState.squadSpots.contains(player))
+        .toList();
+
+    if (availablePlayers.isNotEmpty) {
+      _showSpotAssignmentMenu(context, squadState, index);
+    }
+  }
+}
+
+extension PeacockManagement on SquadState {
+  void addToPeacock(String player) {
+    final spotIndex = squadSpots.indexOf(player);
+    if (spotIndex != -1) {
+      squadSpots[spotIndex] = null;
+      spotTimers[spotIndex] = null;
+      statuses[player] = 'Offline';
+    }
+
+    if (!peacockTimers.containsKey(player) && !peacockQueue.contains(player)) {
+      if (peacockTimers.length < 4) {
+        peacockTimers[player] = {
+          'startTime': DateTime.now().millisecondsSinceEpoch,
+          'duration': 3600,
+          'mode': 'Quads'
+        };
+        statuses[player] = 'Strutting';
+      } else {
+        peacockQueue.add(player);
+        statuses[player] = 'Waiting';
+      }
+      updateFirestore(force: true);
+      notifyListeners();
+    }
   }
 
-  void _assignSpot(BuildContext context, SquadState squadState, int index) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Assign Spot'),
-        content: Row(
-          children: [
-            Image.asset(
-              'assets/images/spot_assign.png',
-              width: 24,
-              height: 24,
-              color: Colors.cyanAccent,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Select Player'),
-                items: squadState.logic.squadMembers
-                    .map((player) =>
-                        DropdownMenuItem(value: player, child: Text(player)))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    squadState.logic.squadSpots[index] = value;
-                    squadState.logic.statuses[value] = 'Walking';
-                    squadState.logic.spotTimers[index] = 300;
-                    setState(() {});
-                    squadState.update();
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
+  void removeSpot(int index) {
+    if (squadSpots[index] != null) {
+      statuses[squadSpots[index]!] = 'Offline';
+      squadSpots[index] = null;
+      spotTimers[index] = null;
+      notifyListeners();
+    }
   }
 }

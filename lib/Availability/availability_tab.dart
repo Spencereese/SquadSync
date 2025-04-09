@@ -6,100 +6,25 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import 'package:cod_squad_app/Availability/schedule_dialog.dart';
+import 'package:cod_squad_app/squad_state.dart';
 
-class AvailabilityTab extends StatefulWidget {
-  final dynamic state;
+class AvailabilityTab extends StatelessWidget {
+  const AvailabilityTab({super.key});
 
-  const AvailabilityTab({super.key, required this.state});
-
-  @override
-  State<AvailabilityTab> createState() => _AvailabilityTabState();
-}
-
-class _AvailabilityTabState extends State<AvailabilityTab> {
-  late DateTime _focusedDay;
-  late DateTime _selectedDay;
-  Map<DateTime, List<Map<String, dynamic>>> _events = {};
-  late tz.Location _userTimeZone;
-  bool _isLoading = false;
-
-  final FlutterLocalNotificationsPlugin _notificationsPlugin =
-      FlutterLocalNotificationsPlugin();
-
-  @override
-  void initState() {
-    super.initState();
-    _focusedDay = DateTime.now();
-    _selectedDay = _focusedDay;
-    tz.initializeTimeZones();
-    _userTimeZone = tz.getLocation('America/New_York');
-    _loadEvents();
-  }
-
-  Future<void> _loadEvents() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('schedules')
-          .where('date',
-              isGreaterThanOrEqualTo: DateTime.now()
-                  .subtract(const Duration(days: 30))
-                  .toIso8601String())
-          .get();
-
-      if (!mounted) return;
-      final currentUser = FirebaseAuth.instance.currentUser;
-      final currentUid = currentUser?.uid ?? 'anonymous';
-      final currentDisplayName = currentUser?.displayName ?? 'Unknown';
-
-      setState(() {
-        _events = {};
-        for (var doc in snapshot.docs) {
-          final data = doc.data();
-          final date = DateTime.parse(data['date']);
-          final event = {
-            'player': data['player'] ?? 'Unknown',
-            'startTime': data['startTime'] ?? '00:00',
-            'endTime': data['endTime'] ?? '23:59',
-            'votes': data['votes'] ?? 0,
-            'id': doc.id,
-            'recurring': data['recurring'] ?? false,
-            'recurringDays': data['recurringDays'] ?? [],
-            'allDay': data['allDay'] ?? false,
-            'displayName': data['displayName'] ?? data['player'] ?? 'Unknown',
-          };
-          final eventDate = DateTime(date.year, date.month, date.day);
-          _events.update(
-            eventDate,
-            (list) => [...list, event],
-            ifAbsent: () => [event],
-          );
-        }
-        _isLoading = false;
-        print('Loaded events: $_events');
-      });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading events: $e')),
-        );
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _scheduleAvailabilityDialog() async {
+  Future<void> _scheduleAvailabilityDialog(
+      BuildContext context, DateTime selectedDay) async {
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => ScheduleDialog(selectedDay: _selectedDay),
+      builder: (context) => ScheduleDialog(selectedDay: selectedDay),
     );
 
-    if (result == null || !mounted) return;
+    if (result == null) return;
 
-    setState(() => _isLoading = true);
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) throw Exception('You must be signed in.');
@@ -119,12 +44,12 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       final isRecurring = repeatOption != 'Never';
 
       if (isRecurring || isAllDay) {
-        final startDate = _selectedDay;
+        final startDate = selectedDay;
         for (int i = 0; i < 30; i++) {
           final date = startDate.add(Duration(days: i));
           if (repeatOption == 'Daily' ||
               (repeatOption == 'Weekly' && recurringDays[date.weekday % 7]) ||
-              (repeatOption == 'Monthly' && date.day == _selectedDay.day)) {
+              (repeatOption == 'Monthly' && date.day == selectedDay.day)) {
             await _addEvent(
                 date,
                 playerUid,
@@ -134,17 +59,18 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
                 isRecurring,
                 recurringDays,
                 isAllDay,
-                alertOption);
+                alertOption,
+                squadState);
           }
         }
       } else {
-        await _addEvent(_selectedDay, playerUid, displayName, startTimeOfDay,
-            endTimeOfDay, false, [], isAllDay, alertOption);
+        await _addEvent(selectedDay, playerUid, displayName, startTimeOfDay,
+            endTimeOfDay, false, [], isAllDay, alertOption, squadState);
       }
 
-      await _loadEvents();
       if (!isAllDay && alertOption != 'None') {
-        await _scheduleNotification(startTimeOfDay, endTimeOfDay, alertOption);
+        await _scheduleNotification(
+            selectedDay, startTimeOfDay, endTimeOfDay, alertOption);
       }
       if (invitees != 'None') {
         await _sendInvites(
@@ -152,22 +78,17 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
             invitees == 'All Members' ? 'Squad' : invitees,
             isAllDay,
             startTimeOfDay,
-            endTimeOfDay);
+            endTimeOfDay,
+            selectedDay);
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Availability scheduled!')),
-        );
-      }
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Availability scheduled!')),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to schedule: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to schedule: $e')),
+      );
     }
   }
 
@@ -180,12 +101,15 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       bool recurring,
       List<bool> recurringDays,
       bool allDay,
-      String alertOption) async {
-    await FirebaseFirestore.instance.collection('schedules').add({
+      String alertOption,
+      SquadState squadState) async {
+    final event = {
       'player': playerUid,
       'displayName': displayName,
-      'startTime': allDay ? '00:00' : startTime?.format(context) ?? '00:00',
-      'endTime': allDay ? '23:59' : endTime?.format(context) ?? '23:59',
+      'startTime':
+          allDay ? '00:00' : startTime?.format(squadState.context!) ?? '00:00',
+      'endTime':
+          allDay ? '23:59' : endTime?.format(squadState.context!) ?? '23:59',
       'date': date.toIso8601String().split('T')[0],
       'votes': 0,
       'recurring': recurring,
@@ -193,33 +117,35 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       'allDay': allDay,
       'alert': alertOption,
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    };
+    final docRef =
+        await FirebaseFirestore.instance.collection('schedules').add(event);
+    event['id'] = docRef.id; // Add ID for later removal
+    squadState.scheduledTimes.add(event);
+    squadState.updateFirestore();
   }
 
-  Future<void> _voteForEvent(String eventId) async {
+  Future<void> _voteForEvent(BuildContext context, String eventId) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final docRef =
           FirebaseFirestore.instance.collection('schedules').doc(eventId);
       await docRef.update({'votes': FieldValue.increment(1)});
-      await _loadEvents();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to vote: $e')),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to vote: $e')),
+      );
     }
   }
 
-  Future<void> _clearAllAvailabilities() async {
+  Future<void> _clearAllAvailabilities(
+      BuildContext context, SquadState squadState) async {
+    final messenger = ScaffoldMessenger.of(context);
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Please sign in to clear availability.')),
-        );
-      }
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Please sign in to clear availability.')),
+      );
       return;
     }
 
@@ -242,9 +168,8 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       ),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true) return;
 
-    setState(() => _isLoading = true);
     try {
       final playerUid = currentUser.uid;
       final snapshot = await FirebaseFirestore.instance
@@ -255,25 +180,22 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       for (var doc in snapshot.docs) {
         await doc.reference.delete();
       }
-      await _loadEvents();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All availability cleared!')),
-        );
-      }
+      squadState.scheduledTimes
+          .removeWhere((event) => event['player'] == playerUid);
+      squadState.updateFirestore();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('All availability cleared!')),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to clear: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to clear: $e')),
+      );
     }
   }
 
-  Future<void> _scheduleNotification(
-      TimeOfDay startTime, TimeOfDay endTime, String alertOption) async {
+  Future<void> _scheduleNotification(DateTime selectedDay, TimeOfDay startTime,
+      TimeOfDay endTime, String alertOption) async {
+    final notificationsPlugin = FlutterLocalNotificationsPlugin();
     try {
       const androidDetails = AndroidNotificationDetails(
         'match_channel',
@@ -316,17 +238,19 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
           return;
       }
 
+      tz.initializeTimeZones();
+      final userTimeZone = tz.getLocation('America/New_York');
       final scheduledTime = tz.TZDateTime.from(
-        DateTime(_selectedDay.year, _selectedDay.month, _selectedDay.day,
+        DateTime(selectedDay.year, selectedDay.month, selectedDay.day,
                 startTime.hour, startTime.minute)
             .subtract(offset),
-        _userTimeZone,
+        userTimeZone,
       );
 
-      await _notificationsPlugin.zonedSchedule(
+      await notificationsPlugin.zonedSchedule(
         DateTime.now().hashCode,
         'Availability Reminder',
-        'Your availability starts at ${startTime.format(context)}',
+        'Your availability starts at ${startTime.format}',
         scheduledTime,
         platformDetails,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
@@ -339,11 +263,11 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
   }
 
   Future<void> _sendInvites(String sender, String recipient, bool allDay,
-      TimeOfDay startTime, TimeOfDay endTime) async {
+      TimeOfDay startTime, TimeOfDay endTime, DateTime selectedDay) async {
     try {
       final message = allDay
-          ? '$sender invited you to be available all day on ${DateFormat.yMMMd().format(_selectedDay)}'
-          : '$sender invited you to be available from ${startTime.format(context)} to ${endTime.format(context)} on ${DateFormat.yMMMd().format(_selectedDay)}';
+          ? '$sender invited you to be available all day on ${DateFormat.yMMMd().format(selectedDay)}'
+          : '$sender invited you to be available from ${startTime.format} to ${endTime.format} on ${DateFormat.yMMMd().format(selectedDay)}';
       await FirebaseFirestore.instance.collection('invites').add({
         'sender': sender,
         'recipient': recipient,
@@ -357,46 +281,73 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _loadEvents,
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildCalendar(),
-                    const SizedBox(height: 16),
-                    _buildDayBreakdown(),
-                    const SizedBox(height: 16),
-                    _buildClearButton(),
-                  ],
+    return Consumer<SquadState>(
+      builder: (context, squadState, child) {
+        final events = _mapScheduledTimes(squadState.scheduledTimes);
+        return Scaffold(
+          body: RefreshIndicator(
+            onRefresh: () async {
+              squadState.updateFirestore(force: true);
+            },
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildCalendar(context, events),
+                        const SizedBox(height: 16),
+                        _buildDayBreakdown(context, events),
+                        const SizedBox(height: 16),
+                        _buildClearButton(context, squadState),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _isLoading ? null : _scheduleAvailabilityDialog,
-        backgroundColor: Colors.green.shade600,
-        child: const Icon(Icons.add, color: Colors.white),
-        tooltip: 'Schedule Availability',
-      ),
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () =>
+                _scheduleAvailabilityDialog(context, DateTime.now()),
+            backgroundColor: Colors.green.shade600,
+            tooltip: 'Schedule Availability',
+            child: const Icon(Icons.add, color: Colors.white),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildCalendar() {
+  Map<DateTime, List<Map<String, dynamic>>> _mapScheduledTimes(
+      List<Map<String, dynamic>> scheduledTimes) {
+    final Map<DateTime, List<Map<String, dynamic>>> events = {};
+    for (var event in scheduledTimes) {
+      final date = DateTime.parse(event['date']);
+      final eventDate = DateTime(date.year, date.month, date.day);
+      events.update(
+        eventDate,
+        (list) => [...list, event],
+        ifAbsent: () => [event],
+      );
+    }
+    return events;
+  }
+
+  Widget _buildCalendar(
+      BuildContext context, Map<DateTime, List<Map<String, dynamic>>> events) {
+    DateTime focusedDay = DateTime.now();
+    DateTime selectedDay = focusedDay;
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         color: Theme.of(context).cardColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -405,21 +356,19 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       child: TableCalendar(
         firstDay: DateTime.utc(2020, 1, 1),
         lastDay: DateTime.utc(2030, 12, 31),
-        focusedDay: _focusedDay,
+        focusedDay: focusedDay,
         calendarFormat: CalendarFormat.month,
-        selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-        onDaySelected: (selectedDay, focusedDay) {
-          if (!mounted) return;
-          setState(() {
-            _selectedDay = selectedDay;
-            _focusedDay = focusedDay;
-          });
+        selectedDayPredicate: (day) => isSameDay(selectedDay, day),
+        onDaySelected: (newSelectedDay, newFocusedDay) {
+          selectedDay = newSelectedDay;
+          focusedDay = newFocusedDay;
+          (context as Element).markNeedsBuild();
         },
         eventLoader: (day) =>
-            _events[DateTime(day.year, day.month, day.day)] ?? [],
+            events[DateTime(day.year, day.month, day.day)] ?? [],
         calendarStyle: CalendarStyle(
           todayDecoration: BoxDecoration(
-            color: Colors.green.withOpacity(0.3),
+            color: Colors.green.withValues(alpha: 0.3),
             shape: BoxShape.circle,
           ),
           selectedDecoration: BoxDecoration(
@@ -427,7 +376,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
             shape: BoxShape.circle,
           ),
           markerDecoration: BoxDecoration(
-            color: Colors.redAccent.withOpacity(0.8),
+            color: Colors.redAccent.withValues(alpha: 0.8),
             shape: BoxShape.circle,
           ),
         ),
@@ -439,14 +388,14 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     );
   }
 
-  Widget _buildDayBreakdown() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final events = _events[DateTime(
-            _selectedDay.year, _selectedDay.month, _selectedDay.day)] ??
+  Widget _buildDayBreakdown(
+      BuildContext context, Map<DateTime, List<Map<String, dynamic>>> events) {
+    final selectedDay = DateTime.now();
+    final dayEvents = events[
+            DateTime(selectedDay.year, selectedDay.month, selectedDay.day)] ??
         [];
-    if (events.isEmpty) {
+
+    if (dayEvents.isEmpty) {
       return Card(
         elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -458,7 +407,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     }
 
     final Map<String, List<Map<String, dynamic>>> timeSlots = {};
-    for (var event in events) {
+    for (var event in dayEvents) {
       final slot = event['allDay']
           ? 'All Day'
           : '${event['startTime']} - ${event['endTime']}';
@@ -472,7 +421,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Text(
-            'Availability for ${DateFormat.yMMMd().format(_selectedDay)}',
+            'Availability for ${DateFormat.yMMMd().format(selectedDay)}',
             style: Theme.of(context)
                 .textTheme
                 .titleLarge
@@ -525,7 +474,8 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    ...slotEvents.map((event) => _buildPlayerTile(event)),
+                    ...slotEvents
+                        .map((event) => _buildPlayerTile(context, event)),
                   ],
                 ),
               ),
@@ -536,7 +486,8 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     );
   }
 
-  Widget _buildPlayerTile(Map<String, dynamic> event) {
+  Widget _buildPlayerTile(BuildContext context, Map<String, dynamic> event) {
+    final messenger = ScaffoldMessenger.of(context);
     final isOwnEvent =
         FirebaseAuth.instance.currentUser?.uid == event['player'];
     final displayName = event['displayName'] as String? ?? 'Unknown';
@@ -563,7 +514,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
             children: [
               IconButton(
                 icon: const Icon(Icons.thumb_up, color: Colors.blue),
-                onPressed: () => _voteForEvent(event['id']),
+                onPressed: () => _voteForEvent(context, event['id']),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
@@ -576,13 +527,21 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
                 IconButton(
                   icon: const Icon(Icons.delete, color: Colors.red),
                   onPressed: () async {
-                    final confirmed = await _confirmDelete(displayName);
+                    final confirmed =
+                        await _confirmDelete(context, displayName);
                     if (confirmed == true) {
                       await FirebaseFirestore.instance
                           .collection('schedules')
                           .doc(event['id'])
                           .delete();
-                      await _loadEvents();
+                      final squadState =
+                          Provider.of<SquadState>(context, listen: false);
+                      squadState.scheduledTimes
+                          .removeWhere((e) => e['id'] == event['id']);
+                      squadState.updateFirestore();
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('Availability removed!')),
+                      );
                     }
                   },
                   padding: EdgeInsets.zero,
@@ -596,9 +555,9 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     );
   }
 
-  Widget _buildClearButton() {
+  Widget _buildClearButton(BuildContext context, SquadState squadState) {
     return OutlinedButton.icon(
-      onPressed: _isLoading ? null : _clearAllAvailabilities,
+      onPressed: () => _clearAllAvailabilities(context, squadState),
       icon: const Icon(Icons.clear_all, color: Colors.red),
       label: const Text('Clear My Availability'),
       style: OutlinedButton.styleFrom(
@@ -609,7 +568,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     );
   }
 
-  Future<bool?> _confirmDelete(String displayName) {
+  Future<bool?> _confirmDelete(BuildContext context, String displayName) {
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

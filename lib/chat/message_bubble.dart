@@ -7,7 +7,9 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:provider/provider.dart';
 import '../../app_theme.dart';
+import '../../squad_state.dart';
 
 class MessageBubble extends StatelessWidget {
   final DocumentSnapshot message;
@@ -36,39 +38,61 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = message.data() as Map<String, dynamic>;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-      child: Row(
-        mainAxisAlignment:
-            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isMe) _buildAvatar(),
-          if (!isMe) const SizedBox(width: 8),
-          Flexible(
-            child: Column(
-              crossAxisAlignment:
-                  isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              children: [
-                if (showSender) _buildSender(),
-                if (showTimestamp && message['timestamp'] != null)
-                  _buildTimestamp(),
-                _buildMessageContent(context, data),
-                if (!isMe) _buildReactions(),
-              ],
-            ),
+    return Consumer<SquadState>(
+      builder: (context, squadState, child) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+          child: Column(
+            crossAxisAlignment:
+                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              if (showTimestamp && message['timestamp'] != null)
+                _buildTimestamp(),
+              Row(
+                mainAxisAlignment:
+                    isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (!isMe) _buildAvatar(context, squadState, data['sender']),
+                  if (!isMe) const SizedBox(width: 8),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: isMe
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      children: [
+                        if (showSender) _buildSender(),
+                        _buildMessageContent(context, data),
+                        if (!isMe) _buildReactions(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildAvatar() {
+  Widget _buildAvatar(
+      BuildContext context, SquadState squadState, String sender) {
+    String? profileImage = squadState.memberProfileImages[sender];
     return SizedBox(
       width: 32,
       height: 32,
-      child: showAvatar ? const UserAvatar() : const SizedBox.shrink(),
+      child: showAvatar
+          ? CircleAvatar(
+              radius: 16,
+              backgroundImage:
+                  profileImage != null ? NetworkImage(profileImage) : null,
+              child: profileImage == null
+                  ? Text(sender[0],
+                      style: const TextStyle(color: AppTheme.accentColor))
+                  : null,
+            )
+          : const SizedBox.shrink(),
     );
   }
 
@@ -110,7 +134,7 @@ class MessageBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: isMe
               ? AppTheme.accentColor.withAlpha(50)
-              : AppTheme.hintColor.withOpacity(0.2),
+              : AppTheme.hintColor.withAlpha(51), // 0.2 opacity as 51/255
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -129,7 +153,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildText(String text) =>
-      Text(text, style: const TextStyle(fontSize: 16));
+      Text(text, style: const TextStyle(fontSize: 16, color: Colors.white));
 
   Widget _buildImage(String imageUrl) {
     return GestureDetector(
@@ -152,13 +176,14 @@ class MessageBubble extends StatelessWidget {
     if (sendingStatus[message.id] == true) {
       return const Padding(
         padding: EdgeInsets.only(top: 4.0),
-        child: Icon(Icons.access_time, size: 12),
+        child: Icon(Icons.access_time, size: 12, color: Colors.white70),
       );
     }
     if (sendingStatus[message.id] == false) {
       return const Padding(
         padding: EdgeInsets.only(top: 4.0),
-        child: Text('Unsent', style: TextStyle(fontSize: 10)),
+        child: Text('Unsent',
+            style: TextStyle(fontSize: 10, color: Colors.white70)),
       );
     }
     if (showReadIndicator && !sendingStatus.containsKey(message.id)) {
@@ -179,30 +204,6 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
-class UserAvatar extends StatelessWidget {
-  const UserAvatar({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(FirebaseAuth.instance.currentUser!.uid)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const CircleAvatar(radius: 16);
-        final userData = snapshot.data!.data() as Map<String, dynamic>?;
-        final url = userData?['profilePictureUrl'];
-        return CircleAvatar(
-          radius: 16,
-          backgroundImage: url != null ? NetworkImage(url) : null,
-          child: url == null ? const Text('U') : null,
-        );
-      },
-    );
-  }
-}
-
 class VideoMessage extends StatefulWidget {
   final String url;
   const VideoMessage({super.key, required this.url});
@@ -217,7 +218,7 @@ class _VideoMessageState extends State<VideoMessage> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.network(widget.url)
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
       ..initialize().then((_) => setState(() {}));
   }
 
@@ -302,7 +303,7 @@ class _AudioMessageState extends State<AudioMessage> {
       width: 200,
       padding: const EdgeInsets.all(8.0),
       decoration: BoxDecoration(
-        color: AppTheme.hintColor.withOpacity(0.2),
+        color: AppTheme.hintColor.withAlpha(51), // 0.2 opacity as 51/255
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -328,7 +329,7 @@ class _AudioMessageState extends State<AudioMessage> {
           ),
           Text(
             "${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')}",
-            style: const TextStyle(fontSize: 12),
+            style: const TextStyle(fontSize: 12, color: Colors.white70),
           ),
         ],
       ),
@@ -376,7 +377,7 @@ class ReactionsWidget extends StatelessWidget {
                 .map((entry) => ReactionChip(
                       emoji: entry.key,
                       count: entry.value,
-                      onTap: () => _addReaction(docId, entry.key),
+                      onTap: () => _addReaction(context, docId, entry.key),
                     ))
                 .toList(),
           ),
@@ -385,8 +386,11 @@ class ReactionsWidget extends StatelessWidget {
     );
   }
 
-  Future<void> _addReaction(String docId, String emoji) async {
-    final user = FirebaseAuth.instance.currentUser!.displayName;
+  Future<void> _addReaction(
+      BuildContext context, String docId, String emoji) async {
+    final user = FirebaseAuth.instance.currentUser!.displayName ??
+        Provider.of<SquadState>(context, listen: false).displayName ??
+        'User';
     final querySnapshot = await FirebaseFirestore.instance
         .collection('chat')
         .doc(docId)

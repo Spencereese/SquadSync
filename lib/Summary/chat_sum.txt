@@ -1,0 +1,102 @@
+File 1
+File Name: message.dart
+Purpose: Defines a Message data model for chat messages with serialization.
+Key Components:
+Message (class): Holds sender, timestamp, content, reactions.
+fromJson, toJson: Serialization methods.
+copyWith, toString, ==, hashCode: Utility methods.
+Provider Usage: None; pure data model.
+Dependencies: None external.
+Notes:
+JSON keys use shorthand (s, t, c, r) for compactness.
+timestamp is UTC-based.
+File 2
+File Name: chat_screen.dart
+Purpose: Implements a chat UI with an input bar for sending messages and media.
+Key Components:
+ChatInputBar (StatelessWidget): Input bar with text, media, record, and send options.
+ChatScreen (StatelessWidget): Main chat screen with message list and input bar.
+_buildPlusButton, _buildMediaButton, _buildRecordButton, _buildTextField, _buildEmojiButton, _buildSendButton: UI helpers.
+Provider Usage: None directly; relies on callbacks for state updates.
+Dependencies:
+flutter/material.dart, flutter/services.dart.
+Custom: app_theme.dart.
+Notes:
+Uses asset icons with fallbacks (e.g., photo_icon.png).
+Emoji button toggles keyboard via SystemChannels.
+Dummy ListView for messages; real data integration needed.
+File 3
+File Name: chat_service.dart
+Purpose: Handles chat-related backend operations with Firestore and Storage.
+Key Components:
+ChatService (class): Manages message sending, media uploads, and typing status.
+getChatMessages: Streams chat messages from Firestore.
+sendMessage: Sends text/media messages.
+uploadMedia, uploadAudio: Uploads files to Firebase Storage.
+markAsDelivered: Updates message status.
+updateTypingStatus: Updates typing state via SquadState.
+Provider Usage:
+Uses Provider.of<SquadState> for typing status updates.
+Dependencies:
+cloud_firestore, firebase_storage, flutter/material.dart, provider, dart:io.
+Custom: squad_state.dart.
+Notes:
+Typing stream redirects to SquadState.
+Media files stored in chat_media/ and chat_audio/.
+File 4
+File Name: chat_state.dart
+Purpose: Manages chat UI state (typing, recording, uploading, sending) with ChangeNotifier.
+Key Components:
+ChatState (ChangeNotifier): Tracks _typingUser, _isRecording, _isUploading, _sendingStatus.
+setTypingUser, setRecording, setUploading, updateSendingStatus, removeSendingStatus: State setters.
+isMessageSending, clearSendingStatus, reset: State queries and resets.
+Provider Usage: Designed for use with Provider to notify UI of state changes.
+Dependencies:
+flutter/material.dart.
+Notes:
+Validates tempId for sending status.
+Exposes immutable sendingStatus map.
+Resets all state on dispose
+Here are the minimalist summaries for the two provided files:
+File 5
+File Name: chat_screen.dart
+Purpose: Implements a fully functional chat interface with messaging, media, audio, and group options.
+Key Components:
+ChatScreen (StatefulWidget): Main chat screen with yourName param.
+ChatScreenState: Manages chat state, message sending, media/audio uploads, and UI interactions.
+_sendMessage, _sendMedia, _startRecording, _stopRecording, _uploadAudio: Messaging functions.
+_loadChatDetails, _changeChatName, _uploadChatImage: Chat metadata handlers.
+_showChatOptions, _showMessageOptions, _showReactionPicker, _addReaction, _editMessage, _deleteMessage: UI dialogs.
+_scrollToBottom, _updateOnlineStatus: Utility methods.
+Provider Usage:
+Consumer<ChatState>: Updates UI based on typing, recording, uploading states.
+Provider.of<SquadState>: Syncs typing status and online count.
+Dependencies:
+flutter/material.dart, cloud_firestore, firebase_auth, firebase_storage, image_picker, record, provider, flutter_animate, shared_preferences, intl, flutter/services.dart, dart:io.
+Custom: chat_service.dart, chat_state.dart, message_bubble.dart, chat_input_bar.dart, app_theme.dart, setup_screen.dart, squad_state.dart.
+Notes:
+Uses Firestore chat and chat_metadata collections.
+Supports text, image, video, audio messages with reactions.
+Stores online status in users collection.
+Search uses Firestore range query with UTF-8 hack (\uf8ff).
+File 6
+File Name: message_bubble.dart
+Purpose: Renders individual chat messages with text, media, and reactions.
+Key Components:
+MessageBubble (StatelessWidget): Displays message with sender, avatar, timestamp, and status.
+_buildAvatar, _buildSender, _buildTimestamp, _buildMessageContent: UI helpers.
+UserAvatar: Streams user profile picture from Firestore.
+VideoMessage (StatefulWidget): Plays video previews.
+AudioMessage (StatefulWidget): Plays audio with slider control.
+ReactionsWidget: Displays and updates reactions.
+ReactionChip: Renders reaction count chips.
+Provider Usage:
+Optional Consumer<SquadState> (commented out); could integrate for dynamic data.
+Dependencies:
+flutter/material.dart, cloud_firestore, firebase_auth, cached_network_image, flutter_animate, intl, url_launcher, video_player, audioplayers.
+Custom: app_theme.dart, squad_state.dart.
+Notes:
+Media (image/video) opens externally via url_launcher.
+Reactions stored in subcollection chat/{docId}/reactions.
+Audio uses audioplayers with play/pause and seek functionality.
+Avatar defaults to initial if no profile picture.

@@ -1,0 +1,22 @@
+File Name: squad_tab.dart
+Purpose: Displays and manages squad spots, peacock status, and member list with interactive controls.
+Key Components:
+SquadTab (StatelessWidget): Wraps _SquadTabContent.
+_SquadTabContent (StatefulWidget): Main content with state management.
+_buildHeader, _buildSquadSpots, _buildPeacockSpot, _buildActionButtons, _buildSquadMembersList: UI sections.
+_buildSpotCard, _buildSpotInfo, _buildSpotActions: Spot card builders.
+_buildPeacockInfo, _buildPeacockStatus, _buildPeacockTimerRow, _buildPeacockQueueRow: Peacock UI helpers.
+_buildPlayerStatusRow, _buildStatusChip, _getStatusColor: Status display utilities.
+_buildMemberCard: Member list item builder.
+_showSettingsDialog, _showMemberManagementDialog, _showBanDialog, _assignOtherMember, _assignSpot: Dialogs and actions.
+Provider Usage:
+Consumer<SquadState>: Updates UI based on squadState (spots, timers, members, statuses).
+Provider.of<SquadState>: Accesses state for dialogs and peacock status.
+Dependencies:
+flutter/material.dart, provider, dart:async.
+Custom: squad_state.dart, utils.dart.
+Notes:
+Manages 4 squad spots and a peacock spot with claim/lock actions.
+Displays player statuses (e.g., Strutting, Ready) with timers, streaks, and bans.
+Settings include clear spots, reset timers, manage members, and ban options.
+Uses asset icons (e.g., settings_gear.png, sword.png) with dynamic theming.

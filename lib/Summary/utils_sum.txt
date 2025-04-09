@@ -1,0 +1,14 @@
+File 3: utils.dart
+Purpose: Utility functions for formatting timers, building badges, and calculating averages.
+Key Components:
+formatTimer: Converts seconds to MM:SS string with null safety.
+buildBadge: Returns badge widget based on streak thresholds (turkey, duck, chicken).
+_buildBadgeImage: Creates badge image widget with error fallback.
+calculateAverage: Computes average of ratings with error handling.
+Provider Usage: None.
+Dependencies:
+flutter/material.dart.
+Notes:
+Badge thresholds: turkey (3), duck (4), chicken (10).
+Uses asset images with fallback to error icon.
+Average rounded to one decimal place.

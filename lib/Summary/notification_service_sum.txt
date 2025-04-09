@@ -1,0 +1,14 @@
+File Name: notification_service.dart
+Purpose: Manages Firebase Cloud Messaging (FCM) for push notifications.
+Key Components:
+NotificationService (class): Static methods for FCM setup and handling.
+initialize: Requests permission, sets up foreground/background listeners, fetches FCM token.
+_backgroundHandler: Processes background messages.
+sendNotification: Placeholder for sending notifications.
+Provider Usage: None.
+Dependencies:
+firebase_messaging.
+Notes:
+Logs messages and token for debugging.
+iOS requires permission; Android optional.
+Sending notifications requires server-side implementation.

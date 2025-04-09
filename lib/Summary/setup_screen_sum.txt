@@ -1,0 +1,18 @@
+File 1: setup_screen.dart
+Purpose: Handles initial user setup with anonymous Firebase sign-in and name input.
+Key Components:
+SetupScreen (StatefulWidget): Entry screen for app.
+SetupScreenState: Manages sign-in, name storage, and navigation.
+_checkUser: Checks for existing user data and navigates if found.
+_signIn: Signs in anonymously, saves name, and initializes SquadState.
+_navigateToSquadQueue: Routes to SquadQueuePage.
+_showSnackBar: Displays error/success messages.
+Provider Usage:
+Provider.of<SquadState>: Initializes state with user name and context.
+Dependencies:
+flutter/material.dart, firebase_auth, provider, shared_preferences.
+Custom: squad_state.dart, squad_tab/squad_queue_ui.dart.
+Notes:
+Uses SharedPreferences to persist yourName.
+Anonymous auth with display name update.
+Simple UI with text field and button.

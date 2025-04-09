@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
-import 'squad_state.dart'; // Import SquadState
+import 'squad_state.dart';
 import 'setup_screen.dart';
 import 'notification_service.dart';
-import 'chat/chat_state.dart'; // Keep ChatState import
+import 'chat/chat_state.dart';
+import 'app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,17 @@ Future<void> _initializeFirebase() async {
   }
 }
 
+class ThemeProvider with ChangeNotifier {
+  bool _isDarkTheme = true;
+  ThemeData get theme =>
+      _isDarkTheme ? AppTheme.darkTheme : AppTheme.lightTheme;
+
+  void toggleTheme(bool isDark) {
+    _isDarkTheme = isDark;
+    notifyListeners();
+  }
+}
+
 class SquadSyncApp extends StatelessWidget {
   const SquadSyncApp({super.key});
 
@@ -33,119 +45,53 @@ class SquadSyncApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-            create: (context) =>
-                SquadState(yourName: "User")), // Add SquadState
-        ChangeNotifierProvider(
-            create: (context) => ChatState()), // Retain ChatState
+        ChangeNotifierProvider(create: (_) => SquadState()),
+        ChangeNotifierProvider(create: (_) => ChatState()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: FutureBuilder(
-        future: _initializeFirebase(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) => FutureBuilder(
+          future: _initializeFirebase(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return MaterialApp(
+                home: Scaffold(
+                  backgroundColor: Colors.black,
+                  body: const Center(
+                    child: CircularProgressIndicator(color: Colors.cyanAccent),
+                  ),
+                ),
+              );
+            }
+            if (snapshot.hasError) {
+              return MaterialApp(
+                home: Scaffold(
+                  backgroundColor: Colors.black,
+                  body: Center(
+                    child: Text(
+                      'Error: ${snapshot.error}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              );
+            }
             return MaterialApp(
-              home: Scaffold(
-                backgroundColor: Colors.black,
-                body: const Center(
-                  child: CircularProgressIndicator(color: Colors.cyanAccent),
-                ),
+              title: 'SquadSync',
+              theme: themeProvider.theme,
+              home: Builder(
+                builder: (context) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Provider.of<SquadState>(context, listen: false)
+                        .initialize(context);
+                  });
+                  return const SetupScreen();
+                },
               ),
+              debugShowCheckedModeBanner: false,
             );
-          }
-          if (snapshot.hasError) {
-            return MaterialApp(
-              home: Scaffold(
-                backgroundColor: Colors.black,
-                body: Center(
-                  child: Text(
-                    'Error: ${snapshot.error}',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            );
-          }
-          return MaterialApp(
-            title: 'SquadSync',
-            theme: ThemeData(
-              brightness: Brightness.dark,
-              primarySwatch: Colors.indigo,
-              scaffoldBackgroundColor: Colors.transparent,
-              appBarTheme: const AppBarTheme(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.cyanAccent,
-                elevation: 0,
-              ),
-              elevatedButtonTheme: ElevatedButtonThemeData(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyanAccent,
-                  foregroundColor: Colors.black,
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 14,
-                    horizontal: 24,
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              cardTheme: CardTheme(
-                color: Colors.grey[900]!,
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: Colors.cyanAccent.withAlpha(76),
-                    width: 1,
-                  ),
-                ),
-                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              ),
-              textTheme: const TextTheme(
-                bodyMedium: TextStyle(color: Colors.white, fontSize: 16),
-                titleLarge: TextStyle(
-                  color: Colors.cyanAccent,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-                labelLarge: TextStyle(color: Colors.white, fontSize: 16),
-                headlineMedium: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              bottomNavigationBarTheme: BottomNavigationBarThemeData(
-                backgroundColor: Colors.black,
-                selectedItemColor: Colors.cyanAccent,
-                unselectedItemColor: Colors.grey[600],
-                selectedLabelStyle:
-                    const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                unselectedLabelStyle: const TextStyle(fontSize: 12),
-                showUnselectedLabels: true,
-                selectedIconTheme:
-                    const IconThemeData(color: Colors.cyanAccent, size: 24),
-                unselectedIconTheme:
-                    IconThemeData(color: Colors.grey[600], size: 24),
-              ),
-              sliderTheme: const SliderThemeData(
-                activeTrackColor: Colors.cyanAccent,
-                inactiveTrackColor: Colors.grey,
-                thumbColor: Colors.cyanAccent,
-                overlayColor: Colors.cyanAccent,
-                valueIndicatorColor: Colors.cyanAccent,
-                valueIndicatorTextStyle: TextStyle(color: Colors.black),
-              ),
-            ),
-            home: const SetupScreen(),
-            debugShowCheckedModeBanner: false,
-          );
-        },
+          },
+        ),
       ),
     );
   }

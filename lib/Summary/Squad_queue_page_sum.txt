@@ -1,0 +1,20 @@
+File Name: squad_queue_page.dart
+Purpose: Main navigation hub with a swipeable page view and animated bottom nav bar for squad features.
+Key Components:
+SquadQueuePage (StatefulWidget): Root widget with yourName param.
+SquadQueuePageState: Manages page navigation, nav bar animation, and swipe/double-tap interactions.
+_handlePageChange, _onTabTapped: Syncs page index and nav bar visibility.
+_onDragStart, _onDragUpdate, _onDragEnd, _onDoubleTap: Handles swipe and tap gestures.
+_buildPages: Returns list of tab widgets.
+_buildTabItem, _buildPeacockTabItem: Custom nav bar item builders.
+PerformanceHubTabWrapper, PlaceholderTab: Wrapper and placeholder widgets.
+Provider Usage:
+Indirect via child widgets (e.g., ChatScreen, PerformanceHubTab use SquadState).
+Dependencies:
+flutter/material.dart, flutter/services.dart, provider.
+Custom: squad_state.dart, chat/chat_screen.dart, squad_tab.dart, Availability/availability_tab.dart, performance_hub_tab.dart.
+Notes:
+Uses PageController for swipe navigation, starting at index 2 (SquadTab).
+Nav bar slides in/out with 2-second timeout; triggered by swipes, taps, or page changes.
+Gradient background shifts with tab selection; haptic feedback on interactions.
+PlaceholderTab displays static text; other tabs rely on imported implementations.

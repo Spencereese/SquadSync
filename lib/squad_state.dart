@@ -3,12 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../notification_service.dart';
-import '../rating_dialog.dart';
 
 class SquadState with ChangeNotifier {
-  // Core data
   List<String?> squadSpots = List.filled(4, null);
   List<int?> spotTimers = List.filled(4, null);
   List<String> squadMembers = [
@@ -34,29 +31,33 @@ class SquadState with ChangeNotifier {
   List<Map<String, dynamic>> scheduledTimes = [];
   Map<String, List<Map<String, dynamic>>> bans = {};
   Map<String, bool> typing = {};
+  String? _profileImage;
+  Map<String, String?> memberProfileImages = {};
+  Map<String, String?> preferredModes = {};
 
-  // Firebase and utilities
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AudioPlayer _audioPlayer = AudioPlayer();
   static const int _firestoreUpdateInterval = 5;
   DateTime _lastFirestoreUpdate = DateTime.now();
   Timer? _timer;
 
-  // Context and user info
-  BuildContext? context; // Set by initState
-  final String yourName;
+  BuildContext? context;
+  String? _displayName;
 
-  SquadState({required this.yourName});
+  SquadState();
 
-  // Initialization
-  void initState(BuildContext ctx) {
+  String? get displayName => _displayName;
+  String? get profileImage => _profileImage;
+
+  Future<void> initialize(BuildContext ctx) async {
     context = ctx;
-    _initializeAuth();
+    await _initState();
     _initializeData();
     _syncWithFirestore();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       updateSpotTimers();
       updatePeacockTimers();
+      _checkPreferredModes();
       notifyListeners();
     });
   }
@@ -68,11 +69,13 @@ class SquadState with ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> _initializeAuth() async {
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      UserCredential cred = await FirebaseAuth.instance.signInAnonymously();
-      await cred.user!.updateDisplayName(yourName);
+  Future<void> _initState() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      _displayName = userDoc.data()?['displayName'] ?? 'User';
+      _profileImage = userDoc.data()?['profileImage'];
+      notifyListeners();
     }
   }
 
@@ -96,10 +99,11 @@ class SquadState with ChangeNotifier {
       };
       peacockTimers[player] = null;
       typing[player] = false;
+      memberProfileImages[player] = null;
+      preferredModes[player] = null;
     }
   }
 
-  // Firestore sync
   void _syncWithFirestore() {
     _firestore.collection('squad').doc('state').snapshots().listen((snapshot) {
       if (snapshot.exists) {
@@ -137,8 +141,27 @@ class SquadState with ChangeNotifier {
               MapEntry(k, v != null ? Map<String, dynamic>.from(v) : null),
         );
         typing = Map<String, bool>.from(data['typing'] ?? typing);
+        preferredModes =
+            Map<String, String?>.from(data['preferredModes'] ?? preferredModes);
         notifyListeners();
       }
+    });
+
+    _firestore.collection('users').snapshots().listen((snapshot) {
+      for (var doc in snapshot.docs) {
+        String? displayName = doc.data()['displayName'] as String?;
+        if (displayName != null && squadMembers.contains(displayName)) {
+          memberProfileImages[displayName] =
+              doc.data()['profileImage'] as String?;
+          preferredModes[displayName] = doc.data()['preferredMode'] as String?;
+        }
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null && doc.id == user.uid) {
+          _displayName = doc.data()['displayName'] ?? _displayName;
+          _profileImage = doc.data()['profileImage'] ?? _profileImage;
+        }
+      }
+      notifyListeners();
     });
   }
 
@@ -163,6 +186,7 @@ class SquadState with ChangeNotifier {
         'peacockQueue': peacockQueue,
         'members': squadMembers,
         'typing': typing,
+        'preferredModes': preferredModes,
       };
       _firestore
           .collection('squad')
@@ -172,7 +196,160 @@ class SquadState with ChangeNotifier {
     }
   }
 
-  // Typing management for ChatService
+  void updatePreferredMode(String user, String? mode) {
+    preferredModes[user] = mode;
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
+  void updateProfileImage(String url) {
+    _profileImage = url;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _firestore
+          .collection('users')
+          .doc(user.uid)
+          .set({'profileImage': url}, SetOptions(merge: true));
+    }
+    notifyListeners();
+  }
+
+  void updateDisplayName(String name) {
+    _displayName = name;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _firestore
+          .collection('users')
+          .doc(user.uid)
+          .set({'displayName': name}, SetOptions(merge: true));
+    }
+    notifyListeners();
+  }
+
+  void removeFromPeacock(String player) {
+    if (peacockTimers.containsKey(player)) {
+      peacockTimers.remove(player);
+      statuses[player] = 'Offline';
+    } else if (peacockQueue.contains(player)) {
+      peacockQueue.remove(player);
+      statuses[player] = 'Offline';
+    }
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
+  void claimSpot(int index) {
+    if (_displayName != null && !squadSpots.contains(_displayName)) {
+      squadSpots[index] = _displayName;
+      spotTimers[index] = 300;
+      statuses[_displayName!] = 'Ready';
+      // Remove from peacock if present
+      if (peacockTimers.containsKey(_displayName)) {
+        peacockTimers.remove(_displayName);
+      } else if (peacockQueue.contains(_displayName)) {
+        peacockQueue.remove(_displayName);
+      }
+      updateFirestore(force: true);
+      notifyListeners();
+    }
+  }
+
+  void startPeacockTimer(BuildContext dialogContext) {
+    if (_displayName != null &&
+        !squadSpots.contains(_displayName) &&
+        !peacockTimers.containsKey(_displayName) &&
+        !peacockQueue.contains(_displayName)) {
+      if (peacockTimers.length < 4) {
+        peacockTimers[_displayName!] = {
+          'startTime': DateTime.now().millisecondsSinceEpoch,
+          'duration': 3600,
+          'mode': 'Quads'
+        };
+        statuses[_displayName!] = 'Strutting';
+      } else {
+        peacockQueue.add(_displayName!);
+        statuses[_displayName!] = 'Waiting';
+      }
+      updateFirestore(force: true);
+      notifyListeners();
+    } else if (_displayName != null && squadSpots.contains(_displayName)) {
+      // Move from spot to peacock
+      int spotIndex = squadSpots.indexOf(_displayName);
+      if (spotIndex != -1) {
+        squadSpots[spotIndex] = null;
+        spotTimers[spotIndex] = null;
+        statuses[_displayName!] =
+            peacockTimers.length < 4 ? 'Strutting' : 'Waiting';
+        if (peacockTimers.length < 4) {
+          peacockTimers[_displayName!] = {
+            'startTime': DateTime.now().millisecondsSinceEpoch,
+            'duration': 3600,
+            'mode': 'Quads'
+          };
+        } else {
+          peacockQueue.add(_displayName!);
+        }
+        updateFirestore(force: true);
+        notifyListeners();
+      }
+    }
+  }
+
+  void _checkPreferredModes() {
+    int claimedCount = squadSpots.where((spot) => spot != null).length;
+    int availableSpots = 4 - claimedCount;
+    if (availableSpots == 0 || peacockQueue.isEmpty) return;
+
+    List<String> potentialPlayers =
+        squadSpots.where((spot) => spot != null).cast<String>().toList();
+    Map<String, List<String>> modeGroups = {
+      'duos': [],
+      'trios': [],
+      'quads': []
+    };
+
+    for (var player in peacockQueue) {
+      String? mode = preferredModes[player];
+      if (mode != null) {
+        modeGroups[mode]?.add(player);
+        potentialPlayers.add(player);
+      }
+    }
+
+    for (var player in List.from(peacockQueue)) {
+      String? mode = preferredModes[player];
+      if (mode == null) continue;
+
+      int requiredPlayers = mode == 'duos'
+          ? 2
+          : mode == 'trios'
+              ? 3
+              : 4;
+      int currentPlayers = potentialPlayers.length;
+
+      if (currentPlayers >= requiredPlayers && availableSpots > 0) {
+        int spotsToFill =
+            (requiredPlayers - claimedCount).clamp(1, availableSpots);
+        _fillSpots([player], spotsToFill);
+        potentialPlayers.remove(player);
+      }
+    }
+  }
+
+  void _fillSpots(List<String> players, int spotsNeeded) {
+    for (var player in players) {
+      int? freeSpot = squadSpots.indexOf(null);
+      if (freeSpot != -1) {
+        squadSpots[freeSpot] = player;
+        spotTimers[freeSpot] = 300;
+        statuses[player] = 'Ready';
+        peacockQueue.remove(player);
+      }
+    }
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
   void updateTypingStatus(String user, bool isTyping) {
     if (typing[user] != isTyping) {
       typing[user] = isTyping;
@@ -183,12 +360,11 @@ class SquadState with ChangeNotifier {
 
   String? getTypingUser() {
     return typing.entries
-        .where((entry) => entry.value == true)
+        .where((entry) => entry.value)
         .map((entry) => entry.key)
         .firstOrNull;
   }
 
-  // Squad management methods
   void assignSpot(int index) {
     showDialog(
       context: context!,
@@ -210,6 +386,12 @@ class SquadState with ChangeNotifier {
                 squadSpots[index] = selectedPlayer;
                 spotTimers[index] = 300;
                 statuses[selectedPlayer!] = 'Ready';
+                // Remove from peacock if present
+                if (peacockTimers.containsKey(selectedPlayer)) {
+                  peacockTimers.remove(selectedPlayer);
+                } else if (peacockQueue.contains(selectedPlayer)) {
+                  peacockQueue.remove(selectedPlayer);
+                }
                 updateFirestore(force: true);
                 notifyListeners();
                 Navigator.pop(context);
@@ -219,7 +401,7 @@ class SquadState with ChangeNotifier {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel')),
+                child: const Text('Cancel'))
           ],
         );
       },
@@ -232,16 +414,6 @@ class SquadState with ChangeNotifier {
       squadSpots[index] = null;
       spotTimers[index] = null;
       statuses[player] = 'Offline';
-      updateFirestore(force: true);
-      notifyListeners();
-    }
-  }
-
-  void claimSpot(int index) {
-    if (!squadSpots.contains(yourName)) {
-      squadSpots[index] = yourName;
-      spotTimers[index] = 300;
-      statuses[yourName] = 'Ready';
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -329,69 +501,23 @@ class SquadState with ChangeNotifier {
     notifyListeners();
   }
 
-  // Peacock management
-  void startPeacockTimer() {
-    String selectedMode = 'Trios';
-    showDialog(
-      context: context!,
-      builder: (context) => AlertDialog(
-        title: const Text('Select Game Mode'),
-        content: StatefulBuilder(
-          builder: (context, setDialogState) {
-            return DropdownButton<String>(
-              value: selectedMode,
-              items: const [
-                DropdownMenuItem(value: 'Trios', child: Text('Trios')),
-                DropdownMenuItem(value: 'Quads', child: Text('Quads')),
-              ],
-              onChanged: (value) => setDialogState(() => selectedMode = value!),
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              if (!squadSpots.contains(yourName) &&
-                  !peacockTimers.containsKey(yourName) &&
-                  !peacockQueue.contains(yourName)) {
-                if (peacockTimers.length < 4) {
-                  peacockTimers[yourName] = {
-                    'startTime': DateTime.now().millisecondsSinceEpoch,
-                    'duration': 3600,
-                    'mode': selectedMode
-                  };
-                  statuses[yourName] = 'Strutting';
-                } else {
-                  peacockQueue.add(yourName);
-                  statuses[yourName] = 'Waiting';
-                }
-                updateFirestore(force: true);
-                notifyListeners();
-              }
-            },
-            child: const Text('Peacock'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void reupPeacock() {
-    peacockTimers[yourName] = peacockTimers[yourName] != null
-        ? {
-            'startTime': DateTime.now().millisecondsSinceEpoch,
-            'duration': 3600,
-            'mode': peacockTimers[yourName]!['mode'] as String
-          }
-        : {
-            'startTime': DateTime.now().millisecondsSinceEpoch,
-            'duration': 3600,
-            'mode': 'Quads'
-          };
-    statuses[yourName] = 'Strutting';
-    updateFirestore(force: true);
-    notifyListeners();
+    if (_displayName != null) {
+      peacockTimers[_displayName!] = peacockTimers[_displayName!] != null
+          ? {
+              'startTime': DateTime.now().millisecondsSinceEpoch,
+              'duration': 3600,
+              'mode': peacockTimers[_displayName!]!['mode'] as String
+            }
+          : {
+              'startTime': DateTime.now().millisecondsSinceEpoch,
+              'duration': 3600,
+              'mode': 'Quads'
+            };
+      statuses[_displayName!] = 'Strutting';
+      updateFirestore(force: true);
+      notifyListeners();
+    }
   }
 
   void claimPeacockDialog() {
@@ -432,7 +558,7 @@ class SquadState with ChangeNotifier {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+              child: const Text('Cancel'))
         ],
       ),
     );
@@ -497,13 +623,12 @@ class SquadState with ChangeNotifier {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Close')),
+              child: const Text('Close'))
         ],
       ),
     );
   }
 
-  // Ban management
   void addBan(String player, String voter) {
     bans[player] ??= [];
     if (bans[player]!.any((ban) => ban['voter'] == voter)) return;
@@ -514,7 +639,7 @@ class SquadState with ChangeNotifier {
   }
 
   void _startBanTimer(String player) async {
-    await Future.delayed(Duration(hours: 4));
+    await Future.delayed(const Duration(hours: 4));
     if (bans[player] != null) {
       bans[player]!.removeWhere((ban) =>
           DateTime.now().millisecondsSinceEpoch - ban['timestamp'] >=
@@ -533,7 +658,6 @@ class SquadState with ChangeNotifier {
     return 0;
   }
 
-  // Timer updates
   void updateSpotTimers() {
     for (int i = 0; i < spotTimers.length; i++) {
       if (spotTimers[i] != null && spotTimers[i]! > 0) {
@@ -577,7 +701,6 @@ class SquadState with ChangeNotifier {
     return _formatTimer(remaining > 0 ? remaining : 0);
   }
 
-  // Helpers
   String _formatTimer(int? seconds) {
     if (seconds == null) return '00:00';
     int minutes = seconds ~/ 60;

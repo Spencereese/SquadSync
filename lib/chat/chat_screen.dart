@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart' as record_package;
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
@@ -15,13 +14,10 @@ import 'chat_state.dart';
 import 'message_bubble.dart';
 import 'chat_input_bar.dart';
 import '../../app_theme.dart';
-import '../../setup_screen.dart';
 import '../squad_state.dart';
 
 class ChatScreen extends StatefulWidget {
-  final String yourName;
-
-  const ChatScreen({super.key, required this.yourName});
+  const ChatScreen({super.key});
 
   @override
   ChatScreenState createState() => ChatScreenState();
@@ -42,6 +38,7 @@ class ChatScreenState extends State<ChatScreen>
   String _chatName = 'Squad Chat';
   String? _chatImageUrl;
   final ChatService _chatService = ChatService();
+  late SquadState _squadState;
 
   @override
   void initState() {
@@ -50,21 +47,11 @@ class ChatScreenState extends State<ChatScreen>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
+    _squadState = Provider.of<SquadState>(context, listen: false);
     _updateOnlineStatus(true);
     _loadChatDetails();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    Provider.of<SquadState>(context, listen: false).addListener(() {
-      if (mounted) {
-        String? typingUser =
-            Provider.of<SquadState>(context, listen: false).getTypingUser();
-        Provider.of<ChatState>(context, listen: false).setTypingUser(
-          typingUser != null && typingUser != widget.yourName
-              ? typingUser
-              : null,
-        );
-      }
-    });
-    Provider.of<SquadState>(context, listen: false).initState(context);
+    _squadState.addListener(_updateTyping);
   }
 
   @override
@@ -74,14 +61,27 @@ class ChatScreenState extends State<ChatScreen>
     _messageController.dispose();
     _animationController.dispose();
     _audioRecorder.dispose();
+    _squadState.removeListener(_updateTyping);
     super.dispose();
+  }
+
+  void _updateTyping() {
+    if (mounted) {
+      String? typingUser = _squadState.getTypingUser();
+      String? myName = _squadState.displayName;
+      Provider.of<ChatState>(context, listen: false).setTypingUser(
+        typingUser != null && typingUser != myName ? typingUser : null,
+      );
+    }
   }
 
   void _updateOnlineStatus(bool isOnline) {
     String? uid = _auth.currentUser?.uid;
     if (uid != null) {
+      String? displayName = _squadState.displayName;
       _firestore.collection('users').doc(uid).set({
-        'displayName': widget.yourName,
+        'displayName': displayName ?? 'User',
+        'profileImage': _squadState.profileImage, // Sync profile image
         'lastOnline': FieldValue.serverTimestamp(),
         'online': isOnline,
       }, SetOptions(merge: true));
@@ -159,13 +159,15 @@ class ChatScreenState extends State<ChatScreen>
     chatState.updateSendingStatus(tempId, true);
 
     try {
+      String? sender =
+          _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
       await _chatService.sendMessage(
-        sender: _auth.currentUser!.displayName ?? widget.yourName,
+        sender: sender,
         text: _messageController.text,
       );
       chatState.removeSendingStatus(tempId);
       _messageController.clear();
-      await _chatService.updateTypingStatus(context, widget.yourName, false);
+      await _chatService.updateTypingStatus(context, sender, false);
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
@@ -185,12 +187,14 @@ class ChatScreenState extends State<ChatScreen>
       chatState.setUploading(true);
       File file = File(media.path);
       bool isVideo = media.mimeType?.startsWith('video/') ?? false;
+      String sender =
+          _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
       String fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${widget.yourName}.${isVideo ? 'mp4' : 'jpg'}';
+          '${DateTime.now().millisecondsSinceEpoch}_$sender.${isVideo ? 'mp4' : 'jpg'}';
       String downloadUrl =
           await _chatService.uploadMedia(file, fileName, isVideo);
       await _chatService.sendMessage(
-        sender: _auth.currentUser!.displayName ?? widget.yourName,
+        sender: sender,
         text: '',
         videoUrl: isVideo ? downloadUrl : null,
         imageUrl: !isVideo ? downloadUrl : null,
@@ -236,11 +240,12 @@ class ChatScreenState extends State<ChatScreen>
     chatState.setUploading(true);
     try {
       File file = File(_audioPath!);
-      String fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${widget.yourName}.m4a';
+      String sender =
+          _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
+      String fileName = '${DateTime.now().millisecondsSinceEpoch}_$sender.m4a';
       String downloadUrl = await _chatService.uploadAudio(file, fileName);
       await _chatService.sendMessage(
-        sender: _auth.currentUser!.displayName ?? widget.yourName,
+        sender: sender,
         text: '',
         audioUrl: downloadUrl,
       );
@@ -268,32 +273,19 @@ class ChatScreenState extends State<ChatScreen>
         children: [
           ListTile(
             leading: Image.asset('assets/images/info_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for info_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('View Group Info'),
             onTap: () => Navigator.pop(context),
           ),
           ListTile(
             leading: Image.asset('assets/images/notifications_off_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint(
-                  'Asset load error for notifications_off_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Mute Notifications'),
             onTap: () => Navigator.pop(context),
           ),
           ListTile(
             leading: Image.asset('assets/images/delete_sweep_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for delete_sweep_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Clear Chat',
                 style: TextStyle(color: AppTheme.errorColor)),
             onTap: () {
@@ -303,22 +295,14 @@ class ChatScreenState extends State<ChatScreen>
           ),
           ListTile(
             leading: Image.asset('assets/images/exit_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for exit_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Leave Group',
                 style: TextStyle(color: AppTheme.errorColor)),
             onTap: () => Navigator.pop(context),
           ),
           ListTile(
             leading: Image.asset('assets/images/search_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for search_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Search Messages'),
             onTap: () {
               Navigator.pop(context);
@@ -327,11 +311,7 @@ class ChatScreenState extends State<ChatScreen>
           ),
           ListTile(
             leading: Image.asset('assets/images/search_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for search_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Change Chat Name'),
             onTap: () {
               Navigator.pop(context);
@@ -340,11 +320,7 @@ class ChatScreenState extends State<ChatScreen>
           ),
           ListTile(
             leading: Image.asset('assets/images/image_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for image_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Change Chat Image'),
             onTap: () {
               Navigator.pop(context);
@@ -367,7 +343,7 @@ class ChatScreenState extends State<ChatScreen>
   void showSearchBar() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.backgroundColor, // Fixed typo
+      backgroundColor: AppTheme.backgroundColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -448,10 +424,9 @@ class ChatScreenState extends State<ChatScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppTheme.hintColor)),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppTheme.hintColor))),
           TextButton(
             onPressed: () {
               if (nameController.text.isNotEmpty) {
@@ -474,14 +449,12 @@ class ChatScreenState extends State<ChatScreen>
         backgroundColor: AppTheme.backgroundColor,
         title: const Text('Message Details'),
         content: Text(
-          'Sent: ${DateFormat('MMM d, yyyy, HH:mm:ss').format((message['timestamp'] as Timestamp).toDate())}',
-        ),
+            'Sent: ${DateFormat('MMM d, yyyy, HH:mm:ss').format((message['timestamp'] as Timestamp).toDate())}'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child:
-                const Text('OK', style: TextStyle(color: AppTheme.accentColor)),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK',
+                  style: TextStyle(color: AppTheme.accentColor))),
         ],
       ),
     );
@@ -498,11 +471,7 @@ class ChatScreenState extends State<ChatScreen>
         List<Widget> menuItems = [
           ListTile(
             leading: Image.asset('assets/images/copy_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for copy_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Copy'),
             onTap: () async {
               if (mounted) {
@@ -515,21 +484,13 @@ class ChatScreenState extends State<ChatScreen>
           ),
           ListTile(
             leading: Image.asset('assets/images/forward_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for forward_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Forward'),
             onTap: () => Navigator.pop(context),
           ),
           ListTile(
             leading: Image.asset('assets/images/delete_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for delete_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('Delete',
                 style: TextStyle(color: AppTheme.errorColor)),
             onTap: () {
@@ -539,11 +500,7 @@ class ChatScreenState extends State<ChatScreen>
           ),
           ListTile(
             leading: Image.asset('assets/images/emoji_icon.png',
-                width: 24,
-                height: 24, errorBuilder: (context, error, stackTrace) {
-              debugPrint('Asset load error for emoji_icon.png: $error');
-              return const Icon(Icons.error);
-            }),
+                width: 24, height: 24),
             title: const Text('React'),
             onTap: () {
               Navigator.pop(context);
@@ -557,11 +514,7 @@ class ChatScreenState extends State<ChatScreen>
             0,
             ListTile(
               leading: Image.asset('assets/images/edit_icon.png',
-                  width: 24,
-                  height: 24, errorBuilder: (context, error, stackTrace) {
-                debugPrint('Asset load error for edit_icon.png: $error');
-                return const Icon(Icons.error);
-              }),
+                  width: 24, height: 24),
               title: const Text('Edit'),
               onTap: () {
                 Navigator.pop(context);
@@ -571,10 +524,7 @@ class ChatScreenState extends State<ChatScreen>
           );
         }
 
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: menuItems,
-        );
+        return Column(mainAxisSize: MainAxisSize.min, children: menuItems);
       },
     );
   }
@@ -603,7 +553,8 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _addReaction(String docId, String emoji) async {
-    final user = _auth.currentUser!.displayName ?? widget.yourName;
+    final user =
+        _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
     final querySnapshot = await _firestore
         .collection('chat')
         .doc(docId)
@@ -636,10 +587,9 @@ class ChatScreenState extends State<ChatScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppTheme.hintColor)),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppTheme.hintColor))),
           TextButton(
             onPressed: () {
               _editMessage(docId, editController.text);
@@ -662,10 +612,9 @@ class ChatScreenState extends State<ChatScreen>
         content: const Text('Are you sure you want to delete this message?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppTheme.hintColor)),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppTheme.hintColor))),
           TextButton(
             onPressed: () {
               _deleteMessage(docId);
@@ -692,17 +641,24 @@ class ChatScreenState extends State<ChatScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: AppTheme.theme,
-      child: SafeArea(
-        child: Scaffold(
-          body: Container(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            child: Consumer<ChatState>(
-              builder: (context, chatState, _) => Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
+    return SafeArea(
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.black, Colors.indigo],
+            ),
+          ),
+          child: Consumer<ChatState>(
+            builder: (context, chatState, _) => Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: AnimatedOpacity(
+                    opacity: 1.0,
+                    duration: const Duration(milliseconds: 300),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -713,189 +669,182 @@ class ChatScreenState extends State<ChatScreen>
                               if (_chatImageUrl != null)
                                 Padding(
                                   padding: const EdgeInsets.only(right: 8.0),
-                                  child: Image.network(_chatImageUrl!,
-                                      width: 40, height: 40, fit: BoxFit.cover),
+                                  child: CircleAvatar(
+                                    radius: 20,
+                                    backgroundImage:
+                                        NetworkImage(_chatImageUrl!),
+                                  ),
+                                )
+                              else
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 8.0),
+                                  child: CircleAvatar(
+                                    radius: 20,
+                                    child: Icon(Icons.group,
+                                        color: Colors.cyanAccent),
+                                  ),
                                 ),
                               Text(
                                 _chatName,
                                 style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.accentColor,
-                                ),
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.accentColor),
                               ),
                             ],
                           ),
                         ),
-                        Row(
-                          children: [
-                            Consumer<SquadState>(
-                              builder: (context, squadState, _) {
-                                int onlineCount = squadState.statuses.values
-                                    .where((status) =>
-                                        status == 'Strutting' ||
-                                        status == 'Walking' ||
-                                        status == 'Ready')
-                                    .length;
-                                return Text(
-                                  'Online: $onlineCount',
-                                  style: const TextStyle(
-                                      fontSize: 14, color: AppTheme.textColor),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: Image.asset(
-                                  'assets/images/signout_icon.png',
-                                  width: 24,
-                                  height: 24,
-                                  errorBuilder: (context, error, stackTrace) {
-                                debugPrint(
-                                    'Asset load error for signout_icon.png: $error');
-                                return const Icon(Icons.error);
-                              }),
-                              tooltip: 'Sign out',
-                              onPressed: _signOut,
-                            ),
+                        Consumer<SquadState>(
+                          builder: (context, squadState, _) {
+                            int onlineCount = squadState.statuses.values
+                                .where((status) =>
+                                    status == 'Strutting' ||
+                                    status == 'Walking' ||
+                                    status == 'Ready')
+                                .length;
+                            return Text(
+                              'Online: $onlineCount',
+                              style: const TextStyle(
+                                  fontSize: 14, color: AppTheme.textColor),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ).animate().fadeIn(),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 60),
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: _chatService.getChatMessages(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return const Center(
+                              child: Text('Error loading chat'));
+                        }
+                        if (!snapshot.hasData) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+                        var messages = snapshot.data!.docs;
+                        if (messages.isEmpty) {
+                          return const Center(child: Text('No messages yet'));
+                        }
+
+                        Map<String, List<String>> lastReadBy = {};
+                        for (var doc in messages) {
+                          var data = doc.data() as Map<String, dynamic>;
+                          if (data['read'] == true) {
+                            String sender = data['sender'];
+                            String uid = _auth.currentUser!.uid;
+                            if (!lastReadBy.containsKey(sender)) {
+                              lastReadBy[sender] = [];
+                            }
+                            if (!lastReadBy[sender]!.contains(uid)) {
+                              lastReadBy[sender]!.add(uid);
+                            }
+                          }
+                        }
+
+                        return ListView.builder(
+                          controller: _scrollController,
+                          reverse: true,
+                          itemCount: messages.length,
+                          itemBuilder: (context, index) {
+                            var message = messages[index];
+                            String? myName = _squadState.displayName;
+                            bool isMe = message['sender'] ==
+                                (_auth.currentUser!.displayName ??
+                                    myName ??
+                                    'User');
+                            if (!isMe && !(message['delivered'] ?? false)) {
+                              _chatService.markAsDelivered(message.id);
+                            }
+                            bool showSender = !isMe &&
+                                (index == messages.length - 1 ||
+                                    messages[index + 1]['sender'] !=
+                                        message['sender']);
+                            bool showAvatar = !isMe &&
+                                (index == 0 ||
+                                    messages[index - 1]['sender'] !=
+                                        message['sender']);
+                            bool showTimestamp = index > 0 &&
+                                messages[index - 1]['timestamp'] != null &&
+                                message['timestamp'] != null &&
+                                (messages[index - 1]['timestamp'] as Timestamp)
+                                        .toDate()
+                                        .difference(
+                                            (message['timestamp'] as Timestamp)
+                                                .toDate())
+                                        .inMinutes >
+                                    30;
+                            bool showReadIndicator = !isMe &&
+                                lastReadBy[message['sender']]
+                                        ?.contains(_auth.currentUser!.uid) ==
+                                    true;
+
+                            return MessageBubble(
+                              message: message,
+                              isMe: isMe,
+                              showSender: showSender,
+                              showAvatar: showAvatar,
+                              showTimestamp: showTimestamp,
+                              showReadIndicator: showReadIndicator,
+                              onTap: () => _showMessageDetails(message),
+                              onLongPress: () => _showMessageOptions(
+                                context,
+                                message.id,
+                                (message.data()
+                                        as Map<String, dynamic>)['text'] ??
+                                    '',
+                                isMe,
+                              ),
+                              sendingStatus: chatState.sendingStatus,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                if (chatState.typingUser != null)
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 8),
+                        Text('${chatState.typingUser} is typing',
+                            style:
+                                const TextStyle(fontStyle: FontStyle.italic)),
+                        const SizedBox(width: 8),
+                        Animate(
+                          effects: const [
+                            FadeEffect(duration: Duration(milliseconds: 500)),
+                            ScaleEffect(
+                                begin: Offset(0.8, 0.8), end: Offset(1.0, 1.0)),
                           ],
+                          child: const Text('...'),
                         ),
                       ],
                     ),
                   ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 60),
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: _chatService.getChatMessages(),
-                        builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return const Center(
-                                child: Text('Error loading chat'));
-                          }
-                          if (!snapshot.hasData) {
-                            return const Center(
-                                child: CircularProgressIndicator());
-                          }
-                          var messages = snapshot.data!.docs;
-                          if (messages.isEmpty) {
-                            return const Center(child: Text('No messages yet'));
-                          }
-
-                          Map<String, List<String>> lastReadBy = {};
-                          for (var doc in messages) {
-                            var data = doc.data() as Map<String, dynamic>;
-                            if (data['read'] == true) {
-                              String sender = data['sender'];
-                              String uid = _auth.currentUser!.uid;
-                              if (!lastReadBy.containsKey(sender)) {
-                                lastReadBy[sender] = [];
-                              }
-                              if (!lastReadBy[sender]!.contains(uid)) {
-                                lastReadBy[sender]!.add(uid);
-                              }
-                            }
-                          }
-
-                          return ListView.builder(
-                            controller: _scrollController,
-                            reverse: true,
-                            itemCount: messages.length,
-                            itemBuilder: (context, index) {
-                              var message = messages[index];
-                              bool isMe = message['sender'] ==
-                                  (_auth.currentUser!.displayName ??
-                                      widget.yourName);
-                              if (!isMe && !(message['delivered'] ?? false)) {
-                                _chatService.markAsDelivered(message.id);
-                              }
-                              bool showSender = !isMe &&
-                                  (index == messages.length - 1 ||
-                                      messages[index + 1]['sender'] !=
-                                          message['sender']);
-                              bool showAvatar = !isMe &&
-                                  (index == 0 ||
-                                      messages[index - 1]['sender'] !=
-                                          message['sender']);
-                              bool showTimestamp = index > 0 &&
-                                  messages[index - 1]['timestamp'] != null &&
-                                  message['timestamp'] != null &&
-                                  (messages[index - 1]['timestamp']
-                                              as Timestamp)
-                                          .toDate()
-                                          .difference((message['timestamp']
-                                                  as Timestamp)
-                                              .toDate())
-                                          .inMinutes >
-                                      30;
-                              bool showReadIndicator = !isMe &&
-                                  lastReadBy[message['sender']]
-                                          ?.contains(_auth.currentUser!.uid) ==
-                                      true;
-
-                              return MessageBubble(
-                                message: message,
-                                isMe: isMe,
-                                showSender: showSender,
-                                showAvatar: showAvatar,
-                                showTimestamp: showTimestamp,
-                                showReadIndicator: showReadIndicator,
-                                onTap: () => _showMessageDetails(message),
-                                onLongPress: () => _showMessageOptions(
-                                  context,
-                                  message.id,
-                                  (message.data()
-                                          as Map<String, dynamic>)['text'] ??
-                                      '',
-                                  isMe,
-                                ),
-                                sendingStatus: chatState.sendingStatus,
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  if (chatState.typingUser != null)
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 8),
-                          Text('${chatState.typingUser} is typing',
-                              style:
-                                  const TextStyle(fontStyle: FontStyle.italic)),
-                          const SizedBox(width: 8),
-                          Animate(
-                            effects: const [
-                              FadeEffect(duration: Duration(milliseconds: 500)),
-                              ScaleEffect(
-                                  begin: Offset(0.8, 0.8),
-                                  end: Offset(1.0, 1.0)),
-                            ],
-                            child: const Text('...'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ChatInputBar(
-                    controller: _messageController,
-                    isRecording: chatState.isRecording,
-                    isUploading: chatState.isUploading,
-                    onSend: _sendMessage,
-                    onMedia: _sendMedia,
-                    onRecordStart: _startRecording,
-                    onRecordStop: _stopRecording,
-                    onPlusMenu: () {
-                      debugPrint('Plus menu tapped');
-                      _showPlusMenu(context);
-                    },
-                    onTextChanged: (value) => _chatService.updateTypingStatus(
-                        context, widget.yourName, value.isNotEmpty),
-                  ),
-                ],
-              ),
+                ChatInputBar(
+                  controller: _messageController,
+                  isRecording: chatState.isRecording,
+                  isUploading: chatState.isUploading,
+                  onSend: _sendMessage,
+                  onMedia: _sendMedia,
+                  onRecordStart: _startRecording,
+                  onRecordStop: _stopRecording,
+                  onPlusMenu: () => _showPlusMenu(context),
+                  onTextChanged: (value) {
+                    String? sender = _squadState.displayName ?? 'User';
+                    _chatService.updateTypingStatus(
+                        context, sender, value.isNotEmpty);
+                  },
+                ),
+              ],
             ),
           ),
         ),
@@ -912,42 +861,20 @@ class ChatScreenState extends State<ChatScreen>
           ListTile(
             leading: const Icon(Icons.file_present),
             title: const Text('Share a file'),
-            onTap: () {
-              Navigator.pop(context);
-              debugPrint('Share a file selected');
-            },
+            onTap: () => Navigator.pop(context),
           ),
           ListTile(
             leading: const Icon(Icons.location_on),
             title: const Text('Location'),
-            onTap: () {
-              Navigator.pop(context);
-              debugPrint('Location selected');
-            },
+            onTap: () => Navigator.pop(context),
           ),
           ListTile(
             leading: const Icon(Icons.poll),
             title: const Text('Poll'),
-            onTap: () {
-              Navigator.pop(context);
-              debugPrint('Poll selected');
-            },
+            onTap: () => Navigator.pop(context),
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _signOut() async {
-    await _auth.signOut();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('yourName');
-    if (mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const SetupScreen()),
-        (route) => false,
-      );
-    }
   }
 }

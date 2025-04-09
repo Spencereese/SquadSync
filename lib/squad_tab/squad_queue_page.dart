@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import '../squad_state.dart'; // Import SquadState
 import '../chat/chat_screen.dart';
 import 'squad_tab.dart';
 import '../Availability/availability_tab.dart';
 import 'package:cod_squad_app/performance_hub_tab.dart';
+import '../settings_tab.dart'; // Import SettingsTab
 
 void main() {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -16,8 +15,7 @@ void main() {
 }
 
 class SquadQueuePage extends StatefulWidget {
-  final String yourName;
-  const SquadQueuePage({super.key, required this.yourName});
+  const SquadQueuePage({super.key});
 
   @override
   SquadQueuePageState createState() => SquadQueuePageState();
@@ -195,26 +193,20 @@ class SquadQueuePageState extends State<SquadQueuePage> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     _buildTabItem(
-                      iconPath: 'assets/images/performance.png',
-                      index: 0,
-                      size: 28,
-                    ),
+                        iconPath: 'assets/images/performance.png',
+                        index: 0,
+                        size: 28),
                     _buildTabItem(
-                      iconPath: 'assets/images/availability.png',
-                      index: 1,
-                      size: 28,
-                    ),
+                        iconPath: 'assets/images/availability.png',
+                        index: 1,
+                        size: 28),
                     _buildPeacockTabItem(),
                     _buildTabItem(
-                      iconPath: 'assets/images/chat.png',
-                      index: 3,
-                      size: 28,
-                    ),
+                        iconPath: 'assets/images/chat.png', index: 3, size: 28),
                     _buildTabItem(
-                      iconPath: 'assets/images/placeholder.png',
-                      index: 4,
-                      size: 28,
-                    ),
+                        iconPath: 'assets/images/settings.png',
+                        index: 4,
+                        size: 28),
                   ],
                 ),
               ),
@@ -227,19 +219,16 @@ class SquadQueuePageState extends State<SquadQueuePage> {
 
   List<Widget> _buildPages(BuildContext context) {
     return [
-      const PerformanceHubTab(), // Already uses Consumer<SquadState>
-      const AvailabilityTab(), // Assuming it’s updated separately
-      const SquadTab(), // Assuming it’s updated separately
-      ChatScreen(yourName: widget.yourName),
-      const PlaceholderTab(),
+      const PerformanceHubTab(),
+      const AvailabilityTab(),
+      const SquadTab(),
+      const ChatScreen(),
+      SettingsTab(), // Removed 'const' since SettingsTab is StatefulWidget
     ];
   }
 
-  Widget _buildTabItem({
-    required String iconPath,
-    required int index,
-    required double size,
-  }) {
+  Widget _buildTabItem(
+      {required String iconPath, required int index, required double size}) {
     bool isSelected = _selectedIndex == index;
     return GestureDetector(
       onTap: () => _onTabTapped(index),
@@ -325,26 +314,6 @@ class PerformanceHubTabWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const PerformanceHubTab(); // Simplified, uses Consumer internally
-  }
-}
-
-class PlaceholderTab extends StatelessWidget {
-  const PlaceholderTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        'we can stop them\nwe can make them suffer',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: Colors.white.withOpacity(0.7),
-          fontSize: 24,
-          fontWeight: FontWeight.w300,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
+    return const PerformanceHubTab();
   }
 }

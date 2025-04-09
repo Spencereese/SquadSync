@@ -1,0 +1,17 @@
+File Name: schedule_dialog.dart
+Purpose: Provides a dialog for scheduling availability with time, date, recurrence, invite, and alert options.
+Key Components:
+ScheduleDialog (StatefulWidget): Dialog widget with selectedDay input.
+_ScheduleDialogState: Manages state for time pickers, recurrence, invites, and alerts.
+_roundToNearestFive: Rounds minutes to nearest 5.
+_fetchSquadMembers: Fetches or sets default squad members from Firestore.
+_buildSectionCard, _buildSwitchRow, _buildTapRow, _buildTimePickerRow: UI helpers.
+_showDatePicker, _showRecurringDaysPicker, _showInvitePicker, _showAlertPicker: Picker dialogs.
+_buildActionButtons: Cancel/Set buttons returning scheduling data.
+Provider Usage: None directly; returns data for AvailabilityTab to process with SquadState.
+Dependencies:
+flutter/material.dart, flutter/cupertino.dart, intl, cloud_firestore.
+Notes:
+Uses Firestore squad/state doc for member list; defaults to hardcoded list if absent.
+Time pickers round to 5-minute intervals; supports all-day toggle.
+Recurrence is weekly if any day selected; returns data as a map for parent processing.

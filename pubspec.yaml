@@ -68,8 +68,14 @@ flutter:
     - assets/images/squad.png
     - assets/images/chat.png
     - assets/images/placeholder.png
+    - assets/images/settings_gear.png
     - assets/images/check.png
+    - assets/images/sword.png
+    - assets/images/clear_all.png
+    - assets/images/timer_off.png
+    - assets/images/people_group.png
     - assets/images/close.png
+    - assets/images/timer_off.png
     - assets/images/info_icon.png
     - assets/images/notifications_off_icon.png
     - assets/images/delete_sweep_icon.png
@@ -84,7 +90,6 @@ flutter:
     - assets/images/done_all_icon.png
     - assets/images/play_icon.png
     - assets/images/pause_icon.png
-    # Added missing assets
     - assets/images/clear_icon.png
     - assets/images/mute_icon.png
     - assets/images/leave_icon.png

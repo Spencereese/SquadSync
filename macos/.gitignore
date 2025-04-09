@@ -3,5 +3,15 @@
 **/Pods/
 
 # Xcode-related
-**/dgph
+**.dgph
 **/xcuserdata/
+
+# Sensitive files (API keys and configuration)
+ios/Runner/GoogleService-Info.plist
+android/app/google-services.json
+*.key
+*.p12
+*.pem
+*.env
+secrets.json
+config.json

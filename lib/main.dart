@@ -3,11 +3,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:app_links/app_links.dart'; // Using app_links
+import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'squad_state.dart';
 import 'chat/chat_screen.dart';
-import 'setup_screen.dart'; // Import SetupScreen
+import 'setup_screen.dart';
 import 'notification_service.dart';
 import 'chat/chat_state.dart';
 import 'app_theme.dart';
@@ -51,13 +51,13 @@ class SquadSyncApp extends StatefulWidget {
 
 class _SquadSyncAppState extends State<SquadSyncApp> {
   static const platform = MethodChannel('com.example.codSquadApp/siri');
-  late AppLinks _appLinks; // Instance of AppLinks
+  late AppLinks _appLinks;
   StreamSubscription<String?>? _sub;
 
   @override
   void initState() {
     super.initState();
-    _appLinks = AppLinks(); // Initialize AppLinks
+    _appLinks = AppLinks();
     _initDeepLinks();
     _initSiriShortcuts();
   }
@@ -138,7 +138,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                 ),
               );
             }
-            if (snapshot upwardError) {
+            if (snapshot.hasError) {
               return MaterialApp(
                 home: Scaffold(
                   backgroundColor: Colors.black,
@@ -160,7 +160,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                     Provider.of<SquadState>(context, listen: false)
                         .initialize(context);
                   });
-                  return const SetupScreen(); // Use SetupScreen as home
+                  return const SetupScreen();
                 },
               ),
               debugShowCheckedModeBanner: false,

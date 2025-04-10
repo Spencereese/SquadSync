@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Manages the state of a chat interface with typing, recording, and message sending status.
 class ChatState extends ChangeNotifier {
-  // Private state variables
   String? _typingUser;
   bool _isRecording = false;
   bool _isUploading = false;
   final Map<String, bool> _sendingStatus = {};
+  DocumentSnapshot? _replyToMessage; // Added for inline replies
 
-  // Public getters
   String? get typingUser => _typingUser;
   bool get isRecording => _isRecording;
   bool get isUploading => _isUploading;
   Map<String, bool> get sendingStatus => Map.unmodifiable(_sendingStatus);
   bool get hasPendingMessages => _sendingStatus.isNotEmpty;
+  DocumentSnapshot? get replyToMessage => _replyToMessage;
 
-  /// Sets the currently typing user and notifies listeners.
-  /// [user] can be null to indicate no one is typing.
   void setTypingUser(String? user) {
     if (_typingUser != user) {
       _typingUser = user;
@@ -24,8 +22,6 @@ class ChatState extends ChangeNotifier {
     }
   }
 
-  /// Updates recording state and notifies listeners.
-  /// [value] indicates whether recording is active.
   void setRecording(bool value) {
     if (_isRecording != value) {
       _isRecording = value;
@@ -33,8 +29,11 @@ class ChatState extends ChangeNotifier {
     }
   }
 
-  /// Updates uploading state and notifies listeners.
-  /// [value] indicates whether uploading is in progress.
+  void toggleRecording() {
+    _isRecording = !_isRecording;
+    notifyListeners();
+  }
+
   void setUploading(bool value) {
     if (_isUploading != value) {
       _isUploading = value;
@@ -42,38 +41,41 @@ class ChatState extends ChangeNotifier {
     }
   }
 
-  /// Updates the sending status for a message with given [tempId].
-  /// [isSending] indicates whether the message is currently sending.
-  /// Throws [ArgumentError] if tempId is empty or null.
   void updateSendingStatus(String tempId, bool isSending) {
-    _validateTempId(tempId);
-
-    if (isSending) {
-      _sendingStatus[tempId] = true;
-    } else {
-      _sendingStatus.remove(tempId);
-    }
-    notifyListeners();
-  }
-
-  /// Removes sending status for a specific message.
-  /// [tempId] is the temporary identifier of the message to remove.
-  /// Throws [ArgumentError] if tempId is empty or null.
-  void removeSendingStatus(String tempId) {
-    _validateTempId(tempId);
-    if (_sendingStatus.remove(tempId) != null) {
+    try {
+      _validateTempId(tempId);
+      if (isSending) {
+        _sendingStatus[tempId] = true;
+      } else {
+        _sendingStatus.remove(tempId);
+      }
       notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating sending status: $e');
     }
   }
 
-  /// Checks if a specific message is in sending state.
-  /// Returns false if the message ID doesn't exist.
-  bool isMessageSending(String tempId) {
-    _validateTempId(tempId);
-    return _sendingStatus[tempId] ?? false;
+  void removeSendingStatus(String tempId) {
+    try {
+      _validateTempId(tempId);
+      if (_sendingStatus.remove(tempId) != null) {
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error removing sending status: $e');
+    }
   }
 
-  /// Clears all sending status entries.
+  bool isMessageSending(String tempId) {
+    try {
+      _validateTempId(tempId);
+      return _sendingStatus[tempId] ?? false;
+    } catch (e) {
+      debugPrint('Error checking sending status: $e');
+      return false;
+    }
+  }
+
   void clearSendingStatus() {
     if (_sendingStatus.isNotEmpty) {
       _sendingStatus.clear();
@@ -81,19 +83,30 @@ class ChatState extends ChangeNotifier {
     }
   }
 
-  /// Resets all chat state to initial values.
   void reset() {
     _typingUser = null;
     _isRecording = false;
     _isUploading = false;
     _sendingStatus.clear();
+    _replyToMessage = null; // Reset reply state
     notifyListeners();
   }
 
-  // Private validation helper
+  void setReplyToMessage(DocumentSnapshot? message) {
+    if (_replyToMessage != message) {
+      _replyToMessage = message;
+      notifyListeners();
+    }
+  }
+
+  void scrollToMessage(String messageId) {
+    // This will be called by MessageList to handle scrolling
+    notifyListeners(); // Notify MessageList to perform the scroll
+  }
+
   void _validateTempId(String tempId) {
-    if (tempId.isEmpty) {
-      throw ArgumentError('tempId cannot be empty');
+    if (tempId.isEmpty || tempId.trim().isEmpty) {
+      throw ArgumentError('tempId cannot be empty or null');
     }
   }
 

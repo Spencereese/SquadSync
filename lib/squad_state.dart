@@ -18,7 +18,7 @@ class SquadState with ChangeNotifier {
     "Levi",
     "Daniel"
   ];
-  Map<String, String> statuses = {"Alex": "Walking", "Spencer": "Walking"};
+  Map<String, String> statuses = {};
   Map<String, int> currentStreaks = {};
   Map<String, int> highestStreaks = {};
   Map<String, Map<String, dynamic>?> peacockTimers = {};
@@ -27,8 +27,7 @@ class SquadState with ChangeNotifier {
   Map<String, int> complaints = {};
   Map<String, Set<String>> achievements = {};
   Map<String, Map<String, List<int>>> dailyRatings = {};
-  Map<String, Map<String, List<int>>> allTimeRatings =
-      {}; // Fixed: Changed [] to {}
+  Map<String, Map<String, List<int>>> allTimeRatings = {};
   List<Map<String, dynamic>> scheduledTimes = [];
   Map<String, List<Map<String, dynamic>>> bans = {};
   Map<String, bool> typing = {};
@@ -40,6 +39,7 @@ class SquadState with ChangeNotifier {
   final AudioPlayer _audioPlayer = AudioPlayer();
   static const int _firestoreUpdateInterval = 5;
   DateTime _lastFirestoreUpdate = DateTime.now();
+  Set<String> _changedFields = {};
   Timer? _timer;
 
   BuildContext? context;
@@ -83,17 +83,18 @@ class SquadState with ChangeNotifier {
 
   void _initializeData() {
     for (var player in squadMembers) {
-      currentStreaks[player] ??= 0;
-      highestStreaks[player] ??= 0;
-      complaints[player] ??= 0;
-      achievements[player] ??= {};
-      dailyRatings[player] ??= {
+      statuses[player] = 'Offline'; // Default all to Offline
+      currentStreaks[player] = 0;
+      highestStreaks[player] = 0;
+      complaints[player] = 0;
+      achievements[player] = {};
+      dailyRatings[player] = {
         "Vibes": [],
         "Comms": [],
         "Gunny": [],
         "Wingman": []
       };
-      allTimeRatings[player] ??= {
+      allTimeRatings[player] = {
         "Vibes": [],
         "Comms": [],
         "Gunny": [],
@@ -104,17 +105,31 @@ class SquadState with ChangeNotifier {
       memberProfileImages[player] = null;
       preferredModes[player] = null;
     }
+    // Set initial statuses for specific players
+    statuses["Alex"] = "Walking";
+    statuses["Spencer"] = "Walking";
   }
 
   void _syncWithFirestore() {
     _firestore.collection('squad').doc('state').snapshots().listen((snapshot) {
       if (snapshot.exists) {
         var data = snapshot.data()!;
+        debugPrint("Raw Firestore data: ${data.toString()}");
         squadSpots = List<String?>.from(data['squadSpots'] ?? squadSpots);
         spotTimers =
             List<Map<String, dynamic>?>.from(data['spotTimers'] ?? spotTimers);
         squadMembers = List<String>.from(data['members'] ?? squadMembers);
-        statuses = Map<String, String>.from(data['statuses'] ?? statuses);
+        var firestoreStatuses =
+            Map<String, String>.from(data['statuses'] ?? {});
+        statuses = Map<String, String>.from(firestoreStatuses);
+        // Validate statuses against actual state
+        for (var player in squadMembers) {
+          if (!squadSpots.contains(player) &&
+              !peacockTimers.containsKey(player) &&
+              !peacockQueue.contains(player)) {
+            statuses[player] = 'Offline';
+          }
+        }
         currentStreaks =
             Map<String, int>.from(data['currentStreaks'] ?? currentStreaks);
         highestStreaks =
@@ -129,26 +144,47 @@ class SquadState with ChangeNotifier {
         );
         dailyRatings =
             Map<String, dynamic>.from(data['dailyRatings'] ?? {}).map(
-          (k, v) => MapEntry(k, Map<String, List<int>>.from(v)),
+          (k, v) => MapEntry(
+            k,
+            Map<String, dynamic>.from(v).map(
+              (innerKey, innerValue) => MapEntry(
+                innerKey,
+                (innerValue as List<dynamic>).map((e) => e as int).toList(),
+              ),
+            ),
+          ),
         );
         allTimeRatings =
             Map<String, dynamic>.from(data['allTimeRatings'] ?? {}).map(
-          (k, v) => MapEntry(k, Map<String, List<int>>.from(v)),
-        );
-        peacockQueue = List<String>.from(data['peacockQueue'] ?? []);
-        peacockTimers =
-            Map<String, dynamic>.from(data['peacockTimers'] ?? {}).map(
           (k, v) => MapEntry(
             k,
-            v != null && v is Map ? Map<String, dynamic>.from(v) : null,
+            Map<String, dynamic>.from(v).map(
+              (innerKey, innerValue) => MapEntry(
+                innerKey,
+                (innerValue as List<dynamic>).map((e) => e as int).toList(),
+              ),
+            ),
           ),
         );
+        peacockQueue = List<String>.from(data['peacockQueue'] ?? []);
+        var rawPeacockTimers = data['peacockTimers'] ?? {};
+        peacockTimers = {};
+        if (rawPeacockTimers is Map) {
+          rawPeacockTimers.forEach((key, value) {
+            if (value is Map) {
+              peacockTimers[key.toString()] = Map<String, dynamic>.from(value);
+            }
+          });
+        }
+        debugPrint("Parsed peacockTimers: $peacockTimers");
+        debugPrint("Parsed peacockQueue: $peacockQueue");
         typing = Map<String, bool>.from(data['typing'] ?? typing);
         preferredModes =
             Map<String, String?>.from(data['preferredModes'] ?? preferredModes);
-        debugPrint(
-            "Firestore sync: peacockTimers=$peacockTimers, peacockQueue=$peacockQueue");
+        _changedFields.clear();
         notifyListeners();
+      } else {
+        debugPrint("Firestore snapshot does not exist");
       }
     });
 
@@ -180,38 +216,71 @@ class SquadState with ChangeNotifier {
     });
   }
 
-  void updateFirestore({bool force = false}) {
+  void _markFieldChanged(String field) {
+    _changedFields.add(field);
+  }
+
+  Future<void> updateFirestoreAsync({bool force = false}) async {
     final now = DateTime.now();
     if (force ||
         now.difference(_lastFirestoreUpdate).inSeconds >=
             _firestoreUpdateInterval) {
-      final data = {
-        'squadSpots': squadSpots,
-        'spotTimers': spotTimers,
-        'statuses': statuses,
-        'currentStreaks': currentStreaks,
-        'highestStreaks': highestStreaks,
-        'gameHistory': gameHistory,
-        'complaints': complaints,
-        'achievements': achievements.map((k, v) => MapEntry(k, v.toList())),
-        'dailyRatings': dailyRatings,
-        'allTimeRatings': allTimeRatings,
-        'peacockTimers': peacockTimers,
-        'peacockQueue': peacockQueue,
-        'members': squadMembers,
-        'typing': typing,
-        'preferredModes': preferredModes,
-      };
-      _firestore
-          .collection('squad')
-          .doc('state')
-          .set(data, SetOptions(merge: true));
-      _lastFirestoreUpdate = now;
+      final data = <String, dynamic>{};
+      if (_changedFields.contains('squadSpots') || force)
+        data['squadSpots'] = squadSpots;
+      if (_changedFields.contains('spotTimers') || force)
+        data['spotTimers'] = spotTimers;
+      if (_changedFields.contains('statuses') || force)
+        data['statuses'] = statuses;
+      if (_changedFields.contains('currentStreaks') || force)
+        data['currentStreaks'] = currentStreaks;
+      if (_changedFields.contains('highestStreaks') || force)
+        data['highestStreaks'] = highestStreaks;
+      if (_changedFields.contains('gameHistory') || force)
+        data['gameHistory'] = gameHistory;
+      if (_changedFields.contains('complaints') || force)
+        data['complaints'] = complaints;
+      if (_changedFields.contains('achievements') || force) {
+        data['achievements'] =
+            achievements.map((k, v) => MapEntry(k, v.toList()));
+      }
+      if (_changedFields.contains('dailyRatings') || force)
+        data['dailyRatings'] = dailyRatings;
+      if (_changedFields.contains('allTimeRatings') || force)
+        data['allTimeRatings'] = allTimeRatings;
+      if (_changedFields.contains('peacockTimers') || force)
+        data['peacockTimers'] = peacockTimers;
+      if (_changedFields.contains('peacockQueue') || force)
+        data['peacockQueue'] = peacockQueue;
+      if (_changedFields.contains('members') || force)
+        data['members'] = squadMembers;
+      if (_changedFields.contains('typing') || force) data['typing'] = typing;
+      if (_changedFields.contains('preferredModes') || force)
+        data['preferredModes'] = preferredModes;
+
+      if (data.isNotEmpty) {
+        try {
+          await _firestore
+              .collection('squad')
+              .doc('state')
+              .set(data, SetOptions(merge: true));
+          debugPrint("Firestore updated with: $data");
+          _changedFields.clear();
+          _lastFirestoreUpdate = now;
+        } catch (e) {
+          debugPrint("Firestore update failed: $e");
+        }
+      }
     }
+  }
+
+  void updateFirestore({bool force = false}) {
+    updateFirestoreAsync(force: force);
   }
 
   void updatePreferredMode(String user, String? mode) {
     preferredModes[user] = mode;
+    _markFieldChanged('preferredModes');
     updateFirestore(force: true);
     notifyListeners();
   }
@@ -240,15 +309,19 @@ class SquadState with ChangeNotifier {
     notifyListeners();
   }
 
-  void removeFromPeacock(String player) {
+  Future<void> removeFromPeacock(String player) async {
     if (peacockTimers.containsKey(player)) {
       peacockTimers.remove(player);
       statuses[player] = 'Offline';
+      _markFieldChanged('peacockTimers');
+      _markFieldChanged('statuses');
     } else if (peacockQueue.contains(player)) {
       peacockQueue.remove(player);
       statuses[player] = 'Offline';
+      _markFieldChanged('peacockQueue');
+      _markFieldChanged('statuses');
     }
-    updateFirestore(force: true);
+    await updateFirestoreAsync(force: true);
     notifyListeners();
   }
 
@@ -262,9 +335,14 @@ class SquadState with ChangeNotifier {
       statuses[_displayName!] = 'Ready';
       if (peacockTimers.containsKey(_displayName)) {
         peacockTimers.remove(_displayName);
+        _markFieldChanged('peacockTimers');
       } else if (peacockQueue.contains(_displayName)) {
         peacockQueue.remove(_displayName);
+        _markFieldChanged('peacockQueue');
       }
+      _markFieldChanged('squadSpots');
+      _markFieldChanged('spotTimers');
+      _markFieldChanged('statuses');
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -282,9 +360,13 @@ class SquadState with ChangeNotifier {
           'mode': 'Quads'
         };
         statuses[_displayName!] = 'Strutting';
+        _markFieldChanged('peacockTimers');
+        _markFieldChanged('statuses');
       } else {
         peacockQueue.add(_displayName!);
         statuses[_displayName!] = 'Waiting';
+        _markFieldChanged('peacockQueue');
+        _markFieldChanged('statuses');
       }
       updateFirestore(force: true);
       notifyListeners();
@@ -300,10 +382,15 @@ class SquadState with ChangeNotifier {
             'mode': 'Quads'
           };
           statuses[_displayName!] = 'Strutting';
+          _markFieldChanged('peacockTimers');
         } else {
           peacockQueue.add(_displayName!);
           statuses[_displayName!] = 'Waiting';
+          _markFieldChanged('peacockQueue');
         }
+        _markFieldChanged('squadSpots');
+        _markFieldChanged('spotTimers');
+        _markFieldChanged('statuses');
         updateFirestore(force: true);
         notifyListeners();
       }
@@ -362,6 +449,10 @@ class SquadState with ChangeNotifier {
         };
         statuses[player] = 'Ready';
         peacockQueue.remove(player);
+        _markFieldChanged('squadSpots');
+        _markFieldChanged('spotTimers');
+        _markFieldChanged('statuses');
+        _markFieldChanged('peacockQueue');
       }
     }
     updateFirestore(force: true);
@@ -371,6 +462,7 @@ class SquadState with ChangeNotifier {
   void updateTypingStatus(String user, bool isTyping) {
     if (typing[user] != isTyping) {
       typing[user] = isTyping;
+      _markFieldChanged('typing');
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -392,9 +484,14 @@ class SquadState with ChangeNotifier {
     statuses[player] = 'Ready';
     if (peacockTimers.containsKey(player)) {
       peacockTimers.remove(player);
+      _markFieldChanged('peacockTimers');
     } else if (peacockQueue.contains(player)) {
       peacockQueue.remove(player);
+      _markFieldChanged('peacockQueue');
     }
+    _markFieldChanged('squadSpots');
+    _markFieldChanged('spotTimers');
+    _markFieldChanged('statuses');
     updateFirestore(force: true);
     notifyListeners();
   }
@@ -411,6 +508,9 @@ class SquadState with ChangeNotifier {
       } else {
         statuses[player] = 'Offline';
       }
+      _markFieldChanged('squadSpots');
+      _markFieldChanged('spotTimers');
+      _markFieldChanged('statuses');
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -420,6 +520,8 @@ class SquadState with ChangeNotifier {
     if (spotTimers[index] != null) {
       spotTimers[index] = null;
       statuses[squadSpots[index]!] = 'Walking';
+      _markFieldChanged('spotTimers');
+      _markFieldChanged('statuses');
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -446,6 +548,9 @@ class SquadState with ChangeNotifier {
     _audioPlayer.play(AssetSource('sounds/victory.mp3'));
     NotificationService.sendNotification(
         'Squad Win!', '${walkingPlayers.join(', ')} won a game!');
+    _markFieldChanged('currentStreaks');
+    _markFieldChanged('gameHistory');
+    _markFieldChanged('achievements');
     updateFirestore(force: true);
     notifyListeners();
   }
@@ -465,6 +570,8 @@ class SquadState with ChangeNotifier {
       'timestamp': DateTime.now().toIso8601String(),
       'ratings': {},
     });
+    _markFieldChanged('currentStreaks');
+    _markFieldChanged('gameHistory');
     updateFirestore(force: true);
     notifyListeners();
   }
@@ -477,8 +584,15 @@ class SquadState with ChangeNotifier {
     for (var member in squadMembers) {
       if (statuses[member] == 'Strutting' || statuses[member] == 'Walking') {
         statuses[member] = 'Ready';
+      } else {
+        statuses[member] = 'Offline';
       }
     }
+    _markFieldChanged('squadSpots');
+    _markFieldChanged('spotTimers');
+    _markFieldChanged('peacockTimers');
+    _markFieldChanged('peacockQueue');
+    _markFieldChanged('statuses');
     updateFirestore(force: true);
     notifyListeners();
   }
@@ -498,6 +612,8 @@ class SquadState with ChangeNotifier {
         timer['duration'] = 3600;
       }
     });
+    _markFieldChanged('spotTimers');
+    _markFieldChanged('peacockTimers');
     notifyListeners();
   }
 
@@ -515,6 +631,8 @@ class SquadState with ChangeNotifier {
               'mode': 'Quads'
             };
       statuses[_displayName!] = 'Strutting';
+      _markFieldChanged('peacockTimers');
+      _markFieldChanged('statuses');
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -543,10 +661,13 @@ class SquadState with ChangeNotifier {
                             'mode': 'Quads'
                           };
                           statuses[player] = 'Strutting';
+                          _markFieldChanged('peacockTimers');
                         } else {
                           peacockQueue.add(player);
                           statuses[player] = 'Waiting';
+                          _markFieldChanged('peacockQueue');
                         }
+                        _markFieldChanged('statuses');
                         updateFirestore(force: true);
                         notifyListeners();
                         Navigator.pop(context);
@@ -589,12 +710,8 @@ class SquadState with ChangeNotifier {
                     trailing: IconButton(
                       icon: const Icon(Icons.remove_circle,
                           color: Colors.redAccent),
-                      onPressed: () {
-                        peacockTimers.remove(entry.key);
-                        statuses[entry.key] = 'Ready';
-                        _assignNextFromQueue();
-                        updateFirestore(force: true);
-                        notifyListeners();
+                      onPressed: () async {
+                        await removeFromPeacock(entry.key);
                         Navigator.pop(context);
                         managePeacock();
                       },
@@ -606,11 +723,8 @@ class SquadState with ChangeNotifier {
                       trailing: IconButton(
                         icon: const Icon(Icons.remove_circle,
                             color: Colors.redAccent),
-                        onPressed: () {
-                          peacockQueue.remove(player);
-                          statuses[player] = 'Offline';
-                          updateFirestore(force: true);
-                          notifyListeners();
+                        onPressed: () async {
+                          await removeFromPeacock(player);
                           Navigator.pop(context);
                           managePeacock();
                         },
@@ -634,6 +748,7 @@ class SquadState with ChangeNotifier {
     if (bans[player]!.any((ban) => ban['voter'] == voter)) return;
     bans[player]!.add(
         {'voter': voter, 'timestamp': DateTime.now().millisecondsSinceEpoch});
+    _markFieldChanged('bans');
     notifyListeners();
     _startBanTimer(player);
   }
@@ -645,6 +760,7 @@ class SquadState with ChangeNotifier {
           DateTime.now().millisecondsSinceEpoch - ban['timestamp'] >=
           4 * 3600 * 1000);
       if (bans[player]!.isEmpty) bans.remove(player);
+      _markFieldChanged('bans');
       notifyListeners();
     }
   }
@@ -659,6 +775,7 @@ class SquadState with ChangeNotifier {
   }
 
   void updateSpotTimers() {
+    bool changed = false;
     for (int i = 0; i < spotTimers.length; i++) {
       if (spotTimers[i] != null) {
         int startTime = spotTimers[i]!['startTime'] as int;
@@ -670,13 +787,19 @@ class SquadState with ChangeNotifier {
         if (remaining <= 0) {
           removeSpot(i);
           _assignNextFromQueue();
+          changed = true;
         }
       }
     }
-    updateFirestore();
+    if (changed) {
+      updateFirestore(force: true);
+    } else {
+      updateFirestore();
+    }
   }
 
   void updatePeacockTimers() {
+    bool changed = false;
     peacockTimers.forEach((player, timer) {
       if (timer != null) {
         int startTime = timer['startTime'] as int;
@@ -688,12 +811,19 @@ class SquadState with ChangeNotifier {
         if (remaining <= 0) {
           peacockTimers[player] = null;
           statuses[player] = 'Ready';
+          _markFieldChanged('peacockTimers');
+          _markFieldChanged('statuses');
           _assignNextFromQueue();
+          changed = true;
         }
       }
     });
     peacockTimers.removeWhere((key, value) => value == null);
-    updateFirestore();
+    if (changed) {
+      updateFirestore(force: true);
+    } else {
+      updateFirestore();
+    }
   }
 
   String getPeacockTimerDisplay(String player) {
@@ -743,6 +873,10 @@ class SquadState with ChangeNotifier {
             };
             statuses[player] = 'Ready';
             peacockTimers.remove(player);
+            _markFieldChanged('squadSpots');
+            _markFieldChanged('spotTimers');
+            _markFieldChanged('statuses');
+            _markFieldChanged('peacockTimers');
           }
         }
       } else if (waitingCount > 0) {
@@ -758,6 +892,10 @@ class SquadState with ChangeNotifier {
                 'duration': 300,
               };
               statuses[nextPlayer] = 'Ready';
+              _markFieldChanged('squadSpots');
+              _markFieldChanged('spotTimers');
+              _markFieldChanged('statuses');
+              _markFieldChanged('peacockQueue');
             }
           }
         }
@@ -783,6 +921,38 @@ class SquadState with ChangeNotifier {
     if (streak >= 3 && !added) {
       achievements[player]!.add('Turkey');
       _audioPlayer.play(AssetSource('sounds/turkey.wav'));
+    }
+    _markFieldChanged('achievements');
+  }
+
+  void addToPeacock(String player) {
+    final spotIndex = squadSpots.indexOf(player);
+    if (spotIndex != -1) {
+      squadSpots[spotIndex] = null;
+      spotTimers[spotIndex] = null;
+      statuses[player] = 'Offline';
+      _markFieldChanged('squadSpots');
+      _markFieldChanged('spotTimers');
+      _markFieldChanged('statuses');
+    }
+
+    if (!peacockTimers.containsKey(player) && !peacockQueue.contains(player)) {
+      if (peacockTimers.length < 4) {
+        peacockTimers[player] = {
+          'startTime': DateTime.now().millisecondsSinceEpoch,
+          'duration': 3600,
+          'mode': 'Quads'
+        };
+        statuses[player] = 'Strutting';
+        _markFieldChanged('peacockTimers');
+      } else {
+        peacockQueue.add(player);
+        statuses[player] = 'Waiting';
+        _markFieldChanged('peacockQueue');
+      }
+      _markFieldChanged('statuses');
+      updateFirestore(force: true);
+      notifyListeners();
     }
   }
 }

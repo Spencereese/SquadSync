@@ -135,15 +135,19 @@ class SquadState with ChangeNotifier {
             Map<String, dynamic>.from(data['allTimeRatings'] ?? {}).map(
           (k, v) => MapEntry(k, Map<String, List<int>>.from(v)),
         );
-        peacockQueue = List<String>.from(data['peacockQueue'] ?? peacockQueue);
+        peacockQueue = List<String>.from(data['peacockQueue'] ?? []);
         peacockTimers =
             Map<String, dynamic>.from(data['peacockTimers'] ?? {}).map(
-          (k, v) =>
-              MapEntry(k, v != null ? Map<String, dynamic>.from(v) : null),
+          (k, v) => MapEntry(
+            k,
+            v != null && v is Map ? Map<String, dynamic>.from(v) : null,
+          ),
         );
         typing = Map<String, bool>.from(data['typing'] ?? typing);
         preferredModes =
             Map<String, String?>.from(data['preferredModes'] ?? preferredModes);
+        debugPrint(
+            "Firestore sync: peacockTimers=$peacockTimers, peacockQueue=$peacockQueue");
         notifyListeners();
       }
     });
@@ -289,16 +293,16 @@ class SquadState with ChangeNotifier {
       if (spotIndex != -1) {
         squadSpots[spotIndex] = null;
         spotTimers[spotIndex] = null;
-        statuses[_displayName!] =
-            peacockTimers.length < 4 ? 'Strutting' : 'Waiting';
         if (peacockTimers.length < 4) {
           peacockTimers[_displayName!] = {
             'startTime': DateTime.now().millisecondsSinceEpoch,
             'duration': 3600,
             'mode': 'Quads'
           };
+          statuses[_displayName!] = 'Strutting';
         } else {
           peacockQueue.add(_displayName!);
+          statuses[_displayName!] = 'Waiting';
         }
         updateFirestore(force: true);
         notifyListeners();
@@ -400,7 +404,13 @@ class SquadState with ChangeNotifier {
     if (player != null) {
       squadSpots[index] = null;
       spotTimers[index] = null;
-      statuses[player] = 'Offline';
+      if (peacockTimers.containsKey(player)) {
+        statuses[player] = 'Strutting';
+      } else if (peacockQueue.contains(player)) {
+        statuses[player] = 'Waiting';
+      } else {
+        statuses[player] = 'Offline';
+      }
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -717,9 +727,8 @@ class SquadState with ChangeNotifier {
         peacockTimers.values.where((timer) => timer != null).length;
     int waitingCount = peacockQueue.length;
     int availableSpots = squadSpots.where((spot) => spot == null).length;
-    int requiredSpots = struttingCount > 0 ? struttingCount : waitingCount;
 
-    if (availableSpots == requiredSpots && requiredSpots > 0) {
+    if (availableSpots > 0 && (struttingCount > 0 || waitingCount > 0)) {
       if (struttingCount > 0) {
         List<String> struttingPlayers = peacockTimers.keys
             .where((player) => peacockTimers[player] != null)
@@ -737,8 +746,7 @@ class SquadState with ChangeNotifier {
           }
         }
       } else if (waitingCount > 0) {
-        int spotsToFill = waitingCount;
-        for (int i = 0; i < spotsToFill; i++) {
+        for (int i = 0; i < waitingCount && squadSpots.contains(null); i++) {
           int? freeSpot = squadSpots.indexOf(null);
           if (freeSpot != -1 && peacockQueue.isNotEmpty) {
             String nextPlayer = peacockQueue.removeAt(0);

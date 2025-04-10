@@ -346,17 +346,17 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     if (squadState.peacockTimers.isEmpty && squadState.peacockQueue.isEmpty) {
       return const Text('Open', style: TextStyle(color: Colors.white));
     }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ...squadState.peacockTimers.entries
-            .where((e) => e.value != null)
-            .map((entry) => _buildPeacockTimerRow(context, entry, squadState)),
-        ...squadState.peacockQueue
-            .map((player) => _buildPeacockQueueRow(context, player)),
-      ],
+    return Flexible(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ...squadState.peacockTimers.entries.where((e) => e.value != null).map(
+              (entry) => _buildPeacockTimerRow(context, entry, squadState)),
+          ...squadState.peacockQueue
+              .map((player) => _buildPeacockQueueRow(context, player)),
+        ],
+      ),
     );
   }
 
@@ -620,7 +620,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                   const SizedBox(width: 12),
                   Row(
                     children: [
-                      Image.asset('assets/images/swordMail.png',
+                      Image.asset('assets/images/sword.png',
                           width: 20, height: 20, color: Colors.redAccent),
                       const SizedBox(width: 4),
                       Text('$banCount',

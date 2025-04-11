@@ -313,7 +313,7 @@ class SquadState with ChangeNotifier {
   Future<void> submitComplaint({
     required String targetMember,
     required String reason,
-    required String category, // e.g., Behavior, Inactivity, Toxicity
+    required String category,
     required String submittedBy,
   }) async {
     if (!squadMembers.contains(targetMember)) {
@@ -321,7 +321,6 @@ class SquadState with ChangeNotifier {
     }
 
     try {
-      // Store detailed complaint in Firestore subcollection
       await _firestore
           .collection('squad')
           .doc('state')
@@ -334,15 +333,14 @@ class SquadState with ChangeNotifier {
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      // Increment complaint counter
       complaints[targetMember] = (complaints[targetMember] ?? 0) + 1;
       _markFieldChanged('complaints');
       await updateFirestoreAsync(force: true);
 
-      // Notify all members (to be updated when NotificationService supports targeting)
-      NotificationService.sendNotification(
-        'New Complaint',
-        'Complaint against $targetMember: $reason ($category).',
+      await NotificationService.sendNotificationToUser(
+        recipientDisplayName: targetMember,
+        title: 'New Complaint',
+        body: 'You received a complaint: $reason ($category).',
       );
 
       debugPrint('Complaint submitted against $targetMember: $reason');
@@ -353,10 +351,9 @@ class SquadState with ChangeNotifier {
     }
   }
 
-  /// Submits ratings for a member, restricted to those in Walking status during same game
   Future<void> submitRatings({
     required String targetMember,
-    required Map<String, int?> ratings, // e.g., {'Vibes': 4, 'Comms': null}
+    required Map<String, int?> ratings,
     required String submittedBy,
   }) async {
     if (!squadMembers.contains(targetMember)) {
@@ -366,15 +363,14 @@ class SquadState with ChangeNotifier {
       throw Exception('Cannot rate yourself');
     }
 
-    // Validate that target was Walking in a shared game
-    bool canRate = await _canRateMember(targetMember, submittedBy);
+    bool canRate =
+        await canRateMember(targetMember, submittedBy); // Updated here
     if (!canRate) {
       throw Exception(
           'You can only rate members you played with (Walking status).');
     }
 
     try {
-      // Update daily and all-time ratings
       ratings.forEach((category, rating) {
         if (rating != null && rating >= 0 && rating <= 5) {
           dailyRatings[targetMember]![category]!.add(rating);
@@ -382,7 +378,6 @@ class SquadState with ChangeNotifier {
         }
       });
 
-      // Find the latest game with both members and update its ratings
       final latestGame = gameHistory.lastWhere(
         (game) =>
             (game['players'] as List).contains(targetMember) &&
@@ -400,15 +395,15 @@ class SquadState with ChangeNotifier {
       _markFieldChanged('gameHistory');
       await updateFirestoreAsync(force: true);
 
-      // Notify all members (to be updated when NotificationService supports targeting)
       final ratedCategories = ratings.entries
           .where((e) => e.value != null)
           .map((e) => '${e.key}: ${e.value}/5')
           .join(', ');
       if (ratedCategories.isNotEmpty) {
-        NotificationService.sendNotification(
-          'New Rating',
-          '$targetMember was rated by $submittedBy: $ratedCategories.',
+        await NotificationService.sendNotificationToUser(
+          recipientDisplayName: targetMember,
+          title: 'New Rating',
+          body: 'You were rated by $submittedBy: $ratedCategories.',
         );
       }
 
@@ -420,8 +415,23 @@ class SquadState with ChangeNotifier {
     }
   }
 
-  /// Checks if submitter can rate target based on shared Walking status in a game
-  Future<bool> _canRateMember(String targetMember, String submittedBy) async {
+  // Add this method to SquadState
+  Future<bool> hasRatedMember(String targetMember, String submittedBy) async {
+    final sharedGames = gameHistory
+        .where((game) =>
+            (game['players'] as List).contains(targetMember) &&
+            (game['players'] as List).contains(submittedBy) &&
+            (game['result'] == 'Win' || game['result'] == 'Loss'))
+        .toList();
+    if (sharedGames.isEmpty) return false;
+    final latestGame = sharedGames.last;
+    final ratings = latestGame['ratings'] as Map? ?? {};
+    final submittedRatings = ratings[submittedBy] as Map? ?? {};
+    return submittedRatings.containsKey(targetMember);
+  }
+
+  // Existing canRateMember (ensure public)
+  Future<bool> canRateMember(String targetMember, String submittedBy) async {
     return gameHistory.any((game) =>
         (game['players'] as List).contains(targetMember) &&
         (game['players'] as List).contains(submittedBy) &&
@@ -796,7 +806,7 @@ class SquadState with ChangeNotifier {
       'result': 'Win',
       'players': walkingPlayers,
       'timestamp': DateTime.now().toIso8601String(),
-      'ratings': {},
+      'ratings': {}, // Fresh ratings map for this game
     });
     _audioPlayer.play(AssetSource('sounds/victory.mp3'));
     NotificationService.sendNotification(
@@ -821,7 +831,7 @@ class SquadState with ChangeNotifier {
       'result': 'Loss',
       'players': walkingPlayers,
       'timestamp': DateTime.now().toIso8601String(),
-      'ratings': {},
+      'ratings': {}, // Fresh ratings map for this game
     });
     _markFieldChanged('currentStreaks');
     _markFieldChanged('gameHistory');

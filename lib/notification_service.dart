@@ -1,14 +1,19 @@
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   static Future<void> initialize() async {
-    // Initialize local notifications for iOS foreground
+    // Initialize local notifications
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -27,7 +32,7 @@ class NotificationService {
       alert: true,
       badge: true,
       sound: true,
-      provisional: true, // Allows temporary notifications without prompt
+      provisional: true,
     );
     print('User granted permission: ${settings.authorizationStatus}');
 
@@ -59,11 +64,24 @@ class NotificationService {
     // Background messages
     FirebaseMessaging.onBackgroundMessage(_backgroundHandler);
 
-    // Get and monitor FCM token
+    // Store FCM token for the current user
     String? token = await _messaging.getToken();
     print('FCM Token: $token');
-    _messaging.onTokenRefresh.listen((newToken) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && token != null) {
+      await _firestore.collection('users').doc(user.uid).set(
+        {'fcmToken': token, 'displayName': user.displayName},
+        SetOptions(merge: true),
+      );
+    }
+    _messaging.onTokenRefresh.listen((newToken) async {
       print('New FCM Token: $newToken');
+      if (user != null) {
+        await _firestore.collection('users').doc(user.uid).set(
+          {'fcmToken': newToken},
+          SetOptions(merge: true),
+        );
+      }
     });
   }
 
@@ -101,13 +119,67 @@ class NotificationService {
   static void _handleMessage(RemoteMessage message) {
     print('Handling message: ${message.data}');
     if (message.data['screen'] == 'chat') {
-      // Requires NavigatorKey in widget tree for navigation
       print('Should navigate to ChatScreen');
     }
   }
 
   static Future<void> sendNotification(String title, String body) async {
-    // Placeholder for server-side sending
-    print('Sending notification: $title - $body');
+    // Broadcast notification (for testing or squad-wide alerts)
+    print('Sending broadcast notification: $title - $body');
+  }
+
+  static Future<void> sendNotificationToUser({
+    required String recipientDisplayName,
+    required String title,
+    required String body,
+  }) async {
+    try {
+      // Find the user's FCM token by displayName
+      final userDocs = await _firestore
+          .collection('users')
+          .where('displayName', isEqualTo: recipientDisplayName)
+          .limit(1)
+          .get();
+      if (userDocs.docs.isEmpty) {
+        print('No FCM token found for $recipientDisplayName');
+        return;
+      }
+      final fcmToken = userDocs.docs.first.data()['fcmToken'] as String?;
+
+      if (fcmToken == null) {
+        print('FCM token not available for $recipientDisplayName');
+        return;
+      }
+
+      // FCM server key (replace with your Firebase project's server key)
+      const serverKey = 'YOUR_FCM_SERVER_KEY_HERE'; // Add from Firebase Console
+      final url = Uri.parse('https://fcm.googleapis.com/fcm/send');
+
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'key=$serverKey',
+        },
+        body: jsonEncode({
+          'to': fcmToken,
+          'notification': {
+            'title': title,
+            'body': body,
+          },
+          'data': {
+            'screen': 'squad', // Optional: for navigation on tap
+          },
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        print('Notification sent to $recipientDisplayName: $title - $body');
+      } else {
+        print('Failed to send notification: ${response.body}');
+      }
+    } catch (e) {
+      print('Error sending notification to $recipientDisplayName: $e');
+    }
   }
 }

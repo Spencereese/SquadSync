@@ -35,6 +35,22 @@ class SquadState with ChangeNotifier {
   Map<String, String?> memberProfileImages = {};
   Map<String, String?> preferredModes = {};
 
+  // New fields for SquadQueuePage
+  bool _tiltEnabled = true; // Tilt toggle
+  bool _hasNewAvailability = false; // AvailabilityTab notification
+  bool _hasNewSquadSpot = false; // SquadTab notification
+  bool _hasUnreadMessages = false; // ChatScreen notification
+
+  // Chat-related properties
+  DocumentSnapshot? _replyingTo;
+  DocumentSnapshot? get replyingTo => _replyingTo;
+
+  // Getters for new fields
+  bool get tiltEnabled => _tiltEnabled;
+  bool get hasNewAvailability => _hasNewAvailability;
+  bool get hasNewSquadSpot => _hasNewSquadSpot;
+  bool get hasUnreadMessages => _hasUnreadMessages;
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AudioPlayer _audioPlayer = AudioPlayer();
   static const int _firestoreUpdateInterval = 5;
@@ -83,7 +99,7 @@ class SquadState with ChangeNotifier {
 
   void _initializeData() {
     for (var player in squadMembers) {
-      statuses[player] = 'Offline'; // Default all to Offline
+      statuses[player] = 'Offline';
       currentStreaks[player] = 0;
       highestStreaks[player] = 0;
       complaints[player] = 0;
@@ -105,7 +121,6 @@ class SquadState with ChangeNotifier {
       memberProfileImages[player] = null;
       preferredModes[player] = null;
     }
-    // Set initial statuses for specific players
     statuses["Alex"] = "Walking";
     statuses["Spencer"] = "Walking";
   }
@@ -122,7 +137,6 @@ class SquadState with ChangeNotifier {
         var firestoreStatuses =
             Map<String, String>.from(data['statuses'] ?? {});
         statuses = Map<String, String>.from(firestoreStatuses);
-        // Validate statuses against actual state
         for (var player in squadMembers) {
           if (!squadSpots.contains(player) &&
               !peacockTimers.containsKey(player) &&
@@ -176,8 +190,6 @@ class SquadState with ChangeNotifier {
             }
           });
         }
-        debugPrint("Parsed peacockTimers: $peacockTimers");
-        debugPrint("Parsed peacockQueue: $peacockQueue");
         typing = Map<String, bool>.from(data['typing'] ?? typing);
         preferredModes =
             Map<String, String?>.from(data['preferredModes'] ?? preferredModes);
@@ -194,6 +206,14 @@ class SquadState with ChangeNotifier {
         data['id'] = doc.id;
         return data;
       }).toList();
+      // Check for new availability
+      bool newAvailability = scheduledTimes.any((time) =>
+          DateTime.parse(time['timestamp']).isAfter(_lastFirestoreUpdate));
+      if (newAvailability) {
+        _hasNewAvailability = true;
+        NotificationService.sendNotification(
+            'New Availability', 'A new schedule has been added!');
+      }
       debugPrint('Synced scheduledTimes from schedules: $scheduledTimes');
       notifyListeners();
     });
@@ -211,6 +231,18 @@ class SquadState with ChangeNotifier {
           _displayName = doc.data()['displayName'] ?? _displayName;
           _profileImage = doc.data()['profileImage'] ?? _profileImage;
         }
+      }
+      notifyListeners();
+    });
+
+    _firestore.collection('chat').snapshots().listen((snapshot) {
+      bool hasNew = snapshot.docChanges.any((change) =>
+          change.type == DocumentChangeType.added &&
+          change.doc.data()?['read'] == false);
+      if (hasNew) {
+        _hasUnreadMessages = true;
+        NotificationService.sendNotification(
+            'New Message', 'You have an unread message in the chat!');
       }
       notifyListeners();
     });
@@ -278,6 +310,233 @@ class SquadState with ChangeNotifier {
     updateFirestoreAsync(force: force);
   }
 
+  Future<void> submitComplaint({
+    required String targetMember,
+    required String reason,
+    required String category,
+    required String submittedBy,
+  }) async {
+    if (!squadMembers.contains(targetMember)) {
+      throw Exception('Invalid member: $targetMember');
+    }
+
+    try {
+      await _firestore
+          .collection('squad')
+          .doc('state')
+          .collection('complaints')
+          .add({
+        'targetMember': targetMember,
+        'reason': reason,
+        'category': category,
+        'submittedBy': submittedBy,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      complaints[targetMember] = (complaints[targetMember] ?? 0) + 1;
+      _markFieldChanged('complaints');
+      await updateFirestoreAsync(force: true);
+
+      await NotificationService.sendNotificationToUser(
+        recipientDisplayName: targetMember,
+        title: 'New Complaint',
+        body: 'You received a complaint: $reason ($category).',
+      );
+
+      debugPrint('Complaint submitted against $targetMember: $reason');
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to submit complaint: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> submitRatings({
+    required String targetMember,
+    required Map<String, int?> ratings,
+    required String submittedBy,
+  }) async {
+    if (!squadMembers.contains(targetMember)) {
+      throw Exception('Invalid member: $targetMember');
+    }
+    if (targetMember == submittedBy) {
+      throw Exception('Cannot rate yourself');
+    }
+
+    bool canRate =
+        await canRateMember(targetMember, submittedBy); // Updated here
+    if (!canRate) {
+      throw Exception(
+          'You can only rate members you played with (Walking status).');
+    }
+
+    try {
+      ratings.forEach((category, rating) {
+        if (rating != null && rating >= 0 && rating <= 5) {
+          dailyRatings[targetMember]![category]!.add(rating);
+          allTimeRatings[targetMember]![category]!.add(rating);
+        }
+      });
+
+      final latestGame = gameHistory.lastWhere(
+        (game) =>
+            (game['players'] as List).contains(targetMember) &&
+            (game['players'] as List).contains(submittedBy),
+        orElse: () => {},
+      );
+      if (latestGame.isNotEmpty) {
+        latestGame['ratings'] ??= {};
+        (latestGame['ratings'] as Map)[submittedBy] ??= {};
+        (latestGame['ratings'] as Map)[submittedBy][targetMember] = ratings;
+      }
+
+      _markFieldChanged('dailyRatings');
+      _markFieldChanged('allTimeRatings');
+      _markFieldChanged('gameHistory');
+      await updateFirestoreAsync(force: true);
+
+      final ratedCategories = ratings.entries
+          .where((e) => e.value != null)
+          .map((e) => '${e.key}: ${e.value}/5')
+          .join(', ');
+      if (ratedCategories.isNotEmpty) {
+        await NotificationService.sendNotificationToUser(
+          recipientDisplayName: targetMember,
+          title: 'New Rating',
+          body: 'You were rated by $submittedBy: $ratedCategories.',
+        );
+      }
+
+      debugPrint('Ratings submitted for $targetMember: $ratings');
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to submit ratings: $e');
+      rethrow;
+    }
+  }
+
+  // Add this method to SquadState
+  Future<bool> hasRatedMember(String targetMember, String submittedBy) async {
+    final sharedGames = gameHistory
+        .where((game) =>
+            (game['players'] as List).contains(targetMember) &&
+            (game['players'] as List).contains(submittedBy) &&
+            (game['result'] == 'Win' || game['result'] == 'Loss'))
+        .toList();
+    if (sharedGames.isEmpty) return false;
+    final latestGame = sharedGames.last;
+    final ratings = latestGame['ratings'] as Map? ?? {};
+    final submittedRatings = ratings[submittedBy] as Map? ?? {};
+    return submittedRatings.containsKey(targetMember);
+  }
+
+  // Existing canRateMember (ensure public)
+  Future<bool> canRateMember(String targetMember, String submittedBy) async {
+    return gameHistory.any((game) =>
+        (game['players'] as List).contains(targetMember) &&
+        (game['players'] as List).contains(submittedBy) &&
+        (game['result'] == 'Win' || game['result'] == 'Loss'));
+  }
+
+  /// Gets average rating for a member in a category
+  double getAverageRating(String member, String category,
+      {bool daily = false}) {
+    final ratings = daily
+        ? dailyRatings[member]![category]!
+        : allTimeRatings[member]![category]!;
+    if (ratings.isEmpty) return 0.0;
+    return ratings.reduce((a, b) => a + b) / ratings.length;
+  }
+
+  /// Gets all ratings for a member as a map for display
+  Map<String, double> getMemberRatings(String member, {bool daily = false}) {
+    return {
+      'Vibes': getAverageRating(member, 'Vibes', daily: daily),
+      'Comms': getAverageRating(member, 'Comms', daily: daily),
+      'Gunny': getAverageRating(member, 'Gunny', daily: daily),
+      'Wingman': getAverageRating(member, 'Wingman', daily: daily),
+    };
+  }
+
+  // New methods for tilt and notifications
+  void updateTiltEnabled(bool value) {
+    _tiltEnabled = value;
+    notifyListeners();
+  }
+
+  void setNewAvailability(bool value) {
+    _hasNewAvailability = value;
+    notifyListeners();
+  }
+
+  void setNewSquadSpot(bool value) {
+    _hasNewSquadSpot = value;
+    if (value) {
+      NotificationService.sendNotification(
+          'New Squad Spot', 'A spot has been claimed or opened!');
+    }
+    notifyListeners();
+  }
+
+  void setUnreadMessages(bool value) {
+    _hasUnreadMessages = value;
+    notifyListeners();
+  }
+
+  void clearNotifications(int tabIndex) {
+    if (tabIndex == 1) _hasNewAvailability = false;
+    if (tabIndex == 2) _hasNewSquadSpot = false;
+    if (tabIndex == 3) _hasUnreadMessages = false;
+    notifyListeners();
+  }
+
+  // Chat-related methods
+  void setReplyingTo(DocumentSnapshot? message) {
+    _replyingTo = message;
+    notifyListeners();
+  }
+
+  void clearReplyingTo() {
+    _replyingTo = null;
+    notifyListeners();
+  }
+
+  Future<void> sendReply(String messageId, String text) async {
+    if (_replyingTo == null) return;
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw 'No user logged in';
+
+      await _firestore.collection('chat').add({
+        'text': text,
+        'sender': user.displayName ?? _displayName ?? 'User',
+        'timestamp': FieldValue.serverTimestamp(),
+        'replyTo': messageId,
+        'delivered': false,
+        'read': false,
+      });
+
+      clearReplyingTo();
+      debugPrint('Reply sent to message $messageId: $text');
+    } catch (e) {
+      debugPrint('Failed to send reply: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteMessage(String messageId) async {
+    try {
+      await _firestore.collection('chat').doc(messageId).delete();
+      debugPrint('Message $messageId deleted');
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Failed to delete message: $e');
+      rethrow;
+    }
+  }
+
+  // Existing methods (unchanged unless noted)
   void updatePreferredMode(String user, String? mode) {
     preferredModes[user] = mode;
     _markFieldChanged('preferredModes');
@@ -343,6 +602,7 @@ class SquadState with ChangeNotifier {
       _markFieldChanged('squadSpots');
       _markFieldChanged('spotTimers');
       _markFieldChanged('statuses');
+      setNewSquadSpot(true); // Trigger squad spot notification
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -391,6 +651,7 @@ class SquadState with ChangeNotifier {
         _markFieldChanged('squadSpots');
         _markFieldChanged('spotTimers');
         _markFieldChanged('statuses');
+        setNewSquadSpot(true); // Trigger squad spot notification
         updateFirestore(force: true);
         notifyListeners();
       }
@@ -453,6 +714,7 @@ class SquadState with ChangeNotifier {
         _markFieldChanged('spotTimers');
         _markFieldChanged('statuses');
         _markFieldChanged('peacockQueue');
+        setNewSquadSpot(true); // Trigger squad spot notification
       }
     }
     updateFirestore(force: true);
@@ -492,6 +754,7 @@ class SquadState with ChangeNotifier {
     _markFieldChanged('squadSpots');
     _markFieldChanged('spotTimers');
     _markFieldChanged('statuses');
+    setNewSquadSpot(true); // Trigger squad spot notification
     updateFirestore(force: true);
     notifyListeners();
   }
@@ -543,7 +806,7 @@ class SquadState with ChangeNotifier {
       'result': 'Win',
       'players': walkingPlayers,
       'timestamp': DateTime.now().toIso8601String(),
-      'ratings': {},
+      'ratings': {}, // Fresh ratings map for this game
     });
     _audioPlayer.play(AssetSource('sounds/victory.mp3'));
     NotificationService.sendNotification(
@@ -568,7 +831,7 @@ class SquadState with ChangeNotifier {
       'result': 'Loss',
       'players': walkingPlayers,
       'timestamp': DateTime.now().toIso8601String(),
-      'ratings': {},
+      'ratings': {}, // Fresh ratings map for this game
     });
     _markFieldChanged('currentStreaks');
     _markFieldChanged('gameHistory');
@@ -877,6 +1140,7 @@ class SquadState with ChangeNotifier {
             _markFieldChanged('spotTimers');
             _markFieldChanged('statuses');
             _markFieldChanged('peacockTimers');
+            setNewSquadSpot(true); // Trigger squad spot notification
           }
         }
       } else if (waitingCount > 0) {
@@ -896,6 +1160,7 @@ class SquadState with ChangeNotifier {
               _markFieldChanged('spotTimers');
               _markFieldChanged('statuses');
               _markFieldChanged('peacockQueue');
+              setNewSquadSpot(true); // Trigger squad spot notification
             }
           }
         }

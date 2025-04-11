@@ -8,7 +8,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
 import 'squad_state.dart';
 import 'setup_screen.dart';
-import 'main.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class SettingsTab extends StatefulWidget {
@@ -27,6 +26,7 @@ class _SettingsTabState extends State<SettingsTab>
   bool _isDarkTheme = true;
   bool _notificationsEnabled = true;
   bool _soundsEnabled = true;
+  bool _tiltEnabled = true; // New tilt toggle
   bool _preferGameMode = false;
   String? _preferredMode;
   String? _selectedPage;
@@ -37,8 +37,10 @@ class _SettingsTabState extends State<SettingsTab>
     super.initState();
     _nameController = TextEditingController();
     _feedbackController = TextEditingController();
-    _animationController =
-        AnimationController(vsync: this, duration: Duration(milliseconds: 300));
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
     _fadeAnimation =
         Tween<double>(begin: 0.0, end: 1.0).animate(_animationController);
     _loadSettings();
@@ -51,15 +53,23 @@ class _SettingsTabState extends State<SettingsTab>
       _isDarkTheme = prefs.getBool('isDarkTheme') ?? true;
       _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
       _soundsEnabled = prefs.getBool('soundsEnabled') ?? true;
+      _tiltEnabled = prefs.getBool('tiltEnabled') ?? true; // Load tilt setting
       _preferGameMode = prefs.getBool('preferGameMode') ?? false;
       _preferredMode = prefs.getString('preferredMode');
     });
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    squadState.updateTiltEnabled(_tiltEnabled); // Sync with SquadState
     _animationController.forward();
   }
 
   Future<void> _saveSettings(String key, dynamic value) async {
     final prefs = await SharedPreferences.getInstance();
-    if (value is bool) await prefs.setBool(key, value);
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    if (value is bool) {
+      await prefs.setBool(key, value);
+      if (key == 'tiltEnabled')
+        squadState.updateTiltEnabled(value); // Update SquadState
+    }
     if (value is String?) await prefs.setString(key, value ?? '');
   }
 
@@ -92,8 +102,9 @@ class _SettingsTabState extends State<SettingsTab>
     await _saveSettings('profileImageUrl', downloadUrl);
 
     if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Profile picture updated!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile picture updated!')),
+      );
     }
   }
 
@@ -101,8 +112,9 @@ class _SettingsTabState extends State<SettingsTab>
     final squadState = Provider.of<SquadState>(context, listen: false);
     if (_nameController.text.isNotEmpty && mounted) {
       squadState.updateDisplayName(_nameController.text);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Display name updated!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Display name updated!')),
+      );
     }
   }
 
@@ -110,7 +122,9 @@ class _SettingsTabState extends State<SettingsTab>
       {String? severity}) async {
     if (content.isEmpty || !mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Please select a page and provide details')));
+        const SnackBar(
+            content: Text('Please select a page and provide details')),
+      );
       return;
     }
     final packageInfo = await PackageInfo.fromPlatform();
@@ -130,7 +144,8 @@ class _SettingsTabState extends State<SettingsTab>
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$type submitted successfully!')));
+        SnackBar(content: Text('$type submitted successfully!')),
+      );
     }
   }
 
@@ -147,7 +162,7 @@ class _SettingsTabState extends State<SettingsTab>
             children: [
               DropdownButtonFormField<String>(
                 value: _selectedPage,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Page',
                   border: OutlineInputBorder(),
                 ),
@@ -163,25 +178,25 @@ class _SettingsTabState extends State<SettingsTab>
                         DropdownMenuItem(value: page, child: Text(page)))
                     .toList(),
                 onChanged: (value) => setState(() => _selectedPage = value),
-                hint: Text('Select the page'),
+                hint: const Text('Select the page'),
                 validator: (value) =>
                     value == null ? 'Please select a page' : null,
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               TextField(
                 controller: _feedbackController,
                 decoration: InputDecoration(
                   labelText: 'Details',
                   hintText: 'Describe your $type in detail',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
                 maxLines: 4,
               ),
               if (isBug) ...[
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: _severity,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Severity',
                     border: OutlineInputBorder(),
                   ),
@@ -190,7 +205,7 @@ class _SettingsTabState extends State<SettingsTab>
                           value: severity, child: Text(severity)))
                       .toList(),
                   onChanged: (value) => setState(() => _severity = value),
-                  hint: Text('Select severity'),
+                  hint: const Text('Select severity'),
                 ),
               ],
             ],
@@ -206,7 +221,7 @@ class _SettingsTabState extends State<SettingsTab>
               });
               Navigator.pop(context);
             },
-            child: Text('Cancel'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -218,7 +233,7 @@ class _SettingsTabState extends State<SettingsTab>
               );
               Navigator.pop(context);
             },
-            child: Text('Submit'),
+            child: const Text('Submit'),
           ),
         ],
       ),
@@ -229,20 +244,20 @@ class _SettingsTabState extends State<SettingsTab>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Select Preferred Game Mode'),
+        title: const Text('Select Preferred Game Mode'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              title: Text('Duo+'),
+              title: const Text('Duo+'),
               onTap: () => _setPreferredMode('duos'),
             ),
             ListTile(
-              title: Text('Trios+'),
+              title: const Text('Trios+'),
               onTap: () => _setPreferredMode('trios'),
             ),
             ListTile(
-              title: Text('Quads'),
+              title: const Text('Quads'),
               onTap: () => _setPreferredMode('quads'),
             ),
           ],
@@ -250,7 +265,7 @@ class _SettingsTabState extends State<SettingsTab>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
+            child: const Text('Cancel'),
           ),
         ],
       ),
@@ -274,11 +289,11 @@ class _SettingsTabState extends State<SettingsTab>
     final squadState = Provider.of<SquadState>(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Settings'), elevation: 0),
+      appBar: AppBar(title: const Text('Settings'), elevation: 0),
       body: FadeTransition(
         opacity: _fadeAnimation,
         child: ListView(
-          padding: EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(16.0),
           children: [
             _buildSectionHeader('Profile'),
             GestureDetector(
@@ -289,98 +304,113 @@ class _SettingsTabState extends State<SettingsTab>
                     ? NetworkImage(squadState.profileImage!)
                     : null,
                 child: squadState.profileImage == null
-                    ? Icon(Icons.person, size: 50, color: Colors.cyan)
+                    ? const Icon(Icons.person, size: 50, color: Colors.cyan)
                     : null,
               ),
             ),
-            SizedBox(height: 10),
-            Center(child: Text('Tap to change profile picture')),
+            const SizedBox(height: 10),
+            const Center(child: Text('Tap to change profile picture')),
             ListTile(
-              leading: Icon(Icons.person, color: Colors.cyan),
-              title: Text('Display Name'),
+              leading: const Icon(Icons.person, color: Colors.cyan),
+              title: const Text('Display Name'),
               subtitle: Text(squadState.displayName ?? 'User'),
-              trailing: Icon(Icons.edit),
+              trailing: const Icon(Icons.edit),
               onTap: () {
                 _nameController.text = squadState.displayName ?? '';
                 showDialog(
                   context: context,
                   builder: (context) => AlertDialog(
-                    title: Text('Edit Display Name'),
+                    title: const Text('Edit Display Name'),
                     content: TextField(
                       controller: _nameController,
-                      decoration: InputDecoration(hintText: 'Enter new name'),
+                      decoration:
+                          const InputDecoration(hintText: 'Enter new name'),
                     ),
                     actions: [
                       TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: Text('Cancel')),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
                       TextButton(
                         onPressed: () {
                           _updateDisplayName(context);
                           Navigator.pop(context);
                         },
-                        child: Text('Save'),
+                        child: const Text('Save'),
                       ),
                     ],
                   ),
                 );
               },
             ),
-            Divider(),
+            const Divider(),
             _buildSectionHeader('Appearance'),
             AnimatedSwitcher(
-              duration: Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_isDarkTheme),
                 activeColor: Colors.cyan,
-                title: Text('Dark Theme'),
+                title: const Text('Dark Theme'),
                 value: _isDarkTheme,
                 onChanged: (value) {
                   setState(() => _isDarkTheme = value);
                   _saveSettings('isDarkTheme', value);
-                  Provider.of<ThemeProvider>(context, listen: false)
-                      .toggleTheme(value);
+                  // Note: No ThemeProvider, app must handle theme elsewhere
                 },
-                secondary: Icon(Icons.brightness_6),
+                secondary: const Icon(Icons.brightness_6),
               ),
             ),
-            Divider(),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: SwitchListTile(
+                key: ValueKey(_tiltEnabled),
+                activeColor: Colors.cyan,
+                title: const Text('Enable Tab Tilt'),
+                value: _tiltEnabled,
+                onChanged: (value) {
+                  setState(() => _tiltEnabled = value);
+                  _saveSettings('tiltEnabled', value);
+                },
+                secondary: const Icon(Icons.threed_rotation),
+              ),
+            ),
+            const Divider(),
             _buildSectionHeader('Notifications & Sounds'),
             AnimatedSwitcher(
-              duration: Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_notificationsEnabled),
                 activeColor: Colors.cyan,
-                title: Text('Notifications'),
+                title: const Text('Notifications'),
                 value: _notificationsEnabled,
                 onChanged: (value) {
                   setState(() => _notificationsEnabled = value);
                   _saveSettings('notificationsEnabled', value);
                   // TODO: Update notification_service.dart
                 },
-                secondary: Icon(Icons.notifications),
+                secondary: const Icon(Icons.notifications),
               ),
             ),
             AnimatedSwitcher(
-              duration: Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_soundsEnabled),
                 activeColor: Colors.cyan,
-                title: Text('Sounds'),
+                title: const Text('Sounds'),
                 value: _soundsEnabled,
                 onChanged: (value) {
                   setState(() => _soundsEnabled = value);
                   _saveSettings('soundsEnabled', value);
                   // TODO: Update sound playback logic
                 },
-                secondary: Icon(Icons.volume_up),
+                secondary: const Icon(Icons.volume_up),
               ),
             ),
-            Divider(),
+            const Divider(),
             _buildSectionHeader('Peacock Preferences'),
             SwitchListTile(
               activeColor: Colors.cyan,
-              title: Text('Preferred Game Mode'),
+              title: const Text('Preferred Game Mode'),
               subtitle: Text(_preferredMode != null
                   ? 'Prefer $_preferredMode'
                   : 'Set preference for joining spots'),
@@ -401,27 +431,27 @@ class _SettingsTabState extends State<SettingsTab>
                       squadState.displayName ?? 'User', null);
                 }
               },
-              secondary: Icon(Icons.group),
+              secondary: const Icon(Icons.group),
             ),
-            Divider(),
+            const Divider(),
             _buildSectionHeader('Feedback & Support'),
             ListTile(
-              leading: Icon(Icons.bug_report, color: Colors.cyan),
-              title: Text('Report a Bug'),
+              leading: const Icon(Icons.bug_report, color: Colors.cyan),
+              title: const Text('Report a Bug'),
               onTap: () => _showFeedbackDialog('Bug Report'),
             ),
             ListTile(
-              leading: Icon(Icons.lightbulb_outline, color: Colors.cyan),
-              title: Text('Suggest a Feature'),
+              leading: const Icon(Icons.lightbulb_outline, color: Colors.cyan),
+              title: const Text('Suggest a Feature'),
               onTap: () => _showFeedbackDialog('Feature Suggestion'),
             ),
-            Divider(),
+            const Divider(),
             _buildSectionHeader('Account'),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20.0),
               child: ElevatedButton.icon(
-                icon: Icon(Icons.exit_to_app),
-                label: Text('Logout'),
+                icon: const Icon(Icons.exit_to_app),
+                label: const Text('Logout'),
                 onPressed: () => _logout(context),
               ),
             ),
@@ -436,8 +466,11 @@ class _SettingsTabState extends State<SettingsTab>
       padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
       child: Text(
         title,
-        style: TextStyle(
-            fontSize: 18, fontWeight: FontWeight.bold, color: Colors.cyan),
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.cyan,
+        ),
       ),
     );
   }

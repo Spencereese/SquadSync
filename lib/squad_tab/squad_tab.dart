@@ -628,10 +628,179 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                     ],
                   ),
                 ],
+                const SizedBox(width: 12),
+                IconButton(
+                  icon: const Icon(Icons.report, color: Colors.redAccent),
+                  tooltip: 'File Complaint',
+                  onPressed: () =>
+                      _showComplaintDialog(context, squadState, player),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.star, color: Colors.yellowAccent),
+                  tooltip: 'Rate Member',
+                  onPressed: () =>
+                      _showRatingsDialog(context, squadState, player),
+                ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showComplaintDialog(
+      BuildContext context, SquadState squadState, String player) {
+    String? reason;
+    String? category;
+    final categories = ['Behavior', 'Inactivity', 'Toxicity'];
+
+    showDialog(
+      context: _currentContext,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('File Complaint Against $player'),
+        content: StatefulBuilder(
+          builder: (context, setState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: const InputDecoration(labelText: 'Reason'),
+                onChanged: (value) => reason = value,
+              ),
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Category'),
+                items: categories
+                    .map(
+                        (cat) => DropdownMenuItem(value: cat, child: Text(cat)))
+                    .toList(),
+                onChanged: (value) => setState(() => category = value),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (reason != null &&
+                  category != null &&
+                  squadState.displayName != null) {
+                try {
+                  await squadState.submitComplaint(
+                    targetMember: player,
+                    reason: reason!,
+                    category: category!,
+                    submittedBy: squadState.displayName!,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                    ScaffoldMessenger.of(_currentContext).showSnackBar(
+                      const SnackBar(content: Text('Complaint submitted')),
+                    );
+                  }
+                } catch (e) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text('Error: $e')),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRatingsDialog(
+      BuildContext context, SquadState squadState, String player) async {
+    final ratings = <String, int?>{
+      'Vibes': null,
+      'Comms': null,
+      'Gunny': null,
+      'Wingman': null
+    };
+    final canRate = squadState.displayName != null &&
+        await squadState.canRateMember(player, squadState.displayName!);
+
+    if (!canRate) {
+      ScaffoldMessenger.of(_currentContext).showSnackBar(
+        const SnackBar(
+            content: Text('You can only rate members you played with')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: _currentContext,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Rate $player'),
+        content: StatefulBuilder(
+          builder: (context, setState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: ratings.keys
+                .map((category) => Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(category),
+                        Row(
+                          children: List.generate(
+                              5,
+                              (index) => IconButton(
+                                    icon: Icon(
+                                      index < (ratings[category] ?? 0)
+                                          ? Icons.star
+                                          : Icons.star_border,
+                                      color: Colors.yellowAccent,
+                                    ),
+                                    onPressed: () => setState(
+                                        () => ratings[category] = index + 1),
+                                  )),
+                        ),
+                      ],
+                    ))
+                .toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (squadState.displayName != null) {
+                try {
+                  await squadState.submitRatings(
+                    targetMember: player,
+                    ratings: ratings,
+                    submittedBy: squadState.displayName!,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                    ScaffoldMessenger.of(_currentContext).showSnackBar(
+                      const SnackBar(content: Text('Ratings submitted')),
+                    );
+                  }
+                } catch (e) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text('Error: $e')),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('Submit'),
+          ),
+        ],
       ),
     );
   }

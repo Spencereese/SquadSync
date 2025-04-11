@@ -72,10 +72,11 @@ class MessageBubble extends StatelessWidget {
                           children: [
                             _buildMessageContent(context, data),
                             Positioned(
-                              top: -20,
-                              left: isMe ? null : 0,
-                              right: isMe ? 0 : null,
-                              child: ReactionsWidget(docId: message.id),
+                              bottom: -10,
+                              left: isMe ? -10 : null,
+                              right: isMe ? null : -10,
+                              child: ReactionsWidget(
+                                  docId: message.id, isMe: isMe),
                             ),
                           ],
                         ),
@@ -105,7 +106,7 @@ class MessageBubble extends StatelessWidget {
                 backgroundImage:
                     profileImage != null ? NetworkImage(profileImage) : null,
                 child: profileImage == null
-                    ? Text(sender.isNotEmpty ? sender[0] : '?',
+                    ? Text(sender.isNotEmpty ? sender[0].toUpperCase() : '?',
                         style: const TextStyle(color: AppTheme.accentColor))
                     : null,
               )
@@ -122,23 +123,26 @@ class MessageBubble extends StatelessWidget {
         style: TextStyle(
           color: AppTheme.accentColor,
           fontSize: 14,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
 
   Widget _buildTimestamp(Map<String, dynamic> data) {
+    final timestamp = (data['timestamp'] as Timestamp).toDate();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Center(
         child: Semantics(
           label:
-              'Message sent on ${DateFormat('MMMM d, yyyy, HH:mm').format((data['timestamp'] as Timestamp).toDate())}',
+              'Message sent on ${DateFormat('MMMM d, yyyy, h:mm a').format(timestamp)}',
           child: Text(
-            DateFormat('MMM d, yyyy, HH:mm')
-                .format((data['timestamp'] as Timestamp).toDate()),
-            style: const TextStyle(color: AppTheme.hintColor, fontSize: 12),
+            DateFormat('MMM d, yyyy, h:mm a').format(timestamp),
+            style: const TextStyle(
+              color: AppTheme.hintColor,
+              fontSize: 12,
+            ),
           ),
         ),
       ),
@@ -190,7 +194,7 @@ class MessageBubble extends StatelessWidget {
 
   Widget _buildText(String text) {
     return Semantics(
-      label: text,
+      label: 'Message text: $text',
       child: Text(
         text,
         style: const TextStyle(fontSize: 16, color: Colors.white),
@@ -209,7 +213,8 @@ class MessageBubble extends StatelessWidget {
             width: 150,
             height: 150,
             fit: BoxFit.cover,
-            placeholder: (context, url) => const CircularProgressIndicator(),
+            placeholder: (context, url) =>
+                const Center(child: CircularProgressIndicator()),
             errorWidget: (context, url, error) => const Icon(Icons.error),
           ),
         ),
@@ -222,7 +227,7 @@ class MessageBubble extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.only(top: 4.0),
         child: Semantics(
-          label: 'Sending',
+          label: 'Message is sending',
           child: const Icon(Icons.access_time, size: 12, color: Colors.white70),
         ),
       );
@@ -231,7 +236,7 @@ class MessageBubble extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.only(top: 4.0),
         child: Semantics(
-          label: 'Message unsent',
+          label: 'Message failed to send',
           child: const Text('Unsent',
               style: TextStyle(fontSize: 10, color: Colors.white70)),
         ),
@@ -245,13 +250,13 @@ class MessageBubble extends StatelessWidget {
           children: [
             if (data['delivered'] == true)
               Semantics(
-                label: 'Delivered',
+                label: 'Message delivered',
                 child: const Text('Delivered',
                     style: TextStyle(fontSize: 10, color: Colors.white70)),
               ).animate().fadeIn(duration: const Duration(milliseconds: 500)),
             if (data['read'] == true)
               Semantics(
-                label: 'Read',
+                label: 'Message read',
                 child: const Icon(Icons.done_all, color: Colors.blue, size: 12),
               ).animate().scale(duration: const Duration(milliseconds: 300)),
           ],
@@ -263,24 +268,76 @@ class MessageBubble extends StatelessWidget {
 
   void _showReactionMenu(BuildContext context, Map<String, dynamic> data) {
     HapticFeedback.mediumImpact();
-    showDialog(
+    showGeneralDialog(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.5),
-      builder: (context) {
-        return _MessageFocusDialog(
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, anim1, anim2) {
+        return _MessageReactionDialog(
           message: message,
           isMe: isMe,
           data: data,
           onReply: () {
-            // Add reply logic here
+            if (!context.mounted) return;
+            Provider.of<SquadState>(context, listen: false)
+                .setReplyingTo(message);
           },
           onCopy: () {
+            if (!context.mounted) return;
             Clipboard.setData(ClipboardData(text: message['text'] ?? ''));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Text copied')),
+            );
           },
-          onDelete: () {
-            // Add delete logic here
+          onDelete: () async {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Delete Message'),
+                content:
+                    const Text('Are you sure you want to delete this message?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Delete'),
+                  ),
+                ],
+              ),
+            );
+            if (confirm == true && context.mounted) {
+              try {
+                await Provider.of<SquadState>(context, listen: false)
+                    .deleteMessage(message.id);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Message deleted')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete message: $e')),
+                  );
+                }
+              }
+            }
           },
           onEmojiSelect: (emoji) => _addReaction(context, emoji),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOut),
+          child: ScaleTransition(
+            scale: CurvedAnimation(parent: anim1, curve: Curves.easeOutBack),
+            child: child,
+          ),
         );
       },
     );
@@ -314,14 +371,14 @@ class MessageBubble extends StatelessWidget {
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       HapticFeedback.lightImpact();
-      await launchUrl(uri);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       debugPrint('Could not launch $url');
     }
   }
 }
 
-class _MessageFocusDialog extends StatefulWidget {
+class _MessageReactionDialog extends StatefulWidget {
   final DocumentSnapshot message;
   final bool isMe;
   final Map<String, dynamic> data;
@@ -330,7 +387,7 @@ class _MessageFocusDialog extends StatefulWidget {
   final VoidCallback onDelete;
   final Function(String) onEmojiSelect;
 
-  const _MessageFocusDialog({
+  const _MessageReactionDialog({
     required this.message,
     required this.isMe,
     required this.data,
@@ -341,16 +398,16 @@ class _MessageFocusDialog extends StatefulWidget {
   });
 
   @override
-  _MessageFocusDialogState createState() => _MessageFocusDialogState();
+  _MessageReactionDialogState createState() => _MessageReactionDialogState();
 }
 
-class _MessageFocusDialogState extends State<_MessageFocusDialog> {
-  final TextEditingController _emojiController = TextEditingController();
-  bool _showEmojiInput = false;
+class _MessageReactionDialogState extends State<_MessageReactionDialog> {
+  final TextEditingController _reactionController = TextEditingController();
+  bool _showReactionInput = false;
 
   @override
   void dispose() {
-    _emojiController.dispose();
+    _reactionController.dispose();
     super.dispose();
   }
 
@@ -361,19 +418,20 @@ class _MessageFocusDialogState extends State<_MessageFocusDialog> {
       child: Stack(
         children: [
           BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
             child: Container(
-              color: Colors.black.withValues(alpha: 0.3),
+              color: Colors.black.withValues(alpha: 0.2),
             ),
           ),
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Focused Message
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Transform.scale(
-                    scale: 1.1,
+                    scale: 1.05,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -386,9 +444,9 @@ class _MessageFocusDialogState extends State<_MessageFocusDialog> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
+                            color: Colors.black.withValues(alpha: 0.15),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
                           ),
                         ],
                       ),
@@ -426,96 +484,144 @@ class _MessageFocusDialogState extends State<_MessageFocusDialog> {
                     ),
                   ),
                 ),
+                // Reaction Picker
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  margin: const EdgeInsets.symmetric(horizontal: 16.0),
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
                   decoration: BoxDecoration(
-                    color: Colors.grey[800],
-                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.grey[850],
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       ...['❤️', '👍', '😂', '😢', '😡'].map((emoji) {
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
                           child: GestureDetector(
                             onTap: () {
+                              HapticFeedback.lightImpact();
                               widget.onEmojiSelect(emoji);
                               Navigator.pop(context);
                             },
-                            child: Text(
-                              emoji,
-                              style: const TextStyle(fontSize: 28),
+                            child: AnimatedScale(
+                              scale: 1.0,
+                              duration: const Duration(milliseconds: 100),
+                              child: Text(
+                                emoji,
+                                style: const TextStyle(fontSize: 32),
+                              ),
                             ),
                           ),
-                        );
+                        ).animate().scale(
+                              duration: const Duration(milliseconds: 200),
+                              begin: Offset.zero,
+                              end: const Offset(1.0, 1.0),
+                              curve: Curves.easeOutBack,
+                            );
                       }),
-                      IconButton(
-                        icon: const Icon(Icons.add, color: Colors.white),
-                        onPressed: () {
-                          setState(() {
-                            _showEmojiInput = !_showEmojiInput;
-                          });
-                        },
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: IconButton(
+                          icon: Icon(
+                            _showReactionInput ? Icons.close : Icons.add,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _showReactionInput = !_showReactionInput;
+                            });
+                          },
+                        ),
                       ),
                     ],
                   ),
                 ),
-                if (_showEmojiInput)
+                // Custom Reaction Input
+                if (_showReactionInput)
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16.0, vertical: 8.0),
-                    child: TextField(
-                      controller: _emojiController,
-                      decoration: InputDecoration(
-                        hintText: 'Type an emoji...',
-                        filled: true,
-                        fillColor: Colors.grey[900],
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                    child: Material(
+                      color: Colors.grey[900],
+                      borderRadius: BorderRadius.circular(12),
+                      child: TextField(
+                        controller: _reactionController,
+                        decoration: InputDecoration(
+                          hintText: 'Type your reaction',
+                          hintStyle: TextStyle(color: Colors.white54),
+                          filled: true,
+                          fillColor: Colors.grey[900],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16.0, vertical: 12.0),
                         ),
+                        style: const TextStyle(color: Colors.white),
+                        onSubmitted: (value) {
+                          if (value.isNotEmpty) {
+                            widget.onEmojiSelect(value);
+                            Navigator.pop(context);
+                          }
+                        },
                       ),
-                      onSubmitted: (value) {
-                        if (value.isNotEmpty) {
-                          widget.onEmojiSelect(value);
-                          Navigator.pop(context);
-                        }
-                      },
                     ),
                   ),
+                // Action Buttons
                 Material(
                   color: Colors.grey[900],
-                  borderRadius: BorderRadius.circular(12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.reply),
-                        title: const Text('Reply'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          widget.onReply();
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.copy),
-                        title: const Text('Copy'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          widget.onCopy();
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.delete),
-                        title: const Text('Delete'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          widget.onDelete();
-                        },
-                      ),
-                    ],
+                  borderRadius: BorderRadius.circular(16),
+                  elevation: 2,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16.0),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading:
+                              const Icon(Icons.reply, color: Colors.white70),
+                          title: const Text('Reply',
+                              style: TextStyle(color: Colors.white)),
+                          onTap: () {
+                            Navigator.pop(context);
+                            widget.onReply();
+                          },
+                        ),
+                        ListTile(
+                          leading:
+                              const Icon(Icons.copy, color: Colors.white70),
+                          title: const Text('Copy',
+                              style: TextStyle(color: Colors.white)),
+                          onTap: () {
+                            Navigator.pop(context);
+                            widget.onCopy();
+                          },
+                        ),
+                        ListTile(
+                          leading:
+                              const Icon(Icons.delete, color: Colors.white70),
+                          title: const Text('Delete',
+                              style: TextStyle(color: Colors.white)),
+                          onTap: () {
+                            Navigator.pop(context);
+                            widget.onDelete();
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -543,8 +649,12 @@ class _VideoMessageState extends State<VideoMessage> {
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) => setState(() {})).catchError((e) {
-        setState(() => _isError = true);
+      ..initialize().then((_) {
+        setState(() {});
+      }).catchError((e) {
+        setState(() {
+          _isError = true;
+        });
         debugPrint('Video init error: $e');
       });
   }
@@ -599,7 +709,9 @@ class _VideoMessageState extends State<VideoMessage> {
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       HapticFeedback.lightImpact();
-      await launchUrl(uri);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      debugPrint('Could not launch $url');
     }
   }
 }
@@ -625,7 +737,9 @@ class _AudioMessageState extends State<AudioMessage> {
     _player = AudioPlayer();
     _setupListeners();
     _player.setSourceUrl(widget.url).catchError((e) {
-      setState(() => _isError = true);
+      setState(() {
+        _isError = true;
+      });
       debugPrint('Audio init error: $e');
     });
   }
@@ -714,7 +828,9 @@ class _AudioMessageState extends State<AudioMessage> {
 
 class ReactionsWidget extends StatelessWidget {
   final String docId;
-  const ReactionsWidget({super.key, required this.docId});
+  final bool isMe;
+
+  const ReactionsWidget({super.key, required this.docId, required this.isMe});
 
   @override
   Widget build(BuildContext context) {
@@ -736,23 +852,27 @@ class ReactionsWidget extends StatelessWidget {
         }
 
         return latestEmoji != null
-            ? Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            ? AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.grey[700],
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.grey[800],
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      blurRadius: 2,
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 4,
                     ),
                   ],
                 ),
                 child: Text(
                   latestEmoji,
-                  style: const TextStyle(fontSize: 16),
+                  style: const TextStyle(fontSize: 14),
                 ),
-              )
+              ).animate().scale(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutBack,
+                )
             : const SizedBox.shrink();
       },
     );

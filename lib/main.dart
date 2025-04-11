@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:app_links/app_links.dart';
+import 'dart:async';
 import 'squad_state.dart';
+import 'chat/chat_screen.dart';
 import 'setup_screen.dart';
 import 'notification_service.dart';
 import 'chat/chat_state.dart';
@@ -20,10 +24,10 @@ Future<void> _initializeFirebase() async {
     try {
       await NotificationService.initialize();
     } catch (e) {
-      print('NotificationService initialization failed: $e');
+      debugPrint('NotificationService initialization failed: $e');
     }
   } catch (e) {
-    print('Firebase initialization failed: $e');
+    debugPrint('Firebase initialization failed: $e');
   }
 }
 
@@ -38,8 +42,79 @@ class ThemeProvider with ChangeNotifier {
   }
 }
 
-class SquadSyncApp extends StatelessWidget {
+class SquadSyncApp extends StatefulWidget {
   const SquadSyncApp({super.key});
+
+  @override
+  State<SquadSyncApp> createState() => _SquadSyncAppState();
+}
+
+class _SquadSyncAppState extends State<SquadSyncApp> {
+  static const platform = MethodChannel('com.example.codSquadApp/siri');
+  late AppLinks _appLinks;
+  StreamSubscription<String?>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _appLinks = AppLinks();
+    _initDeepLinks();
+    _initSiriShortcuts();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initDeepLinks() async {
+    try {
+      final initialLink = await _appLinks.getInitialAppLinkString();
+      if (initialLink != null) {
+        _handleDeepLink(initialLink);
+      }
+    } catch (e) {
+      debugPrint('Error getting initial link: $e');
+    }
+
+    _sub = _appLinks.stringLinkStream.listen((String? link) {
+      if (link != null) {
+        _handleDeepLink(link);
+      }
+    }, onError: (err) {
+      debugPrint('Error in link stream: $err');
+    });
+  }
+
+  void _handleDeepLink(String link) {
+    if (link == 'cod_squad_app://chat' && mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ChatScreen()),
+      );
+    }
+  }
+
+  Future<void> _initSiriShortcuts() async {
+    try {
+      platform.setMethodCallHandler((call) async {
+        if (call.method == 'sendMessage' && mounted) {
+          final message = call.arguments['message'] as String;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ChatScreen(initialMessage: message),
+            ),
+          );
+          return true;
+        }
+        return false;
+      });
+    } catch (e) {
+      debugPrint('Error setting up Siri channel: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

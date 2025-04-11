@@ -13,9 +13,9 @@ class Message {
 
   factory Message.fromJson(Map<String, dynamic> json) {
     return Message(
-      sender: json['s'] as String? ?? '',
+      sender: json['s'] as String? ?? 'Unknown',
       timestamp: DateTime.fromMillisecondsSinceEpoch(
-        json['t'] as int? ?? 0,
+        json['t'] as int? ?? DateTime.now().millisecondsSinceEpoch,
         isUtc: true,
       ),
       content: json['c'] as String? ?? '',
@@ -33,7 +33,6 @@ class Message {
         'r': reactions,
       };
 
-  // Additional helpful methods
   Message copyWith({
     String? sender,
     DateTime? timestamp,
@@ -50,7 +49,7 @@ class Message {
 
   @override
   String toString() {
-    return 'Message(sender: $sender, timestamp: $timestamp, content: $content, reactions: $reactions)';
+    return 'Message(sender: $sender, timestamp: ${timestamp.toIso8601String()}, content: $content, reactions: ${reactions.length} items)';
   }
 
   @override

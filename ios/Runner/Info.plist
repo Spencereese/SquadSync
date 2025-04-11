@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<string>com.example.codSquadApp</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -53,5 +53,31 @@
 	<string></string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Handoff URL Scheme -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>cod_squad_app</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.example.codSquadApp</string>
+		</dict>
+	</array>
+	<!-- Handoff and Siri Activity Types -->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.example.codSquadApp.chat</string>
+		<string>SendMessageIntent</string>
+	</array>
+	<!-- Siri Usage Description -->
+	<key>NSSiriUsageDescription</key>
+	<string>Send messages to your squad chat using Siri.</string>
+	<!-- Enable Background Modes for Remote Notifications -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

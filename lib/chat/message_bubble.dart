@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:provider/provider.dart';
+import 'package:pinch_zoom/pinch_zoom.dart';
+import 'dart:ui';
 import '../../app_theme.dart';
 import '../../squad_state.dart';
 
@@ -37,7 +40,7 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final data = message.data() as Map<String, dynamic>;
+    final data = message.data() as Map<String, dynamic>? ?? {};
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
         return Padding(
@@ -46,14 +49,16 @@ class MessageBubble extends StatelessWidget {
             crossAxisAlignment:
                 isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              if (showTimestamp && message['timestamp'] != null)
-                _buildTimestamp(),
+              if (showTimestamp && data['timestamp'] != null)
+                _buildTimestamp(data),
               Row(
                 mainAxisAlignment:
                     isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  if (!isMe) _buildAvatar(context, squadState, data['sender']),
+                  if (!isMe)
+                    _buildAvatar(
+                        context, squadState, data['sender'] ?? 'Unknown'),
                   if (!isMe) const SizedBox(width: 8),
                   Flexible(
                     child: Column(
@@ -61,9 +66,19 @@ class MessageBubble extends StatelessWidget {
                           ? CrossAxisAlignment.end
                           : CrossAxisAlignment.start,
                       children: [
-                        if (showSender) _buildSender(),
-                        _buildMessageContent(context, data),
-                        if (!isMe) _buildReactions(),
+                        if (showSender) _buildSender(data),
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            _buildMessageContent(context, data),
+                            Positioned(
+                              top: -20,
+                              left: isMe ? null : 0,
+                              right: isMe ? 0 : null,
+                              child: ReactionsWidget(docId: message.id),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -79,28 +94,31 @@ class MessageBubble extends StatelessWidget {
   Widget _buildAvatar(
       BuildContext context, SquadState squadState, String sender) {
     String? profileImage = squadState.memberProfileImages[sender];
-    return SizedBox(
-      width: 32,
-      height: 32,
-      child: showAvatar
-          ? CircleAvatar(
-              radius: 16,
-              backgroundImage:
-                  profileImage != null ? NetworkImage(profileImage) : null,
-              child: profileImage == null
-                  ? Text(sender[0],
-                      style: const TextStyle(color: AppTheme.accentColor))
-                  : null,
-            )
-          : const SizedBox.shrink(),
+    return Semantics(
+      label: 'Avatar of $sender',
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: showAvatar
+            ? CircleAvatar(
+                radius: 16,
+                backgroundImage:
+                    profileImage != null ? NetworkImage(profileImage) : null,
+                child: profileImage == null
+                    ? Text(sender.isNotEmpty ? sender[0] : '?',
+                        style: const TextStyle(color: AppTheme.accentColor))
+                    : null,
+              )
+            : const SizedBox.shrink(),
+      ),
     );
   }
 
-  Widget _buildSender() {
+  Widget _buildSender(Map<String, dynamic> data) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: Text(
-        message['sender'],
+        data['sender'] ?? 'Unknown',
         style: TextStyle(
           color: AppTheme.accentColor,
           fontSize: 14,
@@ -110,14 +128,18 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildTimestamp() {
+  Widget _buildTimestamp(Map<String, dynamic> data) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Center(
-        child: Text(
-          DateFormat('MMM d, yyyy, HH:mm')
-              .format((message['timestamp'] as Timestamp).toDate()),
-          style: const TextStyle(color: AppTheme.hintColor, fontSize: 12),
+        child: Semantics(
+          label:
+              'Message sent on ${DateFormat('MMMM d, yyyy, HH:mm').format((data['timestamp'] as Timestamp).toDate())}',
+          child: Text(
+            DateFormat('MMM d, yyyy, HH:mm')
+                .format((data['timestamp'] as Timestamp).toDate()),
+            style: const TextStyle(color: AppTheme.hintColor, fontSize: 12),
+          ),
         ),
       ),
     );
@@ -125,82 +147,383 @@ class MessageBubble extends StatelessWidget {
 
   Widget _buildMessageContent(BuildContext context, Map<String, dynamic> data) {
     return GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      onLongPress: () => _showReactionMenu(context, data),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(vertical: 2.0),
         padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
         decoration: BoxDecoration(
           color: isMe
-              ? AppTheme.accentColor.withAlpha(50)
-              : AppTheme.hintColor.withAlpha(51), // 0.2 opacity as 51/255
+              ? AppTheme.accentColor.withValues(alpha: 0.2)
+              : AppTheme.hintColor.withValues(alpha: 0.2),
           borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            if (data['text']?.isNotEmpty ?? false) _buildText(data['text']),
-            if (data['imageUrl'] != null) _buildImage(data['imageUrl']),
-            if (data['videoUrl'] != null) VideoMessage(url: data['videoUrl']),
-            if (data['audioUrl'] != null) AudioMessage(url: data['audioUrl']),
-            _buildMessageStatus(),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
           ],
+        ),
+        child: Semantics(
+          label: 'Message from ${data['sender'] ?? 'Unknown'}',
+          child: Column(
+            crossAxisAlignment:
+                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              if (data['text']?.isNotEmpty ?? false) _buildText(data['text']),
+              if (data['imageUrl'] != null)
+                _buildImage(context, data['imageUrl']),
+              if (data['videoUrl'] != null) VideoMessage(url: data['videoUrl']),
+              if (data['audioUrl'] != null) AudioMessage(url: data['audioUrl']),
+              _buildMessageStatus(data),
+            ],
+          ),
         ),
       ).animate().fadeIn(duration: const Duration(milliseconds: 300)),
     );
   }
 
-  Widget _buildText(String text) =>
-      Text(text, style: const TextStyle(fontSize: 16, color: Colors.white));
+  Widget _buildText(String text) {
+    return Semantics(
+      label: text,
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 16, color: Colors.white),
+      ),
+    );
+  }
 
-  Widget _buildImage(String imageUrl) {
+  Widget _buildImage(BuildContext context, String imageUrl) {
     return GestureDetector(
       onTap: () => _launchUrl(imageUrl),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: CachedNetworkImage(
-          imageUrl: imageUrl,
-          width: 150,
-          height: 150,
-          fit: BoxFit.cover,
-          placeholder: (context, url) => const CircularProgressIndicator(),
-          errorWidget: (context, url, error) => const Icon(Icons.error),
+      child: PinchZoom(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: CachedNetworkImage(
+            imageUrl: imageUrl,
+            width: 150,
+            height: 150,
+            fit: BoxFit.cover,
+            placeholder: (context, url) => const CircularProgressIndicator(),
+            errorWidget: (context, url, error) => const Icon(Icons.error),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildMessageStatus() {
+  Widget _buildMessageStatus(Map<String, dynamic> data) {
     if (sendingStatus[message.id] == true) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 4.0),
-        child: Icon(Icons.access_time, size: 12, color: Colors.white70),
+      return Padding(
+        padding: const EdgeInsets.only(top: 4.0),
+        child: Semantics(
+          label: 'Sending',
+          child: const Icon(Icons.access_time, size: 12, color: Colors.white70),
+        ),
       );
     }
     if (sendingStatus[message.id] == false) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 4.0),
-        child: Text('Unsent',
-            style: TextStyle(fontSize: 10, color: Colors.white70)),
+      return Padding(
+        padding: const EdgeInsets.only(top: 4.0),
+        child: Semantics(
+          label: 'Message unsent',
+          child: const Text('Unsent',
+              style: TextStyle(fontSize: 10, color: Colors.white70)),
+        ),
       );
     }
     if (showReadIndicator && !sendingStatus.containsKey(message.id)) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 4.0),
-        child: Icon(Icons.done_all, color: Colors.blue, size: 12),
+      return Padding(
+        padding: const EdgeInsets.only(top: 4.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (data['delivered'] == true)
+              Semantics(
+                label: 'Delivered',
+                child: const Text('Delivered',
+                    style: TextStyle(fontSize: 10, color: Colors.white70)),
+              ).animate().fadeIn(duration: const Duration(milliseconds: 500)),
+            if (data['read'] == true)
+              Semantics(
+                label: 'Read',
+                child: const Icon(Icons.done_all, color: Colors.blue, size: 12),
+              ).animate().scale(duration: const Duration(milliseconds: 300)),
+          ],
+        ),
       );
     }
     return const SizedBox.shrink();
   }
 
-  Widget _buildReactions() => ReactionsWidget(docId: message.id);
+  void _showReactionMenu(BuildContext context, Map<String, dynamic> data) {
+    HapticFeedback.mediumImpact();
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      builder: (context) {
+        return _MessageFocusDialog(
+          message: message,
+          isMe: isMe,
+          data: data,
+          onReply: () {
+            // Add reply logic here
+          },
+          onCopy: () {
+            Clipboard.setData(ClipboardData(text: message['text'] ?? ''));
+          },
+          onDelete: () {
+            // Add delete logic here
+          },
+          onEmojiSelect: (emoji) => _addReaction(context, emoji),
+        );
+      },
+    );
+    onLongPress();
+  }
+
+  Future<void> _addReaction(BuildContext context, String emoji) async {
+    final user = FirebaseAuth.instance.currentUser!.displayName ??
+        Provider.of<SquadState>(context, listen: false).displayName ??
+        'User';
+    final querySnapshot = await FirebaseFirestore.instance
+        .collection('chat')
+        .doc(message.id)
+        .collection('reactions')
+        .where('user', isEqualTo: user)
+        .get();
+
+    await Future.wait(querySnapshot.docs.map((doc) => doc.reference.delete()));
+    await FirebaseFirestore.instance
+        .collection('chat')
+        .doc(message.id)
+        .collection('reactions')
+        .add({
+      'emoji': emoji,
+      'user': user,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
 
   Future<void> _launchUrl(String url) async {
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url));
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      HapticFeedback.lightImpact();
+      await launchUrl(uri);
+    } else {
+      debugPrint('Could not launch $url');
     }
+  }
+}
+
+class _MessageFocusDialog extends StatefulWidget {
+  final DocumentSnapshot message;
+  final bool isMe;
+  final Map<String, dynamic> data;
+  final VoidCallback onReply;
+  final VoidCallback onCopy;
+  final VoidCallback onDelete;
+  final Function(String) onEmojiSelect;
+
+  const _MessageFocusDialog({
+    required this.message,
+    required this.isMe,
+    required this.data,
+    required this.onReply,
+    required this.onCopy,
+    required this.onDelete,
+    required this.onEmojiSelect,
+  });
+
+  @override
+  _MessageFocusDialogState createState() => _MessageFocusDialogState();
+}
+
+class _MessageFocusDialogState extends State<_MessageFocusDialog> {
+  final TextEditingController _emojiController = TextEditingController();
+  bool _showEmojiInput = false;
+
+  @override
+  void dispose() {
+    _emojiController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context),
+      child: Stack(
+        children: [
+          BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.3),
+            ),
+          ),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Transform.scale(
+                    scale: 1.1,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.symmetric(vertical: 8.0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16.0, vertical: 12.0),
+                      decoration: BoxDecoration(
+                        color: widget.isMe
+                            ? AppTheme.accentColor.withValues(alpha: 0.3)
+                            : AppTheme.hintColor.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: widget.isMe
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          if (widget.data['text']?.isNotEmpty ?? false)
+                            Text(
+                              widget.data['text'],
+                              style: const TextStyle(
+                                  fontSize: 18, color: Colors.white),
+                            ),
+                          if (widget.data['imageUrl'] != null)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: CachedNetworkImage(
+                                imageUrl: widget.data['imageUrl'],
+                                width: 200,
+                                height: 200,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) =>
+                                    const CircularProgressIndicator(),
+                                errorWidget: (context, url, error) =>
+                                    const Icon(Icons.error),
+                              ),
+                            ),
+                          if (widget.data['videoUrl'] != null)
+                            VideoMessage(url: widget.data['videoUrl']),
+                          if (widget.data['audioUrl'] != null)
+                            AudioMessage(url: widget.data['audioUrl']),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ...['❤️', '👍', '😂', '😢', '😡'].map((emoji) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: GestureDetector(
+                            onTap: () {
+                              widget.onEmojiSelect(emoji);
+                              Navigator.pop(context);
+                            },
+                            child: Text(
+                              emoji,
+                              style: const TextStyle(fontSize: 28),
+                            ),
+                          ),
+                        );
+                      }),
+                      IconButton(
+                        icon: const Icon(Icons.add, color: Colors.white),
+                        onPressed: () {
+                          setState(() {
+                            _showEmojiInput = !_showEmojiInput;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                if (_showEmojiInput)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 8.0),
+                    child: TextField(
+                      controller: _emojiController,
+                      decoration: InputDecoration(
+                        hintText: 'Type an emoji...',
+                        filled: true,
+                        fillColor: Colors.grey[900],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      onSubmitted: (value) {
+                        if (value.isNotEmpty) {
+                          widget.onEmojiSelect(value);
+                          Navigator.pop(context);
+                        }
+                      },
+                    ),
+                  ),
+                Material(
+                  color: Colors.grey[900],
+                  borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.reply),
+                        title: const Text('Reply'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          widget.onReply();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.copy),
+                        title: const Text('Copy'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          widget.onCopy();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.delete),
+                        title: const Text('Delete'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          widget.onDelete();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -214,12 +537,16 @@ class VideoMessage extends StatefulWidget {
 
 class _VideoMessageState extends State<VideoMessage> {
   late VideoPlayerController _controller;
+  bool _isError = false;
 
   @override
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) => setState(() {}));
+      ..initialize().then((_) => setState(() {})).catchError((e) {
+        setState(() => _isError = true);
+        debugPrint('Video init error: $e');
+      });
   }
 
   @override
@@ -230,35 +557,49 @@ class _VideoMessageState extends State<VideoMessage> {
 
   @override
   Widget build(BuildContext context) {
-    return _controller.value.isInitialized
-        ? GestureDetector(
-            onTap: () => _launchUrl(widget.url),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: SizedBox(
-                    width: 150,
-                    height: 150,
-                    child: VideoPlayer(_controller),
-                  ),
-                ),
-                const Icon(Icons.play_circle_filled,
-                    size: 50, color: Colors.white70),
-              ],
+    return _isError
+        ? Semantics(
+            label: 'Video failed to load',
+            child: const SizedBox(
+              width: 150,
+              height: 150,
+              child: Icon(Icons.error),
             ),
-          ).animate().fadeIn(duration: const Duration(milliseconds: 300))
-        : const SizedBox(
-            width: 150,
-            height: 150,
-            child: Center(child: CircularProgressIndicator()),
-          );
+          )
+        : _controller.value.isInitialized
+            ? GestureDetector(
+                onTap: () => _launchUrl(widget.url),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 150,
+                        height: 150,
+                        child: VideoPlayer(_controller),
+                      ),
+                    ),
+                    Semantics(
+                      label: 'Play video',
+                      child: const Icon(Icons.play_circle_filled,
+                          size: 50, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ).animate().fadeIn(duration: const Duration(milliseconds: 300))
+            : const SizedBox(
+                width: 150,
+                height: 150,
+                child: Center(child: CircularProgressIndicator()),
+              );
   }
 
   Future<void> _launchUrl(String url) async {
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url));
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      HapticFeedback.lightImpact();
+      await launchUrl(uri);
     }
   }
 }
@@ -276,12 +617,17 @@ class _AudioMessageState extends State<AudioMessage> {
   bool _isPlaying = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
+  bool _isError = false;
 
   @override
   void initState() {
     super.initState();
     _player = AudioPlayer();
     _setupListeners();
+    _player.setSourceUrl(widget.url).catchError((e) {
+      setState(() => _isError = true);
+      debugPrint('Audio init error: $e');
+    });
   }
 
   void _setupListeners() {
@@ -293,50 +639,71 @@ class _AudioMessageState extends State<AudioMessage> {
 
   @override
   void dispose() {
+    _player.stop();
     _player.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 200,
-      padding: const EdgeInsets.all(8.0),
-      decoration: BoxDecoration(
-        color: AppTheme.hintColor.withAlpha(51), // 0.2 opacity as 51/255
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: Icon(
-              _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-              color: AppTheme.accentColor,
-              size: 30,
+    return _isError
+        ? Semantics(
+            label: 'Audio failed to load',
+            child: const SizedBox(
+              width: 200,
+              child: Icon(Icons.error),
             ),
-            onPressed: _togglePlay,
-          ),
-          Expanded(
-            child: Slider(
-              value: _position.inSeconds.toDouble(),
-              min: 0,
-              max: _duration.inSeconds.toDouble(),
-              onChanged: (value) =>
-                  _player.seek(Duration(seconds: value.toInt())),
-              activeColor: AppTheme.accentColor,
-              inactiveColor: AppTheme.hintColor,
+          )
+        : Container(
+            width: 200,
+            padding: const EdgeInsets.all(8.0),
+            decoration: BoxDecoration(
+              color: AppTheme.hintColor.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
             ),
-          ),
-          Text(
-            "${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')}",
-            style: const TextStyle(fontSize: 12, color: Colors.white70),
-          ),
-        ],
-      ),
-    );
+            child: Row(
+              children: [
+                Semantics(
+                  label: _isPlaying ? 'Pause audio' : 'Play audio',
+                  child: IconButton(
+                    icon: Icon(
+                      _isPlaying
+                          ? Icons.pause_circle_filled
+                          : Icons.play_circle_filled,
+                      color: AppTheme.accentColor,
+                      size: 30,
+                    ),
+                    onPressed: _togglePlay,
+                  ),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: _position.inSeconds.toDouble(),
+                    min: 0,
+                    max: _duration.inSeconds.toDouble() > 0
+                        ? _duration.inSeconds.toDouble()
+                        : 1,
+                    onChanged: (value) =>
+                        _player.seek(Duration(seconds: value.toInt())),
+                    activeColor: AppTheme.accentColor,
+                    inactiveColor: AppTheme.hintColor,
+                  ),
+                ),
+                Semantics(
+                  label:
+                      'Audio position ${_position.inMinutes}:${_position.inSeconds % 60}',
+                  child: Text(
+                    "${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')}",
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ),
+              ],
+            ),
+          );
   }
 
   Future<void> _togglePlay() async {
+    HapticFeedback.lightImpact();
     if (_isPlaying) {
       await _player.pause();
     } else {
@@ -363,82 +730,31 @@ class ReactionsWidget extends StatelessWidget {
         }
 
         final reactions = snapshot.data!.docs;
-        final reactionCounts = <String, int>{};
-        for (var reaction in reactions) {
-          final emoji = reaction['emoji'] as String;
-          reactionCounts[emoji] = (reactionCounts[emoji] ?? 0) + 1;
+        String? latestEmoji;
+        if (reactions.isNotEmpty) {
+          latestEmoji = reactions.last['emoji'] as String?;
         }
 
-        return Padding(
-          padding: const EdgeInsets.only(left: 40.0, top: 4.0),
-          child: Wrap(
-            spacing: 4,
-            children: reactionCounts.entries
-                .map((entry) => ReactionChip(
-                      emoji: entry.key,
-                      count: entry.value,
-                      onTap: () => _addReaction(context, docId, entry.key),
-                    ))
-                .toList(),
-          ),
-        );
+        return latestEmoji != null
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.grey[700],
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Text(
+                  latestEmoji,
+                  style: const TextStyle(fontSize: 16),
+                ),
+              )
+            : const SizedBox.shrink();
       },
-    );
-  }
-
-  Future<void> _addReaction(
-      BuildContext context, String docId, String emoji) async {
-    final user = FirebaseAuth.instance.currentUser!.displayName ??
-        Provider.of<SquadState>(context, listen: false).displayName ??
-        'User';
-    final querySnapshot = await FirebaseFirestore.instance
-        .collection('chat')
-        .doc(docId)
-        .collection('reactions')
-        .where('user', isEqualTo: user)
-        .get();
-
-    await Future.wait(querySnapshot.docs.map((doc) => doc.reference.delete()));
-
-    await FirebaseFirestore.instance
-        .collection('chat')
-        .doc(docId)
-        .collection('reactions')
-        .add({
-      'emoji': emoji,
-      'user': user,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-  }
-}
-
-class ReactionChip extends StatelessWidget {
-  final String emoji;
-  final int count;
-  final VoidCallback onTap;
-
-  const ReactionChip({
-    super.key,
-    required this.emoji,
-    required this.count,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Colors.grey[700],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          '$emoji $count',
-          style: const TextStyle(color: Colors.white, fontSize: 12),
-        ),
-      ),
     );
   }
 }

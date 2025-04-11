@@ -43,14 +43,6 @@
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
-	<key>&lt;key&gt;UIBackgroundModes&lt;/key&gt;
-&lt;array&gt;
-    &lt;string&gt;fetch&lt;/string&gt;
-    &lt;string&gt;remote-notification&lt;/string&gt;
-&lt;/array&gt;
-&lt;key&gt;FirebaseAppDelegateAutoRegister&lt;/key&gt;
-&lt;true/&gt;</key>
-	<string></string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<!-- Handoff URL Scheme -->
@@ -59,7 +51,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>cod_squad_app</string>
+				<string>codsquadapp</string>
 			</array>
 			<key>CFBundleURLName</key>
 			<string>com.example.codSquadApp</string>
@@ -74,10 +66,14 @@
 	<!-- Siri Usage Description -->
 	<key>NSSiriUsageDescription</key>
 	<string>Send messages to your squad chat using Siri.</string>
-	<!-- Enable Background Modes for Remote Notifications -->
+	<!-- Enable Background Modes for Fetch and Remote Notifications -->
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<!-- Firebase Auto Registration -->
+	<key>FirebaseAppDelegateAutoRegister</key>
+	<true/>
 </dict>
 </plist>

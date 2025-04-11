@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:async';
 import '../squad_state.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -33,8 +32,6 @@ class ChatService {
     String? imageUrl,
     String? videoUrl,
     String? audioUrl,
-    String? replyToMessageId, // Added for inline replies
-    String? replyToContent, // Added for inline replies
   }) async {
     final messageData = {
       'sender': sender,
@@ -45,17 +42,15 @@ class ChatService {
       'timestamp': FieldValue.serverTimestamp(),
       'delivered': false,
       'read': false,
-      'replyToMessageId': replyToMessageId, // Store reply metadata
-      'replyToContent': replyToContent,
     };
 
     try {
       await _retryOperation(() async {
         await _firestore.collection('chat').add(messageData);
       });
-      HapticFeedback.mediumImpact();
+      HapticFeedback.mediumImpact(); // iOS haptic feedback
     } catch (e) {
-      await _cacheMessage(messageData);
+      await _cacheMessage(messageData); // Cache for offline sync
       throw Exception('Failed to send message: $e. It will sync when online.');
     }
   }
@@ -66,7 +61,7 @@ class ChatService {
       await _retryOperation(() async {
         await ref.putFile(file);
       });
-      HapticFeedback.lightImpact();
+      HapticFeedback.lightImpact(); // iOS haptic feedback
       return await ref.getDownloadURL();
     } catch (e) {
       throw Exception('Failed to upload media: $e');
@@ -79,7 +74,7 @@ class ChatService {
       await _retryOperation(() async {
         await ref.putFile(file);
       });
-      HapticFeedback.lightImpact();
+      HapticFeedback.lightImpact(); // iOS haptic feedback
       return await ref.getDownloadURL();
     } catch (e) {
       throw Exception('Failed to upload audio: $e');
@@ -102,80 +97,20 @@ class ChatService {
   Future<void> updateTypingStatus(
       BuildContext context, String user, bool isTyping) async {
     try {
+      if (user.isEmpty) return; // Prevent empty user
       Provider.of<SquadState>(context, listen: false)
           .updateTypingStatus(user, isTyping);
+      await _firestore.collection('chat_metadata').doc('typing_status').set({
+        'typing': {user: isTyping}, // Non-empty map
+        'timestamp': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     } catch (e) {
-      throw Exception('Failed to update typing status: $e');
+      print('Failed to update typing status: $e');
+      // Optionally rethrow if you want ChatScreen to handle it
     }
   }
 
-  Future<void> addReaction(String docId, String emoji) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser!.displayName ??
-          Provider.of<SquadState>(navigatorKey.currentContext!, listen: false)
-              .displayName ??
-          'User';
-      debugPrint('Adding reaction: $emoji for docId: $docId by user: $user');
-      await _retryOperation(() async {
-        final querySnapshot = await _firestore
-            .collection('chat')
-            .doc(docId)
-            .collection('reactions')
-            .where('user', isEqualTo: user)
-            .get();
-        debugPrint(
-            'Found ${querySnapshot.docs.length} existing reactions for $user');
-        for (var doc in querySnapshot.docs) {
-          await doc.reference.delete();
-          debugPrint('Deleted existing reaction: ${doc.id}');
-        }
-        await _firestore
-            .collection('chat')
-            .doc(docId)
-            .collection('reactions')
-            .add({
-          'emoji': emoji,
-          'user': user,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-        debugPrint('Reaction $emoji added successfully');
-      });
-      HapticFeedback.lightImpact();
-    } catch (e) {
-      debugPrint('Failed to add reaction: $e');
-      if (!navigatorKey.currentContext!.mounted) return;
-      ScaffoldMessenger.of(navigatorKey.currentContext!)
-          .showSnackBar(SnackBar(content: Text('Failed to add reaction: $e')));
-    }
-  }
-
-  Future<void> editMessage(String docId, String newText) async {
-    try {
-      await _retryOperation(() async {
-        await _firestore
-            .collection('chat')
-            .doc(docId)
-            .update({'text': newText, 'edited': true});
-      });
-    } catch (e) {
-      if (!navigatorKey.currentContext!.mounted) return;
-      ScaffoldMessenger.of(navigatorKey.currentContext!)
-          .showSnackBar(SnackBar(content: Text('Failed to edit message: $e')));
-    }
-  }
-
-  Future<void> deleteMessage(String docId) async {
-    try {
-      await _retryOperation(() async {
-        await _firestore.collection('chat').doc(docId).delete();
-      });
-    } catch (e) {
-      if (!navigatorKey.currentContext!.mounted) return;
-      ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
-          SnackBar(content: Text('Failed to delete message: $e')));
-    }
-  }
-
+  // Retry logic with exponential backoff
   Future<void> _retryOperation(Future<void> Function() operation) async {
     int attempt = 0;
     while (attempt < _maxRetries) {
@@ -190,6 +125,7 @@ class ChatService {
     }
   }
 
+  // Cache message for offline sync
   Future<void> _cacheMessage(Map<String, dynamic> messageData) async {
     final prefs = await SharedPreferences.getInstance();
     List<String> cachedMessages = prefs.getStringList('offline_messages') ?? [];
@@ -197,5 +133,3 @@ class ChatService {
     await prefs.setStringList('offline_messages', cachedMessages);
   }
 }
-
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();

@@ -3,16 +3,12 @@ class Message {
   final DateTime timestamp;
   final String content;
   final List<Map<String, String>> reactions;
-  final String? replyToMessageId; // ID of the message being replied to
-  final String? replyToContent; // Content of the message being replied to
 
   Message({
     required this.sender,
     required this.timestamp,
     required this.content,
     this.reactions = const [],
-    this.replyToMessageId,
-    this.replyToContent,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -24,14 +20,9 @@ class Message {
       ),
       content: json['c'] as String? ?? '',
       reactions: (json['r'] as List<dynamic>?)
-              ?.map((r) => {
-                    'emoji': r['emoji'] as String? ?? '',
-                    'userId': r['userId'] as String? ?? '',
-                  })
+              ?.map((r) => Map<String, String>.from(r as Map))
               .toList() ??
           const [],
-      replyToMessageId: json['replyToMessageId'] as String?,
-      replyToContent: json['replyToContent'] as String?,
     );
   }
 
@@ -39,11 +30,7 @@ class Message {
         's': sender,
         't': timestamp.millisecondsSinceEpoch,
         'c': content,
-        'r': reactions
-            .map((r) => {'emoji': r['emoji'], 'userId': r['userId']})
-            .toList(),
-        'replyToMessageId': replyToMessageId,
-        'replyToContent': replyToContent,
+        'r': reactions,
       };
 
   Message copyWith({
@@ -51,22 +38,18 @@ class Message {
     DateTime? timestamp,
     String? content,
     List<Map<String, String>>? reactions,
-    String? replyToMessageId,
-    String? replyToContent,
   }) {
     return Message(
       sender: sender ?? this.sender,
       timestamp: timestamp ?? this.timestamp,
       content: content ?? this.content,
       reactions: reactions ?? this.reactions,
-      replyToMessageId: replyToMessageId ?? this.replyToMessageId,
-      replyToContent: replyToContent ?? this.replyToContent,
     );
   }
 
   @override
   String toString() {
-    return 'Message(sender: $sender, timestamp: ${timestamp.toIso8601String()}, content: $content, reactions: ${reactions.length} items, replyToMessageId: $replyToMessageId)';
+    return 'Message(sender: $sender, timestamp: ${timestamp.toIso8601String()}, content: $content, reactions: ${reactions.length} items)';
   }
 
   @override
@@ -77,17 +60,8 @@ class Message {
           sender == other.sender &&
           timestamp == other.timestamp &&
           content == other.content &&
-          reactions == other.reactions &&
-          replyToMessageId == other.replyToMessageId &&
-          replyToContent == other.replyToContent;
+          reactions == other.reactions;
 
   @override
-  int get hashCode => Object.hash(
-        sender,
-        timestamp,
-        content,
-        reactions,
-        replyToMessageId,
-        replyToContent,
-      );
+  int get hashCode => Object.hash(sender, timestamp, content, reactions);
 }

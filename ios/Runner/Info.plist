@@ -66,5 +66,10 @@
 	<!-- Siri Usage Description -->
 	<key>NSSiriUsageDescription</key>
 	<string>Send messages to your squad chat using Siri.</string>
+	<!-- Enable Background Modes for Remote Notifications -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

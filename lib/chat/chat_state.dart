@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ChatState extends ChangeNotifier {
   String? _typingUser;
   bool _isRecording = false;
   bool _isUploading = false;
   final Map<String, bool> _sendingStatus = {};
-  DocumentSnapshot? _replyToMessage; // Added for inline replies
+  String _quickReactionEmoji = '👍';
 
   String? get typingUser => _typingUser;
   bool get isRecording => _isRecording;
   bool get isUploading => _isUploading;
   Map<String, bool> get sendingStatus => Map.unmodifiable(_sendingStatus);
   bool get hasPendingMessages => _sendingStatus.isNotEmpty;
-  DocumentSnapshot? get replyToMessage => _replyToMessage;
+  String get quickReactionEmoji => _quickReactionEmoji;
 
   void setTypingUser(String? user) {
     if (_typingUser != user) {
@@ -88,25 +88,33 @@ class ChatState extends ChangeNotifier {
     _isRecording = false;
     _isUploading = false;
     _sendingStatus.clear();
-    _replyToMessage = null; // Reset reply state
     notifyListeners();
-  }
-
-  void setReplyToMessage(DocumentSnapshot? message) {
-    if (_replyToMessage != message) {
-      _replyToMessage = message;
-      notifyListeners();
-    }
-  }
-
-  void scrollToMessage(String messageId) {
-    // This will be called by MessageList to handle scrolling
-    notifyListeners(); // Notify MessageList to perform the scroll
   }
 
   void _validateTempId(String tempId) {
     if (tempId.isEmpty || tempId.trim().isEmpty) {
       throw ArgumentError('tempId cannot be empty or null');
+    }
+  }
+
+  Future<void> setQuickReactionEmoji(String emoji) async {
+    try {
+      _quickReactionEmoji = emoji;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('quick_reaction_emoji', emoji);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error setting quick reaction emoji: $e');
+    }
+  }
+
+  Future<void> loadQuickReactionEmoji() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _quickReactionEmoji = prefs.getString('quick_reaction_emoji') ?? '👍';
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading quick reaction emoji: $e');
     }
   }
 

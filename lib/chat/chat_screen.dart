@@ -128,7 +128,6 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _loadChatDetails() async {
-    if (!mounted) return;
     try {
       final doc =
           await _firestore.collection('chat_metadata').doc('chat_config').get();
@@ -147,15 +146,15 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _loadNotificationSettings() async {
-    if (!mounted) return;
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _isMuted = prefs.getBool('chat_muted') ?? false;
-    });
+    if (mounted) {
+      setState(() {
+        _isMuted = prefs.getBool('chat_muted') ?? false;
+      });
+    }
   }
 
   Future<void> _toggleNotifications() async {
-    if (!mounted) return;
     setState(() {
       _isMuted = !_isMuted;
     });
@@ -187,7 +186,7 @@ class ChatScreenState extends State<ChatScreen>
       _messageController.clear();
       await _chatService.updateTypingStatus(context, sender, false);
       _scrollToBottom();
-      _checkFirstMessage();
+      await _checkFirstMessage();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -300,7 +299,6 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _forwardMessage(String messageText) async {
-    if (!mounted) return;
     try {
       String? sender =
           _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
@@ -346,7 +344,6 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _checkFirstMessage() async {
-    if (!mounted) return;
     final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey('first_message_sent')) {
       await prefs.setBool('first_message_sent', true);
@@ -405,7 +402,6 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   void _leaveGroup() async {
-    if (!mounted) return;
     try {
       String? uid = _auth.currentUser?.uid;
       if (uid != null) {
@@ -426,369 +422,6 @@ class ChatScreenState extends State<ChatScreen>
         );
       }
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.black, Colors.indigo],
-            ),
-          ),
-          child: Consumer<ChatState>(
-            builder: (context, chatState, _) => Stack(
-              children: [
-                Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: AnimatedOpacity(
-                        opacity: 1.0,
-                        duration: const Duration(milliseconds: 300),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            GestureDetector(
-                              onTap: () => ChatSettingsMenu.showChatOptions(
-                                context: context,
-                                onSearchMessages: () =>
-                                    ChatSettingsMenu.showSearchBar(
-                                  context: context,
-                                  firestore: _firestore,
-                                  searchQuery: _searchQuery,
-                                  onSearchQueryChanged: (value) =>
-                                      setState(() => _searchQuery = value),
-                                ),
-                                onChangeChatName: () =>
-                                    ChatSettingsMenu.showChangeChatNameDialog(
-                                  context: context,
-                                  currentName: _chatName,
-                                  onSave: (newName) async {
-                                    if (!mounted) return;
-                                    try {
-                                      await _firestore
-                                          .collection('chat_metadata')
-                                          .doc('chat_config')
-                                          .set({
-                                        'name': newName,
-                                        'timestamp':
-                                            FieldValue.serverTimestamp(),
-                                      }, SetOptions(merge: true));
-                                      if (mounted) {
-                                        setState(() => _chatName = newName);
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(SnackBar(
-                                                content: Text(
-                                                    'Failed to update chat name: $e')));
-                                      }
-                                    }
-                                  },
-                                ),
-                                onChangeChatImage: () async {
-                                  if (!mounted) return;
-                                  final XFile? image = await _picker.pickImage(
-                                      source: ImageSource.gallery);
-                                  if (image != null && mounted) {
-                                    try {
-                                      File file = File(image.path);
-                                      String fileName =
-                                          'chat_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                                      Reference ref = FirebaseStorage.instance
-                                          .ref()
-                                          .child('chat_images/$fileName');
-                                      UploadTask uploadTask = ref.putFile(file);
-                                      final snapshot =
-                                          await uploadTask.whenComplete(() {});
-                                      String downloadUrl =
-                                          await snapshot.ref.getDownloadURL();
-                                      await _firestore
-                                          .collection('chat_metadata')
-                                          .doc('chat_config')
-                                          .set({
-                                        'imageUrl': downloadUrl,
-                                        'timestamp':
-                                            FieldValue.serverTimestamp(),
-                                      }, SetOptions(merge: true));
-                                      if (mounted) {
-                                        setState(
-                                            () => _chatImageUrl = downloadUrl);
-                                        HapticFeedback.lightImpact();
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(SnackBar(
-                                                content: Text(
-                                                    'Image upload failed: $e')));
-                                      }
-                                    }
-                                  }
-                                },
-                                onClearChat: () async {
-                                  if (!mounted) return;
-                                  try {
-                                    final snapshot = await _firestore
-                                        .collection('chat')
-                                        .get();
-                                    for (var doc in snapshot.docs) {
-                                      await doc.reference.delete();
-                                    }
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(const SnackBar(
-                                              content: Text('Chat cleared')));
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                              content: Text(
-                                                  'Failed to clear chat: $e')));
-                                    }
-                                  }
-                                },
-                                onQuickReactionPicker: () =>
-                                    ChatSettingsMenu.showQuickReactionPicker(
-                                  context: context,
-                                  onEmojiSelected: (emoji) {
-                                    Provider.of<ChatState>(context,
-                                            listen: false)
-                                        .setQuickReactionEmoji(emoji);
-                                  },
-                                ),
-                                onToggleNotifications: _toggleNotifications,
-                                isMuted: _isMuted,
-                                onViewGroupInfo: _viewGroupInfo,
-                                onReportBug: _reportBug,
-                                onLeaveGroup: _leaveGroup,
-                              ),
-                              child: Semantics(
-                                label: 'Chat options',
-                                child: Row(
-                                  children: [
-                                    if (_chatImageUrl != null)
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.only(right: 8.0),
-                                        child: CircleAvatar(
-                                          radius: 20,
-                                          backgroundImage:
-                                              NetworkImage(_chatImageUrl!),
-                                        ),
-                                      )
-                                    else
-                                      const Padding(
-                                        padding: EdgeInsets.only(right: 8.0),
-                                        child: CircleAvatar(
-                                          radius: 20,
-                                          child: Icon(Icons.group,
-                                              color: Colors.cyanAccent),
-                                        ),
-                                      ),
-                                    Text(
-                                      _chatName,
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.accentColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            Consumer<SquadState>(
-                              builder: (context, squadState, _) {
-                                int onlineCount = squadState.statuses.values
-                                    .where((status) =>
-                                        status == 'Strutting' ||
-                                        status == 'Walking' ||
-                                        status == 'Ready')
-                                    .length;
-                                return Semantics(
-                                  label: '$onlineCount members online',
-                                  child: Text(
-                                    'Online: $onlineCount',
-                                    style: const TextStyle(
-                                        fontSize: 14,
-                                        color: AppTheme.textColor),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ).animate().fadeIn(),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 60),
-                        child: StreamBuilder<QuerySnapshot>(
-                          stream: _chatService
-                              .getChatMessages()
-                              .map((event) => event..docs.take(_messageLimit)),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasError) {
-                              return const Center(
-                                  child: Text('Error loading chat'));
-                            }
-                            if (!snapshot.hasData) {
-                              return const Center(
-                                  child: CircularProgressIndicator());
-                            }
-                            var messages = snapshot.data!.docs;
-                            if (messages.isEmpty) {
-                              return const Center(
-                                  child: Text('No messages yet'));
-                            }
-
-                            Map<String, List<String>> lastReadBy = {};
-                            for (var doc in messages) {
-                              var data = doc.data() as Map<String, dynamic>;
-                              if (data['read'] == true) {
-                                String sender = data['sender'];
-                                String uid = _auth.currentUser!.uid;
-                                if (!lastReadBy.containsKey(sender)) {
-                                  lastReadBy[sender] = [];
-                                }
-                                if (!lastReadBy[sender]!.contains(uid)) {
-                                  lastReadBy[sender]!.add(uid);
-                                }
-                              }
-                            }
-
-                            return ListView.builder(
-                              controller: _scrollController,
-                              reverse: true,
-                              itemCount: messages.length,
-                              itemBuilder: (context, index) {
-                                var message = messages[index];
-                                String? myName = _squadState.displayName;
-                                bool isMe = message['sender'] ==
-                                    (_auth.currentUser!.displayName ??
-                                        myName ??
-                                        'User');
-                                if (!isMe && !(message['delivered'] ?? false)) {
-                                  _chatService.markAsDelivered(message.id);
-                                }
-                                bool showSender = !isMe &&
-                                    (index == messages.length - 1 ||
-                                        messages[index + 1]['sender'] !=
-                                            message['sender']);
-                                bool showAvatar = !isMe &&
-                                    (index == 0 ||
-                                        messages[index - 1]['sender'] !=
-                                            message['sender']);
-                                bool showTimestamp = index > 0 &&
-                                    messages[index - 1]['timestamp'] != null &&
-                                    message['timestamp'] != null &&
-                                    (messages[index - 1]['timestamp']
-                                                as Timestamp)
-                                            .toDate()
-                                            .difference((message['timestamp']
-                                                    as Timestamp)
-                                                .toDate())
-                                            .inMinutes >
-                                        30;
-                                bool showReadIndicator = !isMe &&
-                                    lastReadBy[message['sender']]?.contains(
-                                            _auth.currentUser!.uid) ==
-                                        true;
-
-                                return MessageBubble(
-                                  message: message,
-                                  isMe: isMe,
-                                  showSender: showSender,
-                                  showAvatar: showAvatar,
-                                  showTimestamp: showTimestamp,
-                                  showReadIndicator: showReadIndicator,
-                                  onTap: () => _showMessageDetails(message),
-                                  onLongPress:
-                                      () {}, // Removed ChatSettingsMenu call
-                                  sendingStatus: chatState.sendingStatus,
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    if (chatState.typingUser != null)
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 8),
-                            Semantics(
-                              label: '${chatState.typingUser} is typing',
-                              child: Text('${chatState.typingUser} is typing',
-                                  style: const TextStyle(
-                                      fontStyle: FontStyle.italic)),
-                            ),
-                            const SizedBox(width: 8),
-                            Animate(
-                              effects: const [
-                                FadeEffect(
-                                    duration: Duration(milliseconds: 500)),
-                                ScaleEffect(
-                                    begin: Offset(0.8, 0.8),
-                                    end: Offset(1.0, 1.0)),
-                              ],
-                              child: Semantics(
-                                label: 'Typing indicator',
-                                child: const Text('...'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    Semantics(
-                      label: 'Chat input bar',
-                      child: ChatInputBar(
-                        controller: _messageController,
-                        isRecording: chatState.isRecording,
-                        isUploading: chatState.isUploading,
-                        onSend: _sendMessage,
-                        onMedia: _sendMedia,
-                        onRecordStart: _startRecording,
-                        onRecordStop: _stopRecording,
-                        onPlusMenu: () => _showPlusMenu(context),
-                        onTextChanged: (value) {
-                          String? sender = _squadState.displayName ?? 'User';
-                          _chatService.updateTypingStatus(
-                              context, sender, value.isNotEmpty);
-                        },
-                        quickReactionEmoji: chatState.quickReactionEmoji,
-                      ),
-                    ),
-                  ],
-                ),
-                if (_showJumpToBottom)
-                  Positioned(
-                    bottom: 80,
-                    right: 16,
-                    child: FloatingActionButton(
-                      onPressed: _scrollToBottom,
-                      mini: true,
-                      backgroundColor: AppTheme.accentColor,
-                      tooltip: 'Jump to latest messages',
-                      child: const Icon(Icons.arrow_downward),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   void _showPlusMenu(BuildContext context) {
@@ -825,6 +458,392 @@ class ChatScreenState extends State<ChatScreen>
             },
           ),
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: Consumer<ChatState>(
+          builder: (context, chatState, _) {
+            // Get the keyboard height and navigation bar height
+            final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+            final navBarHeight = MediaQuery.of(context).padding.bottom;
+            // When the keyboard is open, ignore the nav bar height; otherwise, use a small padding
+            final bottomPadding = keyboardHeight > 0 ? keyboardHeight : 2.0;
+            return MediaQuery.removePadding(
+              context: context,
+              removeBottom: keyboardHeight > 0, // Remove nav bar padding when keyboard is open
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black, Colors.indigo],
+                    stops: const [0.0, 1.0],
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    Column(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.9),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: AnimatedOpacity(
+                              opacity: 1.0,
+                              duration: const Duration(milliseconds: 300),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () => ChatSettingsMenu.showChatOptions(
+                                      context: context,
+                                      onSearchMessages: () =>
+                                          ChatSettingsMenu.showSearchBar(
+                                        context: context,
+                                        firestore: _firestore,
+                                        searchQuery: _searchQuery,
+                                        onSearchQueryChanged: (value) =>
+                                            setState(() => _searchQuery = value),
+                                      ),
+                                      onChangeChatName: () =>
+                                          ChatSettingsMenu.showChangeChatNameDialog(
+                                        context: context,
+                                        currentName: _chatName,
+                                        onSave: (newName) async {
+                                          try {
+                                            await _firestore
+                                                .collection('chat_metadata')
+                                                .doc('chat_config')
+                                                .set({
+                                              'name': newName,
+                                              'timestamp':
+                                                  FieldValue.serverTimestamp(),
+                                            }, SetOptions(merge: true));
+                                            if (mounted) {
+                                              setState(() => _chatName = newName);
+                                            }
+                                          } catch (e) {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text(
+                                                          'Failed to update chat name: $e')));
+                                            }
+                                          }
+                                        },
+                                      ),
+                                      onChangeChatImage: () async {
+                                        final XFile? image = await _picker.pickImage(
+                                            source: ImageSource.gallery);
+                                        if (image != null && mounted) {
+                                          try {
+                                            File file = File(image.path);
+                                            String fileName =
+                                                'chat_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                                            Reference ref = FirebaseStorage.instance
+                                                .ref()
+                                                .child('chat_images/$fileName');
+                                            UploadTask uploadTask =
+                                                ref.putFile(file);
+                                            final snapshot = await uploadTask
+                                                .whenComplete(() {});
+                                            String downloadUrl =
+                                                await snapshot.ref.getDownloadURL();
+                                            await _firestore
+                                                .collection('chat_metadata')
+                                                .doc('chat_config')
+                                                .set({
+                                              'imageUrl': downloadUrl,
+                                              'timestamp':
+                                                  FieldValue.serverTimestamp(),
+                                            }, SetOptions(merge: true));
+                                            if (mounted) {
+                                              setState(
+                                                  () => _chatImageUrl = downloadUrl);
+                                              HapticFeedback.lightImpact();
+                                            }
+                                          } catch (e) {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text(
+                                                          'Image upload failed: $e')));
+                                            }
+                                          }
+                                        }
+                                      },
+                                      onClearChat: () async {
+                                        try {
+                                          final snapshot = await _firestore
+                                              .collection('chat')
+                                              .get();
+                                          for (var doc in snapshot.docs) {
+                                            await doc.reference.delete();
+                                          }
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(const SnackBar(
+                                                    content: Text('Chat cleared')));
+                                          }
+                                        } catch (e) {
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(SnackBar(
+                                                    content: Text(
+                                                        'Failed to clear chat: $e')));
+                                          }
+                                        }
+                                      },
+                                      onQuickReactionPicker: () =>
+                                          ChatSettingsMenu.showQuickReactionPicker(
+                                        context: context,
+                                        onEmojiSelected: (emoji) {
+                                          Provider.of<ChatState>(context,
+                                                  listen: false)
+                                              .setQuickReactionEmoji(emoji);
+                                        },
+                                      ),
+                                      onToggleNotifications: _toggleNotifications,
+                                      isMuted: _isMuted,
+                                      onViewGroupInfo: _viewGroupInfo,
+                                      onReportBug: _reportBug,
+                                      onLeaveGroup: _leaveGroup,
+                                    ),
+                                    child: Semantics(
+                                      label: 'Chat options',
+                                      child: Row(
+                                        children: [
+                                          if (_chatImageUrl != null)
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.only(right: 8.0),
+                                              child: CircleAvatar(
+                                                radius: 20,
+                                                backgroundImage:
+                                                    NetworkImage(_chatImageUrl!),
+                                              ),
+                                            )
+                                          else
+                                            const Padding(
+                                              padding: EdgeInsets.only(right: 8.0),
+                                              child: CircleAvatar(
+                                                radius: 20,
+                                                child: Icon(Icons.group,
+                                                    color: Colors.cyanAccent),
+                                              ),
+                                            ),
+                                          Text(
+                                            _chatName,
+                                            style: const TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                              color: AppTheme.accentColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Consumer<SquadState>(
+                                    builder: (context, squadState, _) {
+                                      int onlineCount = squadState.statuses.values
+                                          .where((status) =>
+                                              status == 'Strutting' ||
+                                              status == 'Walking' ||
+                                              status == 'Ready')
+                                          .length;
+                                      return Semantics(
+                                        label: '$onlineCount members online',
+                                        child: Text(
+                                          'Online: $onlineCount',
+                                          style: const TextStyle(
+                                              fontSize: 14,
+                                              color: AppTheme.textColor),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ).animate().fadeIn(),
+                        Expanded(
+                          child: StreamBuilder<QuerySnapshot>(
+                            stream: _chatService.getChatMessages(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return const Center(
+                                    child: Text('Error loading chat'));
+                              }
+                              if (!snapshot.hasData) {
+                                return const Center(
+                                    child: CircularProgressIndicator());
+                              }
+                              var messages =
+                                  snapshot.data!.docs.take(_messageLimit).toList();
+                              if (messages.isEmpty) {
+                                return const Center(child: Text('No messages yet'));
+                              }
+
+                              Map<String, List<String>> lastReadBy = {};
+                              for (var doc in messages) {
+                                var data = doc.data() as Map<String, dynamic>;
+                                if (data['read'] == true) {
+                                  String sender = data['sender'];
+                                  String uid = _auth.currentUser!.uid;
+                                  if (!lastReadBy.containsKey(sender)) {
+                                    lastReadBy[sender] = [];
+                                  }
+                                  if (!lastReadBy[sender]!.contains(uid)) {
+                                    lastReadBy[sender]!.add(uid);
+                                  }
+                                }
+                              }
+
+                              return ListView.builder(
+                                controller: _scrollController,
+                                reverse: true,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8.0, vertical: 4.0),
+                                itemCount: messages.length,
+                                itemBuilder: (context, index) {
+                                  var message = messages[index];
+                                  String? myName = _squadState.displayName;
+                                  bool isMe = message['sender'] ==
+                                      (_auth.currentUser!.displayName ??
+                                          myName ??
+                                          'User');
+                                  if (!isMe && !(message['delivered'] ?? false)) {
+                                    _chatService.markAsDelivered(message.id);
+                                  }
+                                  bool showSender = !isMe &&
+                                      (index == messages.length - 1 ||
+                                          messages[index + 1]['sender'] !=
+                                              message['sender']);
+                                  bool showAvatar = !isMe &&
+                                      (index == 0 ||
+                                          messages[index - 1]['sender'] !=
+                                              message['sender']);
+                                  bool showTimestamp = index > 0 &&
+                                      messages[index - 1]['timestamp'] != null &&
+                                      message['timestamp'] != null &&
+                                      (messages[index - 1]['timestamp']
+                                                  as Timestamp)
+                                              .toDate()
+                                              .difference(
+                                                  (message['timestamp'] as Timestamp)
+                                                      .toDate())
+                                              .inMinutes >
+                                          30;
+                                  bool showReadIndicator = !isMe &&
+                                      lastReadBy[message['sender']]?.contains(
+                                              _auth.currentUser!.uid) ==
+                                          true;
+
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                    child: MessageBubble(
+                                      message: message,
+                                      isMe: isMe,
+                                      showSender: showSender,
+                                      showAvatar: showAvatar,
+                                      showTimestamp: showTimestamp,
+                                      showReadIndicator: showReadIndicator,
+                                      onTap: () => _showMessageDetails(message),
+                                      onLongPress: () =>
+                                          _forwardMessage(message['text'] ?? ''),
+                                      sendingStatus:
+                                          Provider.of<ChatState>(context, listen: false)
+                                              .sendingStatus,
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        Semantics(
+                          label: 'Chat input bar',
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              bottom: bottomPadding,
+                              left: 8.0,
+                              right: 8.0,
+                            ),
+                            child: ChatInputBar(
+                              controller: _messageController,
+                              isRecording: chatState.isRecording,
+                              isUploading: chatState.isUploading,
+                              onSend: _sendMessage,
+                              onMedia: _sendMedia,
+                              onRecordStart: _startRecording,
+                              onRecordStop: _stopRecording,
+                              onPlusMenu: () => _showPlusMenu(context),
+                              onTextChanged: (value) {
+                                String? sender = _squadState.displayName ?? 'User';
+                                _chatService.updateTypingStatus(
+                                    context, sender, value.isNotEmpty);
+                              },
+                              quickReactionEmoji: chatState.quickReactionEmoji,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_showJumpToBottom)
+                      Positioned(
+                        bottom: 80,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: GestureDetector(
+                            onTap: _scrollToBottom,
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.8),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.arrow_downward,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

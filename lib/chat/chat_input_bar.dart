@@ -59,39 +59,36 @@ class _ChatInputBarState extends State<ChatInputBar> {
   @override
   Widget build(BuildContext context) {
     final hasText = widget.controller.text.isNotEmpty;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (!_isExpanded) _buildActionSheetButton(context),
-            if (!_isExpanded) const SizedBox(width: 8),
-            if (!_isExpanded) _buildMediaButton(),
-            if (!_isExpanded) const SizedBox(width: 8),
-            if (!_isExpanded) _buildRecordButton(),
-            if (!_isExpanded) const SizedBox(width: 8),
-            Expanded(
-              child: Stack(
-                children: [
-                  _buildTextField(context),
-                  Positioned(
-                    right: 8,
-                    child: _isExpanded
-                        ? _buildCollapseButton(context)
-                        : _buildEmojiButton(context),
-                  ),
-                ],
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (!_isExpanded) _buildActionSheetButton(context),
+          if (!_isExpanded) const SizedBox(width: 8),
+          if (!_isExpanded) _buildMediaButton(),
+          if (!_isExpanded) const SizedBox(width: 8),
+          if (!_isExpanded) _buildRecordButton(),
+          if (!_isExpanded) const SizedBox(width: 8),
+          Expanded(
+            child: Stack(
+              children: [
+                _buildTextField(context),
+                Positioned(
+                  right: 8,
+                  child: _isExpanded
+                      ? _buildCollapseButton(context)
+                      : _buildEmojiButton(context),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: _buildActionButton(context, hasText),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _buildActionButton(context, hasText),
+          ),
+        ],
       ),
     );
   }
@@ -242,7 +239,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
               }
             },
             textInputAction: TextInputAction.send,
-            keyboardType: TextInputType.multiline,
+            keyboardType: TextInputType.text,
             autocorrect: true,
             enableSuggestions: true,
           ),

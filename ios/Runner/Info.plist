@@ -51,7 +51,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>cod_squad_app</string>
+				<string>codsquadapp</string>
 			</array>
 			<key>CFBundleURLName</key>
 			<string>com.example.codSquadApp</string>
@@ -66,10 +66,14 @@
 	<!-- Siri Usage Description -->
 	<key>NSSiriUsageDescription</key>
 	<string>Send messages to your squad chat using Siri.</string>
-	<!-- Enable Background Modes for Remote Notifications -->
+	<!-- Enable Background Modes for Fetch and Remote Notifications -->
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<!-- Firebase Auto Registration -->
+	<key>FirebaseAppDelegateAutoRegister</key>
+	<true/>
 </dict>
 </plist>

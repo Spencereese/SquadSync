@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -88,7 +89,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   }
 
   void _handleDeepLink(String link) {
-    if (link == 'cod_squad_app://chat' && mounted) {
+    if (link == 'codsquadapp://chat' && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const ChatScreen()),

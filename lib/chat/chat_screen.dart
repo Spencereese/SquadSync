@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart' as record_package;
 import 'package:provider/provider.dart';
@@ -43,8 +42,11 @@ class ChatScreenState extends State<ChatScreen>
   final ChatService _chatService = ChatService();
   late SquadState _squadState;
   bool _showJumpToBottom = false;
-  int _messageLimit = 20;
   bool _isMuted = false;
+  List<Map<String, dynamic>> _historicalMessages = [];
+  int _offset = 0;
+  final int _limit = 50;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -66,6 +68,7 @@ class ChatScreenState extends State<ChatScreen>
       _sendMessage();
     }
     _loadNotificationSettings();
+    _loadMoreMessages();
   }
 
   @override
@@ -87,10 +90,10 @@ class ChatScreenState extends State<ChatScreen>
     } else if (_scrollController.offset <= 100 && _showJumpToBottom) {
       setState(() => _showJumpToBottom = false);
     }
-    if (_scrollController.position.pixels ==
-            _scrollController.position.maxScrollExtent &&
-        mounted) {
-      setState(() => _messageLimit += 20);
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoading) {
+      _loadMoreMessages();
     }
   }
 
@@ -128,7 +131,6 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _loadChatDetails() async {
-    if (!mounted) return;
     try {
       final doc =
           await _firestore.collection('chat_metadata').doc('chat_config').get();
@@ -167,6 +169,32 @@ class ChatScreenState extends State<ChatScreen>
             content: Text(
                 _isMuted ? 'Notifications muted' : 'Notifications unmuted')),
       );
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    try {
+      final newMessages = await _chatService.loadMoreMessages(
+        offset: _offset,
+        limit: _limit,
+      );
+      setState(() {
+        _historicalMessages.addAll(newMessages);
+        _offset += _limit;
+      });
+    } catch (e) {
+      debugPrint('Error loading messages: $e');
+      // Load from SQLite cache
+      final cachedMessages =
+          await _chatService.getCachedMessages(_offset, _limit);
+      setState(() {
+        _historicalMessages.addAll(cachedMessages);
+        _offset += _limit;
+      });
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -211,11 +239,20 @@ class ChatScreenState extends State<ChatScreen>
           '${DateTime.now().millisecondsSinceEpoch}_$sender.${isVideo ? 'mp4' : 'jpg'}';
       String downloadUrl =
           await _chatService.uploadMedia(file, fileName, isVideo);
+      final timestampMs = DateTime.now().millisecondsSinceEpoch;
       await _chatService.sendMessage(
         sender: sender,
         text: '',
-        videoUrl: isVideo ? downloadUrl : null,
-        imageUrl: !isVideo ? downloadUrl : null,
+        photos: !isVideo
+            ? [
+                {'uri': downloadUrl, 'creation_timestamp': timestampMs}
+              ]
+            : [],
+        videos: isVideo
+            ? [
+                {'uri': downloadUrl, 'creation_timestamp': timestampMs}
+              ]
+            : [],
       );
       chatState.setUploading(false);
       HapticFeedback.lightImpact();
@@ -283,10 +320,13 @@ class ChatScreenState extends State<ChatScreen>
           _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
       String fileName = '${DateTime.now().millisecondsSinceEpoch}_$sender.m4a';
       String downloadUrl = await _chatService.uploadAudio(file, fileName);
+      final timestampMs = DateTime.now().millisecondsSinceEpoch;
       await _chatService.sendMessage(
         sender: sender,
         text: '',
-        audioUrl: downloadUrl,
+        audio: [
+          {'uri': downloadUrl, 'creation_timestamp': timestampMs}
+        ],
       );
       chatState.setUploading(false);
       _audioPath = null;
@@ -322,6 +362,19 @@ class ChatScreenState extends State<ChatScreen>
 
   void _showMessageDetails(DocumentSnapshot message) {
     if (!mounted) return;
+    final data = message.data() as Map<String, dynamic>?;
+    if (data == null) return;
+
+    // Handle both Firestore (timestamp) and PostgreSQL (timestamp_ms) formats
+    int timestampMillis;
+    if (data['timestamp_ms'] != null) {
+      timestampMillis = data['timestamp_ms'] as int;
+    } else if (data['timestamp'] is Timestamp) {
+      timestampMillis = (data['timestamp'] as Timestamp).millisecondsSinceEpoch;
+    } else {
+      timestampMillis = DateTime.now().millisecondsSinceEpoch; // Fallback
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -329,9 +382,9 @@ class ChatScreenState extends State<ChatScreen>
         title: const Text('Message Details'),
         content: Semantics(
           label:
-              'Message sent at ${DateFormat('MMMM d, yyyy, HH:mm:ss').format((message['timestamp'] as Timestamp).toDate())}',
+              'Message sent at ${DateFormat('MMMM d, yyyy, HH:mm:ss').format(DateTime.fromMillisecondsSinceEpoch(timestampMillis))}',
           child: Text(
-            'Sent: ${DateFormat('MMM d, yyyy, HH:mm:ss').format((message['timestamp'] as Timestamp).toDate())}',
+            'Sent: ${DateFormat('MMM d, yyyy, HH:mm:ss').format(DateTime.fromMillisecondsSinceEpoch(timestampMillis))}',
           ),
         ),
         actions: [
@@ -501,14 +554,8 @@ class ChatScreenState extends State<ChatScreen>
                                       File file = File(image.path);
                                       String fileName =
                                           'chat_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                                      Reference ref = FirebaseStorage.instance
-                                          .ref()
-                                          .child('chat_images/$fileName');
-                                      UploadTask uploadTask = ref.putFile(file);
-                                      final snapshot =
-                                          await uploadTask.whenComplete(() {});
-                                      String downloadUrl =
-                                          await snapshot.ref.getDownloadURL();
+                                      String downloadUrl = await _chatService
+                                          .uploadMedia(file, fileName, false);
                                       await _firestore
                                           .collection('chat_metadata')
                                           .doc('chat_config')
@@ -632,9 +679,7 @@ class ChatScreenState extends State<ChatScreen>
                       child: Padding(
                         padding: const EdgeInsets.only(bottom: 60),
                         child: StreamBuilder<QuerySnapshot>(
-                          stream: _chatService
-                              .getChatMessages()
-                              .map((event) => event..docs.take(_messageLimit)),
+                          stream: _chatService.getChatMessages(),
                           builder: (context, snapshot) {
                             if (snapshot.hasError) {
                               return const Center(
@@ -645,16 +690,21 @@ class ChatScreenState extends State<ChatScreen>
                                   child: CircularProgressIndicator());
                             }
                             var messages = snapshot.data!.docs;
-                            if (messages.isEmpty) {
+                            // Only use Firestore messages for now, as MessageBubble expects DocumentSnapshot
+                            // TODO: Update MessageBubble to support Map<String, dynamic> for PostgreSQL messages
+                            var allMessages = messages;
+
+                            if (allMessages.isEmpty) {
                               return const Center(
                                   child: Text('No messages yet'));
                             }
 
                             Map<String, List<String>> lastReadBy = {};
-                            for (var doc in messages) {
-                              var data = doc.data() as Map<String, dynamic>;
+                            for (var doc in allMessages) {
+                              final data = doc.data() as Map<String, dynamic>?;
+                              if (data == null) continue;
                               if (data['read'] == true) {
-                                String sender = data['sender'];
+                                String sender = data['sender'] ?? '';
                                 String uid = _auth.currentUser!.uid;
                                 if (!lastReadBy.containsKey(sender)) {
                                   lastReadBy[sender] = [];
@@ -668,38 +718,52 @@ class ChatScreenState extends State<ChatScreen>
                             return ListView.builder(
                               controller: _scrollController,
                               reverse: true,
-                              itemCount: messages.length,
+                              itemCount:
+                                  allMessages.length + (_isLoading ? 1 : 0),
                               itemBuilder: (context, index) {
-                                var message = messages[index];
+                                if (index == allMessages.length && _isLoading) {
+                                  return Center(
+                                      child: CircularProgressIndicator());
+                                }
+                                var message = allMessages[index];
+                                final data =
+                                    message.data() as Map<String, dynamic>?;
+                                if (data == null)
+                                  return const SizedBox.shrink();
                                 String? myName = _squadState.displayName;
-                                bool isMe = message['sender'] ==
+                                bool isMe = data['sender'] ==
                                     (_auth.currentUser!.displayName ??
                                         myName ??
                                         'User');
-                                if (!isMe && !(message['delivered'] ?? false)) {
+                                if (!isMe && !(data['delivered'] ?? false)) {
                                   _chatService.markAsDelivered(message.id);
                                 }
                                 bool showSender = !isMe &&
-                                    (index == messages.length - 1 ||
-                                        messages[index + 1]['sender'] !=
-                                            message['sender']);
+                                    (index == allMessages.length - 1 ||
+                                        (allMessages[index + 1].data() as Map<
+                                                String, dynamic>?)?['sender'] !=
+                                            data['sender']);
                                 bool showAvatar = !isMe &&
                                     (index == 0 ||
-                                        messages[index - 1]['sender'] !=
-                                            message['sender']);
+                                        (allMessages[index - 1].data() as Map<
+                                                String, dynamic>?)?['sender'] !=
+                                            data['sender']);
                                 bool showTimestamp = index > 0 &&
-                                    messages[index - 1]['timestamp'] != null &&
-                                    message['timestamp'] != null &&
-                                    (messages[index - 1]['timestamp']
-                                                as Timestamp)
-                                            .toDate()
-                                            .difference((message['timestamp']
-                                                    as Timestamp)
-                                                .toDate())
+                                    (allMessages[index - 1].data() as Map<
+                                            String,
+                                            dynamic>?)?['timestamp_ms'] !=
+                                        null &&
+                                    data['timestamp_ms'] != null &&
+                                    (DateTime.fromMillisecondsSinceEpoch(
+                                                (allMessages[index - 1].data() as Map<
+                                                    String,
+                                                    dynamic>)['timestamp_ms'])
+                                            .difference(DateTime.fromMillisecondsSinceEpoch(
+                                                data['timestamp_ms']))
                                             .inMinutes >
-                                        30;
+                                        30);
                                 bool showReadIndicator = !isMe &&
-                                    lastReadBy[message['sender']]?.contains(
+                                    lastReadBy[data['sender'] ?? '']?.contains(
                                             _auth.currentUser!.uid) ==
                                         true;
 

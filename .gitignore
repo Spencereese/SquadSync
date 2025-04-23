@@ -52,3 +52,4 @@ android/app/google-services.json  # If present and sensitive
 C:\Users\PC\cod_squad_app>echo android/app/google-services.json >> .gitignoreandroid/app/google-services.json 
 "service-account.json" 
 backend/service-account.json 
+backend/service-account.json 

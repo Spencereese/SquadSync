@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../squad_state.dart';
-import '../utils.dart';
+import 'spot_widgets.dart';
+import 'peacock_widgets.dart';
+import 'member_widgets.dart';
+import 'squad_dialogs.dart';
 
 class SquadTab extends StatelessWidget {
   const SquadTab({super.key});
@@ -37,461 +40,461 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   Widget build(BuildContext context) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
-        return SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHeader(context),
-                _buildSquadSpots(context, squadState),
-                _buildPeacockSpot(context, squadState),
-                if (_showPeacockMembers)
-                  _buildPeacockMembersList(context, squadState),
-                _buildActionButtons(context, squadState),
-                _buildSquadMembersList(context, squadState),
-              ],
-            ),
+        return RefreshIndicator(
+          onRefresh: () async {
+            // Force a state refresh if needed; currently, Firestore listener handles updates
+          },
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.fromLTRB(16, 8 + kToolbarHeight, 16, 16),
+                  child: _buildHeader(context, squadState),
+                ),
+              ),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => SpotWidgets.buildSpotCard(context, index,
+                      squadState, _showSpotAssignmentMenu, _assignOtherMember),
+                  childCount: squadState.currentGame?['maxSpots'] ?? 4,
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: PeacockWidgets.buildPeacockSpot(
+                    context, squadState, _togglePeacockMembers),
+              ),
+              if (_showPeacockMembers)
+                SliverToBoxAdapter(
+                  child: PeacockWidgets.buildPeacockMembersList(
+                      context, squadState, _togglePeacockMember),
+                ),
+              SliverToBoxAdapter(
+                child: _buildActionButtons(context, squadState),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Semantics(
+                    label: 'Squad Members List',
+                    child: Text(
+                      'Squad Members:',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(color: Colors.cyanAccent),
+                    ),
+                  ),
+                ),
+              ),
+              if (squadState.getFilteredMembers.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Text('No squad members yet',
+                        style: TextStyle(color: Colors.grey)),
+                  ),
+                )
+              else
+                SliverToBoxAdapter(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      color: Colors.grey[900],
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: squadState.getFilteredMembers.length,
+                      itemBuilder: (context, index) {
+                        final player = squadState.getFilteredMembers[index];
+                        return MemberWidgets.buildMemberCard(context, player,
+                            squadState, _showBlockDialog, _showJoinLobbyDialog);
+                      },
+                    ),
+                  ),
+                ),
+              SliverToBoxAdapter(
+                child: const SizedBox(height: 80.0),
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Semantics(
-            label: 'Squad Title',
-            child: Text(
-              'Squad',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
+  Widget _buildHeader(BuildContext context, SquadState squadState) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Semantics(
+              label: 'Squad Title',
+              child: Text(
+                'Squad',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.cyanAccent,
+                    ),
+              ),
+            ),
+            // Centered game logo
+            Expanded(
+              child: Center(
+                child: _buildGameDropdown(context, squadState),
+              ),
+            ),
+            Semantics(
+              label: 'Open squad settings',
+              child: IconButton(
+                icon: Image.asset(
+                  'assets/images/settings_gear.png',
+                  width: 28,
+                  height: 28,
+                  color: Colors.grey[400],
+                ),
+                onPressed: () =>
+                    SquadDialogs.showSettingsDialog(context, squadState),
+                tooltip: 'Settings',
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGameDropdown(BuildContext context, SquadState squadState) {
+    return GestureDetector(
+      onTap: () => _showGameSelectionMenu(context, squadState),
+      child: SizedBox(
+        width: 160,
+        height: 120,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Current game logo
+            squadState.currentGame?['logo'] != null
+                ? Image.asset(
+                    squadState.currentGame!['logo'],
+                    width: 160,
+                    height: 100,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.gamepad,
+                        size: 100,
+                        color: Colors.cyanAccent),
+                  )
+                : const Icon(
+                    Icons.gamepad,
+                    size: 100,
                     color: Colors.cyanAccent,
                   ),
+            // Arrow indicator positioned at bottom center of logo
+            Positioned(
+              bottom: 0,
+              child: Icon(
+                Icons.keyboard_arrow_down,
+                color: Colors.cyanAccent,
+                size: 24,
+              ),
             ),
-          ),
-          IconButton(
-            icon: Image.asset(
-              'assets/images/settings_gear.png',
-              width: 28,
-              height: 28,
-              color: Colors.grey[400],
-            ),
-            onPressed: () => _showSettingsDialog(context),
-            tooltip: 'Settings',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSquadSpots(BuildContext context, SquadState squadState) {
-    return Column(
-      children: List.generate(
-        4,
-        (index) => _buildSpotCard(context, index, squadState),
-      ),
-    );
-  }
-
-  Widget _buildSpotCard(
-      BuildContext context, int index, SquadState squadState) {
-    final spotName = squadState.squadSpots[index];
-    final hasOccupant = spotName != null;
-    final yourName = squadState.displayName;
-
-    return GestureDetector(
-      onLongPress: () {
-        if (hasOccupant) {
-          squadState.removeSpot(index);
-        } else {
-          _showSpotAssignmentMenu(context, squadState, index);
-        }
-      },
-      onTap: () {
-        if (!hasOccupant && squadState.squadSpots.contains(yourName)) {
-          _assignOtherMember(context, squadState, index);
-        }
-      },
-      child: Semantics(
-        label: 'Spot ${index + 1}: ${spotName ?? 'Open'}',
-        child: Card(
-          elevation: 4,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildSpotInfo(context, index, spotName, squadState),
-                _buildSpotActions(context, index, hasOccupant, squadState),
-              ],
-            ),
-          ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildSpotInfo(BuildContext context, int index, String? spotName,
-      SquadState squadState) {
-    return Expanded(
-      child: Row(
-        children: [
-          Text('Spot ${index + 1}: ',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  spotName ?? 'Open',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (spotName != null)
-                  _buildPlayerStatusRow(context, spotName, squadState),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  void _showGameSelectionMenu(BuildContext context, SquadState squadState) {
+    // Deduplicate games while preserving order
+    List<Map<String, dynamic>> uniqueGames = [];
+    Set<String> seenKeys = <String>{};
+    for (final game in squadState.availableGames) {
+      final key = '${game['name']}_${game['maxSpots']}';
+      if (seenKeys.add(key)) {
+        uniqueGames.add(game);
+      }
+    }
 
-  Widget _buildSpotActions(BuildContext context, int index, bool hasOccupant,
-      SquadState squadState) {
-    final spotName = squadState.squadSpots[index];
-    final yourName = squadState.displayName;
-    final isReady = squadState.statuses[spotName] == 'Ready';
-    final youAreAssigned = squadState.squadSpots.contains(yourName);
+    // Sort games: active games (with players) first, then by player count descending
+    uniqueGames.sort((a, b) {
+      final aName = a['name'] as String;
+      final bName = b['name'] as String;
+      final aPlayers = squadState.gameSquadSpots[aName]?.where((spot) => spot != null).length ?? 0;
+      final bPlayers = squadState.gameSquadSpots[bName]?.where((spot) => spot != null).length ?? 0;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (!hasOccupant)
-          GestureDetector(
-            onLongPress: () {
-              _showSpotAssignmentMenu(context, squadState, index);
-            },
-            child: ElevatedButton(
-              onPressed: () {
-                if (youAreAssigned) {
-                  _assignOtherMember(context, squadState, index);
-                } else {
-                  squadState.claimSpot(index);
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                elevation: 6,
-              ),
-              child: const Tooltip(
-                message: 'Tap to claim, hold to assign others',
-                child: Text('Claim'),
-              ),
-            ),
-          ),
-        if (hasOccupant && isReady)
-          ElevatedButton(
-            onPressed: () => squadState.lockSpot(index),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.yellowAccent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              elevation: 6,
-            ),
-            child: const Tooltip(
-              message: 'Confirm as Walking',
-              child: Text('Lock In'),
-            ),
-          ),
-      ],
-    );
-  }
+      // Active games first
+      if (aPlayers > 0 && bPlayers == 0) return -1;
+      if (aPlayers == 0 && bPlayers > 0) return 1;
 
-  void _showSpotAssignmentMenu(
-      BuildContext context, SquadState squadState, int index) {
-    final availablePlayers = squadState.squadMembers
-        .where((player) => !squadState.squadSpots.contains(player))
-        .toList();
+      // Then by player count descending
+      if (aPlayers != bPlayers) return bPlayers.compareTo(aPlayers);
 
-    if (availablePlayers.isEmpty) return;
+      // Finally by name
+      return aName.compareTo(bName);
+    });
 
     showModalBottomSheet(
-      context: _currentContext,
-      builder: (dialogContext) => SingleChildScrollView(
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Assign Spot ${index + 1}',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              ...availablePlayers.map((player) => ListTile(
-                    title: Text(player),
-                    onTap: () {
-                      squadState.assignSpot(index, player); // Assign directly
-                      Navigator.pop(dialogContext); // Close bottom sheet
-                    },
-                  )),
-            ],
-          ),
-        ),
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.grey[900],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-    );
-  }
-
-  Widget _buildPeacockSpot(BuildContext context, SquadState squadState) {
-    final yourName = squadState.displayName;
-    final youAreAssigned = squadState.squadSpots.contains(yourName);
-    final youArePeacock = squadState.peacockTimers.containsKey(yourName) ||
-        squadState.peacockQueue.contains(yourName);
-
-    return GestureDetector(
-      onLongPress: () {
-        setState(() {
-          _showPeacockMembers = !_showPeacockMembers;
-        });
-      },
-      child: Semantics(
-        label: 'Peacock Spot',
-        child: Card(
-          elevation: 4,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildPeacockInfo(context),
-                GestureDetector(
-                  onLongPress: () {
-                    setState(() {
-                      _showPeacockMembers = !_showPeacockMembers;
-                    });
-                  },
-                  child: ElevatedButton(
-                    onPressed: () {
-                      if (youArePeacock) {
-                        setState(() {
-                          _showPeacockMembers = !_showPeacockMembers;
-                        });
-                      } else if (youAreAssigned) {
-                        final currentSpotIndex =
-                            squadState.squadSpots.indexOf(yourName);
-                        if (currentSpotIndex != -1) {
-                          squadState.removeSpot(currentSpotIndex);
-                        }
-                        squadState.startPeacockTimer(_currentContext);
-                      } else {
-                        squadState.startPeacockTimer(_currentContext);
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      elevation: 6,
-                    ),
-                    child: const Tooltip(
-                      message:
-                          'Tap to claim/toggle members, hold to toggle members',
-                      child: Text('Claim'),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPeacockInfo(BuildContext context) {
-    return Expanded(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text('Peacock: ',
-              style: TextStyle(
-                color: Colors.cyanAccent,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              )),
-          Flexible(child: _buildPeacockStatus(context)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPeacockStatus(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context);
-    if (squadState.peacockTimers.isEmpty && squadState.peacockQueue.isEmpty) {
-      return const Text('Open', style: TextStyle(color: Colors.white));
-    }
-    return Flexible(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ...squadState.peacockTimers.entries.where((e) => e.value != null).map(
-              (entry) => _buildPeacockTimerRow(context, entry, squadState)),
-          ...squadState.peacockQueue
-              .map((player) => _buildPeacockQueueRow(context, player)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPeacockTimerRow(BuildContext context,
-      MapEntry<String, Map<String, dynamic>?> entry, SquadState squadState) {
-    final timer = entry.value;
-    if (timer == null) return const SizedBox.shrink();
-    final remainingTime = squadState.getPeacockTimerDisplay(entry.key);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(entry.key, style: Theme.of(context).textTheme.bodyMedium),
-        const SizedBox(width: 8),
-        _buildStatusChip('Strutting'),
-        const SizedBox(width: 8),
-        Text('($remainingTime)', style: Theme.of(context).textTheme.bodySmall),
-      ],
-    );
-  }
-
-  Widget _buildPeacockQueueRow(BuildContext context, String player) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(player, style: Theme.of(context).textTheme.bodyMedium),
-        const SizedBox(width: 8),
-        _buildStatusChip('Waiting'),
-      ],
-    );
-  }
-
-  Widget _buildPeacockMembersList(BuildContext context, SquadState squadState) {
-    final allMembers = squadState.squadMembers;
-
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Column(
-        children: allMembers.map((member) {
-          final isInPeacock = squadState.peacockTimers.containsKey(member) ||
-              squadState.peacockQueue.contains(member);
-          return ListTile(
-            title: Text(member),
-            trailing: Icon(
-              isInPeacock ? Icons.remove_circle : Icons.add_circle,
-              color: isInPeacock ? Colors.red : Colors.green,
-            ),
-            onTap: () {
-              if (isInPeacock) {
-                squadState.removeFromPeacock(member);
-              } else {
-                squadState.addToPeacock(member);
-              }
-              setState(() {});
-            },
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildPlayerStatusRow(
-      BuildContext context, String player, SquadState squadState) {
-    final status = squadState.statuses[player] ?? 'Offline';
-    final timerIndex = squadState.squadSpots.indexOf(player);
-    final timerDisplay =
-        timerIndex != -1 ? squadState.getSpotTimerDisplay(timerIndex) : null;
-    final streak = squadState.currentStreaks[player] ?? 0;
-    final banCount = squadState.getBanCount(player);
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Wrap(
-        spacing: 8,
-        children: [
-          _buildStatusChip(status),
-          if (timerDisplay != null && status == 'Ready')
-            Text('($timerDisplay)',
-                style: Theme.of(context).textTheme.bodySmall),
-          if (streak > 0) ...[
-            Image.asset(
-              'assets/images/performance.png',
-              width: 16,
-              height: 16,
-              color: Colors.yellowAccent,
-            ),
-            Text('$streak',
-                style:
-                    const TextStyle(color: Colors.yellowAccent, fontSize: 12)),
-          ],
-          if (banCount > 0)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(
-                banCount,
-                (_) => Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Image.asset(
-                    'assets/images/sword.png',
-                    width: 16,
-                    height: 16,
-                    color: Colors.redAccent,
-                  ),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.8,
+        builder: (_, controller) => Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                gradient: LinearGradient(
+                  colors: [Colors.grey, Colors.black],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                 ),
               ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '🎮 Select Game',
+                    style: TextStyle(
+                      color: Colors.cyanAccent,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  IconButton(
+                    icon:
+                        const Icon(Icons.close, color: Colors.white, size: 28),
+                    onPressed: () => Navigator.pop(dialogContext),
+                  ),
+                ],
+              ),
             ),
-        ],
+            // Game list
+            Expanded(
+              child: ListView.builder(
+                controller: controller,
+                itemCount: uniqueGames.length + 1, // +1 for "Add Game" option
+                itemBuilder: (context, index) {
+                  if (index == uniqueGames.length) {
+                    // Add game option
+                    return Container(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.greenAccent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.greenAccent.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        leading: Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.greenAccent.withValues(alpha: 0.3),
+                                Colors.green.withValues(alpha: 0.3)
+                              ],
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.add,
+                            color: Colors.greenAccent,
+                            size: 28,
+                          ),
+                        ),
+                        title: const Text(
+                          'Add a Game',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Create a new custom game',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 14,
+                          ),
+                        ),
+                        trailing: const Icon(
+                          Icons.arrow_forward_ios,
+                          color: Colors.greenAccent,
+                          size: 16,
+                        ),
+                        onTap: () {
+                          Navigator.pop(dialogContext);
+                          SquadDialogs.showAddGameDialog(context, squadState);
+                        },
+                      ),
+                    );
+                  }
+
+                  final game = uniqueGames[index];
+                  final isSelected =
+                      game['name'] == squadState.currentGame?['name'];
+                  final isMuted = squadState.isGameMuted(game['name']);
+
+                  // Extract game type from description
+                  String gameType = 'Custom Game';
+                  final description = game['description'] ?? '';
+                  if (description.contains(' - ')) {
+                    gameType = description.split(' - ').last;
+                  } else if (description.isNotEmpty) {
+                    // If no " - " separator, use the whole description as type
+                    gameType = description;
+                  }
+
+                  // Get current player count
+                  final gameName = game['name'] as String;
+                  final currentPlayers = squadState.gameSquadSpots[gameName]?.where((spot) => spot != null).length ?? 0;
+                  final maxPlayers = game['maxSpots'] as int;
+
+                  return Container(
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? Colors.cyanAccent.withValues(alpha: 0.1)
+                          : Colors.grey.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color:
+                            isSelected ? Colors.cyanAccent : Colors.transparent,
+                        width: 1,
+                      ),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      leading: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected ? Colors.cyanAccent : Colors.grey,
+                            width: 2,
+                          ),
+                          gradient: LinearGradient(
+                            colors: isSelected
+                                ? [
+                                    Colors.cyanAccent.withValues(alpha: 0.3),
+                                    Colors.blueAccent.withValues(alpha: 0.3)
+                                  ]
+                                : [
+                                    Colors.grey.withValues(alpha: 0.3),
+                                    Colors.grey.withValues(alpha: 0.5)
+                                  ],
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.gamepad,
+                          size: 24,
+                          color: Colors.cyanAccent,
+                        ),
+                      ),
+                      title: Text(
+                        game['name'],
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                          shadows: [
+                            Shadow(
+                              color: Colors.cyanAccent.withValues(alpha: 0.5),
+                              offset: const Offset(0, 0),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$currentPlayers/$maxPlayers Players',
+                            style: TextStyle(
+                              color: currentPlayers > 0 ? Colors.greenAccent : Colors.cyanAccent,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            gameType,
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              isMuted
+                                  ? Icons.notifications_off
+                                  : Icons.notifications,
+                              color: isMuted ? Colors.redAccent : Colors.grey,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              if (isMuted) {
+                                squadState.unmuteGame(game['name']);
+                              } else {
+                                squadState.muteGame(game['name']);
+                              }
+                              setModalState(() {}); // Trigger UI update
+                            },
+                            tooltip: isMuted
+                                ? 'Unmute notifications'
+                                : 'Mute notifications',
+                          ),
+                          if (isSelected)
+                            const Icon(Icons.check_circle,
+                                color: Colors.cyanAccent),
+                        ],
+                      ),
+                      onTap: () {
+                        squadState.selectGame(game);
+                        Navigator.pop(dialogContext);
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+        ),
       ),
     );
-  }
-
-  Widget _buildStatusChip(String status) {
-    return Chip(
-      label: Text(status, style: const TextStyle(fontSize: 12)),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      backgroundColor: _getStatusColor(status).withValues(alpha: 0.2),
-      labelStyle: TextStyle(color: _getStatusColor(status)),
-    );
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'Strutting':
-        return Colors.blueAccent;
-      case 'Walking':
-        return Colors.greenAccent;
-      case 'Ready':
-        return Colors.yellowAccent;
-      case 'Waiting':
-        return Colors.grey[400]!;
-      default:
-        return Colors.grey[600]!;
-    }
   }
 
   Widget _buildActionButtons(BuildContext context, SquadState squadState) {
@@ -527,453 +530,48 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     );
   }
 
-  Widget _buildSquadMembersList(BuildContext context, SquadState squadState) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Semantics(
-            label: 'Squad Members List',
-            child: Text(
-              'Squad Members:',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(color: Colors.cyanAccent),
-            ),
-          ),
-        ),
-        if (squadState.squadMembers.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text('No squad members yet',
-                style: TextStyle(color: Colors.grey)),
-          )
-        else
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              color: Colors.grey[900],
-            ),
-            child: Column(
-              children: squadState.squadMembers
-                  .map(
-                      (player) => _buildMemberCard(context, player, squadState))
-                  .toList(),
-            ),
-          ),
-      ],
-    );
+  void _togglePeacockMembers() {
+    setState(() {
+      _showPeacockMembers = !_showPeacockMembers;
+    });
   }
 
-  Widget _buildMemberCard(
+  void _togglePeacockMember(String member, bool isInPeacock) {
+    if (isInPeacock) {
+      Provider.of<SquadState>(_currentContext, listen: false)
+          .removeFromPeacock(member);
+    } else {
+      Provider.of<SquadState>(_currentContext, listen: false)
+          .addToPeacock(member);
+    }
+    setState(() {});
+  }
+
+  void _showBlockDialog(
       BuildContext context, String player, SquadState squadState) {
-    final streak = squadState.currentStreaks[player] ?? 0;
-    final banCount = squadState.getBanCount(player);
-    final status = squadState.statuses[player] ?? 'Offline';
-
-    String winIcon = 'assets/images/performance.png';
-    if (streak >= 10) {
-      winIcon = 'assets/images/chicken.png';
-    } else if (streak >= 4) {
-      winIcon = 'assets/images/duck.png';
-    } else if (streak >= 3) {
-      winIcon = 'assets/images/turkey.png';
-    }
-
-    return Semantics(
-      label: 'Member: $player',
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(border: Border.all(color: Colors.grey[800]!)),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(player,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyLarge
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  _buildStatusChip(status),
-                ],
-              ),
-            ),
-            Row(
-              children: [
-                if (streak > 0)
-                  Row(
-                    children: [
-                      Image.asset(winIcon,
-                          width: 20, height: 20, color: Colors.yellowAccent),
-                      const SizedBox(width: 4),
-                      Text('$streak',
-                          style: const TextStyle(color: Colors.yellowAccent)),
-                    ],
-                  ),
-                if (banCount > 0) ...[
-                  const SizedBox(width: 12),
-                  Row(
-                    children: [
-                      Image.asset('assets/images/sword.png',
-                          width: 20, height: 20, color: Colors.redAccent),
-                      const SizedBox(width: 4),
-                      Text('$banCount',
-                          style: const TextStyle(color: Colors.redAccent)),
-                    ],
-                  ),
-                ],
-                const SizedBox(width: 12),
-                IconButton(
-                  icon: const Icon(Icons.report, color: Colors.redAccent),
-                  tooltip: 'File Complaint',
-                  onPressed: () =>
-                      _showComplaintDialog(context, squadState, player),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.star, color: Colors.yellowAccent),
-                  tooltip: 'Rate Member',
-                  onPressed: () =>
-                      _showRatingsDialog(context, squadState, player),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+    SquadDialogs.showBlockDialog(context, player, squadState);
   }
 
-  void _showComplaintDialog(
-      BuildContext context, SquadState squadState, String player) {
-    String? reason;
-    String? category;
-    final categories = ['Behavior', 'Inactivity', 'Toxicity'];
-
-    showDialog(
-      context: _currentContext,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('File Complaint Against $player'),
-        content: StatefulBuilder(
-          builder: (context, setState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                decoration: const InputDecoration(labelText: 'Reason'),
-                onChanged: (value) => reason = value,
-              ),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Category'),
-                items: categories
-                    .map(
-                        (cat) => DropdownMenuItem(value: cat, child: Text(cat)))
-                    .toList(),
-                onChanged: (value) => setState(() => category = value),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (reason != null &&
-                  category != null &&
-                  squadState.displayName != null) {
-                try {
-                  await squadState.submitComplaint(
-                    targetMember: player,
-                    reason: reason!,
-                    category: category!,
-                    submittedBy: squadState.displayName!,
-                  );
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext);
-                    ScaffoldMessenger.of(_currentContext).showSnackBar(
-                      const SnackBar(content: Text('Complaint submitted')),
-                    );
-                  }
-                } catch (e) {
-                  if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
-                  }
-                }
-              }
-            },
-            child: const Text('Submit'),
-          ),
-        ],
-      ),
-    );
+  void _showJoinLobbyDialog(
+      BuildContext context, String player, SquadState squadState) {
+    SquadDialogs.showJoinLobbyDialog(context, player, squadState);
   }
 
-  void _showRatingsDialog(
-      BuildContext context, SquadState squadState, String player) async {
-    final ratings = <String, int?>{
-      'Vibes': null,
-      'Comms': null,
-      'Gunny': null,
-      'Wingman': null
-    };
-    final canRate = squadState.displayName != null &&
-        await squadState.canRateMember(player, squadState.displayName!);
-
-    if (!canRate) {
-      ScaffoldMessenger.of(_currentContext).showSnackBar(
-        const SnackBar(
-            content: Text('You can only rate members you played with')),
-      );
-      return;
-    }
-
-    showDialog(
-      context: _currentContext,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Rate $player'),
-        content: StatefulBuilder(
-          builder: (context, setState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: ratings.keys
-                .map((category) => Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(category),
-                        Row(
-                          children: List.generate(
-                              5,
-                              (index) => IconButton(
-                                    icon: Icon(
-                                      index < (ratings[category] ?? 0)
-                                          ? Icons.star
-                                          : Icons.star_border,
-                                      color: Colors.yellowAccent,
-                                    ),
-                                    onPressed: () => setState(
-                                        () => ratings[category] = index + 1),
-                                  )),
-                        ),
-                      ],
-                    ))
-                .toList(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (squadState.displayName != null) {
-                try {
-                  await squadState.submitRatings(
-                    targetMember: player,
-                    ratings: ratings,
-                    submittedBy: squadState.displayName!,
-                  );
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext);
-                    ScaffoldMessenger.of(_currentContext).showSnackBar(
-                      const SnackBar(content: Text('Ratings submitted')),
-                    );
-                  }
-                } catch (e) {
-                  if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
-                  }
-                }
-              }
-            },
-            child: const Text('Submit'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSettingsDialog(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    showDialog(
-      context: _currentContext,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Squad Settings'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Image.asset('assets/images/clear_all.png',
-                  width: 24, height: 24, color: Colors.redAccent),
-              title: const Text('Clear All Spots'),
-              onTap: () {
-                squadState.clearAllSpots();
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: Image.asset('assets/images/timer_off.png',
-                  width: 24, height: 24, color: Colors.blueGrey),
-              title: const Text('Reset Timers'),
-              onTap: () {
-                squadState.resetTimers();
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: Image.asset('assets/images/people_group.png',
-                  width: 24, height: 24, color: Colors.cyanAccent),
-              title: const Text('Manage Members'),
-              onTap: () {
-                Navigator.pop(context);
-                _showMemberManagementDialog(context, squadState);
-              },
-            ),
-            ListTile(
-              leading: Image.asset('assets/images/sword.png',
-                  width: 24, height: 24, color: Colors.redAccent),
-              title: const Text('Ban Member'),
-              onTap: () {
-                Navigator.pop(context);
-                _showBanDialog(context, squadState);
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close')),
-        ],
-      ),
-    );
-  }
-
-  void _showMemberManagementDialog(
-      BuildContext context, SquadState squadState) {
-    showDialog(
-      context: _currentContext,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Manage Members'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Add Member'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Remove Member'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close')),
-        ],
-      ),
-    );
-  }
-
-  void _showBanDialog(BuildContext context, SquadState squadState) {
-    String? selectedPlayer;
-    showDialog(
-      context: _currentContext,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Ban a Member'),
-        content: Row(
-          children: [
-            Image.asset('assets/images/sword.png',
-                width: 24, height: 24, color: Colors.redAccent),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Select Member'),
-                items: squadState.squadMembers
-                    .map((player) =>
-                        DropdownMenuItem(value: player, child: Text(player)))
-                    .toList(),
-                onChanged: (value) => selectedPlayer = value,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              if (selectedPlayer != null && squadState.displayName != null) {
-                squadState.addBan(selectedPlayer!, squadState.displayName!);
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Ban'),
-          ),
-        ],
-      ),
-    );
+  void _showSpotAssignmentMenu(
+      BuildContext context, SquadState squadState, int index) {
+    SquadDialogs.showSpotAssignmentMenu(context, squadState, index);
   }
 
   void _assignOtherMember(
       BuildContext context, SquadState squadState, int index) {
     final yourName = squadState.displayName;
-    final availablePlayers = squadState.squadMembers
+    final availablePlayers = squadState.getFilteredMembers
         .where((player) =>
             player != yourName && !squadState.squadSpots.contains(player))
         .toList();
 
     if (availablePlayers.isNotEmpty) {
       _showSpotAssignmentMenu(context, squadState, index);
-    }
-  }
-}
-
-extension PeacockManagement on SquadState {
-  void addToPeacock(String player) {
-    final spotIndex = squadSpots.indexOf(player);
-    if (spotIndex != -1) {
-      squadSpots[spotIndex] = null;
-      spotTimers[spotIndex] = null;
-      statuses[player] = 'Offline';
-    }
-
-    if (!peacockTimers.containsKey(player) && !peacockQueue.contains(player)) {
-      if (peacockTimers.length < 4) {
-        peacockTimers[player] = {
-          'startTime': DateTime.now().millisecondsSinceEpoch,
-          'duration': 3600,
-          'mode': 'Quads'
-        };
-        statuses[player] = 'Strutting';
-      } else {
-        peacockQueue.add(player);
-        statuses[player] = 'Waiting';
-      }
-      updateFirestore(force: true);
-      notifyListeners();
     }
   }
 }

@@ -331,11 +331,11 @@ class SquadState with ChangeNotifier {
           gameStatuses = (data['gameStatuses'] as Map<String, dynamic>).map(
               (gameName, statusMap) => MapEntry(
                   gameName, Map<String, String>.from(statusMap ?? {})));
-          globalStatuses =
-              Map<String, String>.fromEntries(
-                  (data['globalStatuses'] as Map<String, dynamic>? ?? {}).entries
-                      .where((entry) => entry.key.isNotEmpty && entry.value != null)
-                      .map((entry) => MapEntry(entry.key, entry.value as String)));
+          globalStatuses = Map<String, String>.fromEntries(
+              (data['globalStatuses'] as Map<String, dynamic>? ?? {})
+                  .entries
+                  .where((entry) => entry.key.isNotEmpty && entry.value != null)
+                  .map((entry) => MapEntry(entry.key, entry.value as String)));
         } else {
           // Migrate legacy data to current game
           final currentGameName = _currentGame?['name'] ?? 'Warzone';
@@ -1028,7 +1028,8 @@ class SquadState with ChangeNotifier {
         'duration': 300,
       };
       statuses[userName] = 'Ready';
-      globalStatuses[userName] = 'Ready'; // Set global status to Ready during timer
+      globalStatuses[userName] =
+          'Ready'; // Set global status to Ready during timer
       if (peacockTimers.containsKey(userName)) {
         peacockTimers.remove(userName);
         _markFieldChanged('peacockTimers');
@@ -1186,6 +1187,7 @@ class SquadState with ChangeNotifier {
       'duration': 300,
     };
     statuses[player] = 'Ready';
+    globalStatuses[player] = 'Ready'; // Set global status to Ready during timer
     if (peacockTimers.containsKey(player)) {
       peacockTimers.remove(player);
       _markFieldChanged('peacockTimers');
@@ -1196,6 +1198,7 @@ class SquadState with ChangeNotifier {
     _markFieldChanged('squadSpots');
     _markFieldChanged('spotTimers');
     _markFieldChanged('statuses');
+    _markFieldChanged('globalStatuses');
     setNewSquadSpot(true); // Trigger squad spot notification
     updateFirestore(force: true);
     notifyListeners();

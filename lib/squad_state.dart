@@ -2,12 +2,55 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../notification_service.dart';
 
 class SquadState with ChangeNotifier {
-  List<String?> squadSpots = List.filled(4, null);
-  List<Map<String, dynamic>?> spotTimers = List.filled(4, null);
+  // Game-specific squad spots: Map<gameName, List<String?>>
+  Map<String, List<String?>> gameSquadSpots = {};
+  // Game-specific spot timers: Map<gameName, List<Map<String, dynamic>?>>
+  Map<String, List<Map<String, dynamic>?>> gameSpotTimers = {};
+  // Game-specific statuses: Map<gameName, Map<String, String>>
+  Map<String, Map<String, String>> gameStatuses = {};
+  // Global statuses that persist across games (Walking, Strutting, etc.)
+  Map<String, String> globalStatuses = {};
+
+  // Legacy properties for backward compatibility (computed from current game)
+  List<String?> get squadSpots {
+    final gameName = currentGame?['name'] ?? '';
+    if (!gameSquadSpots.containsKey(gameName)) {
+      final maxSpots = currentGame?['maxSpots'] ?? 4;
+      gameSquadSpots[gameName] = List.filled(maxSpots, null);
+      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+    }
+    return gameSquadSpots[gameName] ?? [];
+  }
+
+  List<Map<String, dynamic>?> get spotTimers {
+    final gameName = currentGame?['name'] ?? '';
+    if (!gameSpotTimers.containsKey(gameName)) {
+      final maxSpots = currentGame?['maxSpots'] ?? 4;
+      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+    }
+    return gameSpotTimers[gameName] ?? [];
+  }
+
+  Map<String, String> get statuses {
+    final gameName = currentGame?['name'] ?? '';
+    if (!gameStatuses.containsKey(gameName)) {
+      gameStatuses[gameName] = {};
+    }
+    // Merge global statuses with game-specific statuses
+    final gameStatusMap = gameStatuses[gameName] ?? {};
+    final mergedStatuses = Map<String, String>.from(gameStatusMap);
+    // Global statuses take precedence over game-specific statuses
+    globalStatuses.forEach((player, status) {
+      mergedStatuses[player] = status;
+    });
+    return mergedStatuses;
+  }
+
   List<String> squadMembers = [
     "Alex",
     "Spencer",
@@ -18,7 +61,6 @@ class SquadState with ChangeNotifier {
     "Levi",
     "Daniel"
   ];
-  Map<String, String> statuses = {};
   Map<String, int> currentStreaks = {};
   Map<String, int> highestStreaks = {};
   Map<String, Map<String, dynamic>?> peacockTimers = {};
@@ -34,6 +76,15 @@ class SquadState with ChangeNotifier {
   String? _profileImage;
   Map<String, String?> memberProfileImages = {};
   Map<String, String?> preferredModes = {};
+
+  // Blocked users map per user
+  Map<String, Map<String, bool>> userBlocks = {};
+
+  // Game selection and lobbies fields
+  Map<String, dynamic>? _currentGame;
+  List<Map<String, dynamic>> availableGames = [];
+  Map<String, List<Map<String, dynamic>>> gameLobbies = {};
+  Set<String> preferredPeacockGames = {};
 
   // New fields for SquadQueuePage
   bool _tiltEnabled = true; // Tilt toggle
@@ -51,11 +102,30 @@ class SquadState with ChangeNotifier {
   bool get hasNewSquadSpot => _hasNewSquadSpot;
   bool get hasUnreadMessages => _hasUnreadMessages;
 
+  // Filtered members getter excluding blocked users
+  List<String> get getFilteredMembers {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final blocks = userBlocks[uid] ?? {};
+    return squadMembers
+        .where((member) => !blocks.containsKey(member) || !blocks[member]!)
+        .toList();
+  }
+
+  // Get list of blocked users for current user
+  List<String> get getBlockedUsers {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final blocks = userBlocks[uid] ?? {};
+    return blocks.entries
+        .where((entry) => entry.value)
+        .map((entry) => entry.key)
+        .toList();
+  }
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AudioPlayer _audioPlayer = AudioPlayer();
   static const int _firestoreUpdateInterval = 5;
   DateTime _lastFirestoreUpdate = DateTime.now();
-  Set<String> _changedFields = {};
+  final Set<String> _changedFields = {};
   Timer? _timer;
 
   BuildContext? context;
@@ -63,14 +133,80 @@ class SquadState with ChangeNotifier {
 
   SquadState();
 
-  String? get displayName => _displayName;
+  String? get displayName => _displayName ?? 'User';
+  set displayName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      _displayName = 'User';
+    } else {
+      _displayName = value.trim();
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && _displayName != null && _displayName != 'User') {
+      _firestore
+          .collection('users')
+          .doc(user.uid)
+          .set({'displayName': _displayName}, SetOptions(merge: true));
+    }
+    // Also save to SharedPreferences for persistence
+    if (_displayName != null && _displayName != 'User') {
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('yourName', _displayName!);
+      });
+    }
+    notifyListeners();
+  }
+
   String? get profileImage => _profileImage;
+
+  // Ensure currentGame is always valid
+  Map<String, dynamic>? get currentGame {
+    if (_currentGame != null &&
+        availableGames.any((game) =>
+            game['name'] == _currentGame!['name'] &&
+            game['maxSpots'] == _currentGame!['maxSpots'])) {
+      return _currentGame;
+    }
+    // Return first available game if currentGame is invalid
+    return availableGames.isNotEmpty ? availableGames.first : null;
+  }
+
+  // Private setter for internal use
+  set currentGame(Map<String, dynamic>? value) {
+    _currentGame = value;
+  }
 
   Future<void> initialize(BuildContext ctx) async {
     context = ctx;
     await _initState();
     _initializeData();
     _syncWithFirestore();
+
+    // Listen for auth state changes to update display name
+    FirebaseAuth.instance.authStateChanges().listen((user) async {
+      if (user != null) {
+        final userDoc =
+            await _firestore.collection('users').doc(user.uid).get();
+        final displayNameFromDoc = userDoc.data()?['displayName'];
+        _displayName =
+            (displayNameFromDoc == null || displayNameFromDoc.trim().isEmpty)
+                ? 'User'
+                : displayNameFromDoc.trim();
+        _profileImage = userDoc.data()?['profileImage'];
+
+        // Also load from SharedPreferences as backup
+        final prefs = await SharedPreferences.getInstance();
+        final prefsName = prefs.getString('yourName');
+        if (prefsName != null && prefsName != 'User') {
+          _displayName = prefsName;
+        }
+        notifyListeners();
+      } else {
+        _displayName = null;
+        _profileImage = null;
+        notifyListeners();
+      }
+    });
+
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       updateSpotTimers();
@@ -93,36 +229,83 @@ class SquadState with ChangeNotifier {
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       _displayName = userDoc.data()?['displayName'] ?? 'User';
       _profileImage = userDoc.data()?['profileImage'];
+
+      // Also load from SharedPreferences as backup
+      final prefs = await SharedPreferences.getInstance();
+      final prefsName = prefs.getString('yourName');
+      if (prefsName != null && prefsName != 'User') {
+        _displayName = prefsName;
+      }
+
       notifyListeners();
     }
   }
 
   void _initializeData() {
     for (var player in squadMembers) {
-      statuses[player] = 'Offline';
-      currentStreaks[player] = 0;
-      highestStreaks[player] = 0;
-      complaints[player] = 0;
-      achievements[player] = {};
-      dailyRatings[player] = {
-        "Vibes": [],
-        "Comms": [],
-        "Gunny": [],
-        "Wingman": []
-      };
-      allTimeRatings[player] = {
-        "Vibes": [],
-        "Comms": [],
-        "Gunny": [],
-        "Wingman": []
-      };
-      peacockTimers[player] = null;
-      typing[player] = false;
-      memberProfileImages[player] = null;
-      preferredModes[player] = null;
+      // Only set default values if not already set
+      if (!statuses.containsKey(player)) {
+        statuses[player] = 'Offline';
+      }
+      if (!currentStreaks.containsKey(player)) {
+        currentStreaks[player] = 0;
+      }
+      if (!highestStreaks.containsKey(player)) {
+        highestStreaks[player] = 0;
+      }
+      if (!complaints.containsKey(player)) {
+        complaints[player] = 0;
+      }
+      if (!achievements.containsKey(player)) {
+        achievements[player] = {};
+      }
+      if (!dailyRatings.containsKey(player)) {
+        dailyRatings[player] = {
+          "Vibes": [],
+          "Comms": [],
+          "Gunny": [],
+          "Wingman": []
+        };
+      }
+      if (!allTimeRatings.containsKey(player)) {
+        allTimeRatings[player] = {
+          "Vibes": [],
+          "Comms": [],
+          "Gunny": [],
+          "Wingman": []
+        };
+      }
+      if (!peacockTimers.containsKey(player)) {
+        peacockTimers[player] = null;
+      }
+      if (!typing.containsKey(player)) {
+        typing[player] = false;
+      }
+      if (!memberProfileImages.containsKey(player)) {
+        memberProfileImages[player] = null;
+      }
+      if (!preferredModes.containsKey(player)) {
+        preferredModes[player] = null;
+      }
     }
-    statuses["Alex"] = "Walking";
-    statuses["Spencer"] = "Walking";
+    globalStatuses["Alex"] = "Walking";
+    globalStatuses["Spencer"] = "Walking";
+
+    // Set default game to Warzone if not already set
+    if (_currentGame == null) {
+      _currentGame = {
+        'name': 'Warzone',
+        'maxSpots': 4,
+        'description': 'Call of Duty: Warzone - Battle Royale',
+        'logo': 'assets/images/placeholder.png'
+      };
+      // Initialize default game spots
+      final gameName = _currentGame!['name'];
+      if (!gameSquadSpots.containsKey(gameName)) {
+        gameSquadSpots[gameName] = List.filled(_currentGame!['maxSpots'], null);
+        gameSpotTimers[gameName] = List.filled(_currentGame!['maxSpots'], null);
+      }
+    }
   }
 
   void _syncWithFirestore() {
@@ -130,20 +313,71 @@ class SquadState with ChangeNotifier {
       if (snapshot.exists) {
         var data = snapshot.data()!;
         debugPrint("Raw Firestore data: ${data.toString()}");
-        squadSpots = List<String?>.from(data['squadSpots'] ?? squadSpots);
-        spotTimers =
-            List<Map<String, dynamic>?>.from(data['spotTimers'] ?? spotTimers);
+
+        // Handle game-specific data or migrate legacy data
+        if (data['gameSquadSpots'] != null) {
+          // New game-specific structure
+          gameSquadSpots = (data['gameSquadSpots'] as Map<String, dynamic>).map(
+              (gameName, spots) =>
+                  MapEntry(gameName, List<String?>.from(spots ?? [])));
+          gameSpotTimers = (data['gameSpotTimers'] as Map<String, dynamic>).map(
+              (gameName, timers) => MapEntry(
+                  gameName,
+                  (timers as List)
+                      .map((timer) => timer != null
+                          ? Map<String, dynamic>.from(timer)
+                          : null)
+                      .toList()));
+          gameStatuses = (data['gameStatuses'] as Map<String, dynamic>).map(
+              (gameName, statusMap) => MapEntry(
+                  gameName, Map<String, String>.from(statusMap ?? {})));
+          globalStatuses =
+              Map<String, String>.from(data['globalStatuses'] ?? {});
+        } else {
+          // Migrate legacy data to current game
+          final currentGameName = _currentGame?['name'] ?? 'Warzone';
+          gameSquadSpots[currentGameName] =
+              List<String?>.from(data['squadSpots'] ?? []);
+
+          // Dynamic spotTimers based on current game
+          var rawSpotTimers = data['spotTimers'] ?? [];
+          int maxSpots = _currentGame?['maxSpots'] ?? 4;
+          gameSpotTimers[currentGameName] = List.filled(maxSpots, null);
+          if (rawSpotTimers is List) {
+            for (int i = 0; i < rawSpotTimers.length && i < maxSpots; i++) {
+              final timer = rawSpotTimers[i];
+              if (timer != null && timer is Map<String, dynamic>) {
+                gameSpotTimers[currentGameName]![i] =
+                    Map<String, dynamic>.from(timer);
+              }
+            }
+          }
+
+          gameStatuses[currentGameName] =
+              Map<String, String>.from(data['statuses'] ?? {});
+        }
+
+        // Load global statuses
+        globalStatuses = Map<String, String>.fromEntries(
+            (data['globalStatuses'] as Map<String, dynamic>? ?? {})
+                .entries
+                .where((entry) => entry.key.isNotEmpty && entry.value != null)
+                .map((entry) => MapEntry(entry.key, entry.value as String)));
+
         squadMembers = List<String>.from(data['members'] ?? squadMembers);
-        var firestoreStatuses =
-            Map<String, String>.from(data['statuses'] ?? {});
-        statuses = Map<String, String>.from(firestoreStatuses);
-        for (var player in squadMembers) {
-          if (!squadSpots.contains(player) &&
-              !peacockTimers.containsKey(player) &&
-              !peacockQueue.contains(player)) {
-            statuses[player] = 'Offline';
+
+        // Ensure all games have status entries for all members
+        for (final gameName in gameStatuses.keys) {
+          for (var player in squadMembers) {
+            if (!gameSquadSpots[gameName]!.contains(player) &&
+                !peacockTimers.containsKey(player) &&
+                !peacockQueue.contains(player)) {
+              gameStatuses[gameName]![player] =
+                  gameStatuses[gameName]![player] ?? 'Offline';
+            }
           }
         }
+
         currentStreaks =
             Map<String, int>.from(data['currentStreaks'] ?? currentStreaks);
         highestStreaks =
@@ -193,6 +427,106 @@ class SquadState with ChangeNotifier {
         typing = Map<String, bool>.from(data['typing'] ?? typing);
         preferredModes =
             Map<String, String?>.from(data['preferredModes'] ?? preferredModes);
+        userBlocks = (data['userBlocks'] as Map<dynamic, dynamic>? ?? {}).map(
+          (k, v) => MapEntry(k.toString(), Map<String, bool>.from(v)),
+        );
+
+        // Merge availableGames from Firestore with default games
+        var firestoreGames =
+            List<Map<String, dynamic>>.from(data['availableGames'] ?? []);
+        if (firestoreGames.isNotEmpty) {
+          // Use Firestore games but ensure they have required fields
+          availableGames = firestoreGames
+              .map((game) => {
+                    'name': game['name'] ?? 'Unknown Game',
+                    'maxSpots': game['maxSpots'] ?? 4,
+                    'description': game['description'] ?? 'Custom Game',
+                    'logo': game['logo'] ?? 'assets/images/placeholder.png'
+                  })
+              .toList();
+        } else {
+          // Use default games if no Firestore data
+          availableGames = [
+            {
+              'name': 'Warzone',
+              'maxSpots': 4,
+              'description': 'Call of Duty: Warzone - Battle Royale',
+              'logo': 'assets/images/placeholder.png'
+            },
+            {
+              'name': 'Modern Warfare III',
+              'maxSpots': 4,
+              'description': 'Call of Duty: Modern Warfare III - Multiplayer',
+              'logo': 'assets/images/placeholder.png'
+            },
+            {
+              'name': 'Fortnite',
+              'maxSpots': 4,
+              'description': 'Fortnite - Battle Royale',
+              'logo': 'assets/images/placeholder.png'
+            },
+            {
+              'name': 'Apex Legends',
+              'maxSpots': 3,
+              'description': 'Apex Legends - Battle Royale',
+              'logo': 'assets/images/placeholder.png'
+            },
+            {
+              'name': 'Valorant',
+              'maxSpots': 5,
+              'description': 'Valorant - Tactical FPS',
+              'logo': 'assets/images/placeholder.png'
+            },
+            {
+              'name': 'Overwatch 2',
+              'maxSpots': 5,
+              'description': 'Overwatch 2 - Hero Shooter',
+              'logo': 'assets/images/placeholder.png'
+            },
+            {
+              'name': 'Rocket League',
+              'maxSpots': 3,
+              'description': 'Rocket League - Sports Action',
+              'logo': 'assets/images/placeholder.png'
+            },
+            {
+              'name': 'Minecraft',
+              'maxSpots': 4,
+              'description': 'Minecraft - Survival/Creative',
+              'logo': 'assets/images/placeholder.png'
+            },
+          ];
+        }
+
+        // Now set currentGame and validate it against availableGames
+        var firestoreCurrentGame = data['currentGame'];
+
+        // Only use firestore currentGame if it matches an available game
+        if (firestoreCurrentGame != null &&
+            availableGames.any((game) =>
+                game['name'] == firestoreCurrentGame['name'] &&
+                game['maxSpots'] == firestoreCurrentGame['maxSpots'])) {
+          _currentGame = firestoreCurrentGame;
+        } else {
+          // Firestore currentGame is invalid or null, keep existing currentGame or set to first available
+          if (_currentGame == null && availableGames.isNotEmpty) {
+            _currentGame = availableGames.first;
+          }
+        }
+
+        // Ensure current game has initialized spots
+        if (_currentGame != null) {
+          final gameName = _currentGame!['name'];
+          if (!gameSquadSpots.containsKey(gameName)) {
+            gameSquadSpots[gameName] =
+                List.filled(_currentGame!['maxSpots'], null);
+            gameSpotTimers[gameName] =
+                List.filled(_currentGame!['maxSpots'], null);
+          }
+        }
+
+        preferredPeacockGames =
+            Set<String>.from(data['preferredPeacockGames'] ?? []);
         _changedFields.clear();
         notifyListeners();
       } else {
@@ -206,8 +540,10 @@ class SquadState with ChangeNotifier {
         data['id'] = doc.id;
         return data;
       }).toList();
-      // Check for new availability
+      // Check for new availability with null safety
       bool newAvailability = scheduledTimes.any((time) =>
+          time['timestamp'] != null &&
+          DateTime.tryParse(time['timestamp'] ?? '') != null &&
           DateTime.parse(time['timestamp']).isAfter(_lastFirestoreUpdate));
       if (newAvailability) {
         _hasNewAvailability = true;
@@ -230,6 +566,13 @@ class SquadState with ChangeNotifier {
         if (user != null && doc.id == user.uid) {
           _displayName = doc.data()['displayName'] ?? _displayName;
           _profileImage = doc.data()['profileImage'] ?? _profileImage;
+
+          // Save to SharedPreferences for backup
+          if (_displayName != null && _displayName != 'User') {
+            SharedPreferences.getInstance().then((prefs) {
+              prefs.setString('yourName', _displayName!);
+            });
+          }
         }
       }
       notifyListeners();
@@ -238,7 +581,9 @@ class SquadState with ChangeNotifier {
     _firestore.collection('chat').snapshots().listen((snapshot) {
       bool hasNew = snapshot.docChanges.any((change) =>
           change.type == DocumentChangeType.added &&
-          change.doc.data()?['read'] == false);
+          (change.doc.data()?['read'] ?? true) == false &&
+          change.doc.data()?['sender_name'] != null &&
+          change.doc.data()?['content'] != null);
       if (hasNew) {
         _hasUnreadMessages = true;
         NotificationService.sendNotification(
@@ -246,6 +591,24 @@ class SquadState with ChangeNotifier {
       }
       notifyListeners();
     });
+
+    // Listen to lobbies subcollections for all games
+    for (final game in availableGames) {
+      final gameName = game['name'] as String;
+      _firestore
+          .collection('lobbies')
+          .doc(gameName)
+          .collection('lobbies')
+          .snapshots()
+          .listen((snapshot) {
+        gameLobbies[gameName] = snapshot.docs.map((doc) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          return data;
+        }).toList();
+        notifyListeners();
+      });
+    }
   }
 
   void _markFieldChanged(String field) {
@@ -258,37 +621,85 @@ class SquadState with ChangeNotifier {
         now.difference(_lastFirestoreUpdate).inSeconds >=
             _firestoreUpdateInterval) {
       final data = <String, dynamic>{};
-      if (_changedFields.contains('squadSpots') || force)
-        data['squadSpots'] = squadSpots;
-      if (_changedFields.contains('spotTimers') || force)
-        data['spotTimers'] = spotTimers;
-      if (_changedFields.contains('statuses') || force)
-        data['statuses'] = statuses;
-      if (_changedFields.contains('currentStreaks') || force)
+      if (_changedFields.contains('squadSpots') || force) {
+        // Only save non-empty game data
+        final filteredSquadSpots = Map<String, dynamic>.fromEntries(
+            gameSquadSpots.entries.where((entry) => entry.value.isNotEmpty));
+        if (filteredSquadSpots.isNotEmpty) {
+          data['gameSquadSpots'] = filteredSquadSpots;
+        }
+      }
+      if (_changedFields.contains('spotTimers') || force) {
+        // Only save non-empty timer data
+        final filteredSpotTimers = Map<String, dynamic>.fromEntries(
+            gameSpotTimers.entries
+                .where((entry) => entry.value.any((timer) => timer != null)));
+        if (filteredSpotTimers.isNotEmpty) {
+          data['gameSpotTimers'] = filteredSpotTimers;
+        }
+      }
+      if (_changedFields.contains('statuses') || force) {
+        // Only save non-empty status data
+        final filteredStatuses = Map<String, dynamic>.fromEntries(
+            gameStatuses.entries.where((entry) => entry.value.isNotEmpty));
+        if (filteredStatuses.isNotEmpty) {
+          data['gameStatuses'] = filteredStatuses;
+        }
+      }
+      if (_changedFields.contains('globalStatuses') || force) {
+        final filteredGlobalStatuses = Map<String, String>.fromEntries(
+            globalStatuses.entries.where((entry) => entry.key.isNotEmpty));
+        if (filteredGlobalStatuses.isNotEmpty) {
+          data['globalStatuses'] = filteredGlobalStatuses;
+        }
+      }
+      if (_changedFields.contains('currentStreaks') || force) {
         data['currentStreaks'] = currentStreaks;
-      if (_changedFields.contains('highestStreaks') || force)
+      }
+      if (_changedFields.contains('highestStreaks') || force) {
         data['highestStreaks'] = highestStreaks;
-      if (_changedFields.contains('gameHistory') || force)
+      }
+      if (_changedFields.contains('gameHistory') || force) {
         data['gameHistory'] = gameHistory;
-      if (_changedFields.contains('complaints') || force)
+      }
+      if (_changedFields.contains('complaints') || force) {
         data['complaints'] = complaints;
+      }
       if (_changedFields.contains('achievements') || force) {
         data['achievements'] =
             achievements.map((k, v) => MapEntry(k, v.toList()));
       }
-      if (_changedFields.contains('dailyRatings') || force)
+      if (_changedFields.contains('dailyRatings') || force) {
         data['dailyRatings'] = dailyRatings;
-      if (_changedFields.contains('allTimeRatings') || force)
+      }
+      if (_changedFields.contains('allTimeRatings') || force) {
         data['allTimeRatings'] = allTimeRatings;
-      if (_changedFields.contains('peacockTimers') || force)
+      }
+      if (_changedFields.contains('peacockTimers') || force) {
         data['peacockTimers'] = peacockTimers;
-      if (_changedFields.contains('peacockQueue') || force)
+      }
+      if (_changedFields.contains('peacockQueue') || force) {
         data['peacockQueue'] = peacockQueue;
-      if (_changedFields.contains('members') || force)
+      }
+      if (_changedFields.contains('members') || force) {
         data['members'] = squadMembers;
+      }
       if (_changedFields.contains('typing') || force) data['typing'] = typing;
-      if (_changedFields.contains('preferredModes') || force)
+      if (_changedFields.contains('preferredModes') || force) {
         data['preferredModes'] = preferredModes;
+      }
+      if (_changedFields.contains('userBlocks') || force) {
+        data['userBlocks'] = userBlocks;
+      }
+      if (_changedFields.contains('currentGame') || force) {
+        data['currentGame'] = currentGame;
+      }
+      if (_changedFields.contains('availableGames') || force) {
+        data['availableGames'] = availableGames;
+      }
+      if (_changedFields.contains('preferredPeacockGames') || force) {
+        data['preferredPeacockGames'] = preferredPeacockGames.toList();
+      }
 
       if (data.isNotEmpty) {
         try {
@@ -490,7 +901,6 @@ class SquadState with ChangeNotifier {
     notifyListeners();
   }
 
-  // Chat-related methods
   void setReplyingTo(DocumentSnapshot? message) {
     _replyingTo = message;
     notifyListeners();
@@ -536,10 +946,26 @@ class SquadState with ChangeNotifier {
     }
   }
 
-  // Existing methods (unchanged unless noted)
   void updatePreferredMode(String user, String? mode) {
     preferredModes[user] = mode;
     _markFieldChanged('preferredModes');
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
+  void blockUser(String user) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    userBlocks[uid] ??= {};
+    userBlocks[uid]![user] = true;
+    _markFieldChanged('userBlocks');
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
+  void unblockUser(String user) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    userBlocks[uid]?.remove(user);
+    _markFieldChanged('userBlocks');
     updateFirestore(force: true);
     notifyListeners();
   }
@@ -565,6 +991,10 @@ class SquadState with ChangeNotifier {
           .doc(user.uid)
           .set({'displayName': name}, SetOptions(merge: true));
     }
+    // Also save to SharedPreferences for persistence
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('yourName', name);
+    });
     notifyListeners();
   }
 
@@ -585,18 +1015,21 @@ class SquadState with ChangeNotifier {
   }
 
   void claimSpot(int index) {
-    if (_displayName != null && !squadSpots.contains(_displayName)) {
-      squadSpots[index] = _displayName;
+    final userName = displayName;
+    if (userName != null &&
+        userName != 'User' &&
+        !squadSpots.contains(userName)) {
+      squadSpots[index] = userName;
       spotTimers[index] = {
         'startTime': DateTime.now().millisecondsSinceEpoch,
         'duration': 300,
       };
-      statuses[_displayName!] = 'Ready';
-      if (peacockTimers.containsKey(_displayName)) {
-        peacockTimers.remove(_displayName);
+      statuses[userName] = 'Ready';
+      if (peacockTimers.containsKey(userName)) {
+        peacockTimers.remove(userName);
         _markFieldChanged('peacockTimers');
-      } else if (peacockQueue.contains(_displayName)) {
-        peacockQueue.remove(_displayName);
+      } else if (peacockQueue.contains(userName)) {
+        peacockQueue.remove(userName);
         _markFieldChanged('peacockQueue');
       }
       _markFieldChanged('squadSpots');
@@ -609,43 +1042,47 @@ class SquadState with ChangeNotifier {
   }
 
   void startPeacockTimer(BuildContext dialogContext) {
-    if (_displayName != null &&
-        !squadSpots.contains(_displayName) &&
-        !peacockTimers.containsKey(_displayName) &&
-        !peacockQueue.contains(_displayName)) {
+    final userName = displayName;
+    if (userName != null &&
+        userName != 'User' &&
+        !squadSpots.contains(userName) &&
+        !peacockTimers.containsKey(userName) &&
+        !peacockQueue.contains(userName)) {
       if (peacockTimers.length < 4) {
-        peacockTimers[_displayName!] = {
+        peacockTimers[userName] = {
           'startTime': DateTime.now().millisecondsSinceEpoch,
           'duration': 3600,
           'mode': 'Quads'
         };
-        statuses[_displayName!] = 'Strutting';
+        statuses[userName] = 'Strutting';
         _markFieldChanged('peacockTimers');
         _markFieldChanged('statuses');
       } else {
-        peacockQueue.add(_displayName!);
-        statuses[_displayName!] = 'Waiting';
+        peacockQueue.add(userName);
+        statuses[userName] = 'Waiting';
         _markFieldChanged('peacockQueue');
         _markFieldChanged('statuses');
       }
       updateFirestore(force: true);
       notifyListeners();
-    } else if (_displayName != null && squadSpots.contains(_displayName)) {
-      int spotIndex = squadSpots.indexOf(_displayName);
+    } else if (userName != null &&
+        userName != 'User' &&
+        squadSpots.contains(userName)) {
+      int spotIndex = squadSpots.indexOf(userName);
       if (spotIndex != -1) {
         squadSpots[spotIndex] = null;
         spotTimers[spotIndex] = null;
         if (peacockTimers.length < 4) {
-          peacockTimers[_displayName!] = {
+          peacockTimers[userName] = {
             'startTime': DateTime.now().millisecondsSinceEpoch,
             'duration': 3600,
             'mode': 'Quads'
           };
-          statuses[_displayName!] = 'Strutting';
+          statuses[userName] = 'Strutting';
           _markFieldChanged('peacockTimers');
         } else {
-          peacockQueue.add(_displayName!);
-          statuses[_displayName!] = 'Waiting';
+          peacockQueue.add(userName);
+          statuses[userName] = 'Waiting';
           _markFieldChanged('peacockQueue');
         }
         _markFieldChanged('squadSpots');
@@ -765,12 +1202,13 @@ class SquadState with ChangeNotifier {
       squadSpots[index] = null;
       spotTimers[index] = null;
       if (peacockTimers.containsKey(player)) {
-        statuses[player] = 'Strutting';
+        globalStatuses[player] = 'Strutting';
       } else if (peacockQueue.contains(player)) {
-        statuses[player] = 'Waiting';
+        globalStatuses[player] = 'Waiting';
       } else {
-        statuses[player] = 'Offline';
+        globalStatuses[player] = 'Offline';
       }
+      _markFieldChanged('globalStatuses');
       _markFieldChanged('squadSpots');
       _markFieldChanged('spotTimers');
       _markFieldChanged('statuses');
@@ -782,7 +1220,8 @@ class SquadState with ChangeNotifier {
   void lockSpot(int index) {
     if (spotTimers[index] != null) {
       spotTimers[index] = null;
-      statuses[squadSpots[index]!] = 'Walking';
+      globalStatuses[squadSpots[index]!] = 'Walking';
+      _markFieldChanged('globalStatuses');
       _markFieldChanged('spotTimers');
       _markFieldChanged('statuses');
       updateFirestore(force: true);
@@ -790,7 +1229,7 @@ class SquadState with ChangeNotifier {
     }
   }
 
-  void recordWin() {
+  Future<void> recordWin() async {
     List<String> walkingPlayers = squadSpots
         .where((spot) => spot != null && statuses[spot] == 'Walking')
         .cast<String>()
@@ -799,7 +1238,7 @@ class SquadState with ChangeNotifier {
     for (var player in walkingPlayers) {
       int oldStreak = currentStreaks[player] ?? 0;
       updatedStreaks[player] = oldStreak + 1;
-      _checkAchievements(player, updatedStreaks[player]!);
+      await _checkAchievements(player, updatedStreaks[player]!);
     }
     currentStreaks.addAll(updatedStreaks);
     gameHistory.add({
@@ -808,7 +1247,8 @@ class SquadState with ChangeNotifier {
       'timestamp': DateTime.now().toIso8601String(),
       'ratings': {}, // Fresh ratings map for this game
     });
-    _audioPlayer.play(AssetSource('sounds/victory.mp3'));
+    await _audioPlayer.setAsset('sounds/victory.mp3');
+    await _audioPlayer.play();
     NotificationService.sendNotification(
         'Squad Win!', '${walkingPlayers.join(', ')} won a game!');
     _markFieldChanged('currentStreaks');
@@ -840,15 +1280,18 @@ class SquadState with ChangeNotifier {
   }
 
   void clearAllSpots() {
-    squadSpots = List.filled(4, null);
-    spotTimers = List.filled(4, null);
+    final currentGameName = _currentGame?['name'] ?? 'Warzone';
+    final maxSpots = _currentGame?['maxSpots'] ?? 4;
+    gameSquadSpots[currentGameName] = List.filled(maxSpots, null);
+    gameSpotTimers[currentGameName] = List.filled(maxSpots, null);
     peacockTimers.clear();
     peacockQueue.clear();
     for (var member in squadMembers) {
-      if (statuses[member] == 'Strutting' || statuses[member] == 'Walking') {
-        statuses[member] = 'Ready';
+      if (gameStatuses[currentGameName]?[member] == 'Strutting' ||
+          gameStatuses[currentGameName]?[member] == 'Walking') {
+        gameStatuses[currentGameName]?[member] = 'Ready';
       } else {
-        statuses[member] = 'Offline';
+        gameStatuses[currentGameName]?[member] = 'Offline';
       }
     }
     _markFieldChanged('squadSpots');
@@ -1037,6 +1480,16 @@ class SquadState with ChangeNotifier {
     return 0;
   }
 
+  // Get the game name where a player has claimed a spot
+  String? getPlayerGame(String player) {
+    for (final gameName in gameSquadSpots.keys) {
+      if (gameSquadSpots[gameName]?.contains(player) ?? false) {
+        return gameName;
+      }
+    }
+    return null;
+  }
+
   void updateSpotTimers() {
     bool changed = false;
     for (int i = 0; i < spotTimers.length; i++) {
@@ -1170,22 +1623,25 @@ class SquadState with ChangeNotifier {
     }
   }
 
-  void _checkAchievements(String player, int streak) {
+  Future<void> _checkAchievements(String player, int streak) async {
     achievements[player] ??= {};
     bool added = false;
     if (streak >= 10) {
       achievements[player]!.add('Chicken');
-      _audioPlayer.play(AssetSource('sounds/turducken.wav'));
+      await _audioPlayer.setAsset('sounds/turducken.wav');
+      await _audioPlayer.play();
       added = true;
     }
     if (streak >= 4 && !added) {
       achievements[player]!.add('Duck');
-      _audioPlayer.play(AssetSource('sounds/duck.mp3'));
+      await _audioPlayer.setAsset('sounds/duck.mp3');
+      await _audioPlayer.play();
       added = true;
     }
     if (streak >= 3 && !added) {
       achievements[player]!.add('Turkey');
-      _audioPlayer.play(AssetSource('sounds/turkey.wav'));
+      await _audioPlayer.setAsset('sounds/turkey.wav');
+      await _audioPlayer.play();
     }
     _markFieldChanged('achievements');
   }
@@ -1219,5 +1675,155 @@ class SquadState with ChangeNotifier {
       updateFirestore(force: true);
       notifyListeners();
     }
+  }
+
+  // Game selection and lobbies methods
+  void selectGame(Map<String, dynamic> game) {
+    _currentGame = game;
+    // Reset spots to match new game size
+    int newSize = game['maxSpots'] ?? 4;
+    final gameName = game['name'];
+    if (!gameSquadSpots.containsKey(gameName) ||
+        gameSquadSpots[gameName]!.length != newSize) {
+      gameSquadSpots[gameName] = List.filled(newSize, null);
+      gameSpotTimers[gameName] = List.filled(newSize, null);
+      _markFieldChanged('squadSpots');
+      _markFieldChanged('spotTimers');
+    }
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
+  List<Map<String, dynamic>> getVisibleLobbies(String gameName) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final userBlocks = this.userBlocks[uid] ?? {};
+
+    return gameLobbies[gameName]?.where((lobby) {
+          final players = List<String>.from(lobby['players'] ?? []);
+          // Filter out lobbies with blocked players
+          return !players.any((player) =>
+              userBlocks.containsKey(player) && userBlocks[player]!);
+        }).toList() ??
+        [];
+  }
+
+  void joinLobby(String lobbyId, String playerName) {
+    // Find the lobby across all games
+    Map<String, dynamic>? targetLobby;
+    String? targetGame;
+
+    for (final gameEntry in gameLobbies.entries) {
+      final lobby = gameEntry.value.firstWhere(
+        (l) => l['id'] == lobbyId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (lobby.isNotEmpty) {
+        targetLobby = lobby;
+        targetGame = gameEntry.key;
+        break;
+      }
+    }
+
+    if (targetLobby != null && targetGame != null) {
+      final players = List<String>.from(targetLobby['players'] ?? []);
+      if (!players.contains(playerName)) {
+        players.add(playerName);
+        targetLobby['players'] = players;
+
+        // Update Firestore
+        _firestore
+            .collection('lobbies')
+            .doc(targetGame)
+            .collection('lobbies')
+            .doc(lobbyId)
+            .update({'players': players});
+
+        notifyListeners();
+      }
+    }
+  }
+
+  void addGame(Map<String, dynamic> game) {
+    if (!availableGames.any((g) => g['name'] == game['name'])) {
+      availableGames.add(game);
+      // Add to Firestore
+      _firestore.collection('games').add(game);
+
+      // Set up lobbies listener for the new game
+      final gameName = game['name'] as String;
+      _firestore
+          .collection('lobbies')
+          .doc(gameName)
+          .collection('lobbies')
+          .snapshots()
+          .listen((snapshot) {
+        gameLobbies[gameName] = snapshot.docs.map((doc) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          return data;
+        }).toList();
+        notifyListeners();
+      });
+
+      notifyListeners();
+    }
+  }
+
+  void editGame(int index, Map<String, dynamic> updatedGame) {
+    if (index >= 0 && index < availableGames.length) {
+      availableGames[index] = updatedGame;
+      // Save to Firestore
+      _firestore.collection('games').doc(updatedGame['name']).set(updatedGame);
+      notifyListeners();
+    }
+  }
+
+  void deleteGame(int index) {
+    if (index >= 0 && index < availableGames.length) {
+      // Don't allow deleting if it's the current game
+      if (availableGames[index]['name'] == _currentGame?['name']) {
+        return;
+      }
+      availableGames.removeAt(index);
+      notifyListeners();
+    }
+  }
+
+  Map<String, dynamic>? getPlayerLobby(String playerName) {
+    for (final gameLobbies in gameLobbies.values) {
+      for (final lobby in gameLobbies) {
+        final players = List<String>.from(lobby['players'] ?? []);
+        if (players.contains(playerName)) {
+          return lobby;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool hasBlockedPlayersInLobby(
+      Map<String, dynamic> lobby, String currentUserId) {
+    final userBlocks = this.userBlocks[currentUserId] ?? {};
+    final players = List<String>.from(lobby['players'] ?? []);
+    return players
+        .any((player) => userBlocks.containsKey(player) && userBlocks[player]!);
+  }
+
+  String? getPlayerPreferredGame(String playerName) {
+    // This could be stored in user preferences or derived from history
+    // For now, return null - can be extended later
+    return null;
+  }
+
+  void addPreferredPeacockGame(String gameName) {
+    preferredPeacockGames.add(gameName);
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
+  void removePreferredPeacockGame(String gameName) {
+    preferredPeacockGames.remove(gameName);
+    updateFirestore(force: true);
+    notifyListeners();
   }
 }

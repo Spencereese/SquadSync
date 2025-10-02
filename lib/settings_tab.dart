@@ -67,15 +67,15 @@ class _SettingsTabState extends State<SettingsTab>
     final squadState = Provider.of<SquadState>(context, listen: false);
     if (value is bool) {
       await prefs.setBool(key, value);
-      if (key == 'tiltEnabled')
+      if (key == 'tiltEnabled') {
         squadState.updateTiltEnabled(value); // Update SquadState
+      }
     }
     if (value is String?) await prefs.setString(key, value ?? '');
   }
 
   Future<void> _logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('yourName');
     await prefs.remove('profileImageUrl');
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
@@ -161,7 +161,7 @@ class _SettingsTabState extends State<SettingsTab>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               DropdownButtonFormField<String>(
-                value: _selectedPage,
+                initialValue: _selectedPage,
                 decoration: const InputDecoration(
                   labelText: 'Page',
                   border: OutlineInputBorder(),
@@ -195,7 +195,7 @@ class _SettingsTabState extends State<SettingsTab>
               if (isBug) ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: _severity,
+                  initialValue: _severity,
                   decoration: const InputDecoration(
                     labelText: 'Severity',
                     border: OutlineInputBorder(),
@@ -284,6 +284,59 @@ class _SettingsTabState extends State<SettingsTab>
     Navigator.pop(context);
   }
 
+  void _showBlockedUsersDialog(BuildContext context, SquadState squadState) {
+    final blockedUsers = squadState.getBlockedUsers;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Blocked Users'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: blockedUsers.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20.0),
+                    child: Text(
+                      'No blocked users',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: blockedUsers.length,
+                  itemBuilder: (context, index) {
+                    final user = blockedUsers[index];
+                    return ListTile(
+                      leading:
+                          const Icon(Icons.person, color: Colors.redAccent),
+                      title: Text(user),
+                      subtitle:
+                          const Text('Blocked - mutual visibility hidden'),
+                      trailing: TextButton(
+                        onPressed: () {
+                          squadState.unblockUser(user);
+                          // Refresh the dialog by popping and showing again
+                          Navigator.pop(dialogContext);
+                          _showBlockedUsersDialog(context, squadState);
+                        },
+                        child: const Text('Unblock'),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final squadState = Provider.of<SquadState>(context);
@@ -349,7 +402,7 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_isDarkTheme),
-                activeColor: Colors.cyan,
+                activeThumbColor: Colors.cyan,
                 title: const Text('Dark Theme'),
                 value: _isDarkTheme,
                 onChanged: (value) {
@@ -364,7 +417,7 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_tiltEnabled),
-                activeColor: Colors.cyan,
+                activeThumbColor: Colors.cyan,
                 title: const Text('Enable Tab Tilt'),
                 value: _tiltEnabled,
                 onChanged: (value) {
@@ -380,7 +433,7 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_notificationsEnabled),
-                activeColor: Colors.cyan,
+                activeThumbColor: Colors.cyan,
                 title: const Text('Notifications'),
                 value: _notificationsEnabled,
                 onChanged: (value) {
@@ -395,7 +448,7 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_soundsEnabled),
-                activeColor: Colors.cyan,
+                activeThumbColor: Colors.cyan,
                 title: const Text('Sounds'),
                 value: _soundsEnabled,
                 onChanged: (value) {
@@ -409,7 +462,7 @@ class _SettingsTabState extends State<SettingsTab>
             const Divider(),
             _buildSectionHeader('Peacock Preferences'),
             SwitchListTile(
-              activeColor: Colors.cyan,
+              activeThumbColor: Colors.cyan,
               title: const Text('Preferred Game Mode'),
               subtitle: Text(_preferredMode != null
                   ? 'Prefer $_preferredMode'
@@ -434,6 +487,15 @@ class _SettingsTabState extends State<SettingsTab>
               secondary: const Icon(Icons.group),
             ),
             const Divider(),
+            _buildSectionHeader('Privacy'),
+            ListTile(
+              leading: const Icon(Icons.block, color: Colors.cyan),
+              title: const Text('Blocked Users'),
+              subtitle: Text('${squadState.getBlockedUsers.length} blocked'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => _showBlockedUsersDialog(context, squadState),
+            ),
+            const Divider(),
             _buildSectionHeader('Feedback & Support'),
             ListTile(
               leading: const Icon(Icons.bug_report, color: Colors.cyan),
@@ -455,6 +517,7 @@ class _SettingsTabState extends State<SettingsTab>
                 onPressed: () => _logout(context),
               ),
             ),
+            const SizedBox(height: 80.0),
           ],
         ),
       ),

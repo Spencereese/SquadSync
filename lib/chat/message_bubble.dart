@@ -13,9 +13,19 @@ import 'package:pinch_zoom/pinch_zoom.dart';
 import 'dart:ui';
 import '../../app_theme.dart';
 import '../../squad_state.dart';
+import 'link_preview.dart';
+// For debugPrint
+
+const String storageBucketPrefix =
+    'https://storage.googleapis.com/squadsync-media/'; // Customize if your bucket differs
+
+String fixMediaUrl(String? url) {
+  if (url == null || url.isEmpty) return '';
+  return url.startsWith('http') ? url : '$storageBucketPrefix$url';
+}
 
 class MessageBubble extends StatelessWidget {
-  final DocumentSnapshot message;
+  final dynamic message;
   final bool isMe;
   final bool showSender;
   final bool showAvatar;
@@ -40,7 +50,9 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final data = message.data() as Map<String, dynamic>? ?? {};
+    // Normalize message data to Map<String, dynamic> with fallback
+    final data = _normalizeMessage(message);
+
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
         return Padding(
@@ -49,7 +61,8 @@ class MessageBubble extends StatelessWidget {
             crossAxisAlignment:
                 isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              if (showTimestamp && data['timestamp'] != null)
+              if (showTimestamp &&
+                  (data['timestamp'] != null || data['timestamp_ms'] != null))
                 _buildTimestamp(data),
               Row(
                 mainAxisAlignment:
@@ -76,7 +89,9 @@ class MessageBubble extends StatelessWidget {
                               left: isMe ? -10 : null,
                               right: isMe ? null : -10,
                               child: ReactionsWidget(
-                                  docId: message.id, isMe: isMe),
+                                docId: _getMessageId(),
+                                isMe: isMe,
+                              ),
                             ),
                           ],
                         ),
@@ -90,6 +105,80 @@ class MessageBubble extends StatelessWidget {
         );
       },
     );
+  }
+
+  Map<String, dynamic> _normalizeMessage(dynamic message) {
+    if (message is DocumentSnapshot) {
+      final data = message.data() as Map<String, dynamic>? ?? {};
+      return {
+        'id': message.id,
+        'sender': data['sender'] ?? data['sender_name'] ?? 'Unknown',
+        'content': data['text'] ?? data['content'] ?? '',
+        'text': data['text'] ?? data['content'] ?? '',
+        'photos': data['imageUrl'] != null
+            ? [
+                {
+                  'uri': data['imageUrl'],
+                  'creation_timestamp': data['timestamp_ms']
+                }
+              ]
+            : (data['photos'] as List<dynamic>?)
+                    ?.cast<Map<String, dynamic>>() ??
+                [],
+        'timestamp_ms': data['timestamp'] is Timestamp
+            ? (data['timestamp'] as Timestamp).millisecondsSinceEpoch
+            : data['timestamp_ms'] ?? DateTime.now().millisecondsSinceEpoch,
+        'videoUrl': data['videoUrl'] ??
+            (data['videos']?.isNotEmpty == true
+                ? data['videos'][0]['uri']
+                : null),
+        'audioUrl': data['audioUrl'] ??
+            (data['audio']?.isNotEmpty == true
+                ? data['audio'][0]['uri']
+                : null),
+        'delivered': data['delivered'] ?? false,
+        'read': data['read'] ?? false,
+      };
+    } else if (message is Map<String, dynamic>) {
+      final id = message['id']?.toString() ?? '';
+      return {
+        'id': id,
+        'sender': message['sender'] ?? message['sender_name'] ?? 'Unknown',
+        'content': message['content'] ?? message['text'] ?? '',
+        'text': message['content'] ?? message['text'] ?? '',
+        'photos': (message['photos'] as List<dynamic>?)
+                ?.cast<Map<String, dynamic>>() ??
+            [],
+        'timestamp_ms': message['timestamp_ms'] is int
+            ? message['timestamp_ms']
+            : DateTime.now().millisecondsSinceEpoch,
+        'videoUrl': message['videoUrl'] ??
+            (message['videos']?.isNotEmpty == true
+                ? message['videos'][0]['uri']
+                : null),
+        'audioUrl': message['audioUrl'] ??
+            (message['audio']?.isNotEmpty == true
+                ? message['audio'][0]['uri']
+                : null),
+        'delivered': message['delivered'] ?? false,
+        'read': message['read'] ?? false,
+      };
+    }
+    return {
+      'id': '',
+      'sender': 'Unknown',
+      'content': '[Invalid Message]',
+      'text': '[Invalid Message]'
+    };
+  }
+
+  String _getMessageId() {
+    if (message is DocumentSnapshot) {
+      return message.id;
+    } else if (message is Map<String, dynamic>) {
+      return message['id']?.toString() ?? '';
+    }
+    return '';
   }
 
   Widget _buildAvatar(
@@ -106,8 +195,10 @@ class MessageBubble extends StatelessWidget {
                 backgroundImage:
                     profileImage != null ? NetworkImage(profileImage) : null,
                 child: profileImage == null
-                    ? Text(sender.isNotEmpty ? sender[0].toUpperCase() : '?',
-                        style: const TextStyle(color: AppTheme.accentColor))
+                    ? Text(
+                        sender.isNotEmpty ? sender[0].toUpperCase() : '?',
+                        style: const TextStyle(color: AppTheme.accentColor),
+                      )
                     : null,
               )
             : const SizedBox.shrink(),
@@ -130,7 +221,14 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildTimestamp(Map<String, dynamic> data) {
-    final timestamp = (data['timestamp'] as Timestamp).toDate();
+    DateTime? timestamp;
+    if (data['timestamp'] is Timestamp) {
+      timestamp = (data['timestamp'] as Timestamp).toDate();
+    } else if (data['timestamp_ms'] != null) {
+      timestamp = DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms']);
+    }
+    if (timestamp == null) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Center(
@@ -150,6 +248,42 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildMessageContent(BuildContext context, Map<String, dynamic> data) {
+    final hasContent = (data['content'] as String?)?.isNotEmpty ?? false;
+    final hasText = (data['text'] as String?)?.isNotEmpty ?? false;
+    final hasPhotos = data['photos']?.isNotEmpty ?? false;
+    final hasVideo =
+        data['videoUrl'] != null && (data['videoUrl'] as String).isNotEmpty;
+    final hasAudio =
+        data['audioUrl'] != null && (data['audioUrl'] as String).isNotEmpty;
+
+    if (!hasContent && !hasText && !hasPhotos && !hasVideo && !hasAudio) {
+      return const Text(
+        '[Empty Message]',
+        style: TextStyle(fontSize: 14, color: Colors.white70),
+      );
+    }
+
+    final contentWidget = Column(
+      crossAxisAlignment:
+          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        if (hasContent || hasText)
+          Container(
+            margin: const EdgeInsets.only(bottom: 4.0),
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(8.0),
+            ),
+            child: _buildText(data['text'] ?? data['content'] ?? ''),
+          ),
+        if (hasPhotos) _buildImage(context, data['photos'][0]['uri']),
+        if (hasVideo) VideoMessage(url: fixMediaUrl(data['videoUrl'])),
+        if (hasAudio) AudioMessage(url: fixMediaUrl(data['audioUrl'])),
+        _buildMessageStatus(data),
+      ],
+    );
+
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
@@ -175,47 +309,93 @@ class MessageBubble extends StatelessWidget {
         ),
         child: Semantics(
           label: 'Message from ${data['sender'] ?? 'Unknown'}',
-          child: Column(
-            crossAxisAlignment:
-                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              if (data['text']?.isNotEmpty ?? false) _buildText(data['text']),
-              if (data['imageUrl'] != null)
-                _buildImage(context, data['imageUrl']),
-              if (data['videoUrl'] != null) VideoMessage(url: data['videoUrl']),
-              if (data['audioUrl'] != null) AudioMessage(url: data['audioUrl']),
-              _buildMessageStatus(data),
-            ],
-          ),
+          child: contentWidget,
         ),
-      ).animate().fadeIn(duration: const Duration(milliseconds: 300)),
-    );
+      ),
+    ).animate().fadeIn(duration: const Duration(milliseconds: 300));
   }
 
   Widget _buildText(String text) {
+    final urls = LinkDetector.extractUrls(text);
+
     return Semantics(
       label: 'Message text: $text',
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 16, color: Colors.white),
+      child: Column(
+        crossAxisAlignment:
+            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          RichTextWithLinks(
+            text: text,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.white,
+              fontWeight: FontWeight.normal,
+              backgroundColor: Colors.transparent,
+            ),
+            textAlign: isMe ? TextAlign.end : TextAlign.start,
+            isMe: isMe,
+          ),
+          // Add link previews for the first URL found
+          if (urls.isNotEmpty) _buildLinkPreview(urls.first),
+        ],
       ),
     );
   }
 
-  Widget _buildImage(BuildContext context, String imageUrl) {
+  Widget _buildLinkPreview(String url) {
+    final linkType = LinkDetector.getLinkType(url);
+
+    // For video content, use video preview
+    if (linkType == LinkType.youtube ||
+        linkType == LinkType.vimeo ||
+        linkType == LinkType.twitch ||
+        linkType == LinkType.videoFile) {
+      return VideoLinkPreview(url: url, type: linkType);
+    }
+
+    // For other links, use general link preview
+    return LinkPreviewWidget(url: url, type: linkType);
+  }
+
+  Widget _buildImage(BuildContext context, String? imageUrl) {
+    final fixedUrl = fixMediaUrl(imageUrl);
+    if (fixedUrl.isEmpty) {
+      return Semantics(
+        label: 'Invalid image',
+        child: const Text(
+          '[Invalid Image URL]',
+          style: TextStyle(fontSize: 14, color: Colors.white70),
+        ),
+      );
+    }
+    debugPrint('Loading image: $fixedUrl'); // Log for debugging
     return GestureDetector(
-      onTap: () => _launchUrl(imageUrl),
+      onTap: () => _launchUrl(fixedUrl),
       child: PinchZoom(
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: CachedNetworkImage(
-            imageUrl: imageUrl,
+            imageUrl: fixedUrl,
             width: 150,
             height: 150,
             fit: BoxFit.cover,
             placeholder: (context, url) =>
                 const Center(child: CircularProgressIndicator()),
-            errorWidget: (context, url, error) => const Icon(Icons.error),
+            errorWidget: (context, url, error) {
+              debugPrint('Image load error: $error for URL: $url'); // Log error
+              return Semantics(
+                label: 'Failed to load image: $error',
+                child: const Column(
+                  children: [
+                    Icon(Icons.error, color: Colors.red, size: 24),
+                    Text(
+                      '[Image Load Failed]',
+                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -223,7 +403,12 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildMessageStatus(Map<String, dynamic> data) {
-    if (sendingStatus[message.id] == true) {
+    final messageId = data['id']?.toString() ?? '';
+    if (messageId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    if (sendingStatus[messageId] == true) {
       return Padding(
         padding: const EdgeInsets.only(top: 4.0),
         child: Semantics(
@@ -232,7 +417,7 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     }
-    if (sendingStatus[message.id] == false) {
+    if (sendingStatus[messageId] == false) {
       return Padding(
         padding: const EdgeInsets.only(top: 4.0),
         child: Semantics(
@@ -242,7 +427,7 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     }
-    if (showReadIndicator && !sendingStatus.containsKey(message.id)) {
+    if (showReadIndicator && !sendingStatus.containsKey(messageId)) {
       return Padding(
         padding: const EdgeInsets.only(top: 4.0),
         child: Row(
@@ -286,7 +471,7 @@ class MessageBubble extends StatelessWidget {
           },
           onCopy: () {
             if (!context.mounted) return;
-            Clipboard.setData(ClipboardData(text: message['text'] ?? ''));
+            Clipboard.setData(ClipboardData(text: data['content'] ?? ''));
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Text copied')),
             );
@@ -313,7 +498,7 @@ class MessageBubble extends StatelessWidget {
             if (confirm == true && context.mounted) {
               try {
                 await Provider.of<SquadState>(context, listen: false)
-                    .deleteMessage(message.id);
+                    .deleteMessage(data['id']);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Message deleted')),
@@ -322,7 +507,7 @@ class MessageBubble extends StatelessWidget {
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to delete message: $e')),
+                    SnackBar(content: Text('Failed to delete: $e')),
                   );
                 }
               }
@@ -350,7 +535,7 @@ class MessageBubble extends StatelessWidget {
         'User';
     final querySnapshot = await FirebaseFirestore.instance
         .collection('chat')
-        .doc(message.id)
+        .doc(_getMessageId())
         .collection('reactions')
         .where('user', isEqualTo: user)
         .get();
@@ -358,7 +543,7 @@ class MessageBubble extends StatelessWidget {
     await Future.wait(querySnapshot.docs.map((doc) => doc.reference.delete()));
     await FirebaseFirestore.instance
         .collection('chat')
-        .doc(message.id)
+        .doc(_getMessageId())
         .collection('reactions')
         .add({
       'emoji': emoji,
@@ -373,13 +558,13 @@ class MessageBubble extends StatelessWidget {
       HapticFeedback.lightImpact();
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      debugPrint('Could not launch $url');
+      debugPrint('Could not launch $url'); // Log for debug
     }
   }
 }
 
 class _MessageReactionDialog extends StatefulWidget {
-  final DocumentSnapshot message;
+  final dynamic message;
   final bool isMe;
   final Map<String, dynamic> data;
   final VoidCallback onReply;
@@ -427,7 +612,6 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Focused Message
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Transform.scale(
@@ -455,36 +639,42 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
                             ? CrossAxisAlignment.end
                             : CrossAxisAlignment.start,
                         children: [
-                          if (widget.data['text']?.isNotEmpty ?? false)
+                          if (widget.data['content']?.isNotEmpty ?? false)
                             Text(
-                              widget.data['text'],
+                              widget.data['content'],
                               style: const TextStyle(
                                   fontSize: 18, color: Colors.white),
                             ),
-                          if (widget.data['imageUrl'] != null)
+                          if (widget.data['photos']?.isNotEmpty ?? false)
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: CachedNetworkImage(
-                                imageUrl: widget.data['imageUrl'],
+                                imageUrl: fixMediaUrl(
+                                    widget.data['photos'][0]['uri']),
                                 width: 200,
                                 height: 200,
                                 fit: BoxFit.cover,
                                 placeholder: (context, url) =>
                                     const CircularProgressIndicator(),
                                 errorWidget: (context, url, error) =>
-                                    const Icon(Icons.error),
+                                    const Text(
+                                  '[Invalid Image]',
+                                  style: TextStyle(
+                                      fontSize: 14, color: Colors.white70),
+                                ),
                               ),
                             ),
                           if (widget.data['videoUrl'] != null)
-                            VideoMessage(url: widget.data['videoUrl']),
+                            VideoMessage(
+                                url: fixMediaUrl(widget.data['videoUrl'])),
                           if (widget.data['audioUrl'] != null)
-                            AudioMessage(url: widget.data['audioUrl']),
+                            AudioMessage(
+                                url: fixMediaUrl(widget.data['audioUrl'])),
                         ],
                       ),
                     ),
                   ),
                 ),
-                // Reaction Picker
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16.0),
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -545,7 +735,6 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
                     ],
                   ),
                 ),
-                // Custom Reaction Input
                 if (_showReactionInput)
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -577,7 +766,6 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
                       ),
                     ),
                   ),
-                // Action Buttons
                 Material(
                   color: Colors.grey[900],
                   borderRadius: BorderRadius.circular(16),
@@ -644,18 +832,26 @@ class VideoMessage extends StatefulWidget {
 class _VideoMessageState extends State<VideoMessage> {
   late VideoPlayerController _controller;
   bool _isError = false;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    debugPrint('Loading video: ${widget.url}'); // Log for debug
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
       ..initialize().then((_) {
-        setState(() {});
+        if (mounted) {
+          setState(() {
+            _isInitialized = true;
+          });
+        }
       }).catchError((e) {
-        setState(() {
-          _isError = true;
-        });
-        debugPrint('Video init error: $e');
+        if (mounted) {
+          setState(() {
+            _isError = true;
+          });
+        }
+        debugPrint('Video init error: $e for URL: ${widget.url}');
       });
   }
 
@@ -667,42 +863,48 @@ class _VideoMessageState extends State<VideoMessage> {
 
   @override
   Widget build(BuildContext context) {
-    return _isError
-        ? Semantics(
-            label: 'Video failed to load',
-            child: const SizedBox(
+    if (_isError) {
+      return Semantics(
+        label: 'Video failed to load',
+        child: const Column(
+          children: [
+            Icon(Icons.error, color: Colors.red, size: 24),
+            Text(
+              '[Video Load Failed]',
+              style: TextStyle(fontSize: 14, color: Colors.white70),
+            ),
+          ],
+        ),
+      );
+    }
+    if (!_isInitialized) {
+      return const SizedBox(
+        width: 150,
+        height: 150,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return GestureDetector(
+      onTap: () => _launchUrl(widget.url),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
               width: 150,
               height: 150,
-              child: Icon(Icons.error),
+              child: VideoPlayer(_controller),
             ),
-          )
-        : _controller.value.isInitialized
-            ? GestureDetector(
-                onTap: () => _launchUrl(widget.url),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: SizedBox(
-                        width: 150,
-                        height: 150,
-                        child: VideoPlayer(_controller),
-                      ),
-                    ),
-                    Semantics(
-                      label: 'Play video',
-                      child: const Icon(Icons.play_circle_filled,
-                          size: 50, color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ).animate().fadeIn(duration: const Duration(milliseconds: 300))
-            : const SizedBox(
-                width: 150,
-                height: 150,
-                child: Center(child: CircularProgressIndicator()),
-              );
+          ),
+          Semantics(
+            label: 'Play video',
+            child: const Icon(Icons.play_circle_filled,
+                size: 50, color: Colors.white70),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: const Duration(milliseconds: 300));
   }
 
   Future<void> _launchUrl(String url) async {
@@ -734,13 +936,16 @@ class _AudioMessageState extends State<AudioMessage> {
   @override
   void initState() {
     super.initState();
+    debugPrint('Loading audio: ${widget.url}'); // Log for debug
     _player = AudioPlayer();
     _setupListeners();
-    _player.setSourceUrl(widget.url).catchError((e) {
-      setState(() {
-        _isError = true;
-      });
-      debugPrint('Audio init error: $e');
+    _player.setSource(UrlSource(widget.url)).catchError((e) {
+      if (mounted) {
+        setState(() {
+          _isError = true;
+        });
+      }
+      debugPrint('Audio init error: $e for URL: ${widget.url}');
     });
   }
 
@@ -760,60 +965,66 @@ class _AudioMessageState extends State<AudioMessage> {
 
   @override
   Widget build(BuildContext context) {
-    return _isError
-        ? Semantics(
-            label: 'Audio failed to load',
-            child: const SizedBox(
-              width: 200,
-              child: Icon(Icons.error),
+    if (_isError) {
+      return Semantics(
+        label: 'Audio failed to load',
+        child: const Column(
+          children: [
+            Icon(Icons.error, color: Colors.red, size: 24),
+            Text(
+              '[Audio Load Failed]',
+              style: TextStyle(fontSize: 14, color: Colors.white70),
             ),
-          )
-        : Container(
-            width: 200,
-            padding: const EdgeInsets.all(8.0),
-            decoration: BoxDecoration(
-              color: AppTheme.hintColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
+          ],
+        ),
+      );
+    }
+    return Container(
+      width: 200,
+      padding: const EdgeInsets.all(8.0),
+      decoration: BoxDecoration(
+        color: AppTheme.hintColor.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Semantics(
+            label: _isPlaying ? 'Pause audio' : 'Play audio',
+            child: IconButton(
+              icon: Icon(
+                _isPlaying
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_filled,
+                color: AppTheme.accentColor,
+                size: 30,
+              ),
+              onPressed: _togglePlay,
             ),
-            child: Row(
-              children: [
-                Semantics(
-                  label: _isPlaying ? 'Pause audio' : 'Play audio',
-                  child: IconButton(
-                    icon: Icon(
-                      _isPlaying
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_filled,
-                      color: AppTheme.accentColor,
-                      size: 30,
-                    ),
-                    onPressed: _togglePlay,
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _position.inSeconds.toDouble(),
-                    min: 0,
-                    max: _duration.inSeconds.toDouble() > 0
-                        ? _duration.inSeconds.toDouble()
-                        : 1,
-                    onChanged: (value) =>
-                        _player.seek(Duration(seconds: value.toInt())),
-                    activeColor: AppTheme.accentColor,
-                    inactiveColor: AppTheme.hintColor,
-                  ),
-                ),
-                Semantics(
-                  label:
-                      'Audio position ${_position.inMinutes}:${_position.inSeconds % 60}',
-                  child: Text(
-                    "${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')}",
-                    style: const TextStyle(fontSize: 12, color: Colors.white70),
-                  ),
-                ),
-              ],
+          ),
+          Expanded(
+            child: Slider(
+              value: _position.inSeconds.toDouble(),
+              min: 0,
+              max: _duration.inSeconds.toDouble() > 0
+                  ? _duration.inSeconds.toDouble()
+                  : 1,
+              onChanged: (value) =>
+                  _player.seek(Duration(seconds: value.toInt())),
+              activeColor: AppTheme.accentColor,
+              inactiveColor: AppTheme.hintColor,
             ),
-          );
+          ),
+          Semantics(
+            label:
+                'Audio position ${_position.inMinutes}:${_position.inSeconds % 60}',
+            child: Text(
+              "${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')}",
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _togglePlay() async {
@@ -821,7 +1032,7 @@ class _AudioMessageState extends State<AudioMessage> {
     if (_isPlaying) {
       await _player.pause();
     } else {
-      await _player.play(UrlSource(widget.url));
+      await _player.resume(); // Use resume for safety after seek/pause
     }
   }
 }
@@ -834,6 +1045,10 @@ class ReactionsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (docId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('chat')

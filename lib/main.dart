@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -53,7 +52,7 @@ class SquadSyncApp extends StatefulWidget {
 class _SquadSyncAppState extends State<SquadSyncApp> {
   static const platform = MethodChannel('com.example.codSquadApp/siri');
   late AppLinks _appLinks;
-  StreamSubscription<String?>? _sub;
+  StreamSubscription<Uri?>? _sub;
 
   @override
   void initState() {
@@ -70,18 +69,10 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   }
 
   Future<void> _initDeepLinks() async {
-    try {
-      final initialLink = await _appLinks.getInitialAppLinkString();
-      if (initialLink != null) {
-        _handleDeepLink(initialLink);
-      }
-    } catch (e) {
-      debugPrint('Error getting initial link: $e');
-    }
-
-    _sub = _appLinks.stringLinkStream.listen((String? link) {
+    // Listen for incoming links - initial link handling may be different in v6
+    _sub = _appLinks.uriLinkStream.listen((Uri? link) {
       if (link != null) {
-        _handleDeepLink(link);
+        _handleDeepLink(link.toString());
       }
     }, onError: (err) {
       debugPrint('Error in link stream: $err');

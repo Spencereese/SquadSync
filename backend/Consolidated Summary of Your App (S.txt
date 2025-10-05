@@ -1,0 +1,56 @@
+Consolidated Summary of Your App (SquadSync)
+Overview
+Your app, "SquadSync," is a Flutter-based social gaming coordination tool designed for squad-based games (e.g., Call of Duty). It features squad management, performance tracking, chat functionality, and availability scheduling, with Firebase integration for real-time data storage and notifications.
+
+Files and Their Roles
+Utility Functions (File 1):
+Provides helper functions: formatTimer for time display, buildBadge for streak badges, and calculateAverage for ratings.
+SquadQueuePage (File 2):
+Main app page with a tabbed interface (Performance, Availability, Squad, Chat, Placeholder) using PageView and an animated nav bar. Integrates with SquadQueueLogic.
+SquadTab (File 3):
+Manages squad UI with spots, peacock role, member list, and ban system. Uses SquadState for state management.
+SquadQueueLogic (File 4):
+Core logic managing squad state, timers, streaks, ratings, achievements, and Firestore sync. Handles spot/peacock assignments and game outcomes.
+SquadManager (File 5):
+Manages squad state and UI for actions and member display, duplicating some SquadQueueLogic functionality with UI focus.
+SetupScreen (File 6):
+Handles user onboarding with anonymous Firebase Auth and name persistence via SharedPreferences.
+RatingDialog (File 7):
+Displays a dialog for rating squad members post-game with sliders for Vibes, Comms, Gunny, and Wingman.
+PerformanceHubTab (File 8):
+Shows personal stats (K/D, win rate) and leaderboards with charts using fl_chart.
+NotificationService (File 9):
+Manages Firebase Cloud Messaging (FCM) for notifications, with initialization and placeholder send functionality.
+Main (CodSquadApp) (File 10):
+App entry point, initializes Firebase, sets up ChatState provider, and defines a dark theme.
+AvailabilityTab (File 11):
+Displays a calendar for scheduling availability, with a heatmap and Firestore-backed events.
+AppTheme (File 12):
+Defines a static theme with colors and basic text styling.
+Chat Widgets (chat/chat_widgets.dart) (File 13):
+Provides MessageBubble, UserAvatar, VideoMessage, AudioMessage, and ReactionsWidget for chat UI.
+Message Model (chat/message.dart) (File 14):
+Defines a Message class for chat data with JSON serialization and equality checks.
+ChatState (chat/chat_state.dart) (File 15):
+Manages chat state (typing, recording, uploading, sending status) with ChangeNotifier.
+ChatService (chat/chat_service.dart) (File 16):
+Backend service for chat, handling message retrieval, sending, media uploads, and typing status via Firebase.
+ChatScreen (chat/chat_screen.dart) (File 17):
+Main chat UI, displaying messages, handling input (text, media, audio), and managing chat settings.
+ChatInputBar (chat/chat_input_bar.dart) (File 18):
+Reusable input bar for chat with text, media, recording, and plus menu options.
+Key Features
+Squad Management: Assign spots, manage peacock roles, track streaks, and handle bans (Files 3, 4, 5).
+Performance Tracking: Display K/D, win rate, and leaderboards with charts (File 8).
+Chat System: Real-time messaging with text, images, videos, audio, and reactions (Files 13-18).
+Availability Scheduling: Calendar-based scheduling with voting and notifications (File 11).
+Notifications: FCM setup for game outcomes and potential scheduling alerts (File 9).
+User Onboarding: Simple setup with anonymous auth (File 6).
+UI/UX: Dark theme, animated navigation, and consistent styling (Files 2, 10, 12).
+Dependencies
+Firebase (Auth, Firestore, Storage, Messaging)
+Flutter packages: provider, fl_chart, table_calendar, image_picker, record, audioplayers, video_player, cached_network_image, flutter_animate, intl, url_launcher, shared_preferences, timezone, flutter_local_notifications
+Data Flow
+Firestore: Stores squad state, chat messages, schedules, and metadata.
+State Management: Uses ChangeNotifier (SquadState, ChatState) and raw state in SquadQueueLogic.
+Real-Time: Streams for chat messages, typing status, and squad updates.

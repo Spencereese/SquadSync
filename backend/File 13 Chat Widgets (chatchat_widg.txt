@@ -1,0 +1,227 @@
+File 13: Chat Widgets (chat/chat_widgets.dart)
+Purpose: Defines widgets for displaying chat messages, including text, images, videos, audio, avatars, and reactions. Integrates with Firestore for reactions and uses external packages for media playback and animations.
+
+Key Methods:
+
+MessageBubble Class:
+build(BuildContext context):
+Constructs a message row with avatar (if not isMe), sender name, timestamp, content, and reactions (if not isMe).
+_buildAvatar():
+Shows a UserAvatar or empty space based on showAvatar.
+_buildSender():
+Displays sender name in bold accent color.
+_buildTimestamp():
+Formats and shows message timestamp.
+_buildMessageContent(BuildContext, Map<String, dynamic>):
+Renders text, image, video, or audio based on message data, with tap/long-press handlers and fade-in animation.
+_buildText(String):
+Displays message text.
+_buildImage(String):
+Shows a cached network image with tap-to-open functionality.
+_buildMessageStatus():
+Indicates sending status (pending, unsent) or read receipt.
+_buildReactions():
+Displays a ReactionsWidget for non-self messages.
+_launchUrl(String):
+Opens URLs using url_launcher.
+UserAvatar Class:
+build(BuildContext context):
+Streams user profile picture from Firestore, falling back to a letter avatar.
+VideoMessage Class:
+initState():
+Initializes VideoPlayerController with network URL.
+dispose():
+Disposes of the video controller.
+build(BuildContext context):
+Shows a playable video thumbnail with fade-in animation or a loading indicator.
+_launchUrl(String):
+Opens the video URL.
+AudioMessage Class:
+initState():
+Initializes AudioPlayer and sets up duration/position listeners.
+_setupListeners():
+Updates duration, position, and play state in real-time.
+dispose():
+Disposes of the audio player.
+build(BuildContext context):
+Renders a play/pause button, slider, and time display for audio playback.
+_togglePlay():
+Toggles audio playback.
+ReactionsWidget Class:
+build(BuildContext context):
+Streams reactions from Firestore subcollection and displays them as ReactionChips.
+_addReaction(String docId, String emoji):
+Removes existing user reaction and adds a new one to Firestore.
+ReactionChip Class:
+build(BuildContext context):
+Displays an emoji and count in a tappable chip.
+Here's the summary for the fourteenth Dart file you provided, added to my ongoing reference for your app's structure. This is for my use when you later request feature changes or additions.
+
+File 14: Message Model (chat/message.dart)
+Purpose: Defines a Message data model for chat messages, including serialization/deserialization, copying, and equality comparison.
+
+Key Methods:
+
+Message Class:
+Constructor:
+Takes sender, timestamp, content, and optional reactions (defaults to empty list).
+fromJson(Map<String, dynamic>):
+Factory method to create a Message from JSON, with null-safe defaults:
+sender: json['s'] or empty string.
+timestamp: Converted from json['t'] (milliseconds) or 0.
+content: json['c'] or empty string.
+reactions: List of maps from json['r'] or empty list.
+toJson():
+Converts the message to a JSON map with keys s, t, c, r.
+copyWith({sender, timestamp, content, reactions}):
+Returns a new Message with optionally updated fields.
+toString():
+Provides a string representation of the message.
+== (Equality Operator):
+Compares two Message objects based on sender, timestamp, content, and reactions.
+hashCode:
+Generates a hash based on all fields using Object.hash.
+File 15: ChatState (chat/chat_state.dart)
+Purpose: Manages the state of the chat interface using ChangeNotifier, tracking typing users, recording/uploading status, and message sending states.
+
+Key Methods:
+
+ChatState Class:
+Private State Variables:
+_typingUser: Tracks the currently typing user (nullable).
+_isRecording: Indicates if audio recording is active.
+_isUploading: Indicates if a file is uploading.
+_sendingStatus: Map of message temp IDs to their sending status (true = sending).
+Public Getters:
+typingUser: Returns _typingUser.
+isRecording: Returns _isRecording.
+isUploading: Returns _isUploading.
+sendingStatus: Returns an unmodifiable view of _sendingStatus.
+hasPendingMessages: True if _sendingStatus is not empty.
+setTypingUser(String? user):
+Updates _typingUser and notifies listeners if changed.
+setRecording(bool value):
+Updates _isRecording and notifies listeners if changed.
+setUploading(bool value):
+Updates _isUploading and notifies listeners if changed.
+updateSendingStatus(String tempId, bool isSending):
+Adds or removes tempId from _sendingStatus based on isSending, notifies listeners.
+removeSendingStatus(String tempId):
+Removes tempId from _sendingStatus and notifies listeners if present.
+isMessageSending(String tempId):
+Returns true if tempId is in _sendingStatus and sending.
+clearSendingStatus():
+Clears _sendingStatus and notifies listeners if it was non-empty.
+reset():
+Resets all state variables to initial values and notifies listeners.
+_validateTempId(String tempId):
+Throws ArgumentError if tempId is empty.
+dispose():
+Clears _sendingStatus and calls superclass dispose.
+File 16: ChatService (chat/chat_service.dart)
+Purpose: Provides backend services for chat functionality, interfacing with Firestore for message storage, Firebase Storage for media uploads, and Firebase Auth for user data. Manages message sending, media uploads, and typing status.
+
+Key Methods:
+
+ChatService Class:
+getChatMessages():
+Returns a Stream<QuerySnapshot> of chat messages from Firestore, ordered by timestamp (descending).
+getTypingUser():
+Streams the currently typing user from the squad/state document’s typing field, returning null if no one is typing.
+sendMessage({sender, text, imageUrl, videoUrl, audioUrl}):
+Adds a new message to the chat collection with server timestamp and initial delivered/read flags set to false.
+uploadMedia(File file, String fileName, bool isVideo):
+Uploads a file to Firebase Storage under chat_media/ and returns its download URL.
+uploadAudio(File file, String fileName):
+Uploads an audio file to Firebase Storage under chat_audio/ and returns its download URL.
+markAsDelivered(String docId):
+Updates a message’s delivered field to true in Firestore.
+updateTypingStatus(String user, bool isTyping):
+Updates the typing map in squad/state with the user’s typing status, merging with existing data.
+Here's the summary for the seventeenth Dart file you provided, added to my ongoing reference for your app's structure. This is for my use when you later request feature changes or additions.
+
+File 17: ChatScreen (chat/chat_screen.dart)
+Purpose: Implements the main chat interface, displaying messages, handling user input (text, media, audio), and managing chat settings like name and image. Integrates with ChatService and ChatState for backend and state management.
+
+Key Methods:
+
+ChatScreenState Class:
+initState():
+Sets up controllers, updates online status, loads chat details, scrolls to bottom, and listens for typing updates.
+dispose():
+Updates offline status and disposes of controllers.
+_updateOnlineStatus(bool):
+Updates user’s online status in Firestore.
+_scrollToBottom():
+Animates scroll to the latest message.
+_loadChatDetails():
+Fetches chat name and image from Firestore.
+_changeChatName(String):
+Updates chat name in Firestore.
+_uploadChatImage():
+Uploads a new chat image to Firebase Storage and updates Firestore.
+_sendMessage():
+Sends text message via _chatService, manages sending status.
+_sendMedia():
+Uploads and sends image/video via _chatService.
+_startRecording() & _stopRecording():
+Handles audio recording with record_package, uploads on stop.
+_uploadAudio():
+Uploads recorded audio and sends it as a message.
+showChatOptions():
+Shows a bottom sheet with chat management options (mute, clear, search, etc.).
+_clearChat():
+Deletes all messages from Firestore.
+showSearchBar():
+Displays a searchable message list.
+_showChangeChatNameDialog():
+Opens dialog to edit chat name.
+_showMessageDetails(DocumentSnapshot):
+Shows message timestamp in a dialog.
+_showMessageOptions(BuildContext, String, String, bool):
+Shows options (copy, forward, delete, react, edit if mine) for a message.
+_showReactionPicker(BuildContext, String):
+Displays emoji picker for reactions.
+_addReaction(String, String):
+Adds or updates a reaction in Firestore.
+_showEditDialog(BuildContext, String, String):
+Opens dialog to edit message text.
+_showDeleteDialog(BuildContext, String):
+Confirms message deletion.
+_editMessage(String, String):
+Updates message text in Firestore with an edited flag.
+_deleteMessage(String):
+Deletes a message from Firestore.
+_showPlusMenu(BuildContext):
+Shows a placeholder menu for additional input options (file, location, poll).
+_signOut():
+Signs out, clears SharedPreferences, and navigates to SetupScreen.
+build(BuildContext context):
+Renders a themed Scaffold with:
+Header: Chat name/image, online count, and sign-out button.
+Body: Scrollable message list via StreamBuilder with MessageBubbles.
+Footer: Typing indicator and ChatInputBar for input.
+File 18: ChatInputBar (chat/chat_input_bar.dart)
+Purpose: Defines a reusable input bar widget for the chat interface, supporting text input, media attachment, audio recording, and additional options. Includes a demo ChatScreen for testing the input bar.
+
+Key Methods:
+
+ChatInputBar Class:
+build(BuildContext context):
+Renders a row with plus, media, record, text field (with emoji button), and send buttons, styled with AppTheme.
+_buildPlusButton():
+Displays a plus icon triggering onPlusMenu.
+_buildMediaButton():
+Shows a photo icon (with fallback) triggering onMedia.
+_buildRecordButton():
+Toggles between mic on/off icons based on isRecording, calling onRecordStart or onRecordStop.
+_buildTextField(BuildContext):
+Renders a multi-line text field with controller, styled with a dark background, and calls onTextChanged.
+_buildEmojiButton(BuildContext):
+Shows an emoji icon that switches to the emoji keyboard using SystemChannels.
+_buildSendButton():
+Displays a send icon (or loading indicator if isUploading), enabled only if text is present, triggering onSend.
+ChatScreen Class (Demo):
+build(BuildContext context):
+Constructs a simple scaffold with a ListView of dummy messages and a positioned ChatInputBar at the bottom.
+Used for testing the input bar with debug print callbacks.

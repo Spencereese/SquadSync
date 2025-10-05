@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:developer' as developer;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -34,7 +35,7 @@ class NotificationService {
       sound: true,
       provisional: true,
     );
-    print('User granted permission: ${settings.authorizationStatus}');
+        developer.log('User granted permission: ${settings.authorizationStatus}');
 
     // Set foreground notification presentation options (iOS)
     await _messaging.setForegroundNotificationPresentationOptions(
@@ -45,7 +46,7 @@ class NotificationService {
 
     // Handle foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print(
+      developer.log(
           'Foreground message: ${message.notification?.title} - ${message.notification?.body}');
       if (message.notification != null && Platform.isIOS) {
         _showLocalNotification(message);
@@ -66,7 +67,7 @@ class NotificationService {
 
     // Store FCM token for the current user
     String? token = await _messaging.getToken();
-    print('FCM Token: $token');
+    developer.log('FCM Token: $token');
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && token != null) {
       await _firestore.collection('users').doc(user.uid).set(
@@ -75,7 +76,7 @@ class NotificationService {
       );
     }
     _messaging.onTokenRefresh.listen((newToken) async {
-      print('New FCM Token: $newToken');
+      developer.log('New FCM Token: $newToken');
       if (user != null) {
         await _firestore.collection('users').doc(user.uid).set(
           {'fcmToken': newToken},
@@ -112,20 +113,20 @@ class NotificationService {
   }
 
   static Future<void> _backgroundHandler(RemoteMessage message) async {
-    print(
+    developer.log(
         'Background message: ${message.notification?.title} - ${message.notification?.body}');
   }
 
   static void _handleMessage(RemoteMessage message) {
-    print('Handling message: ${message.data}');
+    developer.log('Handling message: ${message.data}');
     if (message.data['screen'] == 'chat') {
-      print('Should navigate to ChatScreen');
+      developer.log('Should navigate to ChatScreen');
     }
   }
 
   static Future<void> sendNotification(String title, String body) async {
     // Broadcast notification (for testing or squad-wide alerts)
-    print('Sending broadcast notification: $title - $body');
+    developer.log('Sending broadcast notification: $title - $body');
   }
 
   static Future<void> sendNotificationToUser({
@@ -141,13 +142,13 @@ class NotificationService {
           .limit(1)
           .get();
       if (userDocs.docs.isEmpty) {
-        print('No FCM token found for $recipientDisplayName');
+        developer.log('No FCM token found for $recipientDisplayName');
         return;
       }
       final fcmToken = userDocs.docs.first.data()['fcmToken'] as String?;
 
       if (fcmToken == null) {
-        print('FCM token not available for $recipientDisplayName');
+        developer.log('FCM token not available for $recipientDisplayName');
         return;
       }
 
@@ -174,12 +175,12 @@ class NotificationService {
       );
 
       if (response.statusCode == 200) {
-        print('Notification sent to $recipientDisplayName: $title - $body');
+        developer.log('Notification sent to $recipientDisplayName: $title - $body');
       } else {
-        print('Failed to send notification: ${response.body}');
+        developer.log('Failed to send notification: ${response.body}');
       }
     } catch (e) {
-      print('Error sending notification to $recipientDisplayName: $e');
+      developer.log('Error sending notification to $recipientDisplayName: $e');
     }
   }
 }

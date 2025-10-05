@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+// import 'package:google_sign_in/google_sign_in.dart'; // TODO: Re-enable when v7 API is updated
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../squad_state.dart';
 import 'squad_tab/squad_queue_page.dart';
@@ -19,12 +19,15 @@ class SetupScreenState extends State<SetupScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  // TODO: Update Google Sign In for v7 API
+  // final GoogleSignIn _googleSignIn = GoogleSignIn();
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    // TODO: Update Google Sign In initialization for v7 API
+    // _googleSignIn = GoogleSignIn();
     _checkUser();
   }
 
@@ -83,7 +86,10 @@ class SetupScreenState extends State<SetupScreen> {
     }
   }
 
+  // TODO: Update Google Sign In method for v7 API
   Future<void> _handleGoogleSignIn() async {
+    _showSnackBar('Google Sign-In temporarily disabled - updating to v7 API');
+    /*
     setState(() => _isLoading = true);
     try {
       final googleUser = await _googleSignIn.signIn();
@@ -103,6 +109,7 @@ class SetupScreenState extends State<SetupScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+    */
   }
 
   Future<void> _handleAppleSignIn() async {

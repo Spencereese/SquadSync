@@ -9,12 +9,14 @@ import 'package:provider/provider.dart';
 import 'package:record/record.dart' as record_package;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
+import 'dart:convert'; // Added for utf8
 import '../../app_theme.dart';
 import '../squad_state.dart';
 import 'chat_input_bar.dart';
 import 'chat_service.dart';
 import 'chat_settings_menu.dart';
 import 'chat_state.dart';
+import 'sqlite_helper.dart';
 import 'message_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -40,14 +42,11 @@ class ChatScreenState extends State<ChatScreen>
   String _chatName = 'Squad Chat';
   String? _chatImageUrl;
   final ChatService _chatService = ChatService();
+  final SQLiteHelper _sqliteHelper = SQLiteHelper();
   late SquadState _squadState;
   bool _showJumpToBottom = false;
   bool _isMuted = false;
-  // Mutable due to updates in _loadMoreMessages
-  List<Map<String, dynamic>> _historicalMessages = [];
-  int _offset = 0;
-  final int _limit = 50;
-  bool _isLoading = false;
+  final List<Map<String, dynamic>> _historicalMessages = []; // Made final
 
   @override
   void initState() {
@@ -69,7 +68,9 @@ class ChatScreenState extends State<ChatScreen>
       _sendMessage();
     }
     _loadNotificationSettings();
-    _loadMoreMessages();
+    // Add these lines to clear the cache and reset offset
+    _sqliteHelper.clearMessages();
+    _historicalMessages.clear(); // Clear existing historical messages
   }
 
   @override
@@ -91,11 +92,6 @@ class ChatScreenState extends State<ChatScreen>
     } else if (_scrollController.offset <= 100 && _showJumpToBottom) {
       setState(() => _showJumpToBottom = false);
     }
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
-        !_isLoading) {
-      _loadMoreMessages();
-    }
   }
 
   void _updateTyping() {
@@ -111,13 +107,21 @@ class ChatScreenState extends State<ChatScreen>
   void _updateOnlineStatus(bool isOnline) {
     String? uid = _auth.currentUser?.uid;
     if (uid != null) {
-      String? displayName = _squadState.displayName;
+      String displayName = _squadState.displayName ??
+          _auth.currentUser?.displayName ??
+          'Anonymous';
+      if (displayName == 'User' || displayName.isEmpty) {
+        displayName = _auth.currentUser?.displayName ?? 'Anonymous';
+      }
+      debugPrint('Updating online status: uid=$uid, displayName=$displayName');
       _firestore.collection('users').doc(uid).set({
-        'displayName': displayName ?? 'User',
+        'displayName': displayName,
         'profileImage': _squadState.profileImage,
         'lastOnline': FieldValue.serverTimestamp(),
         'online': isOnline,
       }, SetOptions(merge: true));
+    } else {
+      debugPrint('No authenticated user');
     }
   }
 
@@ -173,38 +177,6 @@ class ChatScreenState extends State<ChatScreen>
     }
   }
 
-  Future<void> _loadMoreMessages() async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-    try {
-      final newMessages = await _chatService.loadMoreMessages(
-        offset: _offset,
-        limit: _limit,
-      );
-      if (mounted) {
-        setState(() {
-          _historicalMessages.addAll(newMessages);
-          _offset += _limit;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading messages: $e');
-      // Load from SQLite cache
-      final cachedMessages =
-          await _chatService.getCachedMessages(_offset, _limit);
-      if (mounted) {
-        setState(() {
-          _historicalMessages.addAll(cachedMessages);
-          _offset += _limit;
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
   Future<void> _sendMessage() async {
     if (_messageController.text.isEmpty) return;
     final chatState = Provider.of<ChatState>(context, listen: false);
@@ -212,8 +184,13 @@ class ChatScreenState extends State<ChatScreen>
     chatState.updateSendingStatus(tempId, true);
 
     try {
-      String? sender =
-          _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
+      String sender = _squadState.displayName ??
+          _auth.currentUser?.displayName ??
+          'Anonymous';
+      // Ensure sender is not empty or default
+      if (sender == 'User' || sender.isEmpty) {
+        sender = _auth.currentUser?.displayName ?? 'Anonymous';
+      }
       await _chatService.sendMessage(
         sender: sender,
         text: _messageController.text,
@@ -368,25 +345,27 @@ class ChatScreenState extends State<ChatScreen>
 
   void _showMessageDetails(dynamic message) {
     if (!mounted) return;
-    final data = message is DocumentSnapshot
-        ? message.data() as Map<String, dynamic>?
-        : message as Map<String, dynamic>?;
-    if (data == null) return;
-
-    // Handle both Firestore (timestamp) and PostgreSQL (timestamp_ms) formats
+    Map<String, dynamic> data;
     int timestampMillis;
-    if (data['timestamp_ms'] != null) {
-      timestampMillis = data['timestamp_ms'] as int;
-    } else if (data['timestamp'] is Timestamp) {
-      timestampMillis = (data['timestamp'] as Timestamp).millisecondsSinceEpoch;
+
+    if (message is DocumentSnapshot) {
+      data = message.data() as Map<String, dynamic>? ?? {};
+      timestampMillis = data['timestamp'] is Timestamp
+          ? (data['timestamp'] as Timestamp).millisecondsSinceEpoch
+          : data['timestamp_ms'] as int? ??
+              DateTime.now().millisecondsSinceEpoch;
+    } else if (message is Map<String, dynamic>) {
+      data = message;
+      timestampMillis =
+          data['timestamp_ms'] as int? ?? DateTime.now().millisecondsSinceEpoch;
     } else {
-      timestampMillis = DateTime.now().millisecondsSinceEpoch; // Fallback
+      return;
     }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.backgroundColor,
+        backgroundColor: Colors.black, // Replaced AppTheme.backgroundColor
         title: const Text('Message Details'),
         content: Semantics(
           label:
@@ -491,7 +470,7 @@ class ChatScreenState extends State<ChatScreen>
     HapticFeedback.lightImpact();
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.black, // Replaced AppTheme.backgroundColor
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => Column(
@@ -525,31 +504,51 @@ class ChatScreenState extends State<ChatScreen>
     );
   }
 
-  // Helper function to safely get sender from a message
+  int? _getTimestampMs(dynamic message) {
+    if (message is DocumentSnapshot) {
+      final data = message.data() as Map<String, dynamic>?;
+      if (data?['timestamp'] is Timestamp) {
+        return (data?['timestamp'] as Timestamp).millisecondsSinceEpoch;
+      }
+      return data?['timestamp_ms'] as int?;
+    } else if (message is Map<String, dynamic>) {
+      return message['timestamp_ms'] as int?;
+    }
+    return null;
+  }
+
   String? _getSender(dynamic message) {
     if (message is DocumentSnapshot) {
       final data = message.data() as Map<String, dynamic>?;
       return data?['sender'] as String?;
     } else if (message is Map<String, dynamic>) {
-      return message['sender'] as String?;
+      return message['sender'] as String? ?? message['sender_name'] as String?;
     }
     return null;
   }
 
-  // Helper function to safely get timestamp_ms from a message
-  int? _getTimestampMs(dynamic message) {
-    if (message is DocumentSnapshot) {
-      final data = message.data() as Map<String, dynamic>?;
-      if (data == null) return null;
-      if (data['timestamp_ms'] != null) {
-        return data['timestamp_ms'] as int?;
-      } else if (data['timestamp'] is Timestamp) {
-        return (data['timestamp'] as Timestamp).millisecondsSinceEpoch;
-      }
-    } else if (message is Map<String, dynamic>) {
-      return message['timestamp_ms'] as int?;
-    }
-    return null;
+  String _cleanText(String text) {
+    // Force UTF-8 decoding if needed, but since from Firestore, replace common garbled patterns
+    try {
+      // If text is garbled, attempt to re-encode/decode
+      final bytes = latin1.encode(text); // Assume wrong encoding
+      text = utf8.decode(bytes, allowMalformed: true);
+    } catch (_) {}
+    // Manual replacements for common Messenger corruptions
+    return text
+        .replaceAll('â’', "'") // Curly apostrophe
+        .replaceAll('â“', '"') // Left double quote
+        .replaceAll('â”', '"') // Right double quote
+        .replaceAll('â’', "'") // Right single quote
+        .replaceAll('â€', '-') // Em dash
+        .replaceAll('â…', '...') // Ellipsis
+        .replaceAll('ðŸ‘�', '👍') // Thumbs up
+        .replaceAll('ðŸ˜‚', '😂') // Laughing
+        .replaceAll('ðŸ˜¢', '😢') // Sad
+        .replaceAll('ðŸ˜¡', '😡') // Angry
+        .replaceAll('â�¤ï¸�', '❤️') // Heart
+        .replaceAll('ð', '👍') // Generic corrupted emoji fallback
+        .replaceAll('ð®', '❤️'); // Another common corruption
   }
 
   @override
@@ -560,9 +559,7 @@ class ChatScreenState extends State<ChatScreen>
       child: Scaffold(
         body: Consumer<ChatState>(
           builder: (context, chatState, _) {
-            // Get the keyboard height
             final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-            // Use a small padding when keyboard is closed
             final bottomPadding = keyboardHeight > 0 ? keyboardHeight : 2.0;
             return MediaQuery.removePadding(
               context: context,
@@ -630,10 +627,12 @@ class ChatScreenState extends State<ChatScreen>
                                             }, SetOptions(merge: true));
                                             setState(() => _chatName = newName);
                                           } catch (e) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(SnackBar(
-                                                    content: Text(
-                                                        'Failed to update chat name: $e')));
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text(
+                                                          'Failed to update chat name: $e')));
+                                            }
                                           }
                                         },
                                       ),
@@ -681,15 +680,19 @@ class ChatScreenState extends State<ChatScreen>
                                           for (var doc in snapshot.docs) {
                                             await doc.reference.delete();
                                           }
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(const SnackBar(
-                                                  content:
-                                                      Text('Chat cleared')));
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(const SnackBar(
+                                                    content:
+                                                        Text('Chat cleared')));
+                                          }
                                         } catch (e) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(SnackBar(
-                                                  content: Text(
-                                                      'Failed to clear chat: $e')));
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(SnackBar(
+                                                    content: Text(
+                                                        'Failed to clear chat: $e')));
+                                          }
                                         }
                                       },
                                       onQuickReactionPicker: () =>
@@ -758,9 +761,10 @@ class ChatScreenState extends State<ChatScreen>
                                         label: '$onlineCount members online',
                                         child: Text(
                                           'Online: $onlineCount',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                               fontSize: 14,
-                                              color: AppTheme.textColor),
+                                              color: Colors
+                                                  .white), // Replaced AppTheme.textColor
                                         ),
                                       );
                                     },
@@ -783,7 +787,6 @@ class ChatScreenState extends State<ChatScreen>
                                 return const Center(
                                     child: CircularProgressIndicator());
                               }
-                              // Combine Firestore and historical messages
                               List<dynamic> allMessages = [];
                               if (snapshot.hasData) {
                                 allMessages.addAll(snapshot.data!.docs);
@@ -795,6 +798,43 @@ class ChatScreenState extends State<ChatScreen>
                                     child: Text('No messages yet'));
                               }
 
+// Deduplicate by ID
+                              final seenIds = <String>{};
+                              allMessages = allMessages.where((msg) {
+                                final id = msg is DocumentSnapshot
+                                    ? msg.id
+                                    : msg['id']?.toString() ?? '';
+                                if (seenIds.contains(id)) return false;
+                                seenIds.add(id);
+                                return true;
+                              }).toList();
+
+// Filter messages to only show from filtered members
+                              final filteredMembers =
+                                  _squadState.getFilteredMembers;
+                              allMessages = allMessages.where((msg) {
+                                final data = msg is DocumentSnapshot
+                                    ? msg.data() as Map<String, dynamic>?
+                                    : msg as Map<String, dynamic>;
+                                if (data == null) return false;
+                                final sender =
+                                    data['sender_name'] ?? data['sender'] ?? '';
+                                return filteredMembers.contains(sender);
+                              }).toList();
+
+// Sort by timestamp_ms (newest first)
+                              allMessages.sort((a, b) {
+                                final aTs = _getTimestampMs(a) ?? 0;
+                                final bTs = _getTimestampMs(b) ?? 0;
+                                return bTs.compareTo(aTs);
+                              });
+
+// Cap live messages at 500 total
+                              allMessages = allMessages.take(500).toList();
+                              debugPrint(
+                                  'Merged allMessages: ${allMessages.length} messages, IDs: ${seenIds.toList().take(10)}');
+
+// Track read status
                               Map<String, List<String>> lastReadBy = {};
                               for (var message in allMessages) {
                                 final data = message is DocumentSnapshot
@@ -816,21 +856,38 @@ class ChatScreenState extends State<ChatScreen>
                                 reverse: true,
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8.0, vertical: 4.0),
-                                itemCount:
-                                    allMessages.length + (_isLoading ? 1 : 0),
+                                itemCount: allMessages.length,
                                 itemBuilder: (context, index) {
-                                  if (index == allMessages.length &&
-                                      _isLoading) {
-                                    return const Center(
-                                        child: CircularProgressIndicator());
-                                  }
                                   var message = allMessages[index];
                                   final data = message is DocumentSnapshot
                                       ? message.data() as Map<String, dynamic>?
                                       : message as Map<String, dynamic>;
                                   if (data == null) {
+                                    debugPrint(
+                                        'Skipping null message at index $index');
                                     return const SizedBox.shrink();
                                   }
+                                  // Clean garbled text
+                                  if (data['content'] != null) {
+                                    data['content'] =
+                                        _cleanText(data['content']);
+                                  }
+                                  if (data['text'] != null) {
+                                    data['text'] = _cleanText(data['text']);
+                                  }
+                                  // Clean reactions if present
+                                  if (data['reactions'] is List) {
+                                    final reactions = data['reactions'] as List;
+                                    for (var reaction in reactions) {
+                                      if (reaction is Map &&
+                                          reaction['reaction'] != null) {
+                                        reaction['reaction'] =
+                                            _cleanText(reaction['reaction']);
+                                      }
+                                    }
+                                  }
+                                  debugPrint(
+                                      'Message data at index $index: $data');
                                   String? myName = _squadState.displayName;
                                   bool isMe = data['sender'] ==
                                       (_auth.currentUser!.displayName ??
@@ -876,20 +933,33 @@ class ChatScreenState extends State<ChatScreen>
                                                   _auth.currentUser!.uid) ==
                                           true;
 
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 4.0),
-                                    child: MessageBubble(
-                                      message: message,
-                                      isMe: isMe,
-                                      showSender: showSender,
-                                      showAvatar: showAvatar,
-                                      showTimestamp: showTimestamp,
-                                      showReadIndicator: showReadIndicator,
-                                      onTap: () => _showMessageDetails(message),
-                                      onLongPress: () =>
-                                          _forwardMessage(data['text'] ?? ''),
-                                      sendingStatus: chatState.sendingStatus,
+                                  debugPrint(
+                                      'Rendering message at index $index: $data');
+                                  return GestureDetector(
+                                    onLongPress: () => _showBlockDialog(
+                                        context,
+                                        data['sender_name'] ??
+                                            data['sender'] ??
+                                            ''),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 4.0),
+                                      child: MessageBubble(
+                                        // Removed Flexible
+                                        message: message,
+                                        isMe: isMe,
+                                        showSender: showSender,
+                                        showAvatar: showAvatar,
+                                        showTimestamp: showTimestamp,
+                                        showReadIndicator: showReadIndicator,
+                                        onTap: () =>
+                                            _showMessageDetails(message),
+                                        onLongPress: () => _forwardMessage(
+                                            data['text'] ??
+                                                data['content'] ??
+                                                ''),
+                                        sendingStatus: chatState.sendingStatus,
+                                      ),
                                     ),
                                   );
                                 },
@@ -963,6 +1033,41 @@ class ChatScreenState extends State<ChatScreen>
             );
           },
         ),
+      ),
+    );
+  }
+
+  void _showBlockDialog(BuildContext context, String sender) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final isBlocked = _squadState.userBlocks[uid]?.containsKey(sender) ?? false;
+    final action = isBlocked ? 'Unblock' : 'Block Player';
+    final message = isBlocked
+        ? 'Unblock $sender? You will see each other again.'
+        : 'Hide $sender from your view? This is mutual—they won\'t see you either.';
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('$action $sender'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (isBlocked) {
+                _squadState.unblockUser(sender);
+              } else {
+                _squadState.blockUser(sender);
+              }
+              Navigator.of(dialogContext).pop();
+            },
+            child: Text(action),
+          ),
+        ],
       ),
     );
   }

@@ -5,6 +5,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../notification_service.dart';
+import 'managers/game_manager.dart';
+import 'managers/squad_manager.dart';
+import 'managers/peacock_manager.dart';
+import 'managers/user_manager.dart';
+import 'managers/achievement_manager.dart';
+import 'managers/notification_manager.dart';
+import 'managers/firestore_manager.dart';
 
 class SquadState with ChangeNotifier {
   // Game-specific squad spots: Map<gameName, List<String?>>
@@ -17,39 +24,12 @@ class SquadState with ChangeNotifier {
   Map<String, String> globalStatuses = {};
 
   // Legacy properties for backward compatibility (computed from current game)
-  List<String?> get squadSpots {
-    final gameName = currentGame?['name'] ?? '';
-    if (!gameSquadSpots.containsKey(gameName)) {
-      final maxSpots = currentGame?['maxSpots'] ?? 4;
-      gameSquadSpots[gameName] = List.filled(maxSpots, null);
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
-    }
-    return gameSquadSpots[gameName] ?? [];
-  }
-
-  List<Map<String, dynamic>?> get spotTimers {
-    final gameName = currentGame?['name'] ?? '';
-    if (!gameSpotTimers.containsKey(gameName)) {
-      final maxSpots = currentGame?['maxSpots'] ?? 4;
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
-    }
-    return gameSpotTimers[gameName] ?? [];
-  }
-
-  Map<String, String> get statuses {
-    final gameName = currentGame?['name'] ?? '';
-    if (!gameStatuses.containsKey(gameName)) {
-      gameStatuses[gameName] = {};
-    }
-    // Merge global statuses with game-specific statuses
-    final gameStatusMap = gameStatuses[gameName] ?? {};
-    final mergedStatuses = Map<String, String>.from(gameStatusMap);
-    // Global statuses take precedence over game-specific statuses
-    globalStatuses.forEach((player, status) {
-      mergedStatuses[player] = status;
-    });
-    return mergedStatuses;
-  }
+  List<String?> get squadSpots =>
+      squadManager.getSquadSpots(currentGame?['name'] ?? '');
+  List<Map<String, dynamic>?> get spotTimers =>
+      squadManager.getSpotTimers(currentGame?['name'] ?? '');
+  Map<String, String> get statuses =>
+      squadManager.getStatuses(currentGame?['name'] ?? '', globalStatuses);
 
   List<String> squadMembers = [
     "Alex",
@@ -61,17 +41,9 @@ class SquadState with ChangeNotifier {
     "Levi",
     "Daniel"
   ];
-  Map<String, int> currentStreaks = {};
-  Map<String, int> highestStreaks = {};
-  Map<String, Map<String, dynamic>?> peacockTimers = {};
-  List<String> peacockQueue = [];
+  // Keep properties that are still needed directly in SquadState
   List<Map<String, dynamic>> gameHistory = [];
-  Map<String, int> complaints = {};
-  Map<String, Set<String>> achievements = {};
-  Map<String, Map<String, List<int>>> dailyRatings = {};
-  Map<String, Map<String, List<int>>> allTimeRatings = {};
   List<Map<String, dynamic>> scheduledTimes = [];
-  Map<String, List<Map<String, dynamic>>> bans = {};
   Map<String, bool> typing = {};
   String? _profileImage;
   Map<String, String?> memberProfileImages = {};
@@ -80,11 +52,29 @@ class SquadState with ChangeNotifier {
   // Blocked users map per user
   Map<String, Map<String, bool>> userBlocks = {};
 
-  // Game selection and lobbies fields
+  // Local currentGame for backward compatibility
   Map<String, dynamic>? _currentGame;
-  List<Map<String, dynamic>> availableGames = [];
-  Map<String, List<Map<String, dynamic>>> gameLobbies = {};
-  Set<String> preferredPeacockGames = {};
+
+  // Delegate to managers
+  Map<String, int> get currentStreaks => achievementManager.currentStreaks;
+  Map<String, int> get highestStreaks => achievementManager.highestStreaks;
+  Map<String, Set<String>> get achievements => achievementManager.achievements;
+  Map<String, Map<String, List<int>>> get dailyRatings =>
+      achievementManager.dailyRatings;
+  Map<String, Map<String, List<int>>> get allTimeRatings =>
+      achievementManager.allTimeRatings;
+  Map<String, int> get complaints => achievementManager.complaints;
+  Map<String, List<Map<String, dynamic>>> get bans => achievementManager.bans;
+
+  Map<String, Map<String, dynamic>?> get peacockTimers =>
+      peacockManager.peacockTimers;
+  List<String> get peacockQueue => peacockManager.peacockQueue;
+
+  List<Map<String, dynamic>> get availableGames => gameManager.availableGames;
+  Map<String, List<Map<String, dynamic>>> get gameLobbies =>
+      gameManager.gameLobbies;
+  Set<String> get preferredPeacockGames => gameManager.preferredPeacockGames;
+  Set<String> get mutedGames => gameManager.mutedGames;
 
   // New fields for SquadQueuePage
   bool _tiltEnabled = true; // Tilt toggle
@@ -131,6 +121,15 @@ class SquadState with ChangeNotifier {
   BuildContext? context;
   String? _displayName;
 
+  // Manager instances for decomposed functionality
+  final GameManager gameManager = GameManager();
+  final SquadManager squadManager = SquadManager();
+  final PeacockManager peacockManager = PeacockManager();
+  final UserManager userManager = UserManager();
+  final AchievementManager achievementManager = AchievementManager();
+  final NotificationManager notificationManager = NotificationManager();
+  final FirestoreManager firestoreManager = FirestoreManager();
+
   SquadState();
 
   String? get displayName => _displayName ?? 'User';
@@ -173,6 +172,52 @@ class SquadState with ChangeNotifier {
   // Private setter for internal use
   set currentGame(Map<String, dynamic>? value) {
     _currentGame = value;
+    gameManager.currentGame = value;
+  }
+
+  // Setters for delegated properties
+  set currentStreaks(Map<String, int> value) {
+    achievementManager.currentStreaks = value;
+  }
+
+  set highestStreaks(Map<String, int> value) {
+    achievementManager.highestStreaks = value;
+  }
+
+  set complaints(Map<String, int> value) {
+    achievementManager.complaints = value;
+  }
+
+  set achievements(Map<String, Set<String>> value) {
+    achievementManager.achievements = value;
+  }
+
+  set dailyRatings(Map<String, Map<String, List<int>>> value) {
+    achievementManager.dailyRatings = value;
+  }
+
+  set allTimeRatings(Map<String, Map<String, List<int>>> value) {
+    achievementManager.allTimeRatings = value;
+  }
+
+  set peacockQueue(List<String> value) {
+    peacockManager.peacockQueue = value;
+  }
+
+  set peacockTimers(Map<String, Map<String, dynamic>?> value) {
+    peacockManager.peacockTimers = value;
+  }
+
+  set availableGames(List<Map<String, dynamic>> value) {
+    gameManager.availableGames = value;
+  }
+
+  set preferredPeacockGames(Set<String> value) {
+    gameManager.preferredPeacockGames = value;
+  }
+
+  set mutedGames(Set<String> value) {
+    gameManager.mutedGames = value;
   }
 
   Future<void> initialize(BuildContext ctx) async {
@@ -530,6 +575,7 @@ class SquadState with ChangeNotifier {
 
         preferredPeacockGames =
             Set<String>.from(data['preferredPeacockGames'] ?? []);
+        mutedGames = Set<String>.from(data['mutedGames'] ?? []);
         _changedFields.clear();
         notifyListeners();
       } else {
@@ -702,6 +748,9 @@ class SquadState with ChangeNotifier {
       }
       if (_changedFields.contains('preferredPeacockGames') || force) {
         data['preferredPeacockGames'] = preferredPeacockGames.toList();
+      }
+      if (_changedFields.contains('mutedGames') || force) {
+        data['mutedGames'] = mutedGames.toList();
       }
 
       if (data.isNotEmpty) {
@@ -883,9 +932,9 @@ class SquadState with ChangeNotifier {
     notifyListeners();
   }
 
-  void setNewSquadSpot(bool value) {
+  void setNewSquadSpot(bool value, [String? gameName]) {
     _hasNewSquadSpot = value;
-    if (value) {
+    if (value && (gameName == null || !isGameMuted(gameName))) {
       NotificationService.sendNotification(
           'New Squad Spot', 'A spot has been claimed or opened!');
     }
@@ -1041,7 +1090,8 @@ class SquadState with ChangeNotifier {
       _markFieldChanged('spotTimers');
       _markFieldChanged('statuses');
       _markFieldChanged('globalStatuses');
-      setNewSquadSpot(true); // Trigger squad spot notification
+      setNewSquadSpot(
+          true, currentGame?['name']); // Trigger squad spot notification
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -1094,7 +1144,8 @@ class SquadState with ChangeNotifier {
         _markFieldChanged('squadSpots');
         _markFieldChanged('spotTimers');
         _markFieldChanged('statuses');
-        setNewSquadSpot(true); // Trigger squad spot notification
+        setNewSquadSpot(
+            true, currentGame?['name']); // Trigger squad spot notification
         updateFirestore(force: true);
         notifyListeners();
       }
@@ -1157,7 +1208,8 @@ class SquadState with ChangeNotifier {
         _markFieldChanged('spotTimers');
         _markFieldChanged('statuses');
         _markFieldChanged('peacockQueue');
-        setNewSquadSpot(true); // Trigger squad spot notification
+        setNewSquadSpot(
+            true, currentGame?['name']); // Trigger squad spot notification
       }
     }
     updateFirestore(force: true);
@@ -1199,7 +1251,8 @@ class SquadState with ChangeNotifier {
     _markFieldChanged('spotTimers');
     _markFieldChanged('statuses');
     _markFieldChanged('globalStatuses');
-    setNewSquadSpot(true); // Trigger squad spot notification
+    setNewSquadSpot(
+        true, currentGame?['name']); // Trigger squad spot notification
     updateFirestore(force: true);
     notifyListeners();
   }
@@ -1490,11 +1543,25 @@ class SquadState with ChangeNotifier {
 
   // Get the game name where a player has claimed a spot
   String? getPlayerGame(String player) {
+    // First check if player is in claimed spots
     for (final gameName in gameSquadSpots.keys) {
       if (gameSquadSpots[gameName]?.contains(player) ?? false) {
         return gameName;
       }
     }
+
+    // Then check if player is playing solo
+    final status = globalStatuses[player];
+    if (status != null && status.contains('(Solo)')) {
+      // Extract game name from "Playing: GameName (Solo)"
+      final match = RegExp(r'Playing: (.+) \(Solo\)').firstMatch(status);
+      if (match != null) {
+        return match.group(1);
+      }
+    } else if (status == 'Playing Solo') {
+      return 'Solo';
+    }
+
     return null;
   }
 
@@ -1601,7 +1668,8 @@ class SquadState with ChangeNotifier {
             _markFieldChanged('spotTimers');
             _markFieldChanged('statuses');
             _markFieldChanged('peacockTimers');
-            setNewSquadSpot(true); // Trigger squad spot notification
+            setNewSquadSpot(
+                true, currentGame?['name']); // Trigger squad spot notification
           }
         }
       } else if (waitingCount > 0) {
@@ -1621,7 +1689,8 @@ class SquadState with ChangeNotifier {
               _markFieldChanged('spotTimers');
               _markFieldChanged('statuses');
               _markFieldChanged('peacockQueue');
-              setNewSquadSpot(true); // Trigger squad spot notification
+              setNewSquadSpot(true,
+                  currentGame?['name']); // Trigger squad spot notification
             }
           }
         }
@@ -1833,5 +1902,55 @@ class SquadState with ChangeNotifier {
     preferredPeacockGames.remove(gameName);
     updateFirestore(force: true);
     notifyListeners();
+  }
+
+  void muteGame(String gameName) {
+    mutedGames.add(gameName);
+    _markFieldChanged('mutedGames');
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
+  void unmuteGame(String gameName) {
+    mutedGames.remove(gameName);
+    _markFieldChanged('mutedGames');
+    updateFirestore(force: true);
+    notifyListeners();
+  }
+
+  void startSoloGame([String? gameName]) {
+    final userName = displayName;
+    if (userName != null && userName != 'User') {
+      // Set global status to indicate solo play
+      if (gameName != null) {
+        globalStatuses[userName] = 'Playing: $gameName (Solo)';
+      } else {
+        globalStatuses[userName] = 'Playing Solo';
+      }
+      _markFieldChanged('globalStatuses');
+      updateFirestore(force: true);
+      notifyListeners();
+    }
+  }
+
+  void stopSoloGame() {
+    final userName = displayName;
+    if (userName != null) {
+      // Remove solo status, go back to offline
+      globalStatuses.remove(userName);
+      _markFieldChanged('globalStatuses');
+      updateFirestore(force: true);
+      notifyListeners();
+    }
+  }
+
+  bool isPlayingSolo(String playerName) {
+    final status = globalStatuses[playerName];
+    return status != null &&
+        (status.contains('(Solo)') || status == 'Playing Solo');
+  }
+
+  bool isGameMuted(String gameName) {
+    return mutedGames.contains(gameName);
   }
 }

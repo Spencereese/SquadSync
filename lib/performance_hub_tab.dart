@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'squad_state.dart';
 
 class PerformanceHubTab extends StatelessWidget {
@@ -11,8 +12,8 @@ class PerformanceHubTab extends StatelessWidget {
     debugPrint('PerformanceHubTab building');
     return DefaultTabController(
       length: 2,
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height - kToolbarHeight - 64,
+      child: Padding(
+        padding: const EdgeInsets.only(top: kToolbarHeight),
         child: Column(
           children: [
             const TabBar(
@@ -129,7 +130,7 @@ class PersonalStatsView extends StatelessWidget {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16.0).copyWith(bottom: 80.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -376,7 +377,10 @@ class LeaderboardsView extends StatelessWidget {
   const LeaderboardsView({super.key, required this.squadState});
 
   List<Map<String, dynamic>> _calculateLeaderboard(List<String> members) {
-    return members.map((member) {
+    final filteredMembers = squadState.getFilteredMembers;
+    return members
+        .where((member) => filteredMembers.contains(member))
+        .map((member) {
       final wins = squadState.gameHistory
           .where((game) =>
               (game['players'] as List?)?.contains(member) == true &&
@@ -399,14 +403,15 @@ class LeaderboardsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     debugPrint(
-        'LeaderboardsView building, squadMembers: ${squadState.squadMembers.length}');
-    final squadLeaderboard = _calculateLeaderboard(squadState.squadMembers);
+        'LeaderboardsView building, filteredMembers: ${squadState.getFilteredMembers.length}');
+    final filteredMembers = squadState.getFilteredMembers;
+    final squadLeaderboard = _calculateLeaderboard(filteredMembers);
     final globalLeaderboard = squadLeaderboard; // Placeholder for global data
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16.0).copyWith(bottom: 80.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -427,7 +432,8 @@ class LeaderboardsView extends StatelessWidget {
               )
             else
               ...squadLeaderboard.map(
-                (entry) => _LeaderboardTile(entry: entry),
+                (entry) =>
+                    _LeaderboardTile(entry: entry, squadState: squadState),
               ),
             const SizedBox(height: 24),
             Text(
@@ -447,7 +453,8 @@ class LeaderboardsView extends StatelessWidget {
               )
             else
               ...globalLeaderboard.map(
-                (entry) => _LeaderboardTile(entry: entry),
+                (entry) =>
+                    _LeaderboardTile(entry: entry, squadState: squadState),
               ),
           ],
         ),
@@ -458,8 +465,46 @@ class LeaderboardsView extends StatelessWidget {
 
 class _LeaderboardTile extends StatelessWidget {
   final Map<String, dynamic> entry;
+  final SquadState squadState;
 
-  const _LeaderboardTile({required this.entry});
+  const _LeaderboardTile({required this.entry, required this.squadState});
+
+  void _showBlockDialog(BuildContext context) {
+    final player = entry['name'] as String;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final isBlocked = squadState.userBlocks[uid]?.containsKey(player) ?? false;
+    final action = isBlocked ? 'Unblock' : 'Hide Player';
+    final message = isBlocked
+        ? 'Unblock $player? You will see each other\'s stats again.'
+        : 'Hide $player\'s stats? This is mutual—they won\'t see yours either.';
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.black,
+        title: Text(action, style: const TextStyle(color: Colors.white)),
+        content: Text(message, style: const TextStyle(color: Colors.white)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              if (isBlocked) {
+                squadState.unblockUser(player);
+              } else {
+                squadState.blockUser(player);
+              }
+              Navigator.of(dialogContext).pop();
+            },
+            child:
+                Text(action, style: const TextStyle(color: Colors.cyanAccent)),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -470,89 +515,93 @@ class _LeaderboardTile extends StatelessWidget {
             ratings.values.where((v) => v > 0).length
         : 0.0;
 
-    return ExpansionTile(
-      leading: const Icon(Icons.person, color: Colors.cyanAccent),
-      title: Text(entry['name'], style: const TextStyle(color: Colors.white)),
-      subtitle: Row(
-        children: [
-          Text('${entry['wins']} wins',
-              style: const TextStyle(color: Colors.cyanAccent)),
-          const SizedBox(width: 8),
-          if (avgRating > 0)
-            Row(
-              children: [
-                const Icon(Icons.star, color: Colors.yellowAccent, size: 16),
-                Text(avgRating.toStringAsFixed(1),
-                    style: const TextStyle(color: Colors.yellowAccent)),
-              ],
-            ),
-          if (entry['complaints'] > 0) ...[
+    return GestureDetector(
+      onLongPress: () => _showBlockDialog(context),
+      child: ExpansionTile(
+        leading: const Icon(Icons.person, color: Colors.cyanAccent),
+        title: Text(entry['name'], style: const TextStyle(color: Colors.white)),
+        subtitle: Row(
+          children: [
+            Text('${entry['wins']} wins',
+                style: const TextStyle(color: Colors.cyanAccent)),
             const SizedBox(width: 8),
-            Text('${entry['complaints']} complaints',
-                style: const TextStyle(color: Colors.redAccent)),
+            if (avgRating > 0)
+              Row(
+                children: [
+                  const Icon(Icons.star, color: Colors.yellowAccent, size: 16),
+                  Text(avgRating.toStringAsFixed(1),
+                      style: const TextStyle(color: Colors.yellowAccent)),
+                ],
+              ),
+            if (entry['complaints'] > 0) ...[
+              const SizedBox(width: 8),
+              Text('${entry['complaints']} complaints',
+                  style: const TextStyle(color: Colors.redAccent)),
+            ],
           ],
-        ],
-      ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('All-Time Ratings:',
-                  style: TextStyle(color: Colors.white)),
-              ...ratings.entries.map((e) => Text(
-                  '${e.key}: ${e.value.toStringAsFixed(1)}/5',
-                  style: const TextStyle(color: Colors.white))),
-              const SizedBox(height: 8),
-              const Text('Daily Ratings:',
-                  style: TextStyle(color: Colors.white)),
-              ...dailyRatings.entries.map((e) => Text(
-                  '${e.key}: ${e.value.toStringAsFixed(1)}/5',
-                  style: const TextStyle(color: Colors.white))),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 200,
-                child: RadarChart(
-                  RadarChartData(
-                    radarShape: RadarShape.circle,
-                    tickCount: 5,
-                    ticksTextStyle: const TextStyle(color: Colors.transparent),
-                    dataSets: [
-                      RadarDataSet(
-                        fillColor: Colors.cyanAccent.withValues(alpha: 0.2),
-                        borderColor: Colors.cyanAccent,
-                        borderWidth: 2,
-                        dataEntries: [
-                          RadarEntry(value: ratings['Vibes'] ?? 0),
-                          RadarEntry(value: ratings['Comms'] ?? 0),
-                          RadarEntry(value: ratings['Gunny'] ?? 0),
-                          RadarEntry(value: ratings['Wingman'] ?? 0),
-                        ],
-                      ),
-                    ],
-                    titlePositionPercentageOffset: 0.1,
-                    getTitle: (index, angle) {
-                      switch (index) {
-                        case 0:
-                          return RadarChartTitle(text: 'Vibes');
-                        case 1:
-                          return RadarChartTitle(text: 'Comms');
-                        case 2:
-                          return RadarChartTitle(text: 'Gunny');
-                        case 3:
-                          return RadarChartTitle(text: 'Wingman');
-                        default:
-                          return RadarChartTitle(text: '');
-                      }
-                    },
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('All-Time Ratings:',
+                    style: TextStyle(color: Colors.white)),
+                ...ratings.entries.map((e) => Text(
+                    '${e.key}: ${e.value.toStringAsFixed(1)}/5',
+                    style: const TextStyle(color: Colors.white))),
+                const SizedBox(height: 8),
+                const Text('Daily Ratings:',
+                    style: TextStyle(color: Colors.white)),
+                ...dailyRatings.entries.map((e) => Text(
+                    '${e.key}: ${e.value.toStringAsFixed(1)}/5',
+                    style: const TextStyle(color: Colors.white))),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 200,
+                  child: RadarChart(
+                    RadarChartData(
+                      radarShape: RadarShape.circle,
+                      tickCount: 5,
+                      ticksTextStyle:
+                          const TextStyle(color: Colors.transparent),
+                      dataSets: [
+                        RadarDataSet(
+                          fillColor: Colors.cyanAccent.withValues(alpha: 0.2),
+                          borderColor: Colors.cyanAccent,
+                          borderWidth: 2,
+                          dataEntries: [
+                            RadarEntry(value: ratings['Vibes'] ?? 0),
+                            RadarEntry(value: ratings['Comms'] ?? 0),
+                            RadarEntry(value: ratings['Gunny'] ?? 0),
+                            RadarEntry(value: ratings['Wingman'] ?? 0),
+                          ],
+                        ),
+                      ],
+                      titlePositionPercentageOffset: 0.1,
+                      getTitle: (index, angle) {
+                        switch (index) {
+                          case 0:
+                            return RadarChartTitle(text: 'Vibes');
+                          case 1:
+                            return RadarChartTitle(text: 'Comms');
+                          case 2:
+                            return RadarChartTitle(text: 'Gunny');
+                          case 3:
+                            return RadarChartTitle(text: 'Wingman');
+                          default:
+                            return RadarChartTitle(text: '');
+                        }
+                      },
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -21,13 +21,13 @@ class ChatSettingsMenu {
     HapticFeedback.lightImpact();
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: ListView(
+          shrinkWrap: true,
           children: [
             Container(
               margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -38,7 +38,7 @@ class ChatSettingsMenu {
                 borderRadius: BorderRadius.circular(2.0),
               ),
             ),
-            _buildSectionTitle('Group Actions'),
+            _buildSectionTitle(context, 'Group Actions'),
             ListTile(
               leading: Image.asset('assets/images/info_icon.png',
                   width: 24, height: 24),
@@ -66,7 +66,7 @@ class ChatSettingsMenu {
                 onToggleNotifications();
               },
             ),
-            _buildSectionTitle('Chat Customization'),
+            _buildSectionTitle(context, 'Chat Customization'),
             ListTile(
               leading: Image.asset('assets/images/edit_icon.png',
                   width: 24, height: 24),
@@ -100,7 +100,7 @@ class ChatSettingsMenu {
                 onQuickReactionPicker();
               },
             ),
-            _buildSectionTitle('Chat Management'),
+            _buildSectionTitle(context, 'Chat Management'),
             ListTile(
               leading: Image.asset('assets/images/search_icon.png',
                   width: 24, height: 24),
@@ -136,7 +136,7 @@ class ChatSettingsMenu {
                 onLeaveGroup();
               },
             ),
-            _buildSectionTitle('Support'),
+            _buildSectionTitle(context, 'Support'),
             ListTile(
               leading: Image.asset('assets/images/bug_report_icon.png',
                   width: 24, height: 24),
@@ -155,7 +155,7 @@ class ChatSettingsMenu {
     );
   }
 
-  static Widget _buildSectionTitle(String title) {
+  static Widget _buildSectionTitle(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
       child: Text(
@@ -176,7 +176,7 @@ class ChatSettingsMenu {
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -198,7 +198,7 @@ class ChatSettingsMenu {
               child: Text(
                 'Select Quick Reaction',
                 style: TextStyle(
-                  color: AppTheme.textColor,
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontWeight: FontWeight.bold,
                   fontSize: 16.0,
                 ),
@@ -216,7 +216,7 @@ class ChatSettingsMenu {
                   child: Container(
                     padding: const EdgeInsets.all(8.0),
                     decoration: BoxDecoration(
-                      color: AppTheme.backgroundColor,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(12.0),
                     ),
                     child: Text(
@@ -243,7 +243,7 @@ class ChatSettingsMenu {
   }) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -319,7 +319,7 @@ class ChatSettingsMenu {
                           Map<String, dynamic> data =
                               message.data() as Map<String, dynamic>;
                           return Card(
-                            color: AppTheme.backgroundColor,
+                            color: Theme.of(context).colorScheme.surface,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12.0),
@@ -328,8 +328,14 @@ class ChatSettingsMenu {
                               contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16.0, vertical: 8.0),
                               title: Text(
-                                data['text'] ?? '',
-                                style: TextStyle(color: AppTheme.textColor),
+                                (data['text'] ?? '')
+                                    .replaceAll('â', "'")
+                                    .replaceAll('€', "")
+                                    .replaceAll('™', "'"),
+                                style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface),
                               ),
                               subtitle: Text(
                                 "${message['sender']} • ${DateFormat('MMM d, yyyy, HH:mm').format((message['timestamp'] as Timestamp).toDate())}",
@@ -360,7 +366,7 @@ class ChatSettingsMenu {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.backgroundColor,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
         title: const Text('Change Chat Name'),
@@ -417,7 +423,7 @@ class ChatSettingsMenu {
     HapticFeedback.lightImpact();
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -439,7 +445,7 @@ class ChatSettingsMenu {
                 showDialog(
                   context: context,
                   builder: (context) => AlertDialog(
-                    backgroundColor: AppTheme.backgroundColor,
+                    backgroundColor: Theme.of(context).colorScheme.surface,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16.0)),
                     title: const Text('Edit Message'),

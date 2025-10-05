@@ -62,7 +62,7 @@ class MemberWidgets {
     );
   }
 
-  static Widget _buildGameBadge(String gameName) {
+  static Widget _buildGameBadge(String gameName, {bool isSolo = false}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -71,7 +71,7 @@ class MemberWidgets {
         border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.5)),
       ),
       child: Text(
-        'Playing: $gameName',
+        'Playing: $gameName${isSolo ? ' (Solo)' : ''}',
         style: const TextStyle(
           color: Colors.blueAccent,
           fontSize: 10,
@@ -101,6 +101,9 @@ class MemberWidgets {
   }
 
   static Color _getStatusColor(String status) {
+    if (status.contains('(Solo)') || status == 'Playing Solo') {
+      return Colors.greenAccent; // Solo players are "walking" (active)
+    }
     switch (status) {
       case 'Strutting':
         return Colors.blueAccent;
@@ -143,7 +146,21 @@ class MemberWidgets {
     return Semantics(
       label: 'Member: $player',
       child: GestureDetector(
-        onLongPress: () => showJoinLobbyDialog(context, player, squadState),
+        onLongPress: () {
+          if (player == squadState.displayName &&
+              squadState.isPlayingSolo(player)) {
+            // Stop solo play for current user
+            squadState.stopSoloGame();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Stopped solo play'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          } else {
+            showJoinLobbyDialog(context, player, squadState);
+          }
+        },
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration:
@@ -181,7 +198,10 @@ class MemberWidgets {
                       spacing: 8,
                       children: [
                         if (squadState.getPlayerGame(player) != null)
-                          _buildGameBadge(squadState.getPlayerGame(player)!),
+                          _buildGameBadge(
+                            squadState.getPlayerGame(player)!,
+                            isSolo: squadState.isPlayingSolo(player),
+                          ),
                         if (playerLobby != null)
                           _buildLobbyBadge(playerLobby['host'] ?? 'Unknown'),
                       ],

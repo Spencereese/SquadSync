@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import 'sqlite_helper.dart';
 import '../squad_state.dart';
@@ -18,11 +19,12 @@ class ChatService {
   static const int _maxRetries = 3;
   static const Duration _initialBackoff = Duration(milliseconds: 500);
 
-  // Stream for real-time messages from Firestore
+  // Stream for real-time messages from Firestore (removed 30-day limit)
   Stream<QuerySnapshot> getChatMessages() {
     return _firestore
         .collection('chat')
         .orderBy('timestamp_ms', descending: true)
+        .limit(100) // Initial load limit
         .snapshots();
   }
 
@@ -45,15 +47,32 @@ class ChatService {
     List<Map<String, dynamic>> reactions = const [],
     String? replyTo,
   }) async {
+    if (text.trim().isEmpty &&
+        photos.isEmpty &&
+        videos.isEmpty &&
+        audio.isEmpty &&
+        imageUrl == null &&
+        videoUrl == null &&
+        audioUrl == null) {
+      debugPrint('Skipping empty message');
+      return;
+    }
+
+    // Ensure we have a valid sender
+    final user = FirebaseAuth.instance.currentUser;
+    final validSender = sender.isNotEmpty && sender != 'User'
+        ? sender
+        : user?.displayName ?? 'Anonymous';
+
     final msgId = Uuid().v4();
     final timestampMs = DateTime.now().millisecondsSinceEpoch;
+
+    // Simplified message data for Firestore
     final messageData = {
       'id': msgId,
-      'sender': sender,
-      'sender_name': sender,
+      'sender': validSender,
       'timestamp_ms': timestampMs,
-      'text': text,
-      'content': text,
+      'text': text.trim(),
       'imageUrl': imageUrl,
       'videoUrl': videoUrl,
       'audioUrl': audioUrl,
@@ -61,36 +80,29 @@ class ChatService {
       'videos': videos,
       'audio': audio,
       'reactions': reactions,
-      'is_geoblocked_for_viewer': false,
-      'is_unsent_image_by_messenger_kid_parent': false,
-      'delivered': false,
-      'read': false,
       'reply_to': replyTo,
       'timestamp': FieldValue.serverTimestamp(),
     };
 
     try {
+      // Write to Firestore with retry
       await _retryOperation(() async {
         await _firestore.collection('chat').doc(msgId).set(messageData);
       });
-      // Cache in SQLite
+
+      // Cache locally for offline viewing
       await _sqliteHelper.insertMessage(messageData);
-      // Store in PostgreSQL via backend
-      final response = await http.post(
-        Uri.parse('https://your-backend-url/messages'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          ...messageData,
-          'created_at': DateTime.now().toIso8601String(),
-        }),
-      );
-      if (response.statusCode != 200) {
-        throw Exception('Failed to save message to PostgreSQL');
-      }
+
+      // Try to sync to backend if available (don't fail if it doesn't work)
+      _syncToBackend(messageData).catchError((e) {
+        debugPrint('Backend sync failed, but message saved locally: $e');
+      });
+
       HapticFeedback.mediumImpact();
     } catch (e) {
+      // Cache for retry later
       await _cacheMessage(messageData);
-      throw Exception('Failed to send message: $e. It will sync when online.');
+      throw Exception('Failed to send message: $e');
     }
   }
 
@@ -171,7 +183,7 @@ class ChatService {
     }
   }
 
-  // Fetch historical messages from PostgreSQL
+  // Fetch historical messages from PostgreSQL (removed 30-day limit)
   Future<List<Map<String, dynamic>>> loadMoreMessages({
     required int offset,
     required int limit,
@@ -179,23 +191,28 @@ class ChatService {
     try {
       final response = await http.get(
         Uri.parse(
-            'https://your-backend-url/messages?offset=$offset&limit=$limit'),
+            'https://squadsync-backend-756172684661.us-central1.run.app/messages?offset=$offset&limit=$limit'),
       );
+      debugPrint('Backend response: ${response.statusCode} ${response.body}');
       if (response.statusCode == 200) {
         final messages =
             List<Map<String, dynamic>>.from(json.decode(response.body));
-        // Cache in SQLite
+        debugPrint(
+            'Loaded ${messages.length} messages from backend: ${messages.map((m) => m['id']).toList()}');
         for (var msg in messages) {
           await _sqliteHelper.insertMessage(msg);
         }
         return messages;
       } else {
-        throw Exception('Failed to load historical messages');
+        throw Exception(
+            'Failed to load historical messages: ${response.statusCode} ${response.body}');
       }
     } catch (e) {
       debugPrint('Failed to load messages from backend: $e');
-      // Fallback to SQLite
-      return await _sqliteHelper.getMessages(offset, limit);
+      final cachedMessages = await _sqliteHelper.getMessages(offset, limit);
+      debugPrint(
+          'Loaded ${cachedMessages.length} messages from SQLite cache: ${cachedMessages.map((m) => m['id']).toList()}');
+      return cachedMessages;
     }
   }
 
@@ -217,6 +234,30 @@ class ChatService {
         if (attempt == _maxRetries) rethrow;
         await Future.delayed(_initialBackoff * (attempt * 2));
       }
+    }
+  }
+
+  // Sync message to backend (non-blocking)
+  Future<void> _syncToBackend(Map<String, dynamic> messageData) async {
+    try {
+      final messageDataForHttp = {
+        ...messageData,
+        'timestamp': messageData['timestamp_ms'], // Use timestamp_ms for HTTP
+        'created_at': DateTime.now().toIso8601String(),
+      };
+
+      final response = await http.post(
+        Uri.parse(
+            'https://squadsync-backend-756172684661.us-central1.run.app/messages'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(messageDataForHttp),
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint('Backend sync failed: ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Backend sync error: $e');
     }
   }
 

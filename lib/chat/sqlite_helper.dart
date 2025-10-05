@@ -90,6 +90,12 @@ class SQLiteHelper {
     }
   }
 
+  // In sqlite_helper.dart
+  Future<void> clearMessages() async {
+    final db = await database;
+    await db.delete('messages');
+  }
+
   Future<List<Map<String, dynamic>>> getMessages(int offset, int limit) async {
     try {
       final db = await database;

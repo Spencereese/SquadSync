@@ -123,7 +123,9 @@ class MemberWidgets {
       String player,
       SquadState squadState,
       Function(BuildContext, String, SquadState) showBlockDialog,
-      Function(BuildContext, String, SquadState) showJoinLobbyDialog) {
+      Function(BuildContext, String, SquadState) showJoinLobbyDialog,
+      Function(BuildContext, ScaffoldMessengerState, SquadState, String)
+          showComplaintDialog) {
     final streak = squadState.currentStreaks[player] ?? 0;
     final banCount = squadState.getBanCount(player);
     final status = squadState.statuses[player] ?? 'Offline';
@@ -240,7 +242,9 @@ class MemberWidgets {
                       icon: const Icon(Icons.report, color: Colors.redAccent),
                       tooltip: 'File Complaint',
                       onPressed: () {
-                        // This would need to be passed from parent
+                        final messenger = ScaffoldMessenger.of(context);
+                        showComplaintDialog(
+                            context, messenger, squadState, player);
                       },
                     ),
                   ),

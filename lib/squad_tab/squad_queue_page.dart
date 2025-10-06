@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../chat/chat_screen.dart';
+import '../chat/chat_groups_screen.dart';
 import 'squad_tab.dart';
 import '../Availability/availability_tab.dart';
 import 'package:cod_squad_app/performance_hub_tab.dart';
@@ -69,7 +69,8 @@ class SquadQueuePageState extends State<SquadQueuePage> {
   }
 
   void _handlePageChange() {
-    int newIndex = _pageController.page?.round() ?? _selectedIndexNotifier.value;
+    int newIndex =
+        _pageController.page?.round() ?? _selectedIndexNotifier.value;
     if (newIndex != _selectedIndexNotifier.value) {
       _selectedIndexNotifier.value = newIndex;
       HapticFeedback.lightImpact();
@@ -120,6 +121,33 @@ class SquadQueuePageState extends State<SquadQueuePage> {
   Widget build(BuildContext context) {
     final squadState = Provider.of<SquadState>(context);
     final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+
+    // Show loading screen while initializing or loading initial data
+    if (!squadState.isInitialized || !squadState.isInitialDataLoaded) {
+      return Theme(
+        data: AppTheme.darkTheme,
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(color: Colors.cyanAccent),
+                const SizedBox(height: 24),
+                Text(
+                  'Loading your squad...',
+                  style: TextStyle(
+                    color: Colors.cyanAccent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Theme(
       data: AppTheme.darkTheme,
@@ -227,7 +255,9 @@ class SquadQueuePageState extends State<SquadQueuePage> {
                   tabs[index],
                   width: 28,
                   height: 28,
-                  color: isSelected ? AppTheme.accentColor : Colors.white.withValues(alpha: 0.7),
+                  color: isSelected
+                      ? AppTheme.accentColor
+                      : Colors.white.withValues(alpha: 0.7),
                 ),
               ],
             ),
@@ -260,7 +290,7 @@ class SquadQueuePageState extends State<SquadQueuePage> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
         padding: EdgeInsets.only(bottom: isKeyboardVisible ? 0 : 75),
-        child: const ChatScreen(),
+        child: const ChatGroupsScreen(),
       ),
       const SettingsTab(),
     ];

@@ -4,13 +4,16 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:app_links/app_links.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'squad_state.dart';
-import 'chat/chat_screen.dart';
+import 'chat/chat_groups_screen.dart';
 import 'setup_screen.dart';
 import 'notification_service.dart';
 import 'chat/chat_state.dart';
 import 'app_theme.dart';
+import 'join_squad_screen.dart';
+import 'squad_tab/squad_queue_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,13 +56,13 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   static const platform = MethodChannel('com.example.codSquadApp/siri');
   late AppLinks _appLinks;
   StreamSubscription<Uri?>? _sub;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
     _appLinks = AppLinks();
-    _initDeepLinks();
-    _initSiriShortcuts();
+    // Deep links will be initialized after Firebase is ready
   }
 
   @override
@@ -69,6 +72,12 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   }
 
   Future<void> _initDeepLinks() async {
+    // Handle initial link
+    final initialLink = await _appLinks.getInitialLink();
+    if (initialLink != null) {
+      _handleDeepLink(initialLink.toString());
+    }
+
     // Listen for incoming links - initial link handling may be different in v6
     _sub = _appLinks.uriLinkStream.listen((Uri? link) {
       if (link != null) {
@@ -80,10 +89,51 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   }
 
   void _handleDeepLink(String link) {
-    if (link == 'codsquadapp://chat' && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const ChatScreen()),
+    // Check if user is authenticated and has a squad before navigating
+    final user = FirebaseAuth.instance.currentUser;
+    final squadState = Provider.of<SquadState>(context, listen: false);
+
+    if (link == 'codsquadapp://chat' &&
+        mounted &&
+        user != null &&
+        squadState.selectedSquadId != null) {
+      // Defer navigation to avoid _debugLocked assertion
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const ChatGroupsScreen()),
+          );
+        }
+      });
+    } else if (link.startsWith('codsquadapp://join/') && mounted) {
+      final code = link.split('/').last;
+      // Defer navigation to avoid _debugLocked assertion
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => JoinSquadScreen(initialCode: code),
+            ),
+          );
+        }
+      });
+    } else if (link == 'codsquadapp://chat' && mounted && user == null) {
+      // User not authenticated, show login screen
+      _showSnackBar('Please sign in first');
+    } else if (link == 'codsquadapp://chat' &&
+        mounted &&
+        squadState.selectedSquadId == null) {
+      // User authenticated but no squad, show squad selection
+      _showSnackBar('Please join a squad first');
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
       );
     }
   }
@@ -92,14 +142,29 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
     try {
       platform.setMethodCallHandler((call) async {
         if (call.method == 'sendMessage' && mounted) {
-          final message = call.arguments['message'] as String;
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ChatScreen(initialMessage: message),
-            ),
-          );
-          return true;
+          final user = FirebaseAuth.instance.currentUser;
+          final squadState = Provider.of<SquadState>(context, listen: false);
+
+          if (user != null && squadState.selectedSquadId != null) {
+            // Defer navigation to avoid _debugLocked assertion
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ChatGroupsScreen(),
+                  ),
+                );
+              }
+            });
+            return true;
+          } else if (user == null) {
+            _showSnackBar('Please sign in first');
+            return false;
+          } else {
+            _showSnackBar('Please join a squad first');
+            return false;
+          }
         }
         return false;
       });
@@ -135,9 +200,25 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                 home: Scaffold(
                   backgroundColor: Colors.black,
                   body: Center(
-                    child: Text(
-                      'Error: ${snapshot.error}',
-                      style: const TextStyle(color: Colors.white),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'Failed to initialize app',
+                          style: TextStyle(color: Colors.white, fontSize: 18),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '${snapshot.error}',
+                          style: const TextStyle(color: Colors.white70),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          'Please restart the app',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -148,11 +229,26 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
               theme: themeProvider.theme,
               home: Builder(
                 builder: (context) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    Provider.of<SquadState>(context, listen: false)
-                        .initialize(context);
-                  });
-                  return const SetupScreen();
+                  // Initialize deep links and Siri shortcuts after Firebase is ready (only once)
+                  if (!_isInitialized) {
+                    _isInitialized = true;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _initDeepLinks();
+                      _initSiriShortcuts();
+                      Provider.of<SquadState>(context, listen: false)
+                          .initialize(context);
+                    });
+                  }
+
+                  // Check authentication status to determine initial screen
+                  final user = FirebaseAuth.instance.currentUser;
+                  if (user != null) {
+                    // User is authenticated, show main app
+                    return const SquadQueuePage();
+                  } else {
+                    // User not authenticated, show login/setup screen
+                    return const SetupScreen();
+                  }
                 },
               ),
               debugShowCheckedModeBanner: false,

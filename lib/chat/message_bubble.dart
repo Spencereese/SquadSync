@@ -24,7 +24,7 @@ String fixMediaUrl(String? url) {
   return url.startsWith('http') ? url : '$storageBucketPrefix$url';
 }
 
-class MessageBubble extends StatelessWidget {
+class MessageBubble extends StatefulWidget {
   final dynamic message;
   final bool isMe;
   final bool showSender;
@@ -34,6 +34,7 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final Map<String, bool> sendingStatus;
+  final String? chatGroupId;
 
   const MessageBubble({
     super.key,
@@ -46,51 +47,80 @@ class MessageBubble extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     required this.sendingStatus,
+    this.chatGroupId,
   });
 
   @override
-  Widget build(BuildContext context) {
-    // Normalize message data to Map<String, dynamic> with fallback
-    final data = _normalizeMessage(message);
+  State<MessageBubble> createState() => _MessageBubbleState();
+}
 
+class _MessageBubbleState extends State<MessageBubble> {
+  late Map<String, dynamic> _normalizedData;
+  late List<String> _urls;
+  late String _messageId;
+
+  @override
+  void initState() {
+    super.initState();
+    _normalizeAndCacheData();
+  }
+
+  @override
+  void didUpdateWidget(MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message != widget.message) {
+      _normalizeAndCacheData();
+    }
+  }
+
+  void _normalizeAndCacheData() {
+    _normalizedData = _normalizeMessage(widget.message);
+    _urls = LinkDetector.extractUrls(_normalizedData['text'] ?? '');
+    _messageId = _getMessageId();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
           child: Column(
             crossAxisAlignment:
-                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              if (showTimestamp &&
-                  (data['timestamp'] != null || data['timestamp_ms'] != null))
-                _buildTimestamp(data),
+              if (widget.showTimestamp &&
+                  (_normalizedData['timestamp'] != null ||
+                      _normalizedData['timestamp_ms'] != null))
+                _buildTimestamp(_normalizedData),
               Row(
-                mainAxisAlignment:
-                    isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                mainAxisAlignment: widget.isMe
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  if (!isMe)
-                    _buildAvatar(
-                        context, squadState, data['sender'] ?? 'Unknown'),
-                  if (!isMe) const SizedBox(width: 8),
+                  if (!widget.isMe)
+                    _buildAvatar(context, squadState,
+                        _normalizedData['sender'] ?? 'Unknown'),
+                  if (!widget.isMe) const SizedBox(width: 8),
                   Flexible(
                     child: Column(
-                      crossAxisAlignment: isMe
+                      crossAxisAlignment: widget.isMe
                           ? CrossAxisAlignment.end
                           : CrossAxisAlignment.start,
                       children: [
-                        if (showSender) _buildSender(data),
+                        if (widget.showSender) _buildSender(_normalizedData),
                         Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            _buildMessageContent(context, data),
+                            _buildMessageContent(context, _normalizedData),
                             Positioned(
                               bottom: -10,
-                              left: isMe ? -10 : null,
-                              right: isMe ? null : -10,
+                              left: widget.isMe ? -10 : null,
+                              right: widget.isMe ? null : -10,
                               child: ReactionsWidget(
-                                docId: _getMessageId(),
-                                isMe: isMe,
+                                docId: _messageId,
+                                isMe: widget.isMe,
                               ),
                             ),
                           ],
@@ -173,10 +203,10 @@ class MessageBubble extends StatelessWidget {
   }
 
   String _getMessageId() {
-    if (message is DocumentSnapshot) {
-      return message.id;
-    } else if (message is Map<String, dynamic>) {
-      return message['id']?.toString() ?? '';
+    if (widget.message is DocumentSnapshot) {
+      return widget.message.id;
+    } else if (widget.message is Map<String, dynamic>) {
+      return widget.message['id']?.toString() ?? '';
     }
     return '';
   }
@@ -189,7 +219,7 @@ class MessageBubble extends StatelessWidget {
       child: SizedBox(
         width: 32,
         height: 32,
-        child: showAvatar
+        child: widget.showAvatar
             ? CircleAvatar(
                 radius: 16,
                 backgroundImage:
@@ -265,7 +295,7 @@ class MessageBubble extends StatelessWidget {
 
     final contentWidget = Column(
       crossAxisAlignment:
-          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         if (hasContent || hasText)
           Container(
@@ -287,7 +317,7 @@ class MessageBubble extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
-        onTap();
+        widget.onTap();
       },
       onLongPress: () => _showReactionMenu(context, data),
       child: AnimatedContainer(
@@ -295,7 +325,7 @@ class MessageBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 2.0),
         padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
         decoration: BoxDecoration(
-          color: isMe
+          color: widget.isMe
               ? AppTheme.accentColor.withValues(alpha: 0.2)
               : AppTheme.hintColor.withValues(alpha: 0.2),
           borderRadius: BorderRadius.circular(16),
@@ -316,13 +346,11 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildText(String text) {
-    final urls = LinkDetector.extractUrls(text);
-
     return Semantics(
       label: 'Message text: $text',
       child: Column(
         crossAxisAlignment:
-            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           RichTextWithLinks(
             text: text,
@@ -332,11 +360,11 @@ class MessageBubble extends StatelessWidget {
               fontWeight: FontWeight.normal,
               backgroundColor: Colors.transparent,
             ),
-            textAlign: isMe ? TextAlign.end : TextAlign.start,
-            isMe: isMe,
+            textAlign: widget.isMe ? TextAlign.end : TextAlign.start,
+            isMe: widget.isMe,
           ),
           // Add link previews for the first URL found
-          if (urls.isNotEmpty) _buildLinkPreview(urls.first),
+          if (_urls.isNotEmpty) _buildLinkPreview(_urls.first),
         ],
       ),
     );
@@ -408,7 +436,7 @@ class MessageBubble extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    if (sendingStatus[messageId] == true) {
+    if (widget.sendingStatus[messageId] == true) {
       return Padding(
         padding: const EdgeInsets.only(top: 4.0),
         child: Semantics(
@@ -417,7 +445,7 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     }
-    if (sendingStatus[messageId] == false) {
+    if (widget.sendingStatus[messageId] == false) {
       return Padding(
         padding: const EdgeInsets.only(top: 4.0),
         child: Semantics(
@@ -427,7 +455,8 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     }
-    if (showReadIndicator && !sendingStatus.containsKey(messageId)) {
+    if (widget.showReadIndicator &&
+        !widget.sendingStatus.containsKey(messageId)) {
       return Padding(
         padding: const EdgeInsets.only(top: 4.0),
         child: Row(
@@ -461,13 +490,13 @@ class MessageBubble extends StatelessWidget {
       transitionDuration: const Duration(milliseconds: 200),
       pageBuilder: (context, anim1, anim2) {
         return _MessageReactionDialog(
-          message: message,
-          isMe: isMe,
+          message: widget.message,
+          isMe: widget.isMe,
           data: data,
           onReply: () {
             if (!context.mounted) return;
             Provider.of<SquadState>(context, listen: false)
-                .setReplyingTo(message);
+                .setReplyingTo(widget.message);
           },
           onCopy: () {
             if (!context.mounted) return;
@@ -514,6 +543,7 @@ class MessageBubble extends StatelessWidget {
             }
           },
           onEmojiSelect: (emoji) => _addReaction(context, emoji),
+          chatGroupId: widget.chatGroupId,
         );
       },
       transitionBuilder: (context, anim1, anim2, child) {
@@ -526,30 +556,34 @@ class MessageBubble extends StatelessWidget {
         );
       },
     );
-    onLongPress();
+    widget.onLongPress();
   }
 
   Future<void> _addReaction(BuildContext context, String emoji) async {
-    final user = FirebaseAuth.instance.currentUser!.displayName ??
-        Provider.of<SquadState>(context, listen: false).displayName ??
-        'User';
-    final querySnapshot = await FirebaseFirestore.instance
-        .collection('chat')
-        .doc(_getMessageId())
-        .collection('reactions')
-        .where('user', isEqualTo: user)
-        .get();
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadId = squadState.selectedSquadId;
+    if (squadId == null) return;
 
-    await Future.wait(querySnapshot.docs.map((doc) => doc.reference.delete()));
-    await FirebaseFirestore.instance
-        .collection('chat')
-        .doc(_getMessageId())
-        .collection('reactions')
-        .add({
-      'emoji': emoji,
-      'user': user,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+    // Determine collection path based on whether it's a group chat
+    final collectionPath = widget.chatGroupId != null
+        ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
+        : 'squads/$squadId/chat';
+
+    final user = FirebaseAuth.instance.currentUser!.displayName ??
+        squadState.displayName ??
+        'User';
+
+    final docRef = FirebaseFirestore.instance
+        .collection(collectionPath)
+        .doc(_getMessageId());
+    final snapshot = await docRef.get();
+    if (snapshot.exists) {
+      final data = snapshot.data() as Map<String, dynamic>;
+      final reactions =
+          List<Map<String, dynamic>>.from(data['reactions'] ?? []);
+      reactions.add({'user': user, 'reaction': emoji});
+      await docRef.update({'reactions': reactions});
+    }
   }
 
   Future<void> _launchUrl(String url) async {
@@ -571,6 +605,7 @@ class _MessageReactionDialog extends StatefulWidget {
   final VoidCallback onCopy;
   final VoidCallback onDelete;
   final Function(String) onEmojiSelect;
+  final String? chatGroupId;
 
   const _MessageReactionDialog({
     required this.message,
@@ -580,6 +615,7 @@ class _MessageReactionDialog extends StatefulWidget {
     required this.onCopy,
     required this.onDelete,
     required this.onEmojiSelect,
+    this.chatGroupId,
   });
 
   @override

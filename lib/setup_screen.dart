@@ -42,10 +42,12 @@ class SetupScreenState extends State<SetupScreen> {
     try {
       final user = _auth.currentUser;
       if (user != null && mounted) {
+        // User is already authenticated, but we don't navigate here anymore
+        // Navigation is handled in main.dart based on auth status
+        // Just ensure SquadState is initialized if needed
         final squadState = Provider.of<SquadState>(context, listen: false);
-        await squadState.initialize(context);
-        if (mounted) {
-          _navigateToSquadQueue();
+        if (!squadState.isInitialized) {
+          await squadState.initialize(context);
         }
       }
     } catch (e) {
@@ -141,7 +143,10 @@ class SetupScreenState extends State<SetupScreen> {
     } else {
       if (!mounted) return;
       final squadState = Provider.of<SquadState>(context, listen: false);
-      await squadState.initialize(context);
+      // Only initialize if not already initialized
+      if (!squadState.isInitialized) {
+        await squadState.initialize(context);
+      }
       if (mounted) {
         _navigateToSquadQueue();
       }

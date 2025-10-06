@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cod_squad_app/Availability/schedule_dialog.dart';
 import 'package:cod_squad_app/squad_state.dart';
+import 'package:cod_squad_app/no_squad_screen.dart';
 
 class AvailabilityTab extends StatefulWidget {
   const AvailabilityTab({super.key});
@@ -254,6 +255,9 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
   Widget build(BuildContext context) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
+        if (squadState.selectedSquadId == null) {
+          return const NoSquadScreen();
+        }
         final events = _mapScheduledTimes(squadState.scheduledTimes);
         return Scaffold(
           body: RefreshIndicator(

@@ -25,12 +25,18 @@ class SpotWidgets {
       onTap: () {
         if (!hasOccupant && squadState.squadSpots.contains(yourName)) {
           assignOtherMember(context, squadState, index);
-        } else if (hasOccupant && spotName == yourName && isReady) {
-          squadState.lockSpot(index);
+        } else if (hasOccupant && spotName == yourName) {
+          if (isReady) {
+            squadState.lockSpot(index);
+          } else {
+            // Allow leaving spot by tapping when not ready
+            squadState.removeSpot(index);
+          }
         }
       },
       child: Semantics(
-        label: 'Spot ${index + 1}: ${spotName ?? 'Open'}',
+        label:
+            'Spot ${index + 1}: ${spotName ?? 'Open'}${spotName == yourName && !isReady ? ' (tap to leave)' : spotName == yourName && isReady ? ' (ready to lock)' : ''}',
         child: Card(
           elevation: 4,
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -133,6 +139,20 @@ class SpotWidgets {
             child: const Tooltip(
               message: 'Confirm as Walking',
               child: Text('Lock In'),
+            ),
+          ),
+        if (hasOccupant && !isReady && spotName == yourName)
+          ElevatedButton(
+            onPressed: () => squadState.removeSpot(index),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              elevation: 6,
+            ),
+            child: const Tooltip(
+              message: 'Leave this spot',
+              child: Text('Leave'),
             ),
           ),
       ],

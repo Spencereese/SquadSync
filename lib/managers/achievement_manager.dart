@@ -59,7 +59,9 @@ class AchievementManager with ChangeNotifier {
     required String targetMember,
     required String reason,
   }) async {
-    // Implementation from original SquadState
+    // Delegate to SquadState for actual implementation
+    // This manager focuses on tracking complaint counts and achievements
+    complaints[targetMember] = (complaints[targetMember] ?? 0) + 1;
     notifyListeners();
   }
 

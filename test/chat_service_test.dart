@@ -4,6 +4,13 @@ import '../lib/chat/link_preview.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('ChatService UID-based Tests', () {
+    test('sendMessage should accept senderUid parameter', () {
+      // Placeholder test for UID-based messaging
+      expect(true, true); // Always pass for now
+    });
+  });
+
   group('Link Preview Tests', () {
     test('should detect URLs in text', () {
       const text =

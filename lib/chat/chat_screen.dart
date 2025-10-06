@@ -10,6 +10,7 @@ import 'package:record/record.dart' as record_package;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:convert'; // Added for utf8
+import 'dart:async'; // Added for StreamSubscription
 import '../../app_theme.dart';
 import '../squad_state.dart';
 import 'chat_input_bar.dart';
@@ -18,10 +19,14 @@ import 'chat_settings_menu.dart';
 import 'chat_state.dart';
 import 'sqlite_helper.dart';
 import 'message_bubble.dart';
+import '../no_squad_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? initialMessage;
-  const ChatScreen({super.key, this.initialMessage});
+  final String? chatGroupId;
+  final String? chatGroupName;
+  const ChatScreen(
+      {super.key, this.initialMessage, this.chatGroupId, this.chatGroupName});
 
   @override
   ChatScreenState createState() => ChatScreenState();
@@ -47,6 +52,7 @@ class ChatScreenState extends State<ChatScreen>
   bool _showJumpToBottom = false;
   bool _isMuted = false;
   final List<Map<String, dynamic>> _historicalMessages = []; // Made final
+  StreamSubscription<String?>? _typingSubscription;
 
   @override
   void initState() {
@@ -56,21 +62,32 @@ class ChatScreenState extends State<ChatScreen>
       duration: const Duration(milliseconds: 300),
     );
     _squadState = Provider.of<SquadState>(context, listen: false);
-    _updateOnlineStatus(true);
-    _loadChatDetails();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
+    // Set chat name from widget parameters if provided (for chat groups)
+    if (widget.chatGroupName != null) {
+      _chatName = widget.chatGroupName!;
+    }
+
+    // Defer heavy operations to after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateOnlineStatus(true);
+      _loadChatDetails();
+      _scrollToBottom();
+      _checkHandoffDraft();
+      Provider.of<ChatState>(context, listen: false).loadQuickReactionEmoji();
+      if (widget.initialMessage != null && mounted) {
+        _messageController.text = widget.initialMessage!;
+        _sendMessage();
+      }
+      _loadNotificationSettings();
+      // Clear cache and reset offset
+      _sqliteHelper.clearMessages(chatGroupId: widget.chatGroupId);
+      _historicalMessages.clear();
+    });
+
+    // Add listeners immediately for responsiveness
     _squadState.addListener(_updateTyping);
     _scrollController.addListener(_scrollListener);
-    _checkHandoffDraft();
-    Provider.of<ChatState>(context, listen: false).loadQuickReactionEmoji();
-    if (widget.initialMessage != null && mounted) {
-      _messageController.text = widget.initialMessage!;
-      _sendMessage();
-    }
-    _loadNotificationSettings();
-    // Add these lines to clear the cache and reset offset
-    _sqliteHelper.clearMessages();
-    _historicalMessages.clear(); // Clear existing historical messages
   }
 
   @override
@@ -82,6 +99,7 @@ class ChatScreenState extends State<ChatScreen>
     _animationController.dispose();
     _audioRecorder.dispose();
     _squadState.removeListener(_updateTyping);
+    _typingSubscription?.cancel();
     _saveDraftForHandoff();
     super.dispose();
   }
@@ -96,11 +114,20 @@ class ChatScreenState extends State<ChatScreen>
 
   void _updateTyping() {
     if (mounted) {
-      String? typingUser = _squadState.getTypingUser();
-      String? myName = _squadState.displayName;
-      Provider.of<ChatState>(context, listen: false).setTypingUser(
-        typingUser != null && typingUser != myName ? typingUser : null,
-      );
+      // Cancel previous subscription to prevent memory leaks
+      _typingSubscription?.cancel();
+
+      // Use ChatService.getTypingUser for chat-specific typing
+      _typingSubscription = _chatService
+          .getTypingUser(context, chatGroupId: widget.chatGroupId)
+          .listen((typingUser) {
+        if (mounted) {
+          String? myName = _squadState.displayName;
+          Provider.of<ChatState>(context, listen: false).setTypingUser(
+            typingUser != null && typingUser != myName ? typingUser : null,
+          );
+        }
+      });
     }
   }
 
@@ -137,6 +164,9 @@ class ChatScreenState extends State<ChatScreen>
 
   Future<void> _loadChatDetails() async {
     try {
+      // If this is a chat group, don't load squad chat details
+      if (widget.chatGroupId != null) return;
+
       final doc =
           await _firestore.collection('chat_metadata').doc('chat_config').get();
       if (doc.exists && mounted) {
@@ -184,20 +214,17 @@ class ChatScreenState extends State<ChatScreen>
     chatState.updateSendingStatus(tempId, true);
 
     try {
-      String sender = _squadState.displayName ??
-          _auth.currentUser?.displayName ??
-          'Anonymous';
-      // Ensure sender is not empty or default
-      if (sender == 'User' || sender.isEmpty) {
-        sender = _auth.currentUser?.displayName ?? 'Anonymous';
-      }
-      await _chatService.sendMessage(
-        sender: sender,
-        text: _messageController.text,
-      );
+      final user = _auth.currentUser;
+      if (user == null) return;
+      await _chatService.sendMessage(context,
+          senderUid: user.uid,
+          text: _messageController.text,
+          chatGroupId: widget.chatGroupId);
       chatState.removeSendingStatus(tempId);
       _messageController.clear();
-      await _chatService.updateTypingStatus(context, sender, false);
+      await _chatService.updateTypingStatus(
+          context, _squadState.displayName ?? 'Anonymous', false,
+          chatGroupId: widget.chatGroupId);
       _scrollToBottom();
       await _checkFirstMessage();
     } catch (e) {
@@ -217,15 +244,16 @@ class ChatScreenState extends State<ChatScreen>
       chatState.setUploading(true);
       File file = File(media.path);
       bool isVideo = media.mimeType?.startsWith('video/') ?? false;
-      String sender =
-          _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
+      final user = _auth.currentUser;
+      if (user == null) return;
       String fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_$sender.${isVideo ? 'mp4' : 'jpg'}';
+          '${DateTime.now().millisecondsSinceEpoch}_${user.uid}.${isVideo ? 'mp4' : 'jpg'}';
       String downloadUrl =
           await _chatService.uploadMedia(file, fileName, isVideo);
       final timestampMs = DateTime.now().millisecondsSinceEpoch;
       await _chatService.sendMessage(
-        sender: sender,
+        context,
+        senderUid: user.uid,
         text: '',
         photos: !isVideo
             ? [
@@ -237,6 +265,7 @@ class ChatScreenState extends State<ChatScreen>
                 {'uri': downloadUrl, 'creation_timestamp': timestampMs}
               ]
             : [],
+        chatGroupId: widget.chatGroupId,
       );
       chatState.setUploading(false);
       HapticFeedback.lightImpact();
@@ -300,17 +329,20 @@ class ChatScreenState extends State<ChatScreen>
     chatState.setUploading(true);
     try {
       File file = File(_audioPath!);
-      String sender =
-          _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
-      String fileName = '${DateTime.now().millisecondsSinceEpoch}_$sender.m4a';
+      final user = _auth.currentUser;
+      if (user == null) return;
+      String fileName =
+          '${DateTime.now().millisecondsSinceEpoch}_${user.uid}.m4a';
       String downloadUrl = await _chatService.uploadAudio(file, fileName);
       final timestampMs = DateTime.now().millisecondsSinceEpoch;
       await _chatService.sendMessage(
-        sender: sender,
+        context,
+        senderUid: user.uid,
         text: '',
         audio: [
           {'uri': downloadUrl, 'creation_timestamp': timestampMs}
         ],
+        chatGroupId: widget.chatGroupId,
       );
       chatState.setUploading(false);
       _audioPath = null;
@@ -325,11 +357,13 @@ class ChatScreenState extends State<ChatScreen>
 
   Future<void> _forwardMessage(String messageText) async {
     try {
-      String? sender =
-          _auth.currentUser!.displayName ?? _squadState.displayName ?? 'User';
+      final user = _auth.currentUser;
+      if (user == null) return;
       await _chatService.sendMessage(
-        sender: sender,
+        context,
+        senderUid: user.uid,
         text: 'Forwarded: $messageText',
+        chatGroupId: widget.chatGroupId,
       );
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -410,7 +444,8 @@ class ChatScreenState extends State<ChatScreen>
     if (draft != null && mounted) {
       _messageController.text = draft;
       await _chatService.updateTypingStatus(
-          context, _squadState.displayName ?? 'User', true);
+          context, _squadState.displayName ?? 'User', true,
+          chatGroupId: widget.chatGroupId);
     }
   }
 
@@ -445,22 +480,16 @@ class ChatScreenState extends State<ChatScreen>
 
   void _leaveGroup() async {
     try {
-      String? uid = _auth.currentUser?.uid;
-      if (uid != null) {
-        await _firestore.collection('users').doc(uid).update({
-          'group': FieldValue.delete(),
-        });
-        if (mounted) {
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('You have left the group')),
-          );
-        }
+      await _squadState.leaveSquad();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You have left the squad')),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to leave group: $e')),
+          SnackBar(content: Text('Failed to leave squad: $e')),
         );
       }
     }
@@ -520,9 +549,9 @@ class ChatScreenState extends State<ChatScreen>
   String? _getSender(dynamic message) {
     if (message is DocumentSnapshot) {
       final data = message.data() as Map<String, dynamic>?;
-      return data?['sender'] as String?;
+      return data?['senderUid'] as String?;
     } else if (message is Map<String, dynamic>) {
-      return message['sender'] as String? ?? message['sender_name'] as String?;
+      return message['senderUid'] as String?;
     }
     return null;
   }
@@ -553,6 +582,10 @@ class ChatScreenState extends State<ChatScreen>
 
   @override
   Widget build(BuildContext context) {
+    final squadState = Provider.of<SquadState>(context);
+    if (squadState.selectedSquadId == null) {
+      return const NoSquadScreen();
+    }
     return SafeArea(
       top: true,
       bottom: false,
@@ -716,6 +749,22 @@ class ChatScreenState extends State<ChatScreen>
                                       label: 'Chat options',
                                       child: Row(
                                         children: [
+                                          // Add back button for chat groups
+                                          if (widget.chatGroupId != null)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                  right: 8.0),
+                                              child: IconButton(
+                                                icon: const Icon(
+                                                  Icons.arrow_back,
+                                                  color: Colors.cyanAccent,
+                                                  size: 24,
+                                                ),
+                                                onPressed: () =>
+                                                    Navigator.pop(context),
+                                                tooltip: 'Back to groups',
+                                              ),
+                                            ),
                                           if (_chatImageUrl != null)
                                             Padding(
                                               padding: const EdgeInsets.only(
@@ -776,7 +825,8 @@ class ChatScreenState extends State<ChatScreen>
                         ).animate().fadeIn(),
                         Expanded(
                           child: StreamBuilder<QuerySnapshot>(
-                            stream: _chatService.getChatMessages(),
+                            stream: _chatService.getChatMessages(context,
+                                chatGroupId: widget.chatGroupId),
                             builder: (context, snapshot) {
                               if (snapshot.hasError) {
                                 return const Center(
@@ -809,7 +859,7 @@ class ChatScreenState extends State<ChatScreen>
                                 return true;
                               }).toList();
 
-// Filter messages to only show from filtered members
+// Filter messages to only show from squad members (all messages in squad are from members)
                               final filteredMembers =
                                   _squadState.getFilteredMembers;
                               allMessages = allMessages.where((msg) {
@@ -817,9 +867,11 @@ class ChatScreenState extends State<ChatScreen>
                                     ? msg.data() as Map<String, dynamic>?
                                     : msg as Map<String, dynamic>;
                                 if (data == null) return false;
-                                final sender =
-                                    data['sender_name'] ?? data['sender'] ?? '';
-                                return filteredMembers.contains(sender);
+                                final senderUid = data['senderUid'] ?? '';
+                                final senderDisplayName =
+                                    _squadState.getDisplayNameForUid(senderUid);
+                                return filteredMembers
+                                    .contains(senderDisplayName);
                               }).toList();
 
 // Sort by timestamp_ms (newest first)
@@ -831,8 +883,8 @@ class ChatScreenState extends State<ChatScreen>
 
 // Cap live messages at 500 total
                               allMessages = allMessages.take(500).toList();
-                              debugPrint(
-                                  'Merged allMessages: ${allMessages.length} messages, IDs: ${seenIds.toList().take(10)}');
+                              // debugPrint(
+                              //     'Merged allMessages: ${allMessages.length} messages, IDs: ${seenIds.toList().take(10)}');
 
 // Track read status
                               Map<String, List<String>> lastReadBy = {};
@@ -863,8 +915,8 @@ class ChatScreenState extends State<ChatScreen>
                                       ? message.data() as Map<String, dynamic>?
                                       : message as Map<String, dynamic>;
                                   if (data == null) {
-                                    debugPrint(
-                                        'Skipping null message at index $index');
+                                    // debugPrint(
+                                    //     'Skipping null message at index $index');
                                     return const SizedBox.shrink();
                                   }
                                   // Clean garbled text
@@ -886,13 +938,10 @@ class ChatScreenState extends State<ChatScreen>
                                       }
                                     }
                                   }
-                                  debugPrint(
-                                      'Message data at index $index: $data');
-                                  String? myName = _squadState.displayName;
-                                  bool isMe = data['sender'] ==
-                                      (_auth.currentUser!.displayName ??
-                                          myName ??
-                                          'User');
+                                  // debugPrint(
+                                  //     'Message data at index $index: $data');
+                                  bool isMe = data['senderUid'] ==
+                                      _auth.currentUser?.uid;
                                   if (!isMe && !(data['delivered'] ?? false)) {
                                     if (message is DocumentSnapshot) {
                                       _chatService.markAsDelivered(message.id);
@@ -928,39 +977,54 @@ class ChatScreenState extends State<ChatScreen>
                                               .inMinutes >
                                           30;
                                   bool showReadIndicator = !isMe &&
-                                      lastReadBy[data['sender'] ?? '']
+                                      lastReadBy[data['senderUid'] ?? '']
                                               ?.contains(
                                                   _auth.currentUser!.uid) ==
                                           true;
 
-                                  debugPrint(
-                                      'Rendering message at index $index: $data');
-                                  return GestureDetector(
-                                    onLongPress: () => _showBlockDialog(
-                                        context,
-                                        data['sender_name'] ??
-                                            data['sender'] ??
-                                            ''),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 4.0),
-                                      child: MessageBubble(
-                                        // Removed Flexible
-                                        message: message,
-                                        isMe: isMe,
-                                        showSender: showSender,
-                                        showAvatar: showAvatar,
-                                        showTimestamp: showTimestamp,
-                                        showReadIndicator: showReadIndicator,
-                                        onTap: () =>
-                                            _showMessageDetails(message),
-                                        onLongPress: () => _forwardMessage(
-                                            data['text'] ??
-                                                data['content'] ??
-                                                ''),
-                                        sendingStatus: chatState.sendingStatus,
-                                      ),
-                                    ),
+                                  // debugPrint(
+                                  //     'Rendering message at index $index: $data');
+                                  return FutureBuilder<DocumentSnapshot>(
+                                    future: _firestore
+                                        .collection('users')
+                                        .doc(data['senderUid'])
+                                        .get(),
+                                    builder: (context, userSnapshot) {
+                                      final displayName =
+                                          (userSnapshot.data?.data() as Map<
+                                                  String,
+                                                  dynamic>?)?['displayName'] ??
+                                              'Unknown';
+                                      final updatedData =
+                                          Map<String, dynamic>.from(data);
+                                      updatedData['sender'] = displayName;
+                                      return GestureDetector(
+                                        onLongPress: () => _showBlockDialog(
+                                            context, displayName),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 4.0),
+                                          child: MessageBubble(
+                                            message: updatedData,
+                                            isMe: isMe,
+                                            showSender: showSender,
+                                            showAvatar: showAvatar,
+                                            showTimestamp: showTimestamp,
+                                            showReadIndicator:
+                                                showReadIndicator,
+                                            onTap: () =>
+                                                _showMessageDetails(message),
+                                            onLongPress: () => _forwardMessage(
+                                                data['text'] ??
+                                                    data['content'] ??
+                                                    ''),
+                                            sendingStatus:
+                                                chatState.sendingStatus,
+                                            chatGroupId: widget.chatGroupId,
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   );
                                 },
                               );
@@ -988,7 +1052,8 @@ class ChatScreenState extends State<ChatScreen>
                                 String? sender =
                                     _squadState.displayName ?? 'User';
                                 _chatService.updateTypingStatus(
-                                    context, sender, value.isNotEmpty);
+                                    context, sender, value.isNotEmpty,
+                                    chatGroupId: widget.chatGroupId);
                               },
                               quickReactionEmoji: chatState.quickReactionEmoji,
                             ),

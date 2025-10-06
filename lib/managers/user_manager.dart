@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 /// Manages user profiles, blocking, and preferences
 class UserManager with ChangeNotifier {
@@ -29,20 +30,20 @@ class UserManager with ChangeNotifier {
   }
 
   void blockUser(String user) {
-    final currentUser = 'current_user'; // TODO: Get from auth
+    final currentUser = FirebaseAuth.instance.currentUser?.uid ?? '';
     userBlocks[currentUser] ??= {};
     userBlocks[currentUser]![user] = true;
     notifyListeners();
   }
 
   void unblockUser(String user) {
-    final currentUser = 'current_user'; // TODO: Get from auth
+    final currentUser = FirebaseAuth.instance.currentUser?.uid ?? '';
     userBlocks[currentUser]?.remove(user);
     notifyListeners();
   }
 
   bool isUserBlocked(String user) {
-    final currentUser = 'current_user'; // TODO: Get from auth
+    final currentUser = FirebaseAuth.instance.currentUser?.uid ?? '';
     return userBlocks[currentUser]?.containsKey(user) ?? false;
   }
 }

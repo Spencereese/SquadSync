@@ -17,7 +17,7 @@ class SQLiteHelper {
     String path = join(await getDatabasesPath(), 'squadsync.db');
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE messages (
@@ -34,14 +34,23 @@ class SQLiteHelper {
             delivered INTEGER,
             read INTEGER,
             reply_to TEXT,
-            created_at TEXT
+            created_at TEXT,
+            chat_group_id TEXT
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // Add chat_group_id column to existing databases
+          await db
+              .execute('ALTER TABLE messages ADD COLUMN chat_group_id TEXT');
+        }
       },
     );
   }
 
-  Future<void> insertMessage(Map<String, dynamic> message) async {
+  Future<void> insertMessage(Map<String, dynamic> message,
+      {String? chatGroupId}) async {
     try {
       final db = await database;
       await db.insert(
@@ -64,6 +73,7 @@ class SQLiteHelper {
           'reply_to': message['reply_to'],
           'created_at':
               message['created_at'] ?? DateTime.now().toIso8601String(),
+          'chat_group_id': chatGroupId,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -91,16 +101,36 @@ class SQLiteHelper {
   }
 
   // In sqlite_helper.dart
-  Future<void> clearMessages() async {
+  Future<void> clearMessages({String? chatGroupId}) async {
     final db = await database;
-    await db.delete('messages');
+    if (chatGroupId != null) {
+      await db.delete('messages',
+          where: 'chat_group_id = ?', whereArgs: [chatGroupId]);
+    } else {
+      // Clear squad chat messages (where chat_group_id is null)
+      await db.delete('messages', where: 'chat_group_id IS NULL');
+    }
   }
 
-  Future<List<Map<String, dynamic>>> getMessages(int offset, int limit) async {
+  Future<List<Map<String, dynamic>>> getMessages(int offset, int limit,
+      {String? chatGroupId}) async {
     try {
       final db = await database;
+      String? whereClause;
+      List<dynamic>? whereArgs;
+
+      if (chatGroupId != null) {
+        whereClause = 'chat_group_id = ?';
+        whereArgs = [chatGroupId];
+      } else {
+        // For squad chat, get messages where chat_group_id is null
+        whereClause = 'chat_group_id IS NULL';
+      }
+
       final List<Map<String, dynamic>> maps = await db.query(
         'messages',
+        where: whereClause,
+        whereArgs: whereArgs,
         orderBy: 'timestamp_ms DESC',
         limit: limit,
         offset: offset,

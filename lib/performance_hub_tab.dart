@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'squad_state.dart';
+import 'no_squad_screen.dart';
 
 class PerformanceHubTab extends StatelessWidget {
   const PerformanceHubTab({super.key});
@@ -31,12 +32,20 @@ class PerformanceHubTab extends StatelessWidget {
                 physics: const BouncingScrollPhysics(),
                 children: [
                   Consumer<SquadState>(
-                    builder: (context, squadState, child) =>
-                        PersonalStatsView(squadState: squadState),
+                    builder: (context, squadState, child) {
+                      if (squadState.selectedSquadId == null) {
+                        return const NoSquadScreen();
+                      }
+                      return PersonalStatsView(squadState: squadState);
+                    },
                   ),
                   Consumer<SquadState>(
-                    builder: (context, squadState, child) =>
-                        LeaderboardsView(squadState: squadState),
+                    builder: (context, squadState, child) {
+                      if (squadState.selectedSquadId == null) {
+                        return const NoSquadScreen();
+                      }
+                      return LeaderboardsView(squadState: squadState);
+                    },
                   ),
                 ],
               ),

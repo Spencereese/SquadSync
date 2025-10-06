@@ -409,7 +409,12 @@ class SquadDialogs {
                     onPressed: () {
                       squadState.joinLobby(
                           lobby['id'], squadState.displayName ?? '');
-                      Navigator.pop(dialogContext);
+                      // Defer navigation to avoid _debugLocked assertion
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (Navigator.canPop(dialogContext)) {
+                          Navigator.pop(dialogContext);
+                        }
+                      });
                     },
                     child: const Text('Join'),
                   ),
@@ -494,7 +499,12 @@ class SquadDialogs {
                       ? gameLogo
                       : 'assets/images/placeholder.png'
                 });
-                Navigator.pop(dialogContext);
+                // Defer navigation to avoid _debugLocked assertion
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (Navigator.canPop(dialogContext)) {
+                    Navigator.pop(dialogContext);
+                  }
+                });
               }
             },
             child: const Text('Add Game'),
@@ -655,7 +665,12 @@ class SquadDialogs {
                       ? gameLogo
                       : 'assets/images/placeholder.png'
                 });
-                Navigator.pop(dialogContext);
+                // Defer navigation to avoid _debugLocked assertion
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (Navigator.canPop(dialogContext)) {
+                    Navigator.pop(dialogContext);
+                  }
+                });
               }
             },
             child: const Text('Save'),
@@ -683,7 +698,12 @@ class SquadDialogs {
           TextButton(
             onPressed: () {
               squadState.deleteGame(index);
-              Navigator.pop(dialogContext);
+              // Defer navigation to avoid _debugLocked assertion
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (Navigator.canPop(dialogContext)) {
+                  Navigator.pop(dialogContext);
+                }
+              });
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete'),

@@ -5,6 +5,7 @@ import 'spot_widgets.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'squad_dialogs.dart';
+import '../no_squad_screen.dart';
 
 class SquadTab extends StatelessWidget {
   const SquadTab({super.key});
@@ -40,86 +41,104 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   Widget build(BuildContext context) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
-        return RefreshIndicator(
-          onRefresh: () async {
-            // Force a state refresh if needed; currently, Firestore listener handles updates
-          },
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(16, 8 + kToolbarHeight, 16, 16),
-                  child: _buildHeader(context, squadState),
-                ),
-              ),
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => SpotWidgets.buildSpotCard(context, index,
-                      squadState, _showSpotAssignmentMenu, _assignOtherMember),
-                  childCount: squadState.currentGame?['maxSpots'] ?? 4,
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: PeacockWidgets.buildPeacockSpot(
-                    context, squadState, _togglePeacockMembers),
-              ),
-              if (_showPeacockMembers)
+        if (squadState.selectedSquadId == null) {
+          return const NoSquadScreen();
+        }
+        return Scaffold(
+          appBar: AppBar(
+            title: _buildSquadSelector(squadState),
+            backgroundColor: Colors.black,
+            elevation: 0,
+          ),
+          body: RefreshIndicator(
+            onRefresh: () async {
+              // Force a state refresh if needed; currently, Firestore listener handles updates
+            },
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
                 SliverToBoxAdapter(
-                  child: PeacockWidgets.buildPeacockMembersList(
-                      context, squadState, _togglePeacockMember),
-                ),
-              SliverToBoxAdapter(
-                child: _buildActionButtons(context, squadState),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Semantics(
-                    label: 'Squad Members List',
-                    child: Text(
-                      'Squad Members:',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(color: Colors.cyanAccent),
-                    ),
-                  ),
-                ),
-              ),
-              if (squadState.getFilteredMembers.isEmpty)
-                const SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Text('No squad members yet',
-                        style: TextStyle(color: Colors.grey)),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: _buildHeader(context, squadState),
                   ),
-                )
-              else
+                ),
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => SpotWidgets.buildSpotCard(
+                        context,
+                        index,
+                        squadState,
+                        _showSpotAssignmentMenu,
+                        _assignOtherMember),
+                    childCount: squadState.currentGame?['maxSpots'] ?? 4,
+                  ),
+                ),
                 SliverToBoxAdapter(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      color: Colors.grey[900],
-                    ),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: squadState.getFilteredMembers.length,
-                      itemBuilder: (context, index) {
-                        final player = squadState.getFilteredMembers[index];
-                        return MemberWidgets.buildMemberCard(context, player,
-                            squadState, _showBlockDialog, _showJoinLobbyDialog);
-                      },
+                  child: PeacockWidgets.buildPeacockSpot(
+                      context, squadState, _togglePeacockMembers),
+                ),
+                if (_showPeacockMembers)
+                  SliverToBoxAdapter(
+                    child: PeacockWidgets.buildPeacockMembersList(
+                        context, squadState, _togglePeacockMember),
+                  ),
+                SliverToBoxAdapter(
+                  child: _buildActionButtons(context, squadState),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Semantics(
+                      label: 'Squad Members List',
+                      child: Text(
+                        'Squad Members:',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(color: Colors.cyanAccent),
+                      ),
                     ),
                   ),
                 ),
-              SliverToBoxAdapter(
-                child: const SizedBox(height: 80.0),
-              ),
-            ],
+                if (squadState.getFilteredMembers.isEmpty)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Text('No squad members yet',
+                          style: TextStyle(color: Colors.grey)),
+                    ),
+                  )
+                else
+                  SliverToBoxAdapter(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: Colors.grey[900],
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: squadState.getFilteredMembers.length,
+                        itemBuilder: (context, index) {
+                          final player = squadState.getFilteredMembers[index];
+                          return MemberWidgets.buildMemberCard(
+                              context,
+                              player,
+                              squadState,
+                              _showBlockDialog,
+                              _showJoinLobbyDialog,
+                              _showComplaintDialog);
+                        },
+                      ),
+                    ),
+                  ),
+                SliverToBoxAdapter(
+                  child: const SizedBox(height: 80.0),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -166,6 +185,35 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildSquadSelector(SquadState squadState) {
+    if (squadState.userSquadIds.length <= 1) {
+      return Text(
+        squadState.currentSquad?['name'] ?? 'Squad',
+        style: const TextStyle(color: Colors.cyanAccent, fontSize: 20),
+      );
+    }
+
+    return DropdownButton<String>(
+      value: squadState.selectedSquadId,
+      dropdownColor: Colors.grey[900],
+      style: const TextStyle(color: Colors.cyanAccent, fontSize: 20),
+      underline: Container(),
+      icon: const Icon(Icons.arrow_drop_down, color: Colors.cyanAccent),
+      items: squadState.userSquadIds.map((squadId) {
+        final squad = squadState.getSquadById(squadId);
+        return DropdownMenuItem<String>(
+          value: squadId,
+          child: Text(squad?['name'] ?? 'Unknown Squad'),
+        );
+      }).toList(),
+      onChanged: (String? newSquadId) {
+        if (newSquadId != null && newSquadId != squadState.selectedSquadId) {
+          squadState.selectSquad(newSquadId);
+        }
+      },
     );
   }
 
@@ -569,7 +617,12 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                           ),
                           onTap: () {
                             squadState.selectGame(game);
-                            Navigator.pop(dialogContext);
+                            // Defer navigation to avoid _debugLocked assertion
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (Navigator.canPop(dialogContext)) {
+                                Navigator.pop(dialogContext);
+                              }
+                            });
                           },
                         ),
                       ),
@@ -637,6 +690,11 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   void _showBlockDialog(
       BuildContext context, String player, SquadState squadState) {
     SquadDialogs.showBlockDialog(context, player, squadState);
+  }
+
+  void _showComplaintDialog(BuildContext context,
+      ScaffoldMessengerState messenger, SquadState squadState, String player) {
+    SquadDialogs.showComplaintDialog(context, messenger, squadState, player);
   }
 
   void _showJoinLobbyDialog(

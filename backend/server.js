@@ -23,10 +23,10 @@ const firestore = new Firestore();
 
 // PostgreSQL connection
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || '34.133.101.232',
-  database: process.env.DB_NAME || 'squadsync',
-  password: process.env.DB_PASSWORD || 'Lainlain0',
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
   port: process.env.DB_PORT || 5432,
 });
 

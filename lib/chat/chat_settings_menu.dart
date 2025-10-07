@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../app_theme.dart';
 
@@ -284,12 +285,19 @@ class ChatSettingsMenu {
                 const SizedBox(height: 16.0),
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
-                    stream: firestore
-                        .collection('chat')
-                        .orderBy('timestamp', descending: true)
-                        .where('text', isGreaterThanOrEqualTo: searchQuery)
-                        .where('text', isLessThan: '$searchQuery\uf8ff')
-                        .snapshots(),
+                    stream: () {
+                      // Check if user is authenticated
+                      final currentUser = FirebaseAuth.instance.currentUser;
+                      if (currentUser == null) {
+                        return Stream<QuerySnapshot>.empty();
+                      }
+                      return firestore
+                          .collection('chat')
+                          .orderBy('timestamp', descending: true)
+                          .where('text', isGreaterThanOrEqualTo: searchQuery)
+                          .where('text', isLessThan: '$searchQuery\uf8ff')
+                          .snapshots();
+                    }(),
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
                         return const Center(

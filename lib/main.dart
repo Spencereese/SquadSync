@@ -15,8 +15,9 @@ import 'app_theme.dart';
 import 'join_squad_screen.dart';
 import 'squad_tab/squad_queue_page.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _initializeFirebase();
   runApp(const SquadSyncApp());
 }
 
@@ -235,20 +236,38 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       _initDeepLinks();
                       _initSiriShortcuts();
-                      Provider.of<SquadState>(context, listen: false)
-                          .initialize(context);
                     });
                   }
 
-                  // Check authentication status to determine initial screen
-                  final user = FirebaseAuth.instance.currentUser;
-                  if (user != null) {
-                    // User is authenticated, show main app
-                    return const SquadQueuePage();
-                  } else {
-                    // User not authenticated, show login/setup screen
-                    return const SetupScreen();
-                  }
+                  // Use StreamBuilder to listen to auth state changes
+                  return StreamBuilder<User?>(
+                    stream: FirebaseAuth.instance.authStateChanges(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        // Still checking auth status
+                        return Scaffold(
+                          backgroundColor: Colors.black,
+                          body: const Center(
+                            child: CircularProgressIndicator(
+                                color: Colors.cyanAccent),
+                          ),
+                        );
+                      }
+
+                      final user = snapshot.data;
+                      if (user != null) {
+                        // User is authenticated, initialize SquadState and show main app
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          Provider.of<SquadState>(context, listen: false)
+                              .initialize(context);
+                        });
+                        return const SquadQueuePage();
+                      } else {
+                        // User not authenticated, show login/setup screen
+                        return const SetupScreen();
+                      }
+                    },
+                  );
                 },
               ),
               debugShowCheckedModeBanner: false,

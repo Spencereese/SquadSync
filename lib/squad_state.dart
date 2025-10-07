@@ -362,11 +362,14 @@ class SquadState with ChangeNotifier {
     context = ctx;
     await _initState();
     _initializeData();
-    _syncWithFirestore();
+    // Removed _syncWithFirestore() call from here - will be called after auth
 
     // Listen for auth state changes to update display name and load squad
     FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (user != null) {
+        // Start Firestore sync only after authentication
+        _syncWithFirestore();
+
         // First try to load from SharedPreferences (most reliable)
         final prefs = await SharedPreferences.getInstance();
         final prefsName = prefs.getString('yourName');
@@ -399,6 +402,10 @@ class SquadState with ChangeNotifier {
         _isInitialDataLoaded = true; // Mark initial data loading as complete
         notifyListeners();
       } else {
+        // User signed out - stop Firestore sync
+        _squadSubscription?.cancel();
+        _squadSubscription = null;
+
         _displayName = null;
         _profileImage = null;
         userSquadIds.clear();
@@ -406,7 +413,6 @@ class SquadState with ChangeNotifier {
         _currentSquadData = null;
         squadMemberUids = [];
         _invalidateCache();
-        _squadSubscription?.cancel();
         _isInitialDataLoaded = true; // Mark initial data loading as complete
         notifyListeners();
       }
@@ -1030,6 +1036,13 @@ class SquadState with ChangeNotifier {
   }
 
   Future<void> updateFirestoreAsync({bool force = false}) async {
+    // Check if user is authenticated before attempting Firestore operations
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      debugPrint("Skipping Firestore update - user not authenticated");
+      return;
+    }
+
     final now = DateTime.now();
     if (force ||
         now.difference(_lastFirestoreUpdate).inSeconds >=

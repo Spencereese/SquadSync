@@ -53,6 +53,14 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
         ),
         child: Consumer<SquadState>(
           builder: (context, squadState, child) {
+            // Check if user is authenticated
+            final currentUser = FirebaseAuth.instance.currentUser;
+            if (currentUser == null) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.cyanAccent),
+              );
+            }
+
             if (squadState.selectedSquadId == null) {
               return const Center(
                 child: Text(

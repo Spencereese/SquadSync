@@ -45,11 +45,6 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           return const NoSquadScreen();
         }
         return Scaffold(
-          appBar: AppBar(
-            title: _buildSquadSelector(squadState),
-            backgroundColor: Colors.black,
-            elevation: 0,
-          ),
           body: RefreshIndicator(
             onRefresh: () async {
               // Force a state refresh if needed; currently, Firestore listener handles updates
@@ -188,35 +183,6 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     );
   }
 
-  Widget _buildSquadSelector(SquadState squadState) {
-    if (squadState.userSquadIds.length <= 1) {
-      return Text(
-        squadState.currentSquad?['name'] ?? 'Squad',
-        style: const TextStyle(color: Colors.cyanAccent, fontSize: 20),
-      );
-    }
-
-    return DropdownButton<String>(
-      value: squadState.selectedSquadId,
-      dropdownColor: Colors.grey[900],
-      style: const TextStyle(color: Colors.cyanAccent, fontSize: 20),
-      underline: Container(),
-      icon: const Icon(Icons.arrow_drop_down, color: Colors.cyanAccent),
-      items: squadState.userSquadIds.map((squadId) {
-        final squad = squadState.getSquadById(squadId);
-        return DropdownMenuItem<String>(
-          value: squadId,
-          child: Text(squad?['name'] ?? 'Unknown Squad'),
-        );
-      }).toList(),
-      onChanged: (String? newSquadId) {
-        if (newSquadId != null && newSquadId != squadState.selectedSquadId) {
-          squadState.selectSquad(newSquadId);
-        }
-      },
-    );
-  }
-
   Widget _buildGameDropdown(BuildContext context, SquadState squadState) {
     return GestureDetector(
       onTap: () => _showGameSelectionMenu(context, squadState),
@@ -259,12 +225,12 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   }
 
   void _showGameSelectionMenu(BuildContext context, SquadState squadState) {
-    // Deduplicate games while preserving order
+    // Deduplicate games while preserving order and filter out muted games
     List<Map<String, dynamic>> uniqueGames = [];
     Set<String> seenKeys = <String>{};
     for (final game in squadState.availableGames) {
       final key = '${game['name']}_${game['maxSpots']}';
-      if (seenKeys.add(key)) {
+      if (seenKeys.add(key) && !squadState.isGameMuted(game['name'])) {
         uniqueGames.add(game);
       }
     }
@@ -296,25 +262,35 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.grey[900],
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setModalState) => DraggableScrollableSheet(
+      backgroundColor: Colors.transparent,
+      builder: (dialogContext) => Container(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.8),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.1),
+            width: 0.5,
+          ),
+        ),
+        child: DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.6,
+          initialChildSize: 0.65,
           minChildSize: 0.4,
-          maxChildSize: 0.8,
+          maxChildSize: 0.85,
           builder: (_, controller) => Column(
             children: [
-              // Header
+              // Modern iOS-style header
               Container(
-                padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                decoration: BoxDecoration(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(24)),
                   gradient: LinearGradient(
-                    colors: [Colors.grey, Colors.black],
+                    colors: [
+                      Colors.white.withValues(alpha: 0.1),
+                      Colors.white.withValues(alpha: 0.05),
+                    ],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),
@@ -322,316 +298,273 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      '🎮 Select Game',
-                      style: TextStyle(
-                        color: Colors.cyanAccent,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Choose Game',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        Text(
+                          '${uniqueGames.length} games available',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close,
-                          color: Colors.white, size: 28),
-                      onPressed: () => Navigator.pop(dialogContext),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.close,
+                          color: Colors.white.withValues(alpha: 0.8),
+                          size: 24,
+                        ),
+                        onPressed: () => Navigator.pop(dialogContext),
+                        padding: const EdgeInsets.all(8),
+                      ),
                     ),
                   ],
                 ),
               ),
-              // Game list
+              // Game grid
               Expanded(
-                child: ListView.builder(
-                  controller: controller,
-                  itemCount: uniqueGames.length +
-                      2, // +1 for "Solo Gaming", +1 for "Add Game" option
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      // Solo Gaming option
-                      return Container(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.greenAccent.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.greenAccent.withValues(alpha: 0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          leading: Container(
-                            width: 50,
-                            height: 50,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.greenAccent.withValues(alpha: 0.3),
-                                  Colors.green.withValues(alpha: 0.3)
-                                ],
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.play_arrow,
-                              color: Colors.greenAccent,
-                              size: 28,
-                            ),
-                          ),
-                          title: const Text(
-                            'Solo Gaming',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Play solo without selecting a game',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 14,
-                            ),
-                          ),
-                          trailing: const Icon(
-                            Icons.arrow_forward_ios,
-                            color: Colors.greenAccent,
-                            size: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: GridView.builder(
+                    controller: controller,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 0.85,
+                    ),
+                    itemCount:
+                        uniqueGames.length + 2, // +1 for Solo, +1 for Add Game
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        // Solo Gaming card
+                        return _buildGameCard(
+                          context: context,
+                          title: 'Solo Gaming',
+                          subtitle: 'Play alone',
+                          icon: Icons.person,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
                           onTap: () {
                             squadState.startSoloGame();
                             Navigator.pop(dialogContext);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Started solo gaming!'),
-                                backgroundColor: Colors.green,
+                              SnackBar(
+                                content: const Text('Started solo gaming!'),
+                                backgroundColor:
+                                    Colors.green.withValues(alpha: 0.9),
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             );
                           },
-                        ),
-                      );
-                    } else if (index == uniqueGames.length + 1) {
-                      // Add game option
-                      return Container(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.greenAccent.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.greenAccent.withValues(alpha: 0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          leading: Container(
-                            width: 50,
-                            height: 50,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.greenAccent.withValues(alpha: 0.3),
-                                  Colors.green.withValues(alpha: 0.3)
-                                ],
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.add,
-                              color: Colors.greenAccent,
-                              size: 28,
-                            ),
-                          ),
-                          title: const Text(
-                            'Add a Game',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Create a new custom game',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 14,
-                            ),
-                          ),
-                          trailing: const Icon(
-                            Icons.arrow_forward_ios,
-                            color: Colors.greenAccent,
-                            size: 16,
+                        );
+                      } else if (index == uniqueGames.length + 1) {
+                        // Add Game card
+                        return _buildGameCard(
+                          context: context,
+                          title: 'Add Game',
+                          subtitle: 'Create custom',
+                          icon: Icons.add,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF10B981), Color(0xFF059669)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
                           onTap: () {
                             Navigator.pop(dialogContext);
                             SquadDialogs.showAddGameDialog(context, squadState);
                           },
-                        ),
+                        );
+                      }
+
+                      final game = uniqueGames[index - 1];
+                      final isSelected =
+                          game['name'] == squadState.currentGame?['name'];
+
+                      // Get current player count
+                      final gameName = game['name'] as String;
+                      final currentPlayers = squadState.gameSquadSpots[gameName]
+                              ?.where((spot) => spot != null)
+                              .length ??
+                          0;
+                      final maxPlayers = game['maxSpots'] as int;
+
+                      // Extract game type
+                      String gameType = 'Custom';
+                      final description = game['description'] ?? '';
+                      if (description.contains(' - ')) {
+                        gameType = description.split(' - ').last;
+                      }
+
+                      return _buildGameCard(
+                        context: context,
+                        title: game['name'],
+                        subtitle: '$currentPlayers/$maxPlayers • $gameType',
+                        icon: Icons.gamepad,
+                        gradient: isSelected
+                            ? const LinearGradient(
+                                colors: [Color(0xFF06B6D4), Color(0xFF0891B2)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                            : LinearGradient(
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.1),
+                                  Colors.white.withValues(alpha: 0.05),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                        isSelected: isSelected,
+                        onTap: () {
+                          squadState.selectGame(game);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (Navigator.canPop(dialogContext)) {
+                              Navigator.pop(dialogContext);
+                            }
+                          });
+                        },
                       );
-                    }
-
-                    final game = uniqueGames[index - 1];
-                    final isSelected =
-                        game['name'] == squadState.currentGame?['name'];
-                    final isMuted = squadState.isGameMuted(game['name']);
-
-                    // Extract game type from description
-                    String gameType = 'Custom Game';
-                    final description = game['description'] ?? '';
-                    if (description.contains(' - ')) {
-                      gameType = description.split(' - ').last;
-                    } else if (description.isNotEmpty) {
-                      // If no " - " separator, use the whole description as type
-                      gameType = description;
-                    }
-
-                    // Get current player count
-                    final gameName = game['name'] as String;
-                    final currentPlayers = squadState.gameSquadSpots[gameName]
-                            ?.where((spot) => spot != null)
-                            .length ??
-                        0;
-                    final maxPlayers = game['maxSpots'] as int;
-
-                    return Container(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? Colors.cyanAccent.withValues(alpha: 0.1)
-                            : Colors.grey.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected
-                              ? Colors.cyanAccent
-                              : Colors.transparent,
-                          width: 1,
-                        ),
-                      ),
-                      child: Tooltip(
-                        message: 'Tap to select game',
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          leading: Container(
-                            width: 50,
-                            height: 50,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isSelected
-                                    ? Colors.cyanAccent
-                                    : Colors.grey,
-                                width: 2,
-                              ),
-                              gradient: LinearGradient(
-                                colors: isSelected
-                                    ? [
-                                        Colors.cyanAccent
-                                            .withValues(alpha: 0.3),
-                                        Colors.blueAccent.withValues(alpha: 0.3)
-                                      ]
-                                    : [
-                                        Colors.grey.withValues(alpha: 0.3),
-                                        Colors.grey.withValues(alpha: 0.5)
-                                      ],
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.gamepad,
-                              size: 24,
-                              color: Colors.cyanAccent,
-                            ),
-                          ),
-                          title: Text(
-                            game['name'],
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                              shadows: [
-                                Shadow(
-                                  color:
-                                      Colors.cyanAccent.withValues(alpha: 0.5),
-                                  offset: const Offset(0, 0),
-                                  blurRadius: 8,
-                                ),
-                              ],
-                            ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '$currentPlayers/$maxPlayers Players',
-                                style: TextStyle(
-                                  color: currentPlayers > 0
-                                      ? Colors.greenAccent
-                                      : Colors.cyanAccent,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Text(
-                                gameType,
-                                style: TextStyle(
-                                  color: Colors.grey[400],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: Icon(
-                                  isMuted
-                                      ? Icons.notifications_off
-                                      : Icons.notifications,
-                                  color:
-                                      isMuted ? Colors.redAccent : Colors.grey,
-                                  size: 20,
-                                ),
-                                onPressed: () {
-                                  if (isMuted) {
-                                    squadState.unmuteGame(game['name']);
-                                  } else {
-                                    squadState.muteGame(game['name']);
-                                  }
-                                  setModalState(() {}); // Trigger UI update
-                                },
-                                tooltip: isMuted
-                                    ? 'Unmute notifications'
-                                    : 'Mute notifications',
-                              ),
-                              if (isSelected)
-                                const Icon(Icons.check_circle,
-                                    color: Colors.cyanAccent),
-                            ],
-                          ),
-                          onTap: () {
-                            squadState.selectGame(game);
-                            // Defer navigation to avoid _debugLocked assertion
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (Navigator.canPop(dialogContext)) {
-                                Navigator.pop(dialogContext);
-                              }
-                            });
-                          },
-                        ),
-                      ),
-                    );
-                  },
+                    },
+                  ),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGameCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required LinearGradient gradient,
+    required VoidCallback onTap,
+    bool isSelected = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(20),
+          border: isSelected
+              ? Border.all(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  width: 2,
+                )
+              : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Background pattern
+            Positioned(
+              top: -20,
+              right: -20,
+              child: Icon(
+                icon,
+                size: 80,
+                color: Colors.white.withValues(alpha: 0.1),
+              ),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Icon
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                  const Spacer(),
+                  // Title
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.3,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  // Subtitle
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Selection indicator
+            if (isSelected)
+              Positioned(
+                top: 12,
+                left: 12,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check,
+                    color: Colors.black,
+                    size: 16,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

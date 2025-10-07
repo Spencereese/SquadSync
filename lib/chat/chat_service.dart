@@ -25,6 +25,13 @@ class ChatService {
   // Stream for real-time messages from Firestore (updated for squad and groups)
   Stream<QuerySnapshot> getChatMessages(BuildContext context,
       {String? chatGroupId}) {
+    // Check if user is authenticated
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      debugPrint("Skipping chat messages stream - user not authenticated");
+      return Stream.empty();
+    }
+
     // Cache context and squadId to avoid repeated Provider.of calls
     if (_cachedContext != context) {
       _cachedContext = context;
@@ -49,6 +56,13 @@ class ChatService {
 
   // Stream for typing status
   Stream<String?> getTypingUser(BuildContext context, {String? chatGroupId}) {
+    // Check if user is authenticated
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      debugPrint("Skipping typing status stream - user not authenticated");
+      return Stream.value(null);
+    }
+
     // Use cached squadId if available
     final squadState = Provider.of<SquadState>(context, listen: false);
     final squadId = _cachedSquadId ?? squadState.selectedSquadId;

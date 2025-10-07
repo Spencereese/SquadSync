@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
 import '../squad_state.dart';
 import 'chat_screen.dart';
 
@@ -489,6 +492,8 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
   final _nameController = TextEditingController();
   bool _isPublic = false;
   bool _isLoading = false;
+  File? _selectedImage;
+  String? _uploadedImageUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -508,6 +513,31 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
             style: const TextStyle(color: Colors.white),
           ),
           const SizedBox(height: 16),
+          GestureDetector(
+            onTap: _pickGroupImage,
+            child: Container(
+              height: 100,
+              width: 100,
+              decoration: BoxDecoration(
+                color: Colors.grey[800],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.cyanAccent, width: 2),
+              ),
+              child: _selectedImage != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.file(_selectedImage!, fit: BoxFit.cover),
+                    )
+                  : const Icon(Icons.add_photo_alternate,
+                      color: Colors.cyanAccent, size: 40),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Tap to select group image (optional)',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               const Text('Public group:',
@@ -516,7 +546,7 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
               Switch(
                 value: _isPublic,
                 onChanged: (value) => setState(() => _isPublic = value),
-                activeThumbColor: Colors.cyanAccent,
+                activeColor: Colors.cyanAccent,
               ),
             ],
           ),
@@ -548,6 +578,93 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
     );
   }
 
+  void _pickGroupImage() async {
+    print('=== _pickGroupImage called ===');
+    try {
+      final picker = ImagePicker();
+      print('=== About to call image picker ===');
+      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+      if (pickedFile != null) {
+        print('=== Image picker returned: image selected ===');
+        print('Image selected: ${pickedFile.path}');
+        setState(() {
+          _selectedImage = File(pickedFile.path);
+        });
+
+        // Upload the image immediately and store the URL
+        final imageUrl = await _uploadImage();
+        if (mounted) {
+          setState(() {
+            _uploadedImageUrl = imageUrl;
+          });
+        }
+      } else {
+        print('=== Image picker returned: no image selected ===');
+      }
+    } catch (e) {
+      print('=== ERROR in _pickGroupImage: $e ===');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error selecting image: $e')),
+        );
+      }
+    }
+  }
+
+  Future<String?> _uploadImage() async {
+    if (_selectedImage == null) return null;
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+
+      // Check if file exists and is readable
+      if (!await _selectedImage!.exists()) {
+        print(
+            'ERROR: Selected image file does not exist: ${_selectedImage!.path}');
+        return null;
+      }
+
+      final fileSize = await _selectedImage!.length();
+      print('File exists, size: $fileSize bytes');
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'group_${timestamp}.jpg';
+      print('Starting upload for file: $fileName');
+
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('chat_group_images')
+          .child(fileName);
+
+      print('Storage reference: ${storageRef.fullPath}'); // Debug log
+
+      print('Starting upload task...'); // Debug log
+      final uploadTask = storageRef.putFile(_selectedImage!);
+
+      // Monitor upload progress
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        print(
+            'Upload progress: ${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes');
+      });
+
+      final snapshot = await uploadTask;
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+
+      print('Upload completed successfully. Download URL: $downloadUrl');
+      return downloadUrl;
+    } catch (e) {
+      print('Upload task error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error uploading image: $e')),
+        );
+      }
+      return null;
+    }
+  }
+
   void _createGroup() async {
     if (_nameController.text.trim().isEmpty) return;
 
@@ -558,6 +675,9 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null || squadState.selectedSquadId == null) return;
 
+      // Upload image if selected (should already be uploaded in _pickGroupImage)
+      String? imageUrl = _uploadedImageUrl;
+
       final groupId = FirebaseFirestore.instance
           .collection('squads')
           .doc(squadState.selectedSquadId)
@@ -565,12 +685,7 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
           .doc()
           .id;
 
-      await FirebaseFirestore.instance
-          .collection('squads')
-          .doc(squadState.selectedSquadId)
-          .collection('chat_groups')
-          .doc(groupId)
-          .set({
+      final groupData = {
         'name': _nameController.text.trim(),
         'createdBy': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
@@ -579,7 +694,18 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
         'members': [user.uid],
         'lastMessage': '',
         'lastMessageTime': FieldValue.serverTimestamp(),
-      });
+      };
+
+      if (imageUrl != null) {
+        groupData['imageUrl'] = imageUrl;
+      }
+
+      await FirebaseFirestore.instance
+          .collection('squads')
+          .doc(squadState.selectedSquadId)
+          .collection('chat_groups')
+          .doc(groupId)
+          .set(groupData);
 
       widget.onGroupCreated(groupId, _nameController.text.trim());
     } catch (e) {
@@ -657,7 +783,7 @@ class _GroupSettingsDialogState extends State<_GroupSettingsDialog> {
                 onChanged: _canModifySettings
                     ? (value) => setState(() => _isPublic = value)
                     : null,
-                activeThumbColor: Colors.cyanAccent,
+                activeColor: Colors.cyanAccent,
               ),
             ],
           ),

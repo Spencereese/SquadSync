@@ -164,9 +164,26 @@ class ChatScreenState extends State<ChatScreen>
 
   Future<void> _loadChatDetails() async {
     try {
-      // If this is a chat group, don't load squad chat details
-      if (widget.chatGroupId != null) return;
+      if (widget.chatGroupId != null) {
+        // Load group chat details
+        final squadState = Provider.of<SquadState>(context, listen: false);
+        final groupDoc = await _firestore
+            .collection('squads')
+            .doc(squadState.selectedSquadId)
+            .collection('chat_groups')
+            .doc(widget.chatGroupId)
+            .get();
+        if (groupDoc.exists && mounted) {
+          final groupData = groupDoc.data() as Map<String, dynamic>;
+          setState(() {
+            _chatName = groupData['name'] ?? 'Group Chat';
+            _chatImageUrl = groupData['imageUrl'];
+          });
+        }
+        return;
+      }
 
+      // Load squad chat details
       final doc =
           await _firestore.collection('chat_metadata').doc('chat_config').get();
       if (doc.exists && mounted) {

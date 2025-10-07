@@ -404,6 +404,8 @@ class SquadState with ChangeNotifier {
         userSquadIds.clear();
         selectedSquadId = null;
         _currentSquadData = null;
+        squadMemberUids = [];
+        _invalidateCache();
         _squadSubscription?.cancel();
         _isInitialDataLoaded = true; // Mark initial data loading as complete
         notifyListeners();
@@ -520,10 +522,17 @@ class SquadState with ChangeNotifier {
     if (userSquadIds.isNotEmpty) {
       selectedSquadId = userSquadIds.first; // Select first squad
       _currentSquadData = userSquads[selectedSquadId];
+      // Update squad members from the squad document
+      squadMemberUids = List<String>.from(_currentSquadData?['members'] ?? []);
+      _invalidateCache(); // Clear cached display names
+      // Load display names for squad members
+      await _loadMemberDisplayNames();
     } else {
       // No squads yet
       selectedSquadId = null;
       _currentSquadData = null;
+      squadMemberUids = [];
+      _invalidateCache();
     }
   }
 
@@ -538,6 +547,12 @@ class SquadState with ChangeNotifier {
         .listen((doc) {
       if (doc.exists) {
         _currentSquadData = doc.data();
+        // Update squad members from the squad document
+        squadMemberUids =
+            List<String>.from(_currentSquadData?['members'] ?? []);
+        _invalidateCache(); // Clear cached display names
+        // Load display names for squad members
+        _loadMemberDisplayNames();
         // Update derived properties (e.g., spots from subcollection)
         _syncSpotsFromSquad();
         notifyListeners();

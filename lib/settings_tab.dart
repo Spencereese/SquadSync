@@ -9,6 +9,7 @@ import 'dart:io';
 import 'squad_state.dart';
 import 'setup_screen.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'firebase_storage_test.dart';
 
 class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key});
@@ -49,6 +50,7 @@ class _SettingsTabState extends State<SettingsTab>
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    final squadState = Provider.of<SquadState>(context, listen: false);
     setState(() {
       _isDarkTheme = prefs.getBool('isDarkTheme') ?? true;
       _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
@@ -57,14 +59,13 @@ class _SettingsTabState extends State<SettingsTab>
       _preferGameMode = prefs.getBool('preferGameMode') ?? false;
       _preferredMode = prefs.getString('preferredMode');
     });
-    final squadState = Provider.of<SquadState>(context, listen: false);
     squadState.updateTiltEnabled(_tiltEnabled); // Sync with SquadState
     _animationController.forward();
   }
 
-  Future<void> _saveSettings(String key, dynamic value) async {
+  Future<void> _saveSettings(
+      String key, dynamic value, SquadState squadState) async {
     final prefs = await SharedPreferences.getInstance();
-    final squadState = Provider.of<SquadState>(context, listen: false);
     if (value is bool) {
       await prefs.setBool(key, value);
       if (key == 'tiltEnabled') {
@@ -90,16 +91,15 @@ class _SettingsTabState extends State<SettingsTab>
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile == null || !mounted) return;
+    final squadState = Provider.of<SquadState>(context, listen: false);
     File imageFile = File(pickedFile.path);
     String uid = FirebaseAuth.instance.currentUser!.uid;
     Reference storageRef =
         FirebaseStorage.instance.ref().child('profile_pics/$uid.jpg');
     await storageRef.putFile(imageFile);
     String downloadUrl = await storageRef.getDownloadURL();
-
-    final squadState = Provider.of<SquadState>(context, listen: false);
     squadState.updateProfileImage(downloadUrl);
-    await _saveSettings('profileImageUrl', downloadUrl);
+    await _saveSettings('profileImageUrl', downloadUrl, squadState);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -161,7 +161,7 @@ class _SettingsTabState extends State<SettingsTab>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               DropdownButtonFormField<String>(
-                initialValue: _selectedPage,
+                value: _selectedPage,
                 decoration: const InputDecoration(
                   labelText: 'Page',
                   border: OutlineInputBorder(),
@@ -195,7 +195,7 @@ class _SettingsTabState extends State<SettingsTab>
               if (isBug) ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  initialValue: _severity,
+                  value: _severity,
                   decoration: const InputDecoration(
                     labelText: 'Severity',
                     border: OutlineInputBorder(),
@@ -273,13 +273,13 @@ class _SettingsTabState extends State<SettingsTab>
   }
 
   void _setPreferredMode(String mode) {
+    final squadState = Provider.of<SquadState>(context, listen: false);
     setState(() {
       _preferredMode = mode;
       _preferGameMode = true;
     });
-    _saveSettings('preferredMode', mode);
-    _saveSettings('preferGameMode', true);
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    _saveSettings('preferredMode', mode, squadState);
+    _saveSettings('preferGameMode', true, squadState);
     squadState.updatePreferredMode(squadState.displayName ?? 'User', mode);
     Navigator.pop(context);
   }
@@ -333,6 +333,15 @@ class _SettingsTabState extends State<SettingsTab>
             child: const Text('Close'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showFirebaseStorageTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const FirebaseStorageTestWidget(),
       ),
     );
   }
@@ -402,12 +411,12 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_isDarkTheme),
-                activeThumbColor: Colors.cyan,
+                activeColor: Colors.cyan,
                 title: const Text('Dark Theme'),
                 value: _isDarkTheme,
                 onChanged: (value) {
                   setState(() => _isDarkTheme = value);
-                  _saveSettings('isDarkTheme', value);
+                  _saveSettings('isDarkTheme', value, squadState);
                   // Note: No ThemeProvider, app must handle theme elsewhere
                 },
                 secondary: const Icon(Icons.brightness_6),
@@ -417,12 +426,12 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_tiltEnabled),
-                activeThumbColor: Colors.cyan,
+                activeColor: Colors.cyan,
                 title: const Text('Enable Tab Tilt'),
                 value: _tiltEnabled,
                 onChanged: (value) {
                   setState(() => _tiltEnabled = value);
-                  _saveSettings('tiltEnabled', value);
+                  _saveSettings('tiltEnabled', value, squadState);
                 },
                 secondary: const Icon(Icons.threed_rotation),
               ),
@@ -433,12 +442,12 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_notificationsEnabled),
-                activeThumbColor: Colors.cyan,
+                activeColor: Colors.cyan,
                 title: const Text('Notifications'),
                 value: _notificationsEnabled,
                 onChanged: (value) {
                   setState(() => _notificationsEnabled = value);
-                  _saveSettings('notificationsEnabled', value);
+                  _saveSettings('notificationsEnabled', value, squadState);
                   // TODO: Update notification_service.dart
                 },
                 secondary: const Icon(Icons.notifications),
@@ -448,12 +457,12 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_soundsEnabled),
-                activeThumbColor: Colors.cyan,
+                activeColor: Colors.cyan,
                 title: const Text('Sounds'),
                 value: _soundsEnabled,
                 onChanged: (value) {
                   setState(() => _soundsEnabled = value);
-                  _saveSettings('soundsEnabled', value);
+                  _saveSettings('soundsEnabled', value, squadState);
                   // TODO: Update sound playback logic
                 },
                 secondary: const Icon(Icons.volume_up),
@@ -462,7 +471,7 @@ class _SettingsTabState extends State<SettingsTab>
             const Divider(),
             _buildSectionHeader('Peacock Preferences'),
             SwitchListTile(
-              activeThumbColor: Colors.cyan,
+              activeColor: Colors.cyan,
               title: const Text('Preferred Game Mode'),
               subtitle: Text(_preferredMode != null
                   ? 'Prefer $_preferredMode'
@@ -473,13 +482,11 @@ class _SettingsTabState extends State<SettingsTab>
                   _preferGameMode = value;
                   if (!value) _preferredMode = null;
                 });
-                _saveSettings('preferGameMode', value);
+                _saveSettings('preferGameMode', value, squadState);
                 if (value) {
                   _showPreferredModeDialog();
                 } else {
-                  _saveSettings('preferredMode', null);
-                  final squadState =
-                      Provider.of<SquadState>(context, listen: false);
+                  _saveSettings('preferredMode', null, squadState);
                   squadState.updatePreferredMode(
                       squadState.displayName ?? 'User', null);
                 }
@@ -506,6 +513,12 @@ class _SettingsTabState extends State<SettingsTab>
               leading: const Icon(Icons.lightbulb_outline, color: Colors.cyan),
               title: const Text('Suggest a Feature'),
               onTap: () => _showFeedbackDialog('Feature Suggestion'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.storage, color: Colors.cyan),
+              title: const Text('Test Firebase Storage'),
+              subtitle: const Text('Debug image upload functionality'),
+              onTap: () => _showFirebaseStorageTest(),
             ),
             const Divider(),
             _buildSectionHeader('Account'),

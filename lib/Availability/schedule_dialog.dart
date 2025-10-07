@@ -269,7 +269,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
         Switch(
           value: value,
           onChanged: onChanged,
-          activeThumbColor: Colors.cyanAccent[100],
+          activeColor: Colors.cyanAccent[100],
           inactiveTrackColor: Colors.blueGrey[600],
         ),
       ],
@@ -499,7 +499,7 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                 setState(() => inviteOption = value ? 'All Members' : 'None');
                 Navigator.pop(context);
               },
-              activeThumbColor: Colors.cyanAccent[100],
+              activeColor: Colors.cyanAccent[100],
               inactiveTrackColor: Colors.blueGrey[600],
             ),
             if (inviteOption != 'All Members')

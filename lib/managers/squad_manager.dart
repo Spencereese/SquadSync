@@ -154,8 +154,7 @@ class SquadManager with ChangeNotifier {
     };
 
     await _firestore.collection('squads').doc(squadId).set(squadData);
-    // Auto-assign creator to spot 1 (index 0)
-    await _assignSpot(squadId, 0, user.uid);
+    // Note: No longer auto-assigning creator to a spot - users can claim manually
     return squadId;
   }
 

@@ -1,7 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 /// Manages app notifications and alerts
 class NotificationManager with ChangeNotifier {
+  static final FlutterLocalNotificationsPlugin
+      _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  static Future<void> initialize() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings();
+
+    const InitializationSettings initializationSettings =
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    await _flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  }
+
   bool notificationsEnabled = true;
   Map<String, bool> notificationTypes = {
     'game_start': true,
@@ -30,7 +51,24 @@ class NotificationManager with ChangeNotifier {
     required String body,
     String? payload,
   }) async {
-    // Implementation from original SquadState
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      'your_channel_id',
+      'your_channel_name',
+      channelDescription: 'your_channel_description',
+      importance: Importance.max,
+      priority: Priority.high,
+      showWhen: false,
+    );
+    const NotificationDetails platformChannelSpecifics =
+        NotificationDetails(android: androidPlatformChannelSpecifics);
+    await _flutterLocalNotificationsPlugin.show(
+      0,
+      title,
+      body,
+      platformChannelSpecifics,
+      payload: payload,
+    );
     notifyListeners();
   }
 
@@ -40,17 +78,36 @@ class NotificationManager with ChangeNotifier {
     required DateTime scheduledTime,
     String? payload,
   }) async {
-    // Implementation from original SquadState
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      'scheduled_channel_id',
+      'Scheduled Notifications',
+      channelDescription: 'Channel for scheduled notifications',
+      importance: Importance.max,
+      priority: Priority.high,
+      showWhen: true,
+    );
+    const NotificationDetails platformChannelSpecifics =
+        NotificationDetails(android: androidPlatformChannelSpecifics);
+    await _flutterLocalNotificationsPlugin.zonedSchedule(
+      0,
+      title,
+      body,
+      tz.TZDateTime.from(scheduledTime, tz.local),
+      platformChannelSpecifics,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: payload,
+    );
     notifyListeners();
   }
 
   Future<void> cancelNotification(int id) async {
-    // Implementation from original SquadState
+    await _flutterLocalNotificationsPlugin.cancel(id);
     notifyListeners();
   }
 
   Future<void> cancelAllNotifications() async {
-    // Implementation from original SquadState
+    await _flutterLocalNotificationsPlugin.cancelAll();
     notifyListeners();
   }
 

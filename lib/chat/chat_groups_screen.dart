@@ -31,7 +31,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chat Groups'),
+        title: const Text('Chats'),
         backgroundColor: Colors.black,
         elevation: 0,
         actions: [
@@ -43,14 +43,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
         ],
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.black, Colors.indigo],
-            stops: [0.0, 1.0],
-          ),
-        ),
+        color: Colors.black,
         child: Consumer<SquadState>(
           builder: (context, squadState, child) {
             // Check if user is authenticated
@@ -96,71 +89,113 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                 final groups = snapshot.data?.docs ?? [];
 
                 if (groups.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.chat_bubble_outline,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No chat groups yet',
-                          style: TextStyle(color: Colors.white, fontSize: 18),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Create your first group to start chatting!',
-                          style: TextStyle(color: Colors.grey),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: _createNewGroup,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Create Group'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.cyanAccent,
-                            foregroundColor: Colors.black,
+                  return Container(
+                    color: Colors.black,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline,
+                            size: 64,
+                            color: Colors.grey[600],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 16),
+                          const Text(
+                            'No chats yet',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Create your first chat to start messaging!',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 16,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 32),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.cyanAccent,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: InkWell(
+                              onTap: _createNewGroup,
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.add,
+                                    color: Colors.black,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'New Chat',
+                                    style: TextStyle(
+                                      color: Colors.black,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: groups.length,
-                  itemBuilder: (context, index) {
-                    final group = groups[index];
-                    final groupData = group.data() as Map<String, dynamic>;
-                    final groupName = groupData['name'] ?? 'Unnamed Group';
-                    final lastMessage = groupData['lastMessage'] ?? '';
-                    final lastMessageTime =
-                        groupData['lastMessageTime'] as Timestamp?;
-                    final memberCount = groupData['memberCount'] ?? 0;
-                    final isPublic = groupData['isPublic'] ?? false;
-                    final createdBy = groupData['createdBy'];
-                    final isOwner = createdBy == _auth.currentUser?.uid;
+                return Container(
+                  color: Colors.black,
+                  child: ListView.separated(
+                    padding: EdgeInsets.zero,
+                    itemCount: groups.length,
+                    separatorBuilder: (context, index) => const Divider(
+                      color: Colors.grey,
+                      height: 0.5,
+                      indent: 72,
+                      thickness: 0.5,
+                    ),
+                    itemBuilder: (context, index) {
+                      final group = groups[index];
+                      final groupData = group.data() as Map<String, dynamic>;
+                      final groupName = groupData['name'] ?? 'Unnamed Group';
+                      final lastMessage = groupData['lastMessage'] ?? '';
+                      final lastMessageTime =
+                          groupData['lastMessageTime'] as Timestamp?;
+                      final memberCount = groupData['memberCount'] ?? 0;
+                      final isPublic = groupData['isPublic'] ?? false;
+                      final imageUrl = groupData['imageUrl'];
 
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      color: Colors.grey[900],
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.all(16),
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         leading: CircleAvatar(
-                          backgroundColor:
-                              isPublic ? Colors.green : Colors.cyanAccent,
-                          child: Icon(
-                            isPublic ? Icons.public : Icons.lock,
-                            color: Colors.black,
-                          ),
+                          radius: 28,
+                          backgroundColor: Colors.grey[800],
+                          backgroundImage:
+                              imageUrl != null ? NetworkImage(imageUrl) : null,
+                          child: imageUrl == null
+                              ? Icon(
+                                  isPublic ? Icons.public : Icons.group,
+                                  color: Colors.cyanAccent,
+                                  size: 24,
+                                )
+                              : null,
                         ),
                         title: Row(
                           children: [
@@ -169,67 +204,54 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                                 groupName,
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w600,
                                   fontSize: 16,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (isOwner)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color:
-                                      Colors.cyanAccent.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  'Owner',
-                                  style: TextStyle(
-                                    color: Colors.cyanAccent,
+                            if (lastMessageTime != null)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Text(
+                                  _formatTime(lastMessageTime.toDate()),
+                                  style: const TextStyle(
+                                    color: Colors.grey,
                                     fontSize: 12,
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.w400,
                                   ),
                                 ),
                               ),
                           ],
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (lastMessage.isNotEmpty)
-                              Text(
-                                lastMessage,
-                                style: const TextStyle(color: Colors.grey),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Text(
-                                  '$memberCount members',
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  lastMessage.isNotEmpty
+                                      ? lastMessage
+                                      : '$memberCount members',
                                   style: const TextStyle(
-                                      color: Colors.grey, fontSize: 12),
-                                ),
-                                if (lastMessageTime != null) ...[
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _formatTime(lastMessageTime.toDate()),
-                                    style: const TextStyle(
-                                        color: Colors.grey, fontSize: 12),
+                                    color: Colors.grey,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w400,
                                   ),
-                                ],
-                              ],
-                            ),
-                          ],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         onTap: () => _openChatGroup(group.id, groupName),
                         onLongPress: () =>
                             _showGroupOptions(group.id, groupData),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 );
               },
             );

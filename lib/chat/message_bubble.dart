@@ -9,7 +9,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:provider/provider.dart';
-import 'package:pinch_zoom/pinch_zoom.dart';
 import 'dart:ui';
 import '../../app_theme.dart';
 import '../../squad_state.dart';
@@ -242,7 +241,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       child: Text(
         data['sender'] ?? 'Unknown',
         style: TextStyle(
-          color: AppTheme.accentColor,
+          color: Colors.cyanAccent
+              .withValues(alpha: 0.8), // Modern cyan accent for sender names
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),
@@ -267,8 +267,9 @@ class _MessageBubbleState extends State<MessageBubble> {
               'Message sent on ${DateFormat('MMMM d, yyyy, h:mm a').format(timestamp)}',
           child: Text(
             DateFormat('MMM d, yyyy, h:mm a').format(timestamp),
-            style: const TextStyle(
-              color: AppTheme.hintColor,
+            style: TextStyle(
+              color: Colors.white
+                  .withValues(alpha: 0.5), // Subtle white with transparency
               fontSize: 12,
             ),
           ),
@@ -293,6 +294,19 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
+    // If message only contains images (no text), don't wrap in bubble
+    if (hasPhotos && !hasContent && !hasText && !hasVideo && !hasAudio) {
+      return Column(
+        crossAxisAlignment:
+            widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          _buildImage(context, data['photos'][0]['uri']),
+          _buildMessageStatus(data),
+        ],
+      );
+    }
+
+    // For messages with text and/or other content, use the bubble
     final contentWidget = Column(
       crossAxisAlignment:
           widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -300,10 +314,15 @@ class _MessageBubbleState extends State<MessageBubble> {
         if (hasContent || hasText)
           Container(
             margin: const EdgeInsets.only(bottom: 4.0),
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
             decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(8.0),
+              color: widget.isMe
+                  ? Colors.white.withValues(
+                      alpha: 0.1) // Subtle white overlay for sent messages
+                  : Colors.white
+                      .withValues(alpha: 0.05), // Very subtle for received
+              borderRadius: BorderRadius.circular(12.0),
             ),
             child: _buildText(data['text'] ?? data['content'] ?? ''),
           ),
@@ -326,13 +345,23 @@ class _MessageBubbleState extends State<MessageBubble> {
         padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
         decoration: BoxDecoration(
           color: widget.isMe
-              ? AppTheme.accentColor.withValues(alpha: 0.2)
-              : AppTheme.hintColor.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(16),
+              ? const Color(
+                  0xFF005C4B) // WhatsApp-style green for sent messages
+              : const Color(0xFF202C33), // Dark grey for received messages
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: widget.isMe
+                ? const Radius.circular(18)
+                : const Radius.circular(4),
+            bottomRight: widget.isMe
+                ? const Radius.circular(4)
+                : const Radius.circular(18),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 4,
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 6,
               offset: const Offset(0, 2),
             ),
           ],
@@ -354,9 +383,11 @@ class _MessageBubbleState extends State<MessageBubble> {
         children: [
           RichTextWithLinks(
             text: text,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
-              color: Colors.white,
+              color: widget.isMe
+                  ? Colors.white
+                  : Colors.white70, // White for sent, light grey for received
               fontWeight: FontWeight.normal,
               backgroundColor: Colors.transparent,
             ),
@@ -398,14 +429,16 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
     debugPrint('Loading image: $fixedUrl'); // Log for debugging
     return GestureDetector(
-      onTap: () => _launchUrl(fixedUrl),
-      child: PinchZoom(
+      onTap: () => _showFullScreenImage(context, fixedUrl),
+      child: Container(
+        constraints: const BoxConstraints(
+          maxWidth: 250,
+          maxHeight: 250,
+        ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: CachedNetworkImage(
             imageUrl: fixedUrl,
-            width: 150,
-            height: 150,
             fit: BoxFit.cover,
             placeholder: (context, url) =>
                 const Center(child: CircularProgressIndicator()),
@@ -424,6 +457,49 @@ class _MessageBubbleState extends State<MessageBubble> {
                 ),
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFullScreenImage(BuildContext context, String imageUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.contain,
+                placeholder: (context, url) =>
+                    const Center(child: CircularProgressIndicator()),
+                errorWidget: (context, url, error) => const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.error, color: Colors.red, size: 48),
+                      SizedBox(height: 16),
+                      Text(
+                        'Failed to load image',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -583,16 +659,6 @@ class _MessageBubbleState extends State<MessageBubble> {
           List<Map<String, dynamic>>.from(data['reactions'] ?? []);
       reactions.add({'user': user, 'reaction': emoji});
       await docRef.update({'reactions': reactions});
-    }
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      HapticFeedback.lightImpact();
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint('Could not launch $url'); // Log for debug
     }
   }
 }

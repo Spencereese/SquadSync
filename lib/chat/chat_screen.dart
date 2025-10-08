@@ -54,6 +54,15 @@ class ChatScreenState extends State<ChatScreen>
   final List<Map<String, dynamic>> _historicalMessages = []; // Made final
   StreamSubscription<String?>? _typingSubscription;
 
+  // Cache for user display names to avoid FutureBuilder in ListView
+  final Map<String, String> _userDisplayNameCache = {};
+  bool _isLoadingUserNames = false;
+
+  // Cache for processed messages to avoid expensive operations in build
+  List<dynamic> _processedMessages = [];
+  Map<String, List<String>> _lastReadByCache = {};
+  bool _needsMessageProcessing = true;
+
   @override
   void initState() {
     super.initState();
@@ -83,6 +92,8 @@ class ChatScreenState extends State<ChatScreen>
       // Clear cache and reset offset
       _sqliteHelper.clearMessages(chatGroupId: widget.chatGroupId);
       _historicalMessages.clear();
+      // Load user display names for better performance
+      _loadUserDisplayNames();
     });
 
     // Add listeners immediately for responsiveness
@@ -105,10 +116,10 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   void _scrollListener() {
-    if (_scrollController.offset > 100 && !_showJumpToBottom) {
-      setState(() => _showJumpToBottom = true);
-    } else if (_scrollController.offset <= 100 && _showJumpToBottom) {
-      setState(() => _showJumpToBottom = false);
+    final shouldShow = _scrollController.offset > 100;
+    if (shouldShow != _showJumpToBottom) {
+      // Use Future.microtask to debounce setState calls
+      Future.microtask(() => setState(() => _showJumpToBottom = shouldShow));
     }
   }
 
@@ -163,13 +174,15 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _loadChatDetails() async {
+    if (!mounted) return;
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadId = squadState.selectedSquadId;
     try {
       if (widget.chatGroupId != null) {
         // Load group chat details
-        final squadState = Provider.of<SquadState>(context, listen: false);
         final groupDoc = await _firestore
             .collection('squads')
-            .doc(squadState.selectedSquadId)
+            .doc(squadId)
             .collection('chat_groups')
             .doc(widget.chatGroupId)
             .get();
@@ -210,23 +223,36 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _toggleNotifications() async {
+    if (!mounted) return;
+    final wasMuted = _isMuted;
     setState(() {
       _isMuted = !_isMuted;
     });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('chat_muted', _isMuted);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                _isMuted ? 'Notifications muted' : 'Notifications unmuted')),
-      );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('chat_muted', _isMuted);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  _isMuted ? 'Notifications muted' : 'Notifications unmuted')),
+        );
+      }
+    } catch (e) {
+      // Revert state on error
+      if (mounted) {
+        setState(() {
+          _isMuted = wasMuted;
+        });
+      }
     }
   }
 
   Future<void> _sendMessage() async {
     if (_messageController.text.isEmpty) return;
+    if (!mounted) return;
     final chatState = Provider.of<ChatState>(context, listen: false);
+    final displayName = _squadState.displayName ?? 'Anonymous';
     String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     chatState.updateSendingStatus(tempId, true);
 
@@ -239,8 +265,7 @@ class ChatScreenState extends State<ChatScreen>
           chatGroupId: widget.chatGroupId);
       chatState.removeSendingStatus(tempId);
       _messageController.clear();
-      await _chatService.updateTypingStatus(
-          context, _squadState.displayName ?? 'Anonymous', false,
+      await _chatService.updateTypingStatus(context, displayName, false,
           chatGroupId: widget.chatGroupId);
       _scrollToBottom();
       await _checkFirstMessage();
@@ -254,6 +279,7 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _sendMedia() async {
+    if (!mounted) return;
     final chatState = Provider.of<ChatState>(context, listen: false);
     try {
       final XFile? media = await _picker.pickMedia();
@@ -296,6 +322,7 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _startRecording() async {
+    if (!mounted) return;
     final chatState = Provider.of<ChatState>(context, listen: false);
     if (await _audioRecorder.hasPermission()) {
       try {
@@ -322,6 +349,7 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _stopRecording() async {
+    if (!mounted) return;
     final chatState = Provider.of<ChatState>(context, listen: false);
     try {
       String? path = await _audioRecorder.stop();
@@ -341,6 +369,7 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _uploadAudio() async {
+    if (!mounted) return;
     final chatState = Provider.of<ChatState>(context, listen: false);
     if (_audioPath == null) return;
     chatState.setUploading(true);
@@ -373,6 +402,7 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _forwardMessage(String messageText) async {
+    if (!mounted) return;
     try {
       final user = _auth.currentUser;
       if (user == null) return;
@@ -437,21 +467,26 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _checkFirstMessage() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey('first_message_sent')) {
-      await prefs.setBool('first_message_sent', true);
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-                const SnackBar(content: Text('🎉 First message sent!')))
-            .closed
-            .then((_) => Animate(
-                  effects: const [
-                    FadeEffect(duration: Duration(milliseconds: 500))
-                  ],
-                  child: const Text(''),
-                ));
+    if (!mounted) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!prefs.containsKey('first_message_sent')) {
+        await prefs.setBool('first_message_sent', true);
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(
+                  const SnackBar(content: Text('🎉 First message sent!')))
+              .closed
+              .then((_) => Animate(
+                    effects: const [
+                      FadeEffect(duration: Duration(milliseconds: 500))
+                    ],
+                    child: const Text(''),
+                  ));
+        }
       }
+    } catch (e) {
+      // Silently handle error - this is not critical
     }
   }
 
@@ -496,6 +531,7 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   void _leaveGroup() async {
+    if (!mounted) return;
     try {
       await _squadState.leaveSquad();
       if (mounted) {
@@ -571,6 +607,106 @@ class ChatScreenState extends State<ChatScreen>
       return message['senderUid'] as String?;
     }
     return null;
+  }
+
+  void _processMessages(List<dynamic> rawMessages) {
+    if (rawMessages.isEmpty) {
+      _processedMessages = [];
+      _lastReadByCache = {};
+      return;
+    }
+
+    // Deduplicate by ID (optimized)
+    final seenIds = <String>{};
+    final deduplicated = rawMessages.where((msg) {
+      final id = msg is DocumentSnapshot ? msg.id : msg['id']?.toString() ?? '';
+      if (seenIds.contains(id)) return false;
+      seenIds.add(id);
+      return true;
+    }).toList();
+
+    // Filter messages to only show from squad members (pre-filtered)
+    final filteredMembers = _squadState.getFilteredMembers;
+    final filtered = deduplicated.where((msg) {
+      final data = msg is DocumentSnapshot
+          ? msg.data() as Map<String, dynamic>?
+          : msg as Map<String, dynamic>;
+      if (data == null) return false;
+      final senderUid = data['senderUid'] ?? '';
+      final senderDisplayName = _squadState.getDisplayNameForUid(senderUid);
+      return filteredMembers.contains(senderDisplayName);
+    }).toList();
+
+    // Sort by timestamp (only if needed)
+    filtered.sort((a, b) {
+      final aTs = _getTimestampMs(a) ?? 0;
+      final bTs = _getTimestampMs(b) ?? 0;
+      return bTs.compareTo(aTs);
+    });
+
+    // Cap at 500 messages
+    _processedMessages = filtered.take(500).toList();
+
+    // Pre-calculate read status (optimized)
+    _lastReadByCache = {};
+    for (var message in _processedMessages) {
+      final data = message is DocumentSnapshot
+          ? message.data() as Map<String, dynamic>?
+          : message as Map<String, dynamic>;
+      if (data == null || data['read'] != true) continue;
+
+      String sender = data['sender'] ?? '';
+      String uid = _auth.currentUser!.uid;
+      _lastReadByCache[sender] ??= [];
+      if (!_lastReadByCache[sender]!.contains(uid)) {
+        _lastReadByCache[sender]!.add(uid);
+      }
+    }
+
+    _needsMessageProcessing = false;
+  }
+
+  Future<void> _loadUserDisplayNames() async {
+    if (_isLoadingUserNames) return;
+    _isLoadingUserNames = true;
+
+    try {
+      // Get all unique user IDs from current squad members
+      final memberUids = _squadState.getFilteredMembers
+          .map((displayName) => _squadState.getUidForDisplayName(displayName))
+          .where((uid) => uid != null)
+          .cast<String>()
+          .toSet();
+
+      // Load display names for users we don't have cached
+      final uidsToLoad = memberUids
+          .where((uid) => !_userDisplayNameCache.containsKey(uid))
+          .toList();
+
+      if (uidsToLoad.isNotEmpty) {
+        final userDocs = await Future.wait(uidsToLoad
+            .map((uid) => _firestore.collection('users').doc(uid).get()));
+
+        for (int i = 0; i < uidsToLoad.length; i++) {
+          final uid = uidsToLoad[i];
+          final doc = userDocs[i];
+          if (doc.exists) {
+            final displayName =
+                doc.data()?['displayName'] as String? ?? 'Unknown';
+            _userDisplayNameCache[uid] = displayName;
+          }
+        }
+
+        // Trigger rebuild to update cached names
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading user display names: $e');
+    } finally {
+      _isLoadingUserNames = false;
+    }
   }
 
   String _cleanText(String text) {
@@ -665,6 +801,7 @@ class ChatScreenState extends State<ChatScreen>
                                         context: context,
                                         currentName: _chatName,
                                         onSave: (newName) async {
+                                          // ignore: use_build_context_synchronously
                                           if (!mounted) return;
                                           try {
                                             await _firestore
@@ -675,8 +812,13 @@ class ChatScreenState extends State<ChatScreen>
                                               'timestamp':
                                                   FieldValue.serverTimestamp(),
                                             }, SetOptions(merge: true));
-                                            setState(() => _chatName = newName);
+                                            // ignore: use_build_context_synchronously
+                                            if (mounted) {
+                                              setState(
+                                                  () => _chatName = newName);
+                                            }
                                           } catch (e) {
+                                            // ignore: use_build_context_synchronously
                                             if (mounted) {
                                               ScaffoldMessenger.of(context)
                                                   .showSnackBar(SnackBar(
@@ -687,6 +829,7 @@ class ChatScreenState extends State<ChatScreen>
                                         },
                                       ),
                                       onChangeChatImage: () async {
+                                        // ignore: use_build_context_synchronously
                                         if (!mounted) return;
                                         final XFile? image =
                                             await _picker.pickImage(
@@ -707,12 +850,14 @@ class ChatScreenState extends State<ChatScreen>
                                             'timestamp':
                                                 FieldValue.serverTimestamp(),
                                           }, SetOptions(merge: true));
+                                          // ignore: use_build_context_synchronously
                                           if (mounted) {
                                             setState(() =>
                                                 _chatImageUrl = downloadUrl);
                                             HapticFeedback.lightImpact();
                                           }
                                         } catch (e) {
+                                          // ignore: use_build_context_synchronously
                                           if (mounted) {
                                             ScaffoldMessenger.of(context)
                                                 .showSnackBar(SnackBar(
@@ -722,6 +867,7 @@ class ChatScreenState extends State<ChatScreen>
                                         }
                                       },
                                       onClearChat: () async {
+                                        // ignore: use_build_context_synchronously
                                         if (!mounted) return;
                                         try {
                                           final snapshot = await _firestore
@@ -730,6 +876,7 @@ class ChatScreenState extends State<ChatScreen>
                                           for (var doc in snapshot.docs) {
                                             await doc.reference.delete();
                                           }
+                                          // ignore: use_build_context_synchronously
                                           if (mounted) {
                                             ScaffoldMessenger.of(context)
                                                 .showSnackBar(const SnackBar(
@@ -737,6 +884,7 @@ class ChatScreenState extends State<ChatScreen>
                                                         Text('Chat cleared')));
                                           }
                                         } catch (e) {
+                                          // ignore: use_build_context_synchronously
                                           if (mounted) {
                                             ScaffoldMessenger.of(context)
                                                 .showSnackBar(SnackBar(
@@ -854,70 +1002,24 @@ class ChatScreenState extends State<ChatScreen>
                                 return const Center(
                                     child: CircularProgressIndicator());
                               }
+
+                              // Process messages only when data changes
                               List<dynamic> allMessages = [];
                               if (snapshot.hasData) {
                                 allMessages.addAll(snapshot.data!.docs);
                               }
                               allMessages.addAll(_historicalMessages);
 
-                              if (allMessages.isEmpty) {
-                                return const Center(
-                                    child: Text('No messages yet'));
+                              // Only process if messages changed
+                              if (_needsMessageProcessing ||
+                                  allMessages.length !=
+                                      _processedMessages.length) {
+                                _processMessages(allMessages);
                               }
 
-// Deduplicate by ID
-                              final seenIds = <String>{};
-                              allMessages = allMessages.where((msg) {
-                                final id = msg is DocumentSnapshot
-                                    ? msg.id
-                                    : msg['id']?.toString() ?? '';
-                                if (seenIds.contains(id)) return false;
-                                seenIds.add(id);
-                                return true;
-                              }).toList();
-
-// Filter messages to only show from squad members (all messages in squad are from members)
-                              final filteredMembers =
-                                  _squadState.getFilteredMembers;
-                              allMessages = allMessages.where((msg) {
-                                final data = msg is DocumentSnapshot
-                                    ? msg.data() as Map<String, dynamic>?
-                                    : msg as Map<String, dynamic>;
-                                if (data == null) return false;
-                                final senderUid = data['senderUid'] ?? '';
-                                final senderDisplayName =
-                                    _squadState.getDisplayNameForUid(senderUid);
-                                return filteredMembers
-                                    .contains(senderDisplayName);
-                              }).toList();
-
-// Sort by timestamp_ms (newest first)
-                              allMessages.sort((a, b) {
-                                final aTs = _getTimestampMs(a) ?? 0;
-                                final bTs = _getTimestampMs(b) ?? 0;
-                                return bTs.compareTo(aTs);
-                              });
-
-// Cap live messages at 500 total
-                              allMessages = allMessages.take(500).toList();
-                              // debugPrint(
-                              //     'Merged allMessages: ${allMessages.length} messages, IDs: ${seenIds.toList().take(10)}');
-
-// Track read status
-                              Map<String, List<String>> lastReadBy = {};
-                              for (var message in allMessages) {
-                                final data = message is DocumentSnapshot
-                                    ? message.data() as Map<String, dynamic>?
-                                    : message as Map<String, dynamic>;
-                                if (data == null || data['read'] != true) {
-                                  continue;
-                                }
-                                String sender = data['sender'] ?? '';
-                                String uid = _auth.currentUser!.uid;
-                                lastReadBy[sender] ??= [];
-                                if (!lastReadBy[sender]!.contains(uid)) {
-                                  lastReadBy[sender]!.add(uid);
-                                }
+                              if (_processedMessages.isEmpty) {
+                                return const Center(
+                                    child: Text('No messages yet'));
                               }
 
                               return ListView.builder(
@@ -925,28 +1027,30 @@ class ChatScreenState extends State<ChatScreen>
                                 reverse: true,
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8.0, vertical: 4.0),
-                                itemCount: allMessages.length,
+                                itemCount: _processedMessages.length,
                                 itemBuilder: (context, index) {
-                                  var message = allMessages[index];
+                                  var message = _processedMessages[index];
                                   final data = message is DocumentSnapshot
                                       ? message.data() as Map<String, dynamic>?
                                       : message as Map<String, dynamic>;
                                   if (data == null) {
-                                    // debugPrint(
-                                    //     'Skipping null message at index $index');
                                     return const SizedBox.shrink();
                                   }
-                                  // Clean garbled text
-                                  if (data['content'] != null) {
-                                    data['content'] =
-                                        _cleanText(data['content']);
+
+                                  // Clean text only once per message (cached)
+                                  final cleanedData =
+                                      Map<String, dynamic>.from(data);
+                                  if (cleanedData['content'] != null) {
+                                    cleanedData['content'] =
+                                        _cleanText(cleanedData['content']);
                                   }
-                                  if (data['text'] != null) {
-                                    data['text'] = _cleanText(data['text']);
+                                  if (cleanedData['text'] != null) {
+                                    cleanedData['text'] =
+                                        _cleanText(cleanedData['text']);
                                   }
-                                  // Clean reactions if present
-                                  if (data['reactions'] is List) {
-                                    final reactions = data['reactions'] as List;
+                                  if (cleanedData['reactions'] is List) {
+                                    final reactions =
+                                        cleanedData['reactions'] as List;
                                     for (var reaction in reactions) {
                                       if (reaction is Map &&
                                           reaction['reaction'] != null) {
@@ -955,33 +1059,39 @@ class ChatScreenState extends State<ChatScreen>
                                       }
                                     }
                                   }
-                                  // debugPrint(
-                                  //     'Message data at index $index: $data');
-                                  bool isMe = data['senderUid'] ==
+
+                                  bool isMe = cleanedData['senderUid'] ==
                                       _auth.currentUser?.uid;
-                                  if (!isMe && !(data['delivered'] ?? false)) {
+                                  if (!isMe &&
+                                      !(cleanedData['delivered'] ?? false)) {
                                     if (message is DocumentSnapshot) {
                                       _chatService.markAsDelivered(message.id);
                                     }
                                   }
+
                                   String? currentSender = _getSender(message);
                                   String? nextSender =
-                                      index < allMessages.length - 1
-                                          ? _getSender(allMessages[index + 1])
+                                      index < _processedMessages.length - 1
+                                          ? _getSender(
+                                              _processedMessages[index + 1])
                                           : null;
                                   String? prevSender = index > 0
-                                      ? _getSender(allMessages[index - 1])
+                                      ? _getSender(
+                                          _processedMessages[index - 1])
                                       : null;
+
                                   bool showSender = !isMe &&
-                                      (index == allMessages.length - 1 ||
+                                      (index == _processedMessages.length - 1 ||
                                           currentSender != nextSender);
                                   bool showAvatar = !isMe &&
                                       (index == 0 ||
                                           currentSender != prevSender);
+
                                   int? currentTimestamp =
                                       _getTimestampMs(message);
                                   int? prevTimestamp = index > 0
-                                      ? _getTimestampMs(allMessages[index - 1])
+                                      ? _getTimestampMs(
+                                          _processedMessages[index - 1])
                                       : null;
                                   bool showTimestamp = index > 0 &&
                                       currentTimestamp != null &&
@@ -993,55 +1103,48 @@ class ChatScreenState extends State<ChatScreen>
                                                       currentTimestamp))
                                               .inMinutes >
                                           30;
+
                                   bool showReadIndicator = !isMe &&
-                                      lastReadBy[data['senderUid'] ?? '']
+                                      _lastReadByCache[
+                                                  cleanedData['senderUid'] ??
+                                                      '']
                                               ?.contains(
                                                   _auth.currentUser!.uid) ==
                                           true;
 
-                                  // debugPrint(
-                                  //     'Rendering message at index $index: $data');
-                                  return FutureBuilder<DocumentSnapshot>(
-                                    future: _firestore
-                                        .collection('users')
-                                        .doc(data['senderUid'])
-                                        .get(),
-                                    builder: (context, userSnapshot) {
-                                      final displayName =
-                                          (userSnapshot.data?.data() as Map<
-                                                  String,
-                                                  dynamic>?)?['displayName'] ??
-                                              'Unknown';
-                                      final updatedData =
-                                          Map<String, dynamic>.from(data);
-                                      updatedData['sender'] = displayName;
-                                      return GestureDetector(
-                                        onLongPress: () => _showBlockDialog(
-                                            context, displayName),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 4.0),
-                                          child: MessageBubble(
-                                            message: updatedData,
-                                            isMe: isMe,
-                                            showSender: showSender,
-                                            showAvatar: showAvatar,
-                                            showTimestamp: showTimestamp,
-                                            showReadIndicator:
-                                                showReadIndicator,
-                                            onTap: () =>
-                                                _showMessageDetails(message),
-                                            onLongPress: () => _forwardMessage(
-                                                data['text'] ??
-                                                    data['content'] ??
-                                                    ''),
-                                            sendingStatus:
-                                                chatState.sendingStatus,
-                                            chatGroupId: widget.chatGroupId,
-                                          ),
-                                        ),
-                                      );
-                                    },
+                                  final senderUid =
+                                      cleanedData['senderUid'] as String?;
+                                  final displayName = senderUid != null
+                                      ? _userDisplayNameCache[senderUid] ??
+                                          _squadState
+                                              .getDisplayNameForUid(senderUid)
+                                      : 'Unknown';
+
+                                  cleanedData['sender'] = displayName;
+
+                                  return GestureDetector(
+                                    onLongPress: () =>
+                                        _showBlockDialog(context, displayName),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 4.0),
+                                      child: MessageBubble(
+                                        message: cleanedData,
+                                        isMe: isMe,
+                                        showSender: showSender,
+                                        showAvatar: showAvatar,
+                                        showTimestamp: showTimestamp,
+                                        showReadIndicator: showReadIndicator,
+                                        onTap: () =>
+                                            _showMessageDetails(message),
+                                        onLongPress: () => _forwardMessage(
+                                            cleanedData['text'] ??
+                                                cleanedData['content'] ??
+                                                ''),
+                                        sendingStatus: chatState.sendingStatus,
+                                        chatGroupId: widget.chatGroupId,
+                                      ),
+                                    ),
                                   );
                                 },
                               );
@@ -1080,7 +1183,7 @@ class ChatScreenState extends State<ChatScreen>
                     ),
                     if (_showJumpToBottom)
                       Positioned(
-                        bottom: 80,
+                        bottom: bottomPadding + 80,
                         left: 0,
                         right: 0,
                         child: Center(

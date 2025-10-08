@@ -14,6 +14,9 @@ import 'chat/chat_state.dart';
 import 'app_theme.dart';
 import 'join_squad_screen.dart';
 import 'squad_tab/squad_queue_page.dart';
+import 'managers/notification_manager.dart';
+import 'managers/firestore_manager.dart';
+import 'managers/availability_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,8 +30,9 @@ Future<void> _initializeFirebase() async {
     FirebaseDatabase.instance.setPersistenceEnabled(true);
     try {
       await NotificationService.initialize();
+      await NotificationManager.initialize();
     } catch (e) {
-      debugPrint('NotificationService initialization failed: $e');
+      debugPrint('Notification initialization failed: $e');
     }
   } catch (e) {
     debugPrint('Firebase initialization failed: $e');
@@ -181,6 +185,9 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
         ChangeNotifierProvider(create: (_) => SquadState()),
         ChangeNotifierProvider(create: (_) => ChatState()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => FirestoreManager()),
+        ChangeNotifierProvider(create: (_) => NotificationManager()),
+        ChangeNotifierProvider(create: (_) => AvailabilityManager()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => FutureBuilder(

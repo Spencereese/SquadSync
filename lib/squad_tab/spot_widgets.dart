@@ -96,8 +96,8 @@ class SpotWidgets {
       Function(BuildContext, SquadState, int) showSpotAssignmentMenu) {
     final spotName = squadState.squadSpots[index];
     final yourName = squadState.displayName;
-    final isReady = squadState.statuses[spotName] == 'Ready';
-    final youAreAssigned = squadState.squadSpots.contains(yourName);
+    final hasTimer = squadState.spotTimers[index] != null;
+    final isClaimed = squadState.statuses[spotName] == 'Claimed Spot';
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -109,11 +109,7 @@ class SpotWidgets {
             },
             child: ElevatedButton(
               onPressed: () {
-                if (youAreAssigned) {
-                  // This would need to be passed from parent
-                } else {
-                  squadState.claimSpot(index);
-                }
+                squadState.claimSpot(index);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.teal,
@@ -122,12 +118,12 @@ class SpotWidgets {
                 elevation: 6,
               ),
               child: const Tooltip(
-                message: 'Tap to claim, hold to assign others',
-                child: Text('Claim'),
+                message: 'Tap to call, hold to assign others',
+                child: Text('Call'),
               ),
             ),
           ),
-        if (hasOccupant && isReady)
+        if (hasOccupant && hasTimer && isClaimed && spotName == yourName)
           ElevatedButton(
             onPressed: () => squadState.lockSpot(index),
             style: ElevatedButton.styleFrom(
@@ -138,10 +134,10 @@ class SpotWidgets {
             ),
             child: const Tooltip(
               message: 'Confirm as Walking',
-              child: Text('Lock In'),
+              child: Text('Walking'),
             ),
           ),
-        if (hasOccupant && !isReady && spotName == yourName)
+        if (hasOccupant && !hasTimer && spotName == yourName)
           ElevatedButton(
             onPressed: () => squadState.removeSpot(index),
             style: ElevatedButton.styleFrom(

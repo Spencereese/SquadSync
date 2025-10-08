@@ -186,6 +186,14 @@ class PeacockWidgets {
     switch (status) {
       case 'Strutting':
         return Colors.blueAccent;
+      case 'Walking':
+        return Colors.greenAccent;
+      case 'in game':
+        return Colors.greenAccent;
+      case 'Ready':
+        return Colors.yellowAccent;
+      case 'Claimed Spot':
+        return Colors.orangeAccent;
       case 'Waiting':
         return Colors.grey[400]!;
       default:

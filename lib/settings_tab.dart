@@ -32,12 +32,19 @@ class _SettingsTabState extends State<SettingsTab>
   String? _preferredMode;
   String? _selectedPage;
   String? _severity;
+  // Privacy settings
+  bool _profileVisible = true;
+  bool _onlineStatusVisible = true;
+  bool _allowMessagesFromAnyone = true;
+  bool _dataSharingEnabled = false;
+  late TextEditingController _blockUserController;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController();
     _feedbackController = TextEditingController();
+    _blockUserController = TextEditingController();
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -58,6 +65,12 @@ class _SettingsTabState extends State<SettingsTab>
       _tiltEnabled = prefs.getBool('tiltEnabled') ?? true; // Load tilt setting
       _preferGameMode = prefs.getBool('preferGameMode') ?? false;
       _preferredMode = prefs.getString('preferredMode');
+      // Load privacy settings
+      _profileVisible = prefs.getBool('profileVisible') ?? true;
+      _onlineStatusVisible = prefs.getBool('onlineStatusVisible') ?? true;
+      _allowMessagesFromAnyone =
+          prefs.getBool('allowMessagesFromAnyone') ?? true;
+      _dataSharingEnabled = prefs.getBool('dataSharingEnabled') ?? false;
     });
     squadState.updateTiltEnabled(_tiltEnabled); // Sync with SquadState
     _animationController.forward();
@@ -337,6 +350,56 @@ class _SettingsTabState extends State<SettingsTab>
     );
   }
 
+  void _showBlockUserDialog(BuildContext context, SquadState squadState) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Block User'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _blockUserController,
+              decoration: const InputDecoration(
+                labelText: 'Username',
+                hintText: 'Enter the username to block',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Blocking a user will hide their messages and prevent them from seeing your activity.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _blockUserController.clear();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final username = _blockUserController.text.trim();
+              if (username.isNotEmpty) {
+                squadState.blockUser(username);
+                _blockUserController.clear();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('$username has been blocked')),
+                );
+                Navigator.pop(dialogContext);
+              }
+            },
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showFirebaseStorageTest() {
     Navigator.push(
       context,
@@ -495,12 +558,64 @@ class _SettingsTabState extends State<SettingsTab>
             ),
             const Divider(),
             _buildSectionHeader('Privacy'),
+            SwitchListTile(
+              activeColor: Colors.cyan,
+              title: const Text('Profile Visibility'),
+              subtitle: const Text('Allow others to see your profile'),
+              value: _profileVisible,
+              onChanged: (value) {
+                setState(() => _profileVisible = value);
+                _saveSettings('profileVisible', value, squadState);
+              },
+              secondary: const Icon(Icons.visibility),
+            ),
+            SwitchListTile(
+              activeColor: Colors.cyan,
+              title: const Text('Online Status'),
+              subtitle: const Text('Show when you\'re online'),
+              value: _onlineStatusVisible,
+              onChanged: (value) {
+                setState(() => _onlineStatusVisible = value);
+                _saveSettings('onlineStatusVisible', value, squadState);
+              },
+              secondary: const Icon(Icons.circle),
+            ),
+            SwitchListTile(
+              activeColor: Colors.cyan,
+              title: const Text('Allow Messages from Anyone'),
+              subtitle: const Text('Receive messages from non-friends'),
+              value: _allowMessagesFromAnyone,
+              onChanged: (value) {
+                setState(() => _allowMessagesFromAnyone = value);
+                _saveSettings('allowMessagesFromAnyone', value, squadState);
+              },
+              secondary: const Icon(Icons.message),
+            ),
+            SwitchListTile(
+              activeColor: Colors.cyan,
+              title: const Text('Data Sharing'),
+              subtitle: const Text('Share usage data for improvements'),
+              value: _dataSharingEnabled,
+              onChanged: (value) {
+                setState(() => _dataSharingEnabled = value);
+                _saveSettings('dataSharingEnabled', value, squadState);
+              },
+              secondary: const Icon(Icons.analytics),
+            ),
             ListTile(
               leading: const Icon(Icons.block, color: Colors.cyan),
               title: const Text('Blocked Users'),
               subtitle: Text('${squadState.getBlockedUsers.length} blocked'),
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
               onTap: () => _showBlockedUsersDialog(context, squadState),
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.person_add_disabled, color: Colors.cyan),
+              title: const Text('Block User'),
+              subtitle: const Text('Enter username to block'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => _showBlockUserDialog(context, squadState),
             ),
             const Divider(),
             _buildSectionHeader('Feedback & Support'),
@@ -555,6 +670,7 @@ class _SettingsTabState extends State<SettingsTab>
   void dispose() {
     _nameController.dispose();
     _feedbackController.dispose();
+    _blockUserController.dispose();
     _animationController.dispose();
     super.dispose();
   }

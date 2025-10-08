@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:cod_squad_app/Availability/schedule_dialog.dart';
 import 'package:cod_squad_app/squad_state.dart';
 import 'package:cod_squad_app/no_squad_screen.dart';
+import 'package:cod_squad_app/managers/notification_manager.dart';
+import 'package:cod_squad_app/managers/firestore_manager.dart';
 
 class AvailabilityTab extends StatefulWidget {
   const AvailabilityTab({super.key});
@@ -67,6 +69,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
               (repeatOption == 'Weekly' && recurringDays[date.weekday % 7]) ||
               (repeatOption == 'Monthly' && date.day == scheduledDay.day)) {
             await _addEvent(
+                context,
                 date,
                 playerUid,
                 displayName,
@@ -81,6 +84,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
         }
       } else {
         await _addEvent(
+            context,
             scheduledDay,
             playerUid,
             displayName,
@@ -95,10 +99,11 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
 
       if (!isAllDay && alertOption != 'None') {
         await _scheduleNotification(
-            scheduledDay, startTimeOfDay, endTimeOfDay, alertOption);
+            context, scheduledDay, startTimeOfDay, endTimeOfDay, alertOption);
       }
       if (invitees != 'None') {
         await _sendInvites(
+            context,
             displayName,
             invitees == 'All Members' ? 'Squad' : invitees,
             isAllDay,
@@ -119,6 +124,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
   }
 
   Future<void> _addEvent(
+      BuildContext context,
       DateTime date,
       String playerUid,
       String displayName,
@@ -152,32 +158,22 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
 
     debugPrint('Adding event to Firestore schedules collection: $event');
 
-    try {
-      final docRef =
-          await FirebaseFirestore.instance.collection('schedules').add(event);
-      debugPrint('Event added with ID: ${docRef.id}');
-    } catch (e) {
-      debugPrint('Failed to add event to Firestore: $e');
-      rethrow;
-    }
+    final firestoreManager =
+        Provider.of<FirestoreManager>(context, listen: false);
+    await firestoreManager.addScheduleEvent(event);
   }
 
   Future<void> _voteForEvent(BuildContext context, String eventId) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final docRef =
-          FirebaseFirestore.instance.collection('schedules').doc(eventId);
-      await docRef.update({'votes': FieldValue.increment(1)});
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Failed to vote: $e')),
-      );
-    }
+    final firestoreManager =
+        Provider.of<FirestoreManager>(context, listen: false);
+    await firestoreManager.voteForScheduleEvent(eventId);
   }
 
   Future<void> _clearAllAvailabilities(
       BuildContext context, SquadState squadState) async {
     final messenger = ScaffoldMessenger.of(context);
+    final firestoreManager =
+        Provider.of<FirestoreManager>(context, listen: false);
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
       messenger.showSnackBar(
@@ -209,13 +205,9 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
 
     try {
       final playerUid = currentUser.uid;
-      final snapshot = await FirebaseFirestore.instance
-          .collection('schedules')
-          .where('player', isEqualTo: playerUid)
-          .get();
-
-      for (var doc in snapshot.docs) {
-        await doc.reference.delete();
+      final docs = await firestoreManager.getUserScheduleEvents(playerUid);
+      for (var doc in docs) {
+        await firestoreManager.deleteScheduleEvent(doc.id);
       }
       messenger.showSnackBar(
         const SnackBar(content: Text('All availability cleared!')),
@@ -227,20 +219,76 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     }
   }
 
-  Future<void> _scheduleNotification(DateTime selectedDay, TimeOfDay startTime,
-      TimeOfDay endTime, String alertOption) async {
-    // TODO: Implement notification scheduling - flutter_local_notifications v19 API requires uiLocalNotificationDateInterpretation
-    // but the UILocalNotificationDateInterpretation enum is not accessible from the main import
-    return;
+  Future<void> _scheduleNotification(BuildContext context, DateTime selectedDay,
+      TimeOfDay startTime, TimeOfDay endTime, String alertOption) async {
+    final notificationManager =
+        Provider.of<NotificationManager>(context, listen: false);
+    if (alertOption == 'None') return;
+
+    final now = DateTime.now();
+    final alertTime = DateTime(selectedDay.year, selectedDay.month,
+        selectedDay.day, startTime.hour, startTime.minute);
+
+    Duration offset;
+    switch (alertOption) {
+      case '5 minutes before':
+        offset = const Duration(minutes: 5);
+        break;
+      case '10 minutes before':
+        offset = const Duration(minutes: 10);
+        break;
+      case '15 minutes before':
+        offset = const Duration(minutes: 15);
+        break;
+      case '30 minutes before':
+        offset = const Duration(minutes: 30);
+        break;
+      case '1 hour before':
+        offset = const Duration(hours: 1);
+        break;
+      case '2 hours before':
+        offset = const Duration(hours: 2);
+        break;
+      case '1 day before':
+        offset = const Duration(days: 1);
+        break;
+      case '2 days before':
+        offset = const Duration(days: 2);
+        break;
+      case '1 week before':
+        offset = const Duration(days: 7);
+        break;
+      default:
+        return;
+    }
+
+    final scheduledTime = alertTime.subtract(offset);
+    if (scheduledTime.isBefore(now))
+      return; // Don't schedule past notifications
+
+    await notificationManager.scheduleNotification(
+      title: 'Availability Reminder',
+      body:
+          'Your scheduled availability starts at ${startTime.format(context)}',
+      scheduledTime: scheduledTime,
+    );
   }
 
-  Future<void> _sendInvites(String sender, String recipient, bool allDay,
-      TimeOfDay startTime, TimeOfDay endTime, DateTime selectedDay) async {
+  Future<void> _sendInvites(
+      BuildContext context,
+      String sender,
+      String recipient,
+      bool allDay,
+      TimeOfDay startTime,
+      TimeOfDay endTime,
+      DateTime selectedDay) async {
+    final firestoreManager =
+        Provider.of<FirestoreManager>(context, listen: false);
     try {
       final message = allDay
           ? '$sender invited you to be available all day on ${DateFormat.yMMMd().format(selectedDay)}'
-          : '$sender invited you to be available from ${startTime.format} to ${endTime.format} on ${DateFormat.yMMMd().format(selectedDay)}';
-      await FirebaseFirestore.instance.collection('invites').add({
+          : '$sender invited you to be available from ${startTime.format(context)} to ${endTime.format(context)} on ${DateFormat.yMMMd().format(selectedDay)}';
+      await firestoreManager.sendInvite({
         'sender': sender,
         'recipient': recipient,
         'message': message,
@@ -516,10 +564,9 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
                     final confirmed =
                         await _confirmDelete(context, displayName);
                     if (confirmed == true) {
-                      await FirebaseFirestore.instance
-                          .collection('schedules')
-                          .doc(event['id'])
-                          .delete();
+                      final firestoreManager =
+                          Provider.of<FirestoreManager>(context, listen: false);
+                      await firestoreManager.deleteScheduleEvent(event['id']);
                       messenger.showSnackBar(
                         const SnackBar(content: Text('Availability removed!')),
                       );

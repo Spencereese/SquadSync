@@ -10,14 +10,17 @@ class MemberWidgets {
         timerIndex != -1 ? squadState.getSpotTimerDisplay(timerIndex) : null;
     final streak = squadState.currentStreaks[player] ?? 0;
     final banCount = squadState.getBanCount(player);
+    final gameName = squadState.currentGame?['name'] ?? '';
 
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Wrap(
         spacing: 8,
         children: [
-          _buildStatusChip(status),
-          if (timerDisplay != null && status == 'Ready')
+          _buildStatusChip(status,
+              gameName: status == 'Claimed Spot' ? gameName : null),
+          if (timerDisplay != null &&
+              (status == 'Ready' || status == 'Claimed Spot'))
             Text('($timerDisplay)',
                 style: Theme.of(context).textTheme.bodySmall),
           if (streak > 0) ...[
@@ -52,9 +55,10 @@ class MemberWidgets {
     );
   }
 
-  static Widget _buildStatusChip(String status) {
+  static Widget _buildStatusChip(String status, {String? gameName}) {
+    final displayStatus = gameName != null ? '$status ($gameName)' : status;
     return Chip(
-      label: Text(status, style: const TextStyle(fontSize: 12)),
+      label: Text(displayStatus, style: const TextStyle(fontSize: 12)),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       backgroundColor: _getStatusColor(status).withValues(alpha: 0.2),
@@ -109,8 +113,12 @@ class MemberWidgets {
         return Colors.blueAccent;
       case 'Walking':
         return Colors.greenAccent;
+      case 'in game':
+        return Colors.greenAccent;
       case 'Ready':
         return Colors.yellowAccent;
+      case 'Claimed Spot':
+        return Colors.orangeAccent;
       case 'Waiting':
         return Colors.grey[400]!;
       default:

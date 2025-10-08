@@ -40,6 +40,12 @@ SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
 - Storage bucket: `squadsync-media` with backend-generated signed URLs
 - Real-time listeners with automatic cleanup on dispose
 
+### Game-Specific Data Architecture
+- **Game-scoped data**: `gameSquadSpots[gameName]`, `gameSpotTimers[gameName]`, `gameStatuses[gameName]`
+- **UID-based users**: Store Firebase UIDs, cache display names in `_memberDisplayNames`
+- **Dynamic spot allocation**: Max spots per game from `currentGame?['maxSpots']`
+- **Status computation**: Global statuses (`Walking`, `Ready`) vs game-specific data
+
 ### File Structure
 - `lib/chat/`: Chat UI components and services
 - `lib/chat/link_preview.dart`: URL detection, link previews, and inline video playback
@@ -75,6 +81,15 @@ docker build -t squadsync-backend backend/
 docker run -p 8080:8080 squadsync-backend
 ```
 
+### Firebase Cloud Functions Deployment
+**Critical for server-side timers** - timers only work when functions are deployed:
+```bash
+# Deploy timer functions (required for background timer processing)
+deploy_functions.bat  # Windows
+# OR manually:
+cd functions && npm install && firebase deploy --only functions
+```
+
 ### Testing
 - Unit tests: `flutter test` (basic test suite available in `test/chat_service_test.dart`)
 - Integration: Manual testing across platforms (Android/iOS/Web/Desktop)
@@ -86,19 +101,48 @@ docker run -p 8080:8080 squadsync-backend
 - **Desugar JDK Libs**: Update to version 2.1.4+ in `android/app/build.gradle.kts`
 - **Clean Build**: Run `flutter clean` before building after version updates
 
-### Dependency Management
-- **Major updates completed**: Firebase (v3→v4, v5→v6), flutter_local_notifications (v17→v19), app_links (v3→v6)
-- **Breaking changes addressed**: Removed deprecated APIs, updated method signatures
-- **Google Sign-In**: Temporarily disabled pending v7 API migration
-- **Android Build Requirements**: AGP 8.9.1, Gradle 8.11.1, desugar_jdk_libs 2.1.4+
-- Run `flutter pub outdated` to check for remaining updates
+### Deep Link Handling
+- **App Links setup**: Initialize in `main.dart` with authentication/squad checks
+- **URI patterns**: `codsquadapp://chat`, `codsquadapp://join/{code}`
+- **Navigation guards**: Check `FirebaseAuth.instance.currentUser` and `squadState.selectedSquadId`
+- **Deferred navigation**: Use `WidgetsBinding.instance.addPostFrameCallback` to avoid `_debugLocked` assertion
+
+### Hybrid Chat Storage Pattern
+```dart
+// Real-time from Firestore
+Stream<QuerySnapshot> getChatMessages(context, {chatGroupId}) {
+  return _firestore.collection(collectionPath)
+    .orderBy('timestamp', descending: true)
+    .limit(100)
+    .snapshots();
+}
+
+// Offline caching to SQLite
+Future<void> _cacheMessageToSQLite(Message message) async {
+  await _sqliteHelper.insertMessage(message.toMap());
+}
+```
+
+### State Caching Optimization
+```dart
+// Cache with 100ms validity to avoid expensive recalculations
+List<String?> get squadSpots {
+  if (_cachedSquadSpots == null || (now - _lastCacheUpdate) > 100) {
+    // Recalculate from gameSquadSpots
+    _cachedSquadSpots = ...;
+    _lastCacheUpdate = now;
+  }
+  return _cachedSquadSpots!;
+}
+```
 
 ## Code Style Notes
 - Extensive use of `mounted` checks before setState in async operations
 - Provider listeners disposed in `dispose()` methods
 - Firebase streams properly managed with StreamSubscription cleanup
 - Custom themes in `AppTheme` with dark/light variants
-- Animation controllers disposed to prevent memory leaks
+- UID-to-display-name caching for performance
+- Game-scoped data structures for multi-game support
 
 ## Key Files to Reference
 - `lib/main.dart`: App initialization with Firebase and deep linking

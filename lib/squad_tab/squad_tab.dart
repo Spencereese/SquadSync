@@ -39,13 +39,13 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SquadState>(
-      builder: (context, squadState, child) {
-        if (squadState.selectedSquadId == null) {
-          return const NoSquadScreen();
-        }
-        return Scaffold(
-          body: RefreshIndicator(
+    return Consumer<SquadState>(builder: (context, squadState, child) {
+      if (squadState.selectedSquadId == null) {
+        return const NoSquadScreen();
+      }
+      return Scaffold(
+        body: SafeArea(
+          child: RefreshIndicator(
             onRefresh: () async {
               // Force a state refresh if needed; currently, Firestore listener handles updates
             },
@@ -135,9 +135,9 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               ],
             ),
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 
   Widget _buildHeader(BuildContext context, SquadState squadState) {
@@ -193,22 +193,44 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           alignment: Alignment.center,
           children: [
             // Current game logo
-            squadState.currentGame?['logo'] != null
-                ? Image.asset(
-                    squadState.currentGame!['logo'],
+            squadState.currentGame?['coverUrl'] != null
+                ? Image.network(
+                    squadState.currentGame!['coverUrl'],
                     width: 160,
                     height: 100,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
+                    errorBuilder: (context, error, stackTrace) =>
+                        squadState.currentGame?['logo'] != null
+                            ? Image.asset(
+                                squadState.currentGame!['logo'],
+                                width: 160,
+                                height: 100,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(Icons.gamepad,
+                                        size: 100, color: Colors.cyanAccent),
+                              )
+                            : const Icon(
+                                Icons.gamepad,
+                                size: 100,
+                                color: Colors.cyanAccent,
+                              ),
+                  )
+                : squadState.currentGame?['logo'] != null
+                    ? Image.asset(
+                        squadState.currentGame!['logo'],
+                        width: 160,
+                        height: 100,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.gamepad,
+                                size: 100, color: Colors.cyanAccent),
+                      )
+                    : const Icon(
                         Icons.gamepad,
                         size: 100,
-                        color: Colors.cyanAccent),
-                  )
-                : const Icon(
-                    Icons.gamepad,
-                    size: 100,
-                    color: Colors.cyanAccent,
-                  ),
+                        color: Colors.cyanAccent,
+                      ),
             // Arrow indicator positioned at bottom center of logo
             Positioned(
               bottom: 0,
@@ -440,6 +462,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                                 end: Alignment.bottomRight,
                               ),
                         isSelected: isSelected,
+                        imageUrl: game['coverUrl'],
                         onTap: () {
                           squadState.selectGame(game);
                           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -468,6 +491,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     required LinearGradient gradient,
     required VoidCallback onTap,
     bool isSelected = false,
+    String? imageUrl,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -507,18 +531,30 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Icon
+                  // Icon or Image
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(
-                      icon,
-                      color: Colors.white,
-                      size: 28,
-                    ),
+                    child: imageUrl != null
+                        ? Image.network(
+                            imageUrl,
+                            width: 28,
+                            height: 28,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Icon(
+                              icon,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          )
+                        : Icon(
+                            icon,
+                            color: Colors.white,
+                            size: 28,
+                          ),
                   ),
                   const Spacer(),
                   // Title

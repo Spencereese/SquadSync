@@ -61,11 +61,11 @@ class SquadDialogs {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               if (isBlocked) {
-                squadState.unblockUser(player);
+                await squadState.unblockUser(player);
               } else {
-                squadState.blockUser(player);
+                await squadState.blockUser(player);
               }
               Navigator.of(dialogContext).pop();
             },
@@ -158,8 +158,9 @@ class SquadDialogs {
       'Gunny': null,
       'Wingman': null
     };
-    final canRate = squadState.displayName != null &&
-        await squadState.canRateMember(player, squadState.displayName!);
+    final canRate = squadState.displayName != null
+        ? await squadState.canRateMember(player, squadState.displayName!)
+        : false;
 
     if (!canRate) {
       messenger.showSnackBar(
@@ -465,8 +466,8 @@ class SquadDialogs {
             const SizedBox(height: 16),
             TextField(
               decoration: const InputDecoration(
-                labelText: 'Logo Path',
-                hintText: 'e.g., assets/images/placeholder.png',
+                labelText: 'Cover Image URL',
+                hintText: 'e.g., https://images.igdb.com/...',
               ),
               onChanged: (value) => gameLogo = value,
             ),
@@ -495,7 +496,7 @@ class SquadDialogs {
                   'description': gameDescription.isNotEmpty
                       ? gameDescription
                       : 'Custom Game',
-                  'logo': gameLogo.isNotEmpty
+                  'coverUrl': gameLogo.isNotEmpty
                       ? gameLogo
                       : 'assets/images/placeholder.png'
                 });

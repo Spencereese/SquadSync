@@ -233,4 +233,27 @@ class SquadManager with ChangeNotifier {
         .get();
     return snapshot.docs.map((doc) => doc.data()).toList();
   }
+
+  // Peacock/Lobby management methods
+  Future<void> addViewer(String peacockId, String userId) async {
+    await _firestore.collection('peacocks').doc(peacockId).update({
+      'viewers': FieldValue.arrayUnion([userId]),
+    });
+  }
+
+  Future<void> removeViewer(String peacockId, String userId) async {
+    await _firestore.collection('peacocks').doc(peacockId).update({
+      'viewers': FieldValue.arrayRemove([userId]),
+    });
+  }
+
+  Stream<QuerySnapshot> getActiveLobbiesStream() {
+    return _firestore.collection('peacocks').snapshots();
+  }
+
+  Future<void> joinLobby(String peacockId, String userId) async {
+    await _firestore.collection('peacocks').doc(peacockId).update({
+      'filled': FieldValue.arrayUnion([userId]),
+    });
+  }
 }

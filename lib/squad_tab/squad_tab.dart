@@ -8,16 +8,22 @@ import 'squad_dialogs.dart';
 import '../no_squad_screen.dart';
 
 class SquadTab extends StatelessWidget {
-  const SquadTab({super.key});
+  final String? lobbyId;
+  final String? gameName;
+
+  const SquadTab({super.key, this.lobbyId, this.gameName});
 
   @override
   Widget build(BuildContext context) {
-    return const _SquadTabContent();
+    return _SquadTabContent(lobbyId: lobbyId, gameName: gameName);
   }
 }
 
 class _SquadTabContent extends StatefulWidget {
-  const _SquadTabContent();
+  final String? lobbyId;
+  final String? gameName;
+
+  const _SquadTabContent({this.lobbyId, this.gameName});
 
   @override
   _SquadTabContentState createState() => _SquadTabContentState();

@@ -118,6 +118,11 @@ class ChatState extends ChangeNotifier {
     }
   }
 
+  void setDMView(bool isDMView) {
+    // This method can be used to track DM view state
+    // Implementation can be added as needed
+  }
+
   @override
   void dispose() {
     _sendingStatus.clear();

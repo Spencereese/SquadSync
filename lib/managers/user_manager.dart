@@ -121,4 +121,111 @@ class UserManager with ChangeNotifier implements IUserManager {
       // Handle error
     }
   }
+
+  // Friend management methods
+  Stream<List<Map<String, dynamic>>> streamFriends() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('friends')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
+  }
+
+  Stream<List<Map<String, dynamic>>> streamPendingRequests() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('friendRequests')
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
+  }
+
+  Future<String> startDMThread(String friendId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('User not authenticated');
+
+    // Create or get existing DM thread
+    final threadId = [user.uid, friendId]..sort();
+    final threadDocId = threadId.join('_');
+
+    // Ensure thread exists in Firestore
+    await FirebaseFirestore.instance
+        .collection('dm_threads')
+        .doc(threadDocId)
+        .set({
+      'participants': threadId,
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    return threadDocId;
+  }
+
+  Future<void> removeFriend(String friendId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Remove from both users' friend lists
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('friends')
+        .doc(friendId)
+        .delete();
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(friendId)
+        .collection('friends')
+        .doc(user.uid)
+        .delete();
+  }
+
+  Future<void> acceptFriendRequest(String requesterId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Move from friendRequests to friends
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('friends')
+        .doc(requesterId)
+        .set({'addedAt': FieldValue.serverTimestamp()});
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('friendRequests')
+        .doc(requesterId)
+        .delete();
+
+    // Also add to requester's friends list
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(requesterId)
+        .collection('friends')
+        .doc(user.uid)
+        .set({'addedAt': FieldValue.serverTimestamp()});
+  }
+
+  Future<void> declineFriendRequest(String requesterId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Remove from friendRequests
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('friendRequests')
+        .doc(requesterId)
+        .delete();
+  }
 }

@@ -3,10 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../squad_state.dart';
-import '../managers/game_manager.dart';
 import '../managers/user_manager.dart';
 import '../managers/notification_manager.dart';
 
@@ -94,8 +92,8 @@ class _PeacockModalState extends State<PeacockModal> {
       final notificationManager =
           Provider.of<NotificationManager>(context, listen: false);
       await notificationManager.showNotification(
-        'Peacock Alert',
-        'Looking for ${_spots.toInt()} spots in $gameName',
+        title: 'Peacock Alert',
+        body: 'Looking for ${_spots.toInt()} spots in $gameName',
       );
 
       if (mounted) {
@@ -264,109 +262,13 @@ class _PeacockModalState extends State<PeacockModal> {
                             ),
                         ],
                       ),
-                      // Game search at the top
-                      TypeAheadField(
+                      // Game input at the top
+                      TextField(
                         controller: _gameController,
-                        builder: (context, controller, focusNode) {
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            child: TextField(
-                              controller: controller,
-                              focusNode: focusNode,
-                              decoration: const InputDecoration(
-                                labelText: 'Game',
-                                hintText: 'Search for a game...',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          );
-                        },
-                        suggestionsCallback: (pattern) async {
-                          if (pattern.isEmpty) return [];
-                          final gameManager =
-                              Provider.of<GameManager>(context, listen: false);
-                          return await gameManager.searchGames(pattern);
-                        },
-                        itemBuilder: (context, suggestion) {
-                          final coverUrl = suggestion['coverUrl'];
-                          return ListTile(
-                            leading: coverUrl != null
-                                ? CachedNetworkImage(
-                                    imageUrl: coverUrl,
-                                    width: 60,
-                                    height: 60,
-                                    fit: BoxFit.cover,
-                                    placeholder: (context, url) =>
-                                        const SizedBox(
-                                      width: 60,
-                                      height: 60,
-                                      child: Center(
-                                          child: CircularProgressIndicator()),
-                                    ),
-                                    errorWidget: (context, url, error) =>
-                                        Container(
-                                      width: 60,
-                                      height: 60,
-                                      color: Colors.grey[300],
-                                      child: const Icon(Icons.image, size: 30),
-                                    ),
-                                  )
-                                : Container(
-                                    width: 60,
-                                    height: 60,
-                                    color: Colors.grey[300],
-                                    child: const Icon(Icons.gamepad, size: 30),
-                                  ),
-                            title: Text(suggestion['name'] ?? ''),
-                            subtitle: suggestion['genres'] != null
-                                ? Text((suggestion['genres'] as List<dynamic>)
-                                    .join(', '))
-                                : null,
-                          );
-                        },
-                        onSelected: (suggestion) async {
-                          setState(() {
-                            _gameController.text = suggestion['name'] ?? '';
-                            _selectedGame = suggestion;
-                            // Auto-fill spots from game data
-                            if (suggestion['maxSpots'] != null) {
-                              _spots =
-                                  (suggestion['maxSpots'] as int).toDouble();
-                            }
-                          });
-                          // Haptic feedback
-                          Feedback.forTap(context);
-                          // Show pin dialog
-                          final shouldPin = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Pin Game'),
-                              content:
-                                  const Text('Pin this game for quick access?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(false),
-                                  child: const Text('No'),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(true),
-                                  child: const Text('Yes'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (shouldPin == true) {
-                            final userManager = Provider.of<UserManager>(
-                                context,
-                                listen: false);
-                            await userManager.addPinnedGame(suggestion);
-                          }
-                        },
-                        emptyBuilder: (context) => const Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Text('No games found'),
+                        decoration: const InputDecoration(
+                          labelText: 'Game',
+                          hintText: 'Enter game name...',
+                          border: OutlineInputBorder(),
                         ),
                       ),
                       const SizedBox(height: 16),

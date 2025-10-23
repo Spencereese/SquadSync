@@ -7,11 +7,13 @@ class GameManager with ChangeNotifier {
   Map<String, List<Map<String, dynamic>>> _gameLobbies = {};
   Set<String> _preferredPeacockGames = {};
   Set<String> _mutedGames = {};
+  Set<String> _hiddenGames = {};
 
   List<Map<String, dynamic>> get availableGames => _availableGames;
   Map<String, List<Map<String, dynamic>>> get gameLobbies => _gameLobbies;
   Set<String> get preferredPeacockGames => _preferredPeacockGames;
   Set<String> get mutedGames => _mutedGames;
+  Set<String> get hiddenGames => _hiddenGames;
 
   set availableGames(List<Map<String, dynamic>> value) {
     _availableGames = value;
@@ -30,6 +32,11 @@ class GameManager with ChangeNotifier {
 
   set mutedGames(Set<String> value) {
     _mutedGames = value;
+    notifyListeners();
+  }
+
+  set hiddenGames(Set<String> value) {
+    _hiddenGames = value;
     notifyListeners();
   }
 
@@ -87,7 +94,21 @@ class GameManager with ChangeNotifier {
     notifyListeners();
   }
 
+  void hideGame(String gameName) {
+    _hiddenGames.add(gameName);
+    notifyListeners();
+  }
+
+  void unhideGame(String gameName) {
+    _hiddenGames.remove(gameName);
+    notifyListeners();
+  }
+
   bool isGameMuted(String gameName) {
     return _mutedGames.contains(gameName);
+  }
+
+  bool isGameHidden(String gameName) {
+    return _hiddenGames.contains(gameName);
   }
 }

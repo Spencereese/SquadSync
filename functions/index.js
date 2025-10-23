@@ -86,3 +86,10 @@ exports.updateTimers = functions.pubsub
       return null;
     }
   });
+
+// Import disband lobby functions
+const disbandFunctions = require('./disband_lobby');
+
+// Export disband functions
+exports.disbandLobby = disbandFunctions.disbandLobby;
+exports.cleanupExpiredLobbies = disbandFunctions.cleanupExpiredLobbies;

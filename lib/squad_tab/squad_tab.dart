@@ -54,7 +54,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               slivers: [
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     child: _buildHeader(context, squadState),
                   ),
                 ),

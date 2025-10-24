@@ -37,9 +37,7 @@ class SquadDataManager {
   Map<String, Map<String, dynamic>> userSquads =
       {}; // Store squad data for all user squads
   Map<String, dynamic>? _currentSquadData;
-  // ignore: unnecessary_getters_setters
   Map<String, dynamic>? get currentSquadData => _currentSquadData;
-  // ignore: unnecessary_getters_setters
   set currentSquadData(Map<String, dynamic>? value) =>
       _currentSquadData = value;
 
@@ -102,7 +100,6 @@ class SquadDataManager {
   }
 
   Map<String, dynamic>? get currentGame => _currentGame;
-  // ignore: unnecessary_getters_setters
   set currentGame(Map<String, dynamic>? game) => _currentGame = game;
 
   bool get isCreator =>
@@ -151,11 +148,12 @@ class SquadDataManager {
     gameSpotTimers[gameName]![index] = {
       'startTime': DateTime.now().millisecondsSinceEpoch,
       'duration': 300,
+      'calling': true,
     };
-    globalStatuses[userName] = 'Claimed Spot';
+    globalStatuses[userName] = 'Calling'; // Set status to calling
   }
 
-  void claimSpotForGame(
+  void callSpotForGame(
       int index, String userName, String userUid, String gameName,
       {int? maxSpots}) {
     if (!gameSquadSpots.containsKey(gameName)) {
@@ -173,12 +171,28 @@ class SquadDataManager {
       gameSpotTimers[gameName]![currentSpotIndex] = null;
     }
 
-    gameSquadSpots[gameName]![index] = userUid;
+    // Set calling status - spot is reserved but not locked yet
+    gameSquadSpots[gameName]![index] =
+        '${userUid}_calling'; // Temporary calling state
     gameSpotTimers[gameName]![index] = {
       'startTime': DateTime.now().millisecondsSinceEpoch,
-      'duration': 300,
+      'duration': 300, // 5 minute calling timer
+      'calling': true,
     };
-    globalStatuses[userName] = 'Claimed Spot';
+    globalStatuses[userName] = 'Calling'; // Set status to calling
+  }
+
+  void lockCalledSpot(
+      String gameName, int index, String userName, String userUid) {
+    // Convert calling spot to locked spot
+    if (gameSquadSpots[gameName]?[index] == '${userUid}_calling') {
+      gameSquadSpots[gameName]![index] = userUid;
+      gameSpotTimers[gameName]![index] = {
+        'startTime': DateTime.now().millisecondsSinceEpoch,
+        'duration': -1, // Count up to show time in lobby
+      };
+      globalStatuses[userName] = 'in game'; // Set status to in game
+    }
   }
 
   void assignSpot(int index, String player) {

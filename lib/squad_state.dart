@@ -87,6 +87,14 @@ class SquadState with ChangeNotifier {
 
   // Get display name for a UID, with caching
   String getDisplayNameForUid(String uid) {
+    // Handle calling UIDs (format: uid_calling)
+    if (uid.contains('_calling')) {
+      final actualUid = uid.split('_calling')[0];
+      if (_memberDisplayNames.containsKey(actualUid)) {
+        return _memberDisplayNames[actualUid]!;
+      }
+    }
+
     if (_memberDisplayNames.containsKey(uid)) {
       return _memberDisplayNames[uid]!;
     }
@@ -163,6 +171,9 @@ class SquadState with ChangeNotifier {
   Map<String, Map<String, int>> get dailyBanVotes => dataManager.dailyBanVotes;
   set dailyBanVotes(Map<String, Map<String, int>> value) =>
       dataManager.dailyBanVotes = value;
+  Map<String, List<Map<String, dynamic>>> get bans => dataManager.bans;
+  set bans(Map<String, List<Map<String, dynamic>>> value) =>
+      dataManager.bans = value;
   List<Map<String, dynamic>> get availableGames => dataManager.availableGames;
   Map<String, List<Map<String, dynamic>>> get gameLobbies =>
       dataManager.gameLobbies;
@@ -418,10 +429,13 @@ class SquadState with ChangeNotifier {
       // Only update UI if context is still valid (app is active)
       // Timer logic is now handled server-side by Cloud Functions
       if (context != null) {
+        // Check for expired timers and auto-lock spots
+        _checkAndLockExpiredSpots();
         // Check for server-side timer updates by refreshing from Firestore periodically
         _checkForServerTimerUpdates();
         _checkPreferredModes();
-        // UI will update via Firestore listeners, no need to force notify here
+        // Notify listeners to update timer displays
+        notifyListeners();
       }
     });
 
@@ -601,6 +615,16 @@ class SquadState with ChangeNotifier {
       final index = int.tryParse(doc.id);
       if (index != null && index < 8) {
         gameSquadSpots[gameName]![index] = doc.data()['uid'];
+      }
+    }
+
+    // Auto-assign creator to first spot if no spots are assigned yet
+    if (spotsSnapshot.docs.isEmpty &&
+        currentSquadData?['creatorUid'] ==
+            FirebaseAuth.instance.currentUser?.uid) {
+      final userName = displayName;
+      if (userName != null && currentGame != null) {
+        callSpotForGame(0, gameName);
       }
     }
   }
@@ -825,11 +849,14 @@ class SquadState with ChangeNotifier {
                     'name': game['name'] ?? 'Unknown Game',
                     'maxSpots': game['maxSpots'] ?? 4,
                     'description': game['description'] ?? 'Custom Game',
-                    'coverUrl': game['coverUrl'] ??
-                        game['logo'] ??
-                        'assets/images/placeholder.png'
+                    'logo': game['logo'] ?? 'assets/images/placeholder.png',
+                    'coverUrl': game['coverUrl'],
+                    'slug': game['slug'],
                   })
               .toList();
+
+          // Asynchronously enrich games with IGDB data in the background
+          _enrichGamesWithIgdbData();
         } else {
           // Use default games if no Firestore data
           availableGames = [
@@ -837,36 +864,31 @@ class SquadState with ChangeNotifier {
               'name': 'Warzone',
               'maxSpots': 4,
               'description': 'Call of Duty: Warzone - Battle Royale',
-              'coverUrl':
-                  'https://images.igdb.com/igdb/image/upload/t_cover_big/co2lbd.jpg'
+              'logo': 'assets/images/placeholder.png'
             },
             {
               'name': 'Modern Warfare III',
               'maxSpots': 4,
               'description': 'Call of Duty: Modern Warfare III - Multiplayer',
-              'coverUrl':
-                  'https://images.igdb.com/igdb/image/upload/t_cover_big/co4q7w.jpg'
+              'logo': 'assets/images/placeholder.png'
             },
             {
               'name': 'Fortnite',
               'maxSpots': 4,
               'description': 'Fortnite - Battle Royale',
-              'coverUrl':
-                  'https://images.igdb.com/igdb/image/upload/t_cover_big/co1uqy.jpg'
+              'logo': 'assets/images/placeholder.png'
             },
             {
               'name': 'Apex Legends',
               'maxSpots': 3,
               'description': 'Apex Legends - Battle Royale',
-              'coverUrl':
-                  'https://images.igdb.com/igdb/image/upload/t_cover_big/co1wyy.jpg'
+              'logo': 'assets/images/placeholder.png'
             },
             {
               'name': 'Valorant',
               'maxSpots': 5,
               'description': 'Valorant - Tactical FPS',
-              'coverUrl':
-                  'https://images.igdb.com/igdb/image/upload/t_cover_big/co2lbd.jpg'
+              'logo': 'assets/images/placeholder.png'
             },
             {
               'name': 'Overwatch 2',
@@ -946,6 +968,31 @@ class SquadState with ChangeNotifier {
           }
           if (docData['profileImage'] != null) {
             persistenceManager.profileImage = docData['profileImage'];
+          }
+
+          // Handle peacock data for current user
+          final peacockData = docData['peacock'] as Map<String, dynamic>?;
+          if (peacockData != null) {
+            final gameName = peacockData['game'] as String?;
+            if (gameName != null) {
+              // Auto-assign creator to spot 0
+              dataManager.gameSquadSpots[gameName] ??= List.filled(4, null);
+              dataManager.gameSquadSpots[gameName]![0] = user.uid;
+              // Set status to "Looking for squad"
+              dataManager.setStatus(user.uid, 'Looking for squad');
+            }
+          } else {
+            // Clear peacock data if no peacock field
+            // This handles when peacock expires or is cancelled
+            for (final game in dataManager.gameSquadSpots.keys) {
+              final spots = dataManager.gameSquadSpots[game];
+              if (spots != null && spots.contains(user.uid)) {
+                final index = spots.indexOf(user.uid);
+                if (index != -1) {
+                  spots[index] = null;
+                }
+              }
+            }
           }
 
           // Save to SharedPreferences for backup
@@ -1347,7 +1394,8 @@ class SquadState with ChangeNotifier {
     final userUid = getUidForDisplayName(userName ?? '');
     if (userName != null && userUid != null) {
       dataManager.claimSpot(index, userName, userUid);
-      dataManager.globalStatuses[userName] = 'Claimed Spot';
+      dataManager.globalStatuses[userName] =
+          'Calling'; // Changed from 'Ready'
       if (dataManager.peacockTimers.containsKey(userName)) {
         dataManager.peacockTimers.remove(userName);
         persistenceManager.markFieldChanged('peacockTimers');
@@ -1358,7 +1406,10 @@ class SquadState with ChangeNotifier {
       persistenceManager.markFieldChanged('squadSpots');
       persistenceManager.markFieldChanged('spotTimers');
       persistenceManager.markFieldChanged('globalStatuses');
+      _markFieldChanged('statuses');
       uiManager.setNewSquadSpot(true, currentGame?['name'] ?? '');
+      // Invalidate cache for statuses
+      cacheService.invalidate('statuses');
       updateFirestoreAsync(force: true);
       notifyListeners();
     }
@@ -1368,20 +1419,43 @@ class SquadState with ChangeNotifier {
     final userName = displayName;
     final userUid = getUidForDisplayName(userName ?? '');
     if (userName != null && userUid != null) {
-      dataManager.claimSpotForGame(index, userName, userUid, gameName,
+      dataManager.callSpotForGame(index, userName, userUid, gameName,
           maxSpots: maxSpots);
-      dataManager.globalStatuses[userName] = 'Claimed Spot';
-      if (dataManager.peacockTimers.containsKey(userName)) {
-        dataManager.peacockTimers.remove(userName);
-        persistenceManager.markFieldChanged('peacockTimers');
-      } else if (dataManager.peacockQueue.contains(userName)) {
-        dataManager.peacockQueue.remove(userName);
-        persistenceManager.markFieldChanged('peacockQueue');
-      }
       persistenceManager.markFieldChanged('squadSpots');
       persistenceManager.markFieldChanged('spotTimers');
       persistenceManager.markFieldChanged('globalStatuses');
+      _markFieldChanged('statuses');
       uiManager.setNewSquadSpot(true, gameName);
+      updateFirestoreAsync(force: true);
+      notifyListeners();
+    }
+  }
+
+  void callSpotForGame(int index, String gameName, {int? maxSpots}) {
+    final userName = displayName;
+    final userUid = getUidForDisplayName(userName ?? '');
+    if (userName != null && userUid != null) {
+      dataManager.callSpotForGame(index, userName, userUid, gameName,
+          maxSpots: maxSpots);
+      persistenceManager.markFieldChanged('squadSpots');
+      persistenceManager.markFieldChanged('spotTimers');
+      persistenceManager.markFieldChanged('globalStatuses');
+      _markFieldChanged('statuses');
+      uiManager.setNewSquadSpot(true, gameName);
+      updateFirestoreAsync(force: true);
+      notifyListeners();
+    }
+  }
+
+  void lockCalledSpot(String gameName, int index) {
+    final userName = displayName;
+    final userUid = getUidForDisplayName(userName ?? '');
+    if (userName != null && userUid != null) {
+      dataManager.lockCalledSpot(gameName, index, userName, userUid);
+      persistenceManager.markFieldChanged('squadSpots');
+      persistenceManager.markFieldChanged('spotTimers');
+      persistenceManager.markFieldChanged('globalStatuses');
+      _markFieldChanged('statuses');
       updateFirestoreAsync(force: true);
       notifyListeners();
     }
@@ -1401,6 +1475,7 @@ class SquadState with ChangeNotifier {
         _markFieldChanged('squadSpots');
         _markFieldChanged('spotTimers');
         _markFieldChanged('globalStatuses');
+        _markFieldChanged('statuses');
         setNewSquadSpot(true, gameName); // Trigger squad spot notification
       }
     }
@@ -1466,6 +1541,7 @@ class SquadState with ChangeNotifier {
           _markFieldChanged('squadSpots');
           _markFieldChanged('spotTimers');
           _markFieldChanged('globalStatuses');
+          _markFieldChanged('statuses');
           _markFieldChanged('peacockQueue');
           setNewSquadSpot(true, gameName); // Trigger squad spot notification
         }
@@ -1520,6 +1596,7 @@ class SquadState with ChangeNotifier {
       _markFieldChanged('squadSpots');
       _markFieldChanged('spotTimers');
       _markFieldChanged('globalStatuses');
+      _markFieldChanged('statuses');
       setNewSquadSpot(true, gameName); // Trigger squad spot notification
       updateFirestore(force: true);
       notifyListeners();
@@ -1543,6 +1620,7 @@ class SquadState with ChangeNotifier {
           globalStatuses[player] = 'Offline';
         }
         _markFieldChanged('globalStatuses');
+        _markFieldChanged('statuses');
         _markFieldChanged('squadSpots');
         _markFieldChanged('spotTimers');
         updateFirestore(force: true);
@@ -1554,14 +1632,18 @@ class SquadState with ChangeNotifier {
   void lockSpot(int index) {
     final gameName = currentGame?['name'] ?? '';
     if (gameSpotTimers.containsKey(gameName) &&
-        index < gameSpotTimers[gameName]!.length &&
-        gameSpotTimers[gameName]![index] != null) {
-      gameSpotTimers[gameName]![index] = null;
+        index < gameSpotTimers[gameName]!.length) {
+      // Set timer to track when player went in game (counting up)
+      gameSpotTimers[gameName]![index] = {
+        'startTime': DateTime.now().millisecondsSinceEpoch,
+        'duration': -1, // Special value to indicate counting up
+      };
       final playerUid = gameSquadSpots[gameName]?[index];
       if (playerUid != null) {
         final player = getDisplayNameForUid(playerUid);
         globalStatuses[player] = 'in game';
         _markFieldChanged('globalStatuses');
+        _markFieldChanged('statuses');
         _markFieldChanged('spotTimers');
         updateFirestore(force: true);
         notifyListeners();
@@ -1749,6 +1831,10 @@ class SquadState with ChangeNotifier {
     return 0;
   }
 
+  int getBanCount(String player) {
+    return bans[player]?.length ?? 0;
+  }
+
   // Check if user A is blocked by user B
   bool isUserBlockedBy(String targetUser, String blocker) {
     final blockerUid = getUidForDisplayName(blocker);
@@ -1814,9 +1900,18 @@ class SquadState with ChangeNotifier {
     if (spotTimers[index] == null) return '00:00';
     int startTime = spotTimers[index]!['startTime'] as int;
     int duration = spotTimers[index]!['duration'] as int;
-    int remaining = duration -
-        ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000).floor();
-    return _formatTimer(remaining > 0 ? remaining : 0);
+
+    if (duration == -1) {
+      // Counting up (player is in game)
+      int elapsed =
+          ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000).floor();
+      return _formatTimer(elapsed);
+    } else {
+      // Counting down
+      int remaining = duration -
+          ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000).floor();
+      return _formatTimer(remaining > 0 ? remaining : 0);
+    }
   }
 
   String _formatTimer(int? seconds) {
@@ -1834,6 +1929,35 @@ class SquadState with ChangeNotifier {
       // Check every 30 seconds
       // Force a refresh from Firestore to get latest timer state
       updateFirestore(force: true);
+    }
+  }
+
+  void _checkAndLockExpiredSpots() {
+    final gameName = currentGame?['name'] ?? '';
+    if (gameSpotTimers.containsKey(gameName)) {
+      for (int i = 0; i < gameSpotTimers[gameName]!.length; i++) {
+        final timer = gameSpotTimers[gameName]![i];
+        if (timer != null) {
+          final startTime = timer['startTime'] as int;
+          final duration = timer['duration'] as int;
+          final elapsed =
+              (DateTime.now().millisecondsSinceEpoch - startTime) / 1000;
+          final remaining = duration - elapsed.floor();
+
+          if (remaining <= 0) {
+            // Check if this is a calling timer
+            final isCalling = timer['calling'] == true;
+
+            if (isCalling) {
+              // All calling spots - remove them if not manually locked (expired)
+              removeSpot(i);
+            } else {
+              // Regular timer expired, free the spot
+              removeSpot(i);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -2071,6 +2195,7 @@ class SquadState with ChangeNotifier {
         globalStatuses[userName] = 'Playing Solo';
       }
       _markFieldChanged('globalStatuses');
+      _markFieldChanged('statuses');
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -2082,6 +2207,7 @@ class SquadState with ChangeNotifier {
       // Remove solo status, go back to offline
       globalStatuses.remove(userName);
       _markFieldChanged('globalStatuses');
+      _markFieldChanged('statuses');
       updateFirestore(force: true);
       notifyListeners();
     }
@@ -2131,6 +2257,24 @@ class SquadState with ChangeNotifier {
     } catch (e) {
       debugPrint('Error fetching active alerts: $e');
       return [];
+    }
+  }
+
+  /// Asynchronously enrich games with IGDB data
+  Future<void> _enrichGamesWithIgdbData() async {
+    try {
+      final enrichedGames =
+          await gameManager.enrichGamesWithIgdbData(availableGames);
+      if (enrichedGames.length == availableGames.length) {
+        availableGames = enrichedGames;
+        notifyListeners();
+        // Update Firestore with enriched data
+        await _firestore.collection('squads').doc(selectedSquadId).set({
+          'availableGames': availableGames,
+        }, SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('Error enriching games with IGDB data: $e');
     }
   }
 }

@@ -53,3 +53,10 @@ C:\Users\PC\cod_squad_app>echo android/app/google-services.json >> .gitignoreand
 "service-account.json" 
 backend/service-account.json 
 backend/service-account.json 
+
+# Node modules
+backend/node_modules/
+functions/node_modules/
+*.lock  # package-lock.json, Podfile.lock
+bin/    # If temp scripts
+.DS_Store

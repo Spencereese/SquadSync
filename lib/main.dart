@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:app_links/app_links.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'squad_state.dart';
 import 'chat/chat_groups_screen.dart';
 import 'setup_screen.dart';
@@ -13,10 +14,14 @@ import 'notification_service.dart';
 import 'chat/chat_state.dart';
 import 'app_theme.dart';
 import 'join_squad_screen.dart';
-import 'squad_tab/squad_queue_page.dart';
 import 'managers/notification_manager.dart';
 import 'managers/firestore_manager.dart';
 import 'managers/availability_manager.dart';
+import 'managers/game_manager.dart';
+import 'managers/user_manager.dart';
+import 'managers/review_manager.dart';
+import 'managers/squad_manager.dart';
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,14 +31,29 @@ void main() async {
 
 Future<void> _initializeFirebase() async {
   try {
-    await Firebase.initializeApp();
-    FirebaseDatabase.instance.setPersistenceEnabled(true);
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    // Firebase Database persistence is not supported on web
+    if (!kIsWeb) {
+      FirebaseDatabase.instance.setPersistenceEnabled(true);
+    }
     try {
       await NotificationService.initialize();
       await NotificationManager.initialize();
     } catch (e) {
       debugPrint('Notification initialization failed: $e');
     }
+
+    // IGDB credentials setup (uncomment for first run, then comment out)
+    // try {
+    //   print('About to call storeCredentials...');
+    //   final igdbService = IgdbAuthService();
+    //   await igdbService.storeCredentials();
+    //   print('IGDB credentials stored - comment out this code after first run');
+    // } catch (e) {
+    //   debugPrint('IGDB credentials setup failed: $e');
+    // }
   } catch (e) {
     debugPrint('Firebase initialization failed: $e');
   }
@@ -188,98 +208,61 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
         ChangeNotifierProvider(create: (_) => FirestoreManager()),
         ChangeNotifierProvider(create: (_) => NotificationManager()),
         ChangeNotifierProvider(create: (_) => AvailabilityManager()),
+        ChangeNotifierProvider(create: (_) => GameManager()),
+        ChangeNotifierProvider(create: (_) => UserManager()),
+        ChangeNotifierProvider(create: (_) => ReviewManager()),
+        ChangeNotifierProvider(create: (_) => SquadManager()),
       ],
       child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) => FutureBuilder(
-          future: _initializeFirebase(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return MaterialApp(
-                home: Scaffold(
-                  backgroundColor: Colors.black,
-                  body: const Center(
-                    child: CircularProgressIndicator(color: Colors.cyanAccent),
-                  ),
-                ),
-              );
-            }
-            if (snapshot.hasError) {
-              return MaterialApp(
-                home: Scaffold(
-                  backgroundColor: Colors.black,
-                  body: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text(
-                          'Failed to initialize app',
-                          style: TextStyle(color: Colors.white, fontSize: 18),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '${snapshot.error}',
-                          style: const TextStyle(color: Colors.white70),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          'Please restart the app',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }
-            return MaterialApp(
-              title: 'SquadSync',
-              theme: themeProvider.theme,
-              home: Builder(
-                builder: (context) {
-                  // Initialize deep links and Siri shortcuts after Firebase is ready (only once)
-                  if (!_isInitialized) {
-                    _isInitialized = true;
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _initDeepLinks();
-                      _initSiriShortcuts();
-                    });
+        builder: (context, themeProvider, _) => MaterialApp(
+          title: 'SquadSync',
+          theme: themeProvider.theme,
+          home: Builder(
+            builder: (context) {
+              // Initialize deep links and Siri shortcuts after Firebase is ready (only once)
+              if (!_isInitialized) {
+                _isInitialized = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _initDeepLinks();
+                  _initSiriShortcuts();
+                });
+              }
+
+              // Use StreamBuilder to listen to auth state changes
+              return StreamBuilder<User?>(
+                stream: FirebaseAuth.instance.authStateChanges(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    // Still checking auth status
+                    return Scaffold(
+                      backgroundColor: Colors.black,
+                      body: const Center(
+                        child:
+                            CircularProgressIndicator(color: Colors.cyanAccent),
+                      ),
+                    );
                   }
 
-                  // Use StreamBuilder to listen to auth state changes
-                  return StreamBuilder<User?>(
-                    stream: FirebaseAuth.instance.authStateChanges(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        // Still checking auth status
-                        return Scaffold(
-                          backgroundColor: Colors.black,
-                          body: const Center(
-                            child: CircularProgressIndicator(
-                                color: Colors.cyanAccent),
-                          ),
-                        );
-                      }
-
-                      final user = snapshot.data;
-                      if (user != null) {
-                        // User is authenticated, initialize SquadState and show main app
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          Provider.of<SquadState>(context, listen: false)
-                              .initialize(context);
-                        });
-                        return const SquadQueuePage();
-                      } else {
-                        // User not authenticated, show login/setup screen
-                        return const SetupScreen();
-                      }
-                    },
-                  );
+                  final user = snapshot.data;
+                  if (user != null) {
+                    // User is authenticated, initialize SquadState and show main app
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      Provider.of<SquadState>(context, listen: false)
+                          .initialize(context);
+                      // Load pinned games for Quick Start
+                      Provider.of<UserManager>(context, listen: false)
+                          .fetchPinnedGames();
+                    });
+                    return const ChatGroupsScreen();
+                  } else {
+                    // User not authenticated, show login/setup screen
+                    return const SetupScreen();
+                  }
                 },
-              ),
-              debugShowCheckedModeBanner: false,
-            );
-          },
+              );
+            },
+          ),
+          debugShowCheckedModeBanner: false,
         ),
       ),
     );

@@ -3,13 +3,92 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+// import 'package:http/http.dart' as http; // TEMPORARILY DISABLED
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:io';
+import 'dart:async';
 import 'sqlite_helper.dart';
 import '../squad_state.dart';
 import 'package:flutter/material.dart';
+
+/// Result of a message send operation
+class MessageSendResult {
+  final bool success;
+  final String? messageId;
+  final String? errorMessage;
+  final bool isOffline;
+
+  MessageSendResult._({
+    required this.success,
+    this.messageId,
+    this.errorMessage,
+    this.isOffline = false,
+  });
+
+  factory MessageSendResult.success(String messageId) {
+    return MessageSendResult._(success: true, messageId: messageId);
+  }
+
+  factory MessageSendResult.failure(String errorMessage) {
+    return MessageSendResult._(success: false, errorMessage: errorMessage);
+  }
+
+  factory MessageSendResult.offline(String messageId) {
+    return MessageSendResult._(
+        success: true, messageId: messageId, isOffline: true);
+  }
+}
+
+/// Represents a cancellable media upload task
+class MediaUploadTask {
+  final String taskId;
+  final UploadTask _uploadTask;
+  final Function(double progress)? onProgress;
+  final Function(String url)? onComplete;
+  final Function(String error)? onError;
+
+  bool _isCancelled = false;
+
+  MediaUploadTask(
+    this.taskId,
+    this._uploadTask, {
+    this.onProgress,
+    this.onComplete,
+    this.onError,
+  }) {
+    // Listen to upload progress
+    _uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+      if (_isCancelled) return;
+
+      final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+      onProgress?.call(progress);
+
+      if (snapshot.state == TaskState.success) {
+        snapshot.ref.getDownloadURL().then((url) {
+          if (!_isCancelled) {
+            onComplete?.call(url);
+          }
+        }).catchError((error) {
+          if (!_isCancelled) {
+            onError?.call('Failed to get download URL: $error');
+          }
+        });
+      } else if (snapshot.state == TaskState.error) {
+        if (!_isCancelled) {
+          onError?.call('Upload failed: ${snapshot.state}');
+        }
+      }
+    });
+  }
+
+  void cancel() {
+    _isCancelled = true;
+    _uploadTask.cancel();
+  }
+
+  bool get isCancelled => _isCancelled;
+}
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -18,9 +97,88 @@ class ChatService {
   static const int _maxRetries = 3;
   static const Duration _initialBackoff = Duration(milliseconds: 500);
 
-  // Cache for frequently accessed data
+  // Improved caching with invalidation
   String? _cachedSquadId;
   BuildContext? _cachedContext;
+  int _cacheTimestamp = 0;
+  static const int _cacheValidityMs = 5000; // 5 second cache validity
+
+  // Stream cache to avoid recreating streams unnecessarily
+  Stream<QuerySnapshot>? _messagesStream;
+  Stream<String?>? _typingStream;
+  String? _lastStreamSquadId;
+  String? _lastStreamGroupId;
+
+  // Offline message queue
+  final List<Map<String, dynamic>> _offlineMessageQueue = [];
+  bool _isOnline = true;
+
+  // Check connectivity by attempting a lightweight Firestore operation
+  Future<bool> _checkConnectivity() async {
+    try {
+      // Try to get current user as a lightweight connectivity check
+      await FirebaseAuth.instance.currentUser?.getIdToken(true);
+      _isOnline = true;
+      return true;
+    } catch (e) {
+      _isOnline = false;
+      return false;
+    }
+  }
+
+  // Process offline message queue when connection is restored
+  Future<void> _processOfflineQueue() async {
+    if (_offlineMessageQueue.isEmpty || !_isOnline) return;
+
+    final queueCopy = List<Map<String, dynamic>>.from(_offlineMessageQueue);
+    _offlineMessageQueue.clear();
+
+    for (final messageData in queueCopy) {
+      try {
+        final collectionPath = messageData['chatGroupId'] != null
+            ? 'squads/${messageData['squadId']}/chat_groups/${messageData['chatGroupId']}/messages'
+            : 'squads/${messageData['squadId']}/chat';
+
+        await _retryOperation(() async {
+          await _firestore
+              .collection(collectionPath)
+              .doc(messageData['id'])
+              .set(messageData, SetOptions(merge: true));
+        });
+
+        // Update group metadata if this is a group chat
+        if (messageData['chatGroupId'] != null) {
+          await _updateGroupMetadata(
+              messageData['squadId'],
+              messageData['chatGroupId'],
+              messageData['text'] ?? '',
+              messageData['timestamp_ms']);
+        }
+
+        debugPrint('Successfully sent queued message: ${messageData['id']}');
+      } catch (e) {
+        debugPrint('Failed to send queued message, re-queuing: $e');
+        _offlineMessageQueue.add(messageData);
+      }
+    }
+  }
+
+  // Get cached squad ID with automatic invalidation
+  String? _getCachedSquadId(BuildContext context) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_cachedContext == context &&
+        _cachedSquadId != null &&
+        (now - _cacheTimestamp) < _cacheValidityMs) {
+      return _cachedSquadId;
+    }
+
+    // Update cache
+    _cachedContext = context;
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    _cachedSquadId = squadState.selectedSquadId;
+    _cacheTimestamp = now;
+    return _cachedSquadId;
+  }
 
   // Stream for real-time messages from Firestore (updated for squad and groups)
   Stream<QuerySnapshot> getChatMessages(BuildContext context,
@@ -32,26 +190,31 @@ class ChatService {
       return Stream.empty();
     }
 
-    // Cache context and squadId to avoid repeated Provider.of calls
-    if (_cachedContext != context) {
-      _cachedContext = context;
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      _cachedSquadId = squadState.selectedSquadId;
-    }
-
-    final squadId = _cachedSquadId;
+    final squadId = _getCachedSquadId(context);
     if (squadId == null) return Stream.empty();
 
-    // If chatGroupId is provided, get messages from the group, otherwise from squad chat
+    // Check if we can reuse the cached stream
+    if (_messagesStream != null &&
+        _lastStreamSquadId == squadId &&
+        _lastStreamGroupId == chatGroupId) {
+      return _messagesStream!;
+    }
+
+    // Create new stream
     final collectionPath = chatGroupId != null
         ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
         : 'squads/$squadId/chat';
 
-    return _firestore
+    _messagesStream = _firestore
         .collection(collectionPath)
         .orderBy('timestamp', descending: true)
         .limit(100)
         .snapshots();
+
+    _lastStreamSquadId = squadId;
+    _lastStreamGroupId = chatGroupId;
+
+    return _messagesStream!;
   }
 
   // Stream for typing status
@@ -63,17 +226,22 @@ class ChatService {
       return Stream.value(null);
     }
 
-    // Use cached squadId if available
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    final squadId = _cachedSquadId ?? squadState.selectedSquadId;
+    final squadId = _getCachedSquadId(context);
     if (squadId == null) return Stream.value(null);
+
+    // Check if we can reuse the cached typing stream
+    if (_typingStream != null &&
+        _lastStreamSquadId == squadId &&
+        _lastStreamGroupId == chatGroupId) {
+      return _typingStream!;
+    }
 
     // Use different typing status paths for squad vs group chats
     final typingPath = chatGroupId != null
         ? 'squads/$squadId/chat_groups/$chatGroupId/typing_status/status'
         : 'squads/$squadId/chat_metadata/typing_status';
 
-    return _firestore.doc(typingPath).snapshots().map((snapshot) {
+    _typingStream = _firestore.doc(typingPath).snapshots().map((snapshot) {
       if (snapshot.exists) {
         final data = snapshot.data() as Map<String, dynamic>;
         final typing = data['typing'] as Map<String, dynamic>?;
@@ -82,17 +250,23 @@ class ChatService {
               .where((entry) => entry.value == true)
               .map((entry) => entry.key)
               .toList();
-          final currentUser = squadState.displayName;
+          final currentUser =
+              Provider.of<SquadState>(context, listen: false).displayName;
           typingUsers.removeWhere((user) => user == currentUser);
           return typingUsers.isNotEmpty ? typingUsers.first : null;
         }
       }
       return null;
     });
+
+    _lastStreamSquadId = squadId;
+    _lastStreamGroupId = chatGroupId;
+
+    return _typingStream!;
   }
 
-  // Send a new message
-  Future<void> sendMessage(
+  // Send a new message with improved error handling
+  Future<MessageSendResult> sendMessage(
     BuildContext context, {
     required String senderUid,
     String? text,
@@ -104,17 +278,19 @@ class ChatService {
     List<Map<String, dynamic>> audio = const [],
     List<Map<String, dynamic>> reactions = const [],
     String? replyTo,
+    String? pollId,
     String? chatGroupId,
   }) async {
+    // Validate input
     if ((text?.trim().isEmpty ?? true) &&
         photos.isEmpty &&
         videos.isEmpty &&
         audio.isEmpty &&
         imageUrl == null &&
         videoUrl == null &&
-        audioUrl == null) {
-      debugPrint('Skipping empty message');
-      return;
+        audioUrl == null &&
+        pollId == null) {
+      return MessageSendResult.failure('Cannot send empty message');
     }
 
     final msgId = Uuid().v4();
@@ -134,13 +310,17 @@ class ChatService {
       'audio': audio,
       'reactions': reactions,
       'reply_to': replyTo,
+      'pollId': pollId,
+      'delivered': false,
+      'read': false,
       'timestamp': FieldValue.serverTimestamp(),
     };
 
-    // Get squadId from context (assume passed or injected)
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    final squadId = squadState.selectedSquadId;
-    if (squadId == null) return;
+    // Get squadId from context (use cached value)
+    final squadId = _getCachedSquadId(context);
+    if (squadId == null) {
+      return MessageSendResult.failure('No squad selected');
+    }
 
     // Determine collection path based on whether it's a group chat
     final collectionPath = chatGroupId != null
@@ -148,6 +328,24 @@ class ChatService {
         : 'squads/$squadId/chat';
 
     try {
+      // Check connectivity before attempting to send
+      final isConnected = await _checkConnectivity();
+      if (!isConnected) {
+        // Queue message for offline sending
+        final offlineMessageData = {
+          ...messageData,
+          'squadId': squadId,
+          'chatGroupId': chatGroupId,
+        };
+        _offlineMessageQueue.add(offlineMessageData);
+
+        // Still cache locally for immediate display
+        await _sqliteHelper.insertMessage(messageData,
+            chatGroupId: chatGroupId);
+
+        return MessageSendResult.offline(msgId);
+      }
+
       // Write to Firestore with retry
       await _retryOperation(() async {
         await _firestore.collection(collectionPath).doc(msgId).set(messageData);
@@ -162,50 +360,131 @@ class ChatService {
       // Cache locally for offline viewing
       await _sqliteHelper.insertMessage(messageData, chatGroupId: chatGroupId);
 
-      // Try to sync to backend if available (don't fail if it doesn't work)
-      _syncToBackend(messageData).catchError((e) {
-        debugPrint('Backend sync failed, but message saved locally: $e');
-      });
+      // TEMPORARILY DISABLED: Backend sync
+      // _syncToBackend(messageData).catchError((e) {
+      //   debugPrint('Backend sync failed, but message saved locally: $e');
+      // });
+
+      // Process any queued offline messages
+      _processOfflineQueue();
+
+      return MessageSendResult.success(msgId);
     } catch (e) {
       debugPrint('Failed to send message: $e');
+
+      // Try to cache locally even if Firestore failed
+      try {
+        await _sqliteHelper.insertMessage(messageData,
+            chatGroupId: chatGroupId);
+      } catch (cacheError) {
+        debugPrint('Failed to cache message locally: $cacheError');
+      }
+
+      return MessageSendResult.failure(_getErrorMessage(e));
     }
   }
 
-  // Upload media to Firebase Storage
-  Future<String> uploadMedia(File file, String fileName, bool isVideo) async {
+  // Upload media to Firebase Storage with progress tracking
+  MediaUploadTask uploadMediaWithProgress(
+    File file,
+    String fileName, {
+    Function(double progress)? onProgress,
+    Function(String url)? onComplete,
+    Function(String error)? onError,
+  }) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
+      onError?.call('User must be authenticated to upload media');
       throw Exception('User must be authenticated to upload media');
     }
 
+    final taskId = 'media_${DateTime.now().millisecondsSinceEpoch}';
     Reference ref = _storage.ref().child('chat_media/$fileName');
+
+    final uploadTask = ref.putFile(file);
+    return MediaUploadTask(
+      taskId,
+      uploadTask,
+      onProgress: onProgress,
+      onComplete: (url) {
+        HapticFeedback.lightImpact();
+        onComplete?.call(url);
+      },
+      onError: onError,
+    );
+  }
+
+  // Legacy method for backward compatibility
+  Future<String> uploadMedia(File file, String fileName, bool isVideo) async {
+    final completer = Completer<String>();
+    String? error;
+
+    final task = uploadMediaWithProgress(
+      file,
+      fileName,
+      onComplete: (url) => completer.complete(url),
+      onError: (err) {
+        error = err;
+        completer.completeError(Exception(err));
+      },
+    );
+
     try {
-      await _retryOperation(() async {
-        await ref.putFile(file);
-      });
-      HapticFeedback.lightImpact();
-      return await ref.getDownloadURL();
+      return await completer.future;
     } catch (e) {
-      throw Exception('Failed to upload media: $e');
+      throw Exception(error ?? 'Failed to upload media: $e');
     }
   }
 
-  // Upload audio to Firebase Storage
-  Future<String> uploadAudio(File file, String fileName) async {
+  // Upload audio to Firebase Storage with progress tracking
+  MediaUploadTask uploadAudioWithProgress(
+    File file,
+    String fileName, {
+    Function(double progress)? onProgress,
+    Function(String url)? onComplete,
+    Function(String error)? onError,
+  }) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
+      onError?.call('User must be authenticated to upload audio');
       throw Exception('User must be authenticated to upload audio');
     }
 
+    final taskId = 'audio_${DateTime.now().millisecondsSinceEpoch}';
     Reference ref = _storage.ref().child('chat_audio/$fileName');
+
+    final uploadTask = ref.putFile(file);
+    return MediaUploadTask(
+      taskId,
+      uploadTask,
+      onProgress: onProgress,
+      onComplete: (url) {
+        HapticFeedback.lightImpact();
+        onComplete?.call(url);
+      },
+      onError: onError,
+    );
+  }
+
+  // Legacy method for backward compatibility
+  Future<String> uploadAudio(File file, String fileName) async {
+    final completer = Completer<String>();
+    String? error;
+
+    uploadAudioWithProgress(
+      file,
+      fileName,
+      onComplete: (url) => completer.complete(url),
+      onError: (err) {
+        error = err;
+        completer.completeError(Exception(err));
+      },
+    );
+
     try {
-      await _retryOperation(() async {
-        await ref.putFile(file);
-      });
-      HapticFeedback.lightImpact();
-      return await ref.getDownloadURL();
+      return await completer.future;
     } catch (e) {
-      throw Exception('Failed to upload audio: $e');
+      throw Exception(error ?? 'Failed to upload audio: $e');
     }
   }
 
@@ -232,8 +511,7 @@ class ChatService {
       Provider.of<SquadState>(context, listen: false)
           .updateTypingStatus(user, isTyping);
 
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      final squadId = squadState.selectedSquadId;
+      final squadId = _getCachedSquadId(context);
       if (squadId == null) return;
 
       // Use different typing status paths for squad vs group chats
@@ -254,9 +532,11 @@ class ChatService {
   Future<void> addReaction(BuildContext context, String msgId, String reaction,
       {String? chatGroupId}) async {
     try {
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      final squadId = squadState.selectedSquadId;
+      final squadId = _getCachedSquadId(context);
       if (squadId == null) return;
+
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
 
       // Determine collection path based on whether it's a group chat
       final collectionPath = chatGroupId != null
@@ -267,15 +547,39 @@ class ChatService {
       final snapshot = await docRef.get();
       if (snapshot.exists) {
         final data = snapshot.data() as Map<String, dynamic>;
-        final reactions =
+        final currentReactions =
             List<Map<String, dynamic>>.from(data['reactions'] ?? []);
-        reactions.add({'user': data['sender'], 'reaction': reaction});
-        await docRef.update({'reactions': reactions});
-        await _sqliteHelper.updateMessage(msgId, {'reactions': reactions});
+
+        // Check if user already reacted with this emoji
+        final existingReactionIndex = currentReactions.indexWhere(
+          (r) => r['userId'] == userId && r['reaction'] == reaction,
+        );
+
+        if (existingReactionIndex != -1) {
+          // User already reacted with this emoji, remove it
+          final reactionToRemove = currentReactions[existingReactionIndex];
+          await docRef.update({
+            'reactions': FieldValue.arrayRemove([reactionToRemove])
+          });
+          await _sqliteHelper.updateMessage(msgId,
+              {'reactions': currentReactions..removeAt(existingReactionIndex)});
+        } else {
+          // User hasn't reacted with this emoji, add it
+          final newReaction = {
+            'userId': userId,
+            'reaction': reaction,
+            'timestamp': FieldValue.serverTimestamp(),
+          };
+          await docRef.update({
+            'reactions': FieldValue.arrayUnion([newReaction])
+          });
+          await _sqliteHelper.updateMessage(
+              msgId, {'reactions': currentReactions..add(newReaction)});
+        }
         HapticFeedback.lightImpact();
       }
     } catch (e) {
-      debugPrint('Failed to add reaction: $e');
+      debugPrint('Failed to update reaction: $e');
     }
   }
 
@@ -284,31 +588,15 @@ class ChatService {
     required int offset,
     required int limit,
   }) async {
+    // TEMPORARILY DISABLED: Backend message loading - only use SQLite cache
     try {
-      final response = await http.get(
-        Uri.parse(
-            'https://squadsync-backend-756172684661.us-central1.run.app/messages?offset=$offset&limit=$limit'),
-      );
-      debugPrint('Backend response: ${response.statusCode} ${response.body}');
-      if (response.statusCode == 200) {
-        final messages =
-            List<Map<String, dynamic>>.from(json.decode(response.body));
-        debugPrint(
-            'Loaded ${messages.length} messages from backend: ${messages.map((m) => m['id']).toList()}');
-        for (var msg in messages) {
-          await _sqliteHelper.insertMessage(msg);
-        }
-        return messages;
-      } else {
-        throw Exception(
-            'Failed to load historical messages: ${response.statusCode} ${response.body}');
-      }
-    } catch (e) {
-      debugPrint('Failed to load messages from backend: $e');
       final cachedMessages = await _sqliteHelper.getMessages(offset, limit);
       debugPrint(
-          'Loaded ${cachedMessages.length} messages from SQLite cache: ${cachedMessages.map((m) => m['id']).toList()}');
+          'Loaded ${cachedMessages.length} messages from SQLite cache (backend disabled): ${cachedMessages.map((m) => m['id']).toList()}');
       return cachedMessages;
+    } catch (e) {
+      debugPrint('Failed to load cached messages: $e');
+      return [];
     }
   }
 
@@ -334,7 +622,8 @@ class ChatService {
     }
   }
 
-  // Sync message to backend (non-blocking)
+  // TEMPORARILY DISABLED: Sync message to backend (non-blocking)
+  /*
   Future<void> _syncToBackend(Map<String, dynamic> messageData) async {
     try {
       final messageDataForHttp = {
@@ -355,6 +644,41 @@ class ChatService {
       }
     } catch (e) {
       debugPrint('Backend sync error: $e');
+    }
+  }
+  */
+
+  // Public method to retry sending offline messages
+  Future<void> retryOfflineMessages() async {
+    await _checkConnectivity();
+    await _processOfflineQueue();
+  }
+
+  // Get current offline queue status
+  int get offlineMessageCount => _offlineMessageQueue.length;
+  bool get isOnline => _isOnline;
+
+  // Convert exceptions to user-friendly error messages
+  String _getErrorMessage(dynamic error) {
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+          return 'You don\'t have permission to send messages in this chat';
+        case 'unavailable':
+          return 'Service temporarily unavailable. Message will be sent when connection is restored';
+        case 'cancelled':
+          return 'Message sending was cancelled';
+        case 'deadline-exceeded':
+          return 'Request timed out. Please try again';
+        default:
+          return 'Failed to send message: ${error.message ?? 'Unknown error'}';
+      }
+    } else if (error is TimeoutException) {
+      return 'Request timed out. Please check your connection and try again';
+    } else if (error is SocketException) {
+      return 'Network connection error. Please check your internet connection';
+    } else {
+      return 'An unexpected error occurred. Please try again';
     }
   }
 

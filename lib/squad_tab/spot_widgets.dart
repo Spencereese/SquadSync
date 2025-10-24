@@ -23,8 +23,9 @@ class SpotWidgets {
         }
       },
       onTap: () {
-        if (!hasOccupant && squadState.squadSpots.contains(yourName)) {
-          assignOtherMember(context, squadState, index);
+        if (!hasOccupant) {
+          // Claim the empty spot
+          squadState.claimSpot(index);
         } else if (hasOccupant && spotName == yourName) {
           if (isReady) {
             squadState.lockSpot(index);
@@ -32,6 +33,9 @@ class SpotWidgets {
             // Allow leaving spot by tapping when not ready
             squadState.removeSpot(index);
           }
+        } else if (hasOccupant && squadState.squadSpots.contains(yourName)) {
+          // You're already in a spot, allow assigning others
+          assignOtherMember(context, squadState, index);
         }
       },
       child: Semantics(
@@ -97,7 +101,9 @@ class SpotWidgets {
     final spotName = squadState.squadSpots[index];
     final yourName = squadState.displayName;
     final hasTimer = squadState.spotTimers[index] != null;
-    final isClaimed = squadState.statuses[spotName] == 'Claimed Spot';
+    final isCalling = squadState.statuses[spotName] == 'Calling';
+    final isReady = squadState.statuses[spotName] == 'Ready';
+    final gameName = squadState.currentGame?['name'] ?? '';
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -109,7 +115,7 @@ class SpotWidgets {
             },
             child: ElevatedButton(
               onPressed: () {
-                squadState.claimSpot(index);
+                squadState.callSpotForGame(index, gameName);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.teal,
@@ -123,7 +129,21 @@ class SpotWidgets {
               ),
             ),
           ),
-        if (hasOccupant && hasTimer && isClaimed && spotName == yourName)
+        if (hasOccupant && hasTimer && isCalling && spotName == yourName)
+          ElevatedButton(
+            onPressed: () => squadState.lockCalledSpot(gameName, index),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              elevation: 6,
+            ),
+            child: const Tooltip(
+              message: 'Lock in your spot',
+              child: Text('Lock'),
+            ),
+          ),
+        if (hasOccupant && hasTimer && isReady && spotName == yourName)
           ElevatedButton(
             onPressed: () => squadState.lockSpot(index),
             style: ElevatedButton.styleFrom(
@@ -137,20 +157,7 @@ class SpotWidgets {
               child: Text('Walking'),
             ),
           ),
-        if (hasOccupant && !hasTimer && spotName == yourName)
-          ElevatedButton(
-            onPressed: () => squadState.removeSpot(index),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              elevation: 6,
-            ),
-            child: const Tooltip(
-              message: 'Leave this spot',
-              child: Text('Leave'),
-            ),
-          ),
+        // Removed "Leave" button - players lose spots automatically after 5 minutes if not locked
       ],
     );
   }

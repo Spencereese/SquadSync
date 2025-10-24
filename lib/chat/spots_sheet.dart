@@ -106,45 +106,6 @@ class _SpotsSheetState extends State<SpotsSheet> {
             ),
           ),
 
-          // Timer countdown
-          Consumer<SquadState>(
-            builder: (context, squadState, child) {
-              final timers = squadState.gameSpotTimers[widget.gameName] ?? [];
-              final activeTimer =
-                  timers.where((timer) => timer != null).firstOrNull;
-
-              if (activeTimer == null) {
-                return const SizedBox.shrink();
-              }
-
-              final endTime = DateTime.fromMillisecondsSinceEpoch(
-                activeTimer['startTime'] + (activeTimer['duration'] * 1000),
-              );
-              final remaining = endTime.difference(DateTime.now());
-
-              if (remaining.isNegative) {
-                // Auto-drop Peacock when timer expires
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                  }
-                });
-                return const SizedBox.shrink();
-              }
-
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Time left: ${remaining.inMinutes}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                    color: Colors.cyanAccent,
-                    fontSize: 14,
-                  ),
-                ),
-              );
-            },
-          ),
-
           // Spots list
           Expanded(
             child: Consumer<SquadState>(
@@ -157,9 +118,16 @@ class _SpotsSheetState extends State<SpotsSheet> {
                   itemBuilder: (context, index) {
                     final isOccupied =
                         index < spots.length && spots[index] != null;
-                    final occupantName = isOccupied
-                        ? squadState.getDisplayNameForUid(spots[index]!)
+                    final spotValue = isOccupied ? spots[index] : null;
+                    final isCalling = spotValue?.endsWith('_calling') ?? false;
+                    final occupantUid = isCalling
+                        ? spotValue!.replaceAll('_calling', '')
+                        : spotValue;
+                    final occupantName = occupantUid != null
+                        ? squadState.getDisplayNameForUid(occupantUid)
                         : null;
+                    final isCurrentUser =
+                        occupantUid == FirebaseAuth.instance.currentUser?.uid;
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
@@ -169,7 +137,7 @@ class _SpotsSheetState extends State<SpotsSheet> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: isOccupied
-                              ? Colors.cyanAccent
+                              ? (isCalling ? Colors.orange : Colors.cyanAccent)
                               : Colors.grey[700]!,
                           width: 1,
                         ),
@@ -184,14 +152,44 @@ class _SpotsSheetState extends State<SpotsSheet> {
                             ),
                           ),
                           const Spacer(),
-                          if (isOccupied)
-                            Text(
-                              occupantName ?? 'Unknown',
-                              style: TextStyle(
-                                color: Colors.cyanAccent,
-                                fontWeight: FontWeight.w500,
+                          if (isOccupied) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isCalling
+                                    ? Colors.orange.withOpacity(0.2)
+                                    : Colors.cyanAccent.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                isCalling
+                                    ? 'Calling'
+                                    : (occupantName ?? 'Unknown'),
+                                style: TextStyle(
+                                  color: isCalling
+                                      ? Colors.orange
+                                      : Colors.cyanAccent,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
+                            if (isCalling && isCurrentUser) ...[
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: () => _lockSpot(index),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 6),
+                                  textStyle: const TextStyle(fontSize: 12),
+                                ),
+                                child: const Text('Lock'),
+                              ),
+                            ],
+                          ],
                         ],
                       ),
                     );
@@ -261,8 +259,8 @@ class _SpotsSheetState extends State<SpotsSheet> {
         return;
       }
 
-      // Claim the spot
-      squadState.claimSpotForGame(availableIndex, widget.gameName,
+      // Call the spot (set calling status)
+      squadState.callSpotForGame(availableIndex, widget.gameName,
           maxSpots: widget.maxSpots);
 
       // Send message to chat thread
@@ -278,7 +276,6 @@ class _SpotsSheetState extends State<SpotsSheet> {
       );
 
       // Check if user has rated this game before
-      // ignore: use_build_context_synchronously
       final userManager = Provider.of<UserManager>(context, listen: false);
       if (!(userManager.hasRatedGame[widget.gameName] ?? false)) {
         // Show rating dialog after a brief delay to let the spot claim settle
@@ -307,6 +304,39 @@ class _SpotsSheetState extends State<SpotsSheet> {
     } finally {
       if (mounted) {
         setState(() => _isClaiming = false);
+      }
+    }
+  }
+
+  Future<void> _lockSpot(int index) async {
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      squadState.lockCalledSpot(widget.gameName, index);
+
+      // Send message to chat thread
+      final chatService = ChatService();
+      final displayName = squadState.getDisplayNameForUid(user.uid);
+
+      await chatService.sendMessage(
+        context,
+        senderUid: user.uid,
+        text: '$displayName locked spot ${index + 1} in ${widget.gameName}!',
+        chatGroupId: widget.chatGroupId,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Spot locked!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error locking spot: $e')),
+        );
       }
     }
   }

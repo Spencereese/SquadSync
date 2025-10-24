@@ -7,6 +7,9 @@ class ChatState extends ChangeNotifier {
   bool _isUploading = false;
   final Map<String, bool> _sendingStatus = {};
   String _quickReactionEmoji = '👍';
+  Map<String, dynamic>? _replyToMessage;
+  bool _isDMView = false; // New: DM view filter state
+  int _dmUnreadCount = 0; // New: DM unread count
 
   String? get typingUser => _typingUser;
   bool get isRecording => _isRecording;
@@ -14,6 +17,9 @@ class ChatState extends ChangeNotifier {
   Map<String, bool> get sendingStatus => Map.unmodifiable(_sendingStatus);
   bool get hasPendingMessages => _sendingStatus.isNotEmpty;
   String get quickReactionEmoji => _quickReactionEmoji;
+  Map<String, dynamic>? get replyToMessage => _replyToMessage;
+  bool get isDMView => _isDMView; // New getter
+  int get dmUnreadCount => _dmUnreadCount; // New getter
 
   void setTypingUser(String? user) {
     if (_typingUser != user) {
@@ -88,7 +94,36 @@ class ChatState extends ChangeNotifier {
     _isRecording = false;
     _isUploading = false;
     _sendingStatus.clear();
+    _replyToMessage = null;
+    _isDMView = false; // Reset DM view
+    _dmUnreadCount = 0; // Reset DM unread count
     notifyListeners();
+  }
+
+  void setReplyToMessage(Map<String, dynamic>? message) {
+    _replyToMessage = message;
+    notifyListeners();
+  }
+
+  void clearReplyToMessage() {
+    _replyToMessage = null;
+    notifyListeners();
+  }
+
+  void setDMView(bool value) {
+    // New method
+    if (_isDMView != value) {
+      _isDMView = value;
+      notifyListeners();
+    }
+  }
+
+  void setDMUnreadCount(int count) {
+    // New method
+    if (_dmUnreadCount != count) {
+      _dmUnreadCount = count;
+      notifyListeners();
+    }
   }
 
   void _validateTempId(String tempId) {
@@ -118,9 +153,19 @@ class ChatState extends ChangeNotifier {
     }
   }
 
-  void setDMView(bool isDMView) {
-    // This method can be used to track DM view state
-    // Implementation can be added as needed
+  void toggleDMView() {
+    _isDMView = !_isDMView;
+    notifyListeners();
+  }
+
+  void incrementDMUnreadCount() {
+    _dmUnreadCount++;
+    notifyListeners();
+  }
+
+  void decrementDMUnreadCount() {
+    _dmUnreadCount--;
+    notifyListeners();
   }
 
   @override

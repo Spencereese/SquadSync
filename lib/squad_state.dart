@@ -1394,8 +1394,7 @@ class SquadState with ChangeNotifier {
     final userUid = getUidForDisplayName(userName ?? '');
     if (userName != null && userUid != null) {
       dataManager.claimSpot(index, userName, userUid);
-      dataManager.globalStatuses[userName] =
-          'Calling'; // Changed from 'Ready'
+      dataManager.globalStatuses[userName] = 'Calling'; // Changed from 'Ready'
       if (dataManager.peacockTimers.containsKey(userName)) {
         dataManager.peacockTimers.remove(userName);
         persistenceManager.markFieldChanged('peacockTimers');

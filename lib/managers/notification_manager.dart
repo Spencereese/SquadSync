@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 /// Manages app notifications and alerts
 class NotificationManager with ChangeNotifier {
@@ -137,5 +139,94 @@ class NotificationManager with ChangeNotifier {
       title: 'Achievement Unlocked!',
       body: '$player earned: $achievement',
     );
+  }
+
+  // Stream methods for smart feed
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      getFilteredNotificationsStream({Set<String>? mutedGames}) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+
+    final query = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('notifications')
+        .orderBy('timestamp', descending: true)
+        .limit(100); // Get more to allow for filtering
+
+    return query.snapshots().map((snapshot) {
+      final docs = snapshot.docs;
+      if (mutedGames == null || mutedGames.isEmpty) {
+        return docs;
+      }
+
+      // Filter out notifications for muted games
+      return docs.where((doc) {
+        final data = doc.data();
+        final game = data['game'] as String?;
+        return game == null || !mutedGames.contains(game);
+      }).toList();
+    });
+  }
+
+  Future<void> createNotification({
+    required String type,
+    required String title,
+    required String body,
+    String? game,
+    Map<String, dynamic>? data,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .add({
+        'type': type,
+        'title': title,
+        'body': body,
+        'game': game,
+        'read': false,
+        'timestamp': FieldValue.serverTimestamp(),
+        'data': data ?? {},
+      });
+    } catch (e) {
+      debugPrint('Error creating notification: $e');
+    }
+  }
+
+  Future<void> markAsRead(String notificationId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'read': true});
+    } catch (e) {
+      debugPrint('Error marking notification as read: $e');
+    }
+  }
+
+  Future<void> archiveNotification(String notificationId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .doc(notificationId)
+          .delete();
+    } catch (e) {
+      debugPrint('Error archiving notification: $e');
+    }
   }
 }

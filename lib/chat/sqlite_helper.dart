@@ -17,7 +17,7 @@ class SQLiteHelper {
     String path = join(await getDatabasesPath(), 'squadsync.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3, // Increment version for schema changes
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE messages (
@@ -38,12 +38,28 @@ class SQLiteHelper {
             chat_group_id TEXT
           )
         ''');
+        // Create indexes for better query performance
+        await db.execute(
+            'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
+        await db.execute(
+            'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
+        await db.execute(
+            'CREATE INDEX idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           // Add chat_group_id column to existing databases
           await db
               .execute('ALTER TABLE messages ADD COLUMN chat_group_id TEXT');
+        }
+        if (oldVersion < 3) {
+          // Add indexes for better performance
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_timestamp_ms ON messages(timestamp_ms DESC)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_chat_group_id ON messages(chat_group_id)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
         }
       },
     );
@@ -131,7 +147,7 @@ class SQLiteHelper {
         'messages',
         where: whereClause,
         whereArgs: whereArgs,
-        orderBy: 'timestamp_ms DESC',
+        orderBy: 'timestamp_ms DESC', // Use indexed column for ordering
         limit: limit,
         offset: offset,
       );

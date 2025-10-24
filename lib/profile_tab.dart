@@ -653,7 +653,6 @@ class _ProfileTabState extends State<ProfileTab>
       // Navigate to Chat tab with DM filter
       final chatState = Provider.of<ChatState>(context, listen: false);
       chatState.setDMView(true);
-      // ignore: use_build_context_synchronously
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -673,7 +672,6 @@ class _ProfileTabState extends State<ProfileTab>
   void _removeFriend(BuildContext context, String friendId) async {
     final userManager = Provider.of<UserManager>(context, listen: false);
     await userManager.removeFriend(friendId);
-    // ignore: use_build_context_synchronously
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend removed')),
     );
@@ -683,7 +681,6 @@ class _ProfileTabState extends State<ProfileTab>
     final userManager = Provider.of<UserManager>(context, listen: false);
     await userManager.acceptFriendRequest(requesterId);
     HapticFeedback.lightImpact();
-    // ignore: use_build_context_synchronously
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend request accepted')),
     );
@@ -692,7 +689,6 @@ class _ProfileTabState extends State<ProfileTab>
   void _declineFriendRequest(BuildContext context, String requesterId) async {
     final userManager = Provider.of<UserManager>(context, listen: false);
     await userManager.declineFriendRequest(requesterId);
-    // ignore: use_build_context_synchronously
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend request declined')),
     );

@@ -11,15 +11,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:convert'; // Added for utf8
 import 'dart:async'; // Added for StreamSubscription
-import '../../app_theme.dart';
+import 'package:cod_squad_app/app_theme.dart';
 import '../squad_state.dart';
 import 'chat_input_bar.dart';
 import 'chat_service.dart';
 import 'chat_settings_menu.dart';
 import 'chat_state.dart';
 import 'sqlite_helper.dart';
+import 'squad_sheet.dart';
 import 'message_bubble.dart';
 import '../no_squad_screen.dart';
+import '../screens/squad_tab_screen.dart';
+import 'peacock_modal.dart';
+import 'poll_creation_dialog.dart';
+import 'available_squads_widget.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? initialMessage;
@@ -54,6 +59,12 @@ class ChatScreenState extends State<ChatScreen>
   final List<Map<String, dynamic>> _historicalMessages = []; // Made final
   StreamSubscription<String?>? _typingSubscription;
 
+  // Pagination state
+  bool _isLoadingMore = false;
+  bool _hasMoreMessages = true;
+  int _currentOffset = 0;
+  static const int _messagesPerPage = 50;
+
   // Cache for user display names to avoid FutureBuilder in ListView
   final Map<String, String> _userDisplayNameCache = {};
   bool _isLoadingUserNames = false;
@@ -62,6 +73,39 @@ class ChatScreenState extends State<ChatScreen>
   List<dynamic> _processedMessages = [];
   Map<String, List<String>> _lastReadByCache = {};
   bool _needsMessageProcessing = true;
+
+  Future<void> _initializeChat() async {
+    // Update online status
+    _updateOnlineStatus(true);
+
+    // Load chat details
+    await _loadChatDetails();
+
+    // Load notification settings
+    await _loadNotificationSettings();
+
+    // Load quick reaction emoji
+    await Provider.of<ChatState>(context, listen: false)
+        .loadQuickReactionEmoji();
+
+    // Load user display names for better performance
+    await _loadUserDisplayNames();
+
+    // Load initial historical messages
+    await _loadMoreMessages();
+
+    // Check for handoff draft
+    await _checkHandoffDraft();
+
+    // Handle initial message if provided
+    if (widget.initialMessage != null && mounted) {
+      _messageController.text = widget.initialMessage!;
+      _sendMessage();
+    }
+
+    // Scroll to bottom after everything is loaded
+    _scrollToBottom();
+  }
 
   @override
   void initState() {
@@ -79,21 +123,10 @@ class ChatScreenState extends State<ChatScreen>
 
     // Defer heavy operations to after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateOnlineStatus(true);
-      _loadChatDetails();
-      _scrollToBottom();
-      _checkHandoffDraft();
-      Provider.of<ChatState>(context, listen: false).loadQuickReactionEmoji();
-      if (widget.initialMessage != null && mounted) {
-        _messageController.text = widget.initialMessage!;
-        _sendMessage();
-      }
-      _loadNotificationSettings();
-      // Clear cache and reset offset
-      _sqliteHelper.clearMessages(chatGroupId: widget.chatGroupId);
-      _historicalMessages.clear();
-      // Load user display names for better performance
-      _loadUserDisplayNames();
+      if (!mounted) return;
+
+      // Batch all initialization operations
+      _initializeChat();
     });
 
     // Add listeners immediately for responsiveness
@@ -120,6 +153,41 @@ class ChatScreenState extends State<ChatScreen>
     if (shouldShow != _showJumpToBottom) {
       // Use Future.microtask to debounce setState calls
       Future.microtask(() => setState(() => _showJumpToBottom = shouldShow));
+    }
+
+    // Load more messages when scrolling near the top
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoadingMore &&
+        _hasMoreMessages) {
+      _loadMoreMessages();
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (_isLoadingMore || !_hasMoreMessages) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final moreMessages = await _chatService.loadMoreMessages(
+        offset: _currentOffset,
+        limit: _messagesPerPage,
+      );
+
+      if (moreMessages.isEmpty || moreMessages.length < _messagesPerPage) {
+        _hasMoreMessages = false;
+      }
+
+      setState(() {
+        _historicalMessages.addAll(moreMessages);
+        _currentOffset += moreMessages.length;
+        _isLoadingMore = false;
+        _needsMessageProcessing = true; // Trigger reprocessing
+      });
+    } catch (e) {
+      debugPrint('Failed to load more messages: $e');
+      setState(() => _isLoadingMore = false);
     }
   }
 
@@ -251,24 +319,56 @@ class ChatScreenState extends State<ChatScreen>
   Future<void> _sendMessage() async {
     if (_messageController.text.isEmpty) return;
     if (!mounted) return;
+
+    // Handle commands
+    if (_messageController.text.startsWith('/')) {
+      await _handleCommand(_messageController.text);
+      _messageController.clear();
+      return;
+    }
+
     final chatState = Provider.of<ChatState>(context, listen: false);
     final displayName = _squadState.displayName ?? 'Anonymous';
     String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     chatState.updateSendingStatus(tempId, true);
 
+    // Get reply information
+    final replyTo = chatState.replyToMessage?['id'] as String?;
+
     try {
       final user = _auth.currentUser;
       if (user == null) return;
-      await _chatService.sendMessage(context,
+
+      final result = await _chatService.sendMessage(context,
           senderUid: user.uid,
           text: _messageController.text,
+          replyTo: replyTo,
           chatGroupId: widget.chatGroupId);
-      chatState.removeSendingStatus(tempId);
-      _messageController.clear();
-      await _chatService.updateTypingStatus(context, displayName, false,
-          chatGroupId: widget.chatGroupId);
-      _scrollToBottom();
-      await _checkFirstMessage();
+
+      if (result.success) {
+        if (result.isOffline && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Message queued for sending when online')),
+          );
+        }
+        chatState.removeSendingStatus(tempId);
+        _messageController.clear();
+        // Clear reply after sending
+        chatState.clearReplyToMessage();
+        await _chatService.updateTypingStatus(context, displayName, false,
+            chatGroupId: widget.chatGroupId);
+        _scrollToBottom();
+        await _checkFirstMessage();
+      } else {
+        // Handle failure
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result.errorMessage ?? 'Send failed')),
+          );
+          chatState.updateSendingStatus(tempId, false);
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -276,6 +376,13 @@ class ChatScreenState extends State<ChatScreen>
         chatState.updateSendingStatus(tempId, false);
       }
     }
+  }
+
+  Future<void> _handleCommand(String command) async {
+    if (command.toLowerCase().startsWith('/peacock')) {
+      _showPeacockModal(context);
+    }
+    // Add other commands here if needed
   }
 
   Future<void> _sendMedia() async {
@@ -559,11 +666,6 @@ class ChatScreenState extends State<ChatScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            leading: const Icon(Icons.file_present),
-            title: const Text('Share a file'),
-            onTap: () => Navigator.pop(context),
-          ),
-          ListTile(
             leading: const Icon(Icons.location_on),
             title: const Text('Location'),
             onTap: () => Navigator.pop(context),
@@ -571,18 +673,148 @@ class ChatScreenState extends State<ChatScreen>
           ListTile(
             leading: const Icon(Icons.poll),
             title: const Text('Poll'),
-            onTap: () => Navigator.pop(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo),
-            title: const Text('Photo/Video'),
             onTap: () {
               Navigator.pop(context);
-              _sendMedia();
+              PollCreationDialog.show(context, chatGroupId: widget.chatGroupId);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.flash_on),
+            title: const Text('Squad Up'),
+            onTap: () {
+              Navigator.pop(context);
+              _showPeacockModal(context);
             },
           ),
         ],
       ),
+    );
+  }
+
+  void _showMessageActionMenu(
+      BuildContext context, dynamic message, bool isMe) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.reply, color: Colors.blue),
+            title: const Text('Reply'),
+            onTap: () {
+              Navigator.pop(context);
+              _setReplyToMessage(message);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.forward, color: Colors.green),
+            title: const Text('Forward'),
+            onTap: () {
+              Navigator.pop(context);
+              final text = _getMessageText(message);
+              _forwardMessage(text);
+            },
+          ),
+          if (isMe)
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Delete'),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteMessage(message);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _setReplyToMessage(dynamic message) {
+    // Store the message to reply to in chat state
+    final chatState = Provider.of<ChatState>(context, listen: false);
+    final messageData = message is DocumentSnapshot
+        ? message.data() as Map<String, dynamic>
+        : message as Map<String, dynamic>;
+    chatState.setReplyToMessage(messageData);
+    HapticFeedback.lightImpact();
+  }
+
+  String _getMessageText(dynamic message) {
+    final data = message is DocumentSnapshot
+        ? message.data() as Map<String, dynamic>
+        : message as Map<String, dynamic>;
+    return data['text'] ?? data['content'] ?? '';
+  }
+
+  void _deleteMessage(dynamic message) async {
+    if (!mounted) return;
+
+    try {
+      // Extract message ID
+      final messageId =
+          message is DocumentSnapshot ? message.id : message['id']?.toString();
+      if (messageId == null || messageId.isEmpty) {
+        debugPrint(
+            'Delete failed: Invalid message ID - message: $message, type: ${message.runtimeType}');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Failed to delete message: Invalid message ID')),
+          );
+        }
+        return;
+      }
+
+      // Determine collection path based on chat type
+      final squadId = _squadState.selectedSquadId;
+      if (squadId == null) {
+        debugPrint('Delete failed: No squad ID available');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Failed to delete message: No squad context')),
+          );
+        }
+        return;
+      }
+
+      final collectionPath = widget.chatGroupId != null
+          ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
+          : 'squads/$squadId/chat';
+
+      debugPrint('Deleting message: ID=$messageId, collection=$collectionPath');
+
+      await _firestore.collection(collectionPath).doc(messageId).delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Message deleted')),
+        );
+      }
+
+      HapticFeedback.lightImpact();
+    } catch (e) {
+      debugPrint('Error deleting message: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete message: $e')),
+        );
+      }
+    }
+  }
+
+  void _showPeacockModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      builder: (BuildContext context) {
+        return PeacockModal();
+      },
     );
   }
 
@@ -870,8 +1102,19 @@ class ChatScreenState extends State<ChatScreen>
                                         // ignore: use_build_context_synchronously
                                         if (!mounted) return;
                                         try {
+                                          // Determine collection path based on chat type
+                                          final squadId =
+                                              _squadState.selectedSquadId;
+                                          if (squadId == null)
+                                            return; // Should not happen in squad context
+                                          final collectionPath = widget
+                                                      .chatGroupId !=
+                                                  null
+                                              ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
+                                              : 'squads/$squadId/chat';
+
                                           final snapshot = await _firestore
-                                              .collection('chat')
+                                              .collection(collectionPath)
                                               .get();
                                           for (var doc in snapshot.docs) {
                                             await doc.reference.delete();
@@ -971,14 +1214,47 @@ class ChatScreenState extends State<ChatScreen>
                                               status == 'Walking' ||
                                               status == 'Ready')
                                           .length;
-                                      return Semantics(
-                                        label: '$onlineCount members online',
-                                        child: Text(
-                                          'Online: $onlineCount',
-                                          style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors
-                                                  .white), // Replaced AppTheme.textColor
+                                      return GestureDetector(
+                                        onTap: () {
+                                          HapticFeedback.lightImpact();
+                                          Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      const SquadTabScreen()));
+                                        },
+                                        child: Semantics(
+                                          label:
+                                              '$onlineCount members online, tap to view squad',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Text(
+                                                  'Online: $onlineCount',
+                                                  style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.w500),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Icon(
+                                                  Icons.keyboard_arrow_down,
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.7),
+                                                  size: 16,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
                                       );
                                     },
@@ -988,6 +1264,67 @@ class ChatScreenState extends State<ChatScreen>
                             ),
                           ),
                         ).animate().fadeIn(),
+                        // Active Squad Header Card
+                        StreamBuilder<QuerySnapshot>(
+                          stream: _firestore
+                              .collection('peacocks')
+                              .where('hostUid',
+                                  isEqualTo: _auth.currentUser?.uid)
+                              .where('timer', isGreaterThan: Timestamp.now())
+                              .orderBy('timer', descending: false)
+                              .limit(1)
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+                            final peacock = snapshot.data!.docs.first.data()
+                                as Map<String, dynamic>;
+                            final gameName =
+                                peacock['game']?['name'] ?? 'Unknown Game';
+                            final maxSpots = peacock['spots'] ?? 4;
+                            final claimed =
+                                (peacock['claimed'] as List<dynamic>?)
+                                        ?.length ??
+                                    0;
+                            return GestureDetector(
+                              onTap: () => SquadSheet.show(context),
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color:
+                                      Colors.cyanAccent.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: Colors.cyanAccent
+                                          .withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.flash_on,
+                                        color: Colors.cyanAccent),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Your Active Squad: $gameName - $claimed/$maxSpots spots',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w500),
+                                      ),
+                                    ),
+                                    const Icon(Icons.arrow_forward_ios,
+                                        color: Colors.white70, size: 16),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        // Available Squads Widget
+                        const AvailableSquadsWidget(),
                         Expanded(
                           child: StreamBuilder<QuerySnapshot>(
                             stream: _chatService.getChatMessages(context,
@@ -1027,9 +1364,31 @@ class ChatScreenState extends State<ChatScreen>
                                 reverse: true,
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8.0, vertical: 4.0),
-                                itemCount: _processedMessages.length,
+                                itemCount: _processedMessages.length +
+                                    (_isLoadingMore ? 1 : 0),
                                 itemBuilder: (context, index) {
-                                  var message = _processedMessages[index];
+                                  // Show loading indicator at the top (index 0 since reverse: true)
+                                  if (index == 0 && _isLoadingMore) {
+                                    return const Padding(
+                                      padding: EdgeInsets.all(16.0),
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.cyanAccent,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  // Adjust index for loading indicator
+                                  final messageIndex =
+                                      _isLoadingMore ? index - 1 : index;
+                                  var message =
+                                      _processedMessages[messageIndex];
                                   final data = message is DocumentSnapshot
                                       ? message.data() as Map<String, dynamic>?
                                       : message as Map<String, dynamic>;
@@ -1123,8 +1482,8 @@ class ChatScreenState extends State<ChatScreen>
                                   cleanedData['sender'] = displayName;
 
                                   return GestureDetector(
-                                    onLongPress: () =>
-                                        _showBlockDialog(context, displayName),
+                                    onLongPress: () => _showMessageActionMenu(
+                                        context, message, isMe),
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                           vertical: 4.0),
@@ -1151,6 +1510,9 @@ class ChatScreenState extends State<ChatScreen>
                             },
                           ),
                         ),
+                        // Reply preview
+                        if (chatState.replyToMessage != null)
+                          _buildReplyPreview(context, chatState),
                         Semantics(
                           label: 'Chat input bar',
                           child: Padding(
@@ -1218,6 +1580,67 @@ class ChatScreenState extends State<ChatScreen>
             );
           },
         ),
+        // Removed floating action button for peacock - now only in squad lobbies
+      ),
+    );
+  }
+
+  Widget _buildReplyPreview(BuildContext context, ChatState chatState) {
+    final replyMessage = chatState.replyToMessage!;
+    final sender = replyMessage['sender'] ?? 'Unknown';
+    final text = replyMessage['text'] ?? replyMessage['content'] ?? '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      padding: const EdgeInsets.all(8.0),
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.blue.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.reply, size: 16, color: Colors.blue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Replying to $sender',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue[200],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  text.length > 100 ? '${text.substring(0, 100)}...' : text,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, size: 16, color: Colors.white70),
+            onPressed: () {
+              chatState.clearReplyToMessage();
+              HapticFeedback.lightImpact();
+            },
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
       ),
     );
   }
@@ -1242,11 +1665,11 @@ class ChatScreenState extends State<ChatScreen>
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               if (isBlocked) {
-                _squadState.unblockUser(sender);
+                await _squadState.unblockUser(sender);
               } else {
-                _squadState.blockUser(sender);
+                await _squadState.blockUser(sender);
               }
               Navigator.of(dialogContext).pop();
             },

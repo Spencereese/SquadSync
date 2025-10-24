@@ -10,9 +10,13 @@ import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:provider/provider.dart';
 import 'dart:ui';
-import '../../app_theme.dart';
-import '../../squad_state.dart';
+import 'package:cod_squad_app/app_theme.dart';
+import '../squad_state.dart';
+import 'chat_state.dart';
 import 'link_preview.dart';
+import 'poll_message_bubble.dart';
+import '../models/poll.dart';
+import '../services/poll_service.dart';
 // For debugPrint
 
 const String storageBucketPrefix =
@@ -56,7 +60,6 @@ class MessageBubble extends StatefulWidget {
 class _MessageBubbleState extends State<MessageBubble> {
   late Map<String, dynamic> _normalizedData;
   late List<String> _urls;
-  late String _messageId;
 
   @override
   void initState() {
@@ -75,7 +78,6 @@ class _MessageBubbleState extends State<MessageBubble> {
   void _normalizeAndCacheData() {
     _normalizedData = _normalizeMessage(widget.message);
     _urls = LinkDetector.extractUrls(_normalizedData['text'] ?? '');
-    _messageId = _getMessageId();
   }
 
   @override
@@ -118,7 +120,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                               left: widget.isMe ? -10 : null,
                               right: widget.isMe ? null : -10,
                               child: ReactionsWidget(
-                                docId: _messageId,
+                                reactions: _normalizedData['reactions'] ?? [],
                                 isMe: widget.isMe,
                               ),
                             ),
@@ -167,6 +169,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                 : null),
         'delivered': data['delivered'] ?? false,
         'read': data['read'] ?? false,
+        'reactions': data['reactions'] ?? [],
+        'replyTo': data['replyTo'] ?? data['reply_to'],
+        'pollId': data['pollId'],
       };
     } else if (message is Map<String, dynamic>) {
       final id = message['id']?.toString() ?? '';
@@ -191,6 +196,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                 : null),
         'delivered': message['delivered'] ?? false,
         'read': message['read'] ?? false,
+        'reactions': message['reactions'] ?? [],
+        'replyTo': message['replyTo'] ?? message['reply_to'],
+        'pollId': message['pollId'],
       };
     }
     return {
@@ -199,40 +207,6 @@ class _MessageBubbleState extends State<MessageBubble> {
       'content': '[Invalid Message]',
       'text': '[Invalid Message]'
     };
-  }
-
-  String _getMessageId() {
-    if (widget.message is DocumentSnapshot) {
-      return widget.message.id;
-    } else if (widget.message is Map<String, dynamic>) {
-      return widget.message['id']?.toString() ?? '';
-    }
-    return '';
-  }
-
-  Widget _buildAvatar(
-      BuildContext context, SquadState squadState, String sender) {
-    String? profileImage = squadState.memberProfileImages[sender];
-    return Semantics(
-      label: 'Avatar of $sender',
-      child: SizedBox(
-        width: 32,
-        height: 32,
-        child: widget.showAvatar
-            ? CircleAvatar(
-                radius: 16,
-                backgroundImage:
-                    profileImage != null ? NetworkImage(profileImage) : null,
-                child: profileImage == null
-                    ? Text(
-                        sender.isNotEmpty ? sender[0].toUpperCase() : '?',
-                        style: const TextStyle(color: AppTheme.accentColor),
-                      )
-                    : null,
-              )
-            : const SizedBox.shrink(),
-      ),
-    );
   }
 
   Widget _buildSender(Map<String, dynamic> data) {
@@ -286,49 +260,57 @@ class _MessageBubbleState extends State<MessageBubble> {
         data['videoUrl'] != null && (data['videoUrl'] as String).isNotEmpty;
     final hasAudio =
         data['audioUrl'] != null && (data['audioUrl'] as String).isNotEmpty;
+    final hasPoll =
+        data['pollId'] != null && (data['pollId'] as String).isNotEmpty;
 
-    if (!hasContent && !hasText && !hasPhotos && !hasVideo && !hasAudio) {
+    if (!hasContent &&
+        !hasText &&
+        !hasPhotos &&
+        !hasVideo &&
+        !hasAudio &&
+        !hasPoll) {
       return const Text(
         '[Empty Message]',
         style: TextStyle(fontSize: 14, color: Colors.white70),
       );
     }
 
-    // If message only contains images (no text), don't wrap in bubble
-    if (hasPhotos && !hasContent && !hasText && !hasVideo && !hasAudio) {
-      return Column(
-        crossAxisAlignment:
-            widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        children: [
-          _buildImage(context, data['photos'][0]['uri']),
-          _buildMessageStatus(data),
-        ],
-      );
+    // If this is a poll message, show the poll
+    if (hasPoll) {
+      return _buildPollContent(data);
     }
 
-    // For messages with text and/or other content, use the bubble
+    // Build content column without inner bubble
     final contentWidget = Column(
       crossAxisAlignment:
           widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
+        // Add reply indicator if this is a reply
+        if (data['replyTo'] != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4.0),
+            child: _buildReplyIndicator(data['replyTo']),
+          ),
         if (hasContent || hasText)
-          Container(
-            margin: const EdgeInsets.only(bottom: 4.0),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-            decoration: BoxDecoration(
-              color: widget.isMe
-                  ? Colors.white.withValues(
-                      alpha: 0.1) // Subtle white overlay for sent messages
-                  : Colors.white
-                      .withValues(alpha: 0.05), // Very subtle for received
-              borderRadius: BorderRadius.circular(12.0),
-            ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4.0),
             child: _buildText(data['text'] ?? data['content'] ?? ''),
           ),
-        if (hasPhotos) _buildImage(context, data['photos'][0]['uri']),
-        if (hasVideo) VideoMessage(url: fixMediaUrl(data['videoUrl'])),
-        if (hasAudio) AudioMessage(url: fixMediaUrl(data['audioUrl'])),
+        if (hasPhotos)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4.0),
+            child: _buildImage(context, data['photos'][0]['uri']),
+          ),
+        if (hasVideo)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4.0),
+            child: VideoMessage(url: fixMediaUrl(data['videoUrl'])),
+          ),
+        if (hasAudio)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4.0),
+            child: AudioMessage(url: fixMediaUrl(data['audioUrl'])),
+          ),
         _buildMessageStatus(data),
       ],
     );
@@ -343,6 +325,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(vertical: 2.0),
         padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+        constraints: const BoxConstraints(maxWidth: 280), // Limit max width
         decoration: BoxDecoration(
           color: widget.isMe
               ? const Color(
@@ -374,6 +357,37 @@ class _MessageBubbleState extends State<MessageBubble> {
     ).animate().fadeIn(duration: const Duration(milliseconds: 300));
   }
 
+  Widget _buildPollContent(Map<String, dynamic> data) {
+    final pollId = data['pollId'] as String;
+    return FutureBuilder<Poll?>(
+      future: PollService().getPoll(pollId, chatGroupId: widget.chatGroupId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 100,
+            child: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return const Text(
+            '[Poll not found]',
+            style: TextStyle(fontSize: 14, color: Colors.white70),
+          );
+        }
+
+        final poll = snapshot.data!;
+        return PollMessageBubble(
+          poll: poll,
+          chatGroupId: widget.chatGroupId,
+          isFromCurrentUser: widget.isMe,
+        );
+      },
+    );
+  }
+
   Widget _buildText(String text) {
     return Semantics(
       label: 'Message text: $text',
@@ -396,6 +410,37 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
           // Add link previews for the first URL found
           if (_urls.isNotEmpty) _buildLinkPreview(_urls.first),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyIndicator(String replyToId) {
+    // For now, just show a simple reply indicator
+    // In a full implementation, you'd fetch the original message
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.blue.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.reply, size: 14, color: Colors.blue),
+          const SizedBox(width: 4),
+          Text(
+            'Replying to message',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.blue[200],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
         ],
       ),
     );
@@ -432,26 +477,42 @@ class _MessageBubbleState extends State<MessageBubble> {
       onTap: () => _showFullScreenImage(context, fixedUrl),
       child: Container(
         constraints: const BoxConstraints(
-          maxWidth: 250,
-          maxHeight: 250,
+          maxWidth: 200, // Smaller within bubble
+          maxHeight: 200,
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius:
+              BorderRadius.circular(8), // Smaller radius within bubble
           child: CachedNetworkImage(
             imageUrl: fixedUrl,
             fit: BoxFit.cover,
-            placeholder: (context, url) =>
-                const Center(child: CircularProgressIndicator()),
+            placeholder: (context, url) => Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: Colors.grey[800],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(child: CircularProgressIndicator()),
+            ),
             errorWidget: (context, url, error) {
               debugPrint('Image load error: $error for URL: $url'); // Log error
-              return Semantics(
-                label: 'Failed to load image: $error',
+              return Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.grey[800],
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.error, color: Colors.red, size: 24),
+                    SizedBox(height: 4),
                     Text(
-                      '[Image Load Failed]',
-                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                      'Failed to load',
+                      style: TextStyle(fontSize: 12, color: Colors.white70),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
@@ -514,27 +575,51 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     if (widget.sendingStatus[messageId] == true) {
       return Padding(
-        padding: const EdgeInsets.only(top: 4.0),
+        padding: const EdgeInsets.only(top: 2.0),
         child: Semantics(
           label: 'Message is sending',
-          child: const Icon(Icons.access_time, size: 12, color: Colors.white70),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Text('Sending...',
+                  style: TextStyle(fontSize: 10, color: Colors.white70)),
+            ],
+          ),
         ),
       );
     }
     if (widget.sendingStatus[messageId] == false) {
       return Padding(
-        padding: const EdgeInsets.only(top: 4.0),
+        padding: const EdgeInsets.only(top: 2.0),
         child: Semantics(
           label: 'Message failed to send',
-          child: const Text('Unsent',
-              style: TextStyle(fontSize: 10, color: Colors.white70)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 12, color: Colors.redAccent),
+              const SizedBox(width: 4),
+              const Text('Failed',
+                  style: TextStyle(fontSize: 10, color: Colors.redAccent)),
+            ],
+          ),
         ),
       );
     }
     if (widget.showReadIndicator &&
         !widget.sendingStatus.containsKey(messageId)) {
       return Padding(
-        padding: const EdgeInsets.only(top: 4.0),
+        padding: const EdgeInsets.only(top: 2.0),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -547,13 +632,45 @@ class _MessageBubbleState extends State<MessageBubble> {
             if (data['read'] == true)
               Semantics(
                 label: 'Message read',
-                child: const Icon(Icons.done_all, color: Colors.blue, size: 12),
+                child: const Icon(Icons.done_all, color: Colors.blue, size: 14),
               ).animate().scale(duration: const Duration(milliseconds: 300)),
           ],
         ),
       );
     }
     return const SizedBox.shrink();
+  }
+
+  Widget _buildAvatar(
+      BuildContext context, SquadState squadState, String sender) {
+    final profileImage = squadState.memberProfileImages[sender];
+    return GestureDetector(
+      onTap: () => _showUserMenu(context, squadState, sender),
+      child: CircleAvatar(
+        radius: 16,
+        backgroundImage: profileImage != null && profileImage.isNotEmpty
+            ? CachedNetworkImageProvider(fixMediaUrl(profileImage))
+            : null,
+        child: profileImage == null || profileImage.isEmpty
+            ? Text(
+                sender.isNotEmpty ? sender[0].toUpperCase() : '?',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              )
+            : null,
+      ),
+    );
+  }
+
+  void _showUserMenu(
+      BuildContext context, SquadState squadState, String userName) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _UserMenuSheet(
+        userName: userName,
+        squadState: squadState,
+      ),
+    );
   }
 
   void _showReactionMenu(BuildContext context, Map<String, dynamic> data) {
@@ -571,8 +688,10 @@ class _MessageBubbleState extends State<MessageBubble> {
           data: data,
           onReply: () {
             if (!context.mounted) return;
-            Provider.of<SquadState>(context, listen: false)
-                .setReplyingTo(widget.message);
+            // Use ChatState for reply functionality
+            final chatState = Provider.of<ChatState>(context, listen: false);
+            chatState.setReplyToMessage(widget.message);
+            Navigator.pop(context); // Close the reaction menu
           },
           onCopy: () {
             if (!context.mounted) return;
@@ -602,12 +721,31 @@ class _MessageBubbleState extends State<MessageBubble> {
             );
             if (confirm == true && context.mounted) {
               try {
-                await Provider.of<SquadState>(context, listen: false)
-                    .deleteMessage(data['id']);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Message deleted')),
-                  );
+                // Get squad state to determine collection path
+                final squadState =
+                    Provider.of<SquadState>(context, listen: false);
+                final squadId = squadState.selectedSquadId;
+
+                // Determine collection path based on chat type
+                final collectionPath = widget.chatGroupId != null &&
+                        squadId != null
+                    ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
+                    : squadId != null
+                        ? 'squads/$squadId/chat'
+                        : 'chats';
+
+                // Use Firestore directly to delete the message
+                final messageId = data['id'];
+                if (messageId != null) {
+                  await FirebaseFirestore.instance
+                      .collection(collectionPath)
+                      .doc(messageId)
+                      .delete();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Message deleted')),
+                    );
+                  }
                 }
               } catch (e) {
                 if (context.mounted) {
@@ -632,33 +770,221 @@ class _MessageBubbleState extends State<MessageBubble> {
         );
       },
     );
-    widget.onLongPress();
   }
 
   Future<void> _addReaction(BuildContext context, String emoji) async {
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    final squadId = squadState.selectedSquadId;
-    if (squadId == null) return;
+    try {
+      final messageId = _normalizedData['id']?.toString();
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null ||
+          messageId == null ||
+          messageId.isEmpty ||
+          emoji.isEmpty) {
+        debugPrint(
+            'Invalid reaction data: userId=$userId, messageId=$messageId, emoji="$emoji"');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Failed to add reaction: Invalid data')),
+          );
+        }
+        return;
+      }
 
-    // Determine collection path based on whether it's a group chat
-    final collectionPath = widget.chatGroupId != null
-        ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
-        : 'squads/$squadId/chat';
+      // Get squad state to determine collection path
+      final squadState = Provider.of<SquadState>(context, listen: false);
+      final squadId = squadState.selectedSquadId;
 
-    final user = FirebaseAuth.instance.currentUser!.displayName ??
-        squadState.displayName ??
-        'User';
+      if (squadId == null) {
+        debugPrint('Reaction failed: No squad ID available');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Failed to add reaction: No squad context')),
+          );
+        }
+        return;
+      }
 
-    final docRef = FirebaseFirestore.instance
-        .collection(collectionPath)
-        .doc(_getMessageId());
-    final snapshot = await docRef.get();
-    if (snapshot.exists) {
-      final data = snapshot.data() as Map<String, dynamic>;
-      final reactions =
-          List<Map<String, dynamic>>.from(data['reactions'] ?? []);
-      reactions.add({'user': user, 'reaction': emoji});
-      await docRef.update({'reactions': reactions});
+      // Determine collection path based on chat type
+      final collectionPath = widget.chatGroupId != null
+          ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
+          : 'squads/$squadId/chat';
+
+      debugPrint(
+          'Adding reaction: emoji=$emoji, messageId=$messageId, collection=$collectionPath');
+
+      try {
+        debugPrint('About to get document snapshot...');
+        final docSnapshot = await FirebaseFirestore.instance
+            .collection(collectionPath)
+            .doc(messageId)
+            .get();
+        debugPrint(
+            'Document snapshot retrieved, exists: ${docSnapshot.exists}');
+
+        if (!docSnapshot.exists) {
+          debugPrint('Message not found: $messageId in $collectionPath');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Message not found')),
+            );
+          }
+          return;
+        }
+
+        debugPrint('About to get message data...');
+        final messageData = docSnapshot.data();
+        debugPrint(
+            'Message data retrieved: ${messageData != null ? 'not null' : 'null'}');
+
+        if (messageData == null) {
+          debugPrint('Message data is null: $messageId in $collectionPath');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Message data unavailable')),
+            );
+          }
+          return;
+        }
+        debugPrint('Message data keys: ${messageData.keys.toList()}');
+
+        // Normalize reactions data - handle both old string format and new map format
+        debugPrint('About to get raw reactions...');
+        final rawReactions = messageData['reactions'];
+        debugPrint(
+            'Raw reactions retrieved: $rawReactions, type: ${rawReactions.runtimeType}');
+        final currentReactions = <Map<String, dynamic>>[];
+
+        if (rawReactions is List) {
+          debugPrint(
+              'Raw reactions is List, processing ${rawReactions.length} items...');
+          for (final reaction in rawReactions) {
+            debugPrint(
+                'Processing reaction: $reaction, type: ${reaction.runtimeType}');
+            if (reaction is Map<String, dynamic>) {
+              // New format
+              currentReactions.add(reaction);
+            } else if (reaction is String) {
+              // Old format - convert to new format
+              currentReactions.add({
+                'userId': 'unknown', // We don't know who added old reactions
+                'reaction': reaction,
+                'timestamp': DateTime.now()
+                    .millisecondsSinceEpoch, // Use numeric timestamp
+              });
+            }
+            // Skip invalid reaction types
+          }
+        } else {
+          debugPrint('Raw reactions is not a List: $rawReactions');
+        }
+
+        debugPrint('Current reactions after processing: $currentReactions');
+
+        // Check if user already reacted with this emoji (be more robust with type checking)
+        debugPrint('About to check existing reactions...');
+        int existingReactionIndex = -1;
+        try {
+          existingReactionIndex = currentReactions.indexWhere(
+            (reaction) {
+              final reactionUserId = reaction['userId']?.toString();
+              final reactionEmoji = reaction['reaction']?.toString();
+              return reactionUserId == userId && reactionEmoji == emoji;
+            },
+          );
+        } catch (e) {
+          debugPrint('Error checking existing reactions: $e');
+          // If we can't check, assume no existing reaction
+          existingReactionIndex = -1;
+        }
+
+        // Create a clean, validated reaction object
+        final newReaction = <String, dynamic>{
+          'userId': userId,
+          'reaction': emoji.trim(),
+          'timestamp': DateTime.now()
+              .millisecondsSinceEpoch, // Use numeric timestamp instead of FieldValue
+        };
+
+        // Always use the set with merge fallback for iOS compatibility
+        final updatedReactions =
+            List<Map<String, dynamic>>.from(currentReactions);
+
+        if (existingReactionIndex != -1) {
+          // User already reacted with this emoji, remove it
+          updatedReactions.removeAt(existingReactionIndex);
+        } else {
+          // User hasn't reacted with this emoji, add it
+          updatedReactions.add(newReaction);
+        }
+
+        // Filter out any invalid reactions and limit to reasonable number
+        final cleanReactions = <Map<String, dynamic>>[];
+        try {
+          cleanReactions.addAll(updatedReactions
+              .where((r) {
+                try {
+                  return r['userId']?.toString().isNotEmpty == true &&
+                      r['reaction']?.toString().isNotEmpty == true;
+                } catch (e) {
+                  debugPrint('Error validating reaction: $e, reaction: $r');
+                  return false;
+                }
+              })
+              .take(50)
+              .toList()); // Limit reactions per message
+        } catch (e) {
+          debugPrint('Error filtering reactions: $e');
+          // If filtering fails, use the updated reactions as-is (limited)
+          cleanReactions.addAll(updatedReactions.take(50));
+        }
+
+        try {
+          debugPrint(
+              'About to update Firestore with reactions: $cleanReactions');
+          await FirebaseFirestore.instance
+              .collection(collectionPath)
+              .doc(messageId)
+              .set({'reactions': cleanReactions}, SetOptions(merge: true));
+          debugPrint('Firestore set successful');
+        } catch (firestoreError) {
+          debugPrint('Firestore set failed, trying update: $firestoreError');
+          // Fallback: try update operation
+          try {
+            await FirebaseFirestore.instance
+                .collection(collectionPath)
+                .doc(messageId)
+                .update({'reactions': cleanReactions});
+          } catch (updateError) {
+            debugPrint('Update also failed: $updateError');
+            // Final fallback: don't update reactions but don't crash
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Reaction saved locally')),
+              );
+            }
+            return;
+          }
+        }
+
+        HapticFeedback.lightImpact();
+      } catch (e) {
+        debugPrint('Error during Firestore operations: $e');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error accessing message: $e')),
+          );
+        }
+        return;
+      }
+    } catch (e) {
+      debugPrint('Error updating reaction: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update reaction: ${e.toString()}')),
+        );
+      }
     }
   }
 }
@@ -705,98 +1031,41 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
       child: Stack(
         children: [
           BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
             child: Container(
-              color: Colors.black.withValues(alpha: 0.2),
+              color: Colors.black.withValues(alpha: 0.1),
             ),
           ),
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Transform.scale(
-                    scale: 1.05,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.symmetric(vertical: 8.0),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16.0, vertical: 12.0),
-                      decoration: BoxDecoration(
-                        color: widget.isMe
-                            ? AppTheme.accentColor.withValues(alpha: 0.3)
-                            : AppTheme.hintColor.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: widget.isMe
-                            ? CrossAxisAlignment.end
-                            : CrossAxisAlignment.start,
-                        children: [
-                          if (widget.data['content']?.isNotEmpty ?? false)
-                            Text(
-                              widget.data['content'],
-                              style: const TextStyle(
-                                  fontSize: 18, color: Colors.white),
-                            ),
-                          if (widget.data['photos']?.isNotEmpty ?? false)
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: CachedNetworkImage(
-                                imageUrl: fixMediaUrl(
-                                    widget.data['photos'][0]['uri']),
-                                width: 200,
-                                height: 200,
-                                fit: BoxFit.cover,
-                                placeholder: (context, url) =>
-                                    const CircularProgressIndicator(),
-                                errorWidget: (context, url, error) =>
-                                    const Text(
-                                  '[Invalid Image]',
-                                  style: TextStyle(
-                                      fontSize: 14, color: Colors.white70),
-                                ),
-                              ),
-                            ),
-                          if (widget.data['videoUrl'] != null)
-                            VideoMessage(
-                                url: fixMediaUrl(widget.data['videoUrl'])),
-                          if (widget.data['audioUrl'] != null)
-                            AudioMessage(
-                                url: fixMediaUrl(widget.data['audioUrl'])),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                // Emoji reactions row (above message, iMessage-style)
                 Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16.0),
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  margin: const EdgeInsets.only(bottom: 12.0),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0, vertical: 12.0),
                   decoration: BoxDecoration(
-                    color: Colors.grey[850],
-                    borderRadius: BorderRadius.circular(24),
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(28),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
                       ),
                     ],
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      width: 0.5,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ...['❤️', '👍', '😂', '😢', '😡'].map((emoji) {
+                      ...['❤️', '👍', '😂', '😢', '😡', '😮'].map((emoji) {
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
                           child: GestureDetector(
                             onTap: () {
                               HapticFeedback.lightImpact();
@@ -808,116 +1077,266 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
                               duration: const Duration(milliseconds: 100),
                               child: Text(
                                 emoji,
-                                style: const TextStyle(fontSize: 32),
+                                style: const TextStyle(fontSize: 28),
                               ),
                             ),
                           ),
                         ).animate().scale(
-                              duration: const Duration(milliseconds: 200),
-                              begin: Offset.zero,
+                              duration: const Duration(milliseconds: 300),
+                              begin: const Offset(0.8, 0.8),
                               end: const Offset(1.0, 1.0),
-                              curve: Curves.easeOutBack,
+                              curve: Curves.elasticOut,
+                              delay: Duration(
+                                  milliseconds: 50 *
+                                      ['❤️', '👍', '😂', '😢', '😡', '😮']
+                                          .indexOf(emoji)),
                             );
                       }),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        child: IconButton(
-                          icon: Icon(
-                            _showReactionInput ? Icons.close : Icons.add,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                          onPressed: () {
+                        padding: const EdgeInsets.only(left: 8.0),
+                        child: GestureDetector(
+                          onTap: () {
                             setState(() {
                               _showReactionInput = !_showReactionInput;
                             });
                           },
+                          child: AnimatedScale(
+                            scale: 1.0,
+                            duration: const Duration(milliseconds: 100),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                _showReactionInput ? Icons.close : Icons.add,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                if (_showReactionInput)
-                  Padding(
+                ).animate().slideY(
+                      duration: const Duration(milliseconds: 400),
+                      begin: -0.2,
+                      end: 0.0,
+                      curve: Curves.easeOutBack,
+                    ),
+                // Message preview (smaller, more subtle)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 8.0),
-                    child: Material(
-                      color: Colors.grey[900],
-                      borderRadius: BorderRadius.circular(12),
-                      child: TextField(
-                        controller: _reactionController,
-                        decoration: InputDecoration(
-                          hintText: 'Type your reaction',
-                          hintStyle: TextStyle(color: Colors.white54),
-                          filled: true,
-                          fillColor: Colors.grey[900],
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16.0, vertical: 12.0),
-                        ),
-                        style: const TextStyle(color: Colors.white),
-                        onSubmitted: (value) {
-                          if (value.isNotEmpty) {
-                            widget.onEmojiSelect(value);
-                            Navigator.pop(context);
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                Material(
-                  color: Colors.grey[900],
-                  borderRadius: BorderRadius.circular(16),
-                  elevation: 2,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16.0),
+                        horizontal: 16.0, vertical: 12.0),
+                    constraints: const BoxConstraints(maxWidth: 300),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading:
-                              const Icon(Icons.reply, color: Colors.white70),
-                          title: const Text('Reply',
-                              style: TextStyle(color: Colors.white)),
-                          onTap: () {
-                            Navigator.pop(context);
-                            widget.onReply();
-                          },
-                        ),
-                        ListTile(
-                          leading:
-                              const Icon(Icons.copy, color: Colors.white70),
-                          title: const Text('Copy',
-                              style: TextStyle(color: Colors.white)),
-                          onTap: () {
-                            Navigator.pop(context);
-                            widget.onCopy();
-                          },
-                        ),
-                        ListTile(
-                          leading:
-                              const Icon(Icons.delete, color: Colors.white70),
-                          title: const Text('Delete',
-                              style: TextStyle(color: Colors.white)),
-                          onTap: () {
-                            Navigator.pop(context);
-                            widget.onDelete();
-                          },
+                      color: widget.isMe
+                          ? AppTheme.accentColor.withValues(alpha: 0.2)
+                          : Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        width: 0.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
+                    child: Column(
+                      crossAxisAlignment: widget.isMe
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.data['content']?.isNotEmpty ?? false)
+                          Text(
+                            widget.data['content'],
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontWeight: FontWeight.w400,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        if (widget.data['photos']?.isNotEmpty ?? false)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                width: 60,
+                                height: 60,
+                                color: Colors.grey[700],
+                                child: const Icon(
+                                  Icons.image,
+                                  color: Colors.white54,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                ).animate().fadeIn(
+                      duration: const Duration(milliseconds: 300),
+                      delay: const Duration(milliseconds: 100),
+                    ),
+                // Custom reaction input
+                if (_showReactionInput)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 12.0),
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: TextField(
+                          controller: _reactionController,
+                          decoration: InputDecoration(
+                            hintText: 'Type your reaction...',
+                            hintStyle: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5)),
+                            border: InputBorder.none,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 12.0),
+                          ),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 16),
+                          onSubmitted: (value) {
+                            if (value.isNotEmpty) {
+                              widget.onEmojiSelect(value);
+                              Navigator.pop(context);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ).animate().slideY(
+                        duration: const Duration(milliseconds: 300),
+                        begin: 0.2,
+                        end: 0.0,
+                        curve: Curves.easeOutBack,
+                      ),
+                // Action buttons (more subtle, bottom sheet style)
+                Container(
+                  margin: const EdgeInsets.only(top: 16.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildActionTile(
+                            icon: Icons.reply,
+                            label: 'Reply',
+                            onTap: () {
+                              Navigator.pop(context);
+                              widget.onReply();
+                            },
+                          ),
+                          Divider(
+                              height: 1,
+                              color: Colors.white.withValues(alpha: 0.1)),
+                          _buildActionTile(
+                            icon: Icons.copy,
+                            label: 'Copy',
+                            onTap: () {
+                              Navigator.pop(context);
+                              widget.onCopy();
+                            },
+                          ),
+                          Divider(
+                              height: 1,
+                              color: Colors.white.withValues(alpha: 0.1)),
+                          _buildActionTile(
+                            icon: Icons.delete,
+                            label: 'Delete',
+                            onTap: () {
+                              Navigator.pop(context);
+                              widget.onDelete();
+                            },
+                            isDestructive: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ).animate().slideY(
+                      duration: const Duration(milliseconds: 400),
+                      begin: 0.3,
+                      end: 0.0,
+                      curve: Curves.easeOutBack,
+                      delay: const Duration(milliseconds: 200),
+                    ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isDestructive = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              color: isDestructive
+                  ? Colors.redAccent
+                  : Colors.white.withValues(alpha: 0.8),
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: isDestructive
+                    ? Colors.redAccent
+                    : Colors.white.withValues(alpha: 0.9),
+                fontSize: 16,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -966,45 +1385,65 @@ class _VideoMessageState extends State<VideoMessage> {
   @override
   Widget build(BuildContext context) {
     if (_isError) {
-      return Semantics(
-        label: 'Video failed to load',
+      return Container(
+        width: 120,
+        height: 80,
+        decoration: BoxDecoration(
+          color: Colors.grey[800],
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error, color: Colors.red, size: 24),
+            Icon(Icons.error, color: Colors.red, size: 20),
+            SizedBox(height: 4),
             Text(
-              '[Video Load Failed]',
-              style: TextStyle(fontSize: 14, color: Colors.white70),
+              'Video failed',
+              style: TextStyle(fontSize: 12, color: Colors.white70),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
       );
     }
     if (!_isInitialized) {
-      return const SizedBox(
-        width: 150,
-        height: 150,
-        child: Center(child: CircularProgressIndicator()),
+      return Container(
+        width: 120,
+        height: 80,
+        decoration: BoxDecoration(
+          color: Colors.grey[800],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Center(child: CircularProgressIndicator()),
       );
     }
     return GestureDetector(
       onTap: () => _launchUrl(widget.url),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 150,
-              height: 150,
-              child: VideoPlayer(_controller),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 200, maxHeight: 150),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: VideoPlayer(_controller),
+              ),
             ),
-          ),
-          Semantics(
-            label: 'Play video',
-            child: const Icon(Icons.play_circle_filled,
-                size: 50, color: Colors.white70),
-          ),
-        ],
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Semantics(
+                label: 'Play video',
+                child: const Icon(Icons.play_circle_filled,
+                    size: 40, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
       ),
     ).animate().fadeIn(duration: const Duration(milliseconds: 300));
   }
@@ -1068,27 +1507,35 @@ class _AudioMessageState extends State<AudioMessage> {
   @override
   Widget build(BuildContext context) {
     if (_isError) {
-      return Semantics(
-        label: 'Audio failed to load',
-        child: const Column(
+      return Container(
+        constraints: const BoxConstraints(maxWidth: 220),
+        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+        decoration: BoxDecoration(
+          color: Colors.grey[800]!.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error, color: Colors.red, size: 24),
+            Icon(Icons.error, color: Colors.red, size: 20),
+            SizedBox(width: 8),
             Text(
-              '[Audio Load Failed]',
-              style: TextStyle(fontSize: 14, color: Colors.white70),
+              'Audio failed to load',
+              style: TextStyle(fontSize: 12, color: Colors.white70),
             ),
           ],
         ),
       );
     }
     return Container(
-      width: 200,
-      padding: const EdgeInsets.all(8.0),
+      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       decoration: BoxDecoration(
-        color: AppTheme.hintColor.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.grey[800]!.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Semantics(
             label: _isPlaying ? 'Pause audio' : 'Play audio',
@@ -1098,30 +1545,39 @@ class _AudioMessageState extends State<AudioMessage> {
                     ? Icons.pause_circle_filled
                     : Icons.play_circle_filled,
                 color: AppTheme.accentColor,
-                size: 30,
+                size: 28,
               ),
               onPressed: _togglePlay,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
           ),
+          const SizedBox(width: 8),
           Expanded(
-            child: Slider(
-              value: _position.inSeconds.toDouble(),
-              min: 0,
-              max: _duration.inSeconds.toDouble() > 0
-                  ? _duration.inSeconds.toDouble()
-                  : 1,
-              onChanged: (value) =>
-                  _player.seek(Duration(seconds: value.toInt())),
-              activeColor: AppTheme.accentColor,
-              inactiveColor: AppTheme.hintColor,
-            ),
-          ),
-          Semantics(
-            label:
-                'Audio position ${_position.inMinutes}:${_position.inSeconds % 60}',
-            child: Text(
-              "${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')}",
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Slider(
+                  value: _position.inSeconds.toDouble(),
+                  min: 0,
+                  max: _duration.inSeconds.toDouble() > 0
+                      ? _duration.inSeconds.toDouble()
+                      : 1,
+                  onChanged: (value) =>
+                      _player.seek(Duration(seconds: value.toInt())),
+                  activeColor: AppTheme.accentColor,
+                  inactiveColor: Colors.grey[600],
+                ),
+                Semantics(
+                  label:
+                      'Audio position ${_position.inMinutes}:${_position.inSeconds % 60} of ${_duration.inMinutes}:${_duration.inSeconds % 60}',
+                  child: Text(
+                    "${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')} / ${_duration.inSeconds ~/ 60}:${(_duration.inSeconds % 60).toString().padLeft(2, '0')}",
+                    style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1140,58 +1596,191 @@ class _AudioMessageState extends State<AudioMessage> {
 }
 
 class ReactionsWidget extends StatelessWidget {
-  final String docId;
+  final List<dynamic> reactions;
   final bool isMe;
 
-  const ReactionsWidget({super.key, required this.docId, required this.isMe});
+  const ReactionsWidget(
+      {super.key, required this.reactions, required this.isMe});
 
   @override
   Widget build(BuildContext context) {
-    if (docId.isEmpty) {
+    if (reactions.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('chat')
-          .doc(docId)
-          .collection('reactions')
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const SizedBox.shrink();
+    // Group reactions by emoji and count them
+    final reactionCounts = <String, int>{};
+    for (final reaction in reactions) {
+      if (reaction is Map<String, dynamic>) {
+        final emoji = reaction['reaction'] as String?;
+        if (emoji != null) {
+          reactionCounts[emoji] = (reactionCounts[emoji] ?? 0) + 1;
         }
+      } else if (reaction is String) {
+        reactionCounts[reaction] = (reactionCounts[reaction] ?? 0) + 1;
+      }
+    }
 
-        final reactions = snapshot.data!.docs;
-        String? latestEmoji;
-        if (reactions.isNotEmpty) {
-          latestEmoji = reactions.last['emoji'] as String?;
-        }
+    if (reactionCounts.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-        return latestEmoji != null
-            ? AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.grey[800],
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 4,
-                    ),
-                  ],
+    // Sort reactions by count (highest first) and then by emoji
+    final sortedReactions = reactionCounts.entries.toList()
+      ..sort((a, b) {
+        final countCompare = b.value.compareTo(a.value);
+        return countCompare != 0 ? countCompare : a.key.compareTo(b.key);
+      });
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: sortedReactions.map((entry) {
+        final emoji = entry.key;
+        final count = entry.value;
+
+        return Container(
+          margin: const EdgeInsets.only(right: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.grey[800]!.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.1),
+              width: 0.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 2,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                emoji,
+                style: const TextStyle(fontSize: 12),
+              ),
+              if (count > 1) ...[
+                const SizedBox(width: 2),
+                Text(
+                  count.toString(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                child: Text(
-                  latestEmoji,
-                  style: const TextStyle(fontSize: 14),
-                ),
-              ).animate().scale(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOutBack,
-                )
-            : const SizedBox.shrink();
-      },
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    ).animate().fadeIn(duration: const Duration(milliseconds: 200));
+  }
+}
+
+class _UserMenuSheet extends StatelessWidget {
+  final String userName;
+  final SquadState squadState;
+
+  const _UserMenuSheet({required this.userName, required this.squadState});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // User's name
+          Text(
+            userName,
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 16),
+          // Options
+          _buildMenuItem(
+            context,
+            icon: Icons.videocam,
+            label: 'Video Call',
+            onTap: () {
+              // TODO: Implement video call
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Video call not implemented yet')),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Icons.call,
+            label: 'Audio Call',
+            onTap: () {
+              // TODO: Implement audio call
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Audio call not implemented yet')),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Icons.message,
+            label: 'Message',
+            onTap: () {
+              // TODO: Open 1-on-1 message
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('1-on-1 messaging not implemented yet')),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Icons.block,
+            label: 'Ban',
+            onTap: () {
+              Navigator.pop(context);
+              squadState.addBan(userName, squadState.displayName ?? 'Unknown');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('$userName has been voted for ban')),
+              );
+            },
+          ),
+          _buildMenuItem(
+            context,
+            icon: Icons.person_off,
+            label: 'Block User',
+            onTap: () async {
+              Navigator.pop(context);
+              await squadState.blockUser(userName);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('$userName has been blocked')),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuItem(BuildContext context,
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
+    return ListTile(
+      leading: Icon(icon, color: Theme.of(context).primaryColor),
+      title: Text(label),
+      onTap: onTap,
     );
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
+import '../../chat/chat_service.dart';
 
 class PollCreationDialog extends StatefulWidget {
   final String? chatGroupId;
@@ -84,6 +86,19 @@ class _PollCreationDialogState extends State<PollCreationDialog> {
       );
 
       if (pollId != null && mounted) {
+        // Send a chat message with the poll
+        final chatService = ChatService();
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser != null) {
+          await chatService.sendMessage(
+            context,
+            senderUid: currentUser.uid,
+            text: '📊 ${_titleController.text.trim()}', // Poll emoji + title
+            pollId: pollId,
+            chatGroupId: widget.chatGroupId,
+          );
+        }
+
         // Get the created poll to pass to callback
         final createdPoll =
             await _pollService.getPoll(pollId, chatGroupId: widget.chatGroupId);

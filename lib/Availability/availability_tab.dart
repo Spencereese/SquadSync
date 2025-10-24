@@ -263,8 +263,9 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     }
 
     final scheduledTime = alertTime.subtract(offset);
-    if (scheduledTime.isBefore(now))
+    if (scheduledTime.isBefore(now)) {
       return; // Don't schedule past notifications
+    }
 
     await notificationManager.scheduleNotification(
       title: 'Availability Reminder',

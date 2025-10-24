@@ -39,8 +39,8 @@ class ReviewManager with ChangeNotifier {
 
     final totalRating = snapshot.docs.fold<double>(
         0.0,
-        (accumulator, doc) =>
-            accumulator + ((doc.data()['rating'] as num?)?.toDouble() ?? 0.0));
+        (sum, doc) =>
+            sum + ((doc.data()['rating'] as num?)?.toDouble() ?? 0.0));
     return totalRating / snapshot.docs.length;
   }
 

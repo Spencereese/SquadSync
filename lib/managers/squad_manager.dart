@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
+import '../services/interfaces.dart';
 
 /// Manages squad spots, assignments, and timers
-class SquadManager with ChangeNotifier {
+class SquadManager with ChangeNotifier implements ISquadManager {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   // Game-specific squad spots: Map<gameName, List<String?>>
   Map<String, List<String?>> gameSquadSpots = {};
@@ -133,6 +134,7 @@ class SquadManager with ChangeNotifier {
   }
 
   // New: Create a squad and return the squadId
+  @override
   Future<String> createSquad(String name) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('User not authenticated');
@@ -159,6 +161,7 @@ class SquadManager with ChangeNotifier {
   }
 
   // New: Join a squad by invite code
+  @override
   Future<bool> joinSquad(String code) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('User not authenticated');
@@ -188,6 +191,7 @@ class SquadManager with ChangeNotifier {
   }
 
   // New: Leave a squad (remove from members, clear spots)
+  @override
   Future<void> leaveSquad(String squadId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -234,26 +238,98 @@ class SquadManager with ChangeNotifier {
     return snapshot.docs.map((doc) => doc.data()).toList();
   }
 
-  // Peacock/Lobby management methods
-  Future<void> addViewer(String peacockId, String userId) async {
+  @override
+  Future<Map<String, dynamic>?> getSquadData(String squadId) async {
+    final doc = await _firestore.collection('squads').doc(squadId).get();
+    return doc.data();
+  }
+
+  @override
+  Future<void> updateSquadData(
+      String squadId, Map<String, dynamic> data) async {
+    await _firestore.collection('squads').doc(squadId).update(data);
+  }
+
+  // Peacock lobby methods
+  Future<void> joinLobby(String peacockId, String userUid) async {
     await _firestore.collection('peacocks').doc(peacockId).update({
-      'viewers': FieldValue.arrayUnion([userId]),
+      'filled': FieldValue.arrayUnion([userUid]),
     });
   }
 
-  Future<void> removeViewer(String peacockId, String userId) async {
+  Future<void> addViewer(String peacockId, String userUid) async {
     await _firestore.collection('peacocks').doc(peacockId).update({
-      'viewers': FieldValue.arrayRemove([userId]),
+      'viewers': FieldValue.arrayUnion([userUid]),
     });
+  }
+
+  Future<void> removeViewer(String peacockId, String userUid) async {
+    await _firestore.collection('peacocks').doc(peacockId).update({
+      'viewers': FieldValue.arrayRemove([userUid]),
+    });
+  }
+
+  Future<void> claimPeacockSpot(
+      String peacockId, String userUid, String gameName) async {
+    final doc = await _firestore.collection('peacocks').doc(peacockId).get();
+    if (!doc.exists) return;
+
+    final data = doc.data()!;
+    final filled = List<Map<String, dynamic>>.from(data['filled'] ?? []);
+    final maxSpots = data['spots'] ?? 4;
+
+    // Find next available spot
+    int nextSpot = 1;
+    final takenSpots = filled.map((f) => f['spot'] as int).toSet();
+    while (takenSpots.contains(nextSpot) && nextSpot <= maxSpots) {
+      nextSpot++;
+    }
+
+    if (nextSpot > maxSpots) return; // No spots available
+
+    filled.add({
+      'uid': userUid,
+      'spot': nextSpot,
+      'status': 'ready',
+      'lockTimer':
+          Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 5))),
+    });
+
+    await _firestore.collection('peacocks').doc(peacockId).update({
+      'filled': filled,
+    });
+  }
+
+  Future<void> lockPeacockSpot(
+      String peacockId, String userUid, String gameName) async {
+    final doc = await _firestore.collection('peacocks').doc(peacockId).get();
+    if (!doc.exists) return;
+
+    final data = doc.data()!;
+    final filled = List<Map<String, dynamic>>.from(data['filled'] ?? []);
+
+    final userSpot = filled.firstWhere(
+      (f) => f['uid'] == userUid,
+      orElse: () => {},
+    );
+
+    if (userSpot.isNotEmpty) {
+      userSpot['status'] = 'walking';
+      // Remove lockTimer
+      userSpot.remove('lockTimer');
+
+      await _firestore.collection('peacocks').doc(peacockId).update({
+        'filled': filled,
+      });
+    }
   }
 
   Stream<QuerySnapshot> getActiveLobbiesStream() {
-    return _firestore.collection('peacocks').snapshots();
-  }
-
-  Future<void> joinLobby(String peacockId, String userId) async {
-    await _firestore.collection('peacocks').doc(peacockId).update({
-      'filled': FieldValue.arrayUnion([userId]),
-    });
+    return _firestore
+        .collection('peacocks')
+        .where('hostLockTimer', isGreaterThan: Timestamp.now())
+        .orderBy('hostLockTimer')
+        .limit(50)
+        .snapshots();
   }
 }

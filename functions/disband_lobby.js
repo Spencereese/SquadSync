@@ -48,30 +48,10 @@ exports.cleanupExpiredLobbies = functions.pubsub
 async function checkDisbandConditions(peacockData, peacockId) {
   const filled = peacockData.filled || [];
   const viewers = peacockData.viewers || [];
-  const spots = peacockData.spots || 4;
-  const timer = peacockData.timer;
-  const hostUid = peacockData.hostUid;
 
-  // Condition 1: Host left and no one else filled spots
-  if (!filled.includes(hostUid) && filled.length === 0) {
+  // Disband if no spots filled AND no viewers
+  if (filled.length === 0 && viewers.length === 0) {
     return true;
-  }
-
-  // Condition 2: All spots filled and game started (timer expired)
-  if (filled.length >= spots && timer && timer.toDate() < new Date()) {
-    return true;
-  }
-
-  // Condition 3: No viewers and no activity for 5 minutes
-  if (viewers.length === 0 && filled.length <= 1) {
-    // Check if created more than 5 minutes ago
-    const createdAt = peacockData.createdAt;
-    if (createdAt) {
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-      if (createdAt.toDate() < fiveMinutesAgo) {
-        return true;
-      }
-    }
   }
 
   return false;

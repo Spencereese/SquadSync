@@ -77,14 +77,6 @@ class _AlertCardWidgetState extends State<AlertCardWidget> {
         final occupiedSpots = spots.where((spot) => spot != null).length;
         final spotsLeft = maxSpots - occupiedSpots;
 
-        // Countdown timer from alert data
-        final timerEnd = alert['timer'] != null
-            ? DateTime.fromMillisecondsSinceEpoch(alert['timer'])
-            : null;
-        final remainingTime = timerEnd != null
-            ? timerEnd.difference(DateTime.now()).inSeconds
-            : 0;
-
         return Card(
           elevation: 4,
           margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -119,14 +111,6 @@ class _AlertCardWidgetState extends State<AlertCardWidget> {
                     ),
                   ),
                   SizedBox(height: 8),
-                  if (remainingTime > 0)
-                    Text(
-                      "Time left: ${Duration(seconds: remainingTime).toString().split('.').first}",
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 14,
-                      ),
-                    ),
                 ],
               ),
             ),

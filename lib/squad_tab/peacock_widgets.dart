@@ -6,7 +6,6 @@ class PeacockWidgets {
       Function() togglePeacockMembers) {
     final yourName = squadState.displayName;
     final youAreAssigned = squadState.squadSpots.contains(yourName);
-    final currentGame = squadState.currentGame?['name'] ?? '';
     final youArePeacock = squadState.peacockTimers.containsKey(yourName) ||
         squadState.peacockQueue.contains(yourName);
 
@@ -29,6 +28,7 @@ class PeacockWidgets {
                   onLongPress: togglePeacockMembers,
                   child: ElevatedButton(
                     onPressed: () {
+                      if (yourName == null) return;
                       if (youArePeacock) {
                         togglePeacockMembers();
                       } else if (youAreAssigned) {
@@ -37,15 +37,11 @@ class PeacockWidgets {
                         if (currentSpotIndex != -1) {
                           squadState.removeSpot(currentSpotIndex);
                         }
-                        if (squadState.preferredPeacockGames
-                            .contains(currentGame)) {
-                          squadState.startPeacockTimer(context);
-                        }
+                        // Immediately lock in as peacock instead of starting timer
+                        squadState.addToPeacock(yourName);
                       } else {
-                        if (squadState.preferredPeacockGames
-                            .contains(currentGame)) {
-                          squadState.startPeacockTimer(context);
-                        }
+                        // Immediately lock in as peacock instead of starting timer
+                        squadState.addToPeacock(yourName);
                       }
                     },
                     style: ElevatedButton.styleFrom(

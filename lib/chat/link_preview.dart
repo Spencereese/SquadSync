@@ -116,22 +116,49 @@ class LinkPreviewService {
   static const String _backendUrl =
       'https://squadsync-backend-756172684661.us-central1.run.app';
 
+  // Cache for link previews to avoid repeated network requests
+  static final Map<String, LinkPreview> _cache = {};
+  static final Map<String, DateTime> _cacheTimestamps = {};
+  static const Duration _cacheValidity =
+      Duration(hours: 24); // Cache for 24 hours
+
   static Future<LinkPreview?> fetchPreview(String url) async {
+    // Check cache first
+    if (_cache.containsKey(url)) {
+      final cachedTime = _cacheTimestamps[url];
+      if (cachedTime != null &&
+          DateTime.now().difference(cachedTime) < _cacheValidity) {
+        return _cache[url];
+      } else {
+        // Remove expired cache entry
+        _cache.remove(url);
+        _cacheTimestamps.remove(url);
+      }
+    }
+
     try {
       final linkType = LinkDetector.getLinkType(url);
 
       // For social media and video platforms, try to get rich previews
       if (linkType == LinkType.twitter) {
-        return await _fetchTwitterPreview(url);
+        final preview = await _fetchTwitterPreview(url);
+        if (preview != null) {
+          _cache[url] = preview;
+          _cacheTimestamps[url] = DateTime.now();
+        }
+        return preview;
       }
 
       // For direct video/image files, create basic preview
       if (linkType == LinkType.videoFile || linkType == LinkType.imageFile) {
-        return LinkPreview(
+        final preview = LinkPreview(
           url: url,
           title: _getFileName(url),
           type: linkType,
         );
+        _cache[url] = preview;
+        _cacheTimestamps[url] = DateTime.now();
+        return preview;
       }
 
       // Use our backend endpoint for link previews
@@ -141,24 +168,47 @@ class LinkPreviewService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return LinkPreview(
+        final preview = LinkPreview(
           url: url,
           title: data['title'],
           description: data['description'],
           imageUrl: data['image'],
           type: linkType,
         );
+        _cache[url] = preview;
+        _cacheTimestamps[url] = DateTime.now();
+        return preview;
       }
     } catch (e) {
       debugPrint('Error fetching link preview: $e');
     }
 
-    // Fallback: return basic preview
+    // Fallback: return basic preview (don't cache failed requests)
     return LinkPreview(
       url: url,
       title: _getDomain(url),
       type: LinkDetector.getLinkType(url),
     );
+  }
+
+  // Clear expired cache entries
+  static void clearExpiredCache() {
+    final now = DateTime.now();
+    final expiredUrls = _cacheTimestamps.entries
+        .where((entry) => now.difference(entry.value) >= _cacheValidity)
+        .map((entry) => entry.key)
+        .toList();
+
+    for (final url in expiredUrls) {
+      _cache.remove(url);
+      _cacheTimestamps.remove(url);
+    }
+  }
+
+  // Clear all cache (useful for memory management)
+  static void clearCache() {
+    _cache.clear();
+    _cacheTimestamps.clear();
   }
 
   static Future<LinkPreview?> _fetchTwitterPreview(String url) async {

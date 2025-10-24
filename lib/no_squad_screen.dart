@@ -14,7 +14,7 @@ class NoSquadScreen extends StatefulWidget {
 }
 
 class _NoSquadScreenState extends State<NoSquadScreen> {
-  bool _isLoading = false;
+  final bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {

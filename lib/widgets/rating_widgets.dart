@@ -41,7 +41,7 @@ class _RatingNudgeState extends State<RatingNudge> {
       decoration: BoxDecoration(
         color: Colors.grey[900],
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.3)),
+        border: Border.all(color: Colors.cyanAccent.withOpacity(0.3)),
       ),
       child: Row(
         children: [
@@ -227,7 +227,6 @@ class _ReviewSubmitDialogState extends State<ReviewSubmitDialog> {
           ? ' "${_reviewController.text.trim()}"'
           : '';
 
-      // ignore: use_build_context_synchronously
       await chatService.sendMessage(
         context,
         senderUid: user.uid,

@@ -233,21 +233,11 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                         (peacock['filled'] as List<dynamic>?)?.length ?? 0;
                     final viewers =
                         (peacock['viewers'] as List<dynamic>?)?.length ?? 0;
-                    final timer = peacock['timer'] as Timestamp?;
                     final isOwn = hostUid == user.uid;
 
                     String title = isOwn
                         ? 'Your $gameName Lobby'
-                        : '$hostName\'s $gameName';
-                    String timerText = '';
-                    if (timer != null) {
-                      final now = Timestamp.now();
-                      final diff = timer.seconds - now.seconds;
-                      if (diff > 0) {
-                        final minutes = (diff / 60).ceil();
-                        timerText = ' • $minutes min left';
-                      }
-                    }
+                        : '$hostName\'s $gameName Lobby: $filled/$maxSpots spots';
 
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -260,7 +250,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                               color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          '$filled/$maxSpots spots filled$timerText • $viewers viewers',
+                          '$viewers viewers',
                           style: const TextStyle(color: Colors.white70),
                         ),
                         trailing: isOwn

@@ -20,7 +20,10 @@ class MemberWidgets {
           _buildStatusChip(status,
               gameName: status == 'Claimed Spot' ? gameName : null),
           if (timerDisplay != null &&
-              (status == 'Ready' || status == 'Claimed Spot'))
+              (status == 'Ready' ||
+                  status == 'Calling' ||
+                  status == 'Claimed Spot' ||
+                  status == 'in game'))
             Text('($timerDisplay)',
                 style: Theme.of(context).textTheme.bodySmall),
           if (streak > 0) ...[
@@ -117,6 +120,8 @@ class MemberWidgets {
         return Colors.greenAccent;
       case 'Ready':
         return Colors.yellowAccent;
+      case 'Calling':
+        return Colors.cyanAccent;
       case 'Claimed Spot':
         return Colors.orangeAccent;
       case 'Waiting':

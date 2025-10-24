@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/chat/link_preview.dart';
+import 'package:cod_squad_app/chat/link_preview.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

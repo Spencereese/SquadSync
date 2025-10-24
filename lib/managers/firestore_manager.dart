@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Manages Firestore data persistence and synchronization
 class FirestoreManager with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  Map<String, dynamic> _cachedData = {};
+  final Map<String, dynamic> _cachedData = {};
   bool _isOnline = true;
 
   bool get isOnline => _isOnline;

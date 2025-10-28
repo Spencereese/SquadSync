@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -813,7 +814,10 @@ class ChatScreenState extends State<ChatScreen>
       isScrollControlled: true,
       barrierColor: Colors.black.withValues(alpha: 0.5),
       builder: (BuildContext context) {
-        return PeacockModal();
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+          child: PeacockModal(),
+        );
       },
     );
   }
@@ -1285,8 +1289,7 @@ class ChatScreenState extends State<ChatScreen>
                                 peacock['game']?['name'] ?? 'Unknown Game';
                             final maxSpots = peacock['spots'] ?? 4;
                             final claimed =
-                                (peacock['claimed'] as List<dynamic>?)
-                                        ?.length ??
+                                (peacock['filled'] as List<dynamic>?)?.length ??
                                     0;
                             return GestureDetector(
                               onTap: () => SquadSheet.show(context),

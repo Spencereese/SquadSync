@@ -51,9 +51,14 @@ class SquadManager with ChangeNotifier implements ISquadManager {
   }
 
   Map<String, String> getStatuses(
-      String gameName, Map<String, String> globalStatuses) {
+      String gameName,
+      Map<String, String> globalStatuses,
+      Map<String, Map<String, String>> gameStatuses) {
     // Merge global statuses with game-specific statuses
     final mergedStatuses = Map<String, String>.from(globalStatuses);
+    // Add game-specific statuses (may have UIDs as keys that need conversion)
+    final gameStatusMap = gameStatuses[gameName] ?? {};
+    mergedStatuses.addAll(gameStatusMap);
     // Global statuses take precedence over game-specific statuses
     return mergedStatuses;
   }
@@ -327,8 +332,8 @@ class SquadManager with ChangeNotifier implements ISquadManager {
   Stream<QuerySnapshot> getActiveLobbiesStream() {
     return _firestore
         .collection('peacocks')
-        .where('hostLockTimer', isGreaterThan: Timestamp.now())
-        .orderBy('hostLockTimer')
+        .where('timer', isGreaterThan: Timestamp.now())
+        .orderBy('timer')
         .limit(50)
         .snapshots();
   }

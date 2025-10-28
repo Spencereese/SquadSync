@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../squad_state.dart';
-import 'member_widgets.dart';
 
 class SpotWidgets {
   static Widget buildSpotCard(
@@ -14,6 +13,16 @@ class SpotWidgets {
     final yourName = squadState.displayName;
     final isReady = squadState.statuses[spotName] == 'Ready';
 
+    // Check if any buttons will be shown
+    final hasTimer = squadState.spotTimers[index] != null;
+    final isCalling = squadState.statuses[spotName] == 'Calling';
+    final hasCallButton = !hasOccupant;
+    final hasLockButton =
+        hasOccupant && hasTimer && isCalling && spotName == yourName;
+    final hasWalkingButton =
+        hasOccupant && hasTimer && isReady && spotName == yourName;
+    final hasAnyButton = hasCallButton || hasLockButton || hasWalkingButton;
+
     return GestureDetector(
       onLongPress: () {
         if (hasOccupant) {
@@ -22,22 +31,27 @@ class SpotWidgets {
           showSpotAssignmentMenu(context, squadState, index);
         }
       },
-      onTap: () {
-        if (!hasOccupant) {
-          // Claim the empty spot
-          squadState.claimSpot(index);
-        } else if (hasOccupant && spotName == yourName) {
-          if (isReady) {
-            squadState.lockSpot(index);
-          } else {
-            // Allow leaving spot by tapping when not ready
-            squadState.removeSpot(index);
-          }
-        } else if (hasOccupant && squadState.squadSpots.contains(yourName)) {
-          // You're already in a spot, allow assigning others
-          assignOtherMember(context, squadState, index);
-        }
-      },
+      onTap: hasAnyButton
+          ? null
+          : () {
+              if (!hasOccupant) {
+                // Claim the empty spot
+                squadState.claimSpot(index);
+              } else if (hasOccupant && spotName == yourName) {
+                final status = squadState.statuses[spotName];
+                if (status == 'Ready') {
+                  squadState.lockSpot(index);
+                } else if (status != 'Calling') {
+                  // Allow leaving spot by tapping when not ready and not calling
+                  squadState.removeSpot(index);
+                }
+                // Don't remove spot when calling - let the Lock button handle it
+              } else if (hasOccupant &&
+                  squadState.squadSpots.contains(yourName)) {
+                // You're already in a spot, allow assigning others
+                assignOtherMember(context, squadState, index);
+              }
+            },
       child: Semantics(
         label:
             'Spot ${index + 1}: ${spotName ?? 'Open'}${spotName == yourName && !isReady ? ' (tap to leave)' : spotName == yourName && isReady ? ' (ready to lock)' : ''}',
@@ -64,6 +78,10 @@ class SpotWidgets {
 
   static Widget _buildSpotInfo(BuildContext context, int index,
       String? spotName, SquadState squadState) {
+    final hasTimer = squadState.spotTimers[index] != null;
+    final timerDisplay =
+        hasTimer ? squadState.getSpotTimerDisplay(index) : null;
+
     return Expanded(
       child: Row(
         children: [
@@ -81,9 +99,17 @@ class SpotWidgets {
                   style: Theme.of(context).textTheme.bodyMedium,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (spotName != null)
-                  MemberWidgets.buildPlayerStatusRow(
-                      context, spotName, squadState),
+                if (hasTimer && timerDisplay != null && timerDisplay != '00:00')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Time: $timerDisplay',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w500,
+                          ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -109,24 +135,19 @@ class SpotWidgets {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!hasOccupant)
-          GestureDetector(
-            onLongPress: () {
-              showSpotAssignmentMenu(context, squadState, index);
-            },
-            child: ElevatedButton(
-              onPressed: () {
-                squadState.callSpotForGame(index, gameName);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-                elevation: 6,
-              ),
-              child: const Tooltip(
-                message: 'Tap to call, hold to assign others',
-                child: Text('Call'),
-              ),
+          ElevatedButton(
+            onPressed: () => squadState.callSpotForGame(index, gameName),
+            onLongPress: () =>
+                showSpotAssignmentMenu(context, squadState, index),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              elevation: 6,
+            ),
+            child: const Tooltip(
+              message: 'Tap to call, hold to assign others',
+              child: Text('Call'),
             ),
           ),
         if (hasOccupant && hasTimer && isCalling && spotName == yourName)
@@ -145,16 +166,17 @@ class SpotWidgets {
           ),
         if (hasOccupant && hasTimer && isReady && spotName == yourName)
           ElevatedButton(
-            onPressed: () => squadState.lockSpot(index),
+            onPressed: () => squadState.removeSpot(index),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.yellowAccent,
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
               elevation: 6,
             ),
             child: const Tooltip(
-              message: 'Confirm as Walking',
-              child: Text('Walking'),
+              message: 'Leave your spot',
+              child: Text('Leave'),
             ),
           ),
         // Removed "Leave" button - players lose spots automatically after 5 minutes if not locked

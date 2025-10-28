@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,20 +16,23 @@ import '../squad_tab/squad_tab.dart';
 class SquadTabScreen extends StatelessWidget {
   final String? lobbyId;
   final String? gameName;
+  final Map<String, dynamic>? game;
 
-  const SquadTabScreen({super.key, this.lobbyId, this.gameName});
+  const SquadTabScreen({super.key, this.lobbyId, this.gameName, this.game});
 
   @override
   Widget build(BuildContext context) {
-    return _SquadTabScreenContent(lobbyId: lobbyId, gameName: gameName);
+    return _SquadTabScreenContent(
+        lobbyId: lobbyId, gameName: gameName, game: game);
   }
 }
 
 class _SquadTabScreenContent extends StatefulWidget {
   final String? lobbyId;
   final String? gameName;
+  final Map<String, dynamic>? game;
 
-  const _SquadTabScreenContent({this.lobbyId, this.gameName});
+  const _SquadTabScreenContent({this.lobbyId, this.gameName, this.game});
 
   @override
   _SquadTabScreenContentState createState() => _SquadTabScreenContentState();
@@ -146,7 +150,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
 
   Widget _buildFullSquadInterface(BuildContext context, SquadState squadState) {
     // Import and use the original SquadTab widget for full squad management
-    return SquadTab(lobbyId: widget.lobbyId, gameName: widget.gameName);
+    return SquadTab(
+        lobbyId: widget.lobbyId, gameName: widget.gameName, game: widget.game);
   }
 
   Widget _buildActiveLobbiesSection(BuildContext context) {
@@ -357,7 +362,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       BuildContext context, List<Map<String, dynamic>> pinnedGames) {
     if (pinnedGames.isEmpty) {
       return Container(
-        height: 80, // Match the square bubble height
+        height: 65, // Match the container height
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -387,7 +392,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       children: [
         SizedBox(
-          height: 80, // Match the square bubble size
+          height: 65, // Match the container height
           child: PageView.builder(
             controller: _pageController,
             itemCount: itemCount,
@@ -453,20 +458,33 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
             opacity: opacity,
             child: GestureDetector(
               onTap: () => _startLobbyForGame(context, game),
+              onLongPress: () async {
+                final squadState =
+                    Provider.of<SquadState>(context, listen: false);
+                await squadState.removePinnedGame(game['name']);
+                // Show feedback that game was removed
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${game['name']} removed from quick start'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
+              },
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 8),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    width: 80,
-                    height: 80,
+                    width: 140,
+                    height: 65,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: isSelected
                           ? [
                               BoxShadow(
-                                color:
-                                    Colors.cyanAccent.withValues(alpha: 0.3),
+                                color: Colors.cyanAccent.withValues(alpha: 0.3),
                                 blurRadius: 8,
                                 spreadRadius: 2,
                               ),
@@ -476,7 +494,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                     child: game['coverUrl'] != null
                         ? CachedNetworkImage(
                             imageUrl: game['coverUrl'],
-                            fit: BoxFit.cover,
+                            fit: BoxFit.contain,
                             placeholder: (context, url) => Container(
                               color: Colors.grey[800],
                               child: const Center(
@@ -494,6 +512,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                             ),
                           )
                         : Container(
+                            width: 80,
+                            height: 120,
                             color: Colors.grey[800],
                             child: const Icon(
                               Icons.videogame_asset,
@@ -516,7 +536,11 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const PeacockModal(),
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+        child: const PeacockModal(),
+      ),
     );
   }
 
@@ -613,8 +637,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) =>
-              SquadTabScreen(lobbyId: peacockRef.id, gameName: gameName),
+          builder: (context) => SquadTabScreen(
+              lobbyId: peacockRef.id, gameName: gameName, game: game),
         ),
       );
     } catch (e) {
@@ -642,12 +666,32 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       BuildContext context, String peacockId, Map<String, dynamic> peacock) {
     final gameName = peacock['game']?['name'] ?? '';
 
+    // Try to find the game in pinned games for better data
+    final userManager = Provider.of<UserManager>(context, listen: false);
+    final game =
+        userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
+                  (g) => g?['name'] == gameName,
+                  orElse: () => null,
+                ) ??
+            userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
+                  (g) => g?['name']?.toLowerCase() == gameName.toLowerCase(),
+                  orElse: () => null,
+                ) ??
+            userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
+                  (g) =>
+                      g?['name']
+                          ?.toLowerCase()
+                          .contains(gameName.toLowerCase()) ==
+                      true,
+                  orElse: () => null,
+                );
+
     // Navigate to full SquadTabScreen filtered for this lobby's game
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) =>
-            SquadTabScreen(lobbyId: peacockId, gameName: gameName),
+            SquadTabScreen(lobbyId: peacockId, gameName: gameName, game: game),
       ),
     );
   }

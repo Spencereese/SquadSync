@@ -61,15 +61,10 @@ class SquadState with ChangeNotifier {
   }
 
   Map<String, String> get statuses {
-    final rawStatuses =
-        squadManager.getStatuses(currentGame?['name'] ?? '', globalStatuses);
-    // Convert UID keys to display name keys
-    return Map.fromEntries(
-      rawStatuses.entries.map((entry) => MapEntry(
-            getDisplayNameForUid(entry.key),
-            entry.value,
-          )),
-    );
+    final rawStatuses = squadManager.getStatuses(
+        currentGame?['name'] ?? '', globalStatuses, gameStatuses);
+    // globalStatuses already has display names as keys, so no conversion needed
+    return rawStatuses;
   }
 
   // New: Store member UIDs and provide display names dynamically
@@ -273,19 +268,35 @@ class SquadState with ChangeNotifier {
 
   // Ensure currentGame is always valid
   Map<String, dynamic>? get currentGame {
-    if (dataManager.currentGame != null &&
-        availableGames.any((game) =>
-            game['name'] == dataManager.currentGame!['name'] &&
-            game['maxSpots'] == dataManager.currentGame!['maxSpots'])) {
+    // Return the stored currentGame if it exists, regardless of availableGames
+    if (dataManager.currentGame != null) {
       return dataManager.currentGame;
     }
-    // Return first available game if currentGame is invalid
+    // Return first available game as fallback
     return availableGames.isNotEmpty ? availableGames.first : null;
   }
 
   // Private setter for internal use
   set currentGame(Map<String, dynamic>? value) {
     dataManager.currentGame = value;
+    // Ensure squadSpots array is properly sized for the new game
+    if (value != null) {
+      final gameName = value['name'] ?? '';
+      final maxSpots = value['maxSpots'] ?? 4;
+      if (!dataManager.gameSquadSpots.containsKey(gameName)) {
+        dataManager.gameSquadSpots[gameName] =
+            List<String?>.filled(maxSpots, null);
+      } else if (dataManager.gameSquadSpots[gameName]!.length != maxSpots) {
+        // Resize the array if maxSpots changed
+        final currentSpots = dataManager.gameSquadSpots[gameName]!;
+        dataManager.gameSquadSpots[gameName] =
+            List<String?>.filled(maxSpots, null);
+        // Copy existing spots (up to the new maxSpots)
+        for (int i = 0; i < currentSpots.length && i < maxSpots; i++) {
+          dataManager.gameSquadSpots[gameName]![i] = currentSpots[i];
+        }
+      }
+    }
   }
 
   // Getters for delegated properties
@@ -430,7 +441,10 @@ class SquadState with ChangeNotifier {
         // Check for server-side timer updates by refreshing from Firestore periodically
         _checkForServerTimerUpdates();
         _checkPreferredModes();
-        // Removed notifyListeners() to prevent unnecessary rebuilds every second
+        // Notify listeners only if there are active timers that need UI updates
+        if (_hasActiveTimers()) {
+          notifyListeners();
+        }
       }
     });
 
@@ -1341,6 +1355,11 @@ class SquadState with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> removePinnedGame(String gameName) async {
+    await userManager.removePinnedGame(gameName);
+    notifyListeners();
+  }
+
   void updateProfileImage(String url) {
     persistenceManager.profileImage = url;
     final user = FirebaseAuth.instance.currentUser;
@@ -1913,6 +1932,16 @@ class SquadState with ChangeNotifier {
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
+  bool _hasActiveTimers() {
+    final gameName = currentGame?['name'] ?? '';
+    if (!gameSpotTimers.containsKey(gameName)) return false;
+
+    for (final timer in gameSpotTimers[gameName]!) {
+      if (timer != null) return true;
+    }
+    return false;
+  }
+
   void _checkForServerTimerUpdates() {
     // Periodically refresh timer data from Firestore to sync with server-side updates
     // This ensures the UI reflects server-side timer changes even when app was closed
@@ -1936,7 +1965,7 @@ class SquadState with ChangeNotifier {
               (DateTime.now().millisecondsSinceEpoch - startTime) / 1000;
           final remaining = duration - elapsed.floor();
 
-          if (remaining <= 0) {
+          if (duration > 0 && remaining <= 0) {
             // Check if this is a calling timer
             final isCalling = timer['calling'] == true;
 

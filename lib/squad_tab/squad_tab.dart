@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../squad_state.dart';
 import '../managers/game_manager.dart';
 import '../managers/squad_manager.dart';
+import '../managers/user_manager.dart';
 import 'spot_widgets.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
@@ -16,20 +17,22 @@ import '../create_squad_screen.dart';
 class SquadTab extends StatelessWidget {
   final String? lobbyId;
   final String? gameName;
+  final Map<String, dynamic>? game;
 
-  const SquadTab({super.key, this.lobbyId, this.gameName});
+  const SquadTab({super.key, this.lobbyId, this.gameName, this.game});
 
   @override
   Widget build(BuildContext context) {
-    return _SquadTabContent(lobbyId: lobbyId, gameName: gameName);
+    return _SquadTabContent(lobbyId: lobbyId, gameName: gameName, game: game);
   }
 }
 
 class _SquadTabContent extends StatefulWidget {
   final String? lobbyId;
   final String? gameName;
+  final Map<String, dynamic>? game;
 
-  const _SquadTabContent({this.lobbyId, this.gameName});
+  const _SquadTabContent({this.lobbyId, this.gameName, this.game});
 
   @override
   _SquadTabContentState createState() => _SquadTabContentState();
@@ -49,26 +52,74 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     }
 
     // Set currentGame if gameName is provided but currentGame is not set or doesn't match
-    if (widget.gameName != null) {
+    if (widget.game != null) {
+      // If we have the full game object, use it directly
+      squadState.currentGame = widget.game;
+    } else if (widget.gameName != null) {
       final gameManager =
           Provider.of<GameManager>(_currentContext, listen: false);
+      final userManager =
+          Provider.of<UserManager>(_currentContext, listen: false);
       if (squadState.currentGame == null ||
           squadState.currentGame!['name'] != widget.gameName) {
-        // Try to find the game in available games
+        // First, try to find the game in pinned games (most likely source for quick start)
         Map<String, dynamic>? game =
-            gameManager.availableGames.cast<Map<String, dynamic>?>().firstWhere(
+            userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
                   (g) => g?['name'] == widget.gameName,
                   orElse: () => null,
                 );
-        game ??=
-            gameManager.availableGames.cast<Map<String, dynamic>?>().firstWhere(
-                  (g) =>
-                      g?['name']
-                          ?.toLowerCase()
-                          .contains(widget.gameName!.toLowerCase()) ??
-                      false,
-                  orElse: () => {'name': widget.gameName, 'maxSpots': 4},
-                );
+
+        // If not found, try case-insensitive match in pinned games
+        if (game == null) {
+          game = userManager.pinnedGames
+              .cast<Map<String, dynamic>?>()
+              .firstWhere(
+                (g) =>
+                    g?['name']?.toLowerCase() == widget.gameName?.toLowerCase(),
+                orElse: () => null,
+              );
+        }
+
+        // If still not found, try partial match in pinned games
+        if (game == null) {
+          game =
+              userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
+                    (g) =>
+                        g?['name']
+                            ?.toLowerCase()
+                            .contains(widget.gameName!.toLowerCase()) ==
+                        true,
+                    orElse: () => null,
+                  );
+        }
+
+        // If still not found, search for the game asynchronously
+        if (game == null) {
+          // Trigger async search without awaiting
+          gameManager.searchGames(widget.gameName!).then((searchResults) {
+            if (searchResults.isNotEmpty && mounted) {
+              final squadState =
+                  Provider.of<SquadState>(_currentContext, listen: false);
+              // Only update if currentGame is still the basic fallback (has empty summary)
+              if (squadState.currentGame?['summary'] == '' &&
+                  squadState.currentGame?['name'] == widget.gameName) {
+                squadState.currentGame = searchResults.first;
+              }
+            }
+          }).catchError((e) {
+            print('Error searching for game ${widget.gameName}: $e');
+          });
+        }
+
+        // Use found game or create fallback
+        game ??= {
+          'name': widget.gameName,
+          'maxSpots': 4,
+          'description': 'Custom Game',
+          'summary':
+              '', // Ensure summary is empty so _showGameInfo doesn't show wrong description
+        };
+
         squadState.currentGame = game;
       }
     }

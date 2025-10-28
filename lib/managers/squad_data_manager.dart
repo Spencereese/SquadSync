@@ -185,13 +185,14 @@ class SquadDataManager {
   void lockCalledSpot(
       String gameName, int index, String userName, String userUid) {
     // Convert calling spot to locked spot
-    if (gameSquadSpots[gameName]?[index] == '${userUid}_calling') {
+    final currentSpot = gameSquadSpots[gameName]?[index];
+    if (currentSpot == '${userUid}_calling' || currentSpot == userUid) {
       gameSquadSpots[gameName]![index] = userUid;
       gameSpotTimers[gameName]![index] = {
         'startTime': DateTime.now().millisecondsSinceEpoch,
         'duration': -1, // Count up to show time in lobby
       };
-      globalStatuses[userName] = 'in game'; // Set status to in game
+      globalStatuses[userName] = 'Ready'; // Set status to ready for walking
     }
   }
 

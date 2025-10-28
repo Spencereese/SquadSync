@@ -272,9 +272,11 @@ class GameManager with ChangeNotifier implements IGameManager {
         // Cache results in Firestore for future offline access
         final batch = FirebaseFirestore.instance.batch();
         for (final game in igdbResults) {
+          final gameData = Map<String, dynamic>.from(game);
+          gameData['name_lowercase'] = game['name']?.toString().toLowerCase();
           final docRef =
               FirebaseFirestore.instance.collection('games').doc(game['slug']);
-          batch.set(docRef, game, SetOptions(merge: true));
+          batch.set(docRef, gameData, SetOptions(merge: true));
         }
         await batch.commit();
         return igdbResults;

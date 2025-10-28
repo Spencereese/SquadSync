@@ -102,20 +102,52 @@ class UserManager with ChangeNotifier implements IUserManager {
         // Enrich games that don't have coverUrl from cached IGDB data
         for (int i = 0; i < pinnedGames.length; i++) {
           final game = pinnedGames[i];
-          if (game['coverUrl'] == null && game['slug'] != null) {
+          if (game['coverUrl'] == null) {
             try {
-              final cachedGame = await FirebaseFirestore.instance
-                  .collection('games')
-                  .doc(game['slug'])
-                  .get();
-              if (cachedGame.exists) {
-                final cachedData = cachedGame.data();
-                if (cachedData != null && cachedData['coverUrl'] != null) {
-                  game['coverUrl'] = cachedData['coverUrl'];
+              // First try by slug if available
+              if (game['slug'] != null) {
+                final cachedGame = await FirebaseFirestore.instance
+                    .collection('games')
+                    .doc(game['slug'])
+                    .get();
+                if (cachedGame.exists) {
+                  final cachedData = cachedGame.data();
+                  if (cachedData != null) {
+                    if (cachedData['coverUrl'] != null) {
+                      game['coverUrl'] = cachedData['coverUrl'];
+                    }
+                    if (cachedData['summary'] != null &&
+                        game['summary'] == null) {
+                      game['summary'] = cachedData['summary'];
+                    }
+                  }
+                }
+              } else {
+                // Fallback: search by name
+                final query = game['name']?.toString().toLowerCase() ?? '';
+                if (query.isNotEmpty) {
+                  final snapshot = await FirebaseFirestore.instance
+                      .collection('games')
+                      .where('name', isGreaterThanOrEqualTo: query)
+                      .where('name', isLessThanOrEqualTo: '$query\uf8ff')
+                      .limit(1)
+                      .get();
+
+                  if (snapshot.docs.isNotEmpty) {
+                    final cachedData = snapshot.docs.first.data();
+                    if (cachedData['coverUrl'] != null) {
+                      game['coverUrl'] = cachedData['coverUrl'];
+                    }
+                    if (cachedData['summary'] != null &&
+                        game['summary'] == null) {
+                      game['summary'] = cachedData['summary'];
+                    }
+                  }
                 }
               }
             } catch (e) {
               // Ignore enrichment errors
+              print('Error enriching pinned game ${game['name']}: $e');
             }
           }
         }
@@ -147,6 +179,26 @@ class UserManager with ChangeNotifier implements IUserManager {
     if (pinnedGames.length >= 10) return;
 
     pinnedGames.add(game);
+    notifyListeners();
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'pinnedGames': pinnedGames,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      // Handle error
+    }
+  }
+
+  Future<void> removePinnedGame(String gameName) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Find and remove the game
+    final index = pinnedGames.indexWhere((g) => g['name'] == gameName);
+    if (index == -1) return; // Game not found
+
+    pinnedGames.removeAt(index);
     notifyListeners();
 
     try {

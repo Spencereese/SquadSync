@@ -61,17 +61,15 @@ class SquadState with ChangeNotifier {
   }
 
   Map<String, String> get statuses {
-    return cacheService.getOrCompute('statuses', () {
-      final rawStatuses =
-          squadManager.getStatuses(currentGame?['name'] ?? '', globalStatuses);
-      // Convert UID keys to display name keys
-      return Map.fromEntries(
-        rawStatuses.entries.map((entry) => MapEntry(
-              getDisplayNameForUid(entry.key),
-              entry.value,
-            )),
-      );
-    });
+    final rawStatuses =
+        squadManager.getStatuses(currentGame?['name'] ?? '', globalStatuses);
+    // Convert UID keys to display name keys
+    return Map.fromEntries(
+      rawStatuses.entries.map((entry) => MapEntry(
+            getDisplayNameForUid(entry.key),
+            entry.value,
+          )),
+    );
   }
 
   // New: Store member UIDs and provide display names dynamically
@@ -382,8 +380,6 @@ class SquadState with ChangeNotifier {
     cacheService.setDefaultMaxAge(
         'squadSpots', const Duration(milliseconds: 100));
     cacheService.setDefaultMaxAge(
-        'statuses', const Duration(milliseconds: 100));
-    cacheService.setDefaultMaxAge(
         'squadMembers', const Duration(milliseconds: 100));
 
     // Initialize auth service
@@ -434,8 +430,7 @@ class SquadState with ChangeNotifier {
         // Check for server-side timer updates by refreshing from Firestore periodically
         _checkForServerTimerUpdates();
         _checkPreferredModes();
-        // Notify listeners to update timer displays
-        notifyListeners();
+        // Removed notifyListeners() to prevent unnecessary rebuilds every second
       }
     });
 
@@ -1407,8 +1402,6 @@ class SquadState with ChangeNotifier {
       persistenceManager.markFieldChanged('globalStatuses');
       _markFieldChanged('statuses');
       uiManager.setNewSquadSpot(true, currentGame?['name'] ?? '');
-      // Invalidate cache for statuses
-      cacheService.invalidate('statuses');
       updateFirestoreAsync(force: true);
       notifyListeners();
     }

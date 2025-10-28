@@ -36,7 +36,7 @@ class _SquadTabContent extends StatefulWidget {
 }
 
 class _SquadTabContentState extends State<_SquadTabContent> {
-  bool _showPeacockMembers = false;
+  final bool _showPeacockMembers = false;
   late BuildContext _currentContext;
 
   @override
@@ -55,10 +55,20 @@ class _SquadTabContentState extends State<_SquadTabContent> {
       if (squadState.currentGame == null ||
           squadState.currentGame!['name'] != widget.gameName) {
         // Try to find the game in available games
-        final game = gameManager.availableGames.firstWhere(
-          (g) => g['name'] == widget.gameName,
-          orElse: () => {'name': widget.gameName, 'maxSpots': 4},
-        );
+        Map<String, dynamic>? game =
+            gameManager.availableGames.cast<Map<String, dynamic>?>().firstWhere(
+                  (g) => g?['name'] == widget.gameName,
+                  orElse: () => null,
+                );
+        game ??=
+            gameManager.availableGames.cast<Map<String, dynamic>?>().firstWhere(
+                  (g) =>
+                      g?['name']
+                          ?.toLowerCase()
+                          .contains(widget.gameName!.toLowerCase()) ??
+                      false,
+                  orElse: () => {'name': widget.gameName, 'maxSpots': 4},
+                );
         squadState.currentGame = game;
       }
     }
@@ -83,6 +93,22 @@ class _SquadTabContentState extends State<_SquadTabContent> {
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
+                // TEMPORARY DEBUG LABEL
+                SliverToBoxAdapter(
+                  child: Container(
+                    padding: const EdgeInsets.all(8.0),
+                    color: Colors.red.withValues(alpha: 0.8),
+                    child: const Text(
+                      'PAGE: Squad Lobbies',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -188,54 +214,58 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     Widget logo;
     final currentGame = squadState.currentGame;
 
+    // Helper to get asset name from game name
+    String? getAssetName(String? gameName) {
+      if (gameName == null) return null;
+      final lower = gameName.toLowerCase();
+      if (lower.contains('call of duty')) return 'codwarzone.png';
+      if (lower.contains('battlefield')) return 'Battlefield.png';
+      if (lower.contains('satisfactory')) return 'satisfactory.png';
+      // Add more mappings as needed
+      return '${gameName.replaceAll(' ', '').toLowerCase()}.png';
+    }
+
     // Try to use coverUrl from IGDB API first
     if (currentGame?['coverUrl'] != null) {
-      logo = Image.network(
-        currentGame!['coverUrl'],
+      logo = Container(
         width: 160,
         height: 100,
-        fit: BoxFit.contain,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return const SizedBox(
-            width: 160,
-            height: 100,
-            child: Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.cyanAccent),
-              ),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) =>
-            const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
-      );
-    } else if (widget.gameName != null) {
-      // Fallback to asset logo
-      logo = Image.asset(
-        'assets/images/${widget.gameName!.toLowerCase()}_logo.png',
-        width: 160,
-        height: 100,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) =>
-            const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
-      );
-    } else if (currentGame?['logo'] != null) {
-      // Fallback to old asset logo field
-      logo = Image.asset(
-        currentGame!['logo'],
-        width: 160,
-        height: 100,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) =>
-            const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: NetworkImage(currentGame!['coverUrl']),
+            fit: BoxFit.contain,
+          ),
+        ),
       );
     } else {
-      logo = const Icon(
-        Icons.gamepad,
-        size: 100,
-        color: Colors.cyanAccent,
-      );
+      final assetName =
+          getAssetName(currentGame?['name']) ?? getAssetName(widget.gameName);
+      if (assetName != null) {
+        logo = Image.asset(
+          'assets/images/$assetName',
+          width: 160,
+          height: 100,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) =>
+              const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
+        );
+      } else if (currentGame?['logo'] != null) {
+        // Fallback to old asset logo field
+        logo = Image.asset(
+          currentGame!['logo'],
+          width: 160,
+          height: 100,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) =>
+              const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
+        );
+      } else {
+        logo = const Icon(
+          Icons.gamepad,
+          size: 100,
+          color: Colors.cyanAccent,
+        );
+      }
     }
 
     return GestureDetector(
@@ -367,8 +397,11 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                                 controller: controller,
                                 itemCount: lobbies.length,
                                 itemBuilder: (context, index) {
-                                  final lobby = lobbies[index].data()
-                                      as Map<String, dynamic>;
+                                  final data = lobbies[index].data();
+                                  if (data is! Map<String, dynamic>) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final lobby = data;
                                   final lobbyId = lobbies[index].id;
                                   final gameName =
                                       lobby['gameName'] ?? 'Unknown Game';
@@ -647,9 +680,15 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           return const SizedBox.shrink();
         }
 
-        final peacockData = snapshot.data!.data() as Map<String, dynamic>;
-        final filled =
-            List<Map<String, dynamic>>.from(peacockData['filled'] ?? []);
+        final data = snapshot.data!.data();
+        if (data is! Map<String, dynamic>) {
+          return const SizedBox.shrink();
+        }
+        final peacockData = data;
+        final filledRaw = peacockData['filled'];
+        final filled = (filledRaw is List<dynamic>)
+            ? filledRaw.whereType<Map<String, dynamic>>().toList()
+            : <Map<String, dynamic>>[];
         final userSpot = filled.firstWhere(
           (f) => f['uid'] == FirebaseAuth.instance.currentUser?.uid,
           orElse: () => <String, dynamic>{},
@@ -657,29 +696,31 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
         if (userSpot.isNotEmpty) {
           final status = userSpot['status'];
-          if (status == 'ready') {
+          if (status == 'called') {
             return FloatingActionButton.extended(
               onPressed: () => _lockSpot(context, squadState),
               backgroundColor: Colors.yellowAccent,
               icon: const Icon(Icons.lock),
               label: const Text('Lock Spot'),
             );
+          } else if (status == 'ready') {
+            return FloatingActionButton.extended(
+              onPressed: () => _callSpot(context, squadState),
+              backgroundColor: Colors.orangeAccent,
+              icon: const Icon(Icons.call),
+              label: const Text('Call Spot'),
+            );
           }
           return const SizedBox.shrink();
         } else {
-          // Show Claim Spot button
-          return FloatingActionButton.extended(
-            onPressed: () => _claimSpot(context, squadState),
-            backgroundColor: Colors.cyanAccent,
-            icon: const Icon(Icons.add),
-            label: const Text('Claim Spot'),
-          );
+          // Claim Spot button removed
+          return const SizedBox.shrink();
         }
       },
     );
   }
 
-  Future<void> _claimSpot(BuildContext context, SquadState squadState) async {
+  Future<void> _callSpot(BuildContext context, SquadState squadState) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || widget.lobbyId == null) return;
 
@@ -690,11 +731,11 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Spot claimed!')),
+        const SnackBar(content: Text('Spot called!')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to claim spot: $e')),
+        SnackBar(content: Text('Failed to call spot: $e')),
       );
     }
   }

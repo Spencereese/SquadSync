@@ -262,65 +262,87 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
         ),
         body: Container(
           color: Colors.black,
-          child: Consumer<SquadState>(
-            builder: (context, squadState, child) {
-              // Check if user is authenticated
-              final currentUser = FirebaseAuth.instance.currentUser;
-              if (currentUser == null) {
-                return const Center(
-                  child: CircularProgressIndicator(color: Colors.cyanAccent),
-                );
-              }
-
-              if (squadState.selectedSquadId == null) {
-                return const Center(
-                  child: Text(
-                    'No squad selected',
-                    style: TextStyle(color: Colors.white),
+          child: Column(
+            children: [
+              // TEMPORARY DEBUG LABEL
+              Container(
+                padding: const EdgeInsets.all(4.0),
+                margin: const EdgeInsets.only(bottom: 8.0),
+                color: Colors.lightBlue.withValues(alpha: 0.8),
+                child: const Text(
+                  'PAGE: Chat Groups Screen',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
                   ),
-                );
-              }
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Expanded(
+                child: Consumer<SquadState>(
+                  builder: (context, squadState, child) {
+                    // Check if user is authenticated
+                    final currentUser = FirebaseAuth.instance.currentUser;
+                    if (currentUser == null) {
+                      return const Center(
+                        child:
+                            CircularProgressIndicator(color: Colors.cyanAccent),
+                      );
+                    }
 
-              return Consumer<ChatState>(
-                builder: (context, chatState, child) {
-                  if (chatState.isDMView) {
-                    // Show DMs
-                    return _buildDMList(context, squadState, currentUser);
-                  } else {
-                    // Show groups with DM card
-                    return StreamBuilder<QuerySnapshot>(
-                      stream: _firestore
-                          .collection('squads')
-                          .doc(squadState.selectedSquadId)
-                          .collection('chat_groups')
-                          .orderBy('lastMessageTime', descending: true)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              'Error: ${snapshot.error}',
-                              style: const TextStyle(color: Colors.white),
-                            ),
+                    if (squadState.selectedSquadId == null) {
+                      return const Center(
+                        child: Text(
+                          'No squad selected',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      );
+                    }
+
+                    return Consumer<ChatState>(
+                      builder: (context, chatState, child) {
+                        if (chatState.isDMView) {
+                          // Show DMs
+                          return _buildDMList(context, squadState, currentUser);
+                        } else {
+                          // Show groups with DM card
+                          return StreamBuilder<QuerySnapshot>(
+                            stream: _firestore
+                                .collection('squads')
+                                .doc(squadState.selectedSquadId)
+                                .collection('chat_groups')
+                                .orderBy('lastMessageTime', descending: true)
+                                .snapshots(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return Center(
+                                  child: Text(
+                                    'Error: ${snapshot.error}',
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                );
+                              }
+
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Center(
+                                  child: CircularProgressIndicator(
+                                      color: Colors.cyanAccent),
+                                );
+                              }
+
+                              return _buildGroupsList(
+                                  context, squadState, currentUser, snapshot);
+                            },
                           );
                         }
-
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                                color: Colors.cyanAccent),
-                          );
-                        }
-
-                        return _buildGroupsList(
-                            context, squadState, currentUser, snapshot);
                       },
                     );
-                  }
-                },
-              );
-            },
+                  },
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -364,6 +386,25 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
       child: Scaffold(
         body: Stack(
           children: [
+            // TEMPORARY DEBUG LABEL
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(8.0),
+                color: Colors.blue.withValues(alpha: 0.8),
+                child: const Text(
+                  'PAGE: Main Navigation Screen (Chat Groups / Notifications / Profile)',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
             AnimatedContainer(
               duration: const Duration(milliseconds: 500),
               decoration: BoxDecoration(
@@ -372,11 +413,8 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                   end: Alignment.bottomRight,
                   colors: [
                     Colors.black,
-                    _selectedIndexNotifier.value == 2
-                        ? AppTheme.primaryColor.withValues(alpha: 0.8)
-                        : AppTheme.primaryColor,
-                    if (_selectedIndexNotifier.value == 2)
-                      AppTheme.accentColor.withValues(alpha: 0.2),
+                    AppTheme.primaryColor,
+                    AppTheme.accentColor.withValues(alpha: 0.2),
                   ],
                 ),
               ),
@@ -627,13 +665,14 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   const Text(
                     'Privacy:',
                     style: TextStyle(color: Colors.white),
                   ),
-                  const SizedBox(width: 16),
                   ChoiceChip(
                     label: const Text('Public'),
                     selected: isPublic,
@@ -646,7 +685,6 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                       color: isPublic ? Colors.cyanAccent : Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 8),
                   ChoiceChip(
                     label: const Text('Private'),
                     selected: !isPublic,
@@ -1449,24 +1487,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             backgroundColor: AppTheme.cardDarkColor,
             actions: [
               // Quiet Games toggle
-              SwitchListTile(
-                title: const Text(
-                  'Quiet Games',
-                  style: TextStyle(color: Colors.white, fontSize: 14),
+              IconButton(
+                icon: Icon(
+                  _quietGames ? Icons.volume_off : Icons.volume_up,
+                  color: Colors.white,
                 ),
-                value: _quietGames,
-                onChanged: (value) {
+                tooltip: _quietGames ? 'Unmute games' : 'Mute games',
+                onPressed: () {
                   setState(() {
-                    _quietGames = value;
+                    _quietGames = !_quietGames;
                   });
-                  if (!value) {
+                  if (!_quietGames) {
                     // Clear all muted games when turning off quiet mode
                     userManager.clearMutedGames();
                   }
                 },
-                activeColor: Colors.cyanAccent,
-                contentPadding: EdgeInsets.zero,
-                dense: true,
               ),
               // Drawer button
               IconButton(
@@ -1476,7 +1511,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ],
           ),
           endDrawer: _buildDrawer(context, userManager),
-          body: _buildNotificationsFeed(notificationManager, userManager),
+          body: Column(
+            children: [
+              // TEMPORARY DEBUG LABEL
+              Container(
+                padding: const EdgeInsets.all(8.0),
+                margin: const EdgeInsets.only(bottom: 8.0),
+                color: Colors.brown.withValues(alpha: 0.8),
+                child: const Text(
+                  'PAGE: Notifications / Alerts Tab',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Expanded(
+                child:
+                    _buildNotificationsFeed(notificationManager, userManager),
+              ),
+            ],
+          ),
         );
       },
     );

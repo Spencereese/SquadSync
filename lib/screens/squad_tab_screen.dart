@@ -37,6 +37,7 @@ class _SquadTabScreenContent extends StatefulWidget {
 class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   late PageController _pageController;
   double _currentPage = 0.0;
+  late SquadManager _squadManager;
 
   @override
   void initState() {
@@ -53,6 +54,12 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         _currentPage = newPage;
       });
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _squadManager = Provider.of<SquadManager>(context, listen: false);
   }
 
   @override
@@ -76,8 +83,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     if (widget.lobbyId != null) {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        final squadManager = Provider.of<SquadManager>(context, listen: false);
-        await squadManager.removeViewer(widget.lobbyId!, user.uid);
+        await _squadManager.removeViewer(widget.lobbyId!, user.uid);
       }
     }
   }

@@ -127,12 +127,12 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         ),
         child: Column(
           children: [
-            // Active Lobbies Section (Top Half)
+            // Active Lobbies Section (Top 2/3 - contains lobbies and carousel)
             Expanded(
-              flex: 1,
+              flex: 2,
               child: _buildActiveLobbiesSection(context),
             ),
-            // Member Status Section (Bottom Half)
+            // Member Status Section (Bottom 1/3)
             Expanded(
               flex: 1,
               child: _buildMemberStatusSection(context, squadState),
@@ -194,39 +194,10 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                 }).toList();
 
                 if (peacocks.isEmpty) {
-                  return Consumer<UserManager>(
-                    builder: (context, userManager, child) => Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text(
-                            'No active games',
-                            style: TextStyle(color: Colors.white, fontSize: 16),
-                          ),
-                          const SizedBox(height: 24),
-                          if (userManager.pinnedGames.isNotEmpty) ...[
-                            const Text(
-                              'Quick Start:',
-                              style: TextStyle(
-                                color: Colors.cyanAccent,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            _buildPinnedGamesCarousel(
-                                context, userManager.pinnedGames),
-                          ] else ...[
-                            const Text(
-                              'Pin favorites for quick start',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                  return const Center(
+                    child: Text(
+                      'No active games',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   );
                 }
@@ -281,6 +252,46 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
               },
             ),
           ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(
+            'Quick Start',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.cyanAccent, fontWeight: FontWeight.bold),
+          ),
+        ),
+        Consumer<UserManager>(
+          builder: (context, userManager, child) {
+            if (userManager.pinnedGames.isNotEmpty) {
+              return _buildPinnedGamesCarousel(
+                  context, userManager.pinnedGames);
+            } else {
+              return Container(
+                height: 320,
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.star_border,
+                      size: 48,
+                      color: Colors.grey[600],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Pin favorites for quick start',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+          },
         ),
       ],
     );
@@ -362,7 +373,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       BuildContext context, List<Map<String, dynamic>> pinnedGames) {
     if (pinnedGames.isEmpty) {
       return Container(
-        height: 65, // Match the container height
+        height: 356, // Match the carousel height
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -392,7 +403,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       children: [
         SizedBox(
-          height: 65, // Match the container height
+          height: 356, // Reduced by 14px to fix bottom overflow
           child: PageView.builder(
             controller: _pageController,
             itemCount: itemCount,
@@ -474,27 +485,27 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
               },
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: Colors.cyanAccent.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            spreadRadius: 2,
+                          ),
+                        ]
+                      : null,
+                ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    width: 140,
-                    height: 65,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: Colors.cyanAccent.withValues(alpha: 0.3),
-                                blurRadius: 8,
-                                spreadRadius: 2,
-                              ),
-                            ]
-                          : null,
-                    ),
+                  child: SizedBox(
+                    width: 120,
+                    height: 336,
                     child: game['coverUrl'] != null
                         ? CachedNetworkImage(
                             imageUrl: game['coverUrl'],
-                            fit: BoxFit.contain,
+                            fit: BoxFit.fitWidth,
                             placeholder: (context, url) => Container(
                               color: Colors.grey[800],
                               child: const Center(
@@ -512,8 +523,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                             ),
                           )
                         : Container(
-                            width: 80,
-                            height: 120,
                             color: Colors.grey[800],
                             child: const Icon(
                               Icons.videogame_asset,

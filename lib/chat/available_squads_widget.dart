@@ -16,24 +16,24 @@ class AvailableSquadsWidget extends StatelessWidget {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('peacocks')
-          .where('hostUid', isNotEqualTo: currentUser.uid)
           .where('timer', isGreaterThan: Timestamp.now())
           .orderBy('timer', descending: false)
           .limit(5)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+        if (snapshot.hasError) {
+          return const SizedBox.shrink();
+        }
+        if (!snapshot.hasData) {
           return const SizedBox.shrink();
         }
 
         final availableSquads = snapshot.data!.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          final claimed = (data['claimed'] as List<dynamic>?) ?? [];
           final maxSpots = data['spots'] ?? 4;
-          // Only show if there's space available
-          return claimed.length < maxSpots;
+          final filled = (data['filled'] as List<dynamic>?)?.length ?? 0;
+          return filled < maxSpots;
         }).toList();
-
         if (availableSquads.isEmpty) {
           return const SizedBox.shrink();
         }
@@ -78,8 +78,8 @@ class AvailableSquadsWidget extends StatelessWidget {
     final data = doc.data() as Map<String, dynamic>;
     final gameName = data['game']?['name'] ?? 'Unknown Game';
     final maxSpots = data['spots'] ?? 4;
-    final claimed = (data['claimed'] as List<dynamic>?) ?? [];
-    final currentSpots = claimed.length;
+    final filled = (data['filled'] as List<dynamic>?) ?? [];
+    final currentSpots = filled.length;
     final nextSpot = currentSpots + 1;
 
     return Padding(
@@ -101,19 +101,10 @@ class AvailableSquadsWidget extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orangeAccent,
               foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              minimumSize: const Size(0, 32),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              textStyle: const TextStyle(fontSize: 12),
             ),
-            child: Text(
-              '$nextSpot/$maxSpots',
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            child: Text('Spot $nextSpot'),
           ),
         ],
       ),

@@ -357,7 +357,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       BuildContext context, List<Map<String, dynamic>> pinnedGames) {
     if (pinnedGames.isEmpty) {
       return Container(
-        height: 100, // Match the carousel height
+        height: 80, // Match the square bubble height
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -387,7 +387,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       children: [
         SizedBox(
-          height: 100, // Reduced height since we removed text
+          height: 80, // Match the square bubble size
           child: PageView.builder(
             controller: _pageController,
             itemCount: itemCount,
@@ -441,60 +441,50 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
 
     // Simplified layering - tuck behind instead of complex animations
     final isSelected = pageOffset.abs() < 0.5;
-    final scale = isSelected ? 1.0 : 0.8;
     final opacity = isSelected ? 1.0 : 0.7;
-    final translateY = isSelected ? 0.0 : 10.0; // Simple tuck behind effect
+    final translateY = isSelected ? 0.0 : 8.0; // Simple tuck behind effect
 
     return AnimatedBuilder(
       animation: _pageController,
       builder: (context, child) {
         return Transform.translate(
           offset: Offset(0, translateY),
-          child: Transform.scale(
-            scale: scale,
-            child: Opacity(
-              opacity: opacity,
-              child: GestureDetector(
-                onTap: () => _startLobbyForGame(context, game),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: isSelected ? [
-                          BoxShadow(
-                            color: Colors.cyanAccent.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            spreadRadius: 2,
-                          ),
-                        ] : null,
-                      ),
-                      child: game['coverUrl'] != null
-                          ? CachedNetworkImage(
-                              imageUrl: game['coverUrl'],
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) =>
-                                  Container(
-                                    color: Colors.grey[800],
-                                    child: const Center(
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.cyanAccent),
-                                    ),
-                                  ),
-                              errorWidget: (context, url, error) => Container(
-                                color: Colors.grey[800],
-                                child: const Icon(
-                                  Icons.videogame_asset,
-                                  color: Colors.cyanAccent,
-                                  size: 32,
-                                ),
+          child: Opacity(
+            opacity: opacity,
+            child: GestureDetector(
+              onTap: () => _startLobbyForGame(context, game),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color:
+                                    Colors.cyanAccent.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                spreadRadius: 2,
                               ),
-                            )
-                          : Container(
+                            ]
+                          : null,
+                    ),
+                    child: game['coverUrl'] != null
+                        ? CachedNetworkImage(
+                            imageUrl: game['coverUrl'],
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              color: Colors.grey[800],
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.cyanAccent),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
                               color: Colors.grey[800],
                               child: const Icon(
                                 Icons.videogame_asset,
@@ -502,7 +492,15 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                                 size: 32,
                               ),
                             ),
-                    ),
+                          )
+                        : Container(
+                            color: Colors.grey[800],
+                            child: const Icon(
+                              Icons.videogame_asset,
+                              color: Colors.cyanAccent,
+                              size: 32,
+                            ),
+                          ),
                   ),
                 ),
               ),

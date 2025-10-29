@@ -141,9 +141,13 @@ class _MessageBubbleState extends State<MessageBubble> {
   Map<String, dynamic> _normalizeMessage(dynamic message) {
     if (message is DocumentSnapshot) {
       final data = message.data() as Map<String, dynamic>? ?? {};
+      final isAiResponse = data['isAiResponse'] ?? false;
+      final senderUid = data['senderUid'] ?? '';
       return {
         'id': message.id,
-        'sender': data['sender'] ?? data['sender_name'] ?? 'Unknown',
+        'sender': isAiResponse && senderUid == 'grok-ai'
+            ? 'Grok 🤖'
+            : data['sender'] ?? data['sender_name'] ?? 'Unknown',
         'content': data['text'] ?? data['content'] ?? '',
         'text': data['text'] ?? data['content'] ?? '',
         'photos': data['imageUrl'] != null
@@ -172,12 +176,17 @@ class _MessageBubbleState extends State<MessageBubble> {
         'reactions': data['reactions'] ?? [],
         'replyTo': data['replyTo'] ?? data['reply_to'],
         'pollId': data['pollId'],
+        'isAiResponse': isAiResponse,
       };
     } else if (message is Map<String, dynamic>) {
       final id = message['id']?.toString() ?? '';
+      final isAiResponse = message['isAiResponse'] ?? false;
+      final senderUid = message['senderUid'] ?? '';
       return {
         'id': id,
-        'sender': message['sender'] ?? message['sender_name'] ?? 'Unknown',
+        'sender': isAiResponse && senderUid == 'grok-ai'
+            ? 'Grok 🤖'
+            : message['sender'] ?? message['sender_name'] ?? 'Unknown',
         'content': message['content'] ?? message['text'] ?? '',
         'text': message['content'] ?? message['text'] ?? '',
         'photos': (message['photos'] as List<dynamic>?)
@@ -199,6 +208,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         'reactions': message['reactions'] ?? [],
         'replyTo': message['replyTo'] ?? message['reply_to'],
         'pollId': message['pollId'],
+        'isAiResponse': isAiResponse,
       };
     }
     return {
@@ -210,13 +220,15 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildSender(Map<String, dynamic> data) {
+    final isAiResponse = data['isAiResponse'] ?? false;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: Text(
         data['sender'] ?? 'Unknown',
         style: TextStyle(
-          color: Colors.cyanAccent
-              .withValues(alpha: 0.8), // Modern cyan accent for sender names
+          color: isAiResponse
+              ? Colors.blueAccent.withValues(alpha: 0.9) // Special color for AI
+              : Colors.cyanAccent.withValues(alpha: 0.8), // Regular sender color
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),

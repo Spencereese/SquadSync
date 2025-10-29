@@ -22,6 +22,7 @@ import 'managers/user_manager.dart';
 import 'managers/review_manager.dart';
 import 'managers/squad_manager.dart';
 import 'firebase_options.dart';
+import 'services/grok_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +54,16 @@ Future<void> _initializeFirebase() async {
     //   print('IGDB credentials stored - comment out this code after first run');
     // } catch (e) {
     //   debugPrint('IGDB credentials setup failed: $e');
+    // }
+
+    // Grok API key setup (uncomment for first run, then comment out)
+    // try {
+    //   print('Setting up Grok API key...');
+    //   final grokService = GrokService();
+    //   await grokService.storeApiKey();
+    //   print('Grok API key stored - comment out this code after first run');
+    // } catch (e) {
+    //   debugPrint('Grok API key setup failed: $e');
     // }
   } catch (e) {
     debugPrint('Firebase initialization failed: $e');

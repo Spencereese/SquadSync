@@ -10,6 +10,7 @@ import 'dart:io';
 import 'dart:async';
 import 'sqlite_helper.dart';
 import '../squad_state.dart';
+import '../services/grok_service.dart';
 import 'package:flutter/material.dart';
 
 /// Result of a message send operation
@@ -94,6 +95,7 @@ class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final SQLiteHelper _sqliteHelper = SQLiteHelper();
+  final GrokService _grokService = GrokService();
   static const int _maxRetries = 3;
   static const Duration _initialBackoff = Duration(milliseconds: 500);
 
@@ -359,6 +361,11 @@ class ChatService {
 
       // Cache locally for offline viewing
       await _sqliteHelper.insertMessage(messageData, chatGroupId: chatGroupId);
+
+      // Check if this is a message for Grok and generate AI response
+      if (text != null && _grokService.isMessageForGrok(text)) {
+        _generateGrokResponse(context, text, senderUid, squadId, chatGroupId);
+      }
 
       // TEMPORARILY DISABLED: Backend sync
       // _syncToBackend(messageData).catchError((e) {
@@ -698,6 +705,99 @@ class ChatService {
       });
     } catch (e) {
       debugPrint('Failed to update group metadata: $e');
+    }
+  }
+
+  // Generate AI response from Grok for messages directed at it
+  Future<void> _generateGrokResponse(BuildContext context, String userMessage,
+      String senderUid, String squadId, String? chatGroupId) async {
+    try {
+      // Clean the message by removing Grok mentions
+      final cleanMessage = _grokService.cleanGrokMessage(userMessage);
+
+      // Get context about the current squad/game
+      final squadState = Provider.of<SquadState>(context, listen: false);
+      final currentGame = squadState.currentGame;
+      final gameContext = currentGame != null
+          ? 'Currently playing: ${currentGame['name']} (${currentGame['genres']?.join(', ') ?? 'Unknown genre'})'
+          : 'No specific game selected';
+
+      // Get recent messages for context (last 5 messages)
+      final recentMessages = await _getRecentMessages(squadId, chatGroupId, limit: 5);
+
+      // Generate Grok response
+      final grokResponse = await _grokService.getGrokResponse(
+        cleanMessage,
+        context: gameContext,
+        recentMessages: recentMessages,
+      );
+
+      // Create Grok's response message
+      final grokMsgId = Uuid().v4();
+      final timestampMs = DateTime.now().millisecondsSinceEpoch;
+
+      final grokMessageData = {
+        'id': grokMsgId,
+        'senderUid': 'grok-ai', // Special UID for Grok
+        'timestamp_ms': timestampMs,
+        'text': grokResponse,
+        'imageUrl': null,
+        'videoUrl': null,
+        'audioUrl': null,
+        'photos': [],
+        'videos': [],
+        'audio': [],
+        'reactions': [],
+        'reply_to': null,
+        'pollId': null,
+        'delivered': true,
+        'read': false,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isAiResponse': true, // Flag to identify AI responses
+      };
+
+      // Determine collection path
+      final collectionPath = chatGroupId != null
+          ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
+          : 'squads/$squadId/chat';
+
+      // Send Grok's response
+      await _firestore.collection(collectionPath).doc(grokMsgId).set(grokMessageData);
+
+      // Cache locally
+      await _sqliteHelper.insertMessage(grokMessageData, chatGroupId: chatGroupId);
+
+    } catch (e) {
+      debugPrint('Failed to generate Grok response: $e');
+      // Don't show error to user, just log it
+    }
+  }
+
+  // Get recent messages for context
+  Future<List<String>> _getRecentMessages(String squadId, String? chatGroupId, {int limit = 5}) async {
+    try {
+      final collectionPath = chatGroupId != null
+          ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
+          : 'squads/$squadId/chat';
+
+      final snapshot = await _firestore
+          .collection(collectionPath)
+          .orderBy('timestamp_ms', descending: true)
+          .limit(limit * 2) // Get more to filter out AI responses
+          .get();
+
+      final messages = snapshot.docs
+          .where((doc) => !(doc.data()['isAiResponse'] ?? false)) // Exclude AI responses
+          .take(limit)
+          .map((doc) => doc.data()['text'] as String?)
+          .where((text) => text != null && text.isNotEmpty)
+          .cast<String>()
+          .toList();
+
+      return messages.reversed.toList(); // Return in chronological order
+    } catch (e) {
+      debugPrint('Failed to get recent messages: $e');
+      return [];
     }
   }
 }

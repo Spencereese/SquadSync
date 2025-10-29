@@ -29,8 +29,6 @@ class SQLiteHelper {
             videos TEXT,
             audio TEXT,
             reactions TEXT,
-            is_geoblocked_for_viewer INTEGER,
-            is_unsent_image_by_messenger_kid_parent INTEGER,
             delivered INTEGER,
             read INTEGER,
             reply_to TEXT,
@@ -80,12 +78,8 @@ class SQLiteHelper {
           'videos': jsonEncode(message['videos'] ?? []),
           'audio': jsonEncode(message['audio'] ?? []),
           'reactions': jsonEncode(message['reactions'] ?? []),
-          'is_geoblocked_for_viewer':
-              message['is_geoblocked_for_viewer'] ? 1 : 0,
-          'is_unsent_image_by_messenger_kid_parent':
-              message['is_unsent_image_by_messenger_kid_parent'] ? 1 : 0,
-          'delivered': message['delivered'] ? 1 : 0,
-          'read': message['read'] ? 1 : 0,
+          'delivered': (message['delivered'] ?? false) ? 1 : 0,
+          'read': (message['read'] ?? false) ? 1 : 0,
           'reply_to': message['reply_to'],
           'created_at':
               message['created_at'] ?? DateTime.now().toIso8601String(),
@@ -161,9 +155,6 @@ class SQLiteHelper {
           'videos': jsonDecode(map['videos'] ?? '[]'),
           'audio': jsonDecode(map['audio'] ?? '[]'),
           'reactions': jsonDecode(map['reactions'] ?? '[]'),
-          'is_geoblocked_for_viewer': map['is_geoblocked_for_viewer'] == 1,
-          'is_unsent_image_by_messenger_kid_parent':
-              map['is_unsent_image_by_messenger_kid_parent'] == 1,
           'delivered': map['delivered'] == 1,
           'read': map['read'] == 1,
           'reply_to': map['reply_to'],

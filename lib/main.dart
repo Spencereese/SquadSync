@@ -22,7 +22,6 @@ import 'managers/user_manager.dart';
 import 'managers/review_manager.dart';
 import 'managers/squad_manager.dart';
 import 'firebase_options.dart';
-import 'services/grok_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

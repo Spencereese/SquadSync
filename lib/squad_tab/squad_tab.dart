@@ -12,7 +12,6 @@ import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'squad_dialogs.dart';
 import '../no_squad_screen.dart';
-import '../create_squad_screen.dart';
 
 class SquadTab extends StatelessWidget {
   final String? lobbyId;
@@ -70,28 +69,24 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                 );
 
         // If not found, try case-insensitive match in pinned games
-        if (game == null) {
-          game = userManager.pinnedGames
-              .cast<Map<String, dynamic>?>()
-              .firstWhere(
-                (g) =>
-                    g?['name']?.toLowerCase() == widget.gameName?.toLowerCase(),
-                orElse: () => null,
-              );
-        }
+        game ??= userManager.pinnedGames
+            .cast<Map<String, dynamic>?>()
+            .firstWhere(
+              (g) =>
+                  g?['name']?.toLowerCase() == widget.gameName?.toLowerCase(),
+              orElse: () => null,
+            );
 
         // If still not found, try partial match in pinned games
-        if (game == null) {
-          game =
-              userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
-                    (g) =>
-                        g?['name']
-                            ?.toLowerCase()
-                            .contains(widget.gameName!.toLowerCase()) ==
-                        true,
-                    orElse: () => null,
-                  );
-        }
+        game ??=
+            userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
+                  (g) =>
+                      g?['name']
+                          ?.toLowerCase()
+                          .contains(widget.gameName!.toLowerCase()) ==
+                      true,
+                  orElse: () => null,
+                );
 
         // If still not found, search for the game asynchronously
         if (game == null) {
@@ -320,13 +315,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     }
 
     return GestureDetector(
-      onTap: () {
-        if (currentGame?['igdbId'] != null || currentGame?['summary'] != null) {
-          _showGameInfo(context, currentGame!);
-        } else {
-          _showLobbyOptions(context);
-        }
-      },
+      onTap: () => _showGameSelectionDialog(context, squadState),
       child: SizedBox(
         width: 160,
         height: 120,
@@ -338,275 +327,129 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     );
   }
 
-  void _showLobbyOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (dialogContext) => Container(
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.8),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.1),
-            width: 0.5,
-          ),
-        ),
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.5,
-          minChildSize: 0.3,
-          maxChildSize: 0.8,
-          builder: (_, controller) => Column(
-            children: [
-              // Header
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                decoration: BoxDecoration(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.white.withValues(alpha: 0.1),
-                      Colors.white.withValues(alpha: 0.05),
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Lobby Options',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.close,
-                        color: Colors.white.withValues(alpha: 0.8),
-                        size: 24,
-                      ),
-                      onPressed: () => Navigator.pop(dialogContext),
-                    ),
-                  ],
-                ),
-              ),
-              // Content
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('lobbies')
-                        .where('members',
-                            arrayContains:
-                                FirebaseAuth.instance.currentUser?.uid)
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text(
-                            'Error loading lobbies',
-                            style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7)),
-                          ),
-                        );
-                      }
+  void _showGameSelectionDialog(BuildContext context, SquadState squadState) {
+    final TextEditingController gameController = TextEditingController();
+    Map<String, dynamic>? selectedGame;
 
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                              color: Colors.cyanAccent),
-                        );
-                      }
-
-                      final lobbies = snapshot.data?.docs ?? [];
-
-                      return Column(
-                        children: [
-                          // Active Lobbies
-                          if (lobbies.isNotEmpty) ...[
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              child: Text(
-                                'Active Lobbies',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: ListView.builder(
-                                controller: controller,
-                                itemCount: lobbies.length,
-                                itemBuilder: (context, index) {
-                                  final data = lobbies[index].data();
-                                  if (data is! Map<String, dynamic>) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  final lobby = data;
-                                  final lobbyId = lobbies[index].id;
-                                  final gameName =
-                                      lobby['gameName'] ?? 'Unknown Game';
-                                  final memberCount =
-                                      (lobby['members'] as List?)?.length ?? 0;
-
-                                  return ListTile(
-                                    leading: Image.asset(
-                                      'assets/images/${gameName.toLowerCase()}_logo.png',
-                                      width: 40,
-                                      height: 40,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              const Icon(Icons.gamepad,
-                                                  color: Colors.cyanAccent),
-                                    ),
-                                    title: Text(
-                                      gameName,
-                                      style:
-                                          const TextStyle(color: Colors.white),
-                                    ),
-                                    subtitle: Text(
-                                      '$memberCount members',
-                                      style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.7)),
-                                    ),
-                                    onTap: () {
-                                      Navigator.pop(dialogContext);
-                                      // Navigate to the lobby
-                                      Navigator.pushReplacement(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => SquadTab(
-                                            lobbyId: lobbyId,
-                                            gameName: gameName,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                          // Create New Lobby Button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 20),
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.pop(dialogContext);
-                                // Navigate to create new lobby screen
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const CreateSquadScreen(),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.add),
-                              label: const Text('Create New Lobby'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.cyanAccent,
-                                foregroundColor: Colors.black,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 24, vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showGameInfo(BuildContext context, Map<String, dynamic> game) {
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: Colors.black.withValues(alpha: 0.9),
-        title: Text(
-          game['name'] ?? 'Game Info',
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (game['coverUrl'] != null) ...[
-                Center(
-                  child: Image.network(
-                    game['coverUrl'],
-                    height: 150,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.gamepad,
-                        size: 100,
-                        color: Colors.cyanAccent),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-              if (game['summary'] != null && game['summary'].isNotEmpty) ...[
-                const Text(
-                  'Description:',
-                  style: TextStyle(
-                    color: Colors.cyanAccent,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  game['summary'],
-                  style: const TextStyle(color: Colors.white),
-                ),
-                const SizedBox(height: 16),
-              ],
-              if (game['releaseDate'] != null) ...[
-                Text(
-                  'Release Date: ${game['releaseDate'].year}-${game['releaseDate'].month.toString().padLeft(2, '0')}-${game['releaseDate'].day.toString().padLeft(2, '0')}',
-                  style: const TextStyle(color: Colors.white),
-                ),
-                const SizedBox(height: 8),
-              ],
-              if (game['genres'] != null &&
-                  (game['genres'] as List).isNotEmpty) ...[
-                Text(
-                  'Genres: ${(game['genres'] as List).join(', ')}',
-                  style: const TextStyle(color: Colors.white),
-                ),
-              ],
-            ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: Colors.black.withValues(alpha: 0.9),
+          title: const Text(
+            'Switch Game',
+            style: TextStyle(color: Colors.white),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child:
-                const Text('Close', style: TextStyle(color: Colors.cyanAccent)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: gameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: 'Search for a game...',
+                    hintStyle: TextStyle(color: Colors.grey),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.cyanAccent),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.cyanAccent),
+                    ),
+                  ),
+                  onChanged: (value) async {
+                    if (value.isNotEmpty) {
+                      final gameManager =
+                          Provider.of<GameManager>(context, listen: false);
+                      final results = await gameManager.searchGames(value);
+                      if (results.isNotEmpty) {
+                        setState(() {
+                          selectedGame = results.first;
+                        });
+                      }
+                    }
+                  },
+                ),
+                if (selectedGame != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[800],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        if (selectedGame!['coverUrl'] != null)
+                          Image.network(
+                            selectedGame!['coverUrl'],
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(Icons.gamepad,
+                                    color: Colors.cyanAccent),
+                          )
+                        else
+                          const Icon(Icons.gamepad,
+                              color: Colors.cyanAccent, size: 50),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                selectedGame!['name'] ?? '',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (selectedGame!['genres'] != null)
+                                Text(
+                                  (selectedGame!['genres'] as List).join(', '),
+                                  style: const TextStyle(
+                                      color: Colors.grey, fontSize: 12),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: selectedGame != null
+                  ? () {
+                      // Update the current game
+                      squadState.currentGame = selectedGame;
+                      // Mark fields as changed for persistence
+                      squadState.persistenceManager
+                          .markFieldChanged('currentGame');
+                      squadState.updateFirestoreAsync(force: true);
+                      Navigator.pop(dialogContext);
+                      HapticFeedback.lightImpact();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content:
+                                Text('Switched to ${selectedGame!['name']}')),
+                      );
+                    }
+                  : null,
+              child: const Text('Switch',
+                  style: TextStyle(color: Colors.cyanAccent)),
+            ),
+          ],
+        ),
       ),
     );
   }

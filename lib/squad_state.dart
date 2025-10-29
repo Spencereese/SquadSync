@@ -297,6 +297,7 @@ class SquadState with ChangeNotifier {
         }
       }
     }
+    notifyListeners();
   }
 
   // Getters for delegated properties

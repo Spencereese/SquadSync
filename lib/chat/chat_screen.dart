@@ -19,10 +19,10 @@ import 'chat_service.dart';
 import 'chat_settings_menu.dart';
 import 'chat_state.dart';
 import 'sqlite_helper.dart';
-import 'squad_sheet.dart';
 import 'message_bubble.dart';
 import '../no_squad_screen.dart';
 import '../screens/squad_tab_screen.dart';
+import '../squad_tab/squad_tab.dart';
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
 // import 'available_squads_widget.dart'; // Removed - no longer used
@@ -861,14 +861,22 @@ class ChatScreenState extends State<ChatScreen>
       return true;
     }).toList();
 
-    // Filter messages to only show from squad members (pre-filtered)
+    // Filter messages to only show from squad members (pre-filtered) or AI responses
     final filteredMembers = _squadState.getFilteredMembers;
     final filtered = deduplicated.where((msg) {
       final data = msg is DocumentSnapshot
           ? msg.data() as Map<String, dynamic>?
           : msg as Map<String, dynamic>;
       if (data == null) return false;
+
       final senderUid = data['senderUid'] ?? '';
+      final isAiResponse = data['isAiResponse'] ?? false;
+
+      // Include AI responses (like Grok) even if sender is not in squad
+      if (isAiResponse && senderUid == 'grok-ai') {
+        return true;
+      }
+
       final senderDisplayName = _squadState.getDisplayNameForUid(senderUid);
       return filteredMembers.contains(senderDisplayName);
     }).toList();
@@ -1040,14 +1048,35 @@ class ChatScreenState extends State<ChatScreen>
                                           // ignore: use_build_context_synchronously
                                           if (!mounted) return;
                                           try {
-                                            await _firestore
-                                                .collection('chat_metadata')
-                                                .doc('chat_config')
-                                                .set({
-                                              'name': newName,
-                                              'timestamp':
-                                                  FieldValue.serverTimestamp(),
-                                            }, SetOptions(merge: true));
+                                            // Determine where to save the name based on chat type
+                                            final squadId =
+                                                _squadState.selectedSquadId;
+                                            if (squadId == null) return;
+
+                                            if (widget.chatGroupId != null) {
+                                              // Update group chat name
+                                              await _firestore
+                                                  .collection('squads')
+                                                  .doc(squadId)
+                                                  .collection('chat_groups')
+                                                  .doc(widget.chatGroupId)
+                                                  .set({
+                                                'name': newName,
+                                                'timestamp': FieldValue
+                                                    .serverTimestamp(),
+                                              }, SetOptions(merge: true));
+                                            } else {
+                                              // Update squad chat name
+                                              await _firestore
+                                                  .collection('chat_metadata')
+                                                  .doc('chat_config')
+                                                  .set({
+                                                'name': newName,
+                                                'timestamp': FieldValue
+                                                    .serverTimestamp(),
+                                              }, SetOptions(merge: true));
+                                            }
+
                                             // ignore: use_build_context_synchronously
                                             if (mounted) {
                                               setState(
@@ -1078,14 +1107,36 @@ class ChatScreenState extends State<ChatScreen>
                                           String downloadUrl =
                                               await _chatService.uploadMedia(
                                                   file, fileName, false);
-                                          await _firestore
-                                              .collection('chat_metadata')
-                                              .doc('chat_config')
-                                              .set({
-                                            'imageUrl': downloadUrl,
-                                            'timestamp':
-                                                FieldValue.serverTimestamp(),
-                                          }, SetOptions(merge: true));
+
+                                          // Determine where to save the image URL based on chat type
+                                          final squadId =
+                                              _squadState.selectedSquadId;
+                                          if (squadId == null) return;
+
+                                          if (widget.chatGroupId != null) {
+                                            // Update group chat image
+                                            await _firestore
+                                                .collection('squads')
+                                                .doc(squadId)
+                                                .collection('chat_groups')
+                                                .doc(widget.chatGroupId)
+                                                .set({
+                                              'imageUrl': downloadUrl,
+                                              'timestamp':
+                                                  FieldValue.serverTimestamp(),
+                                            }, SetOptions(merge: true));
+                                          } else {
+                                            // Update squad chat image
+                                            await _firestore
+                                                .collection('chat_metadata')
+                                                .doc('chat_config')
+                                                .set({
+                                              'imageUrl': downloadUrl,
+                                              'timestamp':
+                                                  FieldValue.serverTimestamp(),
+                                            }, SetOptions(merge: true));
+                                          }
+
                                           // ignore: use_build_context_synchronously
                                           if (mounted) {
                                             setState(() =>
@@ -1109,8 +1160,9 @@ class ChatScreenState extends State<ChatScreen>
                                           // Determine collection path based on chat type
                                           final squadId =
                                               _squadState.selectedSquadId;
-                                          if (squadId == null)
+                                          if (squadId == null) {
                                             return; // Should not happen in squad context
+                                          }
                                           final collectionPath = widget
                                                       .chatGroupId !=
                                                   null
@@ -1269,30 +1321,36 @@ class ChatScreenState extends State<ChatScreen>
                           ),
                         ).animate().fadeIn(),
                         // Active Squad Header Card
-                        StreamBuilder<QuerySnapshot>(
-                          stream: _firestore
-                              .collection('peacocks')
-                              .where('hostUid',
-                                  isEqualTo: _auth.currentUser?.uid)
-                              .where('timer', isGreaterThan: Timestamp.now())
-                              .orderBy('timer', descending: false)
-                              .limit(1)
-                              .snapshots(),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData ||
-                                snapshot.data!.docs.isEmpty) {
+                        Consumer<SquadState>(
+                          builder: (context, squadState, child) {
+                            // Check if user has active peacocks through SquadState
+                            final currentGame = squadState.currentGame;
+                            if (currentGame == null) {
                               return const SizedBox.shrink();
                             }
-                            final peacock = snapshot.data!.docs.first.data()
-                                as Map<String, dynamic>;
+
                             final gameName =
-                                peacock['game']?['name'] ?? 'Unknown Game';
-                            final maxSpots = peacock['spots'] ?? 4;
+                                currentGame['name'] ?? 'Unknown Game';
+                            final maxSpots = currentGame['maxSpots'] ?? 4;
+                            final spots =
+                                squadState.gameSquadSpots[gameName] ?? [];
                             final claimed =
-                                (peacock['filled'] as List<dynamic>?)?.length ??
-                                    0;
+                                spots.where((spot) => spot != null).length;
+
+                            // Only show if there are claimed spots
+                            if (claimed == 0) {
+                              return const SizedBox.shrink();
+                            }
+
                             return GestureDetector(
-                              onTap: () => SquadSheet.show(context),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) =>
+                                            SquadTab(gameName: gameName)));
+                              },
                               child: Container(
                                 margin: const EdgeInsets.symmetric(
                                     horizontal: 16, vertical: 8),

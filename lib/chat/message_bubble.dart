@@ -82,8 +82,19 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if this is a Grok AI message for unique styling
+    final isAiResponse = _normalizedData['isAiResponse'] ?? false;
+    final senderUid = _normalizedData['senderUid'] ?? '';
+    final isGrokMessage = isAiResponse && senderUid == 'grok-ai';
+
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
+        // Unique layout for Grok messages
+        if (isGrokMessage) {
+          return _buildGrokMessage(context);
+        }
+
+        // Standard layout for regular messages
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
           child: Column(
@@ -138,6 +149,89 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
+  Widget _buildGrokMessage(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Column(
+        children: [
+          if (widget.showTimestamp &&
+              (_normalizedData['timestamp'] != null ||
+                  _normalizedData['timestamp_ms'] != null))
+            _buildTimestamp(_normalizedData),
+          // Unique Grok message design - centered, terminal-like
+          Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 320),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0A), // Very dark background
+                border: Border.all(
+                  color: const Color(0xFF8B0000), // Dark red border
+                  width: 2.0,
+                ),
+                borderRadius: BorderRadius.circular(4), // Minimal rounding
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF8B0000).withValues(alpha: 0.4),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 0),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.8),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Header bar with subtle glow
+                  Container(
+                    width: double.infinity,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF8B0000).withValues(alpha: 0.8),
+                          const Color(0xFF8B0000).withValues(alpha: 0.4),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Message content
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12.0, vertical: 8.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Terminal-like prompt indicator
+                        Container(
+                          margin: const EdgeInsets.only(right: 8.0, top: 2.0),
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF8B0000),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        // Text content
+                        Expanded(
+                          child: _buildText(_normalizedData['text'] ?? ''),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Map<String, dynamic> _normalizeMessage(dynamic message) {
     if (message is DocumentSnapshot) {
       final data = message.data() as Map<String, dynamic>? ?? {};
@@ -146,7 +240,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       return {
         'id': message.id,
         'sender': isAiResponse && senderUid == 'grok-ai'
-            ? 'Grok 🤖'
+            ? '' // No name for Grok - shadow mode
             : data['sender'] ?? data['sender_name'] ?? 'Unknown',
         'content': data['text'] ?? data['content'] ?? '',
         'text': data['text'] ?? data['content'] ?? '',
@@ -177,6 +271,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         'replyTo': data['replyTo'] ?? data['reply_to'],
         'pollId': data['pollId'],
         'isAiResponse': isAiResponse,
+        'senderUid': senderUid,
       };
     } else if (message is Map<String, dynamic>) {
       final id = message['id']?.toString() ?? '';
@@ -209,6 +304,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         'replyTo': message['replyTo'] ?? message['reply_to'],
         'pollId': message['pollId'],
         'isAiResponse': isAiResponse,
+        'senderUid': senderUid,
       };
     }
     return {
@@ -219,15 +315,104 @@ class _MessageBubbleState extends State<MessageBubble> {
     };
   }
 
+  Color _getMessageBackgroundColor(Map<String, dynamic> data) {
+    final isAiResponse = data['isAiResponse'] ?? false;
+    final senderUid = data['senderUid'] ?? '';
+
+    // Shadow theme for Grok AI messages - very dark with transparency
+    if (isAiResponse && senderUid == 'grok-ai') {
+      return const Color(
+          0xDD000000); // Very dark with slight transparency for shadow effect
+    }
+
+    // Default dark grey for regular received messages
+    return const Color(0xFF202C33);
+  }
+
+  BoxDecoration _getMessageDecoration(Map<String, dynamic> data) {
+    final isAiResponse = data['isAiResponse'] ?? false;
+    final senderUid = data['senderUid'] ?? '';
+
+    // Futuristic design for Grok AI messages
+    final isGrok = isAiResponse && senderUid == 'grok-ai';
+
+    if (isGrok) {
+      return BoxDecoration(
+        color: const Color(0xFF0A0A0A), // Very dark background
+        border: Border.all(
+          color: const Color(0xFF8B0000), // Dark red border
+          width: 1.5,
+        ),
+        borderRadius: BorderRadius.circular(2), // Sharp, angular corners
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF8B0000).withValues(alpha: 0.3),
+            blurRadius: 8,
+            spreadRadius: 1,
+            offset: const Offset(0, 0),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.7),
+            blurRadius: 15,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      );
+    }
+
+    // Normal message styling for others
+    return BoxDecoration(
+      color: widget.isMe
+          ? const Color(0xFF005C4B) // WhatsApp-style green for sent messages
+          : _getMessageBackgroundColor(
+              data), // Dynamic background for received messages
+      borderRadius: BorderRadius.only(
+        topLeft: const Radius.circular(18),
+        topRight: const Radius.circular(18),
+        bottomLeft:
+            widget.isMe ? const Radius.circular(18) : const Radius.circular(4),
+        bottomRight:
+            widget.isMe ? const Radius.circular(4) : const Radius.circular(18),
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.15),
+          blurRadius: 6,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    );
+  }
+
+  EdgeInsets _getMessagePadding(Map<String, dynamic> data) {
+    final isAiResponse = data['isAiResponse'] ?? false;
+    final senderUid = data['senderUid'] ?? '';
+
+    // Compact padding for futuristic Grok messages
+    if (isAiResponse && senderUid == 'grok-ai') {
+      return const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0);
+    }
+
+    // Normal padding for regular messages
+    return const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0);
+  }
+
   Widget _buildSender(Map<String, dynamic> data) {
     final isAiResponse = data['isAiResponse'] ?? false;
+    final senderUid = data['senderUid'] ?? '';
+
+    // Don't show sender name for Grok shadow messages
+    if (isAiResponse && senderUid == 'grok-ai') {
+      return const SizedBox.shrink();
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: Text(
         data['sender'] ?? 'Unknown',
         style: TextStyle(
           color: isAiResponse
-              ? Colors.blueAccent.withValues(alpha: 0.9) // Special color for AI
+              ? const Color(0xFF00D4FF) // Electric blue for evil AI theme
               : Colors.cyanAccent
                   .withValues(alpha: 0.8), // Regular sender color
           fontSize: 14,
@@ -337,31 +522,9 @@ class _MessageBubbleState extends State<MessageBubble> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(vertical: 2.0),
-        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+        padding: _getMessagePadding(data),
         constraints: const BoxConstraints(maxWidth: 280), // Limit max width
-        decoration: BoxDecoration(
-          color: widget.isMe
-              ? const Color(
-                  0xFF005C4B) // WhatsApp-style green for sent messages
-              : const Color(0xFF202C33), // Dark grey for received messages
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: widget.isMe
-                ? const Radius.circular(18)
-                : const Radius.circular(4),
-            bottomRight: widget.isMe
-                ? const Radius.circular(4)
-                : const Radius.circular(18),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+        decoration: _getMessageDecoration(data),
         child: Semantics(
           label: 'Message from ${data['sender'] ?? 'Unknown'}',
           child: contentWidget,
@@ -402,6 +565,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildText(String text) {
+    final isAiResponse = _normalizedData['isAiResponse'] ?? false;
     return Semantics(
       label: 'Message text: $text',
       child: Column(
@@ -414,7 +578,10 @@ class _MessageBubbleState extends State<MessageBubble> {
               fontSize: 16,
               color: widget.isMe
                   ? Colors.white
-                  : Colors.white70, // White for sent, light grey for received
+                  : isAiResponse
+                      ? Colors.white // White text for Grok messages
+                      : Colors
+                          .white70, // White for sent, light grey for received
               fontWeight: FontWeight.normal,
               backgroundColor: Colors.transparent,
             ),

@@ -333,8 +333,28 @@ class SquadManager with ChangeNotifier implements ISquadManager {
     return _firestore
         .collection('peacocks')
         .where('timer', isGreaterThan: Timestamp.now())
-        .orderBy('timer')
         .limit(50)
         .snapshots();
+  }
+
+  Future<void> leaveLobby(String peacockId, String userUid) async {
+    final doc = await _firestore.collection('peacocks').doc(peacockId).get();
+    if (!doc.exists) return;
+
+    final data = doc.data()!;
+    final filled = List<Map<String, dynamic>>.from(data['filled'] ?? []);
+    final viewers = List<String>.from(data['viewers'] ?? []);
+
+    // Remove user from filled spots
+    filled.removeWhere((spot) => spot['uid'] == userUid);
+
+    // Remove user from viewers
+    viewers.remove(userUid);
+
+    // Update the document
+    await _firestore.collection('peacocks').doc(peacockId).update({
+      'filled': filled,
+      'viewers': viewers,
+    });
   }
 }

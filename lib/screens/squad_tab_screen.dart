@@ -140,11 +140,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _startNewLobby(context),
-        backgroundColor: Colors.cyanAccent,
-        child: const Icon(Icons.add),
-      ),
     );
   }
 
@@ -190,7 +185,11 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                   final maxSpots = data['spots'] ?? 4;
                   final filled =
                       (data['filled'] as List<dynamic>?)?.length ?? 0;
-                  return filled < maxSpots;
+                  final timer = data['timer'] as Timestamp?;
+                  final isActive =
+                      timer != null && timer.toDate().isAfter(DateTime.now());
+
+                  return filled < maxSpots && isActive;
                 }).toList();
 
                 if (peacocks.isEmpty) {
@@ -392,12 +391,29 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
               ),
               textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () => _startNewLobby(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Game'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.cyanAccent,
+                foregroundColor: Colors.black,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
           ],
         ),
       );
     }
 
-    final itemCount = pinnedGames.length;
+    // Add "Add Game" card to the end of pinned games
+    final allGames = [
+      ...pinnedGames,
+      {'isAddCard': true}
+    ];
+    final itemCount = allGames.length;
     final canSwipe = itemCount >= 2;
 
     return Column(
@@ -411,7 +427,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                 ? const PageScrollPhysics()
                 : const NeverScrollableScrollPhysics(),
             itemBuilder: (context, index) {
-              return _buildLayeredCarouselItem(context, index, pinnedGames);
+              return _buildLayeredCarouselItem(context, index, allGames);
             },
           ),
         ),
@@ -451,8 +467,75 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   }
 
   Widget _buildLayeredCarouselItem(
-      BuildContext context, int index, List<Map<String, dynamic>> pinnedGames) {
-    final game = pinnedGames[index];
+      BuildContext context, int index, List<Map<String, dynamic>> games) {
+    final game = games[index];
+
+    // Handle the "Add Game" card
+    if (game['isAddCard'] == true) {
+      final pageOffset = index - _currentPage;
+      final isSelected = pageOffset.abs() < 0.5;
+      final opacity = isSelected ? 1.0 : 0.7;
+      final translateY = isSelected ? 0.0 : 8.0;
+
+      return AnimatedBuilder(
+        animation: _pageController,
+        builder: (context, child) {
+          return Transform.translate(
+            offset: Offset(0, translateY),
+            child: Opacity(
+              opacity: opacity,
+              child: GestureDetector(
+                onTap: () => _startNewLobby(context),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: Colors.cyanAccent.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              spreadRadius: 2,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 120,
+                      height: 336,
+                      color: Colors.grey[800],
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.add,
+                            color: Colors.cyanAccent,
+                            size: 48,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Add Game',
+                            style: TextStyle(
+                              color: Colors.cyanAccent,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
     final pageOffset = index - _currentPage;
 
     // Simplified layering - tuck behind instead of complex animations
@@ -470,9 +553,10 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
             child: GestureDetector(
               onTap: () => _startLobbyForGame(context, game),
               onLongPress: () async {
-                final squadState =
-                    Provider.of<SquadState>(context, listen: false);
-                await squadState.removePinnedGame(game['name']);
+                // Get the userManager from the Consumer context
+                final userManager =
+                    Provider.of<UserManager>(context, listen: false);
+                await userManager.removePinnedGame(game['name']);
                 // Show feedback that game was removed
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(

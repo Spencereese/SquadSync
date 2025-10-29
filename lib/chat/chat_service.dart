@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -426,7 +425,7 @@ class ChatService {
     final completer = Completer<String>();
     String? error;
 
-    final task = uploadMediaWithProgress(
+    uploadMediaWithProgress(
       file,
       fileName,
       onComplete: (url) => completer.complete(url),

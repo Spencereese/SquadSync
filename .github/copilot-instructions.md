@@ -39,6 +39,14 @@ SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
 - Firestore collections: `chat`, `users`, `chat_metadata`
 - Storage bucket: `squadsync-media` with backend-generated signed URLs
 - Real-time listeners with automatic cleanup on dispose
+- **Cloud Functions**: Critical for server-side timer processing (`functions/index.js`)
+- **Database persistence**: Enabled for offline support on non-web platforms
+
+### External API Integration
+- **IGDB API**: Game data and search functionality via `GameManager`
+- **Google Cloud Storage**: Media file storage with signed URL generation
+- **PostgreSQL**: Analytics and reporting backend
+- **App Links**: Deep linking for external app navigation
 
 ### Game-Specific Data Architecture
 - **Game-scoped data**: `gameSquadSpots[gameName]`, `gameSpotTimers[gameName]`, `gameStatuses[gameName]`
@@ -46,12 +54,29 @@ SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
 - **Dynamic spot allocation**: Max spots per game from `currentGame?['maxSpots']`
 - **Status computation**: Global statuses (`Walking`, `Ready`) vs game-specific data
 
+### UID-Based User System
+- **Always use UIDs internally**: Firebase UIDs are the source of truth for user identification
+- **Display name caching**: Cache display names in `_memberDisplayNames` to avoid repeated lookups
+- **UID conversion**: Use `getDisplayNameForUid(uid)` and `getUidForDisplayName(displayName)` for conversions
+- **Calling UIDs**: Format `uid_calling` for users claiming spots with timers
+
+### Manager Pattern with ChangeNotifier
+- **Direct manager access**: Use `Provider.of<UserManager>(context, listen: false)` for immediate operations
+- **Consumer widgets**: Wrap UI sections with `Consumer<UserManager>` for reactive updates
+- **notifyListeners()**: Always call after state changes to trigger UI rebuilds
+- **Async operations**: Handle async manager methods with proper error handling and mounted checks
+
 ### File Structure
 - `lib/chat/`: Chat UI components and services
 - `lib/chat/link_preview.dart`: URL detection, link previews, and inline video playback
 - `lib/`: Main app screens (squad_tab, settings_tab, etc.)
+- `lib/managers/`: Dedicated manager classes for state management
+- `lib/screens/`: Screen-level widgets and navigation
+- `lib/squad_tab/`: Squad management UI components
 - `backend/`: Node.js server with Express routes
+- `functions/`: Firebase Cloud Functions for server-side timers
 - `assets/`: Extensive icon set (100+ PNG files) referenced in pubspec.yaml
+- `test/`: Comprehensive test suite with integration tests
 
 ### Common Patterns
 - **Error handling**: Try-catch with `ScaffoldMessenger` snackbars for user feedback
@@ -94,6 +119,9 @@ cd functions && npm install && firebase deploy --only functions
 - Unit tests: `flutter test` (basic test suite available in `test/chat_service_test.dart`)
 - Integration: Manual testing across platforms (Android/iOS/Web/Desktop)
 - Firebase emulator for local development
+- **Test file naming**: Use descriptive names like `peacock_modal_test.dart`, `chat_service_test.dart`
+- **Widget testing**: Extensive use of `testWidgets()` for UI component testing
+- **Mock dependencies**: Use `mockito` for Firebase and external service mocking
 
 ### Android Build Troubleshooting
 - **AGP Version Conflicts**: Update `android/settings.gradle.kts` and `android/build.gradle` to AGP 8.9.1+
@@ -121,18 +149,29 @@ Stream<QuerySnapshot> getChatMessages(context, {chatGroupId}) {
 Future<void> _cacheMessageToSQLite(Message message) async {
   await _sqliteHelper.insertMessage(message.toMap());
 }
+
+// Sync pattern: Firestore for real-time, SQLite for offline access
+// Always check SQLite cache first, then sync with Firestore
 ```
+
+### Server-Side Timer Functions
+- **Critical dependency**: Firebase Cloud Functions must be deployed for timer functionality
+- **Background processing**: Timers run every minute via scheduled functions
+- **Spot expiration**: Automatically frees claimed spots when timers expire
+- **Peacock cleanup**: Removes expired peacock queue entries
+- **Deployment required**: Run `firebase deploy --only functions` after timer logic changes
 
 ### State Caching Optimization
 ```dart
 // Cache with 100ms validity to avoid expensive recalculations
 List<String?> get squadSpots {
-  if (_cachedSquadSpots == null || (now - _lastCacheUpdate) > 100) {
-    // Recalculate from gameSquadSpots
-    _cachedSquadSpots = ...;
-    _lastCacheUpdate = now;
-  }
-  return _cachedSquadSpots!;
+  return cacheService.getOrCompute('squadSpots', () {
+    final gameName = currentGame?['name'] ?? '';
+    final rawSpots = gameSquadSpots[gameName] ?? [];
+    return rawSpots
+        .map((uid) => uid != null ? getDisplayNameForUid(uid) : null)
+        .toList();
+  });
 }
 ```
 
@@ -143,6 +182,10 @@ List<String?> get squadSpots {
 - Custom themes in `AppTheme` with dark/light variants
 - UID-to-display-name caching for performance
 - Game-scoped data structures for multi-game support
+- **Async error handling**: Always wrap async operations in try-catch with user feedback
+- **Haptic feedback**: Use `HapticFeedback.lightImpact()` for user interactions
+- **SnackBar messaging**: Use `ScaffoldMessenger.of(context).showSnackBar()` for user notifications
+- **StreamBuilder patterns**: Extensive use for real-time Firebase data updates
 
 ## Key Files to Reference
 - `lib/main.dart`: App initialization with Firebase and deep linking

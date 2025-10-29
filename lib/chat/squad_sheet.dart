@@ -17,8 +17,24 @@ class SquadSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SquadState>(
-      builder: (context, squadState, child) {
+    return Selector<SquadState, int>(
+      selector: (context, squadState) {
+        // Return a value that changes when active spots change
+        final activeGames = squadState.availableGames.where((game) {
+          final spots = squadState.gameSquadSpots[game['name']] ?? [];
+          return spots.where((spot) => spot != null).isNotEmpty;
+        }).toList();
+        // Return hash of active games and their filled spots
+        int hash = 0;
+        for (final game in activeGames) {
+          final spots = squadState.gameSquadSpots[game['name']] ?? [];
+          final filledCount = spots.where((spot) => spot != null).length;
+          hash = hash ^ game['name'].hashCode ^ filledCount.hashCode;
+        }
+        return hash;
+      },
+      builder: (context, _, child) {
+        final squadState = context.read<SquadState>();
         return DraggableScrollableSheet(
           expand: false,
           initialChildSize: 0.6,

@@ -109,8 +109,8 @@ class _PeacockModalState extends State<PeacockModal> {
           {'uid': user.uid, 'spot': 1, 'status': 'ready'}
         ], // Creator auto-assigned to spot 1 with ready status
         'viewers': <String>[], // Start with empty viewers list
-        'hostLockTimer': Timestamp.fromDate(DateTime.now()
-            .add(const Duration(minutes: 5))), // 5min timer for host to lock
+        'timer': Timestamp.fromDate(DateTime.now()
+            .add(const Duration(minutes: 5))), // 5min timer for lobby
         'createdAt': Timestamp.now(),
         'circle': _selectedCircle,
       };
@@ -122,7 +122,7 @@ class _PeacockModalState extends State<PeacockModal> {
         'peacock': {
           'game': gameName,
           'spots': _spots.toInt(),
-          'hostLockTimer': DateTime.now()
+          'timer': DateTime.now()
               .add(const Duration(minutes: 5))
               .millisecondsSinceEpoch,
           'circle': _selectedCircle,
@@ -139,6 +139,53 @@ class _PeacockModalState extends State<PeacockModal> {
         title: 'Peacock Alert',
         body: 'Looking for ${_spots.toInt()} spots in $gameName',
       );
+
+      // Ask if user wants to pin the game for quick access
+      if (_selectedGame != null && mounted) {
+        final shouldPin = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            title: Text(
+              'Pin Game',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            ),
+            content: Text(
+              'Pin this game with current settings for quick access?',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(
+                  'No',
+                  style:
+                      TextStyle(color: Theme.of(context).colorScheme.primary),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(
+                  'Yes',
+                  style:
+                      TextStyle(color: Theme.of(context).colorScheme.primary),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        if (shouldPin == true) {
+          final userManager = Provider.of<UserManager>(context, listen: false);
+          final quickStartGame = {
+            ..._selectedGame!,
+            'maxSpots': _spots.toInt(),
+            'alertCircle': _selectedCircle,
+            'alertBackups': _alertBackups,
+          };
+          await userManager.addPinnedGame(quickStartGame);
+        }
+      }
 
       if (mounted) {
         Navigator.of(context).pop();
@@ -266,116 +313,6 @@ class _PeacockModalState extends State<PeacockModal> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 24),
-                      // Quick start games section
-                      if (userManager.pinnedGames.isNotEmpty) ...[
-                        Text(
-                          'Quick Start',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 100,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: userManager.pinnedGames.length,
-                            itemBuilder: (context, index) {
-                              final game = userManager.pinnedGames[index];
-                              return GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _gameController.text = game['name'] ?? '';
-                                    _selectedGame = game;
-                                    if (game['maxSpots'] != null) {
-                                      _spots =
-                                          (game['maxSpots'] as int).toDouble();
-                                    }
-                                  });
-                                  HapticFeedback.lightImpact();
-                                },
-                                child: Container(
-                                  width: 80,
-                                  height: 100,
-                                  margin: const EdgeInsets.only(right: 12),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        width: 70,
-                                        height: 70,
-                                        decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black
-                                                  .withValues(alpha: 0.1),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                          border: _selectedGame?['name'] ==
-                                                  game['name']
-                                              ? Border.all(
-                                                  color:
-                                                      theme.colorScheme.primary,
-                                                  width: 2,
-                                                )
-                                              : null,
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(14),
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              image: game['coverUrl'] != null
-                                                  ? DecorationImage(
-                                                      image:
-                                                          CachedNetworkImageProvider(
-                                                              game['coverUrl']),
-                                                      fit: BoxFit.contain,
-                                                    )
-                                                  : null,
-                                              color: theme.colorScheme
-                                                  .surfaceContainerHighest,
-                                            ),
-                                            child: game['coverUrl'] == null
-                                                ? Icon(
-                                                    Icons
-                                                        .videogame_asset_rounded,
-                                                    color: theme.colorScheme
-                                                        .onSurfaceVariant,
-                                                    size: 28,
-                                                  )
-                                                : null,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Expanded(
-                                        child: Text(
-                                          game['name'] ?? '',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: theme.colorScheme.onSurface,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                      ],
                       // Game selection section
                       Text(
                         'Choose Game',
@@ -388,7 +325,7 @@ class _PeacockModalState extends State<PeacockModal> {
                       Container(
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceContainerHighest
-                              .withValues(alpha: 0.1),
+                              .withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: theme.colorScheme.outline
@@ -565,7 +502,7 @@ class _PeacockModalState extends State<PeacockModal> {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: theme.colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.1),
+                                .withValues(alpha: 0.25),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
                               color: theme.colorScheme.primary
@@ -659,7 +596,7 @@ class _PeacockModalState extends State<PeacockModal> {
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceContainerHighest
-                              .withValues(alpha: 0.1),
+                              .withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: theme.colorScheme.outline
@@ -767,7 +704,7 @@ class _PeacockModalState extends State<PeacockModal> {
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceContainerHighest
-                              .withValues(alpha: 0.1),
+                              .withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: theme.colorScheme.outline
@@ -864,7 +801,7 @@ class _PeacockModalState extends State<PeacockModal> {
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: theme.colorScheme.surfaceContainerHighest
-                              .withValues(alpha: 0.1),
+                              .withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: theme.colorScheme.outline

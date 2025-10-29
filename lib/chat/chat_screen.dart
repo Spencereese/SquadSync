@@ -25,7 +25,7 @@ import '../no_squad_screen.dart';
 import '../screens/squad_tab_screen.dart';
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
-import 'available_squads_widget.dart';
+// import 'available_squads_widget.dart'; // Removed - no longer used
 
 class ChatScreen extends StatefulWidget {
   final String? initialMessage;
@@ -1327,7 +1327,7 @@ class ChatScreenState extends State<ChatScreen>
                           },
                         ),
                         // Available Squads Widget
-                        const AvailableSquadsWidget(),
+                        // const AvailableSquadsWidget(), // Removed - keeping only "Your Active Squad" widget
                         Expanded(
                           child: StreamBuilder<QuerySnapshot>(
                             stream: _chatService.getChatMessages(context,

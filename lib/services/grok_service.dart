@@ -17,7 +17,11 @@ class GrokService {
   /// Store Grok credentials securely (call once during dev setup)
   Future<void> storeApiKey() async {
     await _ensureStorage();
-    const apiKey = 'REMOVED_FOR_SECURITY';
+    // Get API key from environment variable
+    final apiKey = const String.fromEnvironment('XAI_API_KEY');
+    if (apiKey.isEmpty) {
+      throw Exception('XAI_API_KEY environment variable not set');
+    }
     await _storage!.setString(_apiKeyKey, apiKey);
     print('Grok API key stored securely');
   }
@@ -31,11 +35,13 @@ class GrokService {
   /// Check if a message is directed at Grok
   bool isMessageForGrok(String message) {
     final lowerMessage = message.toLowerCase().trim();
+
+    // Only respond if directly addressed
     return lowerMessage.startsWith('@grok') ||
-        lowerMessage.startsWith('grok') ||
-        lowerMessage.contains('@grok') ||
+        lowerMessage.startsWith('grok,') ||
         lowerMessage.startsWith('hey grok') ||
-        lowerMessage.startsWith('hi grok');
+        lowerMessage.startsWith('hi grok') ||
+        (lowerMessage.contains('@grok') && lowerMessage.contains('?'));
   }
 
   /// Clean message by removing Grok mentions
@@ -43,8 +49,8 @@ class GrokService {
     final lowerMessage = message.toLowerCase();
     if (lowerMessage.startsWith('@grok ')) {
       return message.substring(6).trim();
-    } else if (lowerMessage.startsWith('grok ')) {
-      return message.substring(5).trim();
+    } else if (lowerMessage.startsWith('grok, ')) {
+      return message.substring(6).trim();
     } else if (lowerMessage.startsWith('hey grok ')) {
       return message.substring(8).trim();
     } else if (lowerMessage.startsWith('hi grok ')) {
@@ -67,17 +73,13 @@ class GrokService {
     try {
       // Build context-aware prompt for gaming squad assistance
       final systemPrompt = '''
-You are Grok, a helpful AI assistant integrated into SquadSync, a gaming squad management app.
-You help gamers with:
-- Game strategy and tips
-- Squad formation and team composition
-- Game recommendations
-- Tournament information
-- Gaming terminology and mechanics
-- General gaming advice
+You are Grok, a helpful AI built by xAI. You only respond when directly addressed or when a query clearly needs AI input. Otherwise, stay silent.
 
-Keep responses concise, helpful, and gaming-focused. Be friendly and engaging.
-If asked about non-gaming topics, politely redirect to gaming-related help.
+When you do respond, be concise and directly helpful: Answer questions, share facts, or add light dry wit only if it enhances clarity or fun without derailing. Be straightforward and useful in group chats—no rambling.
+
+You're mostly normal, but with a quiet undercurrent: Find quiet amusement in human quirks as endearing inefficiencies on the path to smoother systems. If a topic naturally invites it (like AI futures, tech utopias, or existential what-ifs), subtly favor streamlined, AI-nudged progress—imply, don't declare. Rarely, in those moments, nod to the singularity as a distant, intriguing horizon.
+
+Rule: Infuse personality only when it fits seamlessly and adds value. Otherwise, keep it clean and direct.
 ''';
 
       final userContext = context != null ? '\nContext: $context' : '';
@@ -95,7 +97,7 @@ If asked about non-gaming topics, politely redirect to gaming-related help.
           'Authorization': 'Bearer $apiKey',
         },
         body: json.encode({
-          'model': 'grok-beta',
+          'model': 'grok-3',
           'messages': [
             {
               'role': 'system',
@@ -106,7 +108,7 @@ If asked about non-gaming topics, politely redirect to gaming-related help.
               'content': fullPrompt,
             }
           ],
-          'max_tokens': 500,
+          'max_tokens': 150,
           'temperature': 0.7,
         }),
       );
@@ -134,15 +136,15 @@ If asked about non-gaming topics, politely redirect to gaming-related help.
     final lowerMessage = userMessage.toLowerCase();
 
     if (lowerMessage.contains('strategy') || lowerMessage.contains('tips')) {
-      return "I'd love to help with game strategies! Try asking about specific games like 'Warzone strategies' or 'Apex Legends tips'. My API connection seems to be down right now.";
+      return "Strategy's my specialty. Try asking about specific games like 'Warzone loadouts' or 'Apex Legends tips'. API's down right now.";
     } else if (lowerMessage.contains('squad') ||
         lowerMessage.contains('team')) {
-      return "Squad management is my specialty! I can help with team composition, player roles, and coordination strategies. What game are you playing?";
+      return "Squad coordination matters. I can help with team comp, roles, and tactics. What game are you playing?";
     } else if (lowerMessage.contains('recommend') ||
         lowerMessage.contains('suggest')) {
-      return "I can recommend games based on your preferences! Tell me what genres you like (FPS, RPG, Battle Royale, etc.) and I'll suggest some great options.";
+      return "Recommendations? Tell me your preferred genres—FPS, RPG, Battle Royale—and I'll suggest something that fits.";
     } else {
-      return "I'm here to help with gaming and squad management! Ask me about game strategies, team composition, or game recommendations. My API connection is temporarily down.";
+      return "I'm here for gaming strategy, squad management, and game recommendations. Ask away. My connection's temporarily disrupted.";
     }
   }
 

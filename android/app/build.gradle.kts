@@ -24,8 +24,8 @@ android {
         applicationId = "com.example.cod_squad_app"
         minSdk = flutter.minSdkVersion
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "1.0.5"
     }
 
     buildTypes {

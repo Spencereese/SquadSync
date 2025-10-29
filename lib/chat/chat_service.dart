@@ -723,7 +723,8 @@ class ChatService {
           : 'No specific game selected';
 
       // Get recent messages for context (last 5 messages)
-      final recentMessages = await _getRecentMessages(squadId, chatGroupId, limit: 5);
+      final recentMessages =
+          await _getRecentMessages(squadId, chatGroupId, limit: 5);
 
       // Generate Grok response
       final grokResponse = await _grokService.getGrokResponse(
@@ -762,11 +763,14 @@ class ChatService {
           : 'squads/$squadId/chat';
 
       // Send Grok's response
-      await _firestore.collection(collectionPath).doc(grokMsgId).set(grokMessageData);
+      await _firestore
+          .collection(collectionPath)
+          .doc(grokMsgId)
+          .set(grokMessageData);
 
       // Cache locally
-      await _sqliteHelper.insertMessage(grokMessageData, chatGroupId: chatGroupId);
-
+      await _sqliteHelper.insertMessage(grokMessageData,
+          chatGroupId: chatGroupId);
     } catch (e) {
       debugPrint('Failed to generate Grok response: $e');
       // Don't show error to user, just log it
@@ -774,7 +778,8 @@ class ChatService {
   }
 
   // Get recent messages for context
-  Future<List<String>> _getRecentMessages(String squadId, String? chatGroupId, {int limit = 5}) async {
+  Future<List<String>> _getRecentMessages(String squadId, String? chatGroupId,
+      {int limit = 5}) async {
     try {
       final collectionPath = chatGroupId != null
           ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
@@ -787,7 +792,8 @@ class ChatService {
           .get();
 
       final messages = snapshot.docs
-          .where((doc) => !(doc.data()['isAiResponse'] ?? false)) // Exclude AI responses
+          .where((doc) =>
+              !(doc.data()['isAiResponse'] ?? false)) // Exclude AI responses
           .take(limit)
           .map((doc) => doc.data()['text'] as String?)
           .where((text) => text != null && text.isNotEmpty)

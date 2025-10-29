@@ -14,10 +14,10 @@ class GrokService {
     _storage ??= await SharedPreferences.getInstance();
   }
 
-  /// Store Grok API key securely (call once during dev setup)
+  /// Store Grok credentials securely (call once during dev setup)
   Future<void> storeApiKey() async {
     await _ensureStorage();
-    const apiKey = 'xai-YOUR_API_KEY_HERE'; // Replace with actual API key
+    const apiKey = 'REMOVED_FOR_SECURITY';
     await _storage!.setString(_apiKeyKey, apiKey);
     print('Grok API key stored securely');
   }
@@ -32,10 +32,10 @@ class GrokService {
   bool isMessageForGrok(String message) {
     final lowerMessage = message.toLowerCase().trim();
     return lowerMessage.startsWith('@grok') ||
-           lowerMessage.startsWith('grok') ||
-           lowerMessage.contains('@grok') ||
-           lowerMessage.startsWith('hey grok') ||
-           lowerMessage.startsWith('hi grok');
+        lowerMessage.startsWith('grok') ||
+        lowerMessage.contains('@grok') ||
+        lowerMessage.startsWith('hey grok') ||
+        lowerMessage.startsWith('hi grok');
   }
 
   /// Clean message by removing Grok mentions
@@ -54,7 +54,8 @@ class GrokService {
   }
 
   /// Get AI response from Grok for gaming/squad related queries
-  Future<String> getGrokResponse(String userMessage, {
+  Future<String> getGrokResponse(
+    String userMessage, {
     String? context,
     List<String>? recentMessages,
   }) async {
@@ -84,7 +85,8 @@ If asked about non-gaming topics, politely redirect to gaming-related help.
           ? '\nRecent chat messages: ${recentMessages.take(3).join(' | ')}'
           : '';
 
-      final fullPrompt = '$systemPrompt\n\nUser message: $userMessage$userContext$recentContext';
+      final fullPrompt =
+          '$systemPrompt\n\nUser message: $userMessage$userContext$recentContext';
 
       final response = await http.post(
         Uri.parse('$_baseUrl/chat/completions'),
@@ -133,9 +135,11 @@ If asked about non-gaming topics, politely redirect to gaming-related help.
 
     if (lowerMessage.contains('strategy') || lowerMessage.contains('tips')) {
       return "I'd love to help with game strategies! Try asking about specific games like 'Warzone strategies' or 'Apex Legends tips'. My API connection seems to be down right now.";
-    } else if (lowerMessage.contains('squad') || lowerMessage.contains('team')) {
+    } else if (lowerMessage.contains('squad') ||
+        lowerMessage.contains('team')) {
       return "Squad management is my specialty! I can help with team composition, player roles, and coordination strategies. What game are you playing?";
-    } else if (lowerMessage.contains('recommend') || lowerMessage.contains('suggest')) {
+    } else if (lowerMessage.contains('recommend') ||
+        lowerMessage.contains('suggest')) {
       return "I can recommend games based on your preferences! Tell me what genres you like (FPS, RPG, Battle Royale, etc.) and I'll suggest some great options.";
     } else {
       return "I'm here to help with gaming and squad management! Ask me about game strategies, team composition, or game recommendations. My API connection is temporarily down.";

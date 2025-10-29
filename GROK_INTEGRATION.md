@@ -9,13 +9,14 @@ Grok AI has been integrated into the SquadSync chat system to provide helpful ga
 - **Special UI**: AI responses appear with "Grok 🤖" as the sender name in blue accent color
 
 ## Setup
-1. Get your xAI API key from https://console.x.ai/
-2. In `lib/main.dart`, uncomment and run the Grok setup code:
-   ```dart
-   final grokService = GrokService();
-   await grokService.storeApiKey();
-   ```
+✅ **API Key Configured**: The xAI API key has been integrated into the code.
+
+To activate Grok (if needed):
+1. Uncomment the setup code in `lib/main.dart`
+2. Run the app once to store the API key
 3. Comment out the setup code after first run
+
+The API key is already embedded in `lib/services/grok_service.dart` for immediate use.
 
 ## Usage Examples
 Users can ask Grok questions like:

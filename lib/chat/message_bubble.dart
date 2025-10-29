@@ -228,7 +228,8 @@ class _MessageBubbleState extends State<MessageBubble> {
         style: TextStyle(
           color: isAiResponse
               ? Colors.blueAccent.withValues(alpha: 0.9) // Special color for AI
-              : Colors.cyanAccent.withValues(alpha: 0.8), // Regular sender color
+              : Colors.cyanAccent
+                  .withValues(alpha: 0.8), // Regular sender color
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),

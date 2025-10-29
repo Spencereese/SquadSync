@@ -111,6 +111,10 @@ class IgdbAuthService {
       }
     } catch (e) {
       print('Error fetching IGDB token: $e');
+      print('Error type: ${e.runtimeType}');
+      if (e is http.ClientException) {
+        print('ClientException details: ${e.message}');
+      }
       return null;
     }
   }
@@ -188,6 +192,11 @@ class IgdbAuthService {
       }
     } catch (e) {
       print('Error searching IGDB: $e');
+      print('Error type: ${e.runtimeType}');
+      if (e is http.ClientException) {
+        print('ClientException details: ${e.message}');
+        print('URI: ${e.uri}');
+      }
       return [];
     }
   }

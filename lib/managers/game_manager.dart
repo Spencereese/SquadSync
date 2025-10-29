@@ -265,9 +265,13 @@ class GameManager with ChangeNotifier implements IGameManager {
   Future<List<Map<String, dynamic>>> searchGames(String query) async {
     if (query.isEmpty) return [];
 
+    print('GameManager: Searching for games with query: "$query"');
+
     try {
       // First try IGDB search
+      print('GameManager: Attempting IGDB search...');
       final igdbResults = await _igdbService.searchGames(query, limit: 10);
+      print('GameManager: IGDB search returned ${igdbResults.length} results');
       if (igdbResults.isNotEmpty) {
         // Cache results in Firestore for future offline access
         final batch = FirebaseFirestore.instance.batch();
@@ -314,6 +318,8 @@ class GameManager with ChangeNotifier implements IGameManager {
   Future<void> fetchGames({int page = 1, int pageSize = 20}) async {
     // For prod, proxy token/search via backend to hide secret
     // This is a dev implementation using IGDB directly
+
+    print('GameManager: Starting fetchGames with pageSize: $pageSize');
 
     try {
       // Seed with some popular games using hardcoded queries

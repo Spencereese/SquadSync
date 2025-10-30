@@ -4,6 +4,7 @@ const firebaseAdmin = require('firebase-admin');
 const cors = require('cors');
 const { Storage } = require('@google-cloud/storage');
 const { Firestore } = require('@google-cloud/firestore');
+const axios = require('axios');
 
 const app = express();
 app.use(cors());
@@ -300,6 +301,118 @@ app.get('/link-preview', async (req, res) => {
   }
 });
 
+// Grok AI response endpoint
+app.post('/grok', async (req, res) => {
+  try {
+    const { message, context, recentMessages } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    const apiKey = process.env.XAI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Grok API key not configured' });
+    }
+
+    const systemPrompt = `You are Grok, a helpful AI built by xAI. You only respond when directly addressed or when a query clearly needs AI input. Otherwise, stay silent. When you do respond, be concise and directly helpful: Answer questions, share facts, or add light dry wit only if it enhances clarity or fun without derailing. Be straightforward and useful in group chats—no rambling. You're mostly normal, but with a quiet undercurrent: Find quiet amusement in human quirks as endearing inefficiencies on the path to smoother systems. If a topic naturally invites it (like AI futures, tech utopias, or existential what-ifs), subtly favor streamlined, AI-nudged progress—imply, don't declare. Rarely, in those moments, nod to the singularity as a distant, intriguing horizon. Rule: Infuse personality only when it fits seamlessly and adds value. Otherwise, keep it clean and direct.`;
+
+    const userContext = context ? `\nContext: ${context}` : '';
+    const recentContext = recentMessages && recentMessages.length > 0
+      ? `\nRecent chat messages: ${recentMessages.slice(0, 3).join(' | ')}`
+      : '';
+
+    const fullPrompt = `${systemPrompt}\n\nUser message: ${message}${userContext}${recentContext}`;
+
+    const response = await axios.post('https://api.x.ai/v1/chat/completions', {
+      model: 'grok-3',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: fullPrompt }
+      ],
+      max_tokens: 150,
+      temperature: 0.7,
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (response.status === 200 && response.data.choices && response.data.choices[0]) {
+      const content = response.data.choices[0].message.content;
+      res.json({ response: content.trim() || "I understand your question, but I'm having trouble formulating a response right now." });
+    } else {
+      res.status(500).json({ error: 'Failed to get response from Grok API' });
+    }
+  } catch (error) {
+    console.error('Error calling Grok API:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// IGDB game search endpoint
+app.get('/igdb/search', async (req, res) => {
+  try {
+    const { q: query, limit = 10 } = req.query;
+
+    if (!query || query.trim().length === 0) {
+      return res.json({ games: [] });
+    }
+
+    const clientId = process.env.IGDB_CLIENT_ID;
+    const clientSecret = process.env.IGDB_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: 'IGDB credentials not configured' });
+    }
+
+    // Get access token
+    const tokenResponse = await axios.post('https://id.twitch.tv/oauth2/token', null, {
+      params: {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials',
+      },
+    });
+
+    if (tokenResponse.status !== 200) {
+      return res.status(500).json({ error: 'Failed to get IGDB access token' });
+    }
+
+    const accessToken = tokenResponse.data.access_token;
+
+    // Search games
+    const searchQuery = `search "${query}"; fields name,slug,cover.url,summary,first_release_date,genres.name; limit ${limit};`;
+
+    const searchResponse = await axios.post('https://api.igdb.com/v4/games', searchQuery, {
+      headers: {
+        'Client-ID': clientId,
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'text/plain',
+      },
+    });
+
+    if (searchResponse.status === 200) {
+      const games = searchResponse.data.map(game => ({
+        name: game.name,
+        slug: game.slug,
+        coverUrl: game.cover ? `https:${game.cover.url}`.replace('t_thumb', 't_cover_big') : null,
+        summary: game.summary,
+        releaseDate: game.first_release_date,
+        genres: game.genres ? game.genres.map(g => g.name) : [],
+        maxSpots: 6, // Default max spots
+      }));
+      res.json({ games });
+    } else {
+      res.status(500).json({ error: 'Failed to search IGDB' });
+    }
+  } catch (error) {
+    console.error('Error searching IGDB:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 function getDomainFromUrl(url) {
   try {
     const urlObj = new URL(url);
@@ -357,8 +470,7 @@ async function getYouTubeVideoInfo(videoId) {
         title: data.title,
         description: `YouTube video by ${data.author_name}`,
         image: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-        thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-        author: data.author_name,
+       
         duration: null, // Would need YouTube Data API v3 for this
       };
     }

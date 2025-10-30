@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../services/interfaces.dart';
-import '../services/igdb_auth_service.dart';
 
 /// Manages game selection, lobbies, and game data
 class GameManager with ChangeNotifier implements IGameManager {
-  final IgdbAuthService _igdbService = IgdbAuthService();
+  static const String _backendUrl =
+      'https://your-backend-url.com'; // Replace with your deployed backend URL
   Map<String, dynamic>? _currentGame;
   List<Map<String, dynamic>> _availableGames = [
     {
@@ -268,25 +270,39 @@ class GameManager with ChangeNotifier implements IGameManager {
     print('GameManager: Searching for games with query: "$query"');
 
     try {
-      // First try IGDB search
-      print('GameManager: Attempting IGDB search...');
-      final igdbResults = await _igdbService.searchGames(query, limit: 10);
-      print('GameManager: IGDB search returned ${igdbResults.length} results');
-      if (igdbResults.isNotEmpty) {
-        // Cache results in Firestore for future offline access
-        final batch = FirebaseFirestore.instance.batch();
-        for (final game in igdbResults) {
-          final gameData = Map<String, dynamic>.from(game);
-          gameData['name_lowercase'] = game['name']?.toString().toLowerCase();
-          final docRef =
-              FirebaseFirestore.instance.collection('games').doc(game['slug']);
-          batch.set(docRef, gameData, SetOptions(merge: true));
+      // Call backend IGDB search
+      print('GameManager: Attempting backend IGDB search...');
+      final response = await http.get(
+        Uri.parse(
+            '$_backendUrl/igdb/search?q=${Uri.encodeComponent(query)}&limit=10'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final igdbResults =
+            List<Map<String, dynamic>>.from(data['games'] ?? []);
+        print(
+            'GameManager: Backend IGDB search returned ${igdbResults.length} results');
+        if (igdbResults.isNotEmpty) {
+          // Cache results in Firestore for future offline access
+          final batch = FirebaseFirestore.instance.batch();
+          for (final game in igdbResults) {
+            final gameData = Map<String, dynamic>.from(game);
+            gameData['name_lowercase'] = game['name']?.toString().toLowerCase();
+            final docRef = FirebaseFirestore.instance
+                .collection('games')
+                .doc(game['slug']);
+            batch.set(docRef, gameData, SetOptions(merge: true));
+          }
+          await batch.commit();
+          return igdbResults;
         }
-        await batch.commit();
-        return igdbResults;
+      } else {
+        print(
+            'Backend IGDB search failed: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
-      print('IGDB search failed: $e');
+      print('Backend IGDB search failed: $e');
     }
 
     // Fallback to Firestore search
@@ -352,14 +368,22 @@ class GameManager with ChangeNotifier implements IGameManager {
       for (final query in popularQueries) {
         if (totalFetched >= pageSize) break;
 
-        final results = await _igdbService.searchGames(query, limit: 3);
-        for (final game in results) {
-          if (totalFetched >= pageSize) break;
+        final response = await http.get(
+          Uri.parse(
+              '$_backendUrl/igdb/search?q=${Uri.encodeComponent(query)}&limit=3'),
+        );
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final results = List<Map<String, dynamic>>.from(data['games'] ?? []);
+          for (final game in results) {
+            if (totalFetched >= pageSize) break;
 
-          final docRef =
-              FirebaseFirestore.instance.collection('games').doc(game['slug']);
-          batch.set(docRef, game, SetOptions(merge: true));
-          totalFetched++;
+            final docRef = FirebaseFirestore.instance
+                .collection('games')
+                .doc(game['slug']);
+            batch.set(docRef, game, SetOptions(merge: true));
+            totalFetched++;
+          }
         }
 
         // Small delay to avoid rate limiting
@@ -382,8 +406,16 @@ class GameManager with ChangeNotifier implements IGameManager {
       final gameName = game['name'] as String?;
       if (gameName == null || gameName.isEmpty) return game;
 
-      // Search IGDB for this game
-      final igdbResults = await _igdbService.searchGames(gameName, limit: 5);
+      // Search IGDB for this game via backend
+      final response = await http.get(
+        Uri.parse(
+            '$_backendUrl/igdb/search?q=${Uri.encodeComponent(gameName)}&limit=5'),
+      );
+      List<Map<String, dynamic>> igdbResults = [];
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        igdbResults = List<Map<String, dynamic>>.from(data['games'] ?? []);
+      }
 
       // Find the best match (exact name match preferred)
       Map<String, dynamic>? bestMatch;

@@ -157,6 +157,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Active Lobbies Section
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Text(
@@ -165,7 +166,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                 color: Colors.cyanAccent, fontWeight: FontWeight.bold),
           ),
         ),
-        Expanded(
+        SizedBox(
+          height: 200, // Fixed height for active lobbies
           child: RefreshIndicator(
             onRefresh: () async {
               await Future.delayed(const Duration(milliseconds: 500));
@@ -216,9 +218,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                         (peacock['viewers'] as List<dynamic>?)?.length ?? 0;
                     final isOwn = hostUid == user.uid;
 
-                    String title = isOwn
-                        ? 'Your $gameName Lobby'
-                        : '$hostName\'s $gameName Lobby: $filled/$maxSpots spots';
+                    String title = '$gameName: $filled/$maxSpots players';
 
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -231,11 +231,11 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                               color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          '$viewers viewers',
+                          '$viewers viewers • $hostName',
                           style: const TextStyle(color: Colors.white70),
                         ),
                         trailing: isOwn
-                            ? const Text('Yours',
+                            ? const Text('Host',
                                 style: TextStyle(color: Colors.cyanAccent))
                             : ElevatedButton(
                                 onPressed: () => _joinLobby(
@@ -252,6 +252,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
             ),
           ),
         ),
+
+        // Quick Start Section
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Text(

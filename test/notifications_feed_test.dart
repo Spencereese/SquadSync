@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
-import '../lib/managers/user_manager.dart';
+import 'package:cod_squad_app/managers/user_manager.dart';
 
 // Mock classes
 class MockUserManager extends Mock implements UserManager {}

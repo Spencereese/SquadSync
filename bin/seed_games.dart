@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
-import '../lib/firebase_options.dart';
-import '../lib/services/igdb_auth_service.dart';
+import 'package:cod_squad_app/firebase_options.dart';
+import 'package:cod_squad_app/services/igdb_auth_service.dart';
 
 /// Seeds Firestore with popular games from IGDB API
 /// Run with: dart bin/seed_games.dart

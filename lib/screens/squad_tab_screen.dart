@@ -128,14 +128,13 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         ),
         child: Column(
           children: [
-            // Active Lobbies Section (Top 2/3 - contains lobbies and carousel)
+            // Active Lobbies Section (Top - contains lobbies and carousel)
             Expanded(
-              flex: _hasActiveLobbies ? 3 : 2,
               child: _buildActiveLobbiesSection(context),
             ),
-            // Member Status Section (Bottom 1/3)
-            Expanded(
-              flex: _hasActiveLobbies ? 1 : 1,
+            // Member Status Section (Bottom - fixed height)
+            SizedBox(
+              height: 200, // Fixed height for member status
               child: _buildMemberStatusSection(context, squadState),
             ),
           ],
@@ -158,15 +157,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Active Lobbies Section
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            'Active Lobbies',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Colors.cyanAccent, fontWeight: FontWeight.bold),
-          ),
-        ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () async {
@@ -205,102 +195,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
 
                 return ListView(
                   children: [
-                    if (peacocks.isNotEmpty) ...[
-                      SizedBox(
-                        height: 120, // Reduced height for active lobbies
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: peacocks.length,
-                          itemBuilder: (context, index) {
-                            final peacock =
-                                peacocks[index].data() as Map<String, dynamic>;
-                            final gameName =
-                                peacock['game']?['name'] ?? 'Unknown Game';
-                            final hostUid = peacock['hostUid'];
-                            final maxSpots = peacock['spots'] ?? 4;
-                            final filled =
-                                (peacock['filled'] as List<dynamic>?)?.length ??
-                                    0;
-                            final filledList =
-                                (peacock['filled'] as List<dynamic>?) ?? [];
-                            final squadState = Provider.of<SquadState>(context, listen: false);
-                            final filledNames = filledList.map((uid) {
-                              return squadState.getDisplayNameForUid(uid.toString());
-                            }).toList();
-                            final isOwn = hostUid == user.uid;
-
-                            return Container(
-                              width: MediaQuery.of(context).size.width - 32, // Match member card width
-                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                              child: Card(
-                                color: Colors.white.withValues(alpha: 0.1),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // Big title with game name
-                                      Text(
-                                        gameName,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      // Player count
-                                      Text(
-                                        '$filled/$maxSpots players',
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      // Player names
-                                      if (filledNames.isNotEmpty) ...[
-                                        Text(
-                                          'Players: ${filledNames.join(', ')}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                      const Spacer(),
-                                      // Action button
-                                      Align(
-                                        alignment: Alignment.bottomRight,
-                                        child: isOwn
-                                            ? const Text('Host',
-                                                style: TextStyle(
-                                                    color: Colors.cyanAccent,
-                                                    fontSize: 12))
-                                            : ElevatedButton(
-                                                onPressed: () => _joinLobby(context,
-                                                    peacocks[index].id, peacock),
-                                                style: ElevatedButton.styleFrom(
-                                                  padding: const EdgeInsets.symmetric(
-                                                      horizontal: 16, vertical: 8),
-                                                  textStyle:
-                                                      const TextStyle(fontSize: 12),
-                                                ),
-                                                child: const Text('Join'),
-                                              ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-
                     // Quick Start Section
                     Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -317,6 +211,120 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                             context, userManager.pinnedGames);
                       },
                     ),
+
+                    // Active Lobbies Section
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        'Active Lobbies',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: Colors.cyanAccent,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    if (peacocks.isNotEmpty) ...[
+                      ...peacocks.map((doc) {
+                        final peacock = doc.data() as Map<String, dynamic>;
+                        final gameName =
+                            peacock['game']?['name'] ?? 'Unknown Game';
+                        final hostUid = peacock['hostUid'];
+                        final maxSpots = peacock['spots'] ?? 4;
+                        final filled =
+                            (peacock['filled'] as List<dynamic>?)?.length ?? 0;
+                        final filledList =
+                            (peacock['filled'] as List<dynamic>?) ?? [];
+                        final squadState =
+                            Provider.of<SquadState>(context, listen: false);
+                        final filledNames = filledList.map((uid) {
+                          return squadState
+                              .getDisplayNameForUid(uid.toString());
+                        }).toList();
+                        final isOwn = hostUid == user.uid;
+
+                        return Container(
+                          width: double.infinity,
+                          height: 140,
+                          margin: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          child: Card(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  // Left side: Game title and player names
+                                  Expanded(
+                                    flex: 3,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // Game title
+                                        Text(
+                                          gameName,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        // Player names
+                                        if (filledNames.isNotEmpty) ...[
+                                          Text(
+                                            filledNames.join(', '),
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 14,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                        const Spacer(),
+                                        // Action button
+                                        isOwn
+                                            ? const Text('Host',
+                                                style: TextStyle(
+                                                    color: Colors.cyanAccent,
+                                                    fontSize: 12))
+                                            : ElevatedButton(
+                                                onPressed: () => _joinLobby(
+                                                    context, doc.id, peacock),
+                                                style: ElevatedButton.styleFrom(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 8),
+                                                  textStyle: const TextStyle(
+                                                      fontSize: 12),
+                                                ),
+                                                child: const Text('Join'),
+                                              ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Right side: Big player count
+                                  Expanded(
+                                    flex: 1,
+                                    child: Center(
+                                      child: Text(
+                                        '$filled/$maxSpots',
+                                        style: const TextStyle(
+                                          color: Colors.cyanAccent,
+                                          fontSize: 32,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
                   ],
                 );
               },
@@ -369,6 +377,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       color: Colors.transparent,
+      elevation: 0,
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: Colors.cyanAccent,
@@ -620,7 +629,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                     child: game['coverUrl'] != null
                         ? CachedNetworkImage(
                             imageUrl: game['coverUrl'],
-                            fit: BoxFit.fitWidth,
+                            fit: BoxFit.cover,
                             placeholder: (context, url) => Container(
                               color: Colors.grey[800],
                               child: const Center(

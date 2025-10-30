@@ -174,9 +174,34 @@ class SquadDataManager {
     // Set calling status - spot is reserved but not locked yet
     gameSquadSpots[gameName]![index] =
         '${userUid}_calling'; // Temporary calling state
+
+    // Check how many people are currently calling spots in this game
+    final callingCount = gameSquadSpots[gameName]!
+        .where((spot) => spot != null && spot.toString().contains('_calling'))
+        .length;
+
+    // If only one person is calling, use 1 hour timer (3600 seconds), otherwise 5 minutes (300 seconds)
+    final timerDuration = callingCount == 1 ? 3600 : 300;
+
+    // If this is the second caller (callingCount == 2), reduce any existing 1-hour timers to 5 minutes
+    if (callingCount == 2) {
+      for (int i = 0; i < gameSpotTimers[gameName]!.length; i++) {
+        final timer = gameSpotTimers[gameName]![i];
+        if (timer != null &&
+            timer['calling'] == true &&
+            timer['duration'] == 3600) {
+          gameSpotTimers[gameName]![i] = {
+            'startTime': timer['startTime'],
+            'duration': 300,
+            'calling': true,
+          };
+        }
+      }
+    }
+
     gameSpotTimers[gameName]![index] = {
       'startTime': DateTime.now().millisecondsSinceEpoch,
-      'duration': 300, // 5 minute calling timer
+      'duration': timerDuration,
       'calling': true,
     };
     globalStatuses[userName] = 'Calling'; // Set status to calling

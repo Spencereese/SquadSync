@@ -4,9 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:mockito/mockito.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../lib/screens/squad_tab_screen.dart';
-import '../lib/managers/squad_manager.dart';
-import '../lib/chat/peacock_modal.dart';
+import 'package:cod_squad_app/screens/squad_tab_screen.dart';
+import 'package:cod_squad_app/managers/squad_manager.dart';
+import 'package:cod_squad_app/chat/peacock_modal.dart';
 
 // Mock classes
 class MockUser extends Mock implements User {

@@ -1,4 +1,4 @@
-import '../lib/managers/game_manager.dart';
+import 'package:cod_squad_app/managers/game_manager.dart';
 
 void main() async {
   print('Testing GameManager search functionality...');

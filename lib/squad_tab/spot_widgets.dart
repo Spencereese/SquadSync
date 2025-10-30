@@ -147,72 +147,146 @@ class SpotWidgets {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!hasOccupant)
-          ElevatedButton(
-            onPressed: () {
-              debugPrint('Call button pressed for spot $index');
-              try {
-                squadState.callSpotForGame(index, gameName);
-                debugPrint('Call button action completed for spot $index');
-              } catch (e) {
-                debugPrint('Call button failed for spot $index: $e');
-              }
-            },
-            onLongPress: () =>
-                showSpotAssignmentMenu(context, squadState, index),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              elevation: 6,
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Colors.tealAccent, Colors.teal],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.tealAccent.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            child: const Tooltip(
-              message: 'Tap to call, hold to assign others',
-              child: Text('Call'),
+            child: ElevatedButton(
+              onPressed: () {
+                debugPrint('Call button pressed for spot $index');
+                try {
+                  squadState.callSpotForGame(index, gameName);
+                  debugPrint('Call button action completed for spot $index');
+                } catch (e) {
+                  debugPrint('Call button failed for spot $index: $e');
+                }
+              },
+              onLongPress: () =>
+                  showSpotAssignmentMenu(context, squadState, index),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.call, size: 16, color: Colors.black),
+                  const SizedBox(width: 6),
+                  const Text('Call',
+                      style: TextStyle(
+                          color: Colors.black, fontWeight: FontWeight.bold)),
+                ],
+              ),
             ),
           ),
         if (hasOccupant && hasTimer && isCalling && spotName == yourName)
-          ElevatedButton(
-            onPressed: () {
-              debugPrint('Lock button pressed for spot $index');
-              try {
-                squadState.lockCalledSpot(gameName, index);
-                debugPrint('Lock button action completed for spot $index');
-              } catch (e) {
-                debugPrint('Lock button failed for spot $index: $e');
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              elevation: 6,
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Colors.orangeAccent, Colors.deepOrange],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.orangeAccent.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            child: const Tooltip(
-              message: 'Lock in your spot',
-              child: Text('Lock'),
+            child: ElevatedButton(
+              onPressed: () {
+                debugPrint('Lock button pressed for spot $index');
+                try {
+                  squadState.lockCalledSpot(gameName, index);
+                  debugPrint('Lock button action completed for spot $index');
+                } catch (e) {
+                  debugPrint('Lock button failed for spot $index: $e');
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock, size: 16, color: Colors.white),
+                  const SizedBox(width: 6),
+                  const Text('Lock',
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold)),
+                ],
+              ),
             ),
           ),
         if (hasOccupant && hasTimer && isReady && spotName == yourName)
-          ElevatedButton(
-            onPressed: () {
-              debugPrint('Leave button pressed for spot $index');
-              try {
-                squadState.removeSpot(index);
-                debugPrint('Leave button action completed for spot $index');
-              } catch (e) {
-                debugPrint('Leave button failed for spot $index: $e');
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              elevation: 6,
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Colors.redAccent, Colors.red],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.redAccent.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            child: const Tooltip(
-              message: 'Leave your spot',
-              child: Text('Leave'),
+            child: ElevatedButton(
+              onPressed: () {
+                debugPrint('Leave button pressed for spot $index');
+                try {
+                  squadState.removeSpot(index);
+                  debugPrint('Leave button action completed for spot $index');
+                } catch (e) {
+                  debugPrint('Leave button failed for spot $index: $e');
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.exit_to_app, size: 16, color: Colors.white),
+                  const SizedBox(width: 6),
+                  const Text('Leave',
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold)),
+                ],
+              ),
             ),
           ),
         // Removed "Leave" button - players lose spots automatically after 5 minutes if not locked

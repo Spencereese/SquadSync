@@ -5,10 +5,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:mockito/mockito.dart';
-import '../lib/chat/chat_screen.dart';
-import '../lib/managers/squad_manager.dart';
-import '../lib/squad_state.dart';
-import '../lib/screens/squad_tab_screen.dart';
+import 'package:cod_squad_app/chat/chat_screen.dart';
+import 'package:cod_squad_app/managers/squad_manager.dart';
+import 'package:cod_squad_app/squad_state.dart';
+import 'package:cod_squad_app/screens/squad_tab_screen.dart';
 
 class MockFirebaseAuth extends Mock implements FirebaseAuth {}
 
@@ -93,6 +93,7 @@ void main() {
 }
 
 class MockUser extends Mock implements User {
+  @override
   final String uid;
   MockUser({required this.uid});
 

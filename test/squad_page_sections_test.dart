@@ -6,11 +6,11 @@ import 'package:provider/provider.dart';import 'package:flutter_test/flutter_tes
 
 import 'package:mockito/mockito.dart';
 
-import '../lib/screens/squad_tab_screen.dart';import 'package:provider/provider.dart';import 'package:provider/provider.dart';
+import 'package:cod_squad_app/screens/squad_tab_screen.dart';import 'package:provider/provider.dart';import 'package:provider/provider.dart';
 
-import '../lib/managers/squad_manager.dart';
+import 'package:cod_squad_app/managers/squad_manager.dart';
 
-import '../lib/squad_state.dart';import 'package:mockito/mockito.dart';import 'package:mockito/mockito.dart';
+import 'package:cod_squad_app/squad_state.dart';import 'package:mockito/mockito.dart';import 'package:mockito/mockito.dart';
 
 
 
@@ -18,12 +18,13 @@ import '../lib/squad_state.dart';import 'package:mockito/mockito.dart';import 'p
 
 class MockSquadManager extends Mock implements SquadManager {}
 
-import '../lib/managers/squad_manager.dart';import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cod_squad_app/managers/squad_manager.dart';import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MockSquadState extends Mock implements SquadState {
 
   @overrideimport '../lib/squad_state.dart';import 'package:firebase_core/firebase_core.dart';
 
+  @override
   String? get selectedSquadId => 'test-squad';
 
 import '../lib/screens/squad_tab_screen.dart';
@@ -34,7 +35,7 @@ import '../lib/screens/squad_tab_screen.dart';
 
 }
 
-class MockSquadManager extends Mock implements SquadManager {}import '../lib/squad_state.dart';
+class MockSquadManager extends Mock implements SquadManager {}import 'package:cod_squad_app/squad_state.dart';
 
 void main() {
 
@@ -76,7 +77,7 @@ class MockSquadState extends Mock implements SquadState {// Mock classes
 
       ),void main() {  User? get currentUser => MockUser();
 
-    );
+    )
 
   late MockSquadManager mockSquadManager;}
 
@@ -98,7 +99,7 @@ class MockSquadState extends Mock implements SquadState {// Mock classes
 
     mockSquadState = MockSquadState();    return Stream.value(MockQuerySnapshot());
 
-  });  }
+  })  }
 
 
 

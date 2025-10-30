@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/managers/game_manager.dart';
-import '../lib/squad_state.dart';
+import 'package:cod_squad_app/managers/game_manager.dart';
+import 'package:cod_squad_app/squad_state.dart';
 
 void main() {
   group('GameManager Tests', () {

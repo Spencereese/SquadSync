@@ -22,11 +22,13 @@ class MockSquadState with ChangeNotifier {
   };
   String? selectedSquadId = 'test-squad-id';
 
+  @override
   void notifyListeners() {}
 }
 
 // Mock ReviewManager for testing
 class MockReviewManager with ChangeNotifier {
+  @override
   void notifyListeners() {}
 }
 

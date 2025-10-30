@@ -4,11 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:mockito/mockito.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../lib/chat/peacock_modal.dart';
-import '../lib/managers/user_manager.dart';
-import '../lib/managers/game_manager.dart';
-import '../lib/managers/notification_manager.dart';
-import '../lib/squad_state.dart';
+import 'package:cod_squad_app/chat/peacock_modal.dart';
+import 'package:cod_squad_app/managers/user_manager.dart';
+import 'package:cod_squad_app/managers/game_manager.dart';
+import 'package:cod_squad_app/managers/notification_manager.dart';
+import 'package:cod_squad_app/squad_state.dart';
 
 // Mock classes
 class MockUser extends Mock implements User {}

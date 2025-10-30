@@ -3,12 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:firebase_core/firebase_core.dart';
-import '../lib/chat/peacock_modal.dart';
-import '../lib/managers/game_manager.dart';
-import '../lib/managers/user_manager.dart';
-import '../lib/managers/notification_manager.dart';
-import '../lib/squad_state.dart';
-import '../lib/firebase_options.dart';
+import 'package:cod_squad_app/chat/peacock_modal.dart';
+import 'package:cod_squad_app/managers/game_manager.dart';
+import 'package:cod_squad_app/managers/user_manager.dart';
+import 'package:cod_squad_app/managers/notification_manager.dart';
+import 'package:cod_squad_app/squad_state.dart';
+import 'package:cod_squad_app/firebase_options.dart';
 
 void main() {
   group('Peacock Modal Autocomplete', () {

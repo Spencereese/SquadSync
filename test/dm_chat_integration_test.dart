@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/chat/chat_state.dart';
+import 'package:cod_squad_app/chat/chat_state.dart';
 
 void main() {
   group('DM Chat Integration Tests', () {

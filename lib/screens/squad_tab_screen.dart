@@ -262,34 +262,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         ),
         Consumer<UserManager>(
           builder: (context, userManager, child) {
-            if (userManager.pinnedGames.isNotEmpty) {
-              return _buildPinnedGamesCarousel(
-                  context, userManager.pinnedGames);
-            } else {
-              return Container(
-                height: 320,
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.star_border,
-                      size: 48,
-                      color: Colors.grey[600],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Pin favorites for quick start',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              );
-            }
+            return _buildPinnedGamesCarousel(
+                context, userManager.pinnedGames);
           },
         ),
       ],

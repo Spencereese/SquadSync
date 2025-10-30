@@ -462,49 +462,8 @@ class _PeacockModalState extends State<PeacockModal> {
                               }
                             });
                             HapticFeedback.lightImpact();
-                            // Show pin dialog
-                            final shouldPin = await showDialog<bool>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                backgroundColor: theme.colorScheme.surface,
-                                title: Text(
-                                  'Pin Game',
-                                  style: TextStyle(
-                                      color: theme.colorScheme.onSurface),
-                                ),
-                                content: Text(
-                                  'Pin this game for quick access?',
-                                  style: TextStyle(
-                                      color: theme.colorScheme.onSurface),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(false),
-                                    child: Text(
-                                      'No',
-                                      style: TextStyle(
-                                          color: theme.colorScheme.primary),
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(true),
-                                    child: Text(
-                                      'Yes',
-                                      style: TextStyle(
-                                          color: theme.colorScheme.primary),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (shouldPin == true) {
-                              final userManager = Provider.of<UserManager>(
-                                  context,
-                                  listen: false);
-                              await userManager.addPinnedGame(game);
-                            }
+                            // Ensure suggestions close
+                            FocusScope.of(context).unfocus();
                           },
                           emptyBuilder: (context) => Padding(
                             padding: const EdgeInsets.all(16.0),

@@ -5,22 +5,39 @@ const cors = require('cors');
 const { Storage } = require('@google-cloud/storage');
 const { Firestore } = require('@google-cloud/firestore');
 const axios = require('axios');
+require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // Initialize Firebase Admin
-const serviceAccount = JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS);
-firebaseAdmin.initializeApp({
-  credential: firebaseAdmin.credential.cert(serviceAccount),
-});
+let firebaseInitialized = false;
+if (process.env.GOOGLE_CLOUD_CREDENTIALS && !process.env.GOOGLE_CLOUD_CREDENTIALS.includes('YOUR_PRIVATE_KEY_HERE')) {
+  try {
+    const serviceAccount = JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS);
+    firebaseAdmin.initializeApp({
+      credential: firebaseAdmin.credential.cert(serviceAccount),
+    });
+    firebaseInitialized = true;
+  } catch (error) {
+    console.error('Failed to initialize Firebase:', error.message);
+  }
+} else {
+  console.log('GOOGLE_CLOUD_CREDENTIALS not set or is placeholder, skipping Firebase initialization');
+}
 
 // Initialize Google Cloud Storage
-const storage = new Storage();
+let storage;
+if (firebaseInitialized) {
+  storage = new Storage();
+}
 
 // Initialize Firestore
-const firestore = new Firestore();
+let firestore;
+if (firebaseInitialized) {
+  firestore = new Firestore();
+}
 
 // PostgreSQL connection
 const pool = new Pool({

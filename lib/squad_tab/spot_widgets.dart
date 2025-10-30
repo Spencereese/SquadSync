@@ -23,6 +23,11 @@ class SpotWidgets {
         hasOccupant && hasTimer && isReady && spotName == yourName;
     final hasAnyButton = hasCallButton || hasLockButton || hasWalkingButton;
 
+    // Debug logging for button visibility
+    if (hasOccupant && spotName == yourName) {
+      debugPrint('Spot $index debug: hasTimer=$hasTimer, isCalling=$isCalling, isReady=$isReady, spotName="$spotName", yourName="$yourName", hasLockButton=$hasLockButton');
+    }
+
     return GestureDetector(
       onLongPress: () {
         if (hasOccupant) {

@@ -333,7 +333,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: Colors.white.withValues(alpha: 0.1),
+      color: Colors.transparent,
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: Colors.cyanAccent,

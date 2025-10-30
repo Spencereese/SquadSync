@@ -83,9 +83,18 @@ class SquadState with ChangeNotifier {
     // Handle calling UIDs (format: uid_calling)
     if (uid.contains('_calling')) {
       final actualUid = uid.split('_calling')[0];
+      // Check if this is the current user
+      if (actualUid == FirebaseAuth.instance.currentUser?.uid && displayName != null) {
+        return displayName!;
+      }
       if (_memberDisplayNames.containsKey(actualUid)) {
         return _memberDisplayNames[actualUid]!;
       }
+    }
+
+    // Check if this is the current user
+    if (uid == FirebaseAuth.instance.currentUser?.uid && displayName != null) {
+      return displayName!;
     }
 
     if (_memberDisplayNames.containsKey(uid)) {

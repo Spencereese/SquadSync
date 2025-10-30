@@ -42,6 +42,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   late PageController _pageController;
   double _currentPage = 0.0;
   late SquadManager _squadManager;
+  bool _hasActiveLobbies = false;
 
   @override
   void initState() {
@@ -129,12 +130,12 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
           children: [
             // Active Lobbies Section (Top 2/3 - contains lobbies and carousel)
             Expanded(
-              flex: 2,
+              flex: _hasActiveLobbies ? 3 : 2,
               child: _buildActiveLobbiesSection(context),
             ),
             // Member Status Section (Bottom 1/3)
             Expanded(
-              flex: 1,
+              flex: _hasActiveLobbies ? 1 : 1,
               child: _buildMemberStatusSection(context, squadState),
             ),
           ],
@@ -193,6 +194,15 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                   return filled < maxSpots && isActive;
                 }).toList();
 
+                // Update layout based on active lobbies presence
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_hasActiveLobbies != peacocks.isNotEmpty) {
+                    setState(() {
+                      _hasActiveLobbies = peacocks.isNotEmpty;
+                    });
+                  }
+                });
+
                 return ListView(
                   children: [
                     if (peacocks.isNotEmpty) ...[
@@ -206,58 +216,83 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                                 peacocks[index].data() as Map<String, dynamic>;
                             final gameName =
                                 peacock['game']?['name'] ?? 'Unknown Game';
-                            final hostName =
-                                peacock['hostName'] ?? 'Unknown Host';
                             final hostUid = peacock['hostUid'];
                             final maxSpots = peacock['spots'] ?? 4;
                             final filled =
                                 (peacock['filled'] as List<dynamic>?)?.length ??
                                     0;
-                            final viewers =
-                                (peacock['viewers'] as List<dynamic>?)
-                                        ?.length ??
-                                    0;
+                            final filledList =
+                                (peacock['filled'] as List<dynamic>?) ?? [];
+                            final squadState = Provider.of<SquadState>(context, listen: false);
+                            final filledNames = filledList.map((uid) {
+                              return squadState.getDisplayNameForUid(uid.toString());
+                            }).toList();
                             final isOwn = hostUid == user.uid;
 
-                            String title =
-                                '$gameName: $filled/$maxSpots players';
-
                             return Container(
-                              width: 280,
-                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              width: MediaQuery.of(context).size.width - 32, // Match member card width
+                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                               child: Card(
                                 color: Colors.white.withValues(alpha: 0.1),
-                                child: ListTile(
-                                  title: Text(
-                                    title,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14),
-                                  ),
-                                  subtitle: Text(
-                                    '$viewers viewers • $hostName',
-                                    style: const TextStyle(
-                                        color: Colors.white70, fontSize: 12),
-                                  ),
-                                  trailing: isOwn
-                                      ? const Text('Host',
-                                          style: TextStyle(
-                                              color: Colors.cyanAccent,
-                                              fontSize: 12))
-                                      : ElevatedButton(
-                                          onPressed: () => _joinLobby(context,
-                                              peacocks[index].id, peacock),
-                                          style: ElevatedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 6),
-                                            textStyle:
-                                                const TextStyle(fontSize: 12),
-                                          ),
-                                          child: const Text('Join'),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Big title with game name
+                                      Text(
+                                        gameName,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                  onTap: () => _enterLobby(
-                                      context, peacocks[index].id, peacock),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      // Player count
+                                      Text(
+                                        '$filled/$maxSpots players',
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      // Player names
+                                      if (filledNames.isNotEmpty) ...[
+                                        Text(
+                                          'Players: ${filledNames.join(', ')}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                      const Spacer(),
+                                      // Action button
+                                      Align(
+                                        alignment: Alignment.bottomRight,
+                                        child: isOwn
+                                            ? const Text('Host',
+                                                style: TextStyle(
+                                                    color: Colors.cyanAccent,
+                                                    fontSize: 12))
+                                            : ElevatedButton(
+                                                onPressed: () => _joinLobby(context,
+                                                    peacocks[index].id, peacock),
+                                                style: ElevatedButton.styleFrom(
+                                                  padding: const EdgeInsets.symmetric(
+                                                      horizontal: 16, vertical: 8),
+                                                  textStyle:
+                                                      const TextStyle(fontSize: 12),
+                                                ),
+                                                child: const Text('Join'),
+                                              ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
@@ -748,40 +783,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     // ignore: use_build_context_synchronously
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Joined lobby!')),
-    );
-  }
-
-  void _enterLobby(
-      BuildContext context, String peacockId, Map<String, dynamic> peacock) {
-    final gameName = peacock['game']?['name'] ?? '';
-
-    // Try to find the game in pinned games for better data
-    final userManager = Provider.of<UserManager>(context, listen: false);
-    final game =
-        userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
-                  (g) => g?['name'] == gameName,
-                  orElse: () => null,
-                ) ??
-            userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
-                  (g) => g?['name']?.toLowerCase() == gameName.toLowerCase(),
-                  orElse: () => null,
-                ) ??
-            userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
-                  (g) =>
-                      g?['name']
-                          ?.toLowerCase()
-                          .contains(gameName.toLowerCase()) ==
-                      true,
-                  orElse: () => null,
-                );
-
-    // Navigate to full SquadTabScreen filtered for this lobby's game
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            SquadTabScreen(lobbyId: peacockId, gameName: gameName, game: game),
-      ),
     );
   }
 }

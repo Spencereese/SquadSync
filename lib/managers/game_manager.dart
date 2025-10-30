@@ -7,7 +7,7 @@ import '../services/interfaces.dart';
 /// Manages game selection, lobbies, and game data
 class GameManager with ChangeNotifier implements IGameManager {
   static const String _backendUrl =
-      'http://localhost:8080'; // Replace with your deployed backend URL
+      'https://squadsync-backend-756172684661.us-central1.run.app'; // Replace with your deployed backend URL
   Map<String, dynamic>? _currentGame;
   List<Map<String, dynamic>> _availableGames = [
     {

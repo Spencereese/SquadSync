@@ -359,7 +359,23 @@ class _PeacockModalState extends State<PeacockModal> {
                             );
                           },
                           suggestionsCallback: (pattern) async {
-                            if (pattern.isEmpty) return [];
+                            final userManager = Provider.of<UserManager>(
+                                context,
+                                listen: false);
+                            final pinnedGames = userManager.pinnedGames;
+                            
+                            if (pattern.isEmpty) {
+                              // Show pinned games when no search query
+                              return pinnedGames.map((game) => {
+                                'name': game['name'],
+                                'slug': game['slug'] ?? game['name']?.toString().toLowerCase().replaceAll(' ', '-'),
+                                'coverUrl': game['coverUrl'],
+                                'summary': game['summary'],
+                                'genres': game['genres'],
+                                'maxSpots': game['maxSpots'] ?? 4,
+                              }).toList();
+                            }
+                            
                             final gameManager = Provider.of<GameManager>(
                                 context,
                                 listen: false);

@@ -262,8 +262,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         ),
         Consumer<UserManager>(
           builder: (context, userManager, child) {
-            return _buildPinnedGamesCarousel(
-                context, userManager.pinnedGames);
+            return _buildPinnedGamesCarousel(context, userManager.pinnedGames);
           },
         ),
       ],

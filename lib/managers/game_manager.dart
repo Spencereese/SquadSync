@@ -7,7 +7,7 @@ import '../services/interfaces.dart';
 /// Manages game selection, lobbies, and game data
 class GameManager with ChangeNotifier implements IGameManager {
   static const String _backendUrl =
-      'http://192.168.0.12:8080'; // Replace with your deployed backend URL
+      'http://localhost:8080'; // Replace with your deployed backend URL
   Map<String, dynamic>? _currentGame;
   List<Map<String, dynamic>> _availableGames = [
     {

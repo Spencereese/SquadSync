@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../../app_theme.dart';
+import 'chat_state.dart';
 
 class ChatSettingsMenu {
   static void showChatOptions({
@@ -172,8 +174,12 @@ class ChatSettingsMenu {
 
   static void showQuickReactionPicker({
     required BuildContext context,
-    required Function(String) onEmojiSelected,
+    required Function(List<String>) onEmojisSelected,
   }) {
+    final chatState = Provider.of<ChatState>(context, listen: false);
+    final currentEmojis = List<String>.from(chatState.quickReactionEmojis);
+    final selectedEmojis = Set<String>.from(currentEmojis);
+
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
       context: context,
@@ -181,56 +187,175 @@ class ChatSettingsMenu {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 8.0),
-              height: 4.0,
-              width: 40.0,
-              decoration: BoxDecoration(
-                color: AppTheme.hintColor.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2.0),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Text(
-                'Select Quick Reaction',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16.0,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8.0),
+                height: 4.0,
+                width: 40.0,
+                decoration: BoxDecoration(
+                  color: AppTheme.hintColor.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2.0),
                 ),
               ),
-            ),
-            Wrap(
-              spacing: 8.0,
-              runSpacing: 8.0,
-              children: ['👍', '❤️', '😂', '😮', '😢', '😡'].map((emoji) {
-                return GestureDetector(
-                  onTap: () {
-                    onEmojiSelected(emoji);
-                    Navigator.pop(context);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(8.0),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(12.0),
-                    ),
-                    child: Text(
-                      emoji,
-                      style: const TextStyle(fontSize: 28),
-                      semanticsLabel: 'Set $emoji as quick reaction',
-                    ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  'Select Quick Reactions (${selectedEmojis.length}/6)',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16.0,
                   ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 8.0),
-          ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text(
+                  'Choose up to 6 emojis for your quick reactions',
+                  style: TextStyle(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.7),
+                    fontSize: 14.0,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 16.0),
+              Wrap(
+                spacing: 8.0,
+                runSpacing: 8.0,
+                children: [
+                  '👍',
+                  '❤️',
+                  '😂',
+                  '😮',
+                  '😢',
+                  '😡',
+                  '😍',
+                  '🤔',
+                  '🙄',
+                  '😴',
+                  '🤗',
+                  '🤩',
+                  '🥳',
+                  '😎',
+                  '🤯',
+                  '😱',
+                  '🤪',
+                  '🥺',
+                  '😤',
+                  '🤐',
+                  '👏',
+                  '🙌',
+                  '🤝',
+                  '👌',
+                  '✌️',
+                  '🤞',
+                  '💪',
+                  '🙏',
+                  '🤙',
+                  '👋',
+                  '🔥',
+                  '⭐',
+                  '✨',
+                  '💯',
+                  '🎉',
+                  '🎊',
+                  '💖',
+                  '💕',
+                  '💓',
+                  '💗',
+                  '💜',
+                  '💙',
+                  '💚',
+                  '💛',
+                  '🧡',
+                  '❤️‍🔥',
+                  '💔',
+                  '❣️',
+                  '💞',
+                  '💘'
+                ].map((emoji) {
+                  final isSelected = selectedEmojis.contains(emoji);
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          selectedEmojis.remove(emoji);
+                        } else if (selectedEmojis.length < 6) {
+                          selectedEmojis.add(emoji);
+                        }
+                      });
+                      HapticFeedback.lightImpact();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8.0),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.2)
+                            : Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12.0),
+                        border: Border.all(
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .outline
+                                  .withValues(alpha: 0.3),
+                          width: isSelected ? 2.0 : 1.0,
+                        ),
+                      ),
+                      child: Text(
+                        emoji,
+                        style: const TextStyle(fontSize: 28),
+                        semanticsLabel: isSelected
+                            ? 'Remove $emoji from quick reactions'
+                            : 'Add $emoji to quick reactions',
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16.0),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12.0),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: selectedEmojis.isNotEmpty
+                            ? () {
+                                final sortedEmojis = selectedEmojis.toList()
+                                  ..sort();
+                                onEmojisSelected(sortedEmojis);
+                                Navigator.pop(context);
+                              }
+                            : null,
+                        child: const Text('Save'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8.0),
+            ],
+          ),
         ),
       ),
     );

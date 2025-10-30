@@ -87,7 +87,7 @@ class ChatScreenState extends State<ChatScreen>
 
     // Load quick reaction emoji
     await Provider.of<ChatState>(context, listen: false)
-        .loadQuickReactionEmoji();
+        .loadQuickReactionEmojis();
 
     // Load user display names for better performance
     await _loadUserDisplayNames();
@@ -1196,10 +1196,10 @@ class ChatScreenState extends State<ChatScreen>
                                           ChatSettingsMenu
                                               .showQuickReactionPicker(
                                         context: context,
-                                        onEmojiSelected: (emoji) {
+                                        onEmojisSelected: (emojis) {
                                           Provider.of<ChatState>(context,
                                                   listen: false)
-                                              .setQuickReactionEmoji(emoji);
+                                              .setQuickReactionEmojis(emojis);
                                         },
                                       ),
                                       onToggleNotifications:

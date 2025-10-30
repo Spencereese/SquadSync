@@ -139,22 +139,6 @@ class _SquadTabContentState extends State<_SquadTabContent> {
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                // TEMPORARY DEBUG LABEL
-                SliverToBoxAdapter(
-                  child: Container(
-                    padding: const EdgeInsets.all(8.0),
-                    color: Colors.red.withValues(alpha: 0.8),
-                    child: const Text(
-                      'PAGE: Squad Lobbies',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),

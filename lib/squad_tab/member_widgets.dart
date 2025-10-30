@@ -69,42 +69,81 @@ class MemberWidgets {
     );
   }
 
-  static Widget _buildGameBadge(String gameName, {bool isSolo = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.blueAccent.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.5)),
-      ),
-      child: Text(
-        'Playing: $gameName${isSolo ? ' (Solo)' : ''}',
-        style: const TextStyle(
-          color: Colors.blueAccent,
-          fontSize: 10,
-          fontWeight: FontWeight.w500,
+  static Widget _buildMemberSubtitle(
+      BuildContext context, String player, SquadState squadState) {
+    final status = squadState.statuses[player] ?? 'Offline';
+    final statusColor = _getMemberStatusColor(status);
+
+    return Row(
+      children: [
+        Text(
+          status,
+          style: TextStyle(color: statusColor),
         ),
-      ),
+        if (squadState.getPlayerGame(player) != null) ...[
+          const SizedBox(width: 8),
+          Text(
+            'Playing: ${squadState.getPlayerGame(player)}',
+            style: TextStyle(color: Colors.blueAccent, fontSize: 12),
+          ),
+        ],
+      ],
     );
   }
 
-  static Widget _buildLobbyBadge(String hostName) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.greenAccent.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.5)),
-      ),
-      child: Text(
-        'Lobby: $hostName',
-        style: const TextStyle(
-          color: Colors.greenAccent,
-          fontSize: 10,
-          fontWeight: FontWeight.w500,
+  static Widget _buildMemberActions(
+      BuildContext context,
+      String player,
+      SquadState squadState,
+      Function(BuildContext, ScaffoldMessengerState, SquadState, String)
+          showComplaintDialog) {
+    final streak = squadState.currentStreaks[player] ?? 0;
+    final banCount = squadState.getBanCount(player);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (streak > 0) ...[
+          Icon(Icons.star, color: Colors.yellowAccent, size: 16),
+          const SizedBox(width: 2),
+          Text('$streak',
+              style: const TextStyle(color: Colors.yellowAccent, fontSize: 12)),
+        ],
+        if (banCount > 0) ...[
+          const SizedBox(width: 8),
+          Icon(Icons.warning, color: Colors.redAccent, size: 16),
+          const SizedBox(width: 2),
+          Text('$banCount',
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+        ],
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.report, color: Colors.redAccent, size: 20),
+          tooltip: 'File Complaint',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: () {
+            final messenger = ScaffoldMessenger.of(context);
+            showComplaintDialog(context, messenger, squadState, player);
+          },
         ),
-      ),
+      ],
     );
+  }
+
+  static Color _getMemberStatusColor(String status) {
+    switch (status) {
+      case 'Ready':
+        return Colors.greenAccent;
+      case 'Calling':
+        return Colors.orangeAccent;
+      case 'in game':
+        return Colors.blueAccent;
+      case 'Offline':
+        return Colors.grey;
+      default:
+        return Colors.white70;
+    }
   }
 
   static Color _getStatusColor(String status) {
@@ -139,25 +178,6 @@ class MemberWidgets {
       Function(BuildContext, String, SquadState) showJoinLobbyDialog,
       Function(BuildContext, ScaffoldMessengerState, SquadState, String)
           showComplaintDialog) {
-    final streak = squadState.currentStreaks[player] ?? 0;
-    final banCount = squadState.getBanCount(player);
-    final status = squadState.statuses[player] ?? 'Offline';
-
-    // Check if player is in a lobby and if there are blocked players in that lobby
-    final playerLobby = squadState.getPlayerLobby(player);
-    final hasBlockedInLobby = playerLobby != null &&
-        squadState.hasBlockedPlayersInLobby(
-            playerLobby, squadState.displayName ?? '');
-
-    String winIcon = 'assets/images/performance.png';
-    if (streak >= 10) {
-      winIcon = 'assets/images/chicken.png';
-    } else if (streak >= 4) {
-      winIcon = 'assets/images/duck.png';
-    } else if (streak >= 3) {
-      winIcon = 'assets/images/turkey.png';
-    }
-
     return Semantics(
       label: 'Member: $player',
       child: GestureDetector(
@@ -176,104 +196,26 @@ class MemberWidgets {
             showJoinLobbyDialog(context, player, squadState);
           }
         },
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration:
-              BoxDecoration(border: Border.all(color: Colors.grey[800]!)),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(player,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyLarge
-                                ?.copyWith(fontWeight: FontWeight.bold)),
-                        if (hasBlockedInLobby) ...[
-                          const SizedBox(width: 8),
-                          Tooltip(
-                            message: 'Mixed—Blocked players in lobby',
-                            child: Icon(
-                              Icons.warning,
-                              color: Colors.orangeAccent,
-                              size: 16,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    _buildStatusChip(status),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        if (squadState.getPlayerGame(player) != null)
-                          _buildGameBadge(
-                            squadState.getPlayerGame(player)!,
-                            isSolo: squadState.isPlayingSolo(player),
-                          ),
-                        if (playerLobby != null)
-                          _buildLobbyBadge(playerLobby['host'] ?? 'Unknown'),
-                      ],
-                    ),
-                  ],
-                ),
+        child: Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          color: Colors.white.withValues(alpha: 0.1),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.cyanAccent,
+              child: Text(
+                player.isNotEmpty ? player[0].toUpperCase() : '?',
+                style: const TextStyle(
+                    color: Colors.black, fontWeight: FontWeight.bold),
               ),
-              Row(
-                children: [
-                  if (streak > 0)
-                    Row(
-                      children: [
-                        Image.asset(winIcon,
-                            width: 20, height: 20, color: Colors.yellowAccent),
-                        const SizedBox(width: 4),
-                        Text('$streak',
-                            style: const TextStyle(color: Colors.yellowAccent)),
-                      ],
-                    ),
-                  if (banCount > 0) ...[
-                    const SizedBox(width: 12),
-                    Row(
-                      children: [
-                        Image.asset('assets/images/sword.png',
-                            width: 20, height: 20, color: Colors.redAccent),
-                        const SizedBox(width: 4),
-                        Text('$banCount',
-                            style: const TextStyle(color: Colors.redAccent)),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(width: 12),
-                  Semantics(
-                    label: 'File complaint against $player',
-                    child: IconButton(
-                      icon: const Icon(Icons.report, color: Colors.redAccent),
-                      tooltip: 'File Complaint',
-                      onPressed: () {
-                        final messenger = ScaffoldMessenger.of(context);
-                        showComplaintDialog(
-                            context, messenger, squadState, player);
-                      },
-                    ),
-                  ),
-                  Semantics(
-                    label: 'Rate $player',
-                    child: IconButton(
-                      icon: const Icon(Icons.star, color: Colors.yellowAccent),
-                      tooltip: 'Rate Member',
-                      onPressed: () {
-                        // This would need to be passed from parent
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
+            title: Text(
+              player,
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            subtitle: _buildMemberSubtitle(context, player, squadState),
+            trailing: _buildMemberActions(
+                context, player, squadState, showComplaintDialog),
           ),
         ),
       ),

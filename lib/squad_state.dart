@@ -1406,7 +1406,7 @@ class SquadState with ChangeNotifier {
 
   void claimSpot(int index) {
     final userName = displayName;
-    final userUid = getUidForDisplayName(userName ?? '');
+    final userUid = FirebaseAuth.instance.currentUser?.uid;
     if (userName != null && userUid != null) {
       dataManager.claimSpot(index, userName, userUid);
       dataManager.globalStatuses[userName] = 'Calling'; // Changed from 'Ready'
@@ -1429,7 +1429,7 @@ class SquadState with ChangeNotifier {
 
   void claimSpotForGame(int index, String gameName, {int? maxSpots}) {
     final userName = displayName;
-    final userUid = getUidForDisplayName(userName ?? '');
+    final userUid = FirebaseAuth.instance.currentUser?.uid;
     if (userName != null && userUid != null) {
       dataManager.callSpotForGame(index, userName, userUid, gameName,
           maxSpots: maxSpots);
@@ -1444,9 +1444,13 @@ class SquadState with ChangeNotifier {
   }
 
   void callSpotForGame(int index, String gameName, {int? maxSpots}) {
+    debugPrint(
+        'callSpotForGame called: index=$index, gameName=$gameName, maxSpots=$maxSpots');
     final userName = displayName;
-    final userUid = getUidForDisplayName(userName ?? '');
+    final userUid = FirebaseAuth.instance.currentUser?.uid;
     if (userName != null && userUid != null) {
+      debugPrint(
+          'Calling dataManager.callSpotForGame with userName=$userName, userUid=$userUid');
       dataManager.callSpotForGame(index, userName, userUid, gameName,
           maxSpots: maxSpots);
       persistenceManager.markFieldChanged('squadSpots');
@@ -1454,22 +1458,42 @@ class SquadState with ChangeNotifier {
       persistenceManager.markFieldChanged('globalStatuses');
       _markFieldChanged('statuses');
       uiManager.setNewSquadSpot(true, gameName);
-      updateFirestoreAsync(force: true);
+      debugPrint('About to call updateFirestoreAsync');
+      updateFirestoreAsync(force: true).then((_) {
+        debugPrint('updateFirestoreAsync completed successfully');
+      }).catchError((error) {
+        debugPrint('updateFirestoreAsync failed: $error');
+      });
       notifyListeners();
+      debugPrint('callSpotForGame completed');
+    } else {
+      debugPrint(
+          'callSpotForGame failed: userName=$userName, userUid=$userUid');
     }
   }
 
   void lockCalledSpot(String gameName, int index) {
+    debugPrint('lockCalledSpot called: gameName=$gameName, index=$index');
     final userName = displayName;
-    final userUid = getUidForDisplayName(userName ?? '');
+    final userUid = FirebaseAuth.instance.currentUser?.uid;
     if (userName != null && userUid != null) {
+      debugPrint(
+          'Calling dataManager.lockCalledSpot with userName=$userName, userUid=$userUid');
       dataManager.lockCalledSpot(gameName, index, userName, userUid);
       persistenceManager.markFieldChanged('squadSpots');
       persistenceManager.markFieldChanged('spotTimers');
       persistenceManager.markFieldChanged('globalStatuses');
       _markFieldChanged('statuses');
-      updateFirestoreAsync(force: true);
+      debugPrint('About to call updateFirestoreAsync for lock');
+      updateFirestoreAsync(force: true).then((_) {
+        debugPrint('updateFirestoreAsync completed successfully for lock');
+      }).catchError((error) {
+        debugPrint('updateFirestoreAsync failed for lock: $error');
+      });
       notifyListeners();
+      debugPrint('lockCalledSpot completed');
+    } else {
+      debugPrint('lockCalledSpot failed: userName=$userName, userUid=$userUid');
     }
   }
 
@@ -1616,12 +1640,16 @@ class SquadState with ChangeNotifier {
   }
 
   void removeSpot(int index) {
+    debugPrint('removeSpot called: index=$index');
     final gameName = currentGame?['name'] ?? '';
+    debugPrint('removeSpot: gameName=$gameName');
     if (gameSquadSpots.containsKey(gameName) &&
         index < gameSquadSpots[gameName]!.length) {
       final playerUid = gameSquadSpots[gameName]![index];
+      debugPrint('removeSpot: playerUid=$playerUid');
       if (playerUid != null) {
         final player = getDisplayNameForUid(playerUid);
+        debugPrint('removeSpot: player=$player');
         gameSquadSpots[gameName]![index] = null;
         gameSpotTimers[gameName]![index] = null;
         if (peacockTimers.containsKey(player)) {
@@ -1635,9 +1663,16 @@ class SquadState with ChangeNotifier {
         _markFieldChanged('statuses');
         _markFieldChanged('squadSpots');
         _markFieldChanged('spotTimers');
+        debugPrint('About to call updateFirestore for removeSpot');
         updateFirestore(force: true);
         notifyListeners();
+        debugPrint('removeSpot completed successfully');
+      } else {
+        debugPrint('removeSpot: playerUid was null, no action taken');
       }
+    } else {
+      debugPrint(
+          'removeSpot: conditions not met - gameSquadSpots.containsKey(gameName)=${gameSquadSpots.containsKey(gameName)}, index < gameSquadSpots[gameName]!.length=${index < gameSquadSpots[gameName]!.length}');
     }
   }
 

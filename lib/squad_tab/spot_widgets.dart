@@ -56,66 +56,72 @@ class SpotWidgets {
         label:
             'Spot ${index + 1}: ${spotName ?? 'Open'}${spotName == yourName && !isReady ? ' (tap to leave)' : spotName == yourName && isReady ? ' (ready to lock)' : ''}',
         child: Card(
-          elevation: 4,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildSpotInfo(context, index, spotName, squadState),
-                _buildSpotActions(context, index, hasOccupant, squadState,
-                    showSpotAssignmentMenu),
-              ],
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          color: Colors.white.withValues(alpha: 0.1),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor:
+                  hasOccupant ? Colors.cyanAccent : Colors.grey[600],
+              child: Text(
+                hasOccupant ? spotName[0].toUpperCase() : '${index + 1}',
+                style: TextStyle(
+                    color: hasOccupant ? Colors.black : Colors.white,
+                    fontWeight: FontWeight.bold),
+              ),
             ),
+            title: Text(
+              'Spot ${index + 1}: ${spotName ?? 'Open'}',
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            subtitle: _buildSpotSubtitle(context, index, spotName, squadState),
+            trailing: _buildSpotActions(context, index, hasOccupant, squadState,
+                showSpotAssignmentMenu),
           ),
         ),
       ),
     );
   }
 
-  static Widget _buildSpotInfo(BuildContext context, int index,
+  static Widget _buildSpotSubtitle(BuildContext context, int index,
       String? spotName, SquadState squadState) {
     final hasTimer = squadState.spotTimers[index] != null;
     final timerDisplay =
         hasTimer ? squadState.getSpotTimerDisplay(index) : null;
+    final status =
+        spotName != null ? squadState.statuses[spotName] ?? 'Occupied' : 'Open';
+    final statusColor = _getSpotStatusColor(status);
 
-    return Expanded(
-      child: Row(
-        children: [
-          Text('Spot ${index + 1}: ',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  spotName ?? 'Open',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (hasTimer && timerDisplay != null && timerDisplay != '00:00')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Time: $timerDisplay',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w500,
-                          ),
-                    ),
-                  ),
-              ],
-            ),
+    return Row(
+      children: [
+        Text(
+          status,
+          style: TextStyle(color: statusColor),
+        ),
+        if (timerDisplay != null && timerDisplay != '00:00') ...[
+          const SizedBox(width: 8),
+          Text(
+            '($timerDisplay)',
+            style: TextStyle(color: statusColor, fontSize: 12),
           ),
         ],
-      ),
+      ],
     );
+  }
+
+  static Color _getSpotStatusColor(String status) {
+    switch (status) {
+      case 'Ready':
+        return Colors.greenAccent;
+      case 'Calling':
+        return Colors.orangeAccent;
+      case 'Occupied':
+        return Colors.white70;
+      case 'Open':
+        return Colors.grey;
+      default:
+        return Colors.white70;
+    }
   }
 
   static Widget _buildSpotActions(
@@ -136,7 +142,15 @@ class SpotWidgets {
       children: [
         if (!hasOccupant)
           ElevatedButton(
-            onPressed: () => squadState.callSpotForGame(index, gameName),
+            onPressed: () {
+              debugPrint('Call button pressed for spot $index');
+              try {
+                squadState.callSpotForGame(index, gameName);
+                debugPrint('Call button action completed for spot $index');
+              } catch (e) {
+                debugPrint('Call button failed for spot $index: $e');
+              }
+            },
             onLongPress: () =>
                 showSpotAssignmentMenu(context, squadState, index),
             style: ElevatedButton.styleFrom(
@@ -152,7 +166,15 @@ class SpotWidgets {
           ),
         if (hasOccupant && hasTimer && isCalling && spotName == yourName)
           ElevatedButton(
-            onPressed: () => squadState.lockCalledSpot(gameName, index),
+            onPressed: () {
+              debugPrint('Lock button pressed for spot $index');
+              try {
+                squadState.lockCalledSpot(gameName, index);
+                debugPrint('Lock button action completed for spot $index');
+              } catch (e) {
+                debugPrint('Lock button failed for spot $index: $e');
+              }
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
               shape: RoundedRectangleBorder(
@@ -166,7 +188,15 @@ class SpotWidgets {
           ),
         if (hasOccupant && hasTimer && isReady && spotName == yourName)
           ElevatedButton(
-            onPressed: () => squadState.removeSpot(index),
+            onPressed: () {
+              debugPrint('Leave button pressed for spot $index');
+              try {
+                squadState.removeSpot(index);
+                debugPrint('Leave button action completed for spot $index');
+              } catch (e) {
+                debugPrint('Leave button failed for spot $index: $e');
+              }
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.black,

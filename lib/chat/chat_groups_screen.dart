@@ -263,21 +263,6 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
           color: Colors.black,
           child: Column(
             children: [
-              // TEMPORARY DEBUG LABEL
-              Container(
-                padding: const EdgeInsets.all(4.0),
-                margin: const EdgeInsets.only(bottom: 8.0),
-                color: Colors.lightBlue.withValues(alpha: 0.8),
-                child: const Text(
-                  'PAGE: Chat Groups Screen',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
               Expanded(
                 child: Consumer<SquadState>(
                   builder: (context, squadState, child) {
@@ -385,25 +370,6 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            // TEMPORARY DEBUG LABEL
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(8.0),
-                color: Colors.blue.withValues(alpha: 0.8),
-                child: const Text(
-                  'PAGE: Main Navigation Screen (Chat Groups / Notifications / Profile)',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
             AnimatedContainer(
               duration: const Duration(milliseconds: 500),
               decoration: BoxDecoration(

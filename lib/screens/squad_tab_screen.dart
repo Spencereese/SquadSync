@@ -166,8 +166,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                 color: Colors.cyanAccent, fontWeight: FontWeight.bold),
           ),
         ),
-        SizedBox(
-          height: 200, // Fixed height for active lobbies
+        Expanded(
           child: RefreshIndicator(
             onRefresh: () async {
               await Future.delayed(const Duration(milliseconds: 500));
@@ -194,78 +193,100 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                   return filled < maxSpots && isActive;
                 }).toList();
 
-                if (peacocks.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No active games',
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
-                  );
-                }
+                return ListView(
+                  children: [
+                    if (peacocks.isNotEmpty) ...[
+                      SizedBox(
+                        height: 120, // Reduced height for active lobbies
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: peacocks.length,
+                          itemBuilder: (context, index) {
+                            final peacock =
+                                peacocks[index].data() as Map<String, dynamic>;
+                            final gameName =
+                                peacock['game']?['name'] ?? 'Unknown Game';
+                            final hostName =
+                                peacock['hostName'] ?? 'Unknown Host';
+                            final hostUid = peacock['hostUid'];
+                            final maxSpots = peacock['spots'] ?? 4;
+                            final filled =
+                                (peacock['filled'] as List<dynamic>?)?.length ??
+                                    0;
+                            final viewers =
+                                (peacock['viewers'] as List<dynamic>?)
+                                        ?.length ??
+                                    0;
+                            final isOwn = hostUid == user.uid;
 
-                return ListView.builder(
-                  itemCount: peacocks.length,
-                  itemBuilder: (context, index) {
-                    final peacock =
-                        peacocks[index].data() as Map<String, dynamic>;
-                    final gameName = peacock['game']?['name'] ?? 'Unknown Game';
-                    final hostName = peacock['hostName'] ?? 'Unknown Host';
-                    final hostUid = peacock['hostUid'];
-                    final maxSpots = peacock['spots'] ?? 4;
-                    final filled =
-                        (peacock['filled'] as List<dynamic>?)?.length ?? 0;
-                    final viewers =
-                        (peacock['viewers'] as List<dynamic>?)?.length ?? 0;
-                    final isOwn = hostUid == user.uid;
+                            String title =
+                                '$gameName: $filled/$maxSpots players';
 
-                    String title = '$gameName: $filled/$maxSpots players';
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
-                      color: Colors.white.withValues(alpha: 0.1),
-                      child: ListTile(
-                        title: Text(
-                          title,
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          '$viewers viewers • $hostName',
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                        trailing: isOwn
-                            ? const Text('Host',
-                                style: TextStyle(color: Colors.cyanAccent))
-                            : ElevatedButton(
-                                onPressed: () => _joinLobby(
-                                    context, peacocks[index].id, peacock),
-                                child: const Text('Join'),
+                            return Container(
+                              width: 280,
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Card(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                child: ListTile(
+                                  title: Text(
+                                    title,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14),
+                                  ),
+                                  subtitle: Text(
+                                    '$viewers viewers • $hostName',
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 12),
+                                  ),
+                                  trailing: isOwn
+                                      ? const Text('Host',
+                                          style: TextStyle(
+                                              color: Colors.cyanAccent,
+                                              fontSize: 12))
+                                      : ElevatedButton(
+                                          onPressed: () => _joinLobby(context,
+                                              peacocks[index].id, peacock),
+                                          style: ElevatedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 6),
+                                            textStyle:
+                                                const TextStyle(fontSize: 12),
+                                          ),
+                                          child: const Text('Join'),
+                                        ),
+                                  onTap: () => _enterLobby(
+                                      context, peacocks[index].id, peacock),
+                                ),
                               ),
-                        onTap: () =>
-                            _enterLobby(context, peacocks[index].id, peacock),
+                            );
+                          },
+                        ),
                       ),
-                    );
-                  },
+                    ],
+
+                    // Quick Start Section
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        'Quick Start',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: Colors.cyanAccent,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Consumer<UserManager>(
+                      builder: (context, userManager, child) {
+                        return _buildPinnedGamesCarousel(
+                            context, userManager.pinnedGames);
+                      },
+                    ),
+                  ],
                 );
               },
             ),
           ),
-        ),
-
-        // Quick Start Section
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            'Quick Start',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Colors.cyanAccent, fontWeight: FontWeight.bold),
-          ),
-        ),
-        Consumer<UserManager>(
-          builder: (context, userManager, child) {
-            return _buildPinnedGamesCarousel(context, userManager.pinnedGames);
-          },
         ),
       ],
     );
@@ -347,7 +368,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       BuildContext context, List<Map<String, dynamic>> pinnedGames) {
     if (pinnedGames.isEmpty) {
       return Container(
-        height: 356, // Match the carousel height
+        height: 200, // Reduced height for scrollable layout
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -394,7 +415,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       children: [
         SizedBox(
-          height: 356, // Reduced by 14px to fix bottom overflow
+          height: 240, // Reduced height for scrollable layout
           child: PageView.builder(
             controller: _pageController,
             itemCount: itemCount,

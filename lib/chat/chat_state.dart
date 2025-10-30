@@ -7,6 +7,7 @@ class ChatState extends ChangeNotifier {
   bool _isUploading = false;
   final Map<String, bool> _sendingStatus = {};
   String _quickReactionEmoji = '👍';
+  List<String> _quickReactionEmojis = ['❤️', '👍', '😂', '😢', '😡', '😮'];
   Map<String, dynamic>? _replyToMessage;
   bool _isDMView = false; // New: DM view filter state
   int _dmUnreadCount = 0; // New: DM unread count
@@ -17,6 +18,8 @@ class ChatState extends ChangeNotifier {
   Map<String, bool> get sendingStatus => Map.unmodifiable(_sendingStatus);
   bool get hasPendingMessages => _sendingStatus.isNotEmpty;
   String get quickReactionEmoji => _quickReactionEmoji;
+  List<String> get quickReactionEmojis =>
+      List.unmodifiable(_quickReactionEmojis);
   Map<String, dynamic>? get replyToMessage => _replyToMessage;
   bool get isDMView => _isDMView; // New getter
   int get dmUnreadCount => _dmUnreadCount; // New getter
@@ -143,13 +146,27 @@ class ChatState extends ChangeNotifier {
     }
   }
 
-  Future<void> loadQuickReactionEmoji() async {
+  Future<void> setQuickReactionEmojis(List<String> emojis) async {
     try {
+      _quickReactionEmojis = List.from(emojis);
       final prefs = await SharedPreferences.getInstance();
-      _quickReactionEmoji = prefs.getString('quick_reaction_emoji') ?? '👍';
+      await prefs.setStringList('quick_reaction_emojis', emojis);
       notifyListeners();
     } catch (e) {
-      debugPrint('Error loading quick reaction emoji: $e');
+      debugPrint('Error setting quick reaction emojis: $e');
+    }
+  }
+
+  Future<void> loadQuickReactionEmojis() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('quick_reaction_emojis');
+      if (saved != null && saved.isNotEmpty) {
+        _quickReactionEmojis = List.from(saved);
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading quick reaction emojis: $e');
     }
   }
 

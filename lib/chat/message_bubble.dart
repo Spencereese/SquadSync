@@ -1206,6 +1206,8 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final chatState = Provider.of<ChatState>(context, listen: false);
+    final quickReactions = chatState.quickReactionEmojis;
     return GestureDetector(
       onTap: () => Navigator.pop(context),
       child: Stack(
@@ -1243,7 +1245,7 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ...['❤️', '👍', '😂', '😢', '😡', '😮'].map((emoji) {
+                      ...quickReactions.map((emoji) {
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8.0),
                           child: GestureDetector(
@@ -1267,9 +1269,8 @@ class _MessageReactionDialogState extends State<_MessageReactionDialog> {
                               end: const Offset(1.0, 1.0),
                               curve: Curves.elasticOut,
                               delay: Duration(
-                                  milliseconds: 50 *
-                                      ['❤️', '👍', '😂', '😢', '😡', '😮']
-                                          .indexOf(emoji)),
+                                  milliseconds:
+                                      50 * quickReactions.indexOf(emoji)),
                             );
                       }),
                       Padding(

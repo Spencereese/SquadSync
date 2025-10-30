@@ -368,7 +368,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       BuildContext context, List<Map<String, dynamic>> pinnedGames) {
     if (pinnedGames.isEmpty) {
       return Container(
-        height: 200, // Reduced height for scrollable layout
+        height: 356, // Reverted to original height
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -415,7 +415,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       children: [
         SizedBox(
-          height: 240, // Reduced height for scrollable layout
+          height: 356, // Reverted to original height
           child: PageView.builder(
             controller: _pageController,
             itemCount: itemCount,

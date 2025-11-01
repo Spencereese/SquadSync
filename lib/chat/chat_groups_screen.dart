@@ -633,7 +633,6 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
           .collection('users')
           .doc(currentUser.uid)
           .collection('chat_groups')
-          .orderBy('lastMessageTime', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -652,6 +651,19 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
         }
 
         final groups = snapshot.data?.docs ?? [];
+
+        // Sort groups by lastMessageTime in memory to avoid frequent rebuilds
+        // caused by orderBy in Firestore query
+        groups.sort((a, b) {
+          final aTime = (a.data() as Map<String, dynamic>)['lastMessageTime']
+              as Timestamp?;
+          final bTime = (b.data() as Map<String, dynamic>)['lastMessageTime']
+              as Timestamp?;
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return 1;
+          if (bTime == null) return -1;
+          return bTime.compareTo(aTime); // Descending order
+        });
 
         return Container(
           color: Colors.black,
@@ -749,8 +761,28 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                     ],
                   ),
                 ),
-                onTap: () => _openUserChatGroup(group.id, groupName),
-                onLongPress: () => _showUserGroupOptions(group.id, groupData),
+                onTap: () {
+                  // Navigate to chat screen for this group
+                  debugPrint(
+                      'DEBUG ChatGroupsScreen: Tapping on user group ${group.id}');
+                  if (group.id.isNotEmpty) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => ChatScreen(
+                          chatType: ChatType.userGroup,
+                          chatGroupId: group.id,
+                        ),
+                      ),
+                    );
+                  } else {
+                    debugPrint(
+                        'DEBUG ChatGroupsScreen: group id is invalid, not navigating');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Unable to open group chat')),
+                    );
+                  }
+                },
               );
             },
           ),
@@ -1032,323 +1064,6 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
         );
       }
     });
-  }
-
-  void _openUserChatGroup(String groupId, String groupName) {
-    // Save last opened chat group
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString('last_chat_group', groupId);
-    }).then((_) {
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatScreen(
-              chatGroupId: groupId,
-              chatGroupName: groupName,
-              chatType: ChatType.userGroup,
-            ),
-          ),
-        );
-      }
-    });
-  }
-
-  void _showUserGroupOptions(String groupId, Map<String, dynamic> groupData) {
-    final createdBy = groupData['createdBy'];
-    final currentUser = _auth.currentUser;
-    final isOwner = createdBy == currentUser?.uid;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.grey[900],
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isOwner) ...[
-            ListTile(
-              leading: const Icon(Icons.settings, color: Colors.cyanAccent),
-              title: const Text('Group Settings',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _showUserGroupSettings(groupId, groupData);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('Delete Group',
-                  style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(context);
-                _deleteUserGroup(groupId);
-              },
-            ),
-          ] else ...[
-            ListTile(
-              leading: const Icon(Icons.exit_to_app, color: Colors.orange),
-              title: const Text('Leave Group',
-                  style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _leaveUserGroup(groupId, groupData);
-              },
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  void _showUserGroupSettings(String groupId, Map<String, dynamic> groupData) {
-    final nameController = TextEditingController(text: groupData['name'] ?? '');
-    final members = List<String>.from(groupData['members'] ?? []);
-    var isPublic = groupData['isPublic'] ?? false;
-    final createdBy = groupData['createdBy'];
-    final currentUser = _auth.currentUser;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => DraggableScrollableSheet(
-          initialChildSize: 0.8,
-          minChildSize: 0.5,
-          maxChildSize: 0.9,
-          builder: (context, scrollController) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: Colors.grey, width: 0.5),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Text(
-                        'Group Settings',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // Group Name
-                      const Text(
-                        'Group Name',
-                        style: TextStyle(
-                          color: Colors.cyanAccent,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: nameController,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: const InputDecoration(
-                          filled: true,
-                          fillColor: Colors.grey,
-                          border: OutlineInputBorder(),
-                        ),
-                        enabled: createdBy ==
-                            currentUser?.uid, // Only creator can edit name
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Privacy Setting
-                      const Text(
-                        'Privacy',
-                        style: TextStyle(
-                          color: Colors.cyanAccent,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: RadioListTile<bool>(
-                              title: const Text('Public',
-                                  style: TextStyle(color: Colors.white)),
-                              subtitle: const Text('Anyone can find and join',
-                                  style: TextStyle(color: Colors.grey)),
-                              value: true,
-                              groupValue: isPublic,
-                              onChanged: createdBy == currentUser?.uid
-                                  ? (value) {
-                                      setState(() => isPublic = value!);
-                                    }
-                                  : null,
-                              activeColor: Colors.cyanAccent,
-                            ),
-                          ),
-                          Expanded(
-                            child: RadioListTile<bool>(
-                              title: const Text('Private',
-                                  style: TextStyle(color: Colors.white)),
-                              subtitle: const Text('Invite only',
-                                  style: TextStyle(color: Colors.grey)),
-                              value: false,
-                              groupValue: isPublic,
-                              onChanged: createdBy == currentUser?.uid
-                                  ? (value) {
-                                      setState(() => isPublic = value!);
-                                    }
-                                  : null,
-                              activeColor: Colors.cyanAccent,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Members
-                      Row(
-                        children: [
-                          Text(
-                            'Members (${members.length})',
-                            style: const TextStyle(
-                              color: Colors.cyanAccent,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (createdBy == currentUser?.uid)
-                            IconButton(
-                              icon: const Icon(Icons.person_add,
-                                  color: Colors.cyanAccent),
-                              onPressed: () =>
-                                  _showAddMemberDialog(groupId, members),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      ...members.map((memberUid) =>
-                          FutureBuilder<Map<String, dynamic>?>(
-                            future: _getUserData(memberUid),
-                            builder: (context, snapshot) {
-                              final userData = snapshot.data;
-                              final displayName =
-                                  userData?['displayName'] ?? 'Unknown';
-                              final isCreator = memberUid == createdBy;
-                              final isCurrentUser =
-                                  memberUid == currentUser?.uid;
-
-                              return ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: Colors.cyanAccent,
-                                  child: Text(
-                                    displayName[0].toUpperCase(),
-                                    style: const TextStyle(color: Colors.black),
-                                  ),
-                                ),
-                                title: Text(
-                                  displayName,
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                                subtitle: isCreator
-                                    ? const Text('Creator',
-                                        style:
-                                            TextStyle(color: Colors.cyanAccent))
-                                    : null,
-                                trailing: (createdBy == currentUser?.uid &&
-                                        !isCurrentUser)
-                                    ? IconButton(
-                                        icon: const Icon(Icons.remove,
-                                            color: Colors.red),
-                                        onPressed: () => _removeMember(
-                                            groupId, memberUid, members),
-                                      )
-                                    : null,
-                              );
-                            },
-                          )),
-                      const SizedBox(height: 24),
-
-                      // Action Buttons
-                      if (createdBy == currentUser?.uid) ...[
-                        ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              await _firestore
-                                  .collection('users')
-                                  .doc(currentUser!.uid)
-                                  .collection('chat_groups')
-                                  .doc(groupId)
-                                  .update({
-                                'name': nameController.text.trim(),
-                                'isPublic': isPublic,
-                              });
-
-                              if (mounted) {
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content:
-                                          Text('Group updated successfully')),
-                                );
-                              }
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content:
-                                        Text('Failed to update group: $e')),
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.cyanAccent,
-                            foregroundColor: Colors.black,
-                          ),
-                          child: const Text('Save Changes'),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-
-                      // Leave Group (if not creator)
-                      if (createdBy != currentUser?.uid) ...[
-                        ElevatedButton(
-                          onPressed: () => _leaveUserGroup(groupId, groupData),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                          ),
-                          child: const Text('Leave Group'),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   void _deleteUserGroup(String groupId) async {
@@ -2536,26 +2251,6 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               _buildGameSettings(),
               _buildScheduleSettings(),
             ],
-          ),
-          Positioned(
-            top: 10,
-            left: 10,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'DEBUG: 15 ALERTS',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
           ),
         ],
       ),

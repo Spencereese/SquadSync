@@ -1116,25 +1116,6 @@ class ChatScreenState extends State<ChatScreen>
                   children: [
                     Column(
                       children: [
-                        Center(
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            margin: const EdgeInsets.symmetric(vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'DEBUG: 10 CHAT',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
                         Container(
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.9),

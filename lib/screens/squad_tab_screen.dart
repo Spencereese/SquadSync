@@ -128,25 +128,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         ),
         child: Column(
           children: [
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'DEBUG: 16 CAROUSEL',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
             // Active Lobbies Section (Top - contains lobbies and carousel)
             Expanded(
               child: _buildActiveLobbiesSection(context),
@@ -431,7 +412,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       BuildContext context, List<Map<String, dynamic>> pinnedGames) {
     if (pinnedGames.isEmpty) {
       return Container(
-        height: 409, // Increased by 15% from 356
+        height: 450, // Increased by 10% from 409
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -478,7 +459,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       children: [
         SizedBox(
-          height: 409, // Increased by 15% from 356
+          height: 450, // Increased by 10% from 409
           child: PageView.builder(
             controller: _pageController,
             itemCount: itemCount,
@@ -566,7 +547,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
                       width: 120,
-                      height: 336,
+                      height: 370, // Increased by 10% from 336
                       color: Colors.grey[800],
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -647,7 +628,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                   borderRadius: BorderRadius.circular(12),
                   child: SizedBox(
                     width: 120,
-                    height: 336,
+                    height: 370, // Increased by 10% from 336
                     child: game['coverUrl'] != null
                         ? CachedNetworkImage(
                             imageUrl: game['coverUrl'],

@@ -138,25 +138,6 @@ class _ProfileTabState extends State<ProfileTab>
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'DEBUG: 6 PROFILE',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
             _buildProfileCard(squadState),
             const SizedBox(height: 24),
             _buildFriendsSection(),

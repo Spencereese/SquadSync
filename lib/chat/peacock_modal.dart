@@ -78,12 +78,16 @@ class _PeacockModalState extends State<PeacockModal> {
       squadState.dataManager.gameSpotTimers[gameName] ??=
           List.filled(_spots.toInt(), null);
 
-      // Set creator in spot 1 with 5-minute calling timer
+      // Check if player is solo to determine timer duration
+      final isSoloPlayer = squadState.isPlayingSolo(squadState.displayName ?? '');
+      final timerDuration = isSoloPlayer ? 3600 : 300; // 60 minutes for solo, 5 minutes for groups
+
+      // Set creator in spot 1 with calling timer
       squadState.dataManager.gameSquadSpots[gameName]![0] =
           '${user.uid}_calling';
       squadState.dataManager.gameSpotTimers[gameName]![0] = {
         'startTime': DateTime.now().millisecondsSinceEpoch,
-        'duration': 300, // 5 minutes for lobby creator
+        'duration': timerDuration, // Dynamic duration based on solo status
         'calling': true,
         'peacockCreated':
             true, // Flag to distinguish from regular calling spots
@@ -110,7 +114,7 @@ class _PeacockModalState extends State<PeacockModal> {
         ], // Creator auto-assigned to spot 1 with ready status
         'viewers': <String>[], // Start with empty viewers list
         'timer': Timestamp.fromDate(DateTime.now()
-            .add(const Duration(minutes: 5))), // 5min timer for lobby
+            .add(Duration(seconds: timerDuration))), // Dynamic timer for lobby
         'createdAt': Timestamp.now(),
         'circle': _selectedCircle,
       };

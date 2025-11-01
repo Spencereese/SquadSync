@@ -708,11 +708,15 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       squadState.dataManager.gameSpotTimers[gameName] ??=
           List.filled(maxSpots, null);
 
+      // Check if player is solo to determine timer duration
+      final isSoloPlayer = squadState.isPlayingSolo(squadState.displayName ?? '');
+      final timerDuration = isSoloPlayer ? 3600 : 300; // 60 minutes for solo, 5 minutes for groups
+
       squadState.dataManager.gameSquadSpots[gameName]![0] =
           '${user.uid}_calling';
       squadState.dataManager.gameSpotTimers[gameName]![0] = {
         'startTime': DateTime.now().millisecondsSinceEpoch,
-        'duration': 300, // 5 minutes for lobby creator
+        'duration': timerDuration, // Dynamic duration based on solo status
         'calling': true,
         'peacockCreated':
             true, // Flag to distinguish from regular calling spots
@@ -736,8 +740,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         'spots': maxSpots,
         'filled': [user.uid], // Creator auto-assigned to spot 1
         'viewers': <String>[], // Start with empty viewers list
-        'timer':
-            Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 5))),
+        'timer': Timestamp.fromDate(DateTime.now().add(Duration(seconds: timerDuration))),
         'createdAt': Timestamp.now(),
         'circle': selectedCircle,
       };

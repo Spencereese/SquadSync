@@ -79,8 +79,11 @@ class _PeacockModalState extends State<PeacockModal> {
           List.filled(_spots.toInt(), null);
 
       // Check if player is solo to determine timer duration
-      final isSoloPlayer = squadState.isPlayingSolo(squadState.displayName ?? '');
-      final timerDuration = isSoloPlayer ? 3600 : 300; // 60 minutes for solo, 5 minutes for groups
+      final isSoloPlayer =
+          squadState.isPlayingSolo(squadState.displayName ?? '');
+      final timerDuration = isSoloPlayer
+          ? 3600
+          : 300; // 60 minutes for solo, 5 minutes for groups
 
       // Set creator in spot 1 with calling timer
       squadState.dataManager.gameSquadSpots[gameName]![0] =

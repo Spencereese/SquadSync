@@ -502,6 +502,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
 
               // Get last message from the squad's messages collection
               return StreamBuilder<QuerySnapshot>(
+                key: ValueKey('squad_messages_$squadId'),
                 stream: _firestore
                     .collection('squads')
                     .doc(squadId)
@@ -629,6 +630,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
 
   Widget _buildUserGroupsList(BuildContext context, User currentUser) {
     return StreamBuilder<QuerySnapshot>(
+      key: ValueKey('user_groups_${currentUser.uid}'),
       stream: _firestore
           .collection('users')
           .doc(currentUser.uid)
@@ -1570,7 +1572,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
           .collectionGroup('chat_groups')
           .where('isPublic', isEqualTo: true)
           .where('name', isGreaterThanOrEqualTo: query)
-          .where('name', isLessThanOrEqualTo: query + '\uf8ff')
+          .where('name', isLessThanOrEqualTo: '$query\uf8ff')
           .limit(20);
 
       final userGroupsSnapshot = await userGroupsQuery.get();
@@ -1805,6 +1807,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
   Widget _buildDMList(
       BuildContext context, SquadState squadState, User currentUser) {
     return StreamBuilder<QuerySnapshot>(
+      key: ValueKey('dm_list_${currentUser.uid}'),
       stream: _firestore
           .collection('chats')
           .where('participants', arrayContains: currentUser.uid)
@@ -2526,7 +2529,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                           }
                         });
                       },
-                      activeColor: AppTheme.accentColor,
+                      activeThumbColor: AppTheme.accentColor,
                     ),
                   ),
                 );
@@ -2599,7 +2602,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         setState(() => _quietHoursEnabled = value);
                         _saveSetting('quietHoursEnabled', value);
                       },
-                      activeColor: AppTheme.accentColor,
+                      activeThumbColor: AppTheme.accentColor,
                     ),
                   ],
                 ),
@@ -2841,7 +2844,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         ),
         value: value,
         onChanged: enabled ? onChanged : null,
-        activeColor: AppTheme.accentColor,
+        activeThumbColor: AppTheme.accentColor,
       ),
     );
   }

@@ -709,8 +709,11 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
           List.filled(maxSpots, null);
 
       // Check if player is solo to determine timer duration
-      final isSoloPlayer = squadState.isPlayingSolo(squadState.displayName ?? '');
-      final timerDuration = isSoloPlayer ? 3600 : 300; // 60 minutes for solo, 5 minutes for groups
+      final isSoloPlayer =
+          squadState.isPlayingSolo(squadState.displayName ?? '');
+      final timerDuration = isSoloPlayer
+          ? 3600
+          : 300; // 60 minutes for solo, 5 minutes for groups
 
       squadState.dataManager.gameSquadSpots[gameName]![0] =
           '${user.uid}_calling';
@@ -740,7 +743,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         'spots': maxSpots,
         'filled': [user.uid], // Creator auto-assigned to spot 1
         'viewers': <String>[], // Start with empty viewers list
-        'timer': Timestamp.fromDate(DateTime.now().add(Duration(seconds: timerDuration))),
+        'timer': Timestamp.fromDate(
+            DateTime.now().add(Duration(seconds: timerDuration))),
         'createdAt': Timestamp.now(),
         'circle': selectedCircle,
       };

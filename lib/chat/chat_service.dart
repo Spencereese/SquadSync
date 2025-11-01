@@ -12,6 +12,8 @@ import '../squad_state.dart';
 import '../services/grok_service.dart';
 import 'package:flutter/material.dart';
 
+enum ChatType { squad, dm, userGroup }
+
 /// Result of a message send operation
 class MessageSendResult {
   final bool success;
@@ -109,6 +111,8 @@ class ChatService {
   Stream<String?>? _typingStream;
   String? _lastStreamSquadId;
   String? _lastStreamGroupId;
+  bool _lastStreamIsUserGroup = false;
+  bool _lastStreamIsDM = false;
 
   // Offline message queue
   final List<Map<String, dynamic>> _offlineMessageQueue = [];
@@ -138,7 +142,7 @@ class ChatService {
       try {
         final collectionPath = messageData['chatGroupId'] != null
             ? 'squads/${messageData['squadId']}/chat_groups/${messageData['chatGroupId']}/messages'
-            : 'squads/${messageData['squadId']}/chat';
+            : 'squads/${messageData['squadId']}/messages';
 
         await _retryOperation(() async {
           await _firestore
@@ -149,11 +153,19 @@ class ChatService {
 
         // Update group metadata if this is a group chat
         if (messageData['chatGroupId'] != null) {
+          final chatType = ChatType.values.firstWhere(
+            (type) => type.name == messageData['chatType'],
+            orElse: () => ChatType.squad,
+          );
           await _updateGroupMetadata(
               messageData['squadId'],
               messageData['chatGroupId'],
               messageData['text'] ?? '',
-              messageData['timestamp_ms']);
+              messageData['timestamp_ms'],
+              chatType: chatType,
+              userId: chatType == ChatType.userGroup
+                  ? messageData['senderUid']
+                  : null);
         }
 
         debugPrint('Successfully sent queued message: ${messageData['id']}');
@@ -183,7 +195,7 @@ class ChatService {
 
   // Stream for real-time messages from Firestore (updated for squad and groups)
   Stream<QuerySnapshot> getChatMessages(BuildContext context,
-      {String? chatGroupId}) {
+      {String? chatGroupId, required ChatType chatType}) {
     // Check if user is authenticated
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
@@ -191,20 +203,29 @@ class ChatService {
       return Stream.empty();
     }
 
-    final squadId = _getCachedSquadId(context);
-    if (squadId == null) return Stream.empty();
+    final bool isUserGroup = chatType == ChatType.userGroup;
+    final bool isDM = chatType == ChatType.dm;
 
     // Check if we can reuse the cached stream
     if (_messagesStream != null &&
-        _lastStreamSquadId == squadId &&
-        _lastStreamGroupId == chatGroupId) {
+        _lastStreamGroupId == chatGroupId &&
+        _lastStreamIsUserGroup == (chatType == ChatType.userGroup) &&
+        _lastStreamIsDM == (chatType == ChatType.dm)) {
       return _messagesStream!;
     }
 
     // Create new stream
-    final collectionPath = chatGroupId != null
-        ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-        : 'squads/$squadId/chat';
+    String collectionPath;
+    if (chatType == ChatType.squad) {
+      collectionPath = 'squads/$chatGroupId/messages';
+    } else if (chatType == ChatType.userGroup) {
+      collectionPath =
+          'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
+    } else if (chatType == ChatType.dm) {
+      collectionPath = 'chats/$chatGroupId/messages';
+    } else {
+      return Stream.empty();
+    }
 
     _messagesStream = _firestore
         .collection(collectionPath)
@@ -212,14 +233,18 @@ class ChatService {
         .limit(100)
         .snapshots();
 
-    _lastStreamSquadId = squadId;
+    _lastStreamSquadId =
+        isUserGroup || isDM ? null : _getCachedSquadId(context);
     _lastStreamGroupId = chatGroupId;
+    _lastStreamIsUserGroup = isUserGroup;
+    _lastStreamIsDM = isDM;
 
     return _messagesStream!;
   }
 
   // Stream for typing status
-  Stream<String?> getTypingUser(BuildContext context, {String? chatGroupId}) {
+  Stream<String?> getTypingUser(BuildContext context,
+      {String? chatGroupId, required ChatType chatType}) {
     // Check if user is authenticated
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
@@ -227,20 +252,31 @@ class ChatService {
       return Stream.value(null);
     }
 
-    final squadId = _getCachedSquadId(context);
-    if (squadId == null) return Stream.value(null);
+    final bool isUserGroup = chatType == ChatType.userGroup;
+    final bool isDM = chatType == ChatType.dm;
 
     // Check if we can reuse the cached typing stream
     if (_typingStream != null &&
-        _lastStreamSquadId == squadId &&
-        _lastStreamGroupId == chatGroupId) {
+        _lastStreamSquadId == null && // For DM and user groups
+        _lastStreamGroupId == chatGroupId &&
+        _lastStreamIsUserGroup == isUserGroup &&
+        _lastStreamIsDM == isDM) {
       return _typingStream!;
     }
 
     // Use different typing status paths for squad vs group chats
-    final typingPath = chatGroupId != null
-        ? 'squads/$squadId/chat_groups/$chatGroupId/typing_status/status'
-        : 'squads/$squadId/chat_metadata/typing_status';
+    String typingPath;
+    if (isUserGroup) {
+      typingPath = 'chat_groups/$chatGroupId/typing_status/status';
+    } else if (isDM) {
+      typingPath = 'chats/$chatGroupId/typing_status/status';
+    } else {
+      final squadId = _getCachedSquadId(context);
+      if (squadId == null) return Stream.value(null);
+      typingPath = chatGroupId != null
+          ? 'squads/$squadId/chat_groups/$chatGroupId/typing_status/status'
+          : 'squads/$squadId/chat_metadata/typing_status';
+    }
 
     _typingStream = _firestore.doc(typingPath).snapshots().map((snapshot) {
       if (snapshot.exists) {
@@ -260,8 +296,11 @@ class ChatService {
       return null;
     });
 
-    _lastStreamSquadId = squadId;
+    _lastStreamSquadId =
+        isUserGroup || isDM ? null : _getCachedSquadId(context);
     _lastStreamGroupId = chatGroupId;
+    _lastStreamIsUserGroup = isUserGroup;
+    _lastStreamIsDM = isDM;
 
     return _typingStream!;
   }
@@ -281,7 +320,10 @@ class ChatService {
     String? replyTo,
     String? pollId,
     String? chatGroupId,
+    required ChatType chatType,
   }) async {
+    final bool isUserGroup = chatType == ChatType.userGroup;
+    final bool isDM = chatType == ChatType.dm;
     // Validate input
     if ((text?.trim().isEmpty ?? true) &&
         photos.isEmpty &&
@@ -291,6 +333,7 @@ class ChatService {
         videoUrl == null &&
         audioUrl == null &&
         pollId == null) {
+      debugPrint('DEBUG: Message validation failed - empty message');
       return MessageSendResult.failure('Cannot send empty message');
     }
 
@@ -317,16 +360,25 @@ class ChatService {
       'timestamp': FieldValue.serverTimestamp(),
     };
 
-    // Get squadId from context (use cached value)
-    final squadId = _getCachedSquadId(context);
-    if (squadId == null) {
-      return MessageSendResult.failure('No squad selected');
+    // Determine collection path based on whether it's a group chat and user group
+    String collectionPath;
+    if (isUserGroup) {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        return MessageSendResult.failure('User not authenticated');
+      }
+      collectionPath =
+          'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
+    } else if (isDM) {
+      collectionPath = 'chats/$chatGroupId/messages';
+    } else {
+      final squadId = _getCachedSquadId(context);
+      if (squadId == null) {
+        return MessageSendResult.failure('No squad selected');
+      }
+      // Squad chats: each squad IS the chat group
+      collectionPath = 'squads/$squadId/messages';
     }
-
-    // Determine collection path based on whether it's a group chat
-    final collectionPath = chatGroupId != null
-        ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-        : 'squads/$squadId/chat';
 
     try {
       // Check connectivity before attempting to send
@@ -335,8 +387,9 @@ class ChatService {
         // Queue message for offline sending
         final offlineMessageData = {
           ...messageData,
-          'squadId': squadId,
+          'collectionPath': collectionPath,
           'chatGroupId': chatGroupId,
+          'chatType': chatType.name, // Store as string for serialization
         };
         _offlineMessageQueue.add(offlineMessageData);
 
@@ -352,10 +405,15 @@ class ChatService {
         await _firestore.collection(collectionPath).doc(msgId).set(messageData);
       });
 
-      // Update group metadata if this is a group chat
+      // Update group metadata if this is a group chat (not for squad chats since squads ARE the chat groups)
       if (chatGroupId != null) {
         await _updateGroupMetadata(
-            squadId, chatGroupId, text ?? '', timestampMs);
+            isDM ? null : (isUserGroup ? null : _getCachedSquadId(context)),
+            chatGroupId,
+            text ?? '',
+            timestampMs,
+            chatType: chatType,
+            userId: isUserGroup ? senderUid : null);
       }
 
       // Cache locally for offline viewing
@@ -363,7 +421,13 @@ class ChatService {
 
       // Check if this is a message for Grok and generate AI response
       if (text != null && _grokService.isMessageForGrok(text)) {
-        _generateGrokResponse(context, text, senderUid, squadId, chatGroupId);
+        _generateGrokResponse(
+            context,
+            text,
+            senderUid,
+            isDM ? null : (isUserGroup ? null : _getCachedSquadId(context)),
+            chatGroupId,
+            chatType: chatType);
       }
 
       // TEMPORARILY DISABLED: Backend sync
@@ -376,14 +440,12 @@ class ChatService {
 
       return MessageSendResult.success(msgId);
     } catch (e) {
-      debugPrint('Failed to send message: $e');
-
       // Try to cache locally even if Firestore failed
       try {
         await _sqliteHelper.insertMessage(messageData,
             chatGroupId: chatGroupId);
       } catch (cacheError) {
-        debugPrint('Failed to cache message locally: $cacheError');
+        // Failed to cache locally, but that's okay
       }
 
       return MessageSendResult.failure(_getErrorMessage(e));
@@ -547,7 +609,7 @@ class ChatService {
       // Determine collection path based on whether it's a group chat
       final collectionPath = chatGroupId != null
           ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-          : 'squads/$squadId/chat';
+          : 'squads/$squadId/messages';
 
       final docRef = _firestore.collection(collectionPath).doc(msgId);
       final snapshot = await docRef.get();
@@ -593,10 +655,12 @@ class ChatService {
   Future<List<Map<String, dynamic>>> loadMoreMessages({
     required int offset,
     required int limit,
+    String? chatGroupId,
   }) async {
     // TEMPORARILY DISABLED: Backend message loading - only use SQLite cache
     try {
-      final cachedMessages = await _sqliteHelper.getMessages(offset, limit);
+      final cachedMessages = await _sqliteHelper.getMessages(offset, limit,
+          chatGroupId: chatGroupId);
       debugPrint(
           'Loaded ${cachedMessages.length} messages from SQLite cache (backend disabled): ${cachedMessages.map((m) => m['id']).toList()}');
       return cachedMessages;
@@ -689,18 +753,29 @@ class ChatService {
   }
 
   // Update group metadata when a message is sent
-  Future<void> _updateGroupMetadata(String squadId, String groupId,
-      String lastMessage, int timestampMs) async {
+  Future<void> _updateGroupMetadata(
+      String? squadId, String groupId, String lastMessage, int timestampMs,
+      {required ChatType chatType, String? userId}) async {
     try {
-      await _firestore
-          .collection('squads')
-          .doc(squadId)
-          .collection('chat_groups')
-          .doc(groupId)
-          .update({
+      CollectionReference collectionRef;
+      if (chatType == ChatType.userGroup) {
+        collectionRef = _firestore
+            .collection('users')
+            .doc(userId)
+            .collection('chat_groups');
+      } else if (chatType == ChatType.dm) {
+        collectionRef = _firestore.collection('chats');
+      } else {
+        collectionRef = _firestore
+            .collection('squads')
+            .doc(squadId)
+            .collection('chat_groups');
+      }
+
+      await collectionRef.doc(groupId).update({
         'lastMessage': lastMessage,
         'lastMessageTime': Timestamp.fromMillisecondsSinceEpoch(timestampMs),
-        'messageCount': FieldValue.increment(1),
+        if (chatType != ChatType.dm) 'messageCount': FieldValue.increment(1),
       });
     } catch (e) {
       debugPrint('Failed to update group metadata: $e');
@@ -709,7 +784,8 @@ class ChatService {
 
   // Generate AI response from Grok for messages directed at it
   Future<void> _generateGrokResponse(BuildContext context, String userMessage,
-      String senderUid, String squadId, String? chatGroupId) async {
+      String senderUid, String? squadId, String? chatGroupId,
+      {required ChatType chatType}) async {
     try {
       // Clean the message by removing Grok mentions
       final cleanMessage = _grokService.cleanGrokMessage(userMessage);
@@ -722,8 +798,8 @@ class ChatService {
           : 'No specific game selected';
 
       // Get recent messages for context (last 5 messages)
-      final recentMessages =
-          await _getRecentMessages(squadId, chatGroupId, limit: 5);
+      final recentMessages = await _getRecentMessages(squadId, chatGroupId,
+          limit: 5, chatType: chatType, userId: senderUid);
 
       // Generate Grok response
       final grokResponse = await _grokService.getGrokResponse(
@@ -757,9 +833,19 @@ class ChatService {
       };
 
       // Determine collection path
-      final collectionPath = chatGroupId != null
-          ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-          : 'squads/$squadId/chat';
+      String collectionPath;
+      if (chatType == ChatType.userGroup) {
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser == null) return;
+        collectionPath =
+            'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
+      } else if (chatType == ChatType.dm) {
+        collectionPath = 'chats/$chatGroupId/messages';
+      } else {
+        collectionPath = chatGroupId != null
+            ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
+            : 'squads/$squadId/messages';
+      }
 
       // Send Grok's response
       await _firestore
@@ -777,12 +863,19 @@ class ChatService {
   }
 
   // Get recent messages for context
-  Future<List<String>> _getRecentMessages(String squadId, String? chatGroupId,
-      {int limit = 5}) async {
+  Future<List<String>> _getRecentMessages(String? squadId, String? chatGroupId,
+      {int limit = 5, required ChatType chatType, String? userId}) async {
     try {
-      final collectionPath = chatGroupId != null
-          ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-          : 'squads/$squadId/chat';
+      String collectionPath;
+      if (chatType == ChatType.userGroup) {
+        collectionPath = 'users/$userId/chat_groups/$chatGroupId/messages';
+      } else if (chatType == ChatType.dm) {
+        collectionPath = 'chats/$chatGroupId/messages';
+      } else {
+        collectionPath = chatGroupId != null
+            ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
+            : 'squads/$squadId/messages';
+      }
 
       final snapshot = await _firestore
           .collection(collectionPath)
@@ -803,6 +896,34 @@ class ChatService {
     } catch (e) {
       debugPrint('Failed to get recent messages: $e');
       return [];
+    }
+  }
+
+  // Cache messages from Firestore snapshot to SQLite
+  Future<void> cacheMessagesFromSnapshot(
+      QuerySnapshot snapshot, String? chatGroupId) async {
+    try {
+      for (final doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        // Convert Firestore timestamp to milliseconds
+        final timestamp = data['timestamp'];
+        final timestampMs = timestamp is Timestamp
+            ? timestamp.millisecondsSinceEpoch
+            : (timestamp is int
+                ? timestamp
+                : DateTime.now().millisecondsSinceEpoch);
+
+        final messageData = {
+          ...data,
+          'timestamp_ms': timestampMs,
+          'id': doc.id,
+        };
+
+        await _sqliteHelper.insertMessage(messageData,
+            chatGroupId: chatGroupId);
+      }
+    } catch (e) {
+      debugPrint('Failed to cache messages from snapshot: $e');
     }
   }
 }

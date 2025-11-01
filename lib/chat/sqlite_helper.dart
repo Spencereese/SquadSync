@@ -137,6 +137,9 @@ class SQLiteHelper {
         whereClause = 'chat_group_id IS NULL';
       }
 
+      debugPrint(
+          'DEBUG SQLite getMessages: chatGroupId=$chatGroupId, whereClause=$whereClause, whereArgs=$whereArgs, offset=$offset, limit=$limit');
+
       final List<Map<String, dynamic>> maps = await db.query(
         'messages',
         where: whereClause,
@@ -145,6 +148,9 @@ class SQLiteHelper {
         limit: limit,
         offset: offset,
       );
+
+      debugPrint('DEBUG SQLite getMessages: found ${maps.length} messages');
+
       return maps.map((map) {
         return {
           'id': map['id'],

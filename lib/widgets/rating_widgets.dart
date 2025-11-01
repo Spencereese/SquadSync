@@ -9,12 +9,14 @@ import '../chat/chat_service.dart';
 class RatingNudge extends StatefulWidget {
   final String gameName;
   final String chatGroupId;
+  final ChatType chatType;
   final VoidCallback? onRatingSubmitted;
 
   const RatingNudge({
     super.key,
     required this.gameName,
     required this.chatGroupId,
+    required this.chatType,
     this.onRatingSubmitted,
   });
 
@@ -73,12 +75,14 @@ class _RatingNudgeState extends State<RatingNudge> {
 class ReviewSubmitDialog extends StatefulWidget {
   final String gameName;
   final String chatGroupId;
+  final ChatType chatType;
   final VoidCallback? onSubmitted;
 
   const ReviewSubmitDialog({
     super.key,
     required this.gameName,
     required this.chatGroupId,
+    required this.chatType,
     this.onSubmitted,
   });
 
@@ -86,6 +90,7 @@ class ReviewSubmitDialog extends StatefulWidget {
     BuildContext context, {
     required String gameName,
     required String chatGroupId,
+    required ChatType chatType,
     VoidCallback? onSubmitted,
   }) async {
     return showDialog(
@@ -93,6 +98,7 @@ class ReviewSubmitDialog extends StatefulWidget {
       builder: (context) => ReviewSubmitDialog(
         gameName: gameName,
         chatGroupId: chatGroupId,
+        chatType: chatType,
         onSubmitted: onSubmitted,
       ),
     );
@@ -232,6 +238,7 @@ class _ReviewSubmitDialogState extends State<ReviewSubmitDialog> {
         senderUid: user.uid,
         text: '$displayName rated ${widget.gameName} $ratingText$reviewText',
         chatGroupId: widget.chatGroupId,
+        chatType: widget.chatType,
       );
 
       if (mounted) {

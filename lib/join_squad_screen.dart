@@ -28,9 +28,31 @@ class _JoinSquadScreenState extends State<JoinSquadScreen> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Join Squad'),
-      content: TextField(
-        controller: _codeController,
-        decoration: const InputDecoration(hintText: 'Invite Code'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Text(
+              'DEBUG: 3 JOIN',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _codeController,
+            decoration: const InputDecoration(hintText: 'Invite Code'),
+          ),
+        ],
       ),
       actions: [
         TextButton(

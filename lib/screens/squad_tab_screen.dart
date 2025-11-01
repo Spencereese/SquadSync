@@ -6,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../squad_state.dart';
-import '../no_squad_screen.dart';
 import '../managers/squad_manager.dart';
 import '../managers/user_manager.dart';
 import '../managers/notification_manager.dart';
@@ -97,13 +96,14 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   Widget build(BuildContext context) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
-        if (squadState.selectedSquadId == null) {
-          return const NoSquadScreen();
-        }
-
         // If lobbyId and gameName are provided, show full squad management interface
         if (widget.lobbyId != null && widget.gameName != null) {
           return _buildFullSquadInterface(context, squadState);
+        }
+
+        // If no squad selected, show squad selection/dashboard instead of welcome screen
+        if (squadState.selectedSquadId == null) {
+          return _buildDashboardInterface(context, squadState);
         }
 
         // Otherwise, show the dashboard with active lobbies
@@ -128,6 +128,25 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         ),
         child: Column(
           children: [
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'DEBUG: 16 CAROUSEL',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
             // Active Lobbies Section (Top - contains lobbies and carousel)
             Expanded(
               child: _buildActiveLobbiesSection(context),
@@ -412,7 +431,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       BuildContext context, List<Map<String, dynamic>> pinnedGames) {
     if (pinnedGames.isEmpty) {
       return Container(
-        height: 356, // Reverted to original height
+        height: 409, // Increased by 15% from 356
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -459,7 +478,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     return Column(
       children: [
         SizedBox(
-          height: 356, // Reverted to original height
+          height: 409, // Increased by 15% from 356
           child: PageView.builder(
             controller: _pageController,
             itemCount: itemCount,
@@ -467,7 +486,10 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                 ? const PageScrollPhysics()
                 : const NeverScrollableScrollPhysics(),
             itemBuilder: (context, index) {
-              return _buildLayeredCarouselItem(context, index, allGames);
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: _buildLayeredCarouselItem(context, index, allGames),
+              );
             },
           ),
         ),
@@ -787,7 +809,30 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     if (user == null) return;
 
     final squadManager = Provider.of<SquadManager>(context, listen: false);
+    final squadState = Provider.of<SquadState>(context, listen: false);
+
+    // Join the lobby in Firestore
     await squadManager.joinLobby(peacockId, user.uid);
+
+    // Also call a spot for the joining user to trigger timer logic
+    final gameName = peacock['game']?['name'] ?? 'Unknown Game';
+    try {
+      // Find next available spot
+      final filled = List<String>.from(peacock['filled'] ?? []);
+      final maxSpots = peacock['spots'] ?? 4;
+      int nextSpot = 0; // Start from 0 since creator is at spot 0
+      while (filled.length > nextSpot && nextSpot < maxSpots) {
+        nextSpot++;
+      }
+
+      if (nextSpot < maxSpots) {
+        // Call the spot to trigger timer logic
+        squadState.callSpotForGame(nextSpot, gameName);
+      }
+    } catch (e) {
+      // If spot calling fails, continue anyway
+      print('Failed to call spot when joining lobby: $e');
+    }
 
     // ignore: use_build_context_synchronously
     ScaffoldMessenger.of(context).showSnackBar(

@@ -1893,9 +1893,9 @@ class _UserMenuSheet extends StatelessWidget {
             onTap: () {
               // TODO: Implement video call
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Video call not implemented yet')),
-              );
+              // ScaffoldMessenger.of(context).showSnackBar(
+              //   const SnackBar(content: Text('Video call not implemented yet')),
+              // );
             },
           ),
           _buildMenuItem(
@@ -1905,9 +1905,9 @@ class _UserMenuSheet extends StatelessWidget {
             onTap: () {
               // TODO: Implement audio call
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Audio call not implemented yet')),
-              );
+              // ScaffoldMessenger.of(context).showSnackBar(
+              //   const SnackBar(content: Text('Audio call not implemented yet')),
+              // );
             },
           ),
           _buildMenuItem(
@@ -1917,10 +1917,10 @@ class _UserMenuSheet extends StatelessWidget {
             onTap: () {
               // TODO: Open 1-on-1 message
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('1-on-1 messaging not implemented yet')),
-              );
+              // ScaffoldMessenger.of(context).showSnackBar(
+              //   const SnackBar(
+              //       content: Text('1-on-1 messaging not implemented yet')),
+              // );
             },
           ),
           _buildMenuItem(

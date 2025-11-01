@@ -239,6 +239,25 @@ class _PeacockModalState extends State<PeacockModal> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'DEBUG: 11 MODAL',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
               // Modern header
               Container(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),

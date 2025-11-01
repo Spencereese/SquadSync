@@ -11,7 +11,6 @@ import 'spot_widgets.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'squad_dialogs.dart';
-import '../no_squad_screen.dart';
 
 class SquadTab extends StatelessWidget {
   final String? lobbyId;
@@ -53,7 +52,9 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     // Set currentGame if gameName is provided but currentGame is not set or doesn't match
     if (widget.game != null) {
       // If we have the full game object, use it directly
-      squadState.currentGame = widget.game;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        squadState.currentGame = widget.game;
+      });
     } else if (widget.gameName != null) {
       final gameManager =
           Provider.of<GameManager>(_currentContext, listen: false);
@@ -98,7 +99,9 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               // Only update if currentGame is still the basic fallback (has empty summary)
               if (squadState.currentGame?['summary'] == '' &&
                   squadState.currentGame?['name'] == widget.gameName) {
-                squadState.currentGame = searchResults.first;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  squadState.currentGame = searchResults.first;
+                });
               }
             }
           }).catchError((e) {
@@ -115,7 +118,9 @@ class _SquadTabContentState extends State<_SquadTabContent> {
               '', // Ensure summary is empty so _showGameInfo doesn't show wrong description
         };
 
-        squadState.currentGame = game;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          squadState.currentGame = game;
+        });
       }
     }
   }
@@ -124,9 +129,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   Widget build(BuildContext context) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
-        if (squadState.selectedSquadId == null) {
-          return const NoSquadScreen();
-        }
+        // Always show the squad spots interface, regardless of selectedSquadId
         return Scaffold(
           body: Container(
             decoration: const BoxDecoration(
@@ -143,6 +146,27 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     child: _buildHeader(context, squadState),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'DEBUG: 4 SQUAD',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ),
                 ),
                 SliverList(

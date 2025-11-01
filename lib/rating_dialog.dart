@@ -27,68 +27,94 @@ class RatingDialog {
                     child: SingleChildScrollView(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
-                        children: walkingPlayers.map((player) {
-                          return Card(
-                            color: Colors.grey[900],
-                            elevation: 2,
-                            margin: const EdgeInsets.symmetric(vertical: 8),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(player,
-                                      style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 12),
-                                  _buildSlider(
-                                      'Vibes',
-                                      squadState.dailyRatings[player]!['Vibes']!
-                                              .isNotEmpty
-                                          ? squadState
-                                              .dailyRatings[player]!['Vibes']!
-                                              .last
-                                              .toDouble()
-                                          : 1.0,
-                                      (value) => setDialogState(() {})),
-                                  _buildSlider(
-                                      'Comms',
-                                      squadState.dailyRatings[player]!['Comms']!
-                                              .isNotEmpty
-                                          ? squadState
-                                              .dailyRatings[player]!['Comms']!
-                                              .last
-                                              .toDouble()
-                                          : 1.0,
-                                      (value) => setDialogState(() {})),
-                                  _buildSlider(
-                                      'Gunny',
-                                      squadState.dailyRatings[player]!['Gunny']!
-                                              .isNotEmpty
-                                          ? squadState
-                                              .dailyRatings[player]!['Gunny']!
-                                              .last
-                                              .toDouble()
-                                          : 1.0,
-                                      (value) => setDialogState(() {})),
-                                  _buildSlider(
-                                      'Wingman',
-                                      squadState
-                                              .dailyRatings[player]!['Wingman']!
-                                              .isNotEmpty
-                                          ? squadState
-                                              .dailyRatings[player]!['Wingman']!
-                                              .last
-                                              .toDouble()
-                                          : 1.0,
-                                      (value) => setDialogState(() {})),
-                                ],
+                        children: [
+                          Center(
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'DEBUG: 12 RATING',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
                               ),
                             ),
-                          );
-                        }).toList(),
+                          ),
+                          ...walkingPlayers.map((player) {
+                            return Card(
+                              color: Colors.grey[900],
+                              elevation: 2,
+                              margin: const EdgeInsets.symmetric(vertical: 8),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(player,
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 12),
+                                    _buildSlider(
+                                        'Vibes',
+                                        squadState
+                                                .dailyRatings[player]!['Vibes']!
+                                                .isNotEmpty
+                                            ? squadState
+                                                .dailyRatings[player]!['Vibes']!
+                                                .last
+                                                .toDouble()
+                                            : 1.0,
+                                        (value) => setDialogState(() {})),
+                                    _buildSlider(
+                                        'Comms',
+                                        squadState
+                                                .dailyRatings[player]!['Comms']!
+                                                .isNotEmpty
+                                            ? squadState
+                                                .dailyRatings[player]!['Comms']!
+                                                .last
+                                                .toDouble()
+                                            : 1.0,
+                                        (value) => setDialogState(() {})),
+                                    _buildSlider(
+                                        'Gunny',
+                                        squadState
+                                                .dailyRatings[player]!['Gunny']!
+                                                .isNotEmpty
+                                            ? squadState
+                                                .dailyRatings[player]!['Gunny']!
+                                                .last
+                                                .toDouble()
+                                            : 1.0,
+                                        (value) => setDialogState(() {})),
+                                    _buildSlider(
+                                        'Wingman',
+                                        squadState
+                                                .dailyRatings[player]![
+                                                    'Wingman']!
+                                                .isNotEmpty
+                                            ? squadState
+                                                .dailyRatings[player]![
+                                                    'Wingman']!
+                                                .last
+                                                .toDouble()
+                                            : 1.0,
+                                        (value) => setDialogState(() {})),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ],
                       ),
                     ),
                   ),

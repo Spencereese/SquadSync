@@ -20,7 +20,6 @@ import 'chat_settings_menu.dart';
 import 'chat_state.dart';
 import 'sqlite_helper.dart';
 import 'message_bubble.dart';
-import '../no_squad_screen.dart';
 import '../screens/squad_tab_screen.dart';
 import '../squad_tab/squad_tab.dart';
 import 'peacock_modal.dart';
@@ -31,8 +30,13 @@ class ChatScreen extends StatefulWidget {
   final String? initialMessage;
   final String? chatGroupId;
   final String? chatGroupName;
+  final ChatType chatType;
   const ChatScreen(
-      {super.key, this.initialMessage, this.chatGroupId, this.chatGroupName});
+      {super.key,
+      this.initialMessage,
+      this.chatGroupId,
+      this.chatGroupName,
+      required this.chatType});
 
   @override
   ChatScreenState createState() => ChatScreenState();
@@ -74,8 +78,76 @@ class ChatScreenState extends State<ChatScreen>
   List<dynamic> _processedMessages = [];
   Map<String, List<String>> _lastReadByCache = {};
   bool _needsMessageProcessing = true;
+  bool get isUserGroup => widget.chatType == ChatType.userGroup;
+  bool get isDM => widget.chatType == ChatType.dm;
 
   Future<void> _initializeChat() async {
+    // For squad chats, ensure we have a squad selected (each squad IS the chat)
+    if (widget.chatType == ChatType.squad) {
+      debugPrint('DEBUG ChatScreen: Initializing squad chat');
+      debugPrint(
+          'DEBUG ChatScreen: widget.chatGroupId = ${widget.chatGroupId}');
+      debugPrint(
+          'DEBUG ChatScreen: selectedSquadId = ${_squadState.selectedSquadId}');
+      debugPrint(
+          'DEBUG ChatScreen: userSquadIds = ${_squadState.userSquadIds}');
+
+      // If chatGroupId is provided via widget parameter, use it
+      if (widget.chatGroupId != null) {
+        _squadState.selectedSquadId = widget.chatGroupId;
+        debugPrint(
+            'DEBUG ChatScreen: Set selectedSquadId from widget: ${widget.chatGroupId}');
+      } else if (_squadState.selectedSquadId == null) {
+        debugPrint(
+            'DEBUG: No squad selected for squad chat, attempting to select first available squad');
+        if (_squadState.userSquadIds.isNotEmpty) {
+          _squadState.selectedSquadId = _squadState.userSquadIds.first;
+          debugPrint(
+              'DEBUG: Auto-selected squad: ${_squadState.selectedSquadId}');
+        } else {
+          // Only show error if no chatGroupId was provided via widget parameter
+          if (widget.chatGroupId == null) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Please select or join a squad first')),
+              );
+              Navigator.of(context).pop();
+              return;
+            }
+          } else {
+            debugPrint(
+                'DEBUG: No userSquadIds but widget.chatGroupId provided, proceeding with widget.chatGroupId');
+            _squadState.selectedSquadId = widget.chatGroupId;
+          }
+        }
+      }
+      // For squad chats, use the squad name as chat name
+      if (_squadState.currentSquadData != null) {
+        _chatName = _squadState.currentSquadData!['name'] ?? 'Squad Chat';
+        debugPrint('DEBUG ChatScreen: Using squad name: $_chatName');
+      } else {
+        debugPrint(
+            'DEBUG ChatScreen: currentSquadData is null, trying to load...');
+        // Try to load squad data if not available
+        if (_squadState.selectedSquadId != null) {
+          try {
+            final squadDoc = await FirebaseFirestore.instance
+                .collection('squads')
+                .doc(_squadState.selectedSquadId)
+                .get();
+            if (squadDoc.exists) {
+              _squadState.dataManager.currentSquadData = squadDoc.data();
+              _chatName = squadDoc.data()?['name'] ?? 'Squad Chat';
+              debugPrint('DEBUG ChatScreen: Loaded squad name: $_chatName');
+            }
+          } catch (e) {
+            debugPrint('DEBUG ChatScreen: Failed to load squad data: $e');
+          }
+        }
+      }
+    }
+
     // Update online status
     _updateOnlineStatus(true);
 
@@ -111,11 +183,33 @@ class ChatScreenState extends State<ChatScreen>
   @override
   void initState() {
     super.initState();
+    debugPrint(
+        'DEBUG ChatScreen.initState: widget.chatGroupId = ${widget.chatGroupId}');
+    debugPrint(
+        'DEBUG ChatScreen.initState: widget.chatType = ${widget.chatType}');
+    debugPrint('DEBUG ChatScreen.initState: isDM = $isDM');
+    debugPrint('DEBUG ChatScreen.initState: isUserGroup = $isUserGroup');
+
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
     _squadState = Provider.of<SquadState>(context, listen: false);
+
+    // Safety check: prevent opening squad chat with null chatGroupId
+    if (widget.chatType == ChatType.squad && widget.chatGroupId == null) {
+      debugPrint(
+          'DEBUG ChatScreen: Invalid squad chat initialization with null chatGroupId, popping');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Unable to open squad chat')),
+          );
+        }
+      });
+      return;
+    }
 
     // Set chat name from widget parameters if provided (for chat groups)
     if (widget.chatGroupName != null) {
@@ -174,6 +268,7 @@ class ChatScreenState extends State<ChatScreen>
       final moreMessages = await _chatService.loadMoreMessages(
         offset: _currentOffset,
         limit: _messagesPerPage,
+        chatGroupId: widget.chatGroupId,
       );
 
       if (moreMessages.isEmpty || moreMessages.length < _messagesPerPage) {
@@ -199,7 +294,8 @@ class ChatScreenState extends State<ChatScreen>
 
       // Use ChatService.getTypingUser for chat-specific typing
       _typingSubscription = _chatService
-          .getTypingUser(context, chatGroupId: widget.chatGroupId)
+          .getTypingUser(context,
+              chatGroupId: widget.chatGroupId, chatType: widget.chatType)
           .listen((typingUser) {
         if (mounted) {
           String? myName = _squadState.displayName;
@@ -318,8 +414,12 @@ class ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _sendMessage() async {
-    if (_messageController.text.isEmpty) return;
-    if (!mounted) return;
+    if (_messageController.text.isEmpty) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
 
     // Handle commands
     if (_messageController.text.startsWith('/')) {
@@ -344,7 +444,8 @@ class ChatScreenState extends State<ChatScreen>
           senderUid: user.uid,
           text: _messageController.text,
           replyTo: replyTo,
-          chatGroupId: widget.chatGroupId);
+          chatGroupId: widget.chatGroupId,
+          chatType: widget.chatType);
 
       if (result.success) {
         if (result.isOffline && mounted) {
@@ -417,6 +518,7 @@ class ChatScreenState extends State<ChatScreen>
               ]
             : [],
         chatGroupId: widget.chatGroupId,
+        chatType: widget.chatType,
       );
       chatState.setUploading(false);
       HapticFeedback.lightImpact();
@@ -497,6 +599,7 @@ class ChatScreenState extends State<ChatScreen>
           {'uri': downloadUrl, 'creation_timestamp': timestampMs}
         ],
         chatGroupId: widget.chatGroupId,
+        chatType: widget.chatType,
       );
       chatState.setUploading(false);
       _audioPath = null;
@@ -519,6 +622,7 @@ class ChatScreenState extends State<ChatScreen>
         senderUid: user.uid,
         text: 'Forwarded: $messageText',
         chatGroupId: widget.chatGroupId,
+        chatType: widget.chatType,
       );
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -676,7 +780,8 @@ class ChatScreenState extends State<ChatScreen>
             title: const Text('Poll'),
             onTap: () {
               Navigator.pop(context);
-              PollCreationDialog.show(context, chatGroupId: widget.chatGroupId);
+              PollCreationDialog.show(context,
+                  chatGroupId: widget.chatGroupId, chatType: widget.chatType);
             },
           ),
           ListTile(
@@ -862,7 +967,9 @@ class ChatScreenState extends State<ChatScreen>
     }).toList();
 
     // Filter messages to only show from squad members (pre-filtered) or AI responses
-    final filteredMembers = _squadState.getFilteredMembers;
+    final filteredMembers = widget.chatType == ChatType.squad
+        ? _squadState.getFilteredMembers
+        : null;
     final filtered = deduplicated.where((msg) {
       final data = msg is DocumentSnapshot
           ? msg.data() as Map<String, dynamic>?
@@ -877,8 +984,13 @@ class ChatScreenState extends State<ChatScreen>
         return true;
       }
 
-      final senderDisplayName = _squadState.getDisplayNameForUid(senderUid);
-      return filteredMembers.contains(senderDisplayName);
+      // For squad chats, filter by squad members; for DMs and user groups, show all messages
+      if (widget.chatType == ChatType.squad) {
+        final senderDisplayName = _squadState.getDisplayNameForUid(senderUid);
+        return filteredMembers!.contains(senderDisplayName);
+      } else {
+        return true;
+      }
     }).toList();
 
     // Sort by timestamp (only if needed)
@@ -979,10 +1091,7 @@ class ChatScreenState extends State<ChatScreen>
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context);
-    if (squadState.selectedSquadId == null) {
-      return const NoSquadScreen();
-    }
+    // Chat should work regardless of squad selection status
     return SafeArea(
       top: true,
       bottom: false,
@@ -990,7 +1099,7 @@ class ChatScreenState extends State<ChatScreen>
         body: Consumer<ChatState>(
           builder: (context, chatState, _) {
             final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-            final bottomPadding = keyboardHeight > 0 ? keyboardHeight : 2.0;
+            final bottomPadding = keyboardHeight > 0 ? keyboardHeight : 16.0;
             return MediaQuery.removePadding(
               context: context,
               removeBottom: keyboardHeight > 0,
@@ -1007,6 +1116,25 @@ class ChatScreenState extends State<ChatScreen>
                   children: [
                     Column(
                       children: [
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'DEBUG: 10 CHAT',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
                         Container(
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.9),
@@ -1389,7 +1517,8 @@ class ChatScreenState extends State<ChatScreen>
                         Expanded(
                           child: StreamBuilder<QuerySnapshot>(
                             stream: _chatService.getChatMessages(context,
-                                chatGroupId: widget.chatGroupId),
+                                chatGroupId: widget.chatGroupId,
+                                chatType: widget.chatType),
                             builder: (context, snapshot) {
                               if (snapshot.hasError) {
                                 return const Center(
@@ -1404,6 +1533,9 @@ class ChatScreenState extends State<ChatScreen>
                               // Process messages only when data changes
                               List<dynamic> allMessages = [];
                               if (snapshot.hasData) {
+                                // Cache messages from Firestore to SQLite
+                                _chatService.cacheMessagesFromSnapshot(
+                                    snapshot.data!, widget.chatGroupId);
                                 allMessages.addAll(snapshot.data!.docs);
                               }
                               allMessages.addAll(_historicalMessages);
@@ -1417,7 +1549,8 @@ class ChatScreenState extends State<ChatScreen>
 
                               if (_processedMessages.isEmpty) {
                                 return const Center(
-                                    child: Text('No messages yet'));
+                                    child: Text('No messages yet',
+                                        style: TextStyle(color: Colors.white)));
                               }
 
                               return ListView.builder(
@@ -1700,41 +1833,6 @@ class ChatScreenState extends State<ChatScreen>
             },
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showBlockDialog(BuildContext context, String sender) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final isBlocked = _squadState.userBlocks[uid]?.containsKey(sender) ?? false;
-    final action = isBlocked ? 'Unblock' : 'Block Player';
-    final message = isBlocked
-        ? 'Unblock $sender? You will see each other again.'
-        : 'Hide $sender from your view? This is mutual—they won\'t see you either.';
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('$action $sender'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (isBlocked) {
-                await _squadState.unblockUser(sender);
-              } else {
-                await _squadState.blockUser(sender);
-              }
-              Navigator.of(dialogContext).pop();
-            },
-            child: Text(action),
           ),
         ],
       ),

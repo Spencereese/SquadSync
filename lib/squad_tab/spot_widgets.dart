@@ -23,12 +23,6 @@ class SpotWidgets {
         hasOccupant && hasTimer && isReady && spotName == yourName;
     final hasAnyButton = hasCallButton || hasLockButton || hasWalkingButton;
 
-    // Debug logging for button visibility
-    if (hasOccupant && spotName == yourName) {
-      debugPrint(
-          'Spot $index debug: hasTimer=$hasTimer, isCalling=$isCalling, isReady=$isReady, spotName="$spotName", yourName="$yourName", hasLockButton=$hasLockButton');
-    }
-
     return GestureDetector(
       onLongPress: () {
         if (hasOccupant) {
@@ -165,12 +159,10 @@ class SpotWidgets {
             ),
             child: ElevatedButton(
               onPressed: () {
-                debugPrint('Call button pressed for spot $index');
                 try {
                   squadState.callSpotForGame(index, gameName);
-                  debugPrint('Call button action completed for spot $index');
                 } catch (e) {
-                  debugPrint('Call button failed for spot $index: $e');
+                  // Handle error silently
                 }
               },
               onLongPress: () =>
@@ -214,12 +206,10 @@ class SpotWidgets {
             ),
             child: ElevatedButton(
               onPressed: () {
-                debugPrint('Lock button pressed for spot $index');
                 try {
                   squadState.lockCalledSpot(gameName, index);
-                  debugPrint('Lock button action completed for spot $index');
                 } catch (e) {
-                  debugPrint('Lock button failed for spot $index: $e');
+                  // Handle error silently
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -261,12 +251,10 @@ class SpotWidgets {
             ),
             child: ElevatedButton(
               onPressed: () {
-                debugPrint('Leave button pressed for spot $index');
                 try {
                   squadState.removeSpot(index);
-                  debugPrint('Leave button action completed for spot $index');
                 } catch (e) {
-                  debugPrint('Leave button failed for spot $index: $e');
+                  // Handle error silently
                 }
               },
               style: ElevatedButton.styleFrom(

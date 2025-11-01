@@ -6,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cod_squad_app/Availability/schedule_dialog.dart';
 import 'package:cod_squad_app/squad_state.dart';
-import 'package:cod_squad_app/no_squad_screen.dart';
 import 'package:cod_squad_app/managers/notification_manager.dart';
 import 'package:cod_squad_app/managers/firestore_manager.dart';
 
@@ -304,9 +303,6 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
   Widget build(BuildContext context) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
-        if (squadState.selectedSquadId == null) {
-          return const NoSquadScreen();
-        }
         final events = _mapScheduledTimes(squadState.scheduledTimes);
         return Scaffold(
           body: RefreshIndicator(
@@ -322,6 +318,25 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'DEBUG: 9 AVAILABILITY',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
                         _buildCalendar(context, events),
                         const SizedBox(height: 16),
                         _buildDayBreakdown(context, events),

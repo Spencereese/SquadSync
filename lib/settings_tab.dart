@@ -420,6 +420,25 @@ class _SettingsTabState extends State<SettingsTab>
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'DEBUG: 8 SETTINGS',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
             _buildSectionHeader('Profile'),
             GestureDetector(
               onTap: _updateProfilePicture,

@@ -10,12 +10,14 @@ class SpotsSheet extends StatefulWidget {
   final String gameName;
   final int maxSpots;
   final String chatGroupId;
+  final ChatType chatType;
 
   const SpotsSheet({
     super.key,
     required this.gameName,
     required this.maxSpots,
     required this.chatGroupId,
+    required this.chatType,
   });
 
   static void show(
@@ -23,6 +25,7 @@ class SpotsSheet extends StatefulWidget {
     required String gameName,
     required int maxSpots,
     required String chatGroupId,
+    required ChatType chatType,
   }) {
     showModalBottomSheet(
       context: context,
@@ -32,6 +35,7 @@ class SpotsSheet extends StatefulWidget {
         gameName: gameName,
         maxSpots: maxSpots,
         chatGroupId: chatGroupId,
+        chatType: chatType,
       ),
     );
   }
@@ -50,6 +54,7 @@ class _SpotsSheetState extends State<SpotsSheet> {
     _ratingNudge = RatingNudge(
       gameName: widget.gameName,
       chatGroupId: widget.chatGroupId,
+      chatType: widget.chatType,
       onRatingSubmitted: () {
         // Could add additional logic here if needed
       },
@@ -273,6 +278,7 @@ class _SpotsSheetState extends State<SpotsSheet> {
         text:
             '$displayName claimed spot ${availableIndex + 1} in ${widget.gameName}!',
         chatGroupId: widget.chatGroupId,
+        chatType: widget.chatType,
       );
 
       // Check if user has rated this game before
@@ -286,6 +292,7 @@ class _SpotsSheetState extends State<SpotsSheet> {
               builder: (context) => ReviewSubmitDialog(
                 gameName: widget.gameName,
                 chatGroupId: widget.chatGroupId,
+                chatType: widget.chatType,
               ),
             );
           }
@@ -325,6 +332,7 @@ class _SpotsSheetState extends State<SpotsSheet> {
         senderUid: user.uid,
         text: '$displayName locked spot ${index + 1} in ${widget.gameName}!',
         chatGroupId: widget.chatGroupId,
+        chatType: widget.chatType,
       );
 
       if (mounted) {

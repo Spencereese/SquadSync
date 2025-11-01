@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart';
 import 'interfaces.dart';
 
 /// Service for handling authentication and user management
@@ -52,7 +51,7 @@ class AuthService implements IAuthService {
           return firestoreName.trim();
         }
       } catch (e) {
-        debugPrint('Failed to load display name from Firestore: $e');
+        // Failed to load display name from Firestore - silently handled
       }
     }
 
@@ -76,7 +75,7 @@ class AuthService implements IAuthService {
           .doc(user.uid)
           .set({'displayName': displayName}, SetOptions(merge: true));
     } catch (e) {
-      debugPrint('Failed to save display name to Firestore: $e');
+      // Failed to save display name to Firestore - silently handled
     }
   }
 
@@ -93,7 +92,6 @@ class AuthService implements IAuthService {
           .get();
       return userDoc.data()?['profileImage'];
     } catch (e) {
-      debugPrint('Failed to load profile image: $e');
       return null;
     }
   }
@@ -110,7 +108,7 @@ class AuthService implements IAuthService {
           .doc(user.uid)
           .set({'profileImage': imageUrl}, SetOptions(merge: true));
     } catch (e) {
-      debugPrint('Failed to save profile image: $e');
+      // Failed to save profile image - silently handled
     }
   }
 

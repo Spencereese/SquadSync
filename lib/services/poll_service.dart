@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import '../models/poll.dart';
 
 class PollService {
@@ -47,7 +46,6 @@ class PollService {
 
       return pollId;
     } catch (e) {
-      debugPrint('Error creating poll: $e');
       return null;
     }
   }
@@ -138,7 +136,6 @@ class PollService {
         return true;
       });
     } catch (e) {
-      debugPrint('Error voting on poll: $e');
       return false;
     }
   }
@@ -203,7 +200,6 @@ class PollService {
       }
       return null;
     } catch (e) {
-      debugPrint('Error getting poll: $e');
       return null;
     }
   }

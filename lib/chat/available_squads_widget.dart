@@ -121,8 +121,24 @@ class AvailableSquadsWidget extends StatelessWidget {
       final squadManager = Provider.of<SquadManager>(context, listen: false);
       await squadManager.joinLobby(peacockId, currentUser.uid);
 
-      // Update local status to reflect joining the lobby
+      // Also call a spot for the joining user to trigger timer logic
       final squadState = Provider.of<SquadState>(context, listen: false);
+      final gameName = peacockData['game']?['name'] ?? 'Unknown Game';
+
+      // Find next available spot
+      final filled = List<String>.from(peacockData['filled'] ?? []);
+      final maxSpots = peacockData['spots'] ?? 4;
+      int nextSpot = 0; // Start from 0 since creator is at spot 0
+      while (filled.length > nextSpot && nextSpot < maxSpots) {
+        nextSpot++;
+      }
+
+      if (nextSpot < maxSpots) {
+        // Call the spot to trigger timer logic
+        squadState.callSpotForGame(nextSpot, gameName);
+      }
+
+      // Update local status to reflect joining the lobby
       squadState.dataManager.globalStatuses[squadState.displayName ?? ''] =
           'Ready';
 

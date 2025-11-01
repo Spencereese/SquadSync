@@ -347,6 +347,7 @@ class SquadState with ChangeNotifier {
 
   set selectedSquadId(String? value) {
     dataManager.selectedSquadId = value;
+    notifyListeners();
   }
 
   set userSquadIds(List<String> value) {
@@ -473,6 +474,61 @@ class SquadState with ChangeNotifier {
     audioService.dispose();
     authService.dispose();
     super.dispose();
+  }
+
+  // Reset method for sign out - clears all state and allows re-initialization
+  void reset() {
+    // Cancel all subscriptions and timers
+    _timer?.cancel();
+    _timer = null;
+    _squadSubscription?.cancel();
+    _squadSubscription = null;
+
+    // Reset initialization flag to allow re-initialization
+    persistenceManager.isInitialized = false;
+
+    // Clear all dataManager properties
+    dataManager.squadMemberUids.clear();
+    dataManager.memberDisplayNames.clear();
+    dataManager.gameSquadSpots.clear();
+    dataManager.gameSpotTimers.clear();
+    dataManager.gameStatuses.clear();
+    dataManager.globalStatuses.clear();
+    dataManager.gameHistory.clear();
+    dataManager.preferredModes.clear();
+    dataManager.userBlocks.clear();
+    dataManager.dailyBanVotes.clear();
+    dataManager.userSquadIds.clear();
+    dataManager.selectedSquadId = null;
+    dataManager.userSquads.clear();
+    dataManager.currentSquadData = null;
+    dataManager.availableGames.clear();
+    dataManager.gameLobbies.clear();
+    dataManager.preferredPeacockGames.clear();
+    dataManager.mutedGames.clear();
+    dataManager.hiddenGames.clear();
+    dataManager.currentStreaks.clear();
+    dataManager.highestStreaks.clear();
+    dataManager.achievements.clear();
+    dataManager.dailyRatings.clear();
+    dataManager.allTimeRatings.clear();
+    dataManager.complaints.clear();
+    dataManager.bans.clear();
+    dataManager.scheduledTimes.clear();
+    dataManager.peacockTimers.clear();
+    dataManager.peacockQueue.clear();
+
+    // Clear cache
+    _invalidateCache();
+
+    // Reset services
+    audioService.dispose();
+    authService.dispose();
+
+    // Clear context reference
+    context = null;
+
+    notifyListeners();
   }
 
   // New: Create/join wrappers
@@ -607,11 +663,22 @@ class SquadState with ChangeNotifier {
 
   // Public: Select a squad
   void selectSquad(String squadId) {
-    if (userSquadIds.contains(squadId) && userSquads.containsKey(squadId)) {
+    debugPrint('DEBUG SquadState.selectSquad: called with squadId=$squadId');
+    debugPrint('DEBUG SquadState.selectSquad: userSquadIds=$userSquadIds');
+    debugPrint(
+        'DEBUG SquadState.selectSquad: userSquads keys=${userSquads.keys}');
+    if (userSquadIds.contains(squadId)) {
+      debugPrint('DEBUG SquadState.selectSquad: squadId found in userSquadIds');
       selectedSquadId = squadId;
+      // Load squad data from userSquads if available, otherwise it will be loaded when accessed
       currentSquadData = userSquads[squadId];
       _loadSquadData(squadId);
       notifyListeners();
+      debugPrint(
+          'DEBUG SquadState.selectSquad: completed, selectedSquadId=$selectedSquadId');
+    } else {
+      debugPrint(
+          'DEBUG SquadState.selectSquad: squadId NOT found in userSquadIds');
     }
   }
 
@@ -1522,6 +1589,7 @@ class SquadState with ChangeNotifier {
         _markFieldChanged('spotTimers');
         _markFieldChanged('globalStatuses');
         _markFieldChanged('statuses');
+        cacheService.invalidate('squadSpots');
         setNewSquadSpot(true, gameName); // Trigger squad spot notification
       }
     }
@@ -1589,6 +1657,7 @@ class SquadState with ChangeNotifier {
           _markFieldChanged('globalStatuses');
           _markFieldChanged('statuses');
           _markFieldChanged('peacockQueue');
+          cacheService.invalidate('squadSpots');
           setNewSquadSpot(true, gameName); // Trigger squad spot notification
         }
       }
@@ -1643,6 +1712,7 @@ class SquadState with ChangeNotifier {
       _markFieldChanged('spotTimers');
       _markFieldChanged('globalStatuses');
       _markFieldChanged('statuses');
+      cacheService.invalidate('squadSpots');
       setNewSquadSpot(true, gameName); // Trigger squad spot notification
       updateFirestore(force: true);
       notifyListeners();
@@ -1673,6 +1743,7 @@ class SquadState with ChangeNotifier {
         _markFieldChanged('statuses');
         _markFieldChanged('squadSpots');
         _markFieldChanged('spotTimers');
+        cacheService.invalidate('squadSpots');
         debugPrint('About to call updateFirestore for removeSpot');
         updateFirestore(force: true);
         notifyListeners();

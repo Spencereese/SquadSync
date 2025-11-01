@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'interfaces.dart';
 
 /// Generic field serializer for Firestore operations
@@ -117,7 +116,6 @@ class FirestoreService implements IFirestoreService {
   }) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      debugPrint("Skipping Firestore update - user not authenticated");
       return;
     }
 
@@ -148,11 +146,10 @@ class FirestoreService implements IFirestoreService {
             .collection('squad')
             .doc('state')
             .set(filteredData, SetOptions(merge: true));
-        debugPrint("Firestore updated with: $filteredData");
         _changedFields.clear();
         _lastUpdate = now;
       } catch (e) {
-        debugPrint("Firestore update failed: $e");
+        // Firestore update failed - silently handled
       }
     }
   }
@@ -179,7 +176,6 @@ class FirestoreService implements IFirestoreService {
 
       return processedData;
     } catch (e) {
-      debugPrint("Failed to load Firestore data: $e");
       return {};
     }
   }
@@ -220,7 +216,6 @@ class FirestoreService implements IFirestoreService {
       final doc = await _firestore.collection(collection).doc(document).get();
       return doc.data();
     } catch (e) {
-      debugPrint("Failed to load Firestore document: $e");
       return null;
     }
   }

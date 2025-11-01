@@ -3,8 +3,8 @@ import 'package:http/http.dart' as http;
 
 /// Service for integrating xAI's Grok AI into the chat via backend
 class GrokService {
-  static const String _backendUrl =
-      'https://squadsync-backend-756172684661.us-central1.run.app'; // Replace with your deployed backend URL
+  static const String _backendUrl = String.fromEnvironment('BACKEND_URL',
+      defaultValue: 'http://localhost:8080');
 
   /// Check if a message is directed at Grok
   bool isMessageForGrok(String message) {

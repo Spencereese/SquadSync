@@ -6,18 +6,22 @@ import '../../chat/chat_service.dart';
 
 class PollCreationDialog extends StatefulWidget {
   final String? chatGroupId;
+  final ChatType chatType;
   final Function(Poll)? onPollCreated;
 
   const PollCreationDialog({
     super.key,
     this.chatGroupId,
+    required this.chatType,
     this.onPollCreated,
   });
 
-  static Future<void> show(BuildContext context, {String? chatGroupId}) {
+  static Future<void> show(BuildContext context,
+      {String? chatGroupId, required ChatType chatType}) {
     return showDialog(
       context: context,
-      builder: (context) => PollCreationDialog(chatGroupId: chatGroupId),
+      builder: (context) =>
+          PollCreationDialog(chatGroupId: chatGroupId, chatType: chatType),
     );
   }
 
@@ -96,6 +100,7 @@ class _PollCreationDialogState extends State<PollCreationDialog> {
             text: '📊 ${_titleController.text.trim()}', // Poll emoji + title
             pollId: pollId,
             chatGroupId: widget.chatGroupId,
+            chatType: widget.chatType,
           );
         }
 

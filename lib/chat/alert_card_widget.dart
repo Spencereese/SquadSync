@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../squad_state.dart';
 import 'spots_sheet.dart';
+import 'chat_service.dart';
 
 class AlertCardWidget extends StatefulWidget {
   final String gameName;
   final String hostName;
   final int maxSpots;
   final String chatGroupId;
+  final ChatType chatType;
 
   const AlertCardWidget({
     super.key,
@@ -15,6 +17,7 @@ class AlertCardWidget extends StatefulWidget {
     required this.hostName,
     required this.maxSpots,
     required this.chatGroupId,
+    required this.chatType,
   });
 
   @override
@@ -89,6 +92,7 @@ class _AlertCardWidgetState extends State<AlertCardWidget> {
                   gameName: widget.gameName,
                   maxSpots: maxSpots,
                   chatGroupId: widget.chatGroupId,
+                  chatType: widget.chatType,
                 );
               } catch (e) {
                 if (mounted) {

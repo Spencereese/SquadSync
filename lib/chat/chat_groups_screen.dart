@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../squad_state.dart';
 import 'chat_screen.dart';
 import 'chat_state.dart';
+import 'chat_service.dart';
 import '../managers/user_manager.dart';
 import '../profile_tab.dart';
 import '../app_theme.dart';
@@ -219,12 +220,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
 
   List<Widget> _buildPages(BuildContext context, bool isKeyboardVisible) {
     return [
-      AnimatedPadding(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        padding: EdgeInsets.only(bottom: isKeyboardVisible ? 0 : 75),
-        child: _buildChatGroupsPage(),
-      ),
+      _buildChatGroupsPage(),
       const NotificationsScreen(),
       const ProfileTab(),
     ];
@@ -234,7 +230,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
     return Consumer<ChatState>(
       builder: (context, chatState, child) => Scaffold(
         appBar: AppBar(
-          title: Text(chatState.isDMView ? 'DMs' : 'Chats'),
+          title: const Text('Chats'),
           backgroundColor: Colors.black,
           elevation: 0,
           leading: chatState.isDMView
@@ -251,12 +247,18 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                 onPressed: _showAddFriendDialog,
                 tooltip: 'Add friend',
               )
-            else
+            else ...[
+              IconButton(
+                icon: const Icon(Icons.search, color: Colors.cyanAccent),
+                onPressed: _showFindGroupsDialog,
+                tooltip: 'Find public groups',
+              ),
               IconButton(
                 icon: const Icon(Icons.add, color: Colors.cyanAccent),
                 onPressed: _createNewGroup,
                 tooltip: 'Create new group',
               ),
+            ],
           ],
         ),
         body: Container(
@@ -276,11 +278,18 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                     }
 
                     if (squadState.selectedSquadId == null) {
-                      return const Center(
-                        child: Text(
-                          'No squad selected',
-                          style: TextStyle(color: Colors.white),
-                        ),
+                      // Show user-specific groups instead of squad groups
+                      return Consumer<ChatState>(
+                        builder: (context, chatState, child) {
+                          if (chatState.isDMView) {
+                            // Show DMs
+                            return _buildDMList(
+                                context, squadState, currentUser);
+                          } else {
+                            // Show user groups with DM card
+                            return _buildUserGroupsList(context, currentUser);
+                          }
+                        },
                       );
                     }
 
@@ -290,36 +299,9 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                           // Show DMs
                           return _buildDMList(context, squadState, currentUser);
                         } else {
-                          // Show groups with DM card
-                          return StreamBuilder<QuerySnapshot>(
-                            stream: _firestore
-                                .collection('squads')
-                                .doc(squadState.selectedSquadId)
-                                .collection('chat_groups')
-                                .orderBy('lastMessageTime', descending: true)
-                                .snapshots(),
-                            builder: (context, snapshot) {
-                              if (snapshot.hasError) {
-                                return Center(
-                                  child: Text(
-                                    'Error: ${snapshot.error}',
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                );
-                              }
-
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Center(
-                                  child: CircularProgressIndicator(
-                                      color: Colors.cyanAccent),
-                                );
-                              }
-
-                              return _buildGroupsList(
-                                  context, squadState, currentUser, snapshot);
-                            },
-                          );
+                          // Show squads as chat groups (each squad IS a chat group)
+                          return _buildSquadsAsChatGroups(
+                              context, squadState, currentUser);
                         }
                       },
                     );
@@ -436,15 +418,29 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
     );
   }
 
-  Widget _buildGroupsList(BuildContext context, SquadState squadState,
-      User currentUser, AsyncSnapshot<QuerySnapshot> snapshot) {
-    final groups = snapshot.data?.docs ?? [];
+  Widget _buildSquadsAsChatGroups(
+      BuildContext context, SquadState squadState, User currentUser) {
+    // Get user's squads and display them as chat groups
+    final userSquadIds = squadState.userSquadIds;
+
+    if (userSquadIds.isEmpty) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: Text(
+            'No squads available. Join or create a squad to start chatting!',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
 
     return Container(
       color: Colors.black,
       child: ListView.separated(
         padding: EdgeInsets.zero,
-        itemCount: groups.length + 1, // +1 for DM card
+        itemCount: userSquadIds.length + 1, // +1 for DM card
         separatorBuilder: (context, index) => const Divider(
           color: Colors.grey,
           height: 0.5,
@@ -457,88 +453,309 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
             return _buildDMCard(context);
           }
 
-          final groupIndex = index - 1;
-          final group = groups[groupIndex];
-          final groupData = group.data() as Map<String, dynamic>;
-          final groupName = groupData['name'] ?? 'Unnamed Group';
-          final lastMessage = groupData['lastMessage'] ?? '';
-          final lastMessageTime = groupData['lastMessageTime'] as Timestamp?;
-          final memberCount = groupData['memberCount'] ?? 0;
-          final isPublic = groupData['isPublic'] ?? false;
-          final imageUrl = groupData['imageUrl'];
+          final squadIndex = index - 1;
+          final squadId = userSquadIds[squadIndex];
 
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
-            leading: CircleAvatar(
-              radius: 28,
-              backgroundColor: Colors.grey[800],
-              backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-              child: imageUrl == null
-                  ? Icon(
-                      isPublic ? Icons.public : Icons.group,
-                      color: Colors.cyanAccent,
-                      size: 24,
-                    )
-                  : null,
-            ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    groupName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          // Skip invalid squad IDs
+          if (squadId.isEmpty) {
+            return const SizedBox.shrink();
+          }
+
+          // Get squad data
+          return FutureBuilder<DocumentSnapshot>(
+            future: _firestore.collection('squads').doc(squadId).get(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.grey,
+                    child: CircularProgressIndicator(color: Colors.cyanAccent),
                   ),
-                ),
-                if (lastMessageTime != null) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Text(
-                      _formatTime(lastMessageTime.toDate()),
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
+                  title:
+                      Text('Loading...', style: TextStyle(color: Colors.white)),
+                );
+              }
+
+              if (snapshot.hasError ||
+                  !snapshot.hasData ||
+                  !snapshot.data!.exists) {
+                return ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Colors.grey,
+                    child: Icon(Icons.error, color: Colors.red),
+                  ),
+                  title: Text(
+                    'Error loading squad',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    squadId,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                );
+              }
+
+              final squadData = snapshot.data!.data() as Map<String, dynamic>;
+              final squadName = squadData['name'] ?? 'Unnamed Squad';
+              final memberCount = squadData['memberCount'] ?? 0;
+              final imageUrl = squadData['imageUrl'];
+
+              // Get last message from the squad's messages collection
+              return StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('squads')
+                    .doc(squadId)
+                    .collection('messages')
+                    .orderBy('timestamp', descending: true)
+                    .limit(1)
+                    .snapshots(),
+                builder: (context, messageSnapshot) {
+                  String lastMessage = '';
+                  DateTime? lastMessageTime;
+
+                  if (messageSnapshot.hasData &&
+                      messageSnapshot.data!.docs.isNotEmpty) {
+                    final messageDoc = messageSnapshot.data!.docs.first;
+                    final messageData =
+                        messageDoc.data() as Map<String, dynamic>;
+                    lastMessage = messageData['text'] ?? '';
+                    final timestamp = messageData['timestamp'];
+                    if (timestamp is Timestamp) {
+                      lastMessageTime = timestamp.toDate();
+                    }
+                  }
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    leading: CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.grey[800],
+                      backgroundImage:
+                          imageUrl != null ? NetworkImage(imageUrl) : null,
+                      child: imageUrl == null
+                          ? const Icon(
+                              Icons.group,
+                              color: Colors.cyanAccent,
+                              size: 24,
+                            )
+                          : null,
+                    ),
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            squadName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (lastMessageTime != null) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Text(
+                              _formatTime(lastMessageTime),
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        lastMessage.isNotEmpty
+                            ? lastMessage
+                            : '$memberCount members',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                ],
-              ],
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      lastMessage.isNotEmpty
-                          ? lastMessage
-                          : '$memberCount members',
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            onTap: () => _openChatGroup(group.id, groupName),
-            onLongPress: () => _showGroupOptions(group.id, groupData),
+                    onTap: () {
+                      // Navigate to chat screen for this squad
+                      debugPrint(
+                          'DEBUG ChatGroupsScreen: Tapping on squad $squadId');
+                      debugPrint(
+                          'DEBUG ChatGroupsScreen: userSquadIds = ${squadState.userSquadIds}');
+                      debugPrint(
+                          'DEBUG ChatGroupsScreen: userSquads keys = ${squadState.userSquads.keys}');
+                      // squadState.selectSquad(squadId); // Remove this - we'll pass squadId directly
+                      debugPrint(
+                          'DEBUG ChatGroupsScreen: After selectSquad, selectedSquadId = ${squadState.selectedSquadId}');
+                      if (squadId.isNotEmpty &&
+                          squadState.userSquadIds.contains(squadId)) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => ChatScreen(
+                              chatType: ChatType.squad,
+                              chatGroupId: squadId,
+                            ),
+                          ),
+                        );
+                      } else {
+                        debugPrint(
+                            'DEBUG ChatGroupsScreen: squadId is invalid or not in list, not navigating');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Unable to open squad chat')),
+                        );
+                      }
+                    },
+                  );
+                },
+              );
+            },
           );
         },
       ),
+    );
+  }
+
+  Widget _buildUserGroupsList(BuildContext context, User currentUser) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .orderBy('lastMessageTime', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error: ${snapshot.error}',
+              style: const TextStyle(color: Colors.white),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.cyanAccent),
+          );
+        }
+
+        final groups = snapshot.data?.docs ?? [];
+
+        return Container(
+          color: Colors.black,
+          child: ListView.separated(
+            padding: EdgeInsets.zero,
+            itemCount: groups.length + 1, // +1 for DM card
+            separatorBuilder: (context, index) => const Divider(
+              color: Colors.grey,
+              height: 0.5,
+              indent: 72,
+              thickness: 0.5,
+            ),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                // DM card
+                return _buildDMCard(context);
+              }
+
+              final groupIndex = index - 1;
+              final group = groups[groupIndex];
+              final groupData = group.data() as Map<String, dynamic>;
+              final groupName = groupData['name'] ?? 'Unnamed Group';
+              final lastMessage = groupData['lastMessage'] ?? '';
+              final lastMessageTime =
+                  groupData['lastMessageTime'] as Timestamp?;
+              final memberCount = groupData['memberCount'] ?? 0;
+              final isPublic = groupData['isPublic'] ?? false;
+              final imageUrl = groupData['imageUrl'];
+
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                leading: CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.grey[800],
+                  backgroundImage:
+                      imageUrl != null ? NetworkImage(imageUrl) : null,
+                  child: imageUrl == null
+                      ? Icon(
+                          isPublic ? Icons.public : Icons.group,
+                          color: Colors.cyanAccent,
+                          size: 24,
+                        )
+                      : null,
+                ),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        groupName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (lastMessageTime != null) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Text(
+                          _formatTime(lastMessageTime.toDate()),
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          lastMessage.isNotEmpty
+                              ? lastMessage
+                              : '$memberCount members',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                onTap: () => _openUserChatGroup(group.id, groupName),
+                onLongPress: () => _showUserGroupOptions(group.id, groupData),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -694,12 +911,24 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                   final currentUser = _auth.currentUser;
                   if (currentUser == null) return;
 
-                  // Create group document
-                  final groupRef = _firestore
-                      .collection('squads')
-                      .doc(squadState.selectedSquadId)
-                      .collection('chat_groups')
-                      .doc();
+                  // Create group document - use user-specific or squad-specific based on context
+                  DocumentReference groupRef;
+
+                  if (squadState.selectedSquadId != null) {
+                    // Squad context - create squad group
+                    groupRef = _firestore
+                        .collection('squads')
+                        .doc(squadState.selectedSquadId)
+                        .collection('chat_groups')
+                        .doc();
+                  } else {
+                    // No squad - create user-specific group
+                    groupRef = _firestore
+                        .collection('users')
+                        .doc(currentUser.uid)
+                        .collection('chat_groups')
+                        .doc();
+                  }
 
                   await groupRef.set({
                     'name': groupName,
@@ -743,19 +972,39 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
   void _openChatGroup(String groupId, String groupName) async {
     // Check membership for private groups
     final squadState = Provider.of<SquadState>(context, listen: false);
-    final groupDoc = await _firestore
-        .collection('squads')
-        .doc(squadState.selectedSquadId)
-        .collection('chat_groups')
-        .doc(groupId)
-        .get();
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+
+    DocumentSnapshot? groupDoc;
+    bool isUserGroup = false;
+
+    if (squadState.selectedSquadId != null) {
+      // Try squad group first
+      groupDoc = await _firestore
+          .collection('squads')
+          .doc(squadState.selectedSquadId)
+          .collection('chat_groups')
+          .doc(groupId)
+          .get();
+    }
+
+    if (groupDoc == null || !groupDoc.exists) {
+      // Try user group
+      groupDoc = await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc(groupId)
+          .get();
+      isUserGroup = true;
+    }
 
     if (groupDoc.exists) {
       final groupData = groupDoc.data() as Map<String, dynamic>;
       final isPublic = groupData['isPublic'] ?? false;
       final members = List<String>.from(groupData['members'] ?? []);
 
-      if (!isPublic && !members.contains(_auth.currentUser?.uid)) {
+      if (!isPublic && !members.contains(currentUser.uid)) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -777,6 +1026,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
             builder: (context) => ChatScreen(
               chatGroupId: groupId,
               chatGroupName: groupName,
+              chatType: isUserGroup ? ChatType.userGroup : ChatType.squad,
             ),
           ),
         );
@@ -784,9 +1034,30 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
     });
   }
 
-  void _showGroupOptions(String groupId, Map<String, dynamic> groupData) {
+  void _openUserChatGroup(String groupId, String groupName) {
+    // Save last opened chat group
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('last_chat_group', groupId);
+    }).then((_) {
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatGroupId: groupId,
+              chatGroupName: groupName,
+              chatType: ChatType.userGroup,
+            ),
+          ),
+        );
+      }
+    });
+  }
+
+  void _showUserGroupOptions(String groupId, Map<String, dynamic> groupData) {
     final createdBy = groupData['createdBy'];
-    final isOwner = createdBy == _auth.currentUser?.uid;
+    final currentUser = _auth.currentUser;
+    final isOwner = createdBy == currentUser?.uid;
 
     showModalBottomSheet(
       context: context,
@@ -804,7 +1075,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                   style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
-                _showGroupSettings(groupId, groupData);
+                _showUserGroupSettings(groupId, groupData);
               },
             ),
             ListTile(
@@ -813,7 +1084,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                   style: TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(context);
-                _deleteGroup(groupId);
+                _deleteUserGroup(groupId);
               },
             ),
           ] else ...[
@@ -823,7 +1094,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                   style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
-                _leaveGroup(groupId, groupData);
+                _leaveUserGroup(groupId, groupData);
               },
             ),
           ],
@@ -832,71 +1103,258 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
     );
   }
 
-  void _leaveGroup(String groupId, Map<String, dynamic> groupData) async {
+  void _showUserGroupSettings(String groupId, Map<String, dynamic> groupData) {
+    final nameController = TextEditingController(text: groupData['name'] ?? '');
+    final members = List<String>.from(groupData['members'] ?? []);
+    var isPublic = groupData['isPublic'] ?? false;
+    final createdBy = groupData['createdBy'];
+    final currentUser = _auth.currentUser;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => DraggableScrollableSheet(
+          initialChildSize: 0.8,
+          minChildSize: 0.5,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey, width: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Group Settings',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Group Name
+                      const Text(
+                        'Group Name',
+                        style: TextStyle(
+                          color: Colors.cyanAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: nameController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          filled: true,
+                          fillColor: Colors.grey,
+                          border: OutlineInputBorder(),
+                        ),
+                        enabled: createdBy ==
+                            currentUser?.uid, // Only creator can edit name
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Privacy Setting
+                      const Text(
+                        'Privacy',
+                        style: TextStyle(
+                          color: Colors.cyanAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RadioListTile<bool>(
+                              title: const Text('Public',
+                                  style: TextStyle(color: Colors.white)),
+                              subtitle: const Text('Anyone can find and join',
+                                  style: TextStyle(color: Colors.grey)),
+                              value: true,
+                              groupValue: isPublic,
+                              onChanged: createdBy == currentUser?.uid
+                                  ? (value) {
+                                      setState(() => isPublic = value!);
+                                    }
+                                  : null,
+                              activeColor: Colors.cyanAccent,
+                            ),
+                          ),
+                          Expanded(
+                            child: RadioListTile<bool>(
+                              title: const Text('Private',
+                                  style: TextStyle(color: Colors.white)),
+                              subtitle: const Text('Invite only',
+                                  style: TextStyle(color: Colors.grey)),
+                              value: false,
+                              groupValue: isPublic,
+                              onChanged: createdBy == currentUser?.uid
+                                  ? (value) {
+                                      setState(() => isPublic = value!);
+                                    }
+                                  : null,
+                              activeColor: Colors.cyanAccent,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Members
+                      Row(
+                        children: [
+                          Text(
+                            'Members (${members.length})',
+                            style: const TextStyle(
+                              color: Colors.cyanAccent,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (createdBy == currentUser?.uid)
+                            IconButton(
+                              icon: const Icon(Icons.person_add,
+                                  color: Colors.cyanAccent),
+                              onPressed: () =>
+                                  _showAddMemberDialog(groupId, members),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ...members.map((memberUid) =>
+                          FutureBuilder<Map<String, dynamic>?>(
+                            future: _getUserData(memberUid),
+                            builder: (context, snapshot) {
+                              final userData = snapshot.data;
+                              final displayName =
+                                  userData?['displayName'] ?? 'Unknown';
+                              final isCreator = memberUid == createdBy;
+                              final isCurrentUser =
+                                  memberUid == currentUser?.uid;
+
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: Colors.cyanAccent,
+                                  child: Text(
+                                    displayName[0].toUpperCase(),
+                                    style: const TextStyle(color: Colors.black),
+                                  ),
+                                ),
+                                title: Text(
+                                  displayName,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                subtitle: isCreator
+                                    ? const Text('Creator',
+                                        style:
+                                            TextStyle(color: Colors.cyanAccent))
+                                    : null,
+                                trailing: (createdBy == currentUser?.uid &&
+                                        !isCurrentUser)
+                                    ? IconButton(
+                                        icon: const Icon(Icons.remove,
+                                            color: Colors.red),
+                                        onPressed: () => _removeMember(
+                                            groupId, memberUid, members),
+                                      )
+                                    : null,
+                              );
+                            },
+                          )),
+                      const SizedBox(height: 24),
+
+                      // Action Buttons
+                      if (createdBy == currentUser?.uid) ...[
+                        ElevatedButton(
+                          onPressed: () async {
+                            try {
+                              await _firestore
+                                  .collection('users')
+                                  .doc(currentUser!.uid)
+                                  .collection('chat_groups')
+                                  .doc(groupId)
+                                  .update({
+                                'name': nameController.text.trim(),
+                                'isPublic': isPublic,
+                              });
+
+                              if (mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content:
+                                          Text('Group updated successfully')),
+                                );
+                              }
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content:
+                                        Text('Failed to update group: $e')),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.cyanAccent,
+                            foregroundColor: Colors.black,
+                          ),
+                          child: const Text('Save Changes'),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+
+                      // Leave Group (if not creator)
+                      if (createdBy != currentUser?.uid) ...[
+                        ElevatedButton(
+                          onPressed: () => _leaveUserGroup(groupId, groupData),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                          ),
+                          child: const Text('Leave Group'),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _deleteUserGroup(String groupId) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    final squadId =
-        Provider.of<SquadState>(context, listen: false).selectedSquadId;
-    if (squadId == null) return;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('Leave Group', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'Are you sure you want to leave this group?',
-          style: TextStyle(color: Colors.white),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Leave', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      try {
-        await _firestore
-            .collection('squads')
-            .doc(squadId)
-            .collection('chat_groups')
-            .doc(groupId)
-            .update({
-          'members': FieldValue.arrayRemove([user.uid]),
-          'memberCount': FieldValue.increment(-1),
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Left group successfully')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error leaving group: $e')),
-          );
-        }
-      }
-    }
-  }
-
-  void _showGroupSettings(String groupId, Map<String, dynamic> groupData) {
-    // Placeholder - implement group settings dialog
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Group settings not implemented yet')),
-    );
-  }
-
-  void _deleteGroup(String groupId) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -914,22 +1372,18 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
           ),
           TextButton(
             onPressed: () async {
-              final squadId = Provider.of<SquadState>(context, listen: false)
-                  .selectedSquadId;
-              if (squadId == null) return;
-
               try {
                 await _firestore
-                    .collection('squads')
-                    .doc(squadId)
+                    .collection('users')
+                    .doc(user.uid)
                     .collection('chat_groups')
                     .doc(groupId)
                     .delete();
 
                 // Also delete all messages in the group
                 final messages = await _firestore
-                    .collection('squads')
-                    .doc(squadId)
+                    .collection('users')
+                    .doc(user.uid)
                     .collection('chat_groups')
                     .doc(groupId)
                     .collection('messages')
@@ -958,6 +1412,514 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
         ],
       ),
     );
+  }
+
+  void _leaveUserGroup(String groupId, Map<String, dynamic> groupData) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Leave Group', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Are you sure you want to leave this group?',
+          style: TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Leave', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('chat_groups')
+            .doc(groupId)
+            .update({
+          'members': FieldValue.arrayRemove([user.uid]),
+          'memberCount': FieldValue.increment(-1),
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Left group successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error leaving group: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>?> _getUserData(String uid) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(uid).get();
+      return userDoc.data();
+    } catch (e) {
+      debugPrint('Error fetching user data: $e');
+      return null;
+    }
+  }
+
+  void _showAddMemberDialog(String groupId, List<String> currentMembers) {
+    final searchController = TextEditingController();
+    List<Map<String, dynamic>> searchResults = [];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.5,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey, width: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Add Members',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      // Search
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: TextField(
+                          controller: searchController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: 'Search users...',
+                            hintStyle: const TextStyle(color: Colors.grey),
+                            filled: true,
+                            fillColor: Colors.grey[800],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon:
+                                const Icon(Icons.search, color: Colors.grey),
+                          ),
+                          onChanged: (query) async {
+                            if (query.trim().isEmpty) {
+                              setState(() => searchResults = []);
+                              return;
+                            }
+
+                            try {
+                              final userManager = Provider.of<UserManager>(
+                                  context,
+                                  listen: false);
+                              final results =
+                                  await userManager.searchUsers(query.trim());
+                              setState(() => searchResults = results);
+                            } catch (e) {
+                              debugPrint('Error searching users: $e');
+                            }
+                          },
+                        ),
+                      ),
+                      // Results
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: searchResults.length,
+                          itemBuilder: (context, index) {
+                            final user = searchResults[index];
+                            final uid = user['uid'];
+                            final displayName =
+                                user['displayName'] ?? 'Unknown';
+                            final isAlreadyMember =
+                                currentMembers.contains(uid);
+
+                            return ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: Colors.cyanAccent,
+                                child: Text(
+                                  displayName[0].toUpperCase(),
+                                  style: const TextStyle(color: Colors.black),
+                                ),
+                              ),
+                              title: Text(
+                                displayName,
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                              subtitle: isAlreadyMember
+                                  ? const Text('Already a member',
+                                      style: TextStyle(color: Colors.grey))
+                                  : null,
+                              trailing: isAlreadyMember
+                                  ? null
+                                  : IconButton(
+                                      icon: const Icon(Icons.add,
+                                          color: Colors.cyanAccent),
+                                      onPressed: () => _addMember(
+                                          groupId, uid, currentMembers),
+                                    ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addMember(
+      String groupId, String memberUid, List<String> currentMembers) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc(groupId)
+          .update({
+        'members': FieldValue.arrayUnion([memberUid]),
+        'memberCount': FieldValue.increment(1),
+      });
+
+      currentMembers.add(memberUid);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Member added successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add member: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _removeMember(
+      String groupId, String memberUid, List<String> currentMembers) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc(groupId)
+          .update({
+        'members': FieldValue.arrayRemove([memberUid]),
+        'memberCount': FieldValue.increment(-1),
+      });
+
+      currentMembers.remove(memberUid);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Member removed successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove member: $e')),
+        );
+      }
+    }
+  }
+
+  void _showFindGroupsDialog() {
+    final searchController = TextEditingController();
+    List<Map<String, dynamic>> searchResults = [];
+    bool isLoading = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.5,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey, width: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Find Public Groups',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      // Search
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: TextField(
+                          controller: searchController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: 'Search public groups...',
+                            hintStyle: const TextStyle(color: Colors.grey),
+                            filled: true,
+                            fillColor: Colors.grey[800],
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon:
+                                const Icon(Icons.search, color: Colors.grey),
+                          ),
+                          onChanged: (query) async {
+                            if (query.trim().isEmpty) {
+                              setState(() => searchResults = []);
+                              return;
+                            }
+
+                            setState(() => isLoading = true);
+                            try {
+                              final results =
+                                  await _searchPublicGroups(query.trim());
+                              setState(() {
+                                searchResults = results;
+                                isLoading = false;
+                              });
+                            } catch (e) {
+                              debugPrint('Error searching groups: $e');
+                              setState(() => isLoading = false);
+                            }
+                          },
+                        ),
+                      ),
+                      // Loading indicator
+                      if (isLoading)
+                        const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator(
+                              color: Colors.cyanAccent),
+                        )
+                      // Results
+                      else
+                        Expanded(
+                          child: searchResults.isEmpty &&
+                                  searchController.text.isNotEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No public groups found',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  controller: scrollController,
+                                  itemCount: searchResults.length,
+                                  itemBuilder: (context, index) {
+                                    final group = searchResults[index];
+                                    final groupId = group['id'];
+                                    final groupData =
+                                        group['data'] as Map<String, dynamic>;
+                                    final name =
+                                        groupData['name'] ?? 'Unnamed Group';
+                                    final memberCount =
+                                        groupData['memberCount'] ?? 0;
+                                    final isUserGroup =
+                                        groupData['createdBy'] != null;
+
+                                    return ListTile(
+                                      leading: CircleAvatar(
+                                        backgroundColor: Colors.cyanAccent,
+                                        child: Icon(
+                                          isUserGroup
+                                              ? Icons.group
+                                              : Icons.groups,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        name,
+                                        style: const TextStyle(
+                                            color: Colors.white),
+                                      ),
+                                      subtitle: Text(
+                                        '$memberCount members',
+                                        style:
+                                            const TextStyle(color: Colors.grey),
+                                      ),
+                                      trailing: ElevatedButton(
+                                        onPressed: () => _joinPublicGroup(
+                                            groupId, groupData),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.cyanAccent,
+                                          foregroundColor: Colors.black,
+                                        ),
+                                        child: const Text('Join'),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _searchPublicGroups(String query) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return [];
+
+    try {
+      // Search for public user groups
+      final userGroupsQuery = _firestore
+          .collectionGroup('chat_groups')
+          .where('isPublic', isEqualTo: true)
+          .where('name', isGreaterThanOrEqualTo: query)
+          .where('name', isLessThanOrEqualTo: query + '\uf8ff')
+          .limit(20);
+
+      final userGroupsSnapshot = await userGroupsQuery.get();
+
+      final results = <Map<String, dynamic>>[];
+
+      for (var doc in userGroupsSnapshot.docs) {
+        final data = doc.data();
+        final members = List<String>.from(data['members'] ?? []);
+        final isAlreadyMember = members.contains(currentUser.uid);
+
+        // Only show groups the user is not already a member of
+        if (!isAlreadyMember) {
+          results.add({
+            'id': doc.id,
+            'data': data,
+            'type': 'user_group',
+          });
+        }
+      }
+
+      return results;
+    } catch (e) {
+      debugPrint('Error searching public groups: $e');
+      return [];
+    }
+  }
+
+  Future<void> _joinPublicGroup(
+      String groupId, Map<String, dynamic> groupData) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      // For user groups, we need to find the creator's user document
+      // and add the current user to the members array
+      final creatorUid = groupData['createdBy'];
+      if (creatorUid == null) return;
+
+      await _firestore
+          .collection('users')
+          .doc(creatorUid)
+          .collection('chat_groups')
+          .doc(groupId)
+          .update({
+        'members': FieldValue.arrayUnion([currentUser.uid]),
+        'memberCount': FieldValue.increment(1),
+      });
+
+      if (mounted) {
+        Navigator.pop(context); // Close the search dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text('Joined ${groupData['name'] ?? 'group'} successfully!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to join group: $e')),
+        );
+      }
+    }
   }
 
   String _formatTime(DateTime time) {
@@ -1101,6 +2063,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                                   builder: (context) => ChatScreen(
                                     chatGroupId: chatId,
                                     chatGroupName: displayName,
+                                    chatType: ChatType.dm,
                                   ),
                                 ),
                               );
@@ -1376,6 +2339,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
         builder: (context) => ChatScreen(
           chatGroupId: chatId,
           chatGroupName: displayName,
+          chatType: ChatType.dm,
         ),
       ),
     );
@@ -1407,6 +2371,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
               builder: (context) => ChatScreen(
                 chatGroupId: lastGroupId,
                 chatGroupName: groupData?['name'] ?? 'Unknown Group',
+                chatType: ChatType.userGroup,
               ),
             ),
           );
@@ -1547,7 +2512,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     return Scaffold(
       backgroundColor: AppTheme.darkBackgroundColor,
       appBar: AppBar(
-        title: const Text('Notification Settings'),
+        title: const Text('Notifications'),
         backgroundColor: AppTheme.cardDarkColor,
         elevation: 0,
         bottom: TabBar(
@@ -1562,12 +2527,36 @@ class _NotificationsScreenState extends State<NotificationsScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Stack(
         children: [
-          _buildGeneralSettings(),
-          _buildGameSettings(),
-          _buildScheduleSettings(),
+          TabBarView(
+            controller: _tabController,
+            children: [
+              _buildGeneralSettings(),
+              _buildGameSettings(),
+              _buildScheduleSettings(),
+            ],
+          ),
+          Positioned(
+            top: 10,
+            left: 10,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'DEBUG: 15 ALERTS',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
         ],
       ),
     );

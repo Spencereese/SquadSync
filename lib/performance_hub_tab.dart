@@ -3,7 +3,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'squad_state.dart';
-import 'no_squad_screen.dart';
 
 class PerformanceHubTab extends StatelessWidget {
   const PerformanceHubTab({super.key});
@@ -17,6 +16,25 @@ class PerformanceHubTab extends StatelessWidget {
         padding: const EdgeInsets.only(top: kToolbarHeight),
         child: Column(
           children: [
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'DEBUG: 7 PERFORMANCE',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
             const TabBar(
               tabs: [
                 Tab(text: 'Personal Stats'),
@@ -33,17 +51,11 @@ class PerformanceHubTab extends StatelessWidget {
                 children: [
                   Consumer<SquadState>(
                     builder: (context, squadState, child) {
-                      if (squadState.selectedSquadId == null) {
-                        return const NoSquadScreen();
-                      }
                       return PersonalStatsView(squadState: squadState);
                     },
                   ),
                   Consumer<SquadState>(
                     builder: (context, squadState, child) {
-                      if (squadState.selectedSquadId == null) {
-                        return const NoSquadScreen();
-                      }
                       return LeaderboardsView(squadState: squadState);
                     },
                   ),

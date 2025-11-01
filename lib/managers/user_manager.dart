@@ -27,6 +27,12 @@ class UserManager with ChangeNotifier implements IUserManager {
   // Game rating tracking
   Map<String, bool> hasRatedGame = {};
 
+  // Cache for user profiles to avoid repeated Firestore calls
+  Map<String, Map<String, dynamic>> _userProfileCache = {};
+
+  // Cache for pending request sender details futures
+  Map<String, Future<Map<String, dynamic>?>> _senderDetailFutures = {};
+
   String? get profileImage => _profileImage;
   String? get displayName => _displayName;
 
@@ -58,9 +64,38 @@ class UserManager with ChangeNotifier implements IUserManager {
 
   @override
   Future<Map<String, dynamic>?> getUserProfile(String uid) async {
-    // Implementation for getting user profile
-    // This would typically fetch from Firestore
+    // Check cache first
+    if (_userProfileCache.containsKey(uid)) {
+      return _userProfileCache[uid];
+    }
+
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+
+      if (doc.exists) {
+        final data = doc.data()!;
+        final profile = {
+          'displayName': data['displayName'] ?? 'User',
+          'profileImage': data['profileImage'],
+        };
+        _userProfileCache[uid] = profile;
+        return profile;
+      }
+    } catch (e) {
+      debugPrint('Error fetching user profile: $e');
+    }
     return null;
+  }
+
+  Future<Map<String, dynamic>?> getCachedSenderDetails(String senderId) {
+    if (_senderDetailFutures.containsKey(senderId)) {
+      return _senderDetailFutures[senderId]!;
+    }
+
+    final future = getUserProfile(senderId);
+    _senderDetailFutures[senderId] = future;
+    return future;
   }
 
   @override
@@ -460,29 +495,23 @@ class UserManager with ChangeNotifier implements IUserManager {
         .where('receiverId', isEqualTo: currentUser.uid)
         .where('status', isEqualTo: 'pending')
         .snapshots()
-        .asyncMap((snapshot) async {
+        .map((snapshot) {
+      // Process synchronously to avoid asyncMap delays
       final requests = <Map<String, dynamic>>[];
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
         final senderId = data['senderId'] as String;
 
-        // Get sender details
-        final senderDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(senderId)
-            .get();
-
-        if (senderDoc.exists) {
-          final senderData = senderDoc.data()!;
-          requests.add({
-            'requestId': doc.id,
-            'senderId': senderId,
-            'senderName': senderData['displayName'] ?? 'User',
-            'senderImage': senderData['profileImage'],
-            'timestamp': data['timestamp'],
-          });
-        }
+        // For now, just use senderId - display name will be fetched when needed
+        // This prevents the flashing issue caused by async operations
+        requests.add({
+          'requestId': doc.id,
+          'senderId': senderId,
+          'senderName': 'Loading...', // Will be updated when tile is built
+          'senderImage': null,
+          'timestamp': data['timestamp'],
+        });
       }
 
       return requests;
@@ -553,6 +582,32 @@ class UserManager with ChangeNotifier implements IUserManager {
     }
 
     await batch.commit();
+  }
+
+  Future<void> sendFriendRequest(String receiverId) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    // Check if request already exists
+    final existingRequest = await FirebaseFirestore.instance
+        .collection('friendRequests')
+        .where('senderId', isEqualTo: currentUser.uid)
+        .where('receiverId', isEqualTo: receiverId)
+        .where('status', isEqualTo: 'pending')
+        .get();
+
+    if (existingRequest.docs.isNotEmpty) {
+      // Request already exists
+      return;
+    }
+
+    // Create new friend request
+    await FirebaseFirestore.instance.collection('friendRequests').add({
+      'senderId': currentUser.uid,
+      'receiverId': receiverId,
+      'status': 'pending',
+      'timestamp': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> removeFriend(String friendId) async {

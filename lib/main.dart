@@ -42,7 +42,7 @@ Future<void> _initializeFirebase() async {
       await NotificationService.initialize();
       await NotificationManager.initialize();
     } catch (e) {
-      debugPrint('Notification initialization failed: $e');
+      // Notification initialization failed - silently handled
     }
 
     // IGDB credentials setup (uncomment for first run, then comment out)
@@ -65,7 +65,7 @@ Future<void> _initializeFirebase() async {
     //   debugPrint('Grok API key setup failed: $e');
     // }
   } catch (e) {
-    debugPrint('Firebase initialization failed: $e');
+    // Firebase initialization failed - silently handled
   }
 }
 
@@ -119,7 +119,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
         _handleDeepLink(link.toString());
       }
     }, onError: (err) {
-      debugPrint('Error in link stream: $err');
+      // Error in link stream - silently handled
     });
   }
 
@@ -204,7 +204,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
         return false;
       });
     } catch (e) {
-      debugPrint('Error setting up Siri channel: $e');
+      // Error setting up Siri channel - silently handled
     }
   }
 

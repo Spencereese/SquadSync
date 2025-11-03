@@ -17,6 +17,7 @@ import 'chat_input_bar.dart';
 import 'chat_service.dart';
 
 import 'chat_state.dart';
+import 'dialogs/invite_members_dialog.dart';
 
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
@@ -470,6 +471,19 @@ class ChatScreenState extends State<ChatScreen>
     );
   }
 
+  void _inviteMembers() {
+    if (!mounted || widget.chatGroupId == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => InviteMembersDialog(
+        chatGroupId: widget.chatGroupId!,
+        chatGroupName: _chatName,
+        isSquadGroup: widget.chatType == ChatType.squad,
+      ),
+    );
+  }
+
   void _reportBug() {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -637,6 +651,7 @@ class ChatScreenState extends State<ChatScreen>
                               onViewGroupInfo: _viewGroupInfo,
                               onReportBug: _reportBug,
                               onLeaveGroup: _leaveGroup,
+                              onInviteMembers: _inviteMembers,
                               onChangeChatName: () async {
                                 // This will be implemented when we integrate with ChatSettingsMenu
                               },

@@ -232,32 +232,32 @@ class _MessageBubbleState extends State<MessageBubble> {
       child: Semantics(
         label: 'Grok message - tap to expand',
         child: Container(
-          width: 80,
-          height: 80,
+          width: 27,
+          height: 27,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.black,
             border: Border.all(
               color: const Color(0xFF8B0000),
-              width: 3,
+              width: 1,
             ),
             boxShadow: [
               BoxShadow(
                 color: const Color(0xFF8B0000).withValues(alpha: 0.6),
-                blurRadius: 20,
-                spreadRadius: 5,
+                blurRadius: 7,
+                spreadRadius: 2,
               ),
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.8),
-                blurRadius: 30,
-                offset: const Offset(0, 8),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
           child: Center(
             child: Container(
-              width: 8,
-              height: 8,
+              width: 3,
+              height: 3,
               decoration: const BoxDecoration(
                 color: Color(0xFF8B0000),
                 shape: BoxShape.circle,

@@ -17,6 +17,7 @@ import 'widgets/direct_messages_tab.dart';
 import 'dialogs/create_new_group_dialog.dart';
 import 'dialogs/find_groups_dialog.dart';
 import 'dialogs/add_friend_dialog.dart';
+import 'dialogs/join_group_dialog.dart';
 
 class ChatGroupsScreen extends StatefulWidget {
   const ChatGroupsScreen({super.key});
@@ -259,6 +260,14 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                 tooltip: 'Add friend',
               )
             else ...[
+              IconButton(
+                icon: const Icon(Icons.group_add, color: Colors.cyanAccent),
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (context) => const JoinGroupDialog(),
+                ),
+                tooltip: 'Join group',
+              ),
               IconButton(
                 icon: const Icon(Icons.search, color: Colors.cyanAccent),
                 onPressed: () => showModalBottomSheet(

@@ -71,6 +71,7 @@ class ChatUIManager {
     required Future<void> Function() onChangeChatImage,
     required Future<void> Function() onClearChat,
     required VoidCallback onQuickReactionPicker,
+    required VoidCallback onInviteMembers,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -106,6 +107,7 @@ class ChatUIManager {
                     onViewGroupInfo: onViewGroupInfo,
                     onReportBug: onReportBug,
                     onLeaveGroup: onLeaveGroup,
+                    onInviteMembers: onInviteMembers,
                   ),
                   child: Semantics(
                     label: 'Chat options',
@@ -578,6 +580,7 @@ class ChatUIManager {
     required VoidCallback onViewGroupInfo,
     required VoidCallback onReportBug,
     required VoidCallback onLeaveGroup,
+    required VoidCallback onInviteMembers,
   }) {
     showModalBottomSheet(
       context: context,
@@ -587,122 +590,137 @@ class ChatUIManager {
       ),
       builder: (BuildContext context) {
         return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
           padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Group name header
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    if (_chatImageUrl != null)
-                      CircleAvatar(
-                        radius: 24,
-                        backgroundImage: NetworkImage(_chatImageUrl!),
-                      )
-                    else
-                      const CircleAvatar(
-                        radius: 24,
-                        child: Icon(Icons.group, color: Colors.cyanAccent),
-                      ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _chatName,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Group name header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      if (_chatImageUrl != null)
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundImage: NetworkImage(_chatImageUrl!),
+                        )
+                      else
+                        const CircleAvatar(
+                          radius: 24,
+                          child: Icon(Icons.group, color: Colors.cyanAccent),
+                        ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _chatName,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
-                          ),
-                          Text(
-                            '${squadState.statuses.length} members',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.white.withValues(alpha: 0.7),
+                            Text(
+                              '${squadState.statuses.length} members',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white.withValues(alpha: 0.7),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Colors.white24),
-              const SizedBox(height: 10),
+                const SizedBox(height: 20),
+                const Divider(color: Colors.white24),
+                const SizedBox(height: 10),
 
-              // Menu options
-              _buildMenuOption(
-                icon: Icons.info_outline,
-                title: 'Group Info',
-                onTap: () {
-                  Navigator.pop(context);
-                  onViewGroupInfo();
-                },
-              ),
-
-              if (chatGroupId != null) ...[
+                // Menu options
                 _buildMenuOption(
-                  icon: Icons.edit,
-                  title: 'Change Group Name',
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await onChangeChatName();
-                  },
-                ),
-                _buildMenuOption(
-                  icon: Icons.photo_camera,
-                  title: 'Change Group Photo',
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await onChangeChatImage();
-                  },
-                ),
-                _buildMenuOption(
-                  icon: Icons.clear_all,
-                  title: 'Clear Chat',
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await onClearChat();
-                  },
-                ),
-                _buildMenuOption(
-                  icon: Icons.logout,
-                  title: 'Leave Group',
-                  textColor: Colors.red,
+                  icon: Icons.info_outline,
+                  title: 'Group Info',
                   onTap: () {
                     Navigator.pop(context);
-                    onLeaveGroup();
+                    onViewGroupInfo();
+                  },
+                ),
+
+                if (chatGroupId != null) ...[
+                  _buildMenuOption(
+                    icon: Icons.person_add,
+                    title: 'Invite Members',
+                    onTap: () {
+                      Navigator.pop(context);
+                      onInviteMembers();
+                    },
+                  ),
+                  _buildMenuOption(
+                    icon: Icons.edit,
+                    title: 'Change Group Name',
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await onChangeChatName();
+                    },
+                  ),
+                  _buildMenuOption(
+                    icon: Icons.photo_camera,
+                    title: 'Change Group Photo',
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await onChangeChatImage();
+                    },
+                  ),
+                  _buildMenuOption(
+                    icon: Icons.clear_all,
+                    title: 'Clear Chat',
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await onClearChat();
+                    },
+                  ),
+                  _buildMenuOption(
+                    icon: Icons.logout,
+                    title: 'Leave Group',
+                    textColor: Colors.red,
+                    onTap: () {
+                      Navigator.pop(context);
+                      onLeaveGroup();
+                    },
+                  ),
+                ],
+
+                const Divider(color: Colors.white24),
+                const SizedBox(height: 10),
+
+                _buildMenuOption(
+                  icon:
+                      _isMuted ? Icons.notifications_off : Icons.notifications,
+                  title:
+                      _isMuted ? 'Unmute Notifications' : 'Mute Notifications',
+                  onTap: () {
+                    Navigator.pop(context);
+                    onToggleNotifications();
+                  },
+                ),
+
+                _buildMenuOption(
+                  icon: Icons.bug_report,
+                  title: 'Report Bug',
+                  onTap: () {
+                    Navigator.pop(context);
+                    onReportBug();
                   },
                 ),
               ],
-
-              const Divider(color: Colors.white24),
-              const SizedBox(height: 10),
-
-              _buildMenuOption(
-                icon: _isMuted ? Icons.notifications_off : Icons.notifications,
-                title: _isMuted ? 'Unmute Notifications' : 'Mute Notifications',
-                onTap: () {
-                  Navigator.pop(context);
-                  onToggleNotifications();
-                },
-              ),
-
-              _buildMenuOption(
-                icon: Icons.bug_report,
-                title: 'Report Bug',
-                onTap: () {
-                  Navigator.pop(context);
-                  onReportBug();
-                },
-              ),
-            ],
+            ),
           ),
         );
       },

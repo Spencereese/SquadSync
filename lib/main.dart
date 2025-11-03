@@ -21,6 +21,7 @@ import 'managers/game_manager.dart';
 import 'managers/user_manager.dart';
 import 'managers/review_manager.dart';
 import 'managers/squad_manager.dart';
+import 'screens/squad_tab_screen.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -227,6 +228,24 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
         builder: (context, themeProvider, _) => MaterialApp(
           title: 'SquadSync',
           theme: themeProvider.theme,
+          routes: {
+            '/squad': (context) {
+              final args = ModalRoute.of(context)?.settings.arguments;
+              if (args is Map<String, dynamic>) {
+                // New format: Map with gameName, chatGroupId, etc.
+                return SquadTabScreen(
+                  gameName: args['gameName'],
+                  lobbyId: args['lobbyId'],
+                  game: args['game'],
+                  chatGroupId: args['chatGroupId'],
+                );
+              } else if (args is String) {
+                // Legacy format: just gameName as string
+                return SquadTabScreen(gameName: args);
+              }
+              return const SquadTabScreen();
+            },
+          },
           home: Builder(
             builder: (context) {
               // Initialize deep links and Siri shortcuts after Firebase is ready (only once)

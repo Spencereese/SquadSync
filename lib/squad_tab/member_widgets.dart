@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../squad_state.dart';
+import 'dialogs/join_lobby_dialog.dart';
 
 class MemberWidgets {
   static Widget buildPlayerStatusRow(
@@ -175,7 +176,6 @@ class MemberWidgets {
       String player,
       SquadState squadState,
       Function(BuildContext, String, SquadState) showBlockDialog,
-      Function(BuildContext, String, SquadState) showJoinLobbyDialog,
       Function(BuildContext, ScaffoldMessengerState, SquadState, String)
           showComplaintDialog) {
     return Semantics(
@@ -193,7 +193,7 @@ class MemberWidgets {
               ),
             );
           } else {
-            showJoinLobbyDialog(context, player, squadState);
+            JoinLobbyDialog.show(context, player, squadState);
           }
         },
         child: Card(

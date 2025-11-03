@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'notification_service.dart';
 import 'managers/game_manager.dart';
 import 'managers/squad_manager.dart';
 import 'managers/peacock_manager.dart';
@@ -15,8 +14,36 @@ import 'managers/availability_manager.dart';
 import 'managers/squad_data_manager.dart';
 import 'managers/squad_ui_manager.dart';
 import 'managers/squad_persistence_manager.dart';
+import 'managers/state_initializer.dart';
+import 'managers/timer_state.dart';
+import 'managers/squad_persistence_service.dart';
+import 'managers/notification_coordinator.dart';
+import 'managers/lobby_service.dart';
+import 'managers/peacock_service.dart';
+import 'managers/achievement_service.dart';
+import 'managers/squad_membership_service.dart';
+import 'managers/spot_management_service.dart';
+import 'chat/chat_service.dart';
 import 'services/services.dart';
 
+/// Central state management coordinator for the SquadSync application.
+///
+/// This class serves as the main state coordinator that delegates operations
+/// to specialized manager classes while maintaining a unified interface for
+/// the UI layer. It handles initialization, synchronization, and coordination
+/// between different aspects of squad management including games, users,
+/// achievements, and real-time updates.
+///
+/// Key responsibilities:
+/// - Initialize and coordinate all manager classes
+/// - Handle Firebase authentication and data synchronization
+/// - Provide unified access to squad data across different games
+/// - Manage real-time updates and state persistence
+/// - Coordinate between UI components and business logic managers
+///
+/// The class follows a delegation pattern where complex business logic
+/// is handled by specialized managers (AchievementManager, UserManager, etc.)
+/// while SquadState focuses on coordination and state management.
 class SquadState with ChangeNotifier {
   // Persistence properties
   bool get isInitialized => persistenceManager.isInitialized;
@@ -118,28 +145,6 @@ class SquadState with ChangeNotifier {
             .key;
   }
 
-  // Load display names for all squad members
-  Future<void> _loadMemberDisplayNames() async {
-    if (squadMemberUids.isEmpty) return;
-
-    // Load display names in parallel for better performance
-    final futures = squadMemberUids
-        .where((uid) => !dataManager.memberDisplayNames.containsKey(uid))
-        .map((uid) async {
-      try {
-        final userDoc = await _firestore.collection('users').doc(uid).get();
-        final displayName = userDoc.data()?['displayName'] ?? 'User';
-        dataManager.memberDisplayNames[uid] = displayName;
-      } catch (e) {
-        // If we can't load the display name, use a fallback
-        dataManager.memberDisplayNames[uid] = 'User';
-      }
-    });
-
-    await Future.wait(futures);
-    notifyListeners();
-  }
-
   // Keep properties that are still needed directly in SquadState
   Map<String, bool> get typing => uiManager.typing;
   set typing(Map<String, bool> value) => uiManager.typing = value;
@@ -191,33 +196,7 @@ class SquadState with ChangeNotifier {
 
   // Get active peacock alerts for a specific game
   Stream<List<Map<String, dynamic>>> getActivePeacockAlerts(String gameName) {
-    return _firestore
-        .collection('users')
-        .where('peacock.game', isEqualTo: gameName)
-        .where('peacock.timer',
-            isGreaterThan: DateTime.now().millisecondsSinceEpoch)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) {
-            final data = doc.data();
-            final peacock = data['peacock'] as Map<String, dynamic>?;
-            if (peacock != null) {
-              return {
-                'userId': doc.id,
-                'displayName': data['displayName'] ?? 'User',
-                'game': peacock['game'],
-                'spots': peacock['spots'] ?? 4,
-                'timer': peacock['timer'],
-                'circle': peacock['circle'],
-              };
-            }
-            return null;
-          })
-          .where((alert) => alert != null)
-          .cast<Map<String, dynamic>>()
-          .toList();
-    });
+    return peacockService.getActivePeacockAlerts(gameName);
   }
 
   // Chat-related properties
@@ -247,8 +226,6 @@ class SquadState with ChangeNotifier {
   }
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final Set<String> _changedFields = {};
-  final DateTime _lastFirestoreUpdate = DateTime.now();
   Timer? _timer;
 
   BuildContext? context;
@@ -258,15 +235,19 @@ class SquadState with ChangeNotifier {
   late final SquadManager squadManager = SquadManager();
   late final PeacockManager peacockManager = PeacockManager();
   final UserManager userManager = UserManager();
-  final AchievementManager achievementManager = AchievementManager();
+  late final AchievementManager achievementManager =
+      AchievementManager(dataManager);
   final NotificationManager notificationManager = NotificationManager();
   final FirestoreManager firestoreManager = FirestoreManager();
   final AvailabilityManager availabilityManager = AvailabilityManager();
+  final ChatService chatService = ChatService();
 
   // New managers
   final SquadDataManager dataManager = SquadDataManager();
   final SquadUIManager uiManager = SquadUIManager();
   final SquadPersistenceManager persistenceManager = SquadPersistenceManager();
+  late final TimerState timerState;
+  late final SquadPersistenceService persistenceService;
 
   // Services
   final AuthService authService = AuthService();
@@ -274,7 +255,91 @@ class SquadState with ChangeNotifier {
   final CacheService cacheService = CacheService();
   final FirestoreService firestoreService = FirestoreService();
 
-  SquadState();
+  // State initializer for complex initialization logic
+  late final StateInitializer stateInitializer;
+
+  // Notification coordinator for managing all notification logic
+  late final NotificationCoordinator notificationCoordinator;
+
+  // Lobby service for managing lobby and game operations
+  late final LobbyService lobbyService;
+
+  // Peacock service for handling peacock-related queries
+  late final PeacockService peacockService;
+
+  // Achievement service for handling ratings and complaints
+  late final AchievementService achievementService;
+
+  // Squad membership service for handling squad joining/leaving operations
+  late final SquadMembershipService squadMembershipService;
+
+  // Spot management service for handling spot claiming, assignment, and removal
+  late final SpotManagementService spotManagementService;
+
+  SquadState() {
+    timerState = TimerState(
+      dataManager: dataManager,
+      uiManager: uiManager,
+      persistenceManager: persistenceManager,
+    );
+    // Listen to TimerState changes and propagate them
+    timerState.addListener(notifyListeners);
+    persistenceService = SquadPersistenceService(
+      dataManager: dataManager,
+      uiManager: uiManager,
+      persistenceManager: persistenceManager,
+      firestoreService: firestoreService,
+      cacheService: cacheService,
+    );
+
+    // Initialize state initializer with callback for state changes
+    stateInitializer = StateInitializer(
+      dataManager: dataManager,
+      persistenceManager: persistenceManager,
+      onStateChanged: notifyListeners,
+    );
+
+    // Initialize notification coordinator
+    notificationCoordinator = NotificationCoordinator(
+      notificationManager: notificationManager,
+      uiManager: uiManager,
+      availabilityManager: availabilityManager,
+    );
+
+    // Initialize lobby service
+    lobbyService = LobbyService(
+      dataManager: dataManager,
+      persistenceService: persistenceService,
+    );
+
+    // Initialize peacock service
+    peacockService = PeacockService();
+
+    // Initialize achievement service
+    achievementService = AchievementService(achievementManager);
+
+    // Initialize squad membership service
+    squadMembershipService =
+        SquadMembershipService(squadManager, stateInitializer);
+
+    // Initialize spot management service
+    spotManagementService = SpotManagementService(
+      dataManager: dataManager,
+      persistenceManager: persistenceManager,
+      uiManager: uiManager,
+      cacheService: cacheService,
+      getSquadSpots: () => squadSpots,
+      getGameSquadSpots: () => gameSquadSpots,
+      getGameSpotTimers: () => gameSpotTimers,
+      getSpotTimers: () => spotTimers,
+      getPeacockTimers: () => peacockTimers,
+      getPeacockQueue: () => peacockQueue,
+      getGlobalStatuses: () => globalStatuses,
+      getCurrentGame: () => currentGame,
+      getDisplayName: () => displayName,
+      getUidForDisplayName: getUidForDisplayName,
+    );
+  }
 
   // Ensure currentGame is always valid
   Map<String, dynamic>? get currentGame {
@@ -387,6 +452,20 @@ class SquadState with ChangeNotifier {
     gameManager.hiddenGames = value;
   }
 
+  /// Initializes the SquadState and all dependent managers and services.
+  ///
+  /// This method performs the complete initialization sequence for the application:
+  /// 1. Sets up the build context for UI operations
+  /// 2. Initializes local state and data structures
+  /// 3. Configures caching with appropriate timeouts
+  /// 4. Sets up Firebase authentication state change handling
+  /// 5. Loads user profile and squad data
+  /// 6. Initializes real-time listeners for squad changes
+  ///
+  /// [ctx] The build context used for UI operations and provider access
+  ///
+  /// This method is idempotent - calling it multiple times will only
+  /// perform initialization once.
   Future<void> initialize(BuildContext ctx) async {
     if (persistenceManager.isInitialized) {
       debugPrint('SquadState already initialized, skipping');
@@ -394,8 +473,8 @@ class SquadState with ChangeNotifier {
     }
 
     context = ctx;
-    await _initState();
-    _initializeData();
+    await stateInitializer.initializeUserState();
+    stateInitializer.initializeData();
     // Removed _syncWithFirestore() call from here - will be called after auth
 
     // Initialize services
@@ -409,7 +488,7 @@ class SquadState with ChangeNotifier {
     authService.initialize(onAuthStateChanged: (user) async {
       if (user != null) {
         // Start Firestore sync only after authentication
-        _syncWithFirestore();
+        persistenceService.syncWithFirestore();
 
         // Load display name using AuthService
         persistenceManager.displayName =
@@ -419,8 +498,8 @@ class SquadState with ChangeNotifier {
         // Cache the current user's display name
         dataManager.memberDisplayNames[user.uid] =
             persistenceManager.displayName!;
-        await _loadUserSquads(user.uid);
-        _listenToSquadChanges();
+        await stateInitializer.loadUserSquads(user.uid);
+        stateInitializer.listenToSquadChanges();
         persistenceManager.isInitialDataLoaded =
             true; // Mark initial data loading as complete
         notifyListeners();
@@ -442,23 +521,8 @@ class SquadState with ChangeNotifier {
       }
     });
 
-    // Initialize timer
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      // Only update UI if context is still valid (app is active)
-      // Timer logic is now handled server-side by Cloud Functions
-      if (context != null) {
-        // Check for expired timers and auto-lock spots
-        _checkAndLockExpiredSpots();
-        // Check for server-side timer updates by refreshing from Firestore periodically
-        _checkForServerTimerUpdates();
-        _checkPreferredModes();
-        // Notify listeners only if there are active timers that need UI updates
-        if (_hasActiveTimers()) {
-          notifyListeners();
-        }
-      }
-    });
+    // Initialize timer service
+    timerState.initialize();
 
     // Schedule daily ban vote reset
     _scheduleDailyReset();
@@ -471,6 +535,9 @@ class SquadState with ChangeNotifier {
   void dispose() {
     _timer?.cancel();
     _squadSubscription?.cancel();
+    timerState.removeListener(notifyListeners);
+    timerState.dispose();
+    persistenceService.dispose();
     audioService.dispose();
     authService.dispose();
     super.dispose();
@@ -536,7 +603,7 @@ class SquadState with ChangeNotifier {
     final squadId = await squadManager.createSquad(name);
     userSquadIds.add(squadId);
     selectedSquadId = squadId; // Select the new squad
-    _loadSquadData(squadId);
+    stateInitializer.loadSquadData(squadId);
     notifyListeners();
     return squadId;
   }
@@ -556,7 +623,7 @@ class SquadState with ChangeNotifier {
           userSquadIds.add(squadId);
         }
         selectedSquadId = squadId; // Select the joined squad
-        _loadSquadData(squadId);
+        stateInitializer.loadSquadData(squadId);
         notifyListeners();
       }
     }
@@ -564,101 +631,17 @@ class SquadState with ChangeNotifier {
   }
 
   Future<void> leaveSquad() async {
-    if (selectedSquadId != null) {
-      await squadManager.leaveSquad(selectedSquadId!);
-      userSquadIds.remove(selectedSquadId);
-      selectedSquadId = userSquadIds.isNotEmpty ? userSquadIds.first : null;
-      currentSquadData = null;
-      _squadSubscription?.cancel();
-      notifyListeners();
-    }
-  }
-
-  Future<void> _initState() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      // First try to load from SharedPreferences (most reliable)
-      final prefs = await SharedPreferences.getInstance();
-      final prefsName = prefs.getString('yourName');
-
-      // Then try to load from Firestore
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final displayNameFromDoc = userDoc.data()?['displayName'];
-
-      // Prefer SharedPreferences if it has a valid name, otherwise use Firestore
-      if (prefsName != null &&
-          prefsName.trim().isNotEmpty &&
-          prefsName != 'User') {
-        persistenceManager.displayName = prefsName.trim();
-      } else if (displayNameFromDoc != null &&
-          displayNameFromDoc.trim().isNotEmpty) {
-        persistenceManager.displayName = displayNameFromDoc.trim();
-        // Sync back to SharedPreferences
-        await prefs.setString('yourName', persistenceManager.displayName!);
-      } else {
-        persistenceManager.displayName = 'User';
-      }
-
-      persistenceManager.profileImage = userDoc.data()?['profileImage'];
-
-      notifyListeners();
-    }
-  }
-
-  // New: Load existing squads
-  Future<void> _loadUserSquads(String uid) async {
-    final query = await _firestore
-        .collection('squads')
-        .where('members', arrayContains: uid)
-        .get();
-    userSquadIds = query.docs.map((doc) => doc.id).toList();
-    userSquads = {for (var doc in query.docs) doc.id: doc.data()};
-    if (userSquadIds.isNotEmpty) {
-      selectedSquadId = userSquadIds.first; // Select first squad
-      currentSquadData = userSquads[selectedSquadId];
-      // Update squad members from the squad document
-      dataManager.squadMemberUids =
-          List<String>.from(currentSquadData?['members'] ?? []);
-      _invalidateCache(); // Clear cached display names
-      // Load display names for squad members
-      await _loadMemberDisplayNames();
-    } else {
-      // No squads yet
-      selectedSquadId = null;
-      currentSquadData = null;
-      dataManager.squadMemberUids = [];
-      _invalidateCache();
-    }
-  }
-
-  // New: Listen to squad doc for real-time updates
-  void _listenToSquadChanges() {
-    if (selectedSquadId == null) return;
-    _squadSubscription?.cancel(); // Cancel previous
-    _squadSubscription = _firestore
-        .collection('squads')
-        .doc(selectedSquadId)
-        .snapshots()
-        .listen((doc) {
-      if (doc.exists) {
-        currentSquadData = doc.data();
-        // Update squad members from the squad document
-        dataManager.squadMemberUids =
-            List<String>.from(currentSquadData?['members'] ?? []);
-        _invalidateCache(); // Clear cached display names
-        // Load display names for squad members
-        _loadMemberDisplayNames();
-        // Update derived properties (e.g., spots from subcollection)
-        _syncSpotsFromSquad();
+    await squadMembershipService.leaveSquad(
+      selectedSquadId,
+      userSquadIds,
+      userSquads,
+      () {
+        selectedSquadId = userSquadIds.isNotEmpty ? userSquadIds.first : null;
+        currentSquadData = null;
+        _squadSubscription?.cancel();
         notifyListeners();
-      }
-    });
-  }
-
-  // Helper: Load squad data and start listening
-  void _loadSquadData(String squadId) {
-    selectedSquadId = squadId;
-    _listenToSquadChanges();
+      },
+    );
   }
 
   // Public: Select a squad
@@ -667,505 +650,24 @@ class SquadState with ChangeNotifier {
     debugPrint('DEBUG SquadState.selectSquad: userSquadIds=$userSquadIds');
     debugPrint(
         'DEBUG SquadState.selectSquad: userSquads keys=${userSquads.keys}');
-    if (userSquadIds.contains(squadId)) {
-      debugPrint('DEBUG SquadState.selectSquad: squadId found in userSquadIds');
-      selectedSquadId = squadId;
-      // Load squad data from userSquads if available, otherwise it will be loaded when accessed
-      currentSquadData = userSquads[squadId];
-      _loadSquadData(squadId);
-      notifyListeners();
-      debugPrint(
-          'DEBUG SquadState.selectSquad: completed, selectedSquadId=$selectedSquadId');
-    } else {
-      debugPrint(
-          'DEBUG SquadState.selectSquad: squadId NOT found in userSquadIds');
-    }
+    squadMembershipService.selectSquad(
+      squadId,
+      userSquadIds,
+      userSquads,
+      () {
+        selectedSquadId = squadId;
+        // Load squad data from userSquads if available, otherwise it will be loaded when accessed
+        currentSquadData = userSquads[squadId];
+        notifyListeners();
+        debugPrint(
+            'DEBUG SquadState.selectSquad: completed, selectedSquadId=$selectedSquadId');
+      },
+    );
   }
 
   // Get squad data by ID
   Map<String, dynamic>? getSquadById(String squadId) {
     return userSquads[squadId];
-  }
-
-  // New: Sync spots from squad subcollection
-  Future<void> _syncSpotsFromSquad() async {
-    if (selectedSquadId == null) return;
-    final spotsSnapshot = await _firestore
-        .collection('squads')
-        .doc(selectedSquadId)
-        .collection('spots')
-        .get();
-    // Update SquadState's gameSquadSpots for current game
-    final gameName = currentGame?['name'] ?? '';
-    gameSquadSpots[gameName] = List<String?>.filled(8, null);
-    for (var doc in spotsSnapshot.docs) {
-      final index = int.tryParse(doc.id);
-      if (index != null && index < 8) {
-        gameSquadSpots[gameName]![index] = doc.data()['uid'];
-      }
-    }
-
-    // Auto-assign creator to first spot if no spots are assigned yet
-    if (spotsSnapshot.docs.isEmpty &&
-        currentSquadData?['creatorUid'] ==
-            FirebaseAuth.instance.currentUser?.uid) {
-      final userName = displayName;
-      if (userName != null && currentGame != null) {
-        callSpotForGame(0, gameName);
-      }
-    }
-  }
-
-  void _initializeData() {
-    for (var player in squadMembers) {
-      // Only set default values if not already set
-      if (!statuses.containsKey(player)) {
-        statuses[player] = 'Offline';
-      }
-      if (!currentStreaks.containsKey(player)) {
-        currentStreaks[player] = 0;
-      }
-      if (!highestStreaks.containsKey(player)) {
-        highestStreaks[player] = 0;
-      }
-      if (!complaints.containsKey(player)) {
-        complaints[player] = 0;
-      }
-      if (!achievements.containsKey(player)) {
-        achievements[player] = {};
-      }
-      if (!dailyRatings.containsKey(player)) {
-        dailyRatings[player] = {
-          "Vibes": [],
-          "Comms": [],
-          "Gunny": [],
-          "Wingman": []
-        };
-      }
-      if (!allTimeRatings.containsKey(player)) {
-        allTimeRatings[player] = {
-          "Vibes": [],
-          "Comms": [],
-          "Gunny": [],
-          "Wingman": []
-        };
-      }
-      if (!peacockTimers.containsKey(player)) {
-        peacockTimers[player] = null;
-      }
-      if (!typing.containsKey(player)) {
-        typing[player] = false;
-      }
-      if (!memberProfileImages.containsKey(player)) {
-        memberProfileImages[player] = null;
-      }
-      if (!preferredModes.containsKey(player)) {
-        preferredModes[player] = null;
-      }
-    }
-    globalStatuses["Alex"] = "Walking";
-    globalStatuses["Spencer"] = "Walking";
-
-    // Set default game to Warzone if not already set
-    if (dataManager.currentGame == null) {
-      dataManager.currentGame = {
-        'name': 'Warzone',
-        'maxSpots': 4,
-        'description': 'Call of Duty: Warzone - Battle Royale',
-        'logo': 'assets/images/placeholder.png'
-      };
-      // Initialize default game spots
-      final gameName = dataManager.currentGame!['name'];
-      if (!dataManager.gameSquadSpots.containsKey(gameName)) {
-        dataManager.gameSquadSpots[gameName] =
-            List.filled(dataManager.currentGame!['maxSpots'], null);
-        dataManager.gameSpotTimers[gameName] =
-            List.filled(dataManager.currentGame!['maxSpots'], null);
-      }
-    }
-  }
-
-  void _syncWithFirestore() {
-    _firestore.collection('squad').doc('state').snapshots().listen((snapshot) {
-      if (snapshot.exists) {
-        var data = snapshot.data()!;
-        debugPrint("Raw Firestore data: ${data.toString()}");
-
-        // Handle game-specific data or migrate legacy data
-        if (data['gameSquadSpots'] != null) {
-          // New game-specific structure - skip spot data as it's now squad-specific
-          // gameSquadSpots = (data['gameSquadSpots'] as Map<String, dynamic>).map(
-          //     (gameName, spots) =>
-          //         MapEntry(gameName, List<String?>.from(spots ?? [])));
-          // gameSpotTimers = (data['gameSpotTimers'] as Map<String, dynamic>).map(
-          //     (gameName, timers) => MapEntry(
-          //         gameName,
-          //         (timers as List)
-          //             .map((timer) => timer != null
-          //                 ? Map<String, dynamic>.from(timer)
-          //                 : null)
-          //             .toList()));
-          // gameStatuses = (data['gameStatuses'] as Map<String, dynamic>).map(
-          //     (gameName, statusMap) => MapEntry(
-          //         gameName, Map<String, String>.from(statusMap ?? {})));
-          dataManager.globalStatuses = Map<String, String>.fromEntries(
-              (data['globalStatuses'] as Map<String, dynamic>? ?? {})
-                  .entries
-                  .where((entry) => entry.key.isNotEmpty && entry.value != null)
-                  .map((entry) => MapEntry(entry.key, entry.value as String)));
-        } else {
-          // Migrate legacy data to current game - skip spot data as it's now squad-specific
-          // gameSquadSpots[currentGameName] = List<String?>.from(data['squadSpots'] ?? []);
-
-          // Dynamic spotTimers based on current game - skip as squad-specific
-          // var rawSpotTimers = data['spotTimers'] ?? [];
-          // int maxSpots = _currentGame?['maxSpots'] ?? 4;
-          // gameSpotTimers[currentGameName] = List.filled(maxSpots, null);
-          // if (rawSpotTimers is List) {
-          //   for (int i = 0; i < rawSpotTimers.length && i < maxSpots; i++) {
-          //     final timer = rawSpotTimers[i];
-          //     if (timer != null && timer is Map<String, dynamic>) {
-          //       gameSpotTimers[currentGameName]![i] = Map<String, dynamic>.from(timer);
-          //     }
-          //   }
-          // }
-
-          // gameStatuses[currentGameName] = Map<String, String>.from(data['statuses'] ?? {});
-        }
-
-        // Load global statuses
-        dataManager.globalStatuses = Map<String, String>.fromEntries(
-            (data['globalStatuses'] as Map<String, dynamic>? ?? {})
-                .entries
-                .where((entry) => entry.key.isNotEmpty && entry.value != null)
-                .map((entry) => MapEntry(entry.key, entry.value as String)));
-
-        dataManager.squadMemberUids = List<String>.from(data['members'] ?? []);
-        _invalidateCache();
-
-        // Handle migration: if members contain old hardcoded names instead of UIDs,
-        // treat them as display names and map to current user UID for now
-        // Firebase UIDs are 28 characters, display names are shorter
-        final currentUserUid = FirebaseAuth.instance.currentUser?.uid;
-        if (currentUserUid != null &&
-            squadMemberUids.any((uid) => uid.length < 20)) {
-          // This appears to be old data with display names, migrate to current user
-          dataManager.squadMemberUids = [currentUserUid];
-          dataManager.memberDisplayNames[currentUserUid] =
-              persistenceManager.displayName ?? 'User';
-        }
-
-        _loadMemberDisplayNames(); // Load display names for all members
-
-        // Ensure all games have status entries for all members
-        for (final gameName in gameStatuses.keys) {
-          for (var player in squadMembers) {
-            if (!gameSquadSpots[gameName]!.contains(player) &&
-                !peacockTimers.containsKey(player) &&
-                !peacockQueue.contains(player)) {
-              gameStatuses[gameName]![player] =
-                  gameStatuses[gameName]![player] ?? 'Offline';
-            }
-          }
-        }
-
-        currentStreaks =
-            Map<String, int>.from(data['currentStreaks'] ?? currentStreaks);
-        highestStreaks =
-            Map<String, int>.from(data['highestStreaks'] ?? highestStreaks);
-        gameHistory =
-            List<Map<String, dynamic>>.from(data['gameHistory'] ?? []);
-        complaints = Map<String, int>.from(data['complaints'] ?? complaints);
-        achievements =
-            (data['achievements'] as Map<dynamic, dynamic>? ?? {}).map(
-          (k, v) => MapEntry(
-              k.toString(), Set<String>.from(v.map((item) => item.toString()))),
-        );
-        dailyRatings =
-            Map<String, dynamic>.from(data['dailyRatings'] ?? {}).map(
-          (k, v) => MapEntry(
-            k,
-            Map<String, dynamic>.from(v).map(
-              (innerKey, innerValue) => MapEntry(
-                innerKey,
-                (innerValue as List<dynamic>).map((e) => e as int).toList(),
-              ),
-            ),
-          ),
-        );
-        allTimeRatings =
-            Map<String, dynamic>.from(data['allTimeRatings'] ?? {}).map(
-          (k, v) => MapEntry(
-            k,
-            Map<String, dynamic>.from(v).map(
-              (innerKey, innerValue) => MapEntry(
-                innerKey,
-                (innerValue as List<dynamic>).map((e) => e as int).toList(),
-              ),
-            ),
-          ),
-        );
-        peacockQueue = List<String>.from(data['peacockQueue'] ?? []);
-        var rawPeacockTimers = data['peacockTimers'] ?? {};
-        peacockTimers = {};
-        if (rawPeacockTimers is Map) {
-          rawPeacockTimers.forEach((key, value) {
-            if (value is Map) {
-              peacockTimers[key.toString()] = Map<String, dynamic>.from(value);
-            }
-          });
-        }
-        typing = Map<String, bool>.from(data['typing'] ?? typing);
-        preferredModes =
-            Map<String, String?>.from(data['preferredModes'] ?? preferredModes);
-        userBlocks = (data['userBlocks'] as Map<dynamic, dynamic>? ?? {}).map(
-          (k, v) => MapEntry(k.toString(), Map<String, bool>.from(v)),
-        );
-        dailyBanVotes =
-            (data['dailyBanVotes'] as Map<dynamic, dynamic>? ?? {}).map(
-          (k, v) => MapEntry(k.toString(), Map<String, int>.from(v)),
-        );
-
-        // Merge availableGames from Firestore with default games
-        var firestoreGames =
-            List<Map<String, dynamic>>.from(data['availableGames'] ?? []);
-        if (firestoreGames.isNotEmpty) {
-          // Use Firestore games but ensure they have required fields
-          availableGames = firestoreGames
-              .map((game) => {
-                    'name': game['name'] ?? 'Unknown Game',
-                    'maxSpots': game['maxSpots'] ?? 4,
-                    'description': game['description'] ?? 'Custom Game',
-                    'logo': game['logo'] ?? 'assets/images/placeholder.png',
-                    'coverUrl': game['coverUrl'],
-                    'slug': game['slug'],
-                  })
-              .toList();
-
-          // Asynchronously enrich games with IGDB data in the background
-          _enrichGamesWithIgdbData();
-        } else {
-          // Use default games if no Firestore data
-          availableGames = [
-            {
-              'name': 'Warzone',
-              'maxSpots': 4,
-              'description': 'Call of Duty: Warzone - Battle Royale',
-              'logo': 'assets/images/placeholder.png'
-            },
-            {
-              'name': 'Modern Warfare III',
-              'maxSpots': 4,
-              'description': 'Call of Duty: Modern Warfare III - Multiplayer',
-              'logo': 'assets/images/placeholder.png'
-            },
-            {
-              'name': 'Fortnite',
-              'maxSpots': 4,
-              'description': 'Fortnite - Battle Royale',
-              'logo': 'assets/images/placeholder.png'
-            },
-            {
-              'name': 'Apex Legends',
-              'maxSpots': 3,
-              'description': 'Apex Legends - Battle Royale',
-              'logo': 'assets/images/placeholder.png'
-            },
-            {
-              'name': 'Valorant',
-              'maxSpots': 5,
-              'description': 'Valorant - Tactical FPS',
-              'logo': 'assets/images/placeholder.png'
-            },
-            {
-              'name': 'Overwatch 2',
-              'maxSpots': 5,
-              'description': 'Overwatch 2 - Hero Shooter',
-              'logo': 'assets/images/placeholder.png'
-            },
-            {
-              'name': 'Rocket League',
-              'maxSpots': 3,
-              'description': 'Rocket League - Sports Action',
-              'logo': 'assets/images/placeholder.png'
-            },
-            {
-              'name': 'Minecraft',
-              'maxSpots': 4,
-              'description': 'Minecraft - Survival/Creative',
-              'logo': 'assets/images/placeholder.png'
-            },
-          ];
-        }
-
-        // Now set currentGame and validate it against availableGames
-        var firestoreCurrentGame = data['currentGame'];
-
-        // Only use firestore currentGame if it matches an available game
-        if (firestoreCurrentGame != null &&
-            availableGames.any((game) =>
-                game['name'] == firestoreCurrentGame['name'] &&
-                game['maxSpots'] == firestoreCurrentGame['maxSpots'])) {
-          dataManager.currentGame = firestoreCurrentGame;
-        } else {
-          // Firestore currentGame is invalid or null, keep existing currentGame or set to first available
-          if (dataManager.currentGame == null && availableGames.isNotEmpty) {
-            dataManager.currentGame = availableGames.first;
-          }
-        }
-
-        // Ensure current game has initialized spots
-        if (dataManager.currentGame != null) {
-          final gameName = dataManager.currentGame!['name'];
-          if (!dataManager.gameSquadSpots.containsKey(gameName)) {
-            dataManager.gameSquadSpots[gameName] =
-                List.filled(dataManager.currentGame!['maxSpots'], null);
-            dataManager.gameSpotTimers[gameName] =
-                List.filled(dataManager.currentGame!['maxSpots'], null);
-          }
-        }
-
-        preferredPeacockGames =
-            Set<String>.from(data['preferredPeacockGames'] ?? []);
-        mutedGames = Set<String>.from(data['mutedGames'] ?? []);
-        hiddenGames = Set<String>.from(data['hiddenGames'] ?? []);
-        _changedFields.clear();
-        notifyListeners();
-      } else {
-        debugPrint("Firestore snapshot does not exist");
-      }
-    });
-
-    // Availability sync is now handled by AvailabilityManager
-    availabilityManager.syncWithFirestore();
-
-    _firestore.collection('users').snapshots().listen((snapshot) {
-      for (var doc in snapshot.docs) {
-        String? displayName = doc.data()['displayName'] as String?;
-        if (displayName != null && squadMembers.contains(displayName)) {
-          memberProfileImages[displayName] =
-              doc.data()['profileImage'] as String?;
-          preferredModes[displayName] = doc.data()['preferredMode'] as String?;
-        }
-        final user = FirebaseAuth.instance.currentUser;
-        if (user != null && doc.id == user.uid) {
-          final docData = doc.data();
-          if (docData['displayName'] != null) {
-            persistenceManager.displayName = docData['displayName'];
-          }
-          if (docData['profileImage'] != null) {
-            persistenceManager.profileImage = docData['profileImage'];
-          }
-
-          // Handle peacock data for current user
-          final peacockData = docData['peacock'] as Map<String, dynamic>?;
-          if (peacockData != null) {
-            final gameName = peacockData['game'] as String?;
-            if (gameName != null) {
-              // Auto-assign creator to spot 0
-              dataManager.gameSquadSpots[gameName] ??= List.filled(4, null);
-              dataManager.gameSquadSpots[gameName]![0] = user.uid;
-              // Set status to "Looking for squad"
-              dataManager.setStatus(user.uid, 'Looking for squad');
-            }
-          } else {
-            // Clear peacock data if no peacock field
-            // This handles when peacock expires or is cancelled
-            for (final game in dataManager.gameSquadSpots.keys) {
-              final spots = dataManager.gameSquadSpots[game];
-              if (spots != null && spots.contains(user.uid)) {
-                final index = spots.indexOf(user.uid);
-                if (index != -1) {
-                  spots[index] = null;
-                }
-              }
-            }
-          }
-
-          // Save to SharedPreferences for backup
-          if (persistenceManager.displayName != null &&
-              persistenceManager.displayName != 'User') {
-            SharedPreferences.getInstance().then((prefs) {
-              prefs.setString('yourName', persistenceManager.displayName!);
-            });
-          }
-        }
-      }
-      notifyListeners();
-    });
-
-    _firestore.collection('chat').snapshots().listen((snapshot) {
-      bool hasNew = snapshot.docChanges.any((change) =>
-          change.type == DocumentChangeType.added &&
-          (change.doc.data()?['read'] ?? true) == false &&
-          change.doc.data()?['sender_name'] != null &&
-          change.doc.data()?['content'] != null);
-      if (hasNew) {
-        hasUnreadMessages = true;
-        NotificationService.sendNotification(
-            'New Message', 'You have an unread message in the chat!');
-      }
-      notifyListeners();
-    });
-
-    // Listen for chat group messages (only for groups user is member of)
-    if (selectedSquadId != null) {
-      _firestore
-          .collection('squads')
-          .doc(selectedSquadId)
-          .collection('chat_groups')
-          .snapshots()
-          .listen((groupsSnapshot) async {
-        for (var groupDoc in groupsSnapshot.docs) {
-          final groupData = groupDoc.data();
-          final isPublic = groupData['isPublic'] ?? false;
-          final members = List<String>.from(groupData['members'] ?? []);
-
-          // Only listen to groups where user is a member or group is public
-          if (isPublic ||
-              members.contains(FirebaseAuth.instance.currentUser?.uid)) {
-            _firestore
-                .collection('squads')
-                .doc(selectedSquadId)
-                .collection('chat_groups')
-                .doc(groupDoc.id)
-                .collection('messages')
-                .snapshots()
-                .listen((messagesSnapshot) {
-              bool hasNew = messagesSnapshot.docChanges.any((change) =>
-                  change.type == DocumentChangeType.added &&
-                  (change.doc.data()?['read'] ?? true) == false &&
-                  change.doc.data()?['sender_name'] != null &&
-                  change.doc.data()?['content'] != null);
-              if (hasNew) {
-                hasUnreadMessages = true;
-                NotificationService.sendNotification('New Group Message',
-                    'You have an unread message in ${groupData['name'] ?? 'a group'}!');
-              }
-              notifyListeners();
-            });
-          }
-        }
-      });
-    }
-
-    // Listen to lobbies subcollections for all games
-    for (final game in availableGames) {
-      final gameName = game['name'] as String;
-      _firestore
-          .collection('lobbies')
-          .doc(gameName)
-          .collection('lobbies')
-          .snapshots()
-          .listen((snapshot) {
-        gameLobbies[gameName] = snapshot.docs.map((doc) {
-          final data = doc.data();
-          data['id'] = doc.id;
-          return data;
-        }).toList();
-        notifyListeners();
-      });
-    }
   }
 
   void _markFieldChanged(String field) {
@@ -1180,7 +682,7 @@ class SquadState with ChangeNotifier {
   }
 
   void updateFirestore({bool force = false}) {
-    updateFirestoreAsync(force: force);
+    persistenceService.updateFirestore(force: force);
   }
 
   Future<void> submitComplaint({
@@ -1189,39 +691,14 @@ class SquadState with ChangeNotifier {
     required String category,
     required String submittedBy,
   }) async {
-    if (!squadMembers.contains(targetMember)) {
-      throw Exception('Invalid member: $targetMember');
-    }
-
-    try {
-      await _firestore
-          .collection('squad')
-          .doc('state')
-          .collection('complaints')
-          .add({
-        'targetMember': targetMember,
-        'reason': reason,
-        'category': category,
-        'submittedBy': submittedBy,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      complaints[targetMember] = (complaints[targetMember] ?? 0) + 1;
-      _markFieldChanged('complaints');
-      await updateFirestoreAsync(force: true);
-
-      await NotificationService.sendNotificationToUser(
-        recipientDisplayName: targetMember,
-        title: 'New Complaint',
-        body: 'You received a complaint: $reason ($category).',
-      );
-
-      debugPrint('Complaint submitted against $targetMember: $reason');
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Failed to submit complaint: $e');
-      rethrow;
-    }
+    await achievementService.submitComplaint(
+      submittedBy: submittedBy,
+      targetMember: targetMember,
+      reason: reason,
+      category: category,
+      squadMembers: squadMembers,
+    );
+    notifyListeners();
   }
 
   Future<void> submitRatings({
@@ -1229,86 +706,26 @@ class SquadState with ChangeNotifier {
     required Map<String, int?> ratings,
     required String submittedBy,
   }) async {
-    if (!squadMembers.contains(targetMember)) {
-      throw Exception('Invalid member: $targetMember');
-    }
-    if (targetMember == submittedBy) {
-      throw Exception('Cannot rate yourself');
-    }
-
-    bool canRate =
-        await canRateMember(targetMember, submittedBy); // Updated here
-    if (!canRate) {
-      throw Exception(
-          'You can only rate members you played with (Walking status).');
-    }
-
-    try {
-      ratings.forEach((category, rating) {
-        if (rating != null && rating >= 0 && rating <= 5) {
-          dailyRatings[targetMember]![category]!.add(rating);
-          allTimeRatings[targetMember]![category]!.add(rating);
-        }
-      });
-
-      final latestGame = gameHistory.lastWhere(
-        (game) =>
-            (game['players'] as List).contains(targetMember) &&
-            (game['players'] as List).contains(submittedBy),
-        orElse: () => {},
-      );
-      if (latestGame.isNotEmpty) {
-        latestGame['ratings'] ??= {};
-        (latestGame['ratings'] as Map)[submittedBy] ??= {};
-        (latestGame['ratings'] as Map)[submittedBy][targetMember] = ratings;
-      }
-
-      _markFieldChanged('dailyRatings');
-      _markFieldChanged('allTimeRatings');
-      _markFieldChanged('gameHistory');
-      await updateFirestoreAsync(force: true);
-
-      final ratedCategories = ratings.entries
-          .where((e) => e.value != null)
-          .map((e) => '${e.key}: ${e.value}/5')
-          .join(', ');
-      if (ratedCategories.isNotEmpty) {
-        await NotificationService.sendNotificationToUser(
-          recipientDisplayName: targetMember,
-          title: 'New Rating',
-          body: 'You were rated by $submittedBy: $ratedCategories.',
-        );
-      }
-
-      debugPrint('Ratings submitted for $targetMember: $ratings');
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Failed to submit ratings: $e');
-      rethrow;
-    }
+    await achievementService.submitRatings(
+      submittedBy: submittedBy,
+      targetMember: targetMember,
+      ratings: ratings,
+      squadMembers: squadMembers,
+      gameHistory: gameHistory,
+    );
+    notifyListeners();
   }
 
   // Add this method to SquadState
   Future<bool> hasRatedMember(String targetMember, String submittedBy) async {
-    final sharedGames = gameHistory
-        .where((game) =>
-            (game['players'] as List).contains(targetMember) &&
-            (game['players'] as List).contains(submittedBy) &&
-            (game['result'] == 'Win' || game['result'] == 'Loss'))
-        .toList();
-    if (sharedGames.isEmpty) return false;
-    final latestGame = sharedGames.last;
-    final ratings = latestGame['ratings'] as Map? ?? {};
-    final submittedRatings = ratings[submittedBy] as Map? ?? {};
-    return submittedRatings.containsKey(targetMember);
+    return achievementService.hasRatedMember(
+        targetMember, submittedBy, gameHistory);
   }
 
   // Existing canRateMember (ensure public)
   Future<bool> canRateMember(String targetMember, String submittedBy) async {
-    return gameHistory.any((game) =>
-        (game['players'] as List).contains(targetMember) &&
-        (game['players'] as List).contains(submittedBy) &&
-        (game['result'] == 'Win' || game['result'] == 'Loss'));
+    return achievementService.canRateMember(
+        targetMember, submittedBy, gameHistory);
   }
 
   /// Gets average rating for a member in a category
@@ -1342,13 +759,11 @@ class SquadState with ChangeNotifier {
   }
 
   void setNewSquadSpot(bool value, [String? gameName]) {
-    hasNewSquadSpot = value;
-    if (value &&
-        (gameName == null ||
-            (!isGameMuted(gameName) && !isGameHidden(gameName)))) {
-      NotificationService.sendNotification(
-          'New Squad Spot', 'A spot has been claimed or opened!');
-    }
+    notificationCoordinator.notifyNewSquadSpot(
+      gameName: gameName,
+      isGameMuted: gameName != null ? isGameMuted(gameName) : false,
+      isGameHidden: gameName != null ? isGameHidden(gameName) : false,
+    );
     notifyListeners();
   }
 
@@ -1358,9 +773,7 @@ class SquadState with ChangeNotifier {
   }
 
   void clearNotifications(int tabIndex) {
-    if (tabIndex == 1) availabilityManager.setNewAvailability(false);
-    if (tabIndex == 2) hasNewSquadSpot = false;
-    if (tabIndex == 3) hasUnreadMessages = false;
+    notificationCoordinator.clearNotificationsForTab(tabIndex);
     notifyListeners();
   }
 
@@ -1375,43 +788,18 @@ class SquadState with ChangeNotifier {
   }
 
   Future<void> sendReply(String messageId, String text) async {
-    if (_replyingTo == null) return;
+    final squadId = selectedSquadId;
+    if (squadId == null || _replyingTo == null) return;
 
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw 'No user logged in';
-
-      await _firestore.collection('chat').add({
-        'text': text,
-        'sender': user.displayName ?? persistenceManager.displayName ?? 'User',
-        'timestamp': FieldValue.serverTimestamp(),
-        'replyTo': messageId,
-        'delivered': false,
-        'read': false,
-      });
-
-      clearReplyingTo();
-      debugPrint('Reply sent to message $messageId: $text');
-    } catch (e) {
-      debugPrint('Failed to send reply: $e');
-      rethrow;
-    }
+    await chatService.sendReply(messageId, text, squadId);
+    clearReplyingTo();
   }
 
   Future<void> deleteMessage(String messageId) async {
     final squadId = selectedSquadId;
     if (squadId == null) return;
 
-    try {
-      await _firestore
-          .collection('squads')
-          .doc(squadId)
-          .collection('chat')
-          .doc(messageId)
-          .delete();
-    } catch (e) {
-      debugPrint('Error deleting message: $e');
-    }
+    await chatService.deleteMessage(messageId, squadId);
   }
 
   void updatePreferredMode(String user, String? mode) {
@@ -1466,18 +854,7 @@ class SquadState with ChangeNotifier {
   }
 
   Future<void> removeFromPeacock(String player) async {
-    if (peacockTimers.containsKey(player)) {
-      peacockTimers.remove(player);
-      statuses[player] = 'Offline';
-      _markFieldChanged('peacockTimers');
-      _markFieldChanged('statuses');
-    } else if (peacockQueue.contains(player)) {
-      peacockQueue.remove(player);
-      statuses[player] = 'Offline';
-      _markFieldChanged('peacockQueue');
-      _markFieldChanged('statuses');
-    }
-    await updateFirestoreAsync(force: true);
+    await peacockManager.removeFromPeacock(player);
     notifyListeners();
   }
 
@@ -1597,75 +974,6 @@ class SquadState with ChangeNotifier {
     peacockManager.startPeacockTimer(dialogContext);
   }
 
-  void _checkPreferredModes() {
-    int claimedCount = squadSpots.where((spot) => spot != null).length;
-    int availableSpots = 4 - claimedCount;
-    if (availableSpots == 0 || peacockQueue.isEmpty) return;
-
-    List<String> potentialPlayers =
-        squadSpots.where((spot) => spot != null).cast<String>().toList();
-    Map<String, List<String>> modeGroups = {
-      'duos': [],
-      'trios': [],
-      'quads': []
-    };
-
-    for (var player in peacockQueue) {
-      String? mode = preferredModes[player];
-      if (mode != null) {
-        modeGroups[mode]?.add(player);
-        potentialPlayers.add(player);
-      }
-    }
-
-    for (var player in List.from(peacockQueue)) {
-      String? mode = preferredModes[player];
-      if (mode == null) continue;
-
-      int requiredPlayers = mode == 'duos'
-          ? 2
-          : mode == 'trios'
-              ? 3
-              : 4;
-      int currentPlayers = potentialPlayers.length;
-
-      if (currentPlayers >= requiredPlayers && availableSpots > 0) {
-        int spotsToFill =
-            (requiredPlayers - claimedCount).clamp(1, availableSpots);
-        _fillSpots([player], spotsToFill);
-        potentialPlayers.remove(player);
-      }
-    }
-  }
-
-  void _fillSpots(List<String> players, int spotsNeeded) {
-    final gameName = currentGame?['name'] ?? '';
-    for (var player in players) {
-      final playerUid = getUidForDisplayName(player);
-      if (playerUid != null) {
-        int? freeSpot = squadSpots.indexOf(null);
-        if (freeSpot != -1 && gameSquadSpots.containsKey(gameName)) {
-          gameSquadSpots[gameName]![freeSpot] = playerUid;
-          gameSpotTimers[gameName]![freeSpot] = {
-            'startTime': DateTime.now().millisecondsSinceEpoch,
-            'duration': 300,
-          };
-          globalStatuses[player] = 'Ready';
-          peacockQueue.remove(player);
-          _markFieldChanged('squadSpots');
-          _markFieldChanged('spotTimers');
-          _markFieldChanged('globalStatuses');
-          _markFieldChanged('statuses');
-          _markFieldChanged('peacockQueue');
-          cacheService.invalidate('squadSpots');
-          setNewSquadSpot(true, gameName); // Trigger squad spot notification
-        }
-      }
-    }
-    updateFirestore(force: true);
-    notifyListeners();
-  }
-
   void updateTypingStatus(String user, bool isTyping) {
     if (typing[user] != isTyping) {
       typing[user] = isTyping;
@@ -1780,26 +1088,13 @@ class SquadState with ChangeNotifier {
   }
 
   Future<void> recordWin() async {
-    List<String> walkingPlayers = squadSpots
-        .where((spot) => spot != null && statuses[spot] == 'Walking')
-        .cast<String>()
-        .toList();
-    Map<String, int> updatedStreaks = {};
-    for (var player in walkingPlayers) {
-      int oldStreak = currentStreaks[player] ?? 0;
-      updatedStreaks[player] = oldStreak + 1;
-      await _checkAchievements(player, updatedStreaks[player]!);
-    }
-    currentStreaks.addAll(updatedStreaks);
-    gameHistory.add({
-      'result': 'Win',
-      'players': walkingPlayers,
-      'timestamp': DateTime.now().toIso8601String(),
-      'ratings': {}, // Fresh ratings map for this game
-    });
+    await achievementManager.recordWin(
+      squadSpots: squadSpots,
+      statuses: statuses,
+      gameHistory: gameHistory,
+    );
     await audioService.playVictorySound();
-    NotificationService.sendNotification(
-        'Squad Win!', '${walkingPlayers.join(', ')} won a game!');
+    notificationCoordinator.notifySquadWin(squadSpots, statuses);
     _markFieldChanged('currentStreaks');
     _markFieldChanged('gameHistory');
     _markFieldChanged('achievements');
@@ -1808,20 +1103,12 @@ class SquadState with ChangeNotifier {
   }
 
   void recordLoss() {
-    List<String> walkingPlayers = squadSpots
-        .where((spot) =>
-            spot != null && spotTimers[squadSpots.indexOf(spot)] == null)
-        .cast<String>()
-        .toList();
-    for (var player in walkingPlayers) {
-      currentStreaks[player] = 0;
-    }
-    gameHistory.add({
-      'result': 'Loss',
-      'players': walkingPlayers,
-      'timestamp': DateTime.now().toIso8601String(),
-      'ratings': {}, // Fresh ratings map for this game
-    });
+    achievementManager.recordLoss(
+      squadSpots: squadSpots,
+      spotTimers: spotTimers,
+      currentStreaks: currentStreaks,
+      gameHistory: gameHistory,
+    );
     _markFieldChanged('currentStreaks');
     _markFieldChanged('gameHistory');
     updateFirestore(force: true);
@@ -2025,98 +1312,8 @@ class SquadState with ChangeNotifier {
   }
 
   String getSpotTimerDisplay(int index) {
-    if (spotTimers[index] == null) return '00:00';
-    int startTime = spotTimers[index]!['startTime'] as int;
-    int duration = spotTimers[index]!['duration'] as int;
-
-    if (duration == -1) {
-      // Counting up (player is in game)
-      int elapsed =
-          ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000).floor();
-      return _formatTimer(elapsed);
-    } else {
-      // Counting down
-      int remaining = duration -
-          ((DateTime.now().millisecondsSinceEpoch - startTime) / 1000).floor();
-      return _formatTimer(remaining > 0 ? remaining : 0);
-    }
-  }
-
-  String _formatTimer(int? seconds) {
-    if (seconds == null) return '00:00';
-    int minutes = seconds ~/ 60;
-    int remainingSeconds = seconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
-  }
-
-  bool _hasActiveTimers() {
     final gameName = currentGame?['name'] ?? '';
-    if (!gameSpotTimers.containsKey(gameName)) return false;
-
-    for (final timer in gameSpotTimers[gameName]!) {
-      if (timer != null) return true;
-    }
-    return false;
-  }
-
-  void _checkForServerTimerUpdates() {
-    // Periodically refresh timer data from Firestore to sync with server-side updates
-    // This ensures the UI reflects server-side timer changes even when app was closed
-    final now = DateTime.now();
-    if (now.difference(_lastFirestoreUpdate).inSeconds >= 30) {
-      // Check every 30 seconds
-      // Force a refresh from Firestore to get latest timer state
-      updateFirestore(force: true);
-    }
-  }
-
-  void _checkAndLockExpiredSpots() {
-    final gameName = currentGame?['name'] ?? '';
-    if (gameSpotTimers.containsKey(gameName)) {
-      for (int i = 0; i < gameSpotTimers[gameName]!.length; i++) {
-        final timer = gameSpotTimers[gameName]![i];
-        if (timer != null) {
-          final startTime = timer['startTime'] as int;
-          final duration = timer['duration'] as int;
-          final elapsed =
-              (DateTime.now().millisecondsSinceEpoch - startTime) / 1000;
-          final remaining = duration - elapsed.floor();
-
-          if (duration > 0 && remaining <= 0) {
-            // Check if this is a calling timer
-            final isCalling = timer['calling'] == true;
-
-            if (isCalling) {
-              // All calling spots - remove them if not manually locked (expired)
-              removeSpot(i);
-            } else {
-              // Regular timer expired, free the spot
-              removeSpot(i);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  Future<void> _checkAchievements(String player, int streak) async {
-    achievements[player] ??= {};
-    bool added = false;
-    if (streak >= 10) {
-      achievements[player]!.add('Chicken');
-      await audioService.playAchievementSound(streak);
-      added = true;
-    }
-    if (streak >= 4 && !added) {
-      achievements[player]!.add('Duck');
-      await audioService.playAchievementSound(streak);
-      added = true;
-    }
-    if (streak >= 3 && !added) {
-      achievements[player]!.add('Turkey');
-      await audioService.playAchievementSound(streak);
-    }
-    _markFieldChanged('achievements');
+    return timerState.getSpotTimerDisplay(index, gameName);
   }
 
   void addToPeacock(String player) {
@@ -2169,106 +1366,44 @@ class SquadState with ChangeNotifier {
 
   List<Map<String, dynamic>> getVisibleLobbies(String gameName) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final userBlocks = this.userBlocks[uid] ?? {};
-
-    return gameLobbies[gameName]?.where((lobby) {
-          final players = List<String>.from(lobby['players'] ?? []);
-          // Filter out lobbies with blocked players
-          return !players.any((player) =>
-              userBlocks.containsKey(player) && userBlocks[player]!);
-        }).toList() ??
-        [];
+    final userBlocksMap = this.userBlocks[uid] ?? {};
+    // Convert Map<String, bool> to Set<String> for blocked users
+    final userBlocks = {
+      uid: userBlocksMap.entries
+          .where((entry) => entry.value)
+          .map((entry) => entry.key)
+          .toSet()
+    };
+    return lobbyService.getVisibleLobbies(gameName, userBlocks);
   }
 
   void joinLobby(String lobbyId, String playerName) {
-    // Find the lobby across all games
-    Map<String, dynamic>? targetLobby;
-    String? targetGame;
-
-    for (final gameEntry in gameLobbies.entries) {
-      final lobby = gameEntry.value.firstWhere(
-        (l) => l['id'] == lobbyId,
-        orElse: () => <String, dynamic>{},
-      );
-      if (lobby.isNotEmpty) {
-        targetLobby = lobby;
-        targetGame = gameEntry.key;
-        break;
-      }
-    }
-
-    if (targetLobby != null && targetGame != null) {
-      final players = List<String>.from(targetLobby['players'] ?? []);
-      if (!players.contains(playerName)) {
-        players.add(playerName);
-        targetLobby['players'] = players;
-
-        // Update Firestore
-        _firestore
-            .collection('lobbies')
-            .doc(targetGame)
-            .collection('lobbies')
-            .doc(lobbyId)
-            .update({'players': players});
-
-        notifyListeners();
-      }
-    }
+    lobbyService.joinLobby(lobbyId, playerName);
   }
 
   void addGame(Map<String, dynamic> game) {
-    if (!availableGames.any((g) => g['name'] == game['name'])) {
-      availableGames.add(game);
-      // Add to Firestore
-      _firestore.collection('games').add(game);
-
-      // Set up lobbies listener for the new game
-      final gameName = game['name'] as String;
-      _firestore
-          .collection('lobbies')
-          .doc(gameName)
-          .collection('lobbies')
-          .snapshots()
-          .listen((snapshot) {
-        gameLobbies[gameName] = snapshot.docs.map((doc) {
-          final data = doc.data();
-          data['id'] = doc.id;
-          return data;
-        }).toList();
-        notifyListeners();
-      });
-
-      notifyListeners();
-    }
+    lobbyService.addGame(availableGames, game);
+    notifyListeners();
   }
 
   void editGame(int index, Map<String, dynamic> updatedGame) {
-    if (index >= 0 && index < availableGames.length) {
-      availableGames[index] = updatedGame;
-      // Save to Firestore
-      _firestore.collection('games').doc(updatedGame['name']).set(updatedGame);
-      notifyListeners();
-    }
+    lobbyService.editGame(availableGames, index, updatedGame);
+    notifyListeners();
   }
 
   void deleteGame(int index) {
-    if (index >= 0 && index < availableGames.length) {
-      // Don't allow deleting if it's the current game
-      if (availableGames[index]['name'] == dataManager.currentGame?['name']) {
-        return;
-      }
-      availableGames.removeAt(index);
+    if (lobbyService.deleteGame(availableGames, index, currentGame?['name'])) {
       notifyListeners();
     }
   }
 
   Map<String, dynamic>? getPlayerLobby(String playerName) {
-    return dataManager.getPlayerLobby(playerName);
+    return lobbyService.getPlayerLobby(playerName);
   }
 
   bool hasBlockedPlayersInLobby(
       Map<String, dynamic> lobby, String currentUserId) {
-    return dataManager.hasBlockedPlayersInLobby(lobby, currentUserId);
+    return lobbyService.hasBlockedPlayersInLobby(lobby, currentUserId);
   }
 
   String? getPlayerPreferredGame(String playerName) {
@@ -2363,56 +1498,6 @@ class SquadState with ChangeNotifier {
 
   // Get active alerts for chat list
   Future<List<Map<String, dynamic>>> getActiveAlerts() async {
-    final userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) return [];
-
-    try {
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('circles')
-          .where('status', isEqualTo: 'active')
-          .get();
-
-      final alerts = <Map<String, dynamic>>[];
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final gameName = data['gameName'] as String?;
-        if (gameName != null) {
-          // Fetch host name and other details, assuming stored in circles or elsewhere
-          final hostName = data['hostName'] ?? 'Unknown';
-          final maxSpots = data['maxSpots'] ?? 4;
-          final chatGroupId = data['chatGroupId'] ?? '';
-          alerts.add({
-            'gameName': gameName,
-            'hostName': hostName,
-            'maxSpots': maxSpots,
-            'chatGroupId': chatGroupId,
-          });
-        }
-      }
-      return alerts;
-    } catch (e) {
-      debugPrint('Error fetching active alerts: $e');
-      return [];
-    }
-  }
-
-  /// Asynchronously enrich games with IGDB data
-  Future<void> _enrichGamesWithIgdbData() async {
-    try {
-      final enrichedGames =
-          await gameManager.enrichGamesWithIgdbData(availableGames);
-      if (enrichedGames.length == availableGames.length) {
-        availableGames = enrichedGames;
-        notifyListeners();
-        // Update Firestore with enriched data
-        await _firestore.collection('squads').doc(selectedSquadId).set({
-          'availableGames': availableGames,
-        }, SetOptions(merge: true));
-      }
-    } catch (e) {
-      debugPrint('Error enriching games with IGDB data: $e');
-    }
+    return persistenceService.getActiveAlerts();
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:convert';
 import '../services/interfaces.dart';
 
@@ -28,10 +29,10 @@ class UserManager with ChangeNotifier implements IUserManager {
   Map<String, bool> hasRatedGame = {};
 
   // Cache for user profiles to avoid repeated Firestore calls
-  Map<String, Map<String, dynamic>> _userProfileCache = {};
+  final Map<String, Map<String, dynamic>> _userProfileCache = {};
 
   // Cache for pending request sender details futures
-  Map<String, Future<Map<String, dynamic>?>> _senderDetailFutures = {};
+  final Map<String, Future<Map<String, dynamic>?>> _senderDetailFutures = {};
 
   String? get profileImage => _profileImage;
   String? get displayName => _displayName;
@@ -637,5 +638,26 @@ class UserManager with ChangeNotifier implements IUserManager {
     batch.update(friendRef, {'friends': friendFriends});
 
     await batch.commit();
+  }
+
+  Future<void> submitFeedback({
+    required String type,
+    required String page,
+    required String content,
+    required String severity,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('User not authenticated');
+
+    final packageInfo = await PackageInfo.fromPlatform();
+    await FirebaseFirestore.instance.collection('feedback').add({
+      'type': type,
+      'page': page,
+      'content': content,
+      'severity': severity,
+      'userId': user.uid,
+      'appVersion': packageInfo.version,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
   }
 }

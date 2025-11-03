@@ -9,6 +9,41 @@ String formatTimer(int? seconds) {
   return '$minutes:$secs';
 }
 
+// Show a consistent snackbar across the app
+void showSnackBar(BuildContext context, String message,
+    {Duration duration = const Duration(seconds: 3)}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      duration: duration,
+    ),
+  );
+}
+
+// Show an error snackbar with red background
+void showErrorSnackBar(BuildContext context, String message,
+    {Duration duration = const Duration(seconds: 4)}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.red,
+      duration: duration,
+    ),
+  );
+}
+
+// Show a success snackbar with green background
+void showSuccessSnackBar(BuildContext context, String message,
+    {Duration duration = const Duration(seconds: 3)}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.green,
+      duration: duration,
+    ),
+  );
+}
+
 // Constants for badge thresholds
 const _turkeyBadgeThreshold = 3;
 const _duckBadgeThreshold = 4;

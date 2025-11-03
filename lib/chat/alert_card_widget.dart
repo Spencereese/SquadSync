@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../squad_state.dart';
+import '../services/ai_service.dart';
 import 'spots_sheet.dart';
-import 'chat_service.dart';
 
 class AlertCardWidget extends StatefulWidget {
   final String gameName;

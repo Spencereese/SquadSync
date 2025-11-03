@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import '../squad_state.dart';
+import 'dialogs/spot_assignment_dialog.dart';
 
 class SpotWidgets {
   static Widget buildSpotCard(
       BuildContext context,
       int index,
       SquadState squadState,
-      Function(BuildContext, SquadState, int) showSpotAssignmentMenu,
       Function(BuildContext, SquadState, int) assignOtherMember) {
     final spotName = squadState.squadSpots[index];
     final hasOccupant = spotName != null;
@@ -28,7 +28,7 @@ class SpotWidgets {
         if (hasOccupant) {
           squadState.removeSpot(index);
         } else {
-          showSpotAssignmentMenu(context, squadState, index);
+          SpotAssignmentDialog.show(context, squadState, index);
         }
       },
       onTap: hasAnyButton
@@ -75,8 +75,8 @@ class SpotWidgets {
                   color: Colors.white, fontWeight: FontWeight.bold),
             ),
             subtitle: _buildSpotSubtitle(context, index, spotName, squadState),
-            trailing: _buildSpotActions(context, index, hasOccupant, squadState,
-                showSpotAssignmentMenu),
+            trailing:
+                _buildSpotActions(context, index, hasOccupant, squadState),
           ),
         ),
       ),
@@ -124,12 +124,8 @@ class SpotWidgets {
     }
   }
 
-  static Widget _buildSpotActions(
-      BuildContext context,
-      int index,
-      bool hasOccupant,
-      SquadState squadState,
-      Function(BuildContext, SquadState, int) showSpotAssignmentMenu) {
+  static Widget _buildSpotActions(BuildContext context, int index,
+      bool hasOccupant, SquadState squadState) {
     final spotName = squadState.squadSpots[index];
     final yourName = squadState.displayName;
     final hasTimer = squadState.spotTimers[index] != null;
@@ -166,7 +162,7 @@ class SpotWidgets {
                 }
               },
               onLongPress: () =>
-                  showSpotAssignmentMenu(context, squadState, index),
+                  SpotAssignmentDialog.show(context, squadState, index),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.transparent,
                 shadowColor: Colors.transparent,

@@ -11,17 +11,25 @@ import 'spot_widgets.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'squad_dialogs.dart';
+import 'dialogs/settings_dialog.dart';
+import 'dialogs/spot_assignment_dialog.dart';
 
 class SquadTab extends StatelessWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
+  final String? chatGroupId;
 
-  const SquadTab({super.key, this.lobbyId, this.gameName, this.game});
+  const SquadTab(
+      {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
   Widget build(BuildContext context) {
-    return _SquadTabContent(lobbyId: lobbyId, gameName: gameName, game: game);
+    return _SquadTabContent(
+        lobbyId: lobbyId,
+        gameName: gameName,
+        game: game,
+        chatGroupId: chatGroupId);
   }
 }
 
@@ -29,8 +37,10 @@ class _SquadTabContent extends StatefulWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
+  final String? chatGroupId;
 
-  const _SquadTabContent({this.lobbyId, this.gameName, this.game});
+  const _SquadTabContent(
+      {this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
   _SquadTabContentState createState() => _SquadTabContentState();
@@ -39,6 +49,7 @@ class _SquadTabContent extends StatefulWidget {
 class _SquadTabContentState extends State<_SquadTabContent> {
   final bool _showPeacockMembers = false;
   late BuildContext _currentContext;
+  List<String> _chatGroupMembers = [];
 
   @override
   void didChangeDependencies() {
@@ -123,6 +134,36 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         });
       }
     }
+
+    // Fetch chat group members if chatGroupId is provided
+    if (widget.chatGroupId != null && _chatGroupMembers.isEmpty) {
+      _fetchChatGroupMembers();
+    }
+  }
+
+  Future<void> _fetchChatGroupMembers() async {
+    if (widget.chatGroupId == null) return;
+
+    try {
+      final squadState =
+          Provider.of<SquadState>(_currentContext, listen: false);
+      final chatGroupDoc = await FirebaseFirestore.instance
+          .collection('squads')
+          .doc(squadState.selectedSquadId)
+          .collection('chat_groups')
+          .doc(widget.chatGroupId)
+          .get();
+
+      if (chatGroupDoc.exists && mounted) {
+        final data = chatGroupDoc.data();
+        final members = List<String>.from(data?['members'] ?? []);
+        setState(() {
+          _chatGroupMembers = members;
+        });
+      }
+    } catch (e) {
+      print('Error fetching chat group members: $e');
+    }
   }
 
   @override
@@ -151,11 +192,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                 SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) => SpotWidgets.buildSpotCard(
-                        context,
-                        index,
-                        squadState,
-                        _showSpotAssignmentMenu,
-                        _assignOtherMember),
+                        context, index, squadState, _assignOtherMember),
                     childCount: squadState.currentGame?['maxSpots'] ?? 4,
                   ),
                 ),
@@ -231,8 +268,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                     height: 28,
                     color: Colors.grey[400],
                   ),
-                  onPressed: () =>
-                      SquadDialogs.showSettingsDialog(context, squadState),
+                  onPressed: () => SettingsDialog.show(context, squadState,
+                      lobbyId: widget.lobbyId),
                   tooltip: 'Settings',
                 ),
               ),
@@ -475,12 +512,17 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   }
 
   Widget _buildMembersSection(SquadState squadState) {
-    if (squadState.getFilteredMembers.isEmpty) {
+    // Use chat group members if available, otherwise fall back to squad members
+    final membersToShow =
+        widget.chatGroupId != null && _chatGroupMembers.isNotEmpty
+            ? _chatGroupMembers
+            : squadState.getFilteredMembers;
+
+    if (membersToShow.isEmpty) {
       return const SliverToBoxAdapter(
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text('No squad members yet',
-              style: TextStyle(color: Colors.grey)),
+          child: Text('No members yet', style: TextStyle(color: Colors.grey)),
         ),
       );
     } else {
@@ -494,11 +536,11 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           child: ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: squadState.getFilteredMembers.length,
+            itemCount: membersToShow.length,
             itemBuilder: (context, index) {
-              final player = squadState.getFilteredMembers[index];
+              final player = membersToShow[index];
               return MemberWidgets.buildMemberCard(context, player, squadState,
-                  _showBlockDialog, _showJoinLobbyDialog, _showComplaintDialog);
+                  _showBlockDialog, _showComplaintDialog);
             },
           ),
         ),
@@ -527,14 +569,9 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     SquadDialogs.showComplaintDialog(context, messenger, squadState, player);
   }
 
-  void _showJoinLobbyDialog(
-      BuildContext context, String player, SquadState squadState) {
-    SquadDialogs.showJoinLobbyDialog(context, player, squadState);
-  }
-
   void _showSpotAssignmentMenu(
       BuildContext context, SquadState squadState, int index) {
-    SquadDialogs.showSpotAssignmentMenu(context, squadState, index);
+    SpotAssignmentDialog.show(context, squadState, index);
   }
 
   void _assignOtherMember(

@@ -4,11 +4,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
 import 'squad_state.dart';
 import 'setup_screen.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'firebase_storage_test.dart';
 
 class SettingsTab extends StatefulWidget {
@@ -140,16 +138,15 @@ class _SettingsTabState extends State<SettingsTab>
       );
       return;
     }
-    final packageInfo = await PackageInfo.fromPlatform();
-    await FirebaseFirestore.instance.collection('feedback').add({
-      'type': type,
-      'page': page,
-      'content': content,
-      'severity': severity,
-      'userId': FirebaseAuth.instance.currentUser!.uid,
-      'appVersion': packageInfo.version,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    await squadState.userManager.submitFeedback(
+      type: type,
+      page: page,
+      content: content,
+      severity: severity ?? 'medium',
+    );
+
     _feedbackController.clear();
     setState(() {
       _selectedPage = null;
@@ -174,7 +171,7 @@ class _SettingsTabState extends State<SettingsTab>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               DropdownButtonFormField<String>(
-                value: _selectedPage,
+                initialValue: _selectedPage,
                 decoration: const InputDecoration(
                   labelText: 'Page',
                   border: OutlineInputBorder(),
@@ -208,7 +205,7 @@ class _SettingsTabState extends State<SettingsTab>
               if (isBug) ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: _severity,
+                  initialValue: _severity,
                   decoration: const InputDecoration(
                     labelText: 'Severity',
                     border: OutlineInputBorder(),
@@ -493,7 +490,7 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_isDarkTheme),
-                activeColor: Colors.cyan,
+                activeThumbColor: Colors.cyan,
                 title: const Text('Dark Theme'),
                 value: _isDarkTheme,
                 onChanged: (value) {
@@ -508,7 +505,7 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_tiltEnabled),
-                activeColor: Colors.cyan,
+                activeThumbColor: Colors.cyan,
                 title: const Text('Enable Tab Tilt'),
                 value: _tiltEnabled,
                 onChanged: (value) {
@@ -524,7 +521,7 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_notificationsEnabled),
-                activeColor: Colors.cyan,
+                activeThumbColor: Colors.cyan,
                 title: const Text('Notifications'),
                 value: _notificationsEnabled,
                 onChanged: (value) {
@@ -539,7 +536,7 @@ class _SettingsTabState extends State<SettingsTab>
               duration: const Duration(milliseconds: 300),
               child: SwitchListTile(
                 key: ValueKey(_soundsEnabled),
-                activeColor: Colors.cyan,
+                activeThumbColor: Colors.cyan,
                 title: const Text('Sounds'),
                 value: _soundsEnabled,
                 onChanged: (value) {
@@ -553,7 +550,7 @@ class _SettingsTabState extends State<SettingsTab>
             const Divider(),
             _buildSectionHeader('Peacock Preferences'),
             SwitchListTile(
-              activeColor: Colors.cyan,
+              activeThumbColor: Colors.cyan,
               title: const Text('Preferred Game Mode'),
               subtitle: Text(_preferredMode != null
                   ? 'Prefer $_preferredMode'
@@ -578,7 +575,7 @@ class _SettingsTabState extends State<SettingsTab>
             const Divider(),
             _buildSectionHeader('Privacy'),
             SwitchListTile(
-              activeColor: Colors.cyan,
+              activeThumbColor: Colors.cyan,
               title: const Text('Profile Visibility'),
               subtitle: const Text('Allow others to see your profile'),
               value: _profileVisible,
@@ -589,7 +586,7 @@ class _SettingsTabState extends State<SettingsTab>
               secondary: const Icon(Icons.visibility),
             ),
             SwitchListTile(
-              activeColor: Colors.cyan,
+              activeThumbColor: Colors.cyan,
               title: const Text('Online Status'),
               subtitle: const Text('Show when you\'re online'),
               value: _onlineStatusVisible,
@@ -600,7 +597,7 @@ class _SettingsTabState extends State<SettingsTab>
               secondary: const Icon(Icons.circle),
             ),
             SwitchListTile(
-              activeColor: Colors.cyan,
+              activeThumbColor: Colors.cyan,
               title: const Text('Allow Messages from Anyone'),
               subtitle: const Text('Receive messages from non-friends'),
               value: _allowMessagesFromAnyone,
@@ -611,7 +608,7 @@ class _SettingsTabState extends State<SettingsTab>
               secondary: const Icon(Icons.message),
             ),
             SwitchListTile(
-              activeColor: Colors.cyan,
+              activeThumbColor: Colors.cyan,
               title: const Text('Data Sharing'),
               subtitle: const Text('Share usage data for improvements'),
               value: _dataSharingEnabled,

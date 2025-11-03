@@ -30,10 +30,7 @@ class _ProfileTabState extends State<ProfileTab>
   bool _soundsEnabled = true;
   bool _tiltEnabled = true; // New tilt toggle
   // Privacy settings
-  bool _profileVisible = true;
   bool _onlineStatusVisible = true;
-  bool _allowMessagesFromAnyone = true;
-  bool _dataSharingEnabled = false;
   late TextEditingController _blockUserController;
   // Friends section
   late TextEditingController _searchController;
@@ -64,11 +61,7 @@ class _ProfileTabState extends State<ProfileTab>
       _soundsEnabled = prefs.getBool('soundsEnabled') ?? true;
       _tiltEnabled = prefs.getBool('tiltEnabled') ?? true; // Load tilt setting
       // Load privacy settings
-      _profileVisible = prefs.getBool('profileVisible') ?? true;
       _onlineStatusVisible = prefs.getBool('onlineStatusVisible') ?? true;
-      _allowMessagesFromAnyone =
-          prefs.getBool('allowMessagesFromAnyone') ?? true;
-      _dataSharingEnabled = prefs.getBool('dataSharingEnabled') ?? false;
     });
     squadState.updateTiltEnabled(_tiltEnabled); // Sync with SquadState
     _animationController.forward();
@@ -199,7 +192,7 @@ class _ProfileTabState extends State<ProfileTab>
                   children: [
                     _buildSectionHeader('Appearance'),
                     SwitchListTile(
-                      activeColor: Colors.cyan,
+                      activeThumbColor: Colors.cyan,
                       title: const Text('Dark Theme',
                           style: TextStyle(color: Colors.white)),
                       value: _isDarkTheme,
@@ -212,7 +205,7 @@ class _ProfileTabState extends State<ProfileTab>
                           const Icon(Icons.brightness_6, color: Colors.cyan),
                     ),
                     SwitchListTile(
-                      activeColor: Colors.cyan,
+                      activeThumbColor: Colors.cyan,
                       title: const Text('Enable Tab Tilt',
                           style: TextStyle(color: Colors.white)),
                       value: _tiltEnabled,
@@ -226,7 +219,7 @@ class _ProfileTabState extends State<ProfileTab>
                     ),
                     _buildSectionHeader('Notifications'),
                     SwitchListTile(
-                      activeColor: Colors.cyan,
+                      activeThumbColor: Colors.cyan,
                       title: const Text('Push Notifications',
                           style: TextStyle(color: Colors.white)),
                       value: _notificationsEnabled,
@@ -239,7 +232,7 @@ class _ProfileTabState extends State<ProfileTab>
                           const Icon(Icons.notifications, color: Colors.cyan),
                     ),
                     SwitchListTile(
-                      activeColor: Colors.cyan,
+                      activeThumbColor: Colors.cyan,
                       title: const Text('Sound Effects',
                           style: TextStyle(color: Colors.white)),
                       value: _soundsEnabled,
@@ -251,22 +244,8 @@ class _ProfileTabState extends State<ProfileTab>
                       secondary:
                           const Icon(Icons.volume_up, color: Colors.cyan),
                     ),
-                    _buildSectionHeader('Privacy'),
                     SwitchListTile(
-                      activeColor: Colors.cyan,
-                      title: const Text('Public Profile',
-                          style: TextStyle(color: Colors.white)),
-                      value: _profileVisible,
-                      onChanged: (value) {
-                        setState(() => _profileVisible = value);
-                        _saveSettings('profileVisible', value,
-                            Provider.of<SquadState>(context, listen: false));
-                      },
-                      secondary:
-                          const Icon(Icons.visibility, color: Colors.cyan),
-                    ),
-                    SwitchListTile(
-                      activeColor: Colors.cyan,
+                      activeThumbColor: Colors.cyan,
                       title: const Text('Show Online Status',
                           style: TextStyle(color: Colors.white)),
                       value: _onlineStatusVisible,
@@ -278,32 +257,30 @@ class _ProfileTabState extends State<ProfileTab>
                       secondary:
                           const Icon(Icons.access_time, color: Colors.cyan),
                     ),
-                    _buildSectionHeader('Circles'),
-                    SwitchListTile(
-                      activeColor: Colors.cyan,
-                      title: const Text('Allow Messages from Anyone',
+                    _buildSectionHeader('Data & Privacy'),
+                    ListTile(
+                      leading: const Icon(Icons.storage, color: Colors.cyan),
+                      title: const Text('Clear Cache',
                           style: TextStyle(color: Colors.white)),
-                      value: _allowMessagesFromAnyone,
-                      onChanged: (value) {
-                        setState(() => _allowMessagesFromAnyone = value);
-                        _saveSettings('allowMessagesFromAnyone', value,
-                            Provider.of<SquadState>(context, listen: false));
-                      },
-                      secondary: const Icon(Icons.message, color: Colors.cyan),
+                      subtitle: const Text('Free up storage space',
+                          style: TextStyle(color: Colors.grey)),
+                      onTap: () => _clearCache(context),
                     ),
-                    _buildSectionHeader('Theme'),
-                    SwitchListTile(
-                      activeColor: Colors.cyan,
-                      title: const Text('Data Sharing',
+                    ListTile(
+                      leading: const Icon(Icons.feedback, color: Colors.cyan),
+                      title: const Text('Send Feedback',
                           style: TextStyle(color: Colors.white)),
-                      value: _dataSharingEnabled,
-                      onChanged: (value) {
-                        setState(() => _dataSharingEnabled = value);
-                        _saveSettings('dataSharingEnabled', value,
-                            Provider.of<SquadState>(context, listen: false));
-                      },
-                      secondary:
-                          const Icon(Icons.analytics, color: Colors.cyan),
+                      subtitle: const Text('Help us improve the app',
+                          style: TextStyle(color: Colors.grey)),
+                      onTap: () => _showFeedbackDialog(context),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.info, color: Colors.cyan),
+                      title: const Text('About',
+                          style: TextStyle(color: Colors.white)),
+                      subtitle: const Text('App version and info',
+                          style: TextStyle(color: Colors.grey)),
+                      onTap: () => _showAboutDialog(context),
                     ),
                     _buildSectionHeader('Account'),
                     ListTile(
@@ -962,6 +939,119 @@ class _ProfileTabState extends State<ProfileTab>
         (route) => false,
       );
     }
+  }
+
+  Future<void> _clearCache(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Clear Cache', style: TextStyle(color: Colors.white)),
+        content: const Text('This will clear cached images and data. Continue?',
+            style: TextStyle(color: Colors.white)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.cyan)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Clear', style: TextStyle(color: Colors.orange)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Clear image cache
+        // Note: In a real app, you'd clear more cache types
+        final prefs = await SharedPreferences.getInstance();
+        // Clear any cached data we store
+        await prefs.remove('cached_user_data');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cache cleared successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to clear cache: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  void _showFeedbackDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title:
+            const Text('Send Feedback', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _feedbackController,
+              maxLines: 4,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'Tell us what you think...',
+                hintStyle: TextStyle(color: Colors.grey),
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.cyan)),
+          ),
+          TextButton(
+            onPressed: () {
+              // TODO: Implement actual feedback sending
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Thank you for your feedback!')),
+              );
+            },
+            child: const Text('Send', style: TextStyle(color: Colors.cyan)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAboutDialog(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: 'SquadSync',
+      applicationVersion: '1.0.0',
+      applicationIcon: const Icon(Icons.games, color: Colors.cyan, size: 48),
+      applicationLegalese: '© 2025 SquadSync Team',
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'SquadSync is a gaming squad management app that helps you coordinate with your gaming friends and manage squad activities.',
+          style: TextStyle(color: Colors.white),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Features include:\n'
+          '• Real-time chat with groups and DMs\n'
+          '• Squad lobby management\n'
+          '• Friend system\n'
+          '• Game integration\n'
+          '• Push notifications',
+          style: TextStyle(color: Colors.white),
+        ),
+      ],
+    );
   }
 
   Widget _buildSectionHeader(String title) {

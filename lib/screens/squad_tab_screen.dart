@@ -16,13 +16,18 @@ class SquadTabScreen extends StatelessWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
+  final String? chatGroupId;
 
-  const SquadTabScreen({super.key, this.lobbyId, this.gameName, this.game});
+  const SquadTabScreen(
+      {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
   Widget build(BuildContext context) {
     return _SquadTabScreenContent(
-        lobbyId: lobbyId, gameName: gameName, game: game);
+        lobbyId: lobbyId,
+        gameName: gameName,
+        game: game,
+        chatGroupId: chatGroupId);
   }
 }
 
@@ -30,8 +35,10 @@ class _SquadTabScreenContent extends StatefulWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
+  final String? chatGroupId;
 
-  const _SquadTabScreenContent({this.lobbyId, this.gameName, this.game});
+  const _SquadTabScreenContent(
+      {this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
   _SquadTabScreenContentState createState() => _SquadTabScreenContentState();
@@ -40,7 +47,6 @@ class _SquadTabScreenContent extends StatefulWidget {
 class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   late PageController _pageController;
   double _currentPage = 0.0;
-  late SquadManager _squadManager;
   bool _hasActiveLobbies = false;
 
   @override
@@ -63,7 +69,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _squadManager = Provider.of<SquadManager>(context, listen: false);
   }
 
   @override
@@ -87,7 +92,21 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     if (widget.lobbyId != null) {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        await _squadManager.removeViewer(widget.lobbyId!, user.uid);
+        final squadManager = Provider.of<SquadManager>(context, listen: false);
+        final squadState = Provider.of<SquadState>(context, listen: false);
+
+        // Check if user has a spot assigned
+        final gameName = widget.gameName ?? '';
+        final gameSquadSpots = squadState.gameSquadSpots[gameName] ?? [];
+        final hasSpot = gameSquadSpots.contains(user.uid);
+
+        // If user has a spot, remove them from filled list
+        if (hasSpot) {
+          await squadManager.leaveLobby(widget.lobbyId!, user.uid);
+        }
+
+        // Always remove from viewers
+        await squadManager.removeViewer(widget.lobbyId!, user.uid);
       }
     }
   }
@@ -146,7 +165,10 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   Widget _buildFullSquadInterface(BuildContext context, SquadState squadState) {
     // Import and use the original SquadTab widget for full squad management
     return SquadTab(
-        lobbyId: widget.lobbyId, gameName: widget.gameName, game: widget.game);
+        lobbyId: widget.lobbyId,
+        gameName: widget.gameName,
+        game: widget.game,
+        chatGroupId: widget.chatGroupId);
   }
 
   Widget _buildActiveLobbiesSection(BuildContext context) {
@@ -248,77 +270,92 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                               horizontal: 16, vertical: 8),
                           child: Card(
                             color: Colors.white.withValues(alpha: 0.1),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Row(
-                                children: [
-                                  // Left side: Game title and player names
-                                  Expanded(
-                                    flex: 3,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // Game title
-                                        Text(
-                                          gameName,
+                            child: InkWell(
+                              onTap: () {
+                                // Navigate to the squad screen for this lobby
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => SquadTabScreen(
+                                        lobbyId: doc.id,
+                                        gameName: gameName,
+                                        chatGroupId: widget.chatGroupId),
+                                  ),
+                                );
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Row(
+                                  children: [
+                                    // Left side: Game title and player names
+                                    Expanded(
+                                      flex: 3,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // Game title
+                                          Text(
+                                            gameName,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          // Player names
+                                          if (filledNames.isNotEmpty) ...[
+                                            Text(
+                                              filledNames.join(', '),
+                                              style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 14,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                          const Spacer(),
+                                          // Action button
+                                          isOwn
+                                              ? const Text('Host',
+                                                  style: TextStyle(
+                                                      color: Colors.cyanAccent,
+                                                      fontSize: 12))
+                                              : ElevatedButton(
+                                                  onPressed: () => _joinLobby(
+                                                      context, doc.id, peacock),
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal: 16,
+                                                        vertical: 8),
+                                                    textStyle: const TextStyle(
+                                                        fontSize: 12),
+                                                  ),
+                                                  child: const Text('Join'),
+                                                ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Right side: Big player count
+                                    Expanded(
+                                      flex: 1,
+                                      child: Center(
+                                        child: Text(
+                                          '$filled/$maxSpots',
                                           style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 18,
+                                            color: Colors.cyanAccent,
+                                            fontSize: 32,
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
-                                        const SizedBox(height: 8),
-                                        // Player names
-                                        if (filledNames.isNotEmpty) ...[
-                                          Text(
-                                            filledNames.join(', '),
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 14,
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                        const Spacer(),
-                                        // Action button
-                                        isOwn
-                                            ? const Text('Host',
-                                                style: TextStyle(
-                                                    color: Colors.cyanAccent,
-                                                    fontSize: 12))
-                                            : ElevatedButton(
-                                                onPressed: () => _joinLobby(
-                                                    context, doc.id, peacock),
-                                                style: ElevatedButton.styleFrom(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 16,
-                                                      vertical: 8),
-                                                  textStyle: const TextStyle(
-                                                      fontSize: 12),
-                                                ),
-                                                child: const Text('Join'),
-                                              ),
-                                      ],
-                                    ),
-                                  ),
-                                  // Right side: Big player count
-                                  Expanded(
-                                    flex: 1,
-                                    child: Center(
-                                      child: Text(
-                                        '$filled/$maxSpots',
-                                        style: const TextStyle(
-                                          color: Colors.cyanAccent,
-                                          fontSize: 32,
-                                          fontWeight: FontWeight.bold,
-                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -781,7 +818,10 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         context,
         MaterialPageRoute(
           builder: (context) => SquadTabScreen(
-              lobbyId: peacockRef.id, gameName: gameName, game: game),
+              lobbyId: peacockRef.id,
+              gameName: gameName,
+              game: game,
+              chatGroupId: widget.chatGroupId),
         ),
       );
     } catch (e) {

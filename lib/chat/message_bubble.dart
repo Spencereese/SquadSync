@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:video_player/video_player.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
-import 'package:cod_squad_app/app_theme.dart';
 import '../squad_state.dart';
 import 'chat_state.dart';
 import 'link_preview.dart';
 import 'poll_message_bubble.dart';
 import '../models/poll.dart';
 import '../services/poll_service.dart';
+import 'dialogs/message_reaction_dialog.dart';
+import 'widgets/video_message.dart';
+import 'widgets/audio_message.dart';
+import 'services/reaction_service.dart';
 // For debugPrint
 
 const String storageBucketPrefix =
@@ -60,6 +58,7 @@ class MessageBubble extends StatefulWidget {
 class _MessageBubbleState extends State<MessageBubble> {
   late Map<String, dynamic> _normalizedData;
   late List<String> _urls;
+  bool _isGrokExpanded = false; // Track if Grok message is expanded
 
   @override
   void initState() {
@@ -126,15 +125,49 @@ class _MessageBubbleState extends State<MessageBubble> {
                           clipBehavior: Clip.none,
                           children: [
                             _buildMessageContent(context, _normalizedData),
-                            Positioned(
-                              bottom: -10,
-                              left: widget.isMe ? -10 : null,
-                              right: widget.isMe ? null : -10,
-                              child: ReactionsWidget(
-                                reactions: _normalizedData['reactions'] ?? [],
-                                isMe: widget.isMe,
+                            // Microphone icon for voice-to-text (like iMessage)
+                            if (!widget.isMe)
+                              Positioned(
+                                bottom: -8,
+                                right: -8,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    // TODO: Implement voice-to-text functionality
+                                    HapticFeedback.lightImpact();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Voice-to-text coming soon!')),
+                                    );
+                                  },
+                                  child: Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                          0xFF007AFF), // iMessage blue
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.2),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.mic,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ],
@@ -150,6 +183,13 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildGrokMessage(BuildContext context) {
+    final isGrokMessage = _normalizedData['isAiResponse'] == true &&
+        _normalizedData['senderUid'] == 'grok-ai';
+
+    if (!isGrokMessage) {
+      return const SizedBox.shrink();
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Column(
@@ -158,76 +198,150 @@ class _MessageBubbleState extends State<MessageBubble> {
               (_normalizedData['timestamp'] != null ||
                   _normalizedData['timestamp_ms'] != null))
             _buildTimestamp(_normalizedData),
-          // Unique Grok message design - centered, terminal-like
+          // HAL-like collapsed state initially
           Center(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 320),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0A0A0A), // Very dark background
-                border: Border.all(
-                  color: const Color(0xFF8B0000), // Dark red border
-                  width: 2.0,
-                ),
-                borderRadius: BorderRadius.circular(4), // Minimal rounding
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF8B0000).withValues(alpha: 0.4),
-                    blurRadius: 12,
-                    spreadRadius: 2,
-                    offset: const Offset(0, 0),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              transitionBuilder: (child, animation) {
+                return ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(
+                    opacity: animation,
+                    child: child,
                   ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.8),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                );
+              },
+              child: _isGrokExpanded
+                  ? _buildExpandedGrokMessage()
+                  : _buildCollapsedGrokMessage(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCollapsedGrokMessage() {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setState(() {
+          _isGrokExpanded = true;
+        });
+      },
+      child: Semantics(
+        label: 'Grok message - tap to expand',
+        child: Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black,
+            border: Border.all(
+              color: const Color(0xFF8B0000),
+              width: 3,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF8B0000).withValues(alpha: 0.6),
+                blurRadius: 20,
+                spreadRadius: 5,
               ),
-              child: Column(
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.8),
+                blurRadius: 30,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Center(
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Color(0xFF8B0000),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpandedGrokMessage() {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setState(() {
+          _isGrokExpanded = false;
+        });
+      },
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 320),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0A0A0A), // Very dark background
+          border: Border.all(
+            color: const Color(0xFF8B0000), // Dark red border
+            width: 2.0,
+          ),
+          borderRadius: BorderRadius.circular(4), // Minimal rounding
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF8B0000).withValues(alpha: 0.4),
+              blurRadius: 12,
+              spreadRadius: 2,
+              offset: const Offset(0, 0),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.8),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // Header bar with subtle glow
+            Container(
+              width: double.infinity,
+              height: 6,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF8B0000).withValues(alpha: 0.8),
+                    const Color(0xFF8B0000).withValues(alpha: 0.4),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+            // Message content
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header bar with subtle glow
+                  // Terminal-like prompt indicator
                   Container(
-                    width: double.infinity,
+                    margin: const EdgeInsets.only(right: 8.0, top: 2.0),
+                    width: 6,
                     height: 6,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFF8B0000).withValues(alpha: 0.8),
-                          const Color(0xFF8B0000).withValues(alpha: 0.4),
-                          Colors.transparent,
-                        ],
-                      ),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF8B0000),
+                      shape: BoxShape.circle,
                     ),
                   ),
-                  // Message content
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12.0, vertical: 8.0),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Terminal-like prompt indicator
-                        Container(
-                          margin: const EdgeInsets.only(right: 8.0, top: 2.0),
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF8B0000),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        // Text content
-                        Expanded(
-                          child: _buildText(_normalizedData['text'] ?? ''),
-                        ),
-                      ],
-                    ),
+                  // Text content
+                  Expanded(
+                    child: _buildText(_normalizedData['text'] ?? ''),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -315,20 +429,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     };
   }
 
-  Color _getMessageBackgroundColor(Map<String, dynamic> data) {
-    final isAiResponse = data['isAiResponse'] ?? false;
-    final senderUid = data['senderUid'] ?? '';
-
-    // Shadow theme for Grok AI messages - very dark with transparency
-    if (isAiResponse && senderUid == 'grok-ai') {
-      return const Color(
-          0xDD000000); // Very dark with slight transparency for shadow effect
-    }
-
-    // Default dark grey for regular received messages
-    return const Color(0xFF202C33);
-  }
-
   BoxDecoration _getMessageDecoration(Map<String, dynamic> data) {
     final isAiResponse = data['isAiResponse'] ?? false;
     final senderUid = data['senderUid'] ?? '';
@@ -360,25 +460,25 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
-    // Normal message styling for others
+    // iMessage-style bubbles
     return BoxDecoration(
       color: widget.isMe
-          ? const Color(0xFF005C4B) // WhatsApp-style green for sent messages
-          : _getMessageBackgroundColor(
-              data), // Dynamic background for received messages
+          ? const Color(0xFF007AFF) // iMessage blue for sent messages
+          : const Color(
+              0xFF2C2C2E), // Dark gray for received messages in dark theme
       borderRadius: BorderRadius.only(
-        topLeft: const Radius.circular(18),
-        topRight: const Radius.circular(18),
+        topLeft: const Radius.circular(21),
+        topRight: const Radius.circular(21),
         bottomLeft:
-            widget.isMe ? const Radius.circular(18) : const Radius.circular(4),
+            widget.isMe ? const Radius.circular(21) : const Radius.circular(4),
         bottomRight:
-            widget.isMe ? const Radius.circular(4) : const Radius.circular(18),
+            widget.isMe ? const Radius.circular(4) : const Radius.circular(21),
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.15),
-          blurRadius: 6,
-          offset: const Offset(0, 2),
+          color: Colors.black.withValues(alpha: 0.1),
+          blurRadius: 4,
+          offset: const Offset(0, 1),
         ),
       ],
     );
@@ -393,8 +493,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       return const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0);
     }
 
-    // Normal padding for regular messages
-    return const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0);
+    // iMessage-style padding - generous for comfortable reading
+    return const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0);
   }
 
   Widget _buildSender(Map<String, dynamic> data) {
@@ -523,11 +623,18 @@ class _MessageBubbleState extends State<MessageBubble> {
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(vertical: 2.0),
         padding: _getMessagePadding(data),
-        constraints: const BoxConstraints(maxWidth: 280), // Limit max width
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width *
+              0.7, // More reasonable max width
+          minWidth: 60, // Smaller minimum for short messages
+        ),
         decoration: _getMessageDecoration(data),
         child: Semantics(
           label: 'Message from ${data['sender'] ?? 'Unknown'}',
-          child: contentWidget,
+          child: IntrinsicWidth(
+            // This ensures the bubble sizes to content
+            child: contentWidget,
+          ),
         ),
       ),
     ).animate().fadeIn(duration: const Duration(milliseconds: 300));
@@ -862,7 +969,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       barrierColor: Colors.black.withValues(alpha: 0.4),
       transitionDuration: const Duration(milliseconds: 200),
       pageBuilder: (context, anim1, anim2) {
-        return _MessageReactionDialog(
+        return MessageReactionDialog(
           message: widget.message,
           isMe: widget.isMe,
           data: data,
@@ -936,7 +1043,12 @@ class _MessageBubbleState extends State<MessageBubble> {
               }
             }
           },
-          onEmojiSelect: (emoji) => _addReaction(context, emoji),
+          onEmojiSelect: (emoji) => ReactionService.addReaction(
+            context,
+            emoji,
+            _normalizedData['id']?.toString() ?? '',
+            widget.chatGroupId,
+          ),
           chatGroupId: widget.chatGroupId,
         );
       },
@@ -950,915 +1062,6 @@ class _MessageBubbleState extends State<MessageBubble> {
         );
       },
     );
-  }
-
-  Future<void> _addReaction(BuildContext context, String emoji) async {
-    try {
-      final messageId = _normalizedData['id']?.toString();
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null ||
-          messageId == null ||
-          messageId.isEmpty ||
-          emoji.isEmpty) {
-        debugPrint(
-            'Invalid reaction data: userId=$userId, messageId=$messageId, emoji="$emoji"');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Failed to add reaction: Invalid data')),
-          );
-        }
-        return;
-      }
-
-      // Get squad state to determine collection path
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      final squadId = squadState.selectedSquadId;
-
-      if (squadId == null) {
-        debugPrint('Reaction failed: No squad ID available');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Failed to add reaction: No squad context')),
-          );
-        }
-        return;
-      }
-
-      // Determine collection path based on chat type
-      final collectionPath = widget.chatGroupId != null
-          ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
-          : 'squads/$squadId/chat';
-
-      debugPrint(
-          'Adding reaction: emoji=$emoji, messageId=$messageId, collection=$collectionPath');
-
-      try {
-        debugPrint('About to get document snapshot...');
-        final docSnapshot = await FirebaseFirestore.instance
-            .collection(collectionPath)
-            .doc(messageId)
-            .get();
-        debugPrint(
-            'Document snapshot retrieved, exists: ${docSnapshot.exists}');
-
-        if (!docSnapshot.exists) {
-          debugPrint('Message not found: $messageId in $collectionPath');
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Message not found')),
-            );
-          }
-          return;
-        }
-
-        debugPrint('About to get message data...');
-        final messageData = docSnapshot.data();
-        debugPrint(
-            'Message data retrieved: ${messageData != null ? 'not null' : 'null'}');
-
-        if (messageData == null) {
-          debugPrint('Message data is null: $messageId in $collectionPath');
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Message data unavailable')),
-            );
-          }
-          return;
-        }
-        debugPrint('Message data keys: ${messageData.keys.toList()}');
-
-        // Normalize reactions data - handle both old string format and new map format
-        debugPrint('About to get raw reactions...');
-        final rawReactions = messageData['reactions'];
-        debugPrint(
-            'Raw reactions retrieved: $rawReactions, type: ${rawReactions.runtimeType}');
-        final currentReactions = <Map<String, dynamic>>[];
-
-        if (rawReactions is List) {
-          debugPrint(
-              'Raw reactions is List, processing ${rawReactions.length} items...');
-          for (final reaction in rawReactions) {
-            debugPrint(
-                'Processing reaction: $reaction, type: ${reaction.runtimeType}');
-            if (reaction is Map<String, dynamic>) {
-              // New format
-              currentReactions.add(reaction);
-            } else if (reaction is String) {
-              // Old format - convert to new format
-              currentReactions.add({
-                'userId': 'unknown', // We don't know who added old reactions
-                'reaction': reaction,
-                'timestamp': DateTime.now()
-                    .millisecondsSinceEpoch, // Use numeric timestamp
-              });
-            }
-            // Skip invalid reaction types
-          }
-        } else {
-          debugPrint('Raw reactions is not a List: $rawReactions');
-        }
-
-        debugPrint('Current reactions after processing: $currentReactions');
-
-        // Check if user already reacted with this emoji (be more robust with type checking)
-        debugPrint('About to check existing reactions...');
-        int existingReactionIndex = -1;
-        try {
-          existingReactionIndex = currentReactions.indexWhere(
-            (reaction) {
-              final reactionUserId = reaction['userId']?.toString();
-              final reactionEmoji = reaction['reaction']?.toString();
-              return reactionUserId == userId && reactionEmoji == emoji;
-            },
-          );
-        } catch (e) {
-          debugPrint('Error checking existing reactions: $e');
-          // If we can't check, assume no existing reaction
-          existingReactionIndex = -1;
-        }
-
-        // Create a clean, validated reaction object
-        final newReaction = <String, dynamic>{
-          'userId': userId,
-          'reaction': emoji.trim(),
-          'timestamp': DateTime.now()
-              .millisecondsSinceEpoch, // Use numeric timestamp instead of FieldValue
-        };
-
-        // Always use the set with merge fallback for iOS compatibility
-        final updatedReactions =
-            List<Map<String, dynamic>>.from(currentReactions);
-
-        if (existingReactionIndex != -1) {
-          // User already reacted with this emoji, remove it
-          updatedReactions.removeAt(existingReactionIndex);
-        } else {
-          // User hasn't reacted with this emoji, add it
-          updatedReactions.add(newReaction);
-        }
-
-        // Filter out any invalid reactions and limit to reasonable number
-        final cleanReactions = <Map<String, dynamic>>[];
-        try {
-          cleanReactions.addAll(updatedReactions
-              .where((r) {
-                try {
-                  return r['userId']?.toString().isNotEmpty == true &&
-                      r['reaction']?.toString().isNotEmpty == true;
-                } catch (e) {
-                  debugPrint('Error validating reaction: $e, reaction: $r');
-                  return false;
-                }
-              })
-              .take(50)
-              .toList()); // Limit reactions per message
-        } catch (e) {
-          debugPrint('Error filtering reactions: $e');
-          // If filtering fails, use the updated reactions as-is (limited)
-          cleanReactions.addAll(updatedReactions.take(50));
-        }
-
-        try {
-          debugPrint(
-              'About to update Firestore with reactions: $cleanReactions');
-          await FirebaseFirestore.instance
-              .collection(collectionPath)
-              .doc(messageId)
-              .set({'reactions': cleanReactions}, SetOptions(merge: true));
-          debugPrint('Firestore set successful');
-        } catch (firestoreError) {
-          debugPrint('Firestore set failed, trying update: $firestoreError');
-          // Fallback: try update operation
-          try {
-            await FirebaseFirestore.instance
-                .collection(collectionPath)
-                .doc(messageId)
-                .update({'reactions': cleanReactions});
-          } catch (updateError) {
-            debugPrint('Update also failed: $updateError');
-            // Final fallback: don't update reactions but don't crash
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Reaction saved locally')),
-              );
-            }
-            return;
-          }
-        }
-
-        HapticFeedback.lightImpact();
-      } catch (e) {
-        debugPrint('Error during Firestore operations: $e');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error accessing message: $e')),
-          );
-        }
-        return;
-      }
-    } catch (e) {
-      debugPrint('Error updating reaction: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update reaction: ${e.toString()}')),
-        );
-      }
-    }
-  }
-}
-
-class _MessageReactionDialog extends StatefulWidget {
-  final dynamic message;
-  final bool isMe;
-  final Map<String, dynamic> data;
-  final VoidCallback onReply;
-  final VoidCallback onCopy;
-  final VoidCallback onDelete;
-  final Function(String) onEmojiSelect;
-  final String? chatGroupId;
-
-  const _MessageReactionDialog({
-    required this.message,
-    required this.isMe,
-    required this.data,
-    required this.onReply,
-    required this.onCopy,
-    required this.onDelete,
-    required this.onEmojiSelect,
-    this.chatGroupId,
-  });
-
-  @override
-  _MessageReactionDialogState createState() => _MessageReactionDialogState();
-}
-
-class _MessageReactionDialogState extends State<_MessageReactionDialog> {
-  final TextEditingController _reactionController = TextEditingController();
-  bool _showReactionInput = false;
-
-  @override
-  void dispose() {
-    _reactionController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final chatState = Provider.of<ChatState>(context, listen: false);
-    final quickReactions = chatState.quickReactionEmojis;
-    return GestureDetector(
-      onTap: () => Navigator.pop(context),
-      child: Stack(
-        children: [
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.1),
-            ),
-          ),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Emoji reactions row (above message, iMessage-style)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12.0),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0, vertical: 12.0),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ...quickReactions.map((emoji) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                          child: GestureDetector(
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              widget.onEmojiSelect(emoji);
-                              Navigator.pop(context);
-                            },
-                            child: AnimatedScale(
-                              scale: 1.0,
-                              duration: const Duration(milliseconds: 100),
-                              child: Text(
-                                emoji,
-                                style: const TextStyle(fontSize: 28),
-                              ),
-                            ),
-                          ),
-                        ).animate().scale(
-                              duration: const Duration(milliseconds: 300),
-                              begin: const Offset(0.8, 0.8),
-                              end: const Offset(1.0, 1.0),
-                              curve: Curves.elasticOut,
-                              delay: Duration(
-                                  milliseconds:
-                                      50 * quickReactions.indexOf(emoji)),
-                            );
-                      }),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8.0),
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _showReactionInput = !_showReactionInput;
-                            });
-                          },
-                          child: AnimatedScale(
-                            scale: 1.0,
-                            duration: const Duration(milliseconds: 100),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _showReactionInput ? Icons.close : Icons.add,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ).animate().slideY(
-                      duration: const Duration(milliseconds: 400),
-                      begin: -0.2,
-                      end: 0.0,
-                      curve: Curves.easeOutBack,
-                    ),
-                // Message preview (smaller, more subtle)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 12.0),
-                    constraints: const BoxConstraints(maxWidth: 300),
-                    decoration: BoxDecoration(
-                      color: widget.isMe
-                          ? AppTheme.accentColor.withValues(alpha: 0.2)
-                          : Colors.white.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        width: 0.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: widget.isMe
-                          ? CrossAxisAlignment.end
-                          : CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.data['content']?.isNotEmpty ?? false)
-                          Text(
-                            widget.data['content'],
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.white.withValues(alpha: 0.9),
-                              fontWeight: FontWeight.w400,
-                            ),
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        if (widget.data['photos']?.isNotEmpty ?? false)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                width: 60,
-                                height: 60,
-                                color: Colors.grey[700],
-                                child: const Icon(
-                                  Icons.image,
-                                  color: Colors.white54,
-                                  size: 24,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ).animate().fadeIn(
-                      duration: const Duration(milliseconds: 300),
-                      delay: const Duration(milliseconds: 100),
-                    ),
-                // Custom reaction input
-                if (_showReactionInput)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 12.0),
-                    child: Material(
-                      color: Colors.black.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            width: 0.5,
-                          ),
-                        ),
-                        child: TextField(
-                          controller: _reactionController,
-                          decoration: InputDecoration(
-                            hintText: 'Type your reaction...',
-                            hintStyle: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5)),
-                            border: InputBorder.none,
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 12.0),
-                          ),
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 16),
-                          onSubmitted: (value) {
-                            if (value.isNotEmpty) {
-                              widget.onEmojiSelect(value);
-                              Navigator.pop(context);
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ).animate().slideY(
-                        duration: const Duration(milliseconds: 300),
-                        begin: 0.2,
-                        end: 0.0,
-                        curve: Curves.easeOutBack,
-                      ),
-                // Action buttons (more subtle, bottom sheet style)
-                Container(
-                  margin: const EdgeInsets.only(top: 16.0),
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Material(
-                    color: Colors.black.withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildActionTile(
-                            icon: Icons.reply,
-                            label: 'Reply',
-                            onTap: () {
-                              Navigator.pop(context);
-                              widget.onReply();
-                            },
-                          ),
-                          Divider(
-                              height: 1,
-                              color: Colors.white.withValues(alpha: 0.1)),
-                          _buildActionTile(
-                            icon: Icons.copy,
-                            label: 'Copy',
-                            onTap: () {
-                              Navigator.pop(context);
-                              widget.onCopy();
-                            },
-                          ),
-                          Divider(
-                              height: 1,
-                              color: Colors.white.withValues(alpha: 0.1)),
-                          _buildActionTile(
-                            icon: Icons.delete,
-                            label: 'Delete',
-                            onTap: () {
-                              Navigator.pop(context);
-                              widget.onDelete();
-                            },
-                            isDestructive: true,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ).animate().slideY(
-                      duration: const Duration(milliseconds: 400),
-                      begin: 0.3,
-                      end: 0.0,
-                      curve: Curves.easeOutBack,
-                      delay: const Duration(milliseconds: 200),
-                    ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionTile({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool isDestructive = false,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: isDestructive
-                  ? Colors.redAccent
-                  : Colors.white.withValues(alpha: 0.8),
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: TextStyle(
-                color: isDestructive
-                    ? Colors.redAccent
-                    : Colors.white.withValues(alpha: 0.9),
-                fontSize: 16,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class VideoMessage extends StatefulWidget {
-  final String url;
-  const VideoMessage({super.key, required this.url});
-
-  @override
-  State<VideoMessage> createState() => _VideoMessageState();
-}
-
-class _VideoMessageState extends State<VideoMessage> {
-  late VideoPlayerController _controller;
-  bool _isError = false;
-  bool _isInitialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    debugPrint('Loading video: ${widget.url}'); // Log for debug
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() {
-            _isInitialized = true;
-          });
-        }
-      }).catchError((e) {
-        if (mounted) {
-          setState(() {
-            _isError = true;
-          });
-        }
-        debugPrint('Video init error: $e for URL: ${widget.url}');
-      });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isError) {
-      return Container(
-        width: 120,
-        height: 80,
-        decoration: BoxDecoration(
-          color: Colors.grey[800],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error, color: Colors.red, size: 20),
-            SizedBox(height: 4),
-            Text(
-              'Video failed',
-              style: TextStyle(fontSize: 12, color: Colors.white70),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-    if (!_isInitialized) {
-      return Container(
-        width: 120,
-        height: 80,
-        decoration: BoxDecoration(
-          color: Colors.grey[800],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Center(child: CircularProgressIndicator()),
-      );
-    }
-    return GestureDetector(
-      onTap: () => _launchUrl(widget.url),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 200, maxHeight: 150),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: AspectRatio(
-                aspectRatio: 16 / 9,
-                child: VideoPlayer(_controller),
-              ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                shape: BoxShape.circle,
-              ),
-              child: Semantics(
-                label: 'Play video',
-                child: const Icon(Icons.play_circle_filled,
-                    size: 40, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(duration: const Duration(milliseconds: 300));
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      HapticFeedback.lightImpact();
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint('Could not launch $url');
-    }
-  }
-}
-
-class AudioMessage extends StatefulWidget {
-  final String url;
-  const AudioMessage({super.key, required this.url});
-
-  @override
-  State<AudioMessage> createState() => _AudioMessageState();
-}
-
-class _AudioMessageState extends State<AudioMessage> {
-  late AudioPlayer _player;
-  bool _isPlaying = false;
-  Duration _duration = Duration.zero;
-  Duration _position = Duration.zero;
-  bool _isError = false;
-
-  @override
-  void initState() {
-    super.initState();
-    debugPrint('Loading audio: ${widget.url}'); // Log for debug
-    _player = AudioPlayer();
-    _setupListeners();
-    _player.setSource(UrlSource(widget.url)).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _isError = true;
-        });
-      }
-      debugPrint('Audio init error: $e for URL: ${widget.url}');
-    });
-  }
-
-  void _setupListeners() {
-    _player.onDurationChanged.listen((d) => setState(() => _duration = d));
-    _player.onPositionChanged.listen((p) => setState(() => _position = p));
-    _player.onPlayerStateChanged.listen(
-        (state) => setState(() => _isPlaying = state == PlayerState.playing));
-  }
-
-  @override
-  void dispose() {
-    _player.stop();
-    _player.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isError) {
-      return Container(
-        constraints: const BoxConstraints(maxWidth: 220),
-        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-        decoration: BoxDecoration(
-          color: Colors.grey[800]!.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error, color: Colors.red, size: 20),
-            SizedBox(width: 8),
-            Text(
-              'Audio failed to load',
-              style: TextStyle(fontSize: 12, color: Colors.white70),
-            ),
-          ],
-        ),
-      );
-    }
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 220),
-      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-      decoration: BoxDecoration(
-        color: Colors.grey[800]!.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Semantics(
-            label: _isPlaying ? 'Pause audio' : 'Play audio',
-            child: IconButton(
-              icon: Icon(
-                _isPlaying
-                    ? Icons.pause_circle_filled
-                    : Icons.play_circle_filled,
-                color: AppTheme.accentColor,
-                size: 28,
-              ),
-              onPressed: _togglePlay,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Slider(
-                  value: _position.inSeconds.toDouble(),
-                  min: 0,
-                  max: _duration.inSeconds.toDouble() > 0
-                      ? _duration.inSeconds.toDouble()
-                      : 1,
-                  onChanged: (value) =>
-                      _player.seek(Duration(seconds: value.toInt())),
-                  activeColor: AppTheme.accentColor,
-                  inactiveColor: Colors.grey[600],
-                ),
-                Semantics(
-                  label:
-                      'Audio position ${_position.inMinutes}:${_position.inSeconds % 60} of ${_duration.inMinutes}:${_duration.inSeconds % 60}',
-                  child: Text(
-                    "${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')} / ${_duration.inSeconds ~/ 60}:${(_duration.inSeconds % 60).toString().padLeft(2, '0')}",
-                    style: const TextStyle(fontSize: 11, color: Colors.white70),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _togglePlay() async {
-    HapticFeedback.lightImpact();
-    if (_isPlaying) {
-      await _player.pause();
-    } else {
-      await _player.resume(); // Use resume for safety after seek/pause
-    }
-  }
-}
-
-class ReactionsWidget extends StatelessWidget {
-  final List<dynamic> reactions;
-  final bool isMe;
-
-  const ReactionsWidget(
-      {super.key, required this.reactions, required this.isMe});
-
-  @override
-  Widget build(BuildContext context) {
-    if (reactions.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    // Group reactions by emoji and count them
-    final reactionCounts = <String, int>{};
-    for (final reaction in reactions) {
-      if (reaction is Map<String, dynamic>) {
-        final emoji = reaction['reaction'] as String?;
-        if (emoji != null) {
-          reactionCounts[emoji] = (reactionCounts[emoji] ?? 0) + 1;
-        }
-      } else if (reaction is String) {
-        reactionCounts[reaction] = (reactionCounts[reaction] ?? 0) + 1;
-      }
-    }
-
-    if (reactionCounts.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    // Sort reactions by count (highest first) and then by emoji
-    final sortedReactions = reactionCounts.entries.toList()
-      ..sort((a, b) {
-        final countCompare = b.value.compareTo(a.value);
-        return countCompare != 0 ? countCompare : a.key.compareTo(b.key);
-      });
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: sortedReactions.map((entry) {
-        final emoji = entry.key;
-        final count = entry.value;
-
-        return Container(
-          margin: const EdgeInsets.only(right: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.grey[800]!.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.1),
-              width: 0.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 2,
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                emoji,
-                style: const TextStyle(fontSize: 12),
-              ),
-              if (count > 1) ...[
-                const SizedBox(width: 2),
-                Text(
-                  count.toString(),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        );
-      }).toList(),
-    ).animate().fadeIn(duration: const Duration(milliseconds: 200));
   }
 }
 

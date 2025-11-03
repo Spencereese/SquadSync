@@ -357,4 +357,9 @@ class SquadManager with ChangeNotifier implements ISquadManager {
       'viewers': viewers,
     });
   }
+
+  Future<void> closeLobby(String peacockId) async {
+    // Delete the peacock document to close the lobby
+    await _firestore.collection('peacocks').doc(peacockId).delete();
+  }
 }

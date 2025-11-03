@@ -5,6 +5,7 @@ import '../squad_state.dart';
 import '../managers/user_manager.dart';
 import '../widgets/rating_widgets.dart';
 import 'chat_service.dart';
+import '../../services/ai_service.dart';
 
 class SpotsSheet extends StatefulWidget {
   final String gameName;

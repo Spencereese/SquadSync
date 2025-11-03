@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
+import '../../services/ai_service.dart';
 import '../../chat/chat_service.dart';
 
 class PollCreationDialog extends StatefulWidget {
@@ -293,7 +294,7 @@ class _PollCreationDialogState extends State<PollCreationDialog> {
                   _settings = _settings.copyWith(isMultipleChoice: value);
                 });
               },
-              activeColor: Colors.cyanAccent,
+              activeThumbColor: Colors.cyanAccent,
             ),
 
             // Anonymous toggle
@@ -312,7 +313,7 @@ class _PollCreationDialogState extends State<PollCreationDialog> {
                   _settings = _settings.copyWith(isAnonymous: value);
                 });
               },
-              activeColor: Colors.cyanAccent,
+              activeThumbColor: Colors.cyanAccent,
             ),
 
             const SizedBox(height: 32),

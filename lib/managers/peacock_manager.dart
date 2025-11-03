@@ -281,8 +281,10 @@ class PeacockManager with ChangeNotifier {
   Future<void> removeFromPeacock(String player) async {
     _peacockQueue.remove(player);
     _peacockTimers.remove(player);
+    updateStatus?.call('$player:Offline');
     markFieldChanged?.call('peacockQueue');
     markFieldChanged?.call('peacockTimers');
+    markFieldChanged?.call('statuses');
     updateFirestore?.call();
     notifyListeners();
   }

@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'squad_data_manager.dart';
 
 /// Manages achievements, ratings, complaints, and bans
 class AchievementManager with ChangeNotifier {
+  final SquadDataManager _dataManager;
+
+  // Local copies for UI state management
   Map<String, int> _currentStreaks = {};
   Map<String, int> _highestStreaks = {};
   Map<String, Set<String>> _achievements = {};
@@ -9,6 +13,17 @@ class AchievementManager with ChangeNotifier {
   Map<String, Map<String, List<int>>> _allTimeRatings = {};
   Map<String, int> _complaints = {};
   Map<String, List<Map<String, dynamic>>> _bans = {};
+
+  AchievementManager(this._dataManager) {
+    // Initialize with data from SquadDataManager
+    _currentStreaks = Map.from(_dataManager.currentStreaks);
+    _highestStreaks = Map.from(_dataManager.highestStreaks);
+    _achievements = Map.from(_dataManager.achievements);
+    _dailyRatings = Map.from(_dataManager.dailyRatings);
+    _allTimeRatings = Map.from(_dataManager.allTimeRatings);
+    _complaints = Map.from(_dataManager.complaints);
+    _bans = Map.from(_dataManager.bans);
+  }
 
   Map<String, int> get currentStreaks => _currentStreaks;
   Map<String, int> get highestStreaks => _highestStreaks;
@@ -58,18 +73,44 @@ class AchievementManager with ChangeNotifier {
     required String submittedBy,
     required String targetMember,
     required String reason,
+    required String category,
+    required List<String> squadMembers,
   }) async {
-    // Delegate to SquadState for actual implementation
-    // This manager focuses on tracking complaint counts and achievements
-    complaints[targetMember] = (complaints[targetMember] ?? 0) + 1;
+    await _dataManager.submitComplaint(
+      submittedBy: submittedBy,
+      targetMember: targetMember,
+      reason: reason,
+      category: category,
+    );
+    // Update local state
+    _complaints[targetMember] = (_complaints[targetMember] ?? 0) + 1;
     notifyListeners();
   }
 
   Future<void> submitRatings({
     required String submittedBy,
-    required Map<String, int> ratings,
+    required String targetMember,
+    required Map<String, int?> ratings,
+    required List<String> squadMembers,
+    required List<Map<String, dynamic>> gameHistory,
   }) async {
-    // Implementation from original SquadState
+    await _dataManager.submitRatings(
+      submittedBy: submittedBy,
+      targetMember: targetMember,
+      ratings: ratings,
+    );
+    // Update local state - simplified version
+    ratings.forEach((category, rating) {
+      if (rating != null && rating >= 0 && rating <= 5) {
+        _dailyRatings[targetMember] ??= {};
+        _dailyRatings[targetMember]![category] ??= [];
+        _dailyRatings[targetMember]![category]!.add(rating);
+
+        _allTimeRatings[targetMember] ??= {};
+        _allTimeRatings[targetMember]![category] ??= [];
+        _allTimeRatings[targetMember]![category]!.add(rating);
+      }
+    });
     notifyListeners();
   }
 
@@ -96,13 +137,70 @@ class AchievementManager with ChangeNotifier {
     return 120; // 2 hours for 5+ bans
   }
 
-  Future<void> recordWin() async {
-    // Implementation from original SquadState
+  Future<void> recordWin({
+    required List<String?> squadSpots,
+    required Map<String, String> statuses,
+    required List<Map<String, dynamic>> gameHistory,
+  }) async {
+    List<String> walkingPlayers = squadSpots
+        .where((spot) => spot != null && statuses[spot] == 'Walking')
+        .cast<String>()
+        .toList();
+
+    Map<String, int> updatedStreaks = {};
+    for (var player in walkingPlayers) {
+      int oldStreak = _currentStreaks[player] ?? 0;
+      updatedStreaks[player] = oldStreak + 1;
+      await _checkAchievements(player, updatedStreaks[player]!);
+    }
+
+    _currentStreaks.addAll(updatedStreaks);
+    gameHistory.add({
+      'result': 'Win',
+      'players': walkingPlayers,
+      'timestamp': DateTime.now().toIso8601String(),
+      'ratings': {}, // Fresh ratings map for this game
+    });
+
     notifyListeners();
   }
 
-  void recordLoss() {
-    // Implementation from original SquadState
+  void recordLoss({
+    required List<String?> squadSpots,
+    required List<Map<String, dynamic>?> spotTimers,
+    required Map<String, int> currentStreaks,
+    required List<Map<String, dynamic>> gameHistory,
+  }) {
+    List<String> walkingPlayers = squadSpots
+        .where((spot) =>
+            spot != null && spotTimers[squadSpots.indexOf(spot)] == null)
+        .cast<String>()
+        .toList();
+    for (var player in walkingPlayers) {
+      _currentStreaks[player] = 0;
+    }
+    gameHistory.add({
+      'result': 'Loss',
+      'players': walkingPlayers,
+      'timestamp': DateTime.now().toIso8601String(),
+      'ratings': {}, // Fresh ratings map for this game
+    });
     notifyListeners();
+  }
+
+  Future<void> _checkAchievements(String player, int streak) async {
+    _achievements[player] ??= {};
+    bool added = false;
+    if (streak >= 10) {
+      _achievements[player]!.add('Chicken');
+      added = true;
+    }
+    if (streak >= 4 && !added) {
+      _achievements[player]!.add('Duck');
+      added = true;
+    }
+    if (streak >= 3 && !added) {
+      _achievements[player]!.add('Turkey');
+    }
   }
 }

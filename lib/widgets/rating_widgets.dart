@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../managers/user_manager.dart';
 import '../managers/review_manager.dart';
+import '../services/ai_service.dart';
 import '../chat/chat_service.dart';
 
 /// Conditional rating nudge shown only for first-time users of a game

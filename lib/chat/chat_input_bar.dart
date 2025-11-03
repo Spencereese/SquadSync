@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../app_theme.dart';
 
 class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;
@@ -33,19 +32,16 @@ class ChatInputBar extends StatefulWidget {
 }
 
 class _ChatInputBarState extends State<ChatInputBar> {
-  bool _isExpanded = false;
   final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _focusNode.addListener(() {
-      setState(() {
-        _isExpanded = _focusNode.hasFocus;
-      });
+      setState(() {});
     });
     widget.controller.addListener(() {
-      setState(() {}); // Ensure UI updates when text changes
+      setState(() {});
     });
   }
 
@@ -64,36 +60,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (!_isExpanded) _buildActionSheetButton(context),
-          if (!_isExpanded) const SizedBox(width: 8),
-          if (!_isExpanded) _buildMediaButton(),
-          if (!_isExpanded) const SizedBox(width: 8),
-          if (!_isExpanded) _buildRecordButton(),
-          if (!_isExpanded) const SizedBox(width: 8),
-          Expanded(
-            child: Stack(
-              children: [
-                _buildTextField(context),
-                Positioned(
-                  right: 8,
-                  child: _isExpanded
-                      ? _buildCollapseButton(context)
-                      : _buildEmojiButton(context),
-                ),
-              ],
-            ),
-          ),
+          // Plus button like iMessage
+          _buildPlusButton(context),
           const SizedBox(width: 8),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            child: _buildActionButton(context, hasText),
+          Expanded(
+            child: _buildTextField(context, hasText),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildActionSheetButton(BuildContext context) {
+  Widget _buildPlusButton(BuildContext context) {
     return Semantics(
       label: 'More options',
       child: GestureDetector(
@@ -102,322 +80,97 @@ class _ChatInputBarState extends State<ChatInputBar> {
           widget.onPlusMenu();
         },
         child: Container(
-          padding: const EdgeInsets.all(8),
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.grey[800],
+            borderRadius: BorderRadius.circular(18),
+          ),
           child: const Icon(
-            Icons.add_circle_outline,
+            Icons.add,
             size: 24,
-            color: Colors.grey,
-            shadows: [
-              Shadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1))
-            ],
+            color: Colors.white,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildMediaButton() {
-    return Semantics(
-      label: 'Send media',
-      child: GestureDetector(
-        onTap: widget.isUploading
-            ? null
-            : () {
-                HapticFeedback.lightImpact();
-                widget.onMedia();
-              },
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          child: Image.asset(
-            'assets/images/photo_icon.png',
-            width: 24,
-            height: 24,
-            color:
-                widget.isUploading ? Colors.grey.withAlpha(128) : Colors.grey,
-            errorBuilder: (context, error, stackTrace) {
-              debugPrint('Failed to load photo_icon.png: $error');
-              return Icon(
-                Icons.photo,
-                size: 24,
-                color: widget.isUploading
-                    ? Colors.grey.withAlpha(128)
-                    : Colors.grey,
-                shadows: const [
-                  Shadow(
-                      color: Colors.black26,
-                      blurRadius: 2,
-                      offset: Offset(1, 1))
-                ],
-              );
-            },
-          ),
-        ),
+  Widget _buildTextField(BuildContext context, bool hasText) {
+    return Container(
+      constraints: const BoxConstraints(
+        minHeight: 36,
+        maxHeight: 120,
       ),
-    );
-  }
-
-  Widget _buildRecordButton() {
-    return Semantics(
-      label: widget.isRecording ? 'Stop recording' : 'Start recording',
-      child: GestureDetector(
-        onTap: widget.isUploading
-            ? null
-            : () {
-                HapticFeedback.mediumImpact();
-                widget.isRecording
-                    ? widget.onRecordStop()
-                    : widget.onRecordStart();
-              },
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          child: Image.asset(
-            widget.isRecording
-                ? 'assets/images/mic_off_icon.png'
-                : 'assets/images/mic_on_icon.png',
-            width: 24,
-            height: 24,
-            color: widget.isUploading
-                ? Colors.grey.withAlpha(128)
-                : (widget.isRecording ? Colors.redAccent : Colors.grey),
-            errorBuilder: (context, error, stackTrace) {
-              debugPrint('Failed to load mic icon: $error');
-              return Icon(
-                widget.isRecording ? Icons.mic_off : Icons.mic,
-                size: 24,
-                color: widget.isUploading
-                    ? Colors.grey.withAlpha(128)
-                    : (widget.isRecording ? Colors.redAccent : Colors.grey),
-                shadows: const [
-                  Shadow(
-                      color: Colors.black26,
-                      blurRadius: 2,
-                      offset: Offset(1, 1))
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: _isExpanded
-          ? MediaQuery.of(context).size.width - 60
-          : MediaQuery.of(context).size.width - 150,
-      constraints: const BoxConstraints(maxHeight: 100),
       decoration: BoxDecoration(
-        color: Colors.black.withAlpha(217),
-        borderRadius: BorderRadius.circular(25),
+        color: Colors.grey[800],
+        borderRadius:
+            BorderRadius.circular(20), // More pill-shaped like iMessage
+        border: Border.all(
+          color: Colors.grey[300]!, // Lighter grey border like iMessage
+          width: 1,
+        ),
       ),
-      child: Semantics(
-        label: 'Type a message',
-        child: GestureDetector(
-          onDoubleTap: () => _showPasteWidget(context),
-          child: TextField(
-            controller: widget.controller,
-            focusNode: _focusNode,
-            decoration: InputDecoration(
-              hintText: 'Aa',
-              hintStyle: TextStyle(
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: widget.controller,
+              focusNode: _focusNode,
+              onChanged: widget.onTextChanged,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Message',
+                hintStyle: TextStyle(
                   color: Colors.grey[400],
                   fontSize: 16,
-                  fontWeight: FontWeight.w400),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.fromLTRB(16, 12, 40, 12),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                border: InputBorder.none,
+                isDense: true,
+              ),
+              textCapitalization: TextCapitalization.sentences,
+              autocorrect: true,
+              enableSuggestions: true,
             ),
-            style: const TextStyle(fontSize: 16, color: Colors.white),
-            minLines: 1,
-            maxLines: 3,
-            onChanged: widget.onTextChanged,
-            onSubmitted: (_) {
-              if (widget.controller.text.isNotEmpty) {
-                widget.onSend();
-                widget.controller.clear();
-              }
-            },
-            textInputAction: TextInputAction.send,
-            keyboardType: TextInputType.text,
-            autocorrect: true,
-            enableSuggestions: true,
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmojiButton(BuildContext context) {
-    return Semantics(
-      label: 'Emoji keyboard',
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          if (!context.mounted) return;
-          FocusScope.of(context).unfocus();
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (!context.mounted) return;
-            SystemChannels.textInput.invokeMethod('TextInput.show');
-            FocusScope.of(context).requestFocus(_focusNode);
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          child: const Icon(
-            Icons.emoji_emotions_outlined,
-            size: 24,
-            color: Colors.grey,
-            shadows: [
-              Shadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1))
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCollapseButton(BuildContext context) {
-    return Semantics(
-      label: 'Collapse options',
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          _focusNode.unfocus();
-          setState(() => _isExpanded = false);
-        },
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          child: const Icon(
-            Icons.arrow_forward_ios,
-            size: 24,
-            color: Colors.grey,
-            shadows: [
-              Shadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1))
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton(BuildContext context, bool hasText) {
-    return Semantics(
-      label: hasText ? 'Send message' : 'Send quick reaction',
-      enabled: !widget.isUploading,
-      child: GestureDetector(
-        onTap: widget.isUploading
-            ? null
-            : () {
-                HapticFeedback.mediumImpact();
-                if (hasText) {
-                  widget.onSend();
-                  widget.controller.clear();
-                } else {
-                  widget.controller.text = widget.quickReactionEmoji;
-                  widget.onTextChanged(widget.quickReactionEmoji);
-                  widget.onSend();
-                  widget.controller.clear();
-                }
-              },
-        child: Container(
-          key: ValueKey(hasText ? 'send' : 'quick_reaction'),
-          padding: const EdgeInsets.all(8),
-          child: widget.isUploading
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : hasText
-                  ? Image.asset(
-                      'assets/images/send_icon.png',
-                      width: 24,
-                      height: 24,
-                      color: AppTheme.primaryColor,
-                      errorBuilder: (context, error, stackTrace) {
-                        debugPrint('Failed to load send_icon.png: $error');
-                        return Icon(
-                          Icons.send,
-                          size: 24,
-                          color: AppTheme.primaryColor,
-                          shadows: const [
-                            Shadow(
-                                color: Colors.black26,
-                                blurRadius: 2,
-                                offset: Offset(1, 1))
-                          ],
-                        );
-                      },
-                    )
-                  : Text(
-                      widget.quickReactionEmoji,
-                      style: const TextStyle(fontSize: 24),
+          if (hasText)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Semantics(
+                label: 'Send message',
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    widget.onSend();
+                  },
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF007AFF), // iMessage blue
+                      shape: BoxShape.circle,
                     ),
-        ),
+                    child: const Icon(
+                      Icons.send,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
-  }
-
-  void _showPasteWidget(BuildContext context) async {
-    HapticFeedback.mediumImpact();
-    ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data == null || data.text == null || !context.mounted) return;
-
-    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-
-    final offset = renderBox.localToGlobal(Offset.zero);
-    final cursorPosition = widget.controller.selection.baseOffset;
-    final textPosition = _getTextPosition(context, cursorPosition);
-
-    showMenu(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        offset.dx + textPosition.dx + 16,
-        offset.dy + textPosition.dy - 20,
-        offset.dx + textPosition.dx + 16,
-        offset.dy + textPosition.dy - 20,
-      ),
-      items: [
-        PopupMenuItem(
-          child: Row(
-            children: [
-              const Icon(Icons.content_paste, color: Colors.white),
-              const SizedBox(width: 8),
-              Text('Paste', style: TextStyle(color: Colors.white)),
-            ],
-          ),
-          onTap: () {
-            final currentText = widget.controller.text;
-            final newText = currentText.substring(0, cursorPosition) +
-                data.text! +
-                currentText.substring(cursorPosition);
-            widget.controller.text = newText;
-            widget.controller.selection = TextSelection.fromPosition(
-              TextPosition(offset: cursorPosition + data.text!.length),
-            );
-            widget.onTextChanged(newText);
-          },
-        ),
-      ],
-      color: Colors.grey[900],
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    );
-  }
-
-  Offset _getTextPosition(BuildContext context, int cursorPosition) {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: widget.controller.text.substring(0, cursorPosition),
-        style: const TextStyle(fontSize: 16, color: Colors.white),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout(maxWidth: MediaQuery.of(context).size.width - 100);
-    return Offset(textPainter.width, textPainter.height);
   }
 }

@@ -80,6 +80,9 @@
 	<string>This app needs access to your photo library to let you select group images.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>This app needs access to save images to your photo library.</string>
+	<!-- Camera Permissions -->
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to your camera to scan QR codes for joining groups and sharing invite links.</string>
 	<!-- Network Security Configuration for IGDB API -->
 	<key>NSAppTransportSecurity</key>
 	<dict>

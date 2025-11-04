@@ -32,17 +32,24 @@ void main() async {
 
 Future<void> _initializeFirebase() async {
   try {
+    debugPrint('Initializing Firebase...');
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    debugPrint('Firebase initialized successfully');
+
     // Firebase Database persistence is not supported on web
     if (!kIsWeb) {
       FirebaseDatabase.instance.setPersistenceEnabled(true);
+      debugPrint('Firebase Database persistence enabled');
     }
+
     try {
       await NotificationService.initialize();
       await NotificationManager.initialize();
+      debugPrint('Notification services initialized');
     } catch (e) {
+      debugPrint('Notification initialization failed: $e');
       // Notification initialization failed - silently handled
     }
 
@@ -66,6 +73,7 @@ Future<void> _initializeFirebase() async {
     //   debugPrint('Grok API key setup failed: $e');
     // }
   } catch (e) {
+    debugPrint('Firebase initialization failed: $e');
     // Firebase initialization failed - silently handled
   }
 }
@@ -93,6 +101,8 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   late AppLinks _appLinks;
   StreamSubscription<Uri?>? _sub;
   bool _isInitialized = false;
+  Timer? _authTimeoutTimer;
+  bool _authTimedOut = false;
 
   @override
   void initState() {
@@ -104,6 +114,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   @override
   void dispose() {
     _sub?.cancel();
+    _authTimeoutTimer?.cancel();
     super.dispose();
   }
 
@@ -261,7 +272,29 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
               return StreamBuilder<User?>(
                 stream: FirebaseAuth.instance.authStateChanges(),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+                  debugPrint(
+                      'Auth state: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, user: ${snapshot.data}');
+
+                  // Start timeout timer on first build if not already started
+                  if (_authTimeoutTimer == null && !_authTimedOut) {
+                    _authTimeoutTimer = Timer(const Duration(seconds: 10), () {
+                      if (mounted) {
+                        debugPrint(
+                            'Firebase auth timeout - forcing setup screen');
+                        setState(() {
+                          _authTimedOut = true;
+                        });
+                      }
+                    });
+                  }
+
+                  // Cancel timeout if we get a result
+                  if (snapshot.connectionState != ConnectionState.waiting) {
+                    _authTimeoutTimer?.cancel();
+                    _authTimeoutTimer = null;
+                  }
+
+                  if (snapshot.connectionState == ConnectionState.waiting && !_authTimedOut) {
                     // Still checking auth status
                     return Scaffold(
                       backgroundColor: Colors.black,
@@ -272,8 +305,15 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                     );
                   }
 
+                  // If auth timed out, show setup screen
+                  if (_authTimedOut) {
+                    debugPrint('Auth timed out, showing setup screen');
+                    return const SetupScreen();
+                  }
+
                   final user = snapshot.data;
                   if (user != null) {
+                    debugPrint('User authenticated: ${user.uid}');
                     // User is authenticated, initialize SquadState and show main app
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       Provider.of<SquadState>(context, listen: false)
@@ -284,6 +324,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                     });
                     return const ChatGroupsScreen();
                   } else {
+                    debugPrint('User not authenticated, showing setup screen');
                     // User not authenticated, show login/setup screen
                     return const SetupScreen();
                   }

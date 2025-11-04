@@ -103,6 +103,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   bool _isInitialized = false;
   Timer? _authTimeoutTimer;
   bool _authTimedOut = false;
+  User? _directUserCheck;
 
   @override
   void initState() {
@@ -273,17 +274,37 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                 stream: FirebaseAuth.instance.authStateChanges(),
                 builder: (context, snapshot) {
                   debugPrint(
-                      'Auth state: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, user: ${snapshot.data}');
+                      'Auth state: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, user: ${snapshot.data}, error: ${snapshot.error}');
+
+                  // Check if Firebase is properly initialized
+                  try {
+                    FirebaseAuth.instance.app.name; // This will throw if Firebase isn't initialized
+                  } catch (e) {
+                    debugPrint('Firebase not properly initialized: $e');
+                    return const SetupScreen();
+                  }
 
                   // Start timeout timer on first build if not already started
                   if (_authTimeoutTimer == null && !_authTimedOut) {
-                    _authTimeoutTimer = Timer(const Duration(seconds: 10), () {
+                    _authTimeoutTimer = Timer(const Duration(seconds: 5), () {
                       if (mounted) {
                         debugPrint(
-                            'Firebase auth timeout - forcing setup screen');
-                        setState(() {
-                          _authTimedOut = true;
-                        });
+                            'Firebase auth timeout after 5 seconds - checking current user directly');
+                        // Try to get current user directly as fallback
+                        try {
+                          final currentUser = FirebaseAuth.instance.currentUser;
+                          debugPrint('Direct current user check: $currentUser');
+                          setState(() {
+                            _authTimedOut = true;
+                            _directUserCheck = currentUser;
+                          });
+                        } catch (e) {
+                          debugPrint('Error checking current user directly: $e');
+                          setState(() {
+                            _authTimedOut = true;
+                            _directUserCheck = null;
+                          });
+                        }
                       }
                     });
                   }
@@ -294,7 +315,8 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                     _authTimeoutTimer = null;
                   }
 
-                  if (snapshot.connectionState == ConnectionState.waiting && !_authTimedOut) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !_authTimedOut) {
                     // Still checking auth status
                     return Scaffold(
                       backgroundColor: Colors.black,
@@ -305,10 +327,25 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                     );
                   }
 
-                  // If auth timed out, show setup screen
+                  // If auth timed out, use direct user check result
                   if (_authTimedOut) {
-                    debugPrint('Auth timed out, showing setup screen');
-                    return const SetupScreen();
+                    debugPrint('Auth timed out, using direct user check result: $_directUserCheck');
+                    final user = _directUserCheck;
+                    if (user != null) {
+                      debugPrint('User authenticated via direct check: ${user.uid}');
+                      // User is authenticated, initialize SquadState and show main app
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        Provider.of<SquadState>(context, listen: false)
+                            .initialize(context);
+                        // Load pinned games for Quick Start
+                        Provider.of<UserManager>(context, listen: false)
+                            .fetchPinnedGames();
+                      });
+                      return const ChatGroupsScreen();
+                    } else {
+                      debugPrint('No authenticated user found, showing setup screen');
+                      return const SetupScreen();
+                    }
                   }
 
                   final user = snapshot.data;

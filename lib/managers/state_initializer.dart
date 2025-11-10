@@ -73,6 +73,7 @@ class StateInitializer {
     userSquads = {};
     selectedSquadId = null;
     currentSquadData = null;
+    _squadSubscription = null;
   }
 
   /// Initialize user state from authentication and stored data

@@ -328,4 +328,34 @@ class ChatService {
     return _messageService.deleteMessage(messageId, squadId,
         chatGroupId: chatGroupId);
   }
+
+  Future<void> pinMessage(String messageId, String squadId,
+      {String? chatGroupId}) async {
+    String collectionPath;
+    if (chatGroupId != null) {
+      collectionPath =
+          'users/${FirebaseAuth.instance.currentUser?.uid}/chat_groups/$chatGroupId/messages';
+    } else {
+      collectionPath = 'squads/$squadId/messages';
+    }
+
+    await _firestore.collection(collectionPath).doc(messageId).update({
+      'pinned': true,
+    });
+  }
+
+  Future<void> unpinMessage(String messageId, String squadId,
+      {String? chatGroupId}) async {
+    String collectionPath;
+    if (chatGroupId != null) {
+      collectionPath =
+          'users/${FirebaseAuth.instance.currentUser?.uid}/chat_groups/$chatGroupId/messages';
+    } else {
+      collectionPath = 'squads/$squadId/messages';
+    }
+
+    await _firestore.collection(collectionPath).doc(messageId).update({
+      'pinned': false,
+    });
+  }
 }

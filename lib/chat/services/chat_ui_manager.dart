@@ -255,8 +255,12 @@ class ChatUIManager {
 
         return GestureDetector(
           onTap: () {
-            // Navigate to squad tab for this game
-            Navigator.pushNamed(context, '/squad', arguments: gameName);
+            // Navigate directly to spots lobby for this game and squad
+            Navigator.pushNamed(context, '/squad', arguments: {
+              'gameName': gameName,
+              'lobbyId': squadState.selectedSquadId,
+              'game': currentGame,
+            });
           },
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

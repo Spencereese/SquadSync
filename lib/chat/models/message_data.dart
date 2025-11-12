@@ -17,6 +17,7 @@ class MessageData {
   final String? replyTo;
   final String? pollId;
   final bool isAiResponse;
+  final bool pinned;
   final MessageType type;
   final MessageStatus status;
 
@@ -36,6 +37,7 @@ class MessageData {
     this.replyTo,
     this.pollId,
     this.isAiResponse = false,
+    this.pinned = false,
     this.type = MessageType.text,
     this.status = MessageStatus.sent,
   }) : timestamp = timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -82,6 +84,7 @@ class MessageData {
       replyTo: data['replyTo'] ?? data['reply_to'],
       pollId: data['pollId'],
       isAiResponse: isAiResponse,
+      pinned: data['pinned'] ?? false,
     );
   }
 
@@ -120,6 +123,7 @@ class MessageData {
       replyTo: data['replyTo'] ?? data['reply_to'],
       pollId: data['pollId'],
       isAiResponse: isAiResponse,
+      pinned: data['pinned'] ?? false,
     );
   }
 

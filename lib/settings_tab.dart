@@ -8,6 +8,10 @@ import 'dart:io';
 import 'squad_state.dart';
 import 'setup_screen.dart';
 import 'firebase_storage_test.dart';
+import 'chat/poll_history_screen.dart';
+import 'chat/media_history_screen.dart';
+import 'chat/pinned_messages_screen.dart';
+import 'services/ai_service.dart';
 
 class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key});
@@ -634,6 +638,38 @@ class _SettingsTabState extends State<SettingsTab>
               onTap: () => _showBlockUserDialog(context, squadState),
             ),
             const Divider(),
+            _buildSectionHeader('Chat History'),
+            ListTile(
+              leading: const Icon(Icons.poll, color: Colors.cyan),
+              title: const Text('Poll History'),
+              subtitle: const Text('View and manage past polls'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => _navigateToHistoryScreen(PollHistoryScreen(
+                chatGroupId: squadState.selectedSquadId,
+                chatType: ChatType.squad,
+              )),
+            ),
+            ListTile(
+              leading: const Icon(Icons.perm_media, color: Colors.cyan),
+              title: const Text('Media History'),
+              subtitle: const Text('View images, videos, and audio'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => _navigateToHistoryScreen(MediaHistoryScreen(
+                chatGroupId: squadState.selectedSquadId,
+                chatType: ChatType.squad,
+              )),
+            ),
+            ListTile(
+              leading: const Icon(Icons.push_pin, color: Colors.cyan),
+              title: const Text('Pinned Messages'),
+              subtitle: const Text('View and manage pinned messages'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => _navigateToHistoryScreen(PinnedMessagesScreen(
+                chatGroupId: squadState.selectedSquadId,
+                chatType: ChatType.squad,
+              )),
+            ),
+            const Divider(),
             _buildSectionHeader('Feedback & Support'),
             ListTile(
               leading: const Icon(Icons.bug_report, color: Colors.cyan),
@@ -679,6 +715,13 @@ class _SettingsTabState extends State<SettingsTab>
           color: Colors.cyan,
         ),
       ),
+    );
+  }
+
+  void _navigateToHistoryScreen(Widget screen) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => screen),
     );
   }
 

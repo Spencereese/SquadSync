@@ -59,6 +59,7 @@ class Poll {
   final bool isClosed;
   final DateTime createdAt;
   final DateTime? closedAt;
+  final Duration? duration; // Time limit for the poll
   final int totalVotes;
 
   Poll({
@@ -72,6 +73,7 @@ class Poll {
     this.isClosed = false,
     required this.createdAt,
     this.closedAt,
+    this.duration,
   }) : totalVotes = options.fold(
             0, (accumulator, option) => accumulator + option.voteCount);
 
@@ -87,6 +89,7 @@ class Poll {
       'isClosed': isClosed,
       'createdAt': Timestamp.fromDate(createdAt),
       'closedAt': closedAt != null ? Timestamp.fromDate(closedAt!) : null,
+      'duration': duration?.inSeconds,
     };
   }
 
@@ -105,6 +108,9 @@ class Poll {
       isClosed: map['isClosed'] ?? false,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       closedAt: (map['closedAt'] as Timestamp?)?.toDate(),
+      duration: map['duration'] != null
+          ? Duration(seconds: map['duration'] as int)
+          : null,
     );
   }
 
@@ -119,6 +125,7 @@ class Poll {
     bool? isClosed,
     DateTime? createdAt,
     DateTime? closedAt,
+    Duration? duration,
   }) {
     return Poll(
       id: id ?? this.id,
@@ -131,6 +138,7 @@ class Poll {
       isClosed: isClosed ?? this.isClosed,
       createdAt: createdAt ?? this.createdAt,
       closedAt: closedAt ?? this.closedAt,
+      duration: duration ?? this.duration,
     );
   }
 

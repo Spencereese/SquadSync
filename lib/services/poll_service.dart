@@ -36,6 +36,7 @@ class PollService {
         isMultipleChoice: settings.isMultipleChoice,
         isAnonymous: settings.isAnonymous,
         createdAt: DateTime.now(),
+        duration: settings.duration,
       );
 
       // Determine collection path based on chat type
@@ -202,5 +203,17 @@ class PollService {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Get a stream for a specific poll
+  Stream<Poll?> getPollStream(String pollId, {String? chatGroupId}) {
+    final collectionPath =
+        chatGroupId != null ? 'chat_groups/$chatGroupId/polls' : 'polls';
+
+    return _firestore
+        .collection(collectionPath)
+        .doc(pollId)
+        .snapshots()
+        .map((doc) => doc.exists ? Poll.fromMap(doc.data()!) : null);
   }
 }

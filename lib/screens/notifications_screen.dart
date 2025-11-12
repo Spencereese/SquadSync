@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../app_theme.dart';
 import '../managers/user_manager.dart';
+import '../managers/notification_manager.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -37,7 +39,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadSettings();
   }
 
@@ -147,6 +149,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
             Tab(text: 'General', icon: Icon(Icons.settings)),
             Tab(text: 'Games', icon: Icon(Icons.videogame_asset)),
             Tab(text: 'Schedule', icon: Icon(Icons.schedule)),
+            Tab(text: 'History', icon: Icon(Icons.history)),
           ],
         ),
       ),
@@ -158,6 +161,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
               _buildGeneralSettings(),
               _buildGameSettings(),
               _buildScheduleSettings(),
+              _buildNotificationHistory(),
             ],
           ),
         ],
@@ -345,6 +349,38 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 24),
+            _buildSectionHeader('Notification Channels'),
+            _buildChannelTile(
+              title: 'Squad Notifications',
+              subtitle: 'Squad activities and spot updates',
+              channelId: 'squad_channel',
+              icon: Icons.group,
+            ),
+            _buildChannelTile(
+              title: 'Chat Notifications',
+              subtitle: 'Messages and mentions',
+              channelId: 'chat_channel',
+              icon: Icons.chat,
+            ),
+            _buildChannelTile(
+              title: 'Timer Notifications',
+              subtitle: 'Timer warnings and alerts',
+              channelId: 'timer_channel',
+              icon: Icons.timer,
+            ),
+            _buildChannelTile(
+              title: 'Achievement Notifications',
+              subtitle: 'Unlocked achievements',
+              channelId: 'achievement_channel',
+              icon: Icons.emoji_events,
+            ),
+            _buildChannelTile(
+              title: 'General Notifications',
+              subtitle: 'App updates and general alerts',
+              channelId: 'general_channel',
+              icon: Icons.notifications,
             ),
           ],
         );
@@ -703,6 +739,187 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     );
   }
 
+  Widget _buildNotificationHistory() {
+    return Consumer<NotificationManager>(
+      builder: (context, notificationManager, child) {
+        return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+          stream: notificationManager.getFilteredNotificationsStream(
+            mutedGames: _mutedGames,
+          ),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.cyanAccent),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error loading notifications',
+                      style: TextStyle(color: Colors.grey[400]),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      snapshot.error.toString(),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            final notifications = snapshot.data ?? [];
+
+            if (notifications.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.notifications_none,
+                      color: Colors.grey[600],
+                      size: 64,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No notifications yet',
+                      style: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'You\'ll see your notification history here',
+                      style: TextStyle(color: Colors.grey[600]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: notifications.length,
+              itemBuilder: (context, index) {
+                final notification = notifications[index];
+                final data = notification.data();
+                final isRead = data['read'] ?? false;
+                final timestamp = data['timestamp'] as Timestamp?;
+                final timeAgo = timestamp != null
+                    ? _getTimeAgo(timestamp.toDate())
+                    : 'Unknown time';
+
+                return Dismissible(
+                  key: Key(notification.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    color: Colors.red,
+                    child: const Icon(
+                      Icons.delete,
+                      color: Colors.white,
+                    ),
+                  ),
+                  onDismissed: (direction) {
+                    notificationManager.archiveNotification(notification.id);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${data['title']} deleted'),
+                        action: SnackBarAction(
+                          label: 'Undo',
+                          onPressed: () {
+                            // Note: Undo functionality would require storing deleted notifications
+                            // For now, just show the message
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                  child: Card(
+                    color: isRead
+                        ? AppTheme.cardDarkColor
+                        : AppTheme.cardDarkColor.withValues(alpha: 0.8),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: _getNotificationColor(data['type']),
+                        child: Icon(
+                          _getNotificationIcon(data['type']),
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        data['title'] ?? 'Notification',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight:
+                              isRead ? FontWeight.normal : FontWeight.bold,
+                        ),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            data['body'] ?? '',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            timeAgo,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      trailing: !isRead
+                          ? Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Colors.cyanAccent,
+                                shape: BoxShape.circle,
+                              ),
+                            )
+                          : null,
+                      onTap: () {
+                        if (!isRead) {
+                          notificationManager.markAsRead(notification.id);
+                        }
+                        // TODO: Handle notification tap actions based on type
+                        _handleNotificationTap(context, data);
+                      },
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -752,5 +969,143 @@ class _NotificationsScreenState extends State<NotificationsScreen>
         activeThumbColor: AppTheme.accentColor,
       ),
     );
+  }
+
+  Widget _buildChannelTile({
+    required String title,
+    required String subtitle,
+    required String channelId,
+    required IconData icon,
+  }) {
+    return Card(
+      color: AppTheme.cardDarkColor,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color: AppTheme.accentColor,
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            color: Colors.grey[400],
+            fontSize: 12,
+          ),
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.play_arrow, color: Colors.blue),
+          onPressed: () async {
+            // Test the notification channel
+            final notificationManager =
+                Provider.of<NotificationManager>(context, listen: false);
+            await notificationManager.showSmartNotification(
+              title: 'Test $title',
+              body: 'This is a test notification for $subtitle',
+              channelId: channelId,
+              payload: 'test:$channelId',
+            );
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text('Test notification sent to $title channel')),
+              );
+            }
+          },
+          tooltip: 'Test this notification channel',
+        ),
+      ),
+    );
+  }
+
+  String _getTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
+  }
+
+  Color _getNotificationColor(String? type) {
+    switch (type) {
+      case 'squad_spot':
+        return Colors.green;
+      case 'achievement':
+        return Colors.amber;
+      case 'timer_warning':
+        return Colors.orange;
+      case 'ban_warning':
+        return Colors.red;
+      case 'friend_request':
+        return Colors.purple;
+      case 'lobby_invite':
+        return Colors.blue;
+      default:
+        return Colors.cyanAccent;
+    }
+  }
+
+  IconData _getNotificationIcon(String? type) {
+    switch (type) {
+      case 'squad_spot':
+        return Icons.group_add;
+      case 'achievement':
+        return Icons.emoji_events;
+      case 'timer_warning':
+        return Icons.timer;
+      case 'ban_warning':
+        return Icons.warning;
+      case 'friend_request':
+        return Icons.person_add;
+      case 'lobby_invite':
+        return Icons.gamepad;
+      default:
+        return Icons.notifications;
+    }
+  }
+
+  void _handleNotificationTap(BuildContext context, Map<String, dynamic> data) {
+    final type = data['type'];
+    final gameData = data['data'] as Map<String, dynamic>?;
+
+    switch (type) {
+      case 'squad_spot':
+        if (gameData != null && gameData['gameName'] != null) {
+          Navigator.pushNamed(context, '/squad', arguments: {
+            'gameName': gameData['gameName'],
+            'lobbyId': gameData['lobbyId'],
+            'game': gameData['game'],
+          });
+        }
+        break;
+      case 'lobby_invite':
+        if (gameData != null && gameData['lobbyId'] != null) {
+          Navigator.pushNamed(context, '/squad', arguments: {
+            'lobbyId': gameData['lobbyId'],
+            'gameName': gameData['gameName'],
+            'game': gameData['game'],
+          });
+        }
+        break;
+      // Add more cases for other notification types as needed
+      default:
+        // For now, just show a snackbar
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tapped: ${data['title']}')),
+        );
+    }
   }
 }

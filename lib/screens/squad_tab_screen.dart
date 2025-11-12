@@ -212,11 +212,11 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
 
                 return ListView(
                   children: [
-                    // Quick Start Section
+                    // Game Select Section
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        'Quick Start',
+                        'Game Select',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             color: Colors.cyanAccent,
                             fontWeight: FontWeight.bold),
@@ -383,7 +383,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Pin favorites for quick start',
+              'Pin favorites for quick access',
               style: TextStyle(
                 color: Colors.grey[600],
                 fontSize: 14,
@@ -563,7 +563,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('${game['name']} removed from quick start'),
+                      content:
+                          Text('${game['name']} removed from pinned games'),
                       duration: const Duration(seconds: 2),
                     ),
                   );
@@ -731,7 +732,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       final notificationManager =
           Provider.of<NotificationManager>(context, listen: false);
       await notificationManager.showNotification(
-        title: 'Quick Start Lobby Created',
+        title: 'Game Lobby Created',
         body: 'Looking for $maxSpots spots in $gameName',
       );
 
@@ -748,7 +749,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to create Quick Start lobby: $e')),
+        SnackBar(content: Text('Failed to create game lobby: $e')),
       );
     }
   }

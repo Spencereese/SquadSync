@@ -27,7 +27,7 @@ void main() {
                         Icon(Icons.star_border, size: 48, color: Colors.grey),
                         SizedBox(height: 16),
                         Text(
-                          'Pin favorites for quick start',
+                          'Pin favorites for quick access',
                           style: TextStyle(fontSize: 16, color: Colors.grey),
                         ),
                       ],
@@ -41,7 +41,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Pin favorites for quick start'), findsOneWidget);
+      expect(find.text('Pin favorites for quick access'), findsOneWidget);
       expect(find.byIcon(Icons.star_border), findsOneWidget);
     });
 

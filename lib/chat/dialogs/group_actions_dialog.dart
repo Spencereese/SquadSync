@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../squad_state.dart';
+import '../../managers/game_manager.dart';
 import '../../utils.dart';
 
 /// Unified dialog for all group-related actions: join, create, and browse public groups
@@ -737,9 +738,14 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
           _showInviteCodeDialog(groupRef.id, groupName);
         } else {
           Navigator.pop(context);
-          showSnackBar(context, 'Group created successfully!');
-          // Navigate to the new group
-          _openChatGroup(groupRef.id, groupName);
+          // Use addPostFrameCallback to ensure context is valid for navigation
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              showSnackBar(context, 'Group created successfully!');
+              // Navigate to the new group
+              _openChatGroup(groupRef.id, groupName);
+            }
+          });
         }
       }
     } catch (e) {
@@ -816,8 +822,13 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
             onPressed: () {
               Navigator.pop(context); // Close dialog
               Navigator.pop(context); // Close group actions dialog
-              // Navigate to the new group
-              _openChatGroup(groupId, groupName);
+              // Use addPostFrameCallback to ensure context is valid for navigation
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  // Navigate to the new group
+                  _openChatGroup(groupId, groupName);
+                }
+              });
             },
             child:
                 const Text('Go to Group', style: TextStyle(color: Colors.cyan)),
@@ -842,7 +853,11 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
   @override
   Widget build(BuildContext context) {
     final squadState = Provider.of<SquadState>(context);
-    final availableGames = squadState.availableGames;
+    final gameManager = Provider.of<GameManager>(context);
+    // Use squad availableGames if available, otherwise fallback to gameManager
+    final availableGames = squadState.availableGames.isNotEmpty
+        ? squadState.availableGames
+        : gameManager.availableGames;
 
     return SingleChildScrollView(
       child: Column(

@@ -441,62 +441,71 @@ class UserManager with ChangeNotifier implements IUserManager {
     return Stream.fromFuture(_getCachedFriendsList())
         .asyncExpand((cachedFriends) {
       List<String>? lastFriendsUids;
+      List<Map<String, dynamic>>? lastFriendsList;
 
       return FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid)
           .snapshots()
           .asyncMap((doc) async {
-            try {
-              final data = doc.data();
-              if (data == null || !data.containsKey('friends')) {
-                return cachedFriends;
-              }
+        try {
+          final data = doc.data();
+          if (data == null || !data.containsKey('friends')) {
+            return cachedFriends;
+          }
 
-              final friendsUids = List<String>.from(data['friends'] ?? []);
+          final friendsUids = List<String>.from(data['friends'] ?? []);
 
-              // Only process if friends list has actually changed
-              if (lastFriendsUids != null &&
-                  _listsEqual(lastFriendsUids!, friendsUids)) {
-                return null; // Return null to indicate no change
-              }
-              lastFriendsUids = List<String>.from(friendsUids);
+          // Only process if friends list has actually changed
+          if (lastFriendsUids != null &&
+              _listsEqual(lastFriendsUids!, friendsUids)) {
+            return lastFriendsList ??
+                cachedFriends; // Return cached result, don't refetch
+          }
+          lastFriendsUids = List<String>.from(friendsUids);
 
-              if (friendsUids.isEmpty) {
-                // Cache empty list and return
-                await _cacheFriendsList([]);
-                return [];
-              }
+          if (friendsUids.isEmpty) {
+            // Cache empty list and return
+            final emptyList = <Map<String, dynamic>>[];
+            await _cacheFriendsList(emptyList);
+            lastFriendsList = emptyList;
+            return emptyList;
+          }
 
-              // Get friend details
-              final snapshot = await FirebaseFirestore.instance
-                  .collection('users')
-                  .where(FieldPath.documentId, whereIn: friendsUids)
-                  .get();
+          // Get friend details
+          final snapshot = await FirebaseFirestore.instance
+              .collection('users')
+              .where(FieldPath.documentId, whereIn: friendsUids)
+              .get();
 
-              final friendsList = snapshot.docs.map((friendDoc) {
-                final friendData = friendDoc.data();
-                return {
-                  'uid': friendDoc.id,
-                  'displayName': friendData['displayName'] ?? 'User',
-                  'profileImage': friendData['profileImage'],
-                  'isOnline': friendData['isOnline'] ?? false,
-                  'lastSeen': friendData['lastSeen'],
-                };
-              }).toList();
+          final friendsList = snapshot.docs.map((friendDoc) {
+            final friendData = friendDoc.data();
+            return {
+              'uid': friendDoc.id,
+              'displayName': friendData['displayName'] ?? 'User',
+              'profileImage': friendData['profileImage'],
+              'isOnline': friendData['isOnline'] ?? false,
+              'lastSeen': friendData['lastSeen'],
+            };
+          }).toList();
 
-              // Cache the friends list for offline use
-              await _cacheFriendsList(friendsList);
-              return friendsList;
-            } catch (e) {
-              debugPrint('Error fetching friends from Firestore: $e');
-              // Return cached data when offline
-              return cachedFriends;
-            }
-          })
-          .where((friends) =>
-              friends != null) // Filter out null values (no changes)
-          .cast<List<Map<String, dynamic>>>(); // Cast back to correct type
+          // Only update if the friends list actually changed
+          if (lastFriendsList == null ||
+              !_friendsListsEqual(lastFriendsList!, friendsList)) {
+            // Cache the friends list for offline use
+            await _cacheFriendsList(friendsList);
+            lastFriendsList = friendsList;
+            return friendsList;
+          } else {
+            // Return the cached result to avoid unnecessary rebuilds
+            return lastFriendsList!;
+          }
+        } catch (e) {
+          debugPrint('Error fetching friends from Firestore: $e');
+          // Return cached data when offline
+          return cachedFriends;
+        }
+      });
     });
   }
 
@@ -679,6 +688,23 @@ class UserManager with ChangeNotifier implements IUserManager {
     if (list1.length != list2.length) return false;
     for (int i = 0; i < list1.length; i++) {
       if (list1[i] != list2[i]) return false;
+    }
+    return true;
+  }
+
+  // Helper method to compare two friends lists for equality
+  bool _friendsListsEqual(
+      List<Map<String, dynamic>> list1, List<Map<String, dynamic>> list2) {
+    if (list1.length != list2.length) return false;
+    for (int i = 0; i < list1.length; i++) {
+      final friend1 = list1[i];
+      final friend2 = list2[i];
+      // Compare key fields that don't change frequently
+      if (friend1['uid'] != friend2['uid'] ||
+          friend1['displayName'] != friend2['displayName'] ||
+          friend1['profileImage'] != friend2['profileImage']) {
+        return false;
+      }
     }
     return true;
   }

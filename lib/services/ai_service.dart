@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:convert';
 import '../squad_state.dart';
 import '../services/grok_service.dart';
 import '../chat/sqlite_helper.dart';
@@ -134,6 +135,68 @@ class AiService {
   /// Check if a message should trigger an AI response
   bool shouldGenerateAiResponse(String message) {
     return _grokService.isMessageForGrok(message);
+  }
+
+  /// Generate AI-powered poll options based on a poll question
+  Future<List<String>> generatePollOptions(String pollQuestion,
+      {String? context}) async {
+    try {
+      final prompt = '''
+Generate 4-6 creative and relevant poll options for this question: "$pollQuestion"
+
+${context != null ? 'Context: $context' : ''}
+
+Requirements:
+- Options should be diverse and engaging
+- Keep each option under 50 characters
+- Make them specific and actionable
+- Avoid generic options like "Other" or "None"
+- Focus on general conversation and decision-making
+
+Return only the options as a JSON array of strings, no other text.
+Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
+''';
+
+      final response = await _grokService.getGrokResponse(
+        prompt,
+        context: 'Generating poll options for a general chat conversation',
+      );
+
+      // Try to parse as JSON array
+      try {
+        final cleanedResponse = response.trim();
+        // Remove markdown code blocks if present
+        final jsonStart = cleanedResponse.indexOf('[');
+        final jsonEnd = cleanedResponse.lastIndexOf(']') + 1;
+        if (jsonStart >= 0 && jsonEnd > jsonStart) {
+          final jsonStr = cleanedResponse.substring(jsonStart, jsonEnd);
+          final options = json.decode(jsonStr) as List<dynamic>;
+          return options.map((e) => e.toString()).toList();
+        }
+      } catch (e) {
+        print('Failed to parse poll options JSON: $e');
+      }
+
+      // Fallback: extract options from text response
+      final lines = response
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) =>
+              line.isNotEmpty &&
+              !line.startsWith('[') &&
+              !line.startsWith(']') &&
+              !line.contains('Example:') &&
+              !line.contains('Return only'))
+          .take(6)
+          .toList();
+
+      return lines
+          .where((line) => line.length > 0 && line.length < 50)
+          .toList();
+    } catch (e) {
+      print('Error generating poll options: $e');
+      return [];
+    }
   }
 }
 

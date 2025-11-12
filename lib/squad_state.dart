@@ -750,29 +750,46 @@ class SquadState with ChangeNotifier {
     if (currentUser == null) throw Exception('User not authenticated');
 
     try {
-      // Get the group data first to get the name for the success message
+      // First, check if this is a public group in the main chat_groups collection
       final groupDoc =
           await _firestore.collection('chat_groups').doc(groupId).get();
 
-      if (!groupDoc.exists) {
-        throw Exception('Group no longer exists');
+      if (groupDoc.exists) {
+        // This is a public group - remove user from it
+        final groupData = groupDoc.data()!;
+        final members = List<String>.from(groupData['members'] ?? []);
+
+        // Check if user is actually a member
+        if (!members.contains(currentUser.uid)) {
+          return; // Already not a member
+        }
+
+        // Remove user from the group
+        await _firestore.collection('chat_groups').doc(groupId).update({
+          'members': FieldValue.arrayRemove([currentUser.uid]),
+          'memberCount': FieldValue.increment(-1),
+        });
+      } else {
+        // This might be a user-specific group or the group no longer exists
+        // Check if it exists in user's subcollection
+        final userGroupDoc = await _firestore
+            .collection('users')
+            .doc(currentUser.uid)
+            .collection('chat_groups')
+            .doc(groupId)
+            .get();
+
+        if (!userGroupDoc.exists) {
+          throw Exception('Group not found');
+        }
+
+        // For user-specific groups, we might want to delete them entirely
+        // since they are owned by the user. But for now, let's just remove
+        // the reference from user's subcollection
       }
 
-      final groupData = groupDoc.data()!;
-      final members = List<String>.from(groupData['members'] ?? []);
-
-      // Check if user is actually a member
-      if (!members.contains(currentUser.uid)) {
-        return; // Already not a member
-      }
-
-      // Remove user from the group
-      await _firestore.collection('chat_groups').doc(groupId).update({
-        'members': FieldValue.arrayRemove([currentUser.uid]),
-        'memberCount': FieldValue.increment(-1),
-      });
-
-      // Also remove the group from user's chat_groups subcollection
+      // Always remove the group from user's chat_groups subcollection
+      // This ensures the group disappears from their UI
       await _firestore
           .collection('users')
           .doc(currentUser.uid)

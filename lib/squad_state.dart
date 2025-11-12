@@ -630,6 +630,85 @@ class SquadState with ChangeNotifier {
     return success;
   }
 
+  /// Join a chat group using an invite code
+  Future<bool> joinChatGroup(String code) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) throw Exception('User not authenticated');
+
+    try {
+      // First, try to find the invite in the chat_groups collection
+      // We need to search through all chat_groups/*/invites/* documents
+      final invitesQuery = await _firestore
+          .collectionGroup('invites')
+          .where('code', isEqualTo: code)
+          .limit(1)
+          .get();
+
+      if (invitesQuery.docs.isEmpty) {
+        throw Exception('Invalid invite code');
+      }
+
+      final inviteDoc = invitesQuery.docs.first;
+      final inviteData = inviteDoc.data();
+
+      // Check if invite is expired
+      final expiresAt = inviteData['expiresAt'];
+      if (expiresAt != null) {
+        final expiryDate = DateTime.parse(expiresAt);
+        if (DateTime.now().isAfter(expiryDate)) {
+          throw Exception('Invite code has expired');
+        }
+      }
+
+      // Check usage limit
+      final maxUses = inviteData['maxUses'] ?? 50;
+      final currentUses = inviteData['uses'] ?? 0;
+      if (currentUses >= maxUses) {
+        throw Exception('Invite code has reached its usage limit');
+      }
+
+      // Get the group ID from the document path
+      // Path format: chat_groups/{groupId}/invites/{code}
+      final pathSegments = inviteDoc.reference.path.split('/');
+      if (pathSegments.length < 4 || pathSegments[0] != 'chat_groups') {
+        throw Exception('Invalid invite document path');
+      }
+      final groupId = pathSegments[1];
+
+      // Get the group data to check membership
+      final groupDoc =
+          await _firestore.collection('chat_groups').doc(groupId).get();
+
+      if (!groupDoc.exists) {
+        throw Exception('Group no longer exists');
+      }
+
+      final groupData = groupDoc.data()!;
+      final members = List<String>.from(groupData['members'] ?? []);
+
+      // Check if user is already a member
+      if (members.contains(currentUser.uid)) {
+        return true; // Already a member
+      }
+
+      // Add user to the group
+      await _firestore.collection('chat_groups').doc(groupId).update({
+        'members': FieldValue.arrayUnion([currentUser.uid]),
+        'memberCount': FieldValue.increment(1),
+      });
+
+      // Update invite usage count
+      await inviteDoc.reference.update({
+        'uses': FieldValue.increment(1),
+      });
+
+      return true;
+    } catch (e) {
+      debugPrint('Error joining chat group: $e');
+      throw e; // Re-throw to let caller handle the error
+    }
+  }
+
   Future<void> leaveSquad() async {
     await squadMembershipService.leaveSquad(
       selectedSquadId,

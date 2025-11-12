@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'squad_state.dart';
-import 'setup_screen.dart';
 import 'firebase_storage_test.dart';
 import 'chat/poll_history_screen.dart';
 import 'chat/media_history_screen.dart';
@@ -94,12 +93,7 @@ class _SettingsTabState extends State<SettingsTab>
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('profileImageUrl');
     await FirebaseAuth.instance.signOut();
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => SetupScreen()),
-      (route) => false,
-    );
+    // Navigation will be handled automatically by the StreamBuilder in main.dart
   }
 
   Future<void> _updateProfilePicture() async {

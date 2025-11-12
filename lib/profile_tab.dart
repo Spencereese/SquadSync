@@ -9,7 +9,6 @@ import 'squad_state.dart';
 import '../managers/user_manager.dart';
 import '../chat/chat_state.dart';
 import '../chat/chat_groups_screen.dart';
-import 'setup_screen.dart';
 import 'package:flutter/services.dart';
 
 class ProfileTab extends StatefulWidget {
@@ -932,12 +931,7 @@ class _ProfileTabState extends State<ProfileTab>
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('profileImageUrl');
       await FirebaseAuth.instance.signOut();
-      if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const SetupScreen()),
-        (route) => false,
-      );
+      // Navigation will be handled automatically by the StreamBuilder in main.dart
     }
   }
 

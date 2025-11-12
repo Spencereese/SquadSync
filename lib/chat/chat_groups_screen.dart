@@ -14,10 +14,8 @@ import '../app_theme.dart';
 import 'widgets/squad_chat_tab.dart';
 import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
-import 'dialogs/create_new_group_dialog.dart';
-import 'dialogs/find_groups_dialog.dart';
+import 'dialogs/group_actions_dialog.dart';
 import 'dialogs/add_friend_dialog.dart';
-import 'dialogs/join_group_dialog.dart';
 
 class ChatGroupsScreen extends StatefulWidget {
   const ChatGroupsScreen({super.key});
@@ -260,31 +258,14 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                 tooltip: 'Add friend',
               )
             else ...[
-              IconButton(
-                icon: const Icon(Icons.group_add, color: Colors.cyanAccent),
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (context) => const JoinGroupDialog(),
-                ),
-                tooltip: 'Join group',
-              ),
-              IconButton(
-                icon: const Icon(Icons.search, color: Colors.cyanAccent),
-                onPressed: () => showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (context) => const FindGroupsDialog(),
-                ),
-                tooltip: 'Find public groups',
-              ),
+              // Single + button for all group actions
               IconButton(
                 icon: const Icon(Icons.add, color: Colors.cyanAccent),
                 onPressed: () => showDialog(
                   context: context,
-                  builder: (context) => const CreateNewGroupDialog(),
+                  builder: (context) => const GroupActionsDialog(),
                 ),
-                tooltip: 'Create new group',
+                tooltip: 'Group actions',
               ),
             ],
           ],

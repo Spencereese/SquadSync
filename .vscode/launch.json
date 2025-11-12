@@ -5,18 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "cod_squad_app",
+            "name": "SquadSync",
             "request": "launch",
             "type": "dart"
         },
         {
-            "name": "cod_squad_app (profile mode)",
+            "name": "SquadSync (profile mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
-            "name": "cod_squad_app (release mode)",
+            "name": "SquadSync (release mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"

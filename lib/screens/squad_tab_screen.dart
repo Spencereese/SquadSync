@@ -315,10 +315,24 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                                           const Spacer(),
                                           // Action button
                                           isOwn
-                                              ? const Text('Host',
-                                                  style: TextStyle(
-                                                      color: Colors.cyanAccent,
-                                                      fontSize: 12))
+                                              ? ElevatedButton.icon(
+                                                  onPressed: () => _closeLobby(
+                                                      context, doc.id),
+                                                  icon: const Icon(Icons.close,
+                                                      size: 12),
+                                                  label: const Text('Close'),
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.red
+                                                        .withValues(alpha: 0.8),
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 6),
+                                                    textStyle: const TextStyle(
+                                                        fontSize: 10),
+                                                  ),
+                                                )
                                               : ElevatedButton(
                                                   onPressed: () => _joinLobby(
                                                       context, doc.id, peacock),
@@ -357,6 +371,46 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                           ),
                         );
                       }),
+                    ] else ...[
+                      // Empty state when no active lobbies exist
+                      Container(
+                        height: 120,
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        child: Card(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.group_off,
+                                  size: 32,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'No active lobbies right now',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Create one to get started!',
+                                  style: TextStyle(
+                                    color: Colors.grey[500],
+                                    fontSize: 12,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ],
                 );
@@ -790,5 +844,48 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Joined lobby!')),
     );
+  }
+
+  void _closeLobby(BuildContext context, String peacockId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final squadManager = Provider.of<SquadManager>(context, listen: false);
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Close Lobby'),
+        content: const Text(
+            'Are you sure you want to close this lobby? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await squadManager.closeLobby(peacockId);
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lobby closed successfully')),
+        );
+      } catch (e) {
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to close lobby: $e')),
+        );
+      }
+    }
   }
 }

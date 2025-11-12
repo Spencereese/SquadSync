@@ -20,6 +20,8 @@ class MessageData {
   final bool pinned;
   final MessageType type;
   final MessageStatus status;
+  final String? threadId;
+  final int threadDepth;
 
   MessageData({
     required this.id,
@@ -40,6 +42,8 @@ class MessageData {
     this.pinned = false,
     this.type = MessageType.text,
     this.status = MessageStatus.sent,
+    this.threadId,
+    this.threadDepth = 0,
   }) : timestamp = timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Factory constructor to create MessageData from Firestore DocumentSnapshot
@@ -85,6 +89,8 @@ class MessageData {
       pollId: data['pollId'],
       isAiResponse: isAiResponse,
       pinned: data['pinned'] ?? false,
+      threadId: data['threadId'],
+      threadDepth: data['threadDepth'] ?? 0,
     );
   }
 
@@ -124,6 +130,8 @@ class MessageData {
       pollId: data['pollId'],
       isAiResponse: isAiResponse,
       pinned: data['pinned'] ?? false,
+      threadId: data['threadId'],
+      threadDepth: data['threadDepth'] is int ? data['threadDepth'] : 0,
     );
   }
 
@@ -156,6 +164,8 @@ class MessageData {
       'replyTo': replyTo,
       'pollId': pollId,
       'isAiResponse': isAiResponse,
+      'threadId': threadId,
+      'threadDepth': threadDepth,
     };
   }
 }

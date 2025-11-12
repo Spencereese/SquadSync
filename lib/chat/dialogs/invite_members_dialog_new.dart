@@ -232,11 +232,16 @@ class _InviteMembersDialogState extends BaseDialogState<InviteMembersDialog> {
 
     final inviteLink =
         'codsquadapp://join/${widget.chatGroupId}?code=$_inviteCode';
-    final message =
-        'Join "${widget.chatGroupName}" on SquadSync! Use code: $_inviteCode or tap: $inviteLink';
+    final webFallbackLink =
+        'https://squadsync.app/join/${widget.chatGroupId}?code=$_inviteCode';
+    final message = 'Join "${widget.chatGroupName}" on SquadSync!\n\n'
+        '📱 App users: $inviteLink\n'
+        '🌐 Web users: $webFallbackLink\n\n'
+        'Or use invite code: $_inviteCode';
 
     try {
-      await Share.share(message, subject: 'Join ${widget.chatGroupName}');
+      await Share.share(message,
+          subject: 'Join ${widget.chatGroupName} on SquadSync');
     } catch (e) {
       // Fallback to clipboard
       await Clipboard.setData(ClipboardData(text: message));

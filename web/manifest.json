@@ -1,6 +1,6 @@
 {
-    "name": "cod_squad_app",
-    "short_name": "cod_squad_app",
+    "name": "SquadSync",
+    "short_name": "SquadSync",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

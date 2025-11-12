@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../../squad_state.dart';
 import '../../managers/game_manager.dart';
 import '../../utils.dart';
@@ -931,41 +932,76 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
                 const SizedBox(height: 12),
               ],
 
-              // Add game dropdown
-              DropdownButtonFormField<String>(
-                decoration: InputDecoration(
-                  hintText: _selectedGames.isEmpty
-                      ? 'Game focus (optional)'
-                      : 'Add another game',
-                  hintStyle: const TextStyle(color: Colors.grey),
-                  filled: true,
-                  fillColor: Colors.grey[800],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  prefixIcon: const Icon(Icons.games, color: Colors.cyanAccent),
-                ),
-                dropdownColor: Colors.grey[800],
-                style: const TextStyle(color: Colors.white),
-                items: [
-                  ...availableGames
+              // Add game search field
+              TypeAheadField<String>(
+                builder: (context, controller, focusNode) {
+                  return TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: _selectedGames.isEmpty
+                          ? 'Game focus (optional)'
+                          : 'Add another game',
+                      hintStyle: const TextStyle(color: Colors.grey),
+                      filled: true,
+                      fillColor: Colors.grey[800],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                      prefixIcon:
+                          const Icon(Icons.games, color: Colors.cyanAccent),
+                    ),
+                  );
+                },
+                suggestionsCallback: (pattern) async {
+                  // Always include "Any Game" option
+                  List<String> suggestions = ['Any Game'];
+
+                  // Add available games that haven't been selected yet
+                  final unselectedGames = availableGames
                       .where((game) =>
                           !_selectedGames.contains(game['name'] as String))
-                      .map((game) {
-                    return DropdownMenuItem<String>(
-                      value: game['name'] as String,
-                      child: Text(game['name'] as String),
-                    );
-                  }),
-                ],
-                onChanged: (value) {
-                  if (value != null && !_selectedGames.contains(value)) {
+                      .map((game) => game['name'] as String)
+                      .toList();
+
+                  if (pattern.isEmpty) {
+                    suggestions.addAll(unselectedGames);
+                  } else {
+                    // Filter games based on search pattern
+                    final filteredGames = unselectedGames
+                        .where((game) =>
+                            game.toLowerCase().contains(pattern.toLowerCase()))
+                        .toList();
+                    suggestions.addAll(filteredGames);
+                  }
+
+                  return suggestions;
+                },
+                itemBuilder: (context, suggestion) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      suggestion,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  );
+                },
+                onSelected: (suggestion) {
+                  if (!_selectedGames.contains(suggestion)) {
                     setState(() {
-                      _selectedGames.add(value);
+                      _selectedGames.add(suggestion);
                     });
                   }
                 },
+                emptyBuilder: (context) => const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text(
+                    'No games found',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
               ),
             ],
           ),

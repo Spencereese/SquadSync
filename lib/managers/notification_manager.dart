@@ -9,9 +9,13 @@ class NotificationManager with ChangeNotifier {
   static final FlutterLocalNotificationsPlugin
       _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
+  NotificationManager() {
+    _loadNotificationSettings();
+  }
+
   static Future<void> initialize() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@mipmap/launcher_icon');
 
     const DarwinInitializationSettings initializationSettingsIOS =
         DarwinInitializationSettings();
@@ -99,6 +103,23 @@ class NotificationManager with ChangeNotifier {
           debugPrint('Viewing chat');
         }
         break;
+      case 'lobby_join':
+        if (actionId == 'join_lobby' && parts.length >= 2) {
+          final lobbyId = parts[1];
+          final gameName = parts.length >= 3 ? parts[2] : '';
+          final hostName = parts.length >= 4 ? parts[3] : '';
+          // TODO: Navigate to lobby and join it
+          debugPrint(
+              'Joining lobby $lobbyId for $gameName hosted by $hostName');
+        } else if (actionId == 'view_lobby' && parts.length >= 2) {
+          final lobbyId = parts[1];
+          final gameName = parts.length >= 3 ? parts[2] : '';
+          final hostName = parts.length >= 4 ? parts[3] : '';
+          // TODO: Navigate to view lobby details
+          debugPrint(
+              'Viewing lobby $lobbyId for $gameName hosted by $hostName');
+        }
+        break;
     }
   }
 
@@ -145,6 +166,19 @@ class NotificationManager with ChangeNotifier {
       playSound: true,
     );
 
+    const AndroidNotificationChannel gamingLobbyChannel =
+        AndroidNotificationChannel(
+      'gaming_lobby_channel',
+      'Gaming Lobby Notifications',
+      description: 'Persistent notifications for joinable gaming lobbies',
+      importance: Importance.max,
+      playSound: false,
+      showBadge: true,
+      enableVibration: false,
+      enableLights: true,
+      ledColor: Color.fromARGB(255, 0, 255, 0),
+    );
+
     await _flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
@@ -169,6 +203,11 @@ class NotificationManager with ChangeNotifier {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(generalChannel);
+
+    await _flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(gamingLobbyChannel);
   }
 
   bool notificationsEnabled = true;
@@ -178,7 +217,115 @@ class NotificationManager with ChangeNotifier {
     'timer_warning': true,
     'ban_warning': true,
     'achievement': true,
+    'lobby_available': true,
   };
+
+  // FCM token management
+  Future<void> updateFCMToken(String token) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      // Get current tokens
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final currentTokens =
+          List<String>.from(userDoc.data()?['fcmTokens'] ?? []);
+
+      // Add new token if not already present
+      if (!currentTokens.contains(token)) {
+        currentTokens.add(token);
+
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({
+          'fcmTokens': currentTokens,
+        });
+      }
+    } catch (e) {
+      debugPrint('Error updating FCM token: $e');
+    }
+  }
+
+  Future<void> removeFCMToken(String token) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      // Get current tokens
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final currentTokens =
+          List<String>.from(userDoc.data()?['fcmTokens'] ?? []);
+
+      // Remove token
+      currentTokens.remove(token);
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'fcmTokens': currentTokens,
+      });
+    } catch (e) {
+      debugPrint('Error removing FCM token: $e');
+    }
+  }
+
+  // Notification settings management
+  Future<void> updateNotificationSettings(Map<String, bool> settings) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'notificationSettings': settings,
+      }, SetOptions(merge: true));
+
+      // Update local state
+      notificationTypes.addAll(settings);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating notification settings: $e');
+    }
+  }
+
+  Future<Map<String, bool>> getNotificationSettings() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return notificationTypes;
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final settings =
+          userDoc.data()?['notificationSettings'] as Map<String, dynamic>?;
+
+      if (settings != null) {
+        final typedSettings =
+            settings.map((key, value) => MapEntry(key, value as bool));
+        // Update local state
+        notificationTypes.addAll(typedSettings);
+        return typedSettings;
+      }
+    } catch (e) {
+      debugPrint('Error getting notification settings: $e');
+    }
+
+    return notificationTypes;
+  }
+
+  Future<void> _loadNotificationSettings() async {
+    final settings = await getNotificationSettings();
+    notificationTypes = Map.from(settings);
+    notifyListeners();
+  }
 
   void setNotificationsEnabled(bool enabled) {
     notificationsEnabled = enabled;
@@ -265,6 +412,7 @@ class NotificationManager with ChangeNotifier {
     required String channelId,
     String? payload,
     List<AndroidNotificationAction>? actions,
+    bool ongoing = false,
   }) async {
     final AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
@@ -275,6 +423,8 @@ class NotificationManager with ChangeNotifier {
       priority: Priority.high,
       showWhen: true,
       actions: actions,
+      ongoing: ongoing,
+      autoCancel: !ongoing, // Auto-cancel non-ongoing notifications when tapped
     );
     final NotificationDetails platformChannelSpecifics =
         NotificationDetails(android: androidPlatformChannelSpecifics);
@@ -300,6 +450,8 @@ class NotificationManager with ChangeNotifier {
         return 'Timer Notifications';
       case 'general_channel':
         return 'General Notifications';
+      case 'gaming_lobby_channel':
+        return 'Gaming Lobby Notifications';
       default:
         return 'SquadSync Notifications';
     }
@@ -317,6 +469,8 @@ class NotificationManager with ChangeNotifier {
         return 'Notifications for timer warnings and alerts';
       case 'general_channel':
         return 'General app notifications';
+      case 'gaming_lobby_channel':
+        return 'Persistent notifications for joinable gaming lobbies';
       default:
         return 'Notifications for SquadSync app';
     }
@@ -327,6 +481,8 @@ class NotificationManager with ChangeNotifier {
       case 'squad_channel':
       case 'timer_channel':
         return Importance.high;
+      case 'gaming_lobby_channel':
+        return Importance.max;
       case 'chat_channel':
       case 'general_channel':
         return Importance.defaultImportance;
@@ -454,6 +610,63 @@ class NotificationManager with ChangeNotifier {
       payload: 'chat_mention:$sender:$message',
       actions: actions,
     );
+  }
+
+  // Gaming Lobby Notifications
+  Future<void> showPersistentLobbyNotification({
+    required String lobbyId,
+    required String gameName,
+    required String hostName,
+    required int currentPlayers,
+    required int maxPlayers,
+    required List<String> playerNames,
+  }) async {
+    if (!isNotificationEnabled('lobby_available')) return;
+
+    final actions = [
+      AndroidNotificationAction(
+        'join_lobby',
+        'Join Lobby',
+        showsUserInterface: true,
+      ),
+      AndroidNotificationAction(
+        'view_lobby',
+        'View Details',
+        showsUserInterface: true,
+      ),
+    ];
+
+    final playerList = playerNames.isNotEmpty
+        ? playerNames.take(3).join(', ') +
+            (playerNames.length > 3 ? ' +${playerNames.length - 3} more' : '')
+        : 'Waiting for players';
+
+    await showSmartNotification(
+      title: '$hostName\'s $gameName Lobby',
+      body: '$currentPlayers/$maxPlayers players • $playerList',
+      channelId: 'gaming_lobby_channel',
+      payload: 'lobby_join:$lobbyId:$gameName:$hostName',
+      actions: actions,
+      ongoing: true, // This makes it persistent until dismissed
+    );
+  }
+
+  Future<void> dismissPersistentLobbyNotification(String lobbyId) async {
+    // Cancel the specific notification by its ID
+    // Since we use timestamp-based IDs, we need to find and cancel by payload or use a specific ID
+    // For now, we'll cancel all ongoing notifications when a lobby is closed
+    await cancelAllNotifications();
+  }
+
+  // Method to check for friend lobbies and show persistent notifications
+  // This should be called periodically or when the app detects friend activity
+  Future<void> checkAndShowFriendLobbyNotifications() async {
+    // TODO: Implement server-side push notifications for friend lobbies
+    // For now, this is a placeholder for the logic that would:
+    // 1. Get current user's friends
+    // 2. Check which friends have active lobbies
+    // 3. Show persistent notifications for joinable friend lobbies
+    // 4. Server-side implementation needed for cross-device notifications
   }
 
   // Stream methods for smart feed

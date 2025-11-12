@@ -84,6 +84,9 @@ class ChatMediaHandler {
     if (await _audioRecorder.hasPermission()) {
       try {
         final directory = Directory.systemTemp;
+        if (!directory.existsSync()) {
+          directory.createSync(recursive: true);
+        }
         final path =
             '${directory.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
         await _audioRecorder.start(const record_package.RecordConfig(),
@@ -91,12 +94,17 @@ class ChatMediaHandler {
         chatState.setRecording(true);
         HapticFeedback.mediumImpact();
       } catch (e) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Recording failed: $e')));
+        debugPrint('Recording start failed: $e');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('Recording failed: $e')));
+        }
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone permission Denied')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission Denied')));
+      }
     }
   }
 
@@ -119,8 +127,12 @@ class ChatMediaHandler {
       }
       HapticFeedback.mediumImpact();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to stop recording: $e')));
+      debugPrint('Recording stop failed: $e');
+      chatState.setRecording(false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to stop recording: $e')));
+      }
     }
   }
 

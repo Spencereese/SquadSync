@@ -23,6 +23,7 @@ import 'managers/user_manager.dart';
 import 'managers/review_manager.dart';
 import 'managers/squad_manager.dart';
 import 'screens/squad_tab_screen.dart';
+import 'screens/add_game_screen.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -274,6 +275,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
               }
               return const SquadTabScreen();
             },
+            '/main': (context) => const ChatGroupsScreen(),
           },
           home: Builder(
             builder: (context) {
@@ -362,7 +364,17 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                         Provider.of<UserManager>(context, listen: false)
                             .fetchPinnedGames();
                       });
-                      return const ChatGroupsScreen();
+                      // Check if user has completed onboarding (has pinned games)
+                      return Consumer<UserManager>(
+                        builder: (context, userManager, _) {
+                          // If user has no pinned games, show onboarding
+                          if (userManager.pinnedGames.isEmpty) {
+                            return const AddGameScreen();
+                          } else {
+                            return const ChatGroupsScreen();
+                          }
+                        },
+                      );
                     } else {
                       debugPrint(
                           'No authenticated user found, showing setup screen');
@@ -381,7 +393,17 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                       Provider.of<UserManager>(context, listen: false)
                           .fetchPinnedGames();
                     });
-                    return const ChatGroupsScreen();
+                    // Check if user has completed onboarding (has pinned games)
+                    return Consumer<UserManager>(
+                      builder: (context, userManager, _) {
+                        // If user has no pinned games, show onboarding
+                        if (userManager.pinnedGames.isEmpty) {
+                          return const AddGameScreen();
+                        } else {
+                          return const ChatGroupsScreen();
+                        }
+                      },
+                    );
                   } else {
                     debugPrint('User not authenticated, showing setup screen');
                     // User not authenticated, show login/setup screen

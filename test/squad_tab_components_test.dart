@@ -4,10 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:mockito/mockito.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cod_squad_app/squad_tab/squad_tab.dart';
-import 'package:cod_squad_app/squad_tab/widgets/squad_grid.dart';
-import 'package:cod_squad_app/squad_state.dart';
-import 'package:cod_squad_app/managers/squad_manager.dart';
+import 'package:squad_sync/squad_tab/squad_tab.dart';
+import 'package:squad_sync/squad_tab/widgets/squad_grid.dart';
+import 'package:squad_sync/squad_state.dart';
+import 'package:squad_sync/managers/squad_manager.dart';
 import 'test_setup.dart';
 
 // Mock functions

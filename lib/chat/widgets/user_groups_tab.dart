@@ -291,6 +291,7 @@ class UserGroupsTab extends StatelessWidget {
                         builder: (context) => ChatScreen(
                           chatType: ChatType.userGroup,
                           chatGroupId: group.id,
+                          chatGroupName: groupName,
                         ),
                       ),
                     );

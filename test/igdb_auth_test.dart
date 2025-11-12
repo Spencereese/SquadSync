@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:http/http.dart' as http;
-import 'package:cod_squad_app/services/igdb_auth_service.dart';
+import 'package:squad_sync/services/igdb_auth_service.dart';
 
 // Create a mock for HTTP client
 class MockClient extends Mock implements http.Client {}

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cod_squad_app/managers/user_manager.dart';
+import 'package:squad_sync/managers/user_manager.dart';
 
 void main() {
   late UserManager userManager;

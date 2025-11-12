@@ -342,11 +342,11 @@ class SquadManager with ChangeNotifier implements ISquadManager {
     if (!doc.exists) return;
 
     final data = doc.data()!;
-    final filled = List<Map<String, dynamic>>.from(data['filled'] ?? []);
+    final filled = List<String>.from(data['filled'] ?? []);
     final viewers = List<String>.from(data['viewers'] ?? []);
 
     // Remove user from filled spots
-    filled.removeWhere((spot) => spot['uid'] == userUid);
+    filled.remove(userUid);
 
     // Remove user from viewers
     viewers.remove(userUid);
@@ -361,5 +361,42 @@ class SquadManager with ChangeNotifier implements ISquadManager {
   Future<void> closeLobby(String peacockId) async {
     // Delete the peacock document to close the lobby
     await _firestore.collection('peacocks').doc(peacockId).delete();
+  }
+
+  // Alert methods for squad game requests
+  Future<void> sendGameAlert(String squadId, String userUid, String alertType,
+      {String? specificGame, List<String>? pinnedGames}) async {
+    final alertData = {
+      'userUid': userUid,
+      'type': alertType, // 'specific', 'pinned', or 'any'
+      'specificGame': specificGame,
+      'pinnedGames': pinnedGames,
+      'timestamp': FieldValue.serverTimestamp(),
+    };
+
+    await _firestore.collection('squads').doc(squadId).update({
+      'gameAlerts': FieldValue.arrayUnion([alertData]),
+    });
+  }
+
+  Future<void> clearGameAlerts(String squadId, String userUid) async {
+    final doc = await _firestore.collection('squads').doc(squadId).get();
+    if (!doc.exists) return;
+
+    final data = doc.data()!;
+    final alerts = List<Map<String, dynamic>>.from(data['gameAlerts'] ?? []);
+    alerts.removeWhere((alert) => alert['userUid'] == userUid);
+
+    await _firestore.collection('squads').doc(squadId).update({
+      'gameAlerts': alerts,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getSquadAlerts(String squadId) async {
+    final doc = await _firestore.collection('squads').doc(squadId).get();
+    if (!doc.exists) return [];
+
+    final data = doc.data()!;
+    return List<Map<String, dynamic>>.from(data['gameAlerts'] ?? []);
   }
 }

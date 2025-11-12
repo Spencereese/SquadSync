@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:cod_squad_app/chat/squad_sheet.dart';
-import 'package:cod_squad_app/squad_state.dart';
+import 'package:squad_sync/chat/squad_sheet.dart';
+import 'package:squad_sync/squad_state.dart';
 
 void main() {
   group('SquadSheet', () {

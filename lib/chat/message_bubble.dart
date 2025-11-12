@@ -1061,6 +1061,9 @@ class _MessageBubbleState extends State<MessageBubble> {
             _normalizedData['id']?.toString() ?? '',
             widget.chatGroupId,
           ),
+          onBump: () => _bumpMessage(context, data),
+          onEdit: () => _editMessage(context, data),
+          onPin: () => _pinMessage(context, data),
           chatGroupId: widget.chatGroupId,
         );
       },
@@ -1074,6 +1077,132 @@ class _MessageBubbleState extends State<MessageBubble> {
         );
       },
     );
+  }
+
+  void _bumpMessage(BuildContext context, Map<String, dynamic> data) {
+    // Bump message by updating its timestamp to bring it to the top
+    final messageId = data['id'];
+    if (messageId != null) {
+      // Get squad state to determine collection path
+      final squadState = Provider.of<SquadState>(context, listen: false);
+      final squadId = squadState.selectedSquadId;
+
+      // Determine collection path based on chat type
+      final collectionPath = widget.chatGroupId != null && squadId != null
+          ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
+          : squadId != null
+              ? 'squads/$squadId/chat'
+              : 'chats';
+
+      FirebaseFirestore.instance
+          .collection(collectionPath)
+          .doc(messageId)
+          .update({
+        'timestamp': FieldValue.serverTimestamp(),
+        'bumped': true,
+        'bumpedAt': FieldValue.serverTimestamp(),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message bumped!')),
+      );
+    }
+  }
+
+  void _editMessage(BuildContext context, Map<String, dynamic> data) {
+    final messageId = data['id'];
+    final currentText = data['content'] ?? '';
+
+    if (messageId != null && widget.isMe) {
+      showDialog(
+        context: context,
+        builder: (context) {
+          final controller = TextEditingController(text: currentText);
+          return AlertDialog(
+            title: const Text('Edit Message'),
+            content: TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'Edit your message...',
+              ),
+              maxLines: 5,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final newText = controller.text.trim();
+                  if (newText.isNotEmpty && newText != currentText) {
+                    // Get squad state to determine collection path
+                    final squadState =
+                        Provider.of<SquadState>(context, listen: false);
+                    final squadId = squadState.selectedSquadId;
+
+                    // Determine collection path based on chat type
+                    final collectionPath = widget.chatGroupId != null &&
+                            squadId != null
+                        ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
+                        : squadId != null
+                            ? 'squads/$squadId/chat'
+                            : 'chats';
+
+                    await FirebaseFirestore.instance
+                        .collection(collectionPath)
+                        .doc(messageId)
+                        .update({
+                      'text': newText,
+                      'edited': true,
+                      'editedAt': FieldValue.serverTimestamp(),
+                    });
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Message edited')),
+                      );
+                    }
+                  }
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+
+  void _pinMessage(BuildContext context, Map<String, dynamic> data) {
+    final messageId = data['id'];
+    if (messageId != null) {
+      // Get squad state to determine collection path
+      final squadState = Provider.of<SquadState>(context, listen: false);
+      final squadId = squadState.selectedSquadId;
+
+      // Determine collection path based on chat type
+      final collectionPath = widget.chatGroupId != null && squadId != null
+          ? 'squads/$squadId/chat_groups/${widget.chatGroupId}/messages'
+          : squadId != null
+              ? 'squads/$squadId/chat'
+              : 'chats';
+
+      FirebaseFirestore.instance
+          .collection(collectionPath)
+          .doc(messageId)
+          .update({
+        'pinned': true,
+        'pinnedAt': FieldValue.serverTimestamp(),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message pinned!')),
+      );
+    }
   }
 }
 

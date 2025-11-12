@@ -4,9 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:mockito/mockito.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cod_squad_app/screens/squad_tab_screen.dart';
-import 'package:cod_squad_app/managers/squad_manager.dart';
-import 'package:cod_squad_app/squad_state.dart';
+import 'package:squad_sync/screens/squad_tab_screen.dart';
+import 'package:squad_sync/managers/squad_manager.dart';
+import 'package:squad_sync/squad_state.dart';
 import 'test_setup.dart';
 
 // Mock classes

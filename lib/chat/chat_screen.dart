@@ -28,6 +28,8 @@ import 'services/chat_online_status_manager.dart';
 import 'services/chat_media_handler.dart';
 import 'services/chat_typing_manager.dart';
 import 'services/chat_ui_manager.dart';
+import 'chat_settings_menu.dart'; // Importing ChatSettingsMenu
+
 // import 'available_squads_widget.dart'; // Removed - no longer used
 
 class ChatScreen extends StatefulWidget {
@@ -935,7 +937,55 @@ class ChatScreenState extends State<ChatScreen>
                               onLeaveGroup: _leaveGroup,
                               onInviteMembers: _inviteMembers,
                               onChangeChatName: () async {
-                                // This will be implemented when we integrate with ChatSettingsMenu
+                                ChatSettingsMenu.showChangeChatNameDialog(
+                                  context: context,
+                                  currentName: _chatName,
+                                  onSave: (newName) async {
+                                    if (widget.chatGroupId != null &&
+                                        _squadState.selectedSquadId != null) {
+                                      try {
+                                        // Update the chat group name in Firestore
+                                        await FirebaseFirestore.instance
+                                            .collection('squads')
+                                            .doc(_squadState.selectedSquadId!)
+                                            .collection('chat_groups')
+                                            .doc(widget.chatGroupId!)
+                                            .set({
+                                          'name': newName,
+                                          'timestamp':
+                                              FieldValue.serverTimestamp(),
+                                        }, SetOptions(merge: true));
+
+                                        // Update local state
+                                        setState(() => _chatName = newName);
+
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                  'Chat name updated successfully'),
+                                              backgroundColor: Colors.green,
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        debugPrint(
+                                            'Error updating chat name: $e');
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                  'Failed to update chat name: $e'),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  },
+                                );
                               },
                               onChangeChatImage: () async {
                                 await _mediaHandler.changeChatImage(

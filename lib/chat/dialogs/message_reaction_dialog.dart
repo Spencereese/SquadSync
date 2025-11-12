@@ -15,6 +15,9 @@ class MessageReactionDialog extends StatefulWidget {
   final VoidCallback onCopy;
   final VoidCallback onDelete;
   final Function(String) onEmojiSelect;
+  final VoidCallback? onBump;
+  final VoidCallback? onEdit;
+  final VoidCallback? onPin;
   final String? chatGroupId;
 
   const MessageReactionDialog({
@@ -26,6 +29,9 @@ class MessageReactionDialog extends StatefulWidget {
     required this.onCopy,
     required this.onDelete,
     required this.onEmojiSelect,
+    this.onBump,
+    this.onEdit,
+    this.onPin,
     this.chatGroupId,
   });
 
@@ -295,6 +301,45 @@ class _MessageReactionDialogState extends State<MessageReactionDialog> {
                               widget.onCopy();
                             },
                           ),
+                          if (widget.onBump != null) ...[
+                            Divider(
+                                height: 1,
+                                color: Colors.white.withValues(alpha: 0.1)),
+                            _buildActionTile(
+                              icon: Icons.notifications,
+                              label: 'Bump',
+                              onTap: () {
+                                Navigator.pop(context);
+                                widget.onBump!();
+                              },
+                            ),
+                          ],
+                          if (widget.onEdit != null) ...[
+                            Divider(
+                                height: 1,
+                                color: Colors.white.withValues(alpha: 0.1)),
+                            _buildActionTile(
+                              icon: Icons.edit,
+                              label: 'Edit',
+                              onTap: () {
+                                Navigator.pop(context);
+                                widget.onEdit!();
+                              },
+                            ),
+                          ],
+                          if (widget.onPin != null) ...[
+                            Divider(
+                                height: 1,
+                                color: Colors.white.withValues(alpha: 0.1)),
+                            _buildActionTile(
+                              icon: Icons.push_pin,
+                              label: 'Pin',
+                              onTap: () {
+                                Navigator.pop(context);
+                                widget.onPin!();
+                              },
+                            ),
+                          ],
                           Divider(
                               height: 1,
                               color: Colors.white.withValues(alpha: 0.1)),

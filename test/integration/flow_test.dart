@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:cod_squad_app/chat/chat_state.dart';
-import 'package:cod_squad_app/managers/user_manager.dart';
+import 'package:squad_sync/chat/chat_state.dart';
+import 'package:squad_sync/managers/user_manager.dart';
 
 // Mock SquadState for testing
 class MockSquadState with ChangeNotifier {

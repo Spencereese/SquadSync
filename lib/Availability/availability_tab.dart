@@ -4,10 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:cod_squad_app/Availability/schedule_dialog.dart';
-import 'package:cod_squad_app/squad_state.dart';
-import 'package:cod_squad_app/managers/notification_manager.dart';
-import 'package:cod_squad_app/managers/firestore_manager.dart';
+import 'package:squad_sync/Availability/schedule_dialog.dart';
+import 'package:squad_sync/squad_state.dart';
+import 'package:squad_sync/managers/notification_manager.dart';
+import 'package:squad_sync/managers/firestore_manager.dart';
 
 class AvailabilityTab extends StatefulWidget {
   const AvailabilityTab({super.key});

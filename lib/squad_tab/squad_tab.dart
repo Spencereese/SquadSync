@@ -13,6 +13,7 @@ import 'squad_dialogs.dart';
 import 'widgets/squad_grid.dart';
 import 'widgets/squad_controls.dart';
 import 'widgets/squad_header.dart';
+import 'widgets/game_alerts_display.dart';
 
 class MembersSection extends StatelessWidget {
   final SquadState squadState;
@@ -409,6 +410,9 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
                 // Action buttons (Win/Loss)
                 SquadControls(),
+
+                // Game alerts display
+                const GameAlertsDisplay(),
 
                 // Members section header
                 SliverToBoxAdapter(

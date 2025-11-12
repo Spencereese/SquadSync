@@ -6,9 +6,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:cod_squad_app/screens/squad_tab_screen.dart';
-import 'package:cod_squad_app/managers/squad_manager.dart';
-import 'package:cod_squad_app/squad_state.dart';
+import 'package:squad_sync/screens/squad_tab_screen.dart';
+import 'package:squad_sync/managers/squad_manager.dart';
+import 'package:squad_sync/squad_state.dart';
 
 // Mock classes
 class MockUser extends Mock implements User {

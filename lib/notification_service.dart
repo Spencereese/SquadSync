@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'managers/notification_manager.dart';
 
 class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -21,7 +22,7 @@ class NotificationService {
       requestSoundPermission: true,
     );
     const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@mipmap/launcher_icon');
     const initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
@@ -35,7 +36,7 @@ class NotificationService {
       sound: true,
       provisional: true,
     );
-        developer.log('User granted permission: ${settings.authorizationStatus}');
+    developer.log('User granted permission: ${settings.authorizationStatus}');
 
     // Set foreground notification presentation options (iOS)
     await _messaging.setForegroundNotificationPresentationOptions(
@@ -70,18 +71,16 @@ class NotificationService {
     developer.log('FCM Token: $token');
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && token != null) {
-      await _firestore.collection('users').doc(user.uid).set(
-        {'fcmToken': token, 'displayName': user.displayName},
-        SetOptions(merge: true),
-      );
+      // Use NotificationManager to handle token storage
+      final notificationManager = NotificationManager();
+      await notificationManager.updateFCMToken(token);
     }
     _messaging.onTokenRefresh.listen((newToken) async {
       developer.log('New FCM Token: $newToken');
       if (user != null) {
-        await _firestore.collection('users').doc(user.uid).set(
-          {'fcmToken': newToken},
-          SetOptions(merge: true),
-        );
+        // Use NotificationManager to update token
+        final notificationManager = NotificationManager();
+        await notificationManager.updateFCMToken(newToken);
       }
     });
   }
@@ -119,8 +118,26 @@ class NotificationService {
 
   static void _handleMessage(RemoteMessage message) {
     developer.log('Handling message: ${message.data}');
-    if (message.data['screen'] == 'chat') {
-      developer.log('Should navigate to ChatScreen');
+
+    final data = message.data;
+    final type = data['type'];
+
+    switch (type) {
+      case 'lobby_join':
+        final lobbyId = data['lobbyId'];
+        final gameName = data['gameName'] ?? '';
+        final hostName = data['hostName'] ?? '';
+        developer.log(
+            'Should navigate to lobby: $lobbyId for $gameName hosted by $hostName');
+        // TODO: Navigate to lobby screen
+        break;
+      case 'chat':
+        if (data['screen'] == 'chat') {
+          developer.log('Should navigate to ChatScreen');
+        }
+        break;
+      default:
+        developer.log('Unknown message type: $type');
     }
   }
 
@@ -175,7 +192,8 @@ class NotificationService {
       );
 
       if (response.statusCode == 200) {
-        developer.log('Notification sent to $recipientDisplayName: $title - $body');
+        developer
+            .log('Notification sent to $recipientDisplayName: $title - $body');
       } else {
         developer.log('Failed to send notification: ${response.body}');
       }

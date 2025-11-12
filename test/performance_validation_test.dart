@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:mockito/mockito.dart';
-import 'package:cod_squad_app/managers/squad_manager.dart';
-import 'package:cod_squad_app/squad_state.dart';
-import 'package:cod_squad_app/screens/squad_tab_screen.dart';
-import 'package:cod_squad_app/squad_tab/squad_tab.dart';
-import 'package:cod_squad_app/squad_tab/widgets/squad_grid.dart';
+import 'package:squad_sync/managers/squad_manager.dart';
+import 'package:squad_sync/squad_state.dart';
+import 'package:squad_sync/screens/squad_tab_screen.dart';
+import 'package:squad_sync/squad_tab/squad_tab.dart';
+import 'package:squad_sync/squad_tab/widgets/squad_grid.dart';
 import 'test_setup.dart';
 
 // Mock classes for performance testing

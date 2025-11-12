@@ -14,6 +14,7 @@ import 'notification_service.dart';
 import 'chat/chat_state.dart';
 import 'app_theme.dart';
 import 'join_squad_screen.dart';
+import 'chat/dialogs/group_actions_dialog.dart';
 import 'managers/notification_manager.dart';
 import 'managers/firestore_manager.dart';
 import 'managers/availability_manager.dart';
@@ -163,6 +164,22 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
             context,
             MaterialPageRoute(
               builder: (context) => JoinSquadScreen(initialCode: code),
+            ),
+          );
+        }
+      });
+    } else if (link.startsWith('https://squadsync.app/join/') && mounted) {
+      // Handle web deep links for group invites
+      final uri = Uri.parse(link);
+      final code = uri.queryParameters['code'];
+      // Defer navigation to avoid _debugLocked assertion
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => GroupActionsDialog(
+              initialTabIndex: 0, // Join tab
+              initialCode: code,
             ),
           );
         }

@@ -115,8 +115,9 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   Widget build(BuildContext context) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
-        // If lobbyId and gameName are provided, show full squad management interface
-        if (widget.lobbyId != null && widget.gameName != null) {
+        // If gameName is provided, show full squad management interface
+        // (lobbyId is optional - SquadTab can handle showing spots for a game)
+        if (widget.gameName != null) {
           return _buildFullSquadInterface(context, squadState);
         }
 

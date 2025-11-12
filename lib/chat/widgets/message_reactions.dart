@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Message reactions component - displays reaction emojis below messages
 class MessageReactions extends StatelessWidget {
-  final List<String> reactions;
+  final List<Map<String, dynamic>> reactions;
   final bool isFromCurrentUser;
   final VoidCallback? onReactionTap;
 
@@ -16,6 +16,17 @@ class MessageReactions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (reactions.isEmpty) return const SizedBox.shrink();
+
+    // Group reactions by emoji and count them
+    final reactionCounts = <String, int>{};
+    for (final reaction in reactions) {
+      final emoji = reaction['reaction']?.toString() ?? '';
+      if (emoji.isNotEmpty) {
+        reactionCounts[emoji] = (reactionCounts[emoji] ?? 0) + 1;
+      }
+    }
+
+    if (reactionCounts.isEmpty) return const SizedBox.shrink();
 
     return Container(
       margin: EdgeInsets.only(
@@ -35,15 +46,20 @@ class MessageReactions extends StatelessWidget {
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outline
+                      .withValues(alpha: 0.3),
                 ),
               ),
               child: Row(
-                children: reactions
-                    .map((reaction) => Padding(
+                children: reactionCounts.entries
+                    .map((entry) => Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 2),
-                          child: Text(reaction,
-                              style: const TextStyle(fontSize: 14)),
+                          child: Text(
+                            '${entry.key}${entry.value > 1 ? entry.value : ''}',
+                            style: const TextStyle(fontSize: 14),
+                          ),
                         ))
                     .toList(),
               ),

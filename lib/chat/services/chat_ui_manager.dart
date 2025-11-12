@@ -255,10 +255,9 @@ class ChatUIManager {
 
         return GestureDetector(
           onTap: () {
-            // Navigate directly to spots lobby for this game and squad
+            // Navigate directly to spots lobby for this game
             Navigator.pushNamed(context, '/squad', arguments: {
               'gameName': gameName,
-              'lobbyId': squadState.selectedSquadId,
               'game': currentGame,
             });
           },

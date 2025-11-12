@@ -61,93 +61,7 @@ class _MessageReactionDialogState extends State<MessageReactionDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Emoji reactions row (above message, iMessage-style)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12.0),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0, vertical: 12.0),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ...quickReactions.map((emoji) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                          child: GestureDetector(
-                            onTap: () {
-                              HapticFeedback.lightImpact();
-                              widget.onEmojiSelect(emoji);
-                              Navigator.pop(context);
-                            },
-                            child: AnimatedScale(
-                              scale: 1.0,
-                              duration: const Duration(milliseconds: 100),
-                              child: Text(
-                                emoji,
-                                style: const TextStyle(fontSize: 28),
-                              ),
-                            ),
-                          ),
-                        ).animate().scale(
-                              duration: const Duration(milliseconds: 300),
-                              begin: const Offset(0.8, 0.8),
-                              end: const Offset(1.0, 1.0),
-                              curve: Curves.elasticOut,
-                              delay: Duration(
-                                  milliseconds:
-                                      (50 * quickReactions.indexOf(emoji))
-                                          .toInt()),
-                            );
-                      }),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8.0),
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _showReactionInput = !_showReactionInput;
-                            });
-                          },
-                          child: AnimatedScale(
-                            scale: 1.0,
-                            duration: const Duration(milliseconds: 100),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _showReactionInput ? Icons.close : Icons.add,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ).animate().slideY(
-                      duration: const Duration(milliseconds: 400),
-                      begin: -0.2,
-                      end: 0.0,
-                      curve: Curves.easeOutBack,
-                    ),
-                // Message preview (smaller, more subtle)
+                // Message preview (top, iMessage-style)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: AnimatedContainer(
@@ -212,6 +126,93 @@ class _MessageReactionDialogState extends State<MessageReactionDialog> {
                 ).animate().fadeIn(
                       duration: const Duration(milliseconds: 300),
                       delay: const Duration(milliseconds: 100),
+                    ),
+                // Emoji reactions row (below message, iMessage-style)
+                Container(
+                  margin: const EdgeInsets.only(top: 12.0),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0, vertical: 12.0),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ...quickReactions.map((emoji) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: GestureDetector(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              widget.onEmojiSelect(emoji);
+                              Navigator.pop(context);
+                            },
+                            child: AnimatedScale(
+                              scale: 1.0,
+                              duration: const Duration(milliseconds: 100),
+                              child: Text(
+                                emoji,
+                                style: const TextStyle(fontSize: 28),
+                              ),
+                            ),
+                          ),
+                        ).animate().scale(
+                              duration: const Duration(milliseconds: 300),
+                              begin: const Offset(0.8, 0.8),
+                              end: const Offset(1.0, 1.0),
+                              curve: Curves.elasticOut,
+                              delay: Duration(
+                                  milliseconds:
+                                      (50 * quickReactions.indexOf(emoji))
+                                          .toInt()),
+                            );
+                      }),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8.0),
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            setState(() {
+                              _showReactionInput = !_showReactionInput;
+                            });
+                          },
+                          child: AnimatedScale(
+                            scale: 1.0,
+                            duration: const Duration(milliseconds: 100),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                _showReactionInput ? Icons.close : Icons.add,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ).animate().slideY(
+                      duration: const Duration(milliseconds: 400),
+                      begin: -0.2,
+                      end: 0.0,
+                      curve: Curves.easeOutBack,
                     ),
                 // Custom reaction input
                 if (_showReactionInput)
@@ -332,7 +333,10 @@ class _MessageReactionDialogState extends State<MessageReactionDialog> {
     bool isDestructive = false,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),

@@ -216,6 +216,45 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                 ),
               ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Semantics(
+                label: 'Record voice message',
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    if (widget.isRecording) {
+                      widget.onRecordStop();
+                    } else {
+                      widget.onRecordStart();
+                    }
+                  },
+                  onLongPressStart: (_) {
+                    HapticFeedback.lightImpact();
+                    widget.onRecordStart();
+                  },
+                  onLongPressEnd: (_) {
+                    widget.onRecordStop();
+                  },
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: widget.isRecording
+                          ? Colors.red // Red when recording
+                          : Colors.grey[400], // Grey when not recording
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      widget.isRecording ? Icons.stop : Icons.mic,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
             ),
         ],
       ),
@@ -272,9 +311,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
       final lastAtIndex = textBeforeCursor.lastIndexOf('@');
 
       if (lastAtIndex != -1) {
-        final newText = textBeforeCursor.substring(0, lastAtIndex) +
-            '@$user ' +
-            text.substring(cursorPosition);
+        final newText =
+            '${textBeforeCursor.substring(0, lastAtIndex)}@$user ${text.substring(cursorPosition)}';
         widget.controller.text = newText;
         widget.controller.selection = TextSelection.collapsed(
           offset: lastAtIndex + user.length + 2,

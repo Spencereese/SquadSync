@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../chat_screen.dart';
 import '../chat_state.dart';
 import '../../services/ai_service.dart';
+import '../../squad_state.dart';
 
 class UserGroupsTab extends StatelessWidget {
   const UserGroupsTab({super.key});
@@ -22,6 +23,66 @@ class UserGroupsTab extends StatelessWidget {
     } else {
       return 'now';
     }
+  }
+
+  void _showLeaveGroupDialog(
+      BuildContext context, String groupId, String groupName) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: Text(
+            'Leave Group',
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: Text(
+            'Are you sure you want to leave "$groupName"?',
+            style: const TextStyle(color: Colors.white),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop(); // Close dialog first
+                try {
+                  final squadState =
+                      Provider.of<SquadState>(context, listen: false);
+                  await squadState.leaveChatGroup(groupId);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('You left "$groupName"'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to leave group: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Leave',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildDMCard(BuildContext context) {
@@ -241,6 +302,10 @@ class UserGroupsTab extends StatelessWidget {
                           content: Text('Unable to open group chat')),
                     );
                   }
+                },
+                onLongPress: () {
+                  // Show leave group confirmation dialog
+                  _showLeaveGroupDialog(context, group.id, groupName);
                 },
               );
             },

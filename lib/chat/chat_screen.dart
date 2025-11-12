@@ -225,6 +225,20 @@ class ChatScreenState extends State<ChatScreen>
       return;
     }
 
+    // Check if user is banned
+    final squadState = Provider.of<SquadState>(context, listen: false);
+    final currentUserName = squadState.displayName;
+    if (currentUserName != null && squadState.isBanned(currentUserName)) {
+      if (mounted) {
+        ScaffoldMessenger.of(capturedContext).showSnackBar(
+          const SnackBar(
+              content:
+                  Text('You are currently banned and cannot send messages')),
+        );
+      }
+      return;
+    }
+
     final chatState = Provider.of<ChatState>(context, listen: false);
     String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     chatState.updateSendingStatus(tempId, true);
@@ -423,7 +437,7 @@ class ChatScreenState extends State<ChatScreen>
                   ),
                   const SizedBox(height: 32),
 
-                  // Members section
+                  // Members section - clickable cards at top
                   const Text(
                     'Members',
                     style: TextStyle(
@@ -440,22 +454,82 @@ class ChatScreenState extends State<ChatScreen>
                         final status = entry.value;
                         final displayName =
                             squadState.getDisplayNameForUid(uid);
-                        return ListTile(
-                          leading: CircleAvatar(
-                            child:
-                                Text(displayName.substring(0, 1).toUpperCase()),
-                          ),
-                          title: Text(
-                            displayName,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          subtitle: Text(
-                            status,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
+                        final banCount = squadState.getBanCount(displayName);
+
+                        return GestureDetector(
+                          onTap: () =>
+                              _showMemberMenu(context, displayName, squadState),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  child: Text(displayName
+                                      .substring(0, 1)
+                                      .toUpperCase()),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        displayName,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      Text(
+                                        status,
+                                        style: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.7),
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (banCount > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color:
+                                            Colors.red.withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '$banCount ban${banCount != 1 ? 's' : ''}',
+                                      style: const TextStyle(
+                                        color: Colors.redAccent,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                const Icon(
+                                  Icons.more_vert,
+                                  color: Colors.white70,
+                                  size: 20,
+                                ),
+                              ],
                             ),
                           ),
-                          contentPadding: EdgeInsets.zero,
                         );
                       }).toList();
 
@@ -468,6 +542,100 @@ class ChatScreenState extends State<ChatScreen>
           ),
         ),
       ),
+    );
+  }
+
+  void _showMemberMenu(
+      BuildContext context, String userName, SquadState squadState) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black.withValues(alpha: 0.9),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // User's name
+            Text(
+              userName,
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            // Options
+            _buildMemberMenuItem(
+              context,
+              icon: Icons.videocam,
+              label: 'Video Call',
+              onTap: () {
+                // TODO: Implement video call
+                Navigator.pop(context);
+              },
+            ),
+            _buildMemberMenuItem(
+              context,
+              icon: Icons.call,
+              label: 'Audio Call',
+              onTap: () {
+                // TODO: Implement audio call
+                Navigator.pop(context);
+              },
+            ),
+            _buildMemberMenuItem(
+              context,
+              icon: Icons.message,
+              label: 'Message',
+              onTap: () {
+                // TODO: Open 1-on-1 message
+                Navigator.pop(context);
+              },
+            ),
+            _buildMemberMenuItem(
+              context,
+              icon: Icons.gavel,
+              label: 'Ban',
+              onTap: () {
+                Navigator.pop(context);
+                squadState.addBan(
+                    userName, squadState.displayName ?? 'Unknown');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('$userName has been voted for ban')),
+                );
+              },
+            ),
+            _buildMemberMenuItem(
+              context,
+              icon: Icons.person_off,
+              label: 'Block User',
+              onTap: () async {
+                Navigator.pop(context);
+                await squadState.blockUser(userName);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$userName has been blocked')),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMemberMenuItem(BuildContext context,
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
+    return ListTile(
+      leading: Icon(icon, color: Theme.of(context).primaryColor),
+      title: Text(label, style: const TextStyle(color: Colors.white)),
+      onTap: onTap,
     );
   }
 
@@ -494,16 +662,20 @@ class ChatScreenState extends State<ChatScreen>
   void _leaveGroup() async {
     if (!mounted) return;
     try {
-      await _squadState.leaveSquad();
+      await _squadState.leaveChatGroup(widget.chatGroupId!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You have left the squad')),
+          SnackBar(
+              content:
+                  Text('You left "${widget.chatGroupName ?? 'the group'}"')),
         );
+        // Navigate back to the previous screen
+        Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to leave squad: $e')),
+          SnackBar(content: Text('Failed to leave group: $e')),
         );
       }
     }

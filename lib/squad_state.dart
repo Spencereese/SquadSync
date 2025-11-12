@@ -697,6 +697,27 @@ class SquadState with ChangeNotifier {
         'memberCount': FieldValue.increment(1),
       });
 
+      // Create a reference document in user's chat_groups subcollection
+      final userGroupRef = _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc(groupId);
+
+      // Copy relevant group data to user's subcollection
+      await userGroupRef.set({
+        'name': groupData['name'] ?? 'Unnamed Group',
+        'description': groupData['description'] ?? '',
+        'imageUrl': groupData['imageUrl'],
+        'isPublic': groupData['isPublic'] ?? false,
+        'memberCount': groupData['memberCount'] ?? 1,
+        'createdBy': groupData['createdBy'],
+        'createdAt': groupData['createdAt'],
+        'lastMessage': null,
+        'lastMessageTime': null,
+        'joinedAt': FieldValue.serverTimestamp(),
+      });
+
       // Update invite usage count
       await inviteDoc.reference.update({
         'uses': FieldValue.increment(1),
@@ -705,7 +726,7 @@ class SquadState with ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('Error joining chat group: $e');
-      throw e; // Re-throw to let caller handle the error
+      rethrow; // Re-throw to let caller handle the error
     }
   }
 
@@ -721,6 +742,49 @@ class SquadState with ChangeNotifier {
         notifyListeners();
       },
     );
+  }
+
+  /// Leave a chat group
+  Future<void> leaveChatGroup(String groupId) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) throw Exception('User not authenticated');
+
+    try {
+      // Get the group data first to get the name for the success message
+      final groupDoc =
+          await _firestore.collection('chat_groups').doc(groupId).get();
+
+      if (!groupDoc.exists) {
+        throw Exception('Group no longer exists');
+      }
+
+      final groupData = groupDoc.data()!;
+      final members = List<String>.from(groupData['members'] ?? []);
+
+      // Check if user is actually a member
+      if (!members.contains(currentUser.uid)) {
+        return; // Already not a member
+      }
+
+      // Remove user from the group
+      await _firestore.collection('chat_groups').doc(groupId).update({
+        'members': FieldValue.arrayRemove([currentUser.uid]),
+        'memberCount': FieldValue.increment(-1),
+      });
+
+      // Also remove the group from user's chat_groups subcollection
+      await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc(groupId)
+          .delete();
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error leaving chat group: $e');
+      rethrow; // Re-throw to let caller handle the error
+    }
   }
 
   // Public: Select a squad
@@ -785,6 +849,10 @@ class SquadState with ChangeNotifier {
     required Map<String, int?> ratings,
     required String submittedBy,
   }) async {
+    // Check if user is banned
+    if (isBanned(submittedBy)) {
+      throw Exception('You are currently banned and cannot submit ratings');
+    }
     await achievementService.submitRatings(
       submittedBy: submittedBy,
       targetMember: targetMember,
@@ -941,6 +1009,14 @@ class SquadState with ChangeNotifier {
     final userName = displayName;
     final userUid = FirebaseAuth.instance.currentUser?.uid;
     if (userName != null && userUid != null) {
+      // Check if user is currently banned
+      if (isBanned(userName)) {
+        ScaffoldMessenger.of(context!).showSnackBar(
+          const SnackBar(
+              content: Text('You are currently banned and cannot claim spots')),
+        );
+        return;
+      }
       dataManager.claimSpot(index, userName, userUid);
       dataManager.globalStatuses[userName] = 'Calling'; // Changed from 'Ready'
       if (dataManager.peacockTimers.containsKey(userName)) {
@@ -1315,12 +1391,12 @@ class SquadState with ChangeNotifier {
         squadMembers.length - 1; // Exclude the player themselves
     final voteCount = getBanVoteCount(player);
 
-    if (voteCount > (totalEligibleVoters / 2)) {
-      // More than half voted - 24 hour ban
-      return 24 * 3600 * 1000;
-    } else if (voteCount >= totalEligibleVoters) {
+    if (voteCount >= totalEligibleVoters) {
       // All other users voted - 48 hour ban
       return 48 * 3600 * 1000;
+    } else if (voteCount > (totalEligibleVoters / 2)) {
+      // More than half voted - 24 hour ban
+      return 24 * 3600 * 1000;
     }
     return 0;
   }

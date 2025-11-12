@@ -7,7 +7,14 @@ import '../../utils.dart';
 
 /// Unified dialog for all group-related actions: join, create, and browse public groups
 class GroupActionsDialog extends StatefulWidget {
-  const GroupActionsDialog({super.key});
+  final int initialTabIndex;
+  final String? initialCode;
+
+  const GroupActionsDialog({
+    super.key,
+    this.initialTabIndex = 0,
+    this.initialCode,
+  });
 
   @override
   State<GroupActionsDialog> createState() => _GroupActionsDialogState();
@@ -20,7 +27,11 @@ class _GroupActionsDialogState extends State<GroupActionsDialog>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTabIndex,
+    );
   }
 
   @override
@@ -74,8 +85,11 @@ class _GroupActionsDialogState extends State<GroupActionsDialog>
                   color: Colors.cyanAccent,
                   borderRadius: BorderRadius.circular(8),
                 ),
+                indicatorSize: TabBarIndicatorSize.tab,
                 labelColor: Colors.black,
                 unselectedLabelColor: Colors.white,
+                labelPadding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 tabs: const [
                   Tab(text: 'Join'),
                   Tab(text: 'Create'),
@@ -89,7 +103,7 @@ class _GroupActionsDialogState extends State<GroupActionsDialog>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _JoinGroupTab(),
+                  _JoinGroupTab(initialCode: widget.initialCode),
                   _CreateGroupTab(),
                 ],
               ),
@@ -103,6 +117,10 @@ class _GroupActionsDialogState extends State<GroupActionsDialog>
 
 /// Tab for joining a group with invite code, browsing, and suggested groups
 class _JoinGroupTab extends StatefulWidget {
+  final String? initialCode;
+
+  const _JoinGroupTab({this.initialCode});
+
   @override
   State<_JoinGroupTab> createState() => _JoinGroupTabState();
 }
@@ -121,6 +139,9 @@ class _JoinGroupTabState extends State<_JoinGroupTab> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialCode != null) {
+      _codeController.text = widget.initialCode!;
+    }
     _loadSuggestedGroups();
   }
 
@@ -654,7 +675,7 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
   final _nameController = TextEditingController();
   bool _isPublic = true;
   bool _isLoading = false;
-  String? _selectedGame;
+  final List<String> _selectedGames = [];
 
   @override
   void dispose() {
@@ -705,7 +726,9 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
         'memberCount': 1,
         'members': [currentUser.uid],
         'imageUrl': null,
-        'gameFocus': _selectedGame, // Add game focus field
+        'gameFocus': _selectedGames.isNotEmpty
+            ? _selectedGames
+            : null, // Save as list or null
       });
 
       if (mounted) {
@@ -858,37 +881,78 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
           ),
           const SizedBox(height: 16),
 
-          // Game focus selection
-          DropdownButtonFormField<String>(
-            initialValue: _selectedGame,
-            decoration: InputDecoration(
-              hintText: 'Game focus (optional)',
-              hintStyle: const TextStyle(color: Colors.grey),
-              filled: true,
-              fillColor: Colors.grey[800],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
+          // Game focus selection - Multi-select with chips
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Selected games chips
+              if (_selectedGames.isNotEmpty) ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _selectedGames.map((game) {
+                    return Chip(
+                      label: Text(
+                        game,
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                      backgroundColor: Colors.cyanAccent.withValues(alpha: 0.2),
+                      deleteIcon: const Icon(Icons.close,
+                          size: 16, color: Colors.cyanAccent),
+                      onDeleted: () {
+                        setState(() {
+                          _selectedGames.remove(game);
+                        });
+                      },
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: const BorderSide(
+                            color: Colors.cyanAccent, width: 1),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              // Add game dropdown
+              DropdownButtonFormField<String>(
+                decoration: InputDecoration(
+                  hintText: _selectedGames.isEmpty
+                      ? 'Game focus (optional)'
+                      : 'Add another game',
+                  hintStyle: const TextStyle(color: Colors.grey),
+                  filled: true,
+                  fillColor: Colors.grey[800],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.games, color: Colors.cyanAccent),
+                ),
+                dropdownColor: Colors.grey[800],
+                style: const TextStyle(color: Colors.white),
+                items: [
+                  ...availableGames
+                      .where((game) =>
+                          !_selectedGames.contains(game['name'] as String))
+                      .map((game) {
+                    return DropdownMenuItem<String>(
+                      value: game['name'] as String,
+                      child: Text(game['name'] as String),
+                    );
+                  }),
+                ],
+                onChanged: (value) {
+                  if (value != null && !_selectedGames.contains(value)) {
+                    setState(() {
+                      _selectedGames.add(value);
+                    });
+                  }
+                },
               ),
-              prefixIcon: const Icon(Icons.games, color: Colors.cyanAccent),
-            ),
-            dropdownColor: Colors.grey[800],
-            style: const TextStyle(color: Colors.white),
-            items: [
-              const DropdownMenuItem<String>(
-                value: null,
-                child: Text('Any Games'),
-              ),
-              ...availableGames.map((game) {
-                return DropdownMenuItem<String>(
-                  value: game['name'] as String,
-                  child: Text(game['name'] as String),
-                );
-              }),
             ],
-            onChanged: (value) {
-              setState(() => _selectedGame = value);
-            },
           ),
           const SizedBox(height: 16),
 

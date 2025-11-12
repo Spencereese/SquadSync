@@ -114,7 +114,7 @@ class _UserMenuSheet extends StatelessWidget {
           ),
           _buildMenuItem(
             context,
-            icon: Icons.block,
+            icon: Icons.gavel,
             label: 'Ban',
             onTap: () {
               Navigator.pop(context);

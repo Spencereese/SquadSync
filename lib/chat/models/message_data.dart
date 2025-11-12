@@ -13,7 +13,7 @@ class MessageData {
   final DateTime timestamp;
   final bool delivered;
   final bool read;
-  final List<String> reactions;
+  final List<Map<String, dynamic>> reactions;
   final String? replyTo;
   final String? pollId;
   final bool isAiResponse;
@@ -78,7 +78,7 @@ class MessageData {
       delivered: data['delivered'] ?? false,
       read: data['read'] ?? false,
       reactions: (data['reactions'] as List<dynamic>?)
-              ?.map((e) => e.toString())
+              ?.whereType<Map<String, dynamic>>()
               .toList() ??
           [],
       replyTo: data['replyTo'] ?? data['reply_to'],
@@ -117,7 +117,7 @@ class MessageData {
       delivered: data['delivered'] ?? false,
       read: data['read'] ?? false,
       reactions: (data['reactions'] as List<dynamic>?)
-              ?.map((e) => e.toString())
+              ?.whereType<Map<String, dynamic>>()
               .toList() ??
           [],
       replyTo: data['replyTo'] ?? data['reply_to'],

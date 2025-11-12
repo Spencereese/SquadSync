@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'squad_data_manager.dart';
 
-/// Manages achievements, ratings, complaints, and bans
+/// Manages achievements, ratings, and complaints
 class AchievementManager with ChangeNotifier {
   final SquadDataManager _dataManager;
 
@@ -12,7 +12,6 @@ class AchievementManager with ChangeNotifier {
   Map<String, Map<String, List<int>>> _dailyRatings = {};
   Map<String, Map<String, List<int>>> _allTimeRatings = {};
   Map<String, int> _complaints = {};
-  Map<String, List<Map<String, dynamic>>> _bans = {};
 
   AchievementManager(this._dataManager) {
     // Initialize with data from SquadDataManager
@@ -22,7 +21,6 @@ class AchievementManager with ChangeNotifier {
     _dailyRatings = Map.from(_dataManager.dailyRatings);
     _allTimeRatings = Map.from(_dataManager.allTimeRatings);
     _complaints = Map.from(_dataManager.complaints);
-    _bans = Map.from(_dataManager.bans);
   }
 
   Map<String, int> get currentStreaks => _currentStreaks;
@@ -31,7 +29,6 @@ class AchievementManager with ChangeNotifier {
   Map<String, Map<String, List<int>>> get dailyRatings => _dailyRatings;
   Map<String, Map<String, List<int>>> get allTimeRatings => _allTimeRatings;
   Map<String, int> get complaints => _complaints;
-  Map<String, List<Map<String, dynamic>>> get bans => _bans;
 
   // Setters for delegated properties
   set currentStreaks(Map<String, int> value) {
@@ -61,11 +58,6 @@ class AchievementManager with ChangeNotifier {
 
   set complaints(Map<String, int> value) {
     _complaints = value;
-    notifyListeners();
-  }
-
-  set bans(Map<String, List<Map<String, dynamic>>> value) {
-    _bans = value;
     notifyListeners();
   }
 
@@ -115,26 +107,17 @@ class AchievementManager with ChangeNotifier {
   }
 
   void addBan(String player, String voter) {
-    bans[player] ??= [];
-    bans[player]!.add({
-      'voter': voter,
-      'timestamp': DateTime.now(),
-    });
-    notifyListeners();
+    // Ban system moved to SquadState voting-based system
+    // This method kept for compatibility but does nothing
   }
 
-  int getBanCount(String player) => bans[player]?.length ?? 0;
+  int getBanCount(String player) => 0; // Always return 0
 
-  bool isBanned(String player) => getBanCount(player) >= 5;
+  bool isBanned(String player) => false; // Always return false
 
   int getBanDuration(String player) {
-    final banCount = getBanCount(player);
-    if (banCount == 0) return 0;
-    if (banCount == 1) return 5; // 5 minutes
-    if (banCount == 2) return 15; // 15 minutes
-    if (banCount == 3) return 30; // 30 minutes
-    if (banCount == 4) return 60; // 1 hour
-    return 120; // 2 hours for 5+ bans
+    // Ban durations now handled by SquadState voting system
+    return 0;
   }
 
   Future<void> recordWin({

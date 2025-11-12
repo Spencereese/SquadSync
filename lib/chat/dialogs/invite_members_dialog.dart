@@ -75,9 +75,14 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
   Future<void> _shareInviteCode() async {
     if (_inviteCode == null) return;
 
+    // Create a shareable deep link
+    final deepLink =
+        'https://squadsync.app/join/${widget.chatGroupId}?code=$_inviteCode';
+
     final inviteMessage = 'Join "${widget.chatGroupName}" on SquadSync!\n\n'
-        'Invite Code: $_inviteCode\n\n'
-        'Open SquadSync and go to Join Group to enter this code.';
+        'Invite Code: $_inviteCode\n'
+        'Or click this link: $deepLink\n\n'
+        'Open SquadSync and go to Join Group to enter the code.';
 
     try {
       await Share.share(inviteMessage, subject: 'Join ${widget.chatGroupName}');
@@ -262,31 +267,10 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Icon(Icons.info_outline,
-                                  size: 20, color: Colors.cyanAccent),
-                              const SizedBox(width: 8),
-                              Text(
-                                'How friends can join:',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                              ),
-                            ],
+                          Text(
+                            'Share the code or link with friends to invite them.',
+                            style: Theme.of(context).textTheme.bodyMedium,
                           ),
-                          const SizedBox(height: 12),
-                          _buildInstructionStep(
-                              '1', 'Share the invite code or QR code'),
-                          _buildInstructionStep(
-                              '2', 'Friends open SquadSync app'),
-                          _buildInstructionStep(
-                              '3', 'Go to Join Group and enter the code'),
-                          _buildInstructionStep(
-                              '4', 'Or scan the QR code to join instantly'),
                           const SizedBox(height: 8),
                           Text(
                             '• Code expires in 7 days\n• Limited to 50 uses',
@@ -304,42 +288,6 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildInstructionStep(String number, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 20,
-            height: 20,
-            decoration: const BoxDecoration(
-              color: Colors.cyanAccent,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                number,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
-        ],
       ),
     );
   }

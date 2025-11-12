@@ -28,8 +28,8 @@ class GameSelector extends StatelessWidget {
           onTap:
               onGameTap ?? () => _showGameSelectionDialog(context, squadState),
           child: SizedBox(
-            width: 160,
-            height: 120,
+            width: 220,
+            height: 160,
             child: Stack(
               alignment: Alignment.center,
               children: [_buildGameLogo(currentGame)],
@@ -45,8 +45,8 @@ class GameSelector extends StatelessWidget {
 
     if (currentGame != null && currentGame['coverUrl'] != null) {
       logo = Container(
-        width: 160,
-        height: 100,
+        width: 200,
+        height: 140,
         decoration: BoxDecoration(
           image: DecorationImage(
             image: NetworkImage(currentGame['coverUrl']),
@@ -60,8 +60,8 @@ class GameSelector extends StatelessWidget {
       if (assetName != null) {
         logo = Image.asset(
           'assets/images/$assetName',
-          width: 160,
-          height: 100,
+          width: 200,
+          height: 140,
           fit: BoxFit.contain,
           errorBuilder: (context, error, stackTrace) =>
               const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
@@ -70,8 +70,8 @@ class GameSelector extends StatelessWidget {
         // Fallback to old asset logo field
         logo = Image.asset(
           currentGame!['logo'],
-          width: 160,
-          height: 100,
+          width: 200,
+          height: 140,
           fit: BoxFit.contain,
           errorBuilder: (context, error, stackTrace) =>
               const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),

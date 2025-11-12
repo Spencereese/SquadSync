@@ -20,8 +20,8 @@ class BanVotingService {
     required this.getUserBlocks,
     required void Function() markFieldChanged,
     required void Function() notifyListeners,
-  }) : _markFieldChanged = markFieldChanged,
-       _notifyListeners = notifyListeners {
+  })  : _markFieldChanged = markFieldChanged,
+        _notifyListeners = notifyListeners {
     _scheduleDailyReset();
   }
 
@@ -81,12 +81,12 @@ class BanVotingService {
         squadMembers.length - 1; // Exclude the player themselves
     final voteCount = getBanVoteCount(player);
 
-    if (voteCount > (totalEligibleVoters / 2)) {
-      // More than half voted - 24 hour ban
-      return 24 * 3600 * 1000;
-    } else if (voteCount >= totalEligibleVoters) {
+    if (voteCount >= totalEligibleVoters) {
       // All other users voted - 48 hour ban
       return 48 * 3600 * 1000;
+    } else if (voteCount > (totalEligibleVoters / 2)) {
+      // More than half voted - 24 hour ban
+      return 24 * 3600 * 1000;
     }
     return 0;
   }

@@ -278,7 +278,8 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
 
                   // Check if Firebase is properly initialized
                   try {
-                    FirebaseAuth.instance.app.name; // This will throw if Firebase isn't initialized
+                    FirebaseAuth.instance.app
+                        .name; // This will throw if Firebase isn't initialized
                   } catch (e) {
                     debugPrint('Firebase not properly initialized: $e');
                     return const SetupScreen();
@@ -299,7 +300,8 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                             _directUserCheck = currentUser;
                           });
                         } catch (e) {
-                          debugPrint('Error checking current user directly: $e');
+                          debugPrint(
+                              'Error checking current user directly: $e');
                           setState(() {
                             _authTimedOut = true;
                             _directUserCheck = null;
@@ -329,10 +331,12 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
 
                   // If auth timed out, use direct user check result
                   if (_authTimedOut) {
-                    debugPrint('Auth timed out, using direct user check result: $_directUserCheck');
+                    debugPrint(
+                        'Auth timed out, using direct user check result: $_directUserCheck');
                     final user = _directUserCheck;
                     if (user != null) {
-                      debugPrint('User authenticated via direct check: ${user.uid}');
+                      debugPrint(
+                          'User authenticated via direct check: ${user.uid}');
                       // User is authenticated, initialize SquadState and show main app
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         Provider.of<SquadState>(context, listen: false)
@@ -343,7 +347,8 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
                       });
                       return const ChatGroupsScreen();
                     } else {
-                      debugPrint('No authenticated user found, showing setup screen');
+                      debugPrint(
+                          'No authenticated user found, showing setup screen');
                       return const SetupScreen();
                     }
                   }

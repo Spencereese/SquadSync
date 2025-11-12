@@ -532,17 +532,25 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (timestamp == null) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Center(
         child: Semantics(
           label:
               'Message sent on ${DateFormat('MMMM d, yyyy, h:mm a').format(timestamp)}',
-          child: Text(
-            DateFormat('MMM d, yyyy, h:mm a').format(timestamp),
-            style: TextStyle(
-              color: Colors.white
-                  .withValues(alpha: 0.5), // Subtle white with transparency
-              fontSize: 12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              DateFormat('h:mm a')
+                  .format(timestamp), // Just time, more iMessage-like
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 11,
+                fontWeight: FontWeight.w400,
+              ),
             ),
           ),
         ),
@@ -637,7 +645,11 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
         ),
       ),
-    ).animate().fadeIn(duration: const Duration(milliseconds: 300));
+    ).animate().fadeIn(duration: const Duration(milliseconds: 300)).slideY(
+        begin: 0.2,
+        end: 0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut);
   }
 
   Widget _buildPollContent(Map<String, dynamic> data) {

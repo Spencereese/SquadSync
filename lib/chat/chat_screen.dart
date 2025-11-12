@@ -513,20 +513,47 @@ class ChatScreenState extends State<ChatScreen>
     HapticFeedback.lightImpact();
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.black, // Replaced AppTheme.backgroundColor
+      backgroundColor: Colors.black,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            leading: const Icon(Icons.location_on),
-            title: const Text('Location'),
-            onTap: () => Navigator.pop(context),
+          // Photo options row
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildPlusMenuItem(
+                  icon: Icons.photo_library,
+                  label: 'Photos',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _sendMedia();
+                  },
+                ),
+                _buildPlusMenuItem(
+                  icon: Icons.camera_alt,
+                  label: 'Camera',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _sendMedia();
+                  },
+                ),
+                _buildPlusMenuItem(
+                  icon: Icons.location_on,
+                  label: 'Location',
+                  onTap: () => Navigator.pop(context),
+                ),
+              ],
+            ),
           ),
+          const Divider(color: Colors.grey, height: 1),
           ListTile(
-            leading: const Icon(Icons.poll),
-            title: const Text('Poll'),
+            leading: const Icon(Icons.poll, color: Colors.white),
+            title: const Text('Create Poll',
+                style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
               PollCreationDialog.show(context,
@@ -534,11 +561,11 @@ class ChatScreenState extends State<ChatScreen>
             },
           ),
           ListTile(
-            leading: const Icon(Icons.flash_on),
-            title: const Text('Squad Up'),
+            leading: const Icon(Icons.flash_on, color: Colors.white),
+            title:
+                const Text('Squad Up', style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
-              // Navigate to squad lobbies with chat group context
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -547,6 +574,89 @@ class ChatScreenState extends State<ChatScreen>
                 ),
               );
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlusMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.grey[800],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator(BuildContext context, String typingUser) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Row(
+        children: [
+          // Animated typing dots like iMessage
+          SizedBox(
+            width: 24,
+            height: 16,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: List.generate(3, (index) {
+                return TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: Duration(milliseconds: 600 + (index * 200)),
+                  curve: Curves.easeInOut,
+                  builder: (context, value, child) {
+                    return Transform.translate(
+                      offset: Offset(0, -4 * (value * 2 - 1).abs() + 2),
+                      child: Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[400],
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              }),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$typingUser is typing...',
+            style: TextStyle(
+              color: Colors.grey[400],
+              fontSize: 14,
+              fontStyle: FontStyle.italic,
+            ),
           ),
         ],
       ),
@@ -696,6 +806,9 @@ class ChatScreenState extends State<ChatScreen>
                         // Reply preview
                         if (chatState.replyToMessage != null)
                           _uiManager.buildReplyPreview(context, chatState),
+                        // Typing indicator
+                        if (chatState.typingUser != null)
+                          _buildTypingIndicator(context, chatState.typingUser!),
                         Semantics(
                           label: 'Chat input bar',
                           child: Padding(

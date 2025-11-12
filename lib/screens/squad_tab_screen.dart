@@ -151,11 +151,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
             Expanded(
               child: _buildActiveLobbiesSection(context),
             ),
-            // Member Status Section (Bottom - fixed height)
-            SizedBox(
-              height: 200, // Fixed height for member status
-              child: _buildMemberStatusSection(context, squadState),
-            ),
           ],
         ),
       ),
@@ -369,79 +364,6 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildMemberStatusSection(
-      BuildContext context, SquadState squadState) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            'Member Status',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Colors.cyanAccent, fontWeight: FontWeight.bold),
-          ),
-        ),
-        Expanded(
-          child: squadState.getFilteredMembers.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No squad members yet',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: squadState.getFilteredMembers.length,
-                  itemBuilder: (context, index) {
-                    final member = squadState.getFilteredMembers[index];
-                    return _buildMemberStatusCard(context, member, squadState);
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMemberStatusCard(
-      BuildContext context, String member, SquadState squadState) {
-    // For now, show basic status - can be enhanced with actual online/activity status
-    String statusText = 'Member';
-    Color statusColor = Colors.white70;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: Colors.transparent,
-      elevation: 0,
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Colors.cyanAccent,
-          child: Text(
-            member.isNotEmpty ? member[0].toUpperCase() : '?',
-            style: const TextStyle(
-                color: Colors.black, fontWeight: FontWeight.bold),
-          ),
-        ),
-        title: Text(
-          member,
-          style:
-              const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          statusText,
-          style: TextStyle(color: statusColor),
-        ),
-        trailing: Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: statusColor,
-            shape: BoxShape.circle,
-          ),
-        ),
-      ),
     );
   }
 

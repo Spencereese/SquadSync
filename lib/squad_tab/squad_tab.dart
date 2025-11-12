@@ -7,12 +7,138 @@ import '../squad_state.dart';
 import '../managers/game_manager.dart';
 import '../managers/squad_manager.dart';
 import '../managers/user_manager.dart';
-import 'spot_widgets.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'squad_dialogs.dart';
-import 'dialogs/settings_dialog.dart';
-import 'dialogs/spot_assignment_dialog.dart';
+import 'widgets/squad_grid.dart';
+import 'widgets/squad_controls.dart';
+import 'widgets/squad_header.dart';
+
+class MembersSection extends StatelessWidget {
+  final SquadState squadState;
+  final String? chatGroupId;
+  final List<String> chatGroupMembers;
+  final String? circle;
+  final List<String>? friends;
+  final Function(BuildContext, String, SquadState) showBlockDialog;
+  final Function(BuildContext, ScaffoldMessengerState, SquadState, String)
+      showComplaintDialog;
+
+  const MembersSection({
+    Key? key,
+    required this.squadState,
+    this.chatGroupId,
+    required this.chatGroupMembers,
+    this.circle,
+    this.friends,
+    required this.showBlockDialog,
+    required this.showComplaintDialog,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    // Use provided members list (computed based on circle), otherwise fall back to squad members
+    final membersToShow = chatGroupMembers.isNotEmpty
+        ? chatGroupMembers
+        : squadState.getFilteredMembers;
+
+    if (membersToShow.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.0),
+          child: Text('No members yet', style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    } else {
+      return SliverToBoxAdapter(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: Colors.grey[900],
+          ),
+          child: ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: membersToShow.length,
+            itemBuilder: (context, index) {
+              final player = membersToShow[index];
+              return MemberWidgets.buildMemberCard(context, player, squadState,
+                  showBlockDialog, showComplaintDialog,
+                  circle: circle, friends: friends);
+            },
+          ),
+        ),
+      );
+    }
+  }
+}
+
+class ClaimSpotFAB extends StatelessWidget {
+  final String? lobbyId;
+  final Function(BuildContext, SquadState) callSpot;
+  final Function(BuildContext, SquadState) lockSpot;
+
+  const ClaimSpotFAB({
+    Key? key,
+    required this.lobbyId,
+    required this.callSpot,
+    required this.lockSpot,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    if (lobbyId == null) return const SizedBox.shrink();
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('peacocks')
+          .doc(lobbyId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const SizedBox.shrink();
+        }
+
+        final data = snapshot.data!.data();
+        if (data is! Map<String, dynamic>) {
+          return const SizedBox.shrink();
+        }
+        final peacockData = data;
+        final filledRaw = peacockData['filled'];
+        final filled = (filledRaw is List<dynamic>)
+            ? filledRaw.whereType<Map<String, dynamic>>().toList()
+            : <Map<String, dynamic>>[];
+        final userSpot = filled.firstWhere(
+          (f) => f['uid'] == FirebaseAuth.instance.currentUser?.uid,
+          orElse: () => <String, dynamic>{},
+        );
+
+        if (userSpot.isNotEmpty) {
+          final status = userSpot['status'];
+          if (status == 'called') {
+            return FloatingActionButton.extended(
+              onPressed: () => lockSpot(
+                  context, Provider.of<SquadState>(context, listen: false)),
+              backgroundColor: Colors.yellowAccent,
+              icon: const Icon(Icons.lock),
+              label: const Text('Lock Spot'),
+            );
+          } else if (status == 'ready') {
+            return FloatingActionButton.extended(
+              onPressed: () => callSpot(
+                  context, Provider.of<SquadState>(context, listen: false)),
+              backgroundColor: Colors.orangeAccent,
+              icon: const Icon(Icons.call),
+              label: const Text('Call Spot'),
+            );
+          }
+        }
+        return const SizedBox.shrink();
+      },
+    );
+  }
+}
 
 class SquadTab extends StatelessWidget {
   final String? lobbyId;
@@ -50,6 +176,8 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   final bool _showPeacockMembers = false;
   late BuildContext _currentContext;
   List<String> _chatGroupMembers = [];
+  String? _circle;
+  List<String> _friends = [];
 
   @override
   void didChangeDependencies() {
@@ -139,6 +267,16 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     if (widget.chatGroupId != null && _chatGroupMembers.isEmpty) {
       _fetchChatGroupMembers();
     }
+
+    // Fetch circle if lobbyId is provided
+    if (widget.lobbyId != null && _circle == null) {
+      _fetchCircle();
+    }
+
+    // Fetch friends
+    if (_friends.isEmpty) {
+      _fetchFriends();
+    }
   }
 
   Future<void> _fetchChatGroupMembers() async {
@@ -166,6 +304,73 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     }
   }
 
+  Future<void> _fetchCircle() async {
+    if (widget.lobbyId == null) return;
+
+    try {
+      final peacockDoc = await FirebaseFirestore.instance
+          .collection('peacocks')
+          .doc(widget.lobbyId)
+          .get();
+
+      if (peacockDoc.exists && mounted) {
+        final data = peacockDoc.data();
+        final circle = data?['circle'] as String?;
+        setState(() {
+          _circle = circle;
+        });
+      }
+    } catch (e) {
+      print('Error fetching circle: $e');
+    }
+  }
+
+  Future<void> _fetchFriends() async {
+    final userManager =
+        Provider.of<UserManager>(_currentContext, listen: false);
+    final friendsStream = userManager.streamFriends();
+
+    friendsStream.listen((friends) {
+      if (mounted) {
+        final friendNames = friends
+            .map((f) => f['displayName'] as String? ?? '')
+            .where((name) => name.isNotEmpty)
+            .toList();
+        setState(() {
+          _friends = friendNames;
+        });
+      }
+    });
+  }
+
+  List<String> _getMembersForCircle() {
+    if (_circle == null) {
+      // Default to chat group members if circle not loaded yet
+      return _chatGroupMembers.isNotEmpty ? _chatGroupMembers : [];
+    }
+
+    switch (_circle) {
+      case 'Squad':
+        return _chatGroupMembers.isNotEmpty ? _chatGroupMembers : [];
+      case 'Friends':
+        return _friends;
+      case 'Public':
+        // Show friends plus anyone who has joined spots
+        final squadState =
+            Provider.of<SquadState>(_currentContext, listen: false);
+        final gameName = widget.gameName ?? '';
+        final gameSquadSpots = squadState.gameSquadSpots[gameName] ?? [];
+        final joinedUsers = gameSquadSpots
+            .where((spot) => spot != null)
+            .map((spot) => squadState.getDisplayNameForUid(spot!.split('_')[0]))
+            .where((name) => name.isNotEmpty)
+            .toList();
+        return {..._friends, ...joinedUsers}.toList();
+      default:
+        return _chatGroupMembers.isNotEmpty ? _chatGroupMembers : [];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<SquadState>(
@@ -183,28 +388,29 @@ class _SquadTabContentState extends State<_SquadTabContent> {
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
+                // Header with navigation and game selector
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: _buildHeader(context, squadState),
+                    child: SquadHeader(lobbyId: widget.lobbyId),
                   ),
                 ),
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => SpotWidgets.buildSpotCard(
-                        context, index, squadState, _assignOtherMember),
-                    childCount: squadState.currentGame?['maxSpots'] ?? 4,
-                  ),
-                ),
+
+                // Squad spots grid
+                SquadGrid(),
+
+                // Peacock members section (conditionally shown)
                 SliverToBoxAdapter(
                   child: _showPeacockMembers
                       ? PeacockWidgets.buildPeacockMembersList(
                           context, squadState, _togglePeacockMember)
                       : const SizedBox.shrink(),
                 ),
-                SliverToBoxAdapter(
-                  child: _buildActionButtons(context, squadState),
-                ),
+
+                // Action buttons (Win/Loss)
+                SquadControls(),
+
+                // Members section header
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -220,7 +426,19 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                     ),
                   ),
                 ),
-                _buildMembersSection(squadState),
+
+                // Members list
+                MembersSection(
+                  squadState: squadState,
+                  chatGroupId: widget.chatGroupId,
+                  chatGroupMembers: _getMembersForCircle(),
+                  circle: _circle,
+                  friends: _friends,
+                  showBlockDialog: _showBlockDialog,
+                  showComplaintDialog: _showComplaintDialog,
+                ),
+
+                // Bottom spacing
                 SliverToBoxAdapter(
                   child: const SizedBox(height: 80.0),
                 ),
@@ -228,324 +446,15 @@ class _SquadTabContentState extends State<_SquadTabContent> {
             ),
           ),
           floatingActionButton: widget.lobbyId != null
-              ? _buildClaimSpotFAB(context, squadState)
+              ? ClaimSpotFAB(
+                  lobbyId: widget.lobbyId,
+                  callSpot: _callSpot,
+                  lockSpot: _lockSpot,
+                )
               : null,
         );
       },
     );
-  }
-
-  Widget _buildHeader(BuildContext context, SquadState squadState) {
-    return Padding(
-      padding: const EdgeInsets.only(
-          top: 40.0), // Add top padding to avoid phone settings/clock
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Semantics(
-                label: 'Go back to lobby selection',
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.cyanAccent),
-                  onPressed: () => Navigator.of(context).pop(),
-                  tooltip: 'Back to lobbies',
-                ),
-              ),
-              // Centered game logo - clickable to show lobby options
-              Expanded(
-                child: Center(
-                  child: _buildGameLogo(context, squadState),
-                ),
-              ),
-              Semantics(
-                label: 'Open squad settings',
-                child: IconButton(
-                  icon: Image.asset(
-                    'assets/images/settings_gear.png',
-                    width: 28,
-                    height: 28,
-                    color: Colors.grey[400],
-                  ),
-                  onPressed: () => SettingsDialog.show(context, squadState,
-                      lobbyId: widget.lobbyId),
-                  tooltip: 'Settings',
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGameLogo(BuildContext context, SquadState squadState) {
-    Widget logo;
-    final currentGame = squadState.currentGame;
-
-    // Helper to get asset name from game name
-    String? getAssetName(String? gameName) {
-      if (gameName == null) return null;
-      final lower = gameName.toLowerCase();
-      if (lower.contains('call of duty')) return 'codwarzone.png';
-      if (lower.contains('battlefield')) return 'Battlefield.png';
-      if (lower.contains('satisfactory')) return 'satisfactory.png';
-      // Add more mappings as needed
-      return '${gameName.replaceAll(' ', '').toLowerCase()}.png';
-    }
-
-    // Try to use coverUrl from IGDB API first
-    if (currentGame?['coverUrl'] != null) {
-      logo = Container(
-        width: 160,
-        height: 100,
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: NetworkImage(currentGame!['coverUrl']),
-            fit: BoxFit.contain,
-          ),
-        ),
-      );
-    } else {
-      final assetName =
-          getAssetName(currentGame?['name']) ?? getAssetName(widget.gameName);
-      if (assetName != null) {
-        logo = Image.asset(
-          'assets/images/$assetName',
-          width: 160,
-          height: 100,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) =>
-              const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
-        );
-      } else if (currentGame?['logo'] != null) {
-        // Fallback to old asset logo field
-        logo = Image.asset(
-          currentGame!['logo'],
-          width: 160,
-          height: 100,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) =>
-              const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
-        );
-      } else {
-        logo = const Icon(
-          Icons.gamepad,
-          size: 100,
-          color: Colors.cyanAccent,
-        );
-      }
-    }
-
-    return GestureDetector(
-      onTap: () => _showGameSelectionDialog(context, squadState),
-      child: SizedBox(
-        width: 160,
-        height: 120,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [logo],
-        ),
-      ),
-    );
-  }
-
-  void _showGameSelectionDialog(BuildContext context, SquadState squadState) {
-    final TextEditingController gameController = TextEditingController();
-    Map<String, dynamic>? selectedGame;
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          backgroundColor: Colors.black.withValues(alpha: 0.9),
-          title: const Text(
-            'Switch Game',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: gameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'Search for a game...',
-                    hintStyle: TextStyle(color: Colors.grey),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.cyanAccent),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.cyanAccent),
-                    ),
-                  ),
-                  onChanged: (value) async {
-                    if (value.isNotEmpty) {
-                      final gameManager =
-                          Provider.of<GameManager>(context, listen: false);
-                      final results = await gameManager.searchGames(value);
-                      if (results.isNotEmpty) {
-                        setState(() {
-                          selectedGame = results.first;
-                        });
-                      }
-                    }
-                  },
-                ),
-                if (selectedGame != null) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[800],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        if (selectedGame!['coverUrl'] != null)
-                          Image.network(
-                            selectedGame!['coverUrl'],
-                            width: 50,
-                            height: 50,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.gamepad,
-                                    color: Colors.cyanAccent),
-                          )
-                        else
-                          const Icon(Icons.gamepad,
-                              color: Colors.cyanAccent, size: 50),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                selectedGame!['name'] ?? '',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (selectedGame!['genres'] != null)
-                                Text(
-                                  (selectedGame!['genres'] as List).join(', '),
-                                  style: const TextStyle(
-                                      color: Colors.grey, fontSize: 12),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-            ),
-            TextButton(
-              onPressed: selectedGame != null
-                  ? () {
-                      // Update the current game
-                      squadState.currentGame = selectedGame;
-                      // Mark fields as changed for persistence
-                      squadState.persistenceManager
-                          .markFieldChanged('currentGame');
-                      squadState.updateFirestoreAsync(force: true);
-                      Navigator.pop(dialogContext);
-                      HapticFeedback.lightImpact();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content:
-                                Text('Switched to ${selectedGame!['name']}')),
-                      );
-                    }
-                  : null,
-              child: const Text('Switch',
-                  style: TextStyle(color: Colors.cyanAccent)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButtons(BuildContext context, SquadState squadState) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          ElevatedButton(
-            onPressed: squadState.recordWin,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              textStyle: const TextStyle(fontSize: 18),
-            ),
-            child: const Text('Win'),
-          ),
-          ElevatedButton(
-            onPressed: squadState.recordLoss,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              textStyle: const TextStyle(fontSize: 18),
-            ),
-            child: const Text('Loss'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMembersSection(SquadState squadState) {
-    // Use chat group members if available, otherwise fall back to squad members
-    final membersToShow =
-        widget.chatGroupId != null && _chatGroupMembers.isNotEmpty
-            ? _chatGroupMembers
-            : squadState.getFilteredMembers;
-
-    if (membersToShow.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text('No members yet', style: TextStyle(color: Colors.grey)),
-        ),
-      );
-    } else {
-      return SliverToBoxAdapter(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: Colors.grey[900],
-          ),
-          child: ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: membersToShow.length,
-            itemBuilder: (context, index) {
-              final player = membersToShow[index];
-              return MemberWidgets.buildMemberCard(context, player, squadState,
-                  _showBlockDialog, _showComplaintDialog);
-            },
-          ),
-        ),
-      );
-    }
   }
 
   void _togglePeacockMember(String member, bool isInPeacock) {
@@ -567,75 +476,6 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   void _showComplaintDialog(BuildContext context,
       ScaffoldMessengerState messenger, SquadState squadState, String player) {
     SquadDialogs.showComplaintDialog(context, messenger, squadState, player);
-  }
-
-  void _showSpotAssignmentMenu(
-      BuildContext context, SquadState squadState, int index) {
-    SpotAssignmentDialog.show(context, squadState, index);
-  }
-
-  void _assignOtherMember(
-      BuildContext context, SquadState squadState, int index) {
-    final yourName = squadState.displayName;
-    final availablePlayers = squadState.getFilteredMembers
-        .where((player) =>
-            player != yourName && !squadState.squadSpots.contains(player))
-        .toList();
-
-    if (availablePlayers.isNotEmpty) {
-      _showSpotAssignmentMenu(context, squadState, index);
-    }
-  }
-
-  Widget _buildClaimSpotFAB(BuildContext context, SquadState squadState) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('peacocks')
-          .doc(widget.lobbyId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const SizedBox.shrink();
-        }
-
-        final data = snapshot.data!.data();
-        if (data is! Map<String, dynamic>) {
-          return const SizedBox.shrink();
-        }
-        final peacockData = data;
-        final filledRaw = peacockData['filled'];
-        final filled = (filledRaw is List<dynamic>)
-            ? filledRaw.whereType<Map<String, dynamic>>().toList()
-            : <Map<String, dynamic>>[];
-        final userSpot = filled.firstWhere(
-          (f) => f['uid'] == FirebaseAuth.instance.currentUser?.uid,
-          orElse: () => <String, dynamic>{},
-        );
-
-        if (userSpot.isNotEmpty) {
-          final status = userSpot['status'];
-          if (status == 'called') {
-            return FloatingActionButton.extended(
-              onPressed: () => _lockSpot(context, squadState),
-              backgroundColor: Colors.yellowAccent,
-              icon: const Icon(Icons.lock),
-              label: const Text('Lock Spot'),
-            );
-          } else if (status == 'ready') {
-            return FloatingActionButton.extended(
-              onPressed: () => _callSpot(context, squadState),
-              backgroundColor: Colors.orangeAccent,
-              icon: const Icon(Icons.call),
-              label: const Text('Call Spot'),
-            );
-          }
-          return const SizedBox.shrink();
-        } else {
-          // Claim Spot button removed
-          return const SizedBox.shrink();
-        }
-      },
-    );
   }
 
   Future<void> _callSpot(BuildContext context, SquadState squadState) async {

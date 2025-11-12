@@ -440,50 +440,63 @@ class UserManager with ChangeNotifier implements IUserManager {
     // First emit cached data immediately if available
     return Stream.fromFuture(_getCachedFriendsList())
         .asyncExpand((cachedFriends) {
+      List<String>? lastFriendsUids;
+
       return FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid)
           .snapshots()
           .asyncMap((doc) async {
-        try {
-          final data = doc.data();
-          if (data == null || !data.containsKey('friends')) {
-            return cachedFriends;
-          }
+            try {
+              final data = doc.data();
+              if (data == null || !data.containsKey('friends')) {
+                return cachedFriends;
+              }
 
-          final friendsUids = List<String>.from(data['friends'] ?? []);
-          if (friendsUids.isEmpty) {
-            // Cache empty list and return
-            await _cacheFriendsList([]);
-            return [];
-          }
+              final friendsUids = List<String>.from(data['friends'] ?? []);
 
-          // Get friend details
-          final snapshot = await FirebaseFirestore.instance
-              .collection('users')
-              .where(FieldPath.documentId, whereIn: friendsUids)
-              .get();
+              // Only process if friends list has actually changed
+              if (lastFriendsUids != null &&
+                  _listsEqual(lastFriendsUids!, friendsUids)) {
+                return null; // Return null to indicate no change
+              }
+              lastFriendsUids = List<String>.from(friendsUids);
 
-          final friendsList = snapshot.docs.map((friendDoc) {
-            final friendData = friendDoc.data();
-            return {
-              'uid': friendDoc.id,
-              'displayName': friendData['displayName'] ?? 'User',
-              'profileImage': friendData['profileImage'],
-              'isOnline': friendData['isOnline'] ?? false,
-              'lastSeen': friendData['lastSeen'],
-            };
-          }).toList();
+              if (friendsUids.isEmpty) {
+                // Cache empty list and return
+                await _cacheFriendsList([]);
+                return [];
+              }
 
-          // Cache the friends list for offline use
-          await _cacheFriendsList(friendsList);
-          return friendsList;
-        } catch (e) {
-          debugPrint('Error fetching friends from Firestore: $e');
-          // Return cached data when offline
-          return cachedFriends;
-        }
-      });
+              // Get friend details
+              final snapshot = await FirebaseFirestore.instance
+                  .collection('users')
+                  .where(FieldPath.documentId, whereIn: friendsUids)
+                  .get();
+
+              final friendsList = snapshot.docs.map((friendDoc) {
+                final friendData = friendDoc.data();
+                return {
+                  'uid': friendDoc.id,
+                  'displayName': friendData['displayName'] ?? 'User',
+                  'profileImage': friendData['profileImage'],
+                  'isOnline': friendData['isOnline'] ?? false,
+                  'lastSeen': friendData['lastSeen'],
+                };
+              }).toList();
+
+              // Cache the friends list for offline use
+              await _cacheFriendsList(friendsList);
+              return friendsList;
+            } catch (e) {
+              debugPrint('Error fetching friends from Firestore: $e');
+              // Return cached data when offline
+              return cachedFriends;
+            }
+          })
+          .where((friends) =>
+              friends != null) // Filter out null values (no changes)
+          .cast<List<Map<String, dynamic>>>(); // Cast back to correct type
     });
   }
 
@@ -659,5 +672,14 @@ class UserManager with ChangeNotifier implements IUserManager {
       'appVersion': packageInfo.version,
       'timestamp': FieldValue.serverTimestamp(),
     });
+  }
+
+  // Helper method to compare two lists for equality
+  bool _listsEqual(List<String> list1, List<String> list2) {
+    if (list1.length != list2.length) return false;
+    for (int i = 0; i < list1.length; i++) {
+      if (list1[i] != list2[i]) return false;
+    }
+    return true;
   }
 }

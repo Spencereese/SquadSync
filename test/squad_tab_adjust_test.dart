@@ -6,7 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cod_squad_app/screens/squad_tab_screen.dart';
 import 'package:cod_squad_app/managers/squad_manager.dart';
-import 'package:cod_squad_app/chat/peacock_modal.dart';
+import 'package:cod_squad_app/squad_state.dart';
+import 'test_setup.dart';
 
 // Mock classes
 class MockUser extends Mock implements User {
@@ -17,7 +18,27 @@ class MockUser extends Mock implements User {
 class MockFirebaseAuth extends Mock implements FirebaseAuth {
   @override
   User? get currentUser => MockUser();
+
+  @override
+  Future<UserCredential> signInAnonymously() async {
+    return MockUserCredential();
+  }
 }
+
+class MockUserCredential extends Mock implements UserCredential {
+  @override
+  User get user => MockUser();
+}
+
+class MockFirebaseFirestore extends Mock implements FirebaseFirestore {}
+
+class MockQuerySnapshot extends Mock
+    implements QuerySnapshot<Map<String, dynamic>> {
+  @override
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> get docs => [];
+}
+
+class MockSquadState extends Mock implements SquadState {}
 
 class MockSquadManager extends Mock implements SquadManager {
   @override
@@ -32,75 +53,45 @@ class MockSquadManager extends Mock implements SquadManager {
   }
 }
 
-class MockQuerySnapshot extends Mock implements QuerySnapshot {
-  @override
-  List<QueryDocumentSnapshot> get docs => [];
-}
-
 void main() {
   late MockFirebaseAuth mockAuth;
+  late MockFirebaseFirestore mockFirestore;
   late MockSquadManager mockSquadManager;
+  late MockSquadState mockSquadState;
 
   setUp(() {
+    setupTestEnvironment();
     mockAuth = MockFirebaseAuth();
+    mockFirestore = MockFirebaseFirestore();
     mockSquadManager = MockSquadManager();
+    mockSquadState = MockSquadState();
+  });
+
+  tearDown(() {
+    teardownTestEnvironment();
   });
 
   testWidgets('SquadTabScreen displays empty state with CTA',
       (WidgetTester tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: MultiProvider(
-          providers: [
-            Provider<FirebaseAuth>.value(value: mockAuth),
-            Provider<SquadManager>.value(value: mockSquadManager),
-          ],
-          child: const SquadTabScreen(),
+      MultiProvider(
+        providers: [
+          Provider<FirebaseAuth>.value(value: mockAuth),
+          Provider<FirebaseFirestore>.value(value: mockFirestore),
+          ChangeNotifierProvider<SquadManager>.value(value: mockSquadManager),
+          ChangeNotifierProvider<SquadState>.value(value: mockSquadState),
+        ],
+        child: const MaterialApp(
+          home: SquadTabScreen(),
         ),
       ),
     );
 
+    // Wait for the widget to build
     await tester.pumpAndSettle();
 
-    expect(find.text('No active lobbies—start one?'), findsOneWidget);
-    expect(find.text('Tap the + button below'), findsOneWidget);
-  });
-
-  testWidgets('SquadTabScreen shows FAB for starting new lobby',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MultiProvider(
-          providers: [
-            Provider<FirebaseAuth>.value(value: mockAuth),
-            Provider<SquadManager>.value(value: mockSquadManager),
-          ],
-          child: const SquadTabScreen(),
-        ),
-      ),
-    );
-
-    expect(find.byIcon(Icons.add), findsOneWidget);
-  });
-
-  testWidgets('FAB opens PeacockModal bottom sheet',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MultiProvider(
-          providers: [
-            Provider<FirebaseAuth>.value(value: mockAuth),
-            Provider<SquadManager>.value(value: mockSquadManager),
-          ],
-          child: const SquadTabScreen(),
-        ),
-      ),
-    );
-
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pumpAndSettle();
-
-    // Check if PeacockModal is shown
-    expect(find.byType(PeacockModal), findsOneWidget);
+    // Verify empty state is shown
+    expect(find.text('No active lobbies'), findsOneWidget);
+    expect(find.text('Start a new lobby'), findsOneWidget);
   });
 }

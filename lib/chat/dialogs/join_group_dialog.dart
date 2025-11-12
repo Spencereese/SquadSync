@@ -258,82 +258,89 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.transparent,
-      child: Container(
-        height: MediaQuery.of(context).size.height * 0.7,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
         ),
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor,
-                    width: 0.5,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Theme.of(context).dividerColor,
+                      width: 0.5,
+                    ),
                   ),
                 ),
+                child: Row(
+                  children: [
+                    Text(
+                      'Join Group',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                children: [
-                  Text(
-                    'Join Group',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
 
-            // Tab Bar
-            TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: 'Code', icon: Icon(Icons.code)),
-                Tab(text: 'Scan QR', icon: Icon(Icons.qr_code_scanner)),
-                Tab(text: 'Browse', icon: Icon(Icons.explore)),
-              ],
-              labelColor: Theme.of(context).colorScheme.primary,
-              unselectedLabelColor:
-                  Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-            ),
-
-            // Tab Content
-            Expanded(
-              child: TabBarView(
+              // Tab Bar
+              TabBar(
                 controller: _tabController,
-                children: [
-                  // Code Entry Tab
-                  _buildCodeEntryTab(),
-
-                  // QR Scanner Tab
-                  _buildQRScannerTab(),
-
-                  // Browse Groups Tab
-                  _buildBrowseGroupsTab(),
+                tabs: const [
+                  Tab(text: 'Code', icon: Icon(Icons.code)),
+                  Tab(text: 'Scan QR', icon: Icon(Icons.qr_code_scanner)),
+                  Tab(text: 'Browse', icon: Icon(Icons.explore)),
                 ],
+                labelColor: Theme.of(context).colorScheme.primary,
+                unselectedLabelColor:
+                    Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
               ),
-            ),
-          ],
+
+              // Tab Content
+              Flexible(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // Code Entry Tab
+                    _buildCodeEntryTab(),
+
+                    // QR Scanner Tab
+                    _buildQRScannerTab(),
+
+                    // Browse Groups Tab
+                    _buildBrowseGroupsTab(),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildCodeEntryTab() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             'Enter Invite Code',
@@ -559,7 +566,7 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('chat_groups')
-          .where('isPrivate', isEqualTo: false)
+          .where('isPublic', isEqualTo: true)
           .orderBy('memberCount', descending: true)
           .limit(20)
           .snapshots(),
@@ -567,7 +574,7 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
         if (snapshot.hasError) {
           return Center(
             child: Text(
-              'Error loading groups',
+              'Error loading groups: ${snapshot.error}',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           );

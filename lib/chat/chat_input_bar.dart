@@ -33,6 +33,8 @@ class ChatInputBar extends StatefulWidget {
 
 class _ChatInputBarState extends State<ChatInputBar> {
   final FocusNode _focusNode = FocusNode();
+  bool _showMentions = false;
+  List<String> _mentionSuggestions = [];
 
   @override
   void initState() {
@@ -40,34 +42,75 @@ class _ChatInputBarState extends State<ChatInputBar> {
     _focusNode.addListener(() {
       setState(() {});
     });
-    widget.controller.addListener(() {
-      setState(() {});
-    });
+    widget.controller.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
     _focusNode.dispose();
-    widget.controller.removeListener(() {});
+    widget.controller.removeListener(_onTextChanged);
     super.dispose();
+  }
+
+  void _onTextChanged() {
+    setState(() {});
+    _checkForMentions();
+  }
+
+  void _checkForMentions() {
+    final text = widget.controller.text;
+    final cursorPosition = widget.controller.selection.baseOffset;
+
+    if (cursorPosition > 0) {
+      final textBeforeCursor = text.substring(0, cursorPosition);
+      final lastAtIndex = textBeforeCursor.lastIndexOf('@');
+
+      if (lastAtIndex != -1) {
+        final textAfterAt = textBeforeCursor.substring(lastAtIndex + 1);
+        if (!textAfterAt.contains(' ')) {
+          // Show mention suggestions
+          _showMentions = true;
+          // TODO: Get actual user list from squad state
+          _mentionSuggestions = ['Alice', 'Bob', 'Charlie', 'David']
+              .where((user) =>
+                  user.toLowerCase().contains(textAfterAt.toLowerCase()))
+              .toList();
+        } else {
+          _showMentions = false;
+        }
+      } else {
+        _showMentions = false;
+      }
+    } else {
+      _showMentions = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final hasText = widget.controller.text.isNotEmpty;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Plus button like iMessage
-          _buildPlusButton(context),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildTextField(context, hasText),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Mention suggestions
+        if (_showMentions && _mentionSuggestions.isNotEmpty)
+          _buildMentionSuggestions(),
+        // Input bar
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Plus button like iMessage
+              _buildPlusButton(context),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildTextField(context, hasText),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -83,13 +126,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: Colors.grey[800],
+            color: Colors.grey[300], // Light grey like iMessage
             borderRadius: BorderRadius.circular(18),
           ),
           child: const Icon(
             Icons.add,
             size: 24,
-            color: Colors.white,
+            color: Colors.black, // Black icon on light background
           ),
         ),
       ),
@@ -97,19 +140,23 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Widget _buildTextField(BuildContext context, bool hasText) {
+    final isFocused = _focusNode.hasFocus;
+
     return Container(
       constraints: const BoxConstraints(
         minHeight: 36,
         maxHeight: 120,
       ),
       decoration: BoxDecoration(
-        color: Colors.grey[800],
-        borderRadius:
-            BorderRadius.circular(20), // More pill-shaped like iMessage
-        border: Border.all(
-          color: Colors.grey[300]!, // Lighter grey border like iMessage
-          width: 1,
-        ),
+        color: Colors.grey[200], // Lighter background like iMessage
+        borderRadius: BorderRadius.circular(20),
+        border: isFocused
+            ? Border.all(
+                color: const Color(
+                    0xFF007AFF), // iMessage blue border when focused
+                width: 1.5,
+              )
+            : null, // No border when not focused
       ),
       child: Row(
         children: [
@@ -122,13 +169,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
               keyboardType: TextInputType.multiline,
               textInputAction: TextInputAction.newline,
               style: const TextStyle(
-                color: Colors.white,
+                color: Colors.black, // Black text on light background
                 fontSize: 16,
               ),
               decoration: InputDecoration(
                 hintText: 'Message',
                 hintStyle: TextStyle(
-                  color: Colors.grey[400],
+                  color: Colors.grey[500], // Darker hint text
                   fontSize: 16,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
@@ -153,6 +200,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     HapticFeedback.lightImpact();
                     widget.onSend();
                   },
+                  onLongPress: () => _showMessageEffects(context),
                   child: Container(
                     width: 28,
                     height: 28,
@@ -169,6 +217,167 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMentionSuggestions() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8.0),
+      constraints: const BoxConstraints(maxHeight: 120),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        itemCount: _mentionSuggestions.length,
+        itemBuilder: (context, index) {
+          final user = _mentionSuggestions[index];
+          return ListTile(
+            dense: true,
+            leading: CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.grey[400],
+              child: Text(
+                user[0].toUpperCase(),
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+            title: Text(
+              user,
+              style: const TextStyle(fontSize: 14, color: Colors.black),
+            ),
+            onTap: () => _selectMention(user),
+          );
+        },
+      ),
+    );
+  }
+
+  void _selectMention(String user) {
+    final text = widget.controller.text;
+    final cursorPosition = widget.controller.selection.baseOffset;
+
+    if (cursorPosition > 0) {
+      final textBeforeCursor = text.substring(0, cursorPosition);
+      final lastAtIndex = textBeforeCursor.lastIndexOf('@');
+
+      if (lastAtIndex != -1) {
+        final newText = textBeforeCursor.substring(0, lastAtIndex) +
+            '@$user ' +
+            text.substring(cursorPosition);
+        widget.controller.text = newText;
+        widget.controller.selection = TextSelection.collapsed(
+          offset: lastAtIndex + user.length + 2,
+        );
+      }
+    }
+
+    setState(() {
+      _showMentions = false;
+    });
+  }
+
+  void _showMessageEffects(BuildContext context) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black.withValues(alpha: 0.8),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Send with effect',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildEffectOption(
+                icon: Icons.waves,
+                label: 'Slam',
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onSend();
+                  // TODO: Add slam animation effect
+                },
+              ),
+              _buildEffectOption(
+                icon: Icons.blur_on,
+                label: 'Gentle',
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onSend();
+                  // TODO: Add gentle animation effect
+                },
+              ),
+              _buildEffectOption(
+                icon: Icons.volume_up,
+                label: 'Loud',
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onSend();
+                  // TODO: Add loud animation effect
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEffectOption({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.grey[800],
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+            ),
+          ),
         ],
       ),
     );

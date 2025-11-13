@@ -57,6 +57,7 @@ class _MessageBubbleState extends State<MessageBubble>
   final GlobalKey _messageKey = GlobalKey(); // Key to get message position
   late AnimationController _positionController;
   late Animation<Offset> _positionAnimation;
+  bool _overlayVisible = false; // Prevent multiple overlays
 
   @override
   void initState() {
@@ -70,7 +71,7 @@ class _MessageBubbleState extends State<MessageBubble>
 
     _positionAnimation = Tween<Offset>(
       begin: Offset.zero,
-      end: const Offset(0, -60), // Move up by 60 pixels
+      end: const Offset(0, -20), // Smaller animation - move up by 20 pixels
     ).animate(CurvedAnimation(
       parent: _positionController,
       curve: Curves.easeOut,
@@ -103,7 +104,9 @@ class _MessageBubbleState extends State<MessageBubble>
   }
 
   void _showMessageReactionOverlay(BuildContext context) {
-    // Get the position and size of the message bubble
+    // Prevent multiple overlays
+    if (_overlayVisible) return;
+    _overlayVisible = true;
     final RenderBox? renderBox =
         _messageKey.currentContext?.findRenderObject() as RenderBox?;
     Offset? messagePosition;
@@ -128,6 +131,7 @@ class _MessageBubbleState extends State<MessageBubble>
         onDismiss: () {
           overlayEntry.remove();
           _positionController.reverse(); // Animate message back down
+          _overlayVisible = false; // Reset flag
         },
         onReply: () {
           final chatState = Provider.of<ChatState>(context, listen: false);

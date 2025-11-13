@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -100,21 +99,13 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
     return GestureDetector(
       onTap: widget.onDismiss,
       child: Container(
-        color: Colors.transparent,
+        color: Colors.black.withValues(alpha: 0.3), // Simplified backdrop
         child: Stack(
           children: [
-            // Backdrop blur
-            BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.1),
-              ),
-            ),
-
             // Reaction buttons positioned above message (centered like iMessage)
             Positioned(
               top: widget.messagePosition != null
-                  ? widget.messagePosition!.dy - 120 // Position above message
+                  ? (widget.messagePosition!.dy - 120).clamp(20, MediaQuery.of(context).size.height - 200) // Position above message with bounds
                   : MediaQuery.of(context).size.height * 0.3,
               left: 20,
               right: 20,
@@ -139,6 +130,7 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
                               color: Colors.black.withValues(
                                   alpha: 0.7), // iMessage-style dark grey
                               borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: Colors.transparent, width: 0), // Explicitly no border
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withValues(alpha: 0.2),
@@ -149,6 +141,7 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
                             ),
                             child: SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: quickReactions.map((emoji) {
@@ -220,6 +213,7 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
                               color: Colors.black.withValues(
                                   alpha: 0.7), // iMessage-style dark grey
                               borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.transparent, width: 0), // Explicitly no border
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withValues(alpha: 0.2),
@@ -230,6 +224,7 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
                             ),
                             child: SingleChildScrollView(
                               scrollDirection: Axis.vertical,
+                              physics: const NeverScrollableScrollPhysics(), // Disable scrolling for action buttons
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [

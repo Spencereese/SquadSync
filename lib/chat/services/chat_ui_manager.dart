@@ -379,44 +379,41 @@ class ChatUIManager {
             final messageGroup =
                 _processedMessages[messageGroupIndex] as MessageGroupData;
 
-            return GestureDetector(
-              onLongPress: onMessageLongPress,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: MessageGroup(
-                  parentMessage: messageGroup.parentMessage,
-                  replies: messageGroup.replies,
-                  isMe: messageGroup.parentMessage.senderUid ==
-                      _auth.currentUser?.uid,
-                  showSender:
-                      true, // Will be determined per message in MessageGroup
-                  showAvatar:
-                      true, // Will be determined per message in MessageGroup
-                  showTimestamp: true,
-                  showReadIndicator:
-                      false, // TODO: Implement per-message read indicators
-                  onTap: onMessageTap,
-                  onLongPress: () {}, // Handled by parent GestureDetector
-                  sendingStatus: {}, // TODO: Pass appropriate sending status
-                  chatGroupId: chatGroupId,
-                  chatType: chatType,
-                  onViewThread: () {
-                    // Navigate to thread view
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ThreadScreen(
-                          chatGroupId: chatGroupId ?? '',
-                          currentUserId: _auth.currentUser?.uid ?? '',
-                          currentUserName: _userDisplayNameCache[
-                                  _auth.currentUser?.uid ?? ''] ??
-                              'Unknown',
-                          chatType: chatType,
-                        ),
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4.0),
+              child: MessageGroup(
+                parentMessage: messageGroup.parentMessage,
+                replies: messageGroup.replies,
+                isMe: messageGroup.parentMessage.senderUid ==
+                    _auth.currentUser?.uid,
+                showSender:
+                    true, // Will be determined per message in MessageGroup
+                showAvatar:
+                    true, // Will be determined per message in MessageGroup
+                showTimestamp: true,
+                showReadIndicator:
+                    false, // TODO: Implement per-message read indicators
+                onTap: onMessageTap,
+                onLongPress: () {}, // Handled by individual MessageBubbles
+                sendingStatus: {}, // TODO: Pass appropriate sending status
+                chatGroupId: chatGroupId,
+                chatType: chatType,
+                onViewThread: () {
+                  // Navigate to thread view
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ThreadScreen(
+                        chatGroupId: chatGroupId ?? '',
+                        currentUserId: _auth.currentUser?.uid ?? '',
+                        currentUserName: _userDisplayNameCache[
+                                _auth.currentUser?.uid ?? ''] ??
+                            'Unknown',
+                        chatType: chatType,
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
             );
           },

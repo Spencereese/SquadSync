@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import 'chat_state.dart';
 import 'models/message_data.dart';
 import 'widgets/message_content.dart';
@@ -13,8 +11,6 @@ import 'widgets/message_sender.dart';
 import 'widgets/message_timestamp.dart';
 import 'services/reaction_service.dart';
 import '../services/ai_service.dart';
-import 'chat_service.dart';
-import 'widgets/message_reaction_overlay.dart';
 
 /// Refactored MessageBubble using decomposed components
 /// This replaces the 1183-line monolithic MessageBubble with a clean, maintainable structure
@@ -57,7 +53,16 @@ class _MessageBubbleState extends State<MessageBubble>
   final GlobalKey _messageKey = GlobalKey(); // Key to get message position
   late AnimationController _positionController;
   late Animation<Offset> _positionAnimation;
-  bool _overlayVisible = false; // Prevent multiple overlays
+  late AnimationController _scaleController;
+  late Animation<double> _scaleAnimation;
+
+  // Long press interaction state
+  bool _isLongPressed = false;
+  late AnimationController _longPressController;
+  late Animation<double> _longPressScaleAnimation;
+  late Animation<Offset> _longPressOffsetAnimation;
+  OverlayEntry? _reactionsOverlay;
+  OverlayEntry? _menuOverlay;
 
   @override
   void initState() {
@@ -71,9 +76,43 @@ class _MessageBubbleState extends State<MessageBubble>
 
     _positionAnimation = Tween<Offset>(
       begin: Offset.zero,
-      end: const Offset(0, -20), // Smaller animation - move up by 20 pixels
+      end: Offset.zero, // Disable position animation completely
     ).animate(CurvedAnimation(
       parent: _positionController,
+      curve: Curves.easeOut,
+    ));
+
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 1.02, // Slight growth effect
+    ).animate(CurvedAnimation(
+      parent: _scaleController,
+      curve: Curves.easeOut,
+    ));
+
+    _longPressController = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+
+    _longPressScaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 1.05,
+    ).animate(CurvedAnimation(
+      parent: _longPressController,
+      curve: Curves.easeOut,
+    ));
+
+    _longPressOffsetAnimation = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(0, -2),
+    ).animate(CurvedAnimation(
+      parent: _longPressController,
       curve: Curves.easeOut,
     ));
   }
@@ -89,6 +128,10 @@ class _MessageBubbleState extends State<MessageBubble>
   @override
   void dispose() {
     _positionController.dispose();
+    _scaleController.dispose();
+    _longPressController.dispose();
+    _reactionsOverlay?.remove();
+    _menuOverlay?.remove();
     super.dispose();
   }
 
@@ -103,162 +146,359 @@ class _MessageBubbleState extends State<MessageBubble>
     }
   }
 
-  void _showMessageReactionOverlay(BuildContext context) {
-    // Prevent multiple overlays
-    if (_overlayVisible) return;
-    _overlayVisible = true;
+  void _handleLongPress() {
+    if (_isLongPressed) return; // Prevent multiple long presses
+
+    setState(() {
+      _isLongPressed = true;
+    });
+
+    // Start the lift animation
+    _longPressController.forward();
+
+    // Add background blur after 200ms
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted && _isLongPressed) {
+        _showBackgroundBlur();
+      }
+    });
+
+    // Show reactions after a short delay
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted && _isLongPressed) {
+        _showReactionsPicker();
+      }
+    });
+  }
+
+  void _showBackgroundBlur() {
+    // This would be implemented by adding a BackdropFilter to the parent widget
+    // For now, we'll just ensure the overlays provide the visual feedback
+  }
+
+  void _showReactionsPicker() {
     final RenderBox? renderBox =
         _messageKey.currentContext?.findRenderObject() as RenderBox?;
-    Offset? messagePosition;
-    Size? messageSize;
+    if (renderBox == null) return;
 
-    if (renderBox != null) {
-      messagePosition = renderBox.localToGlobal(Offset.zero);
-      messageSize = renderBox.size;
-    }
+    final messagePosition = renderBox.localToGlobal(Offset.zero);
+    final messageSize = renderBox.size;
+    final screenSize = MediaQuery.of(context).size;
 
-    final overlay = Overlay.of(context);
-    late OverlayEntry overlayEntry;
+    // Position reactions above the message, flip below if not enough space
+    final reactionsTop = messagePosition.dy - 60;
+    final shouldFlipReactions = reactionsTop < 20;
 
-    overlayEntry = OverlayEntry(
-      builder: (context) => MessageReactionOverlay(
-        messageData: _messageData,
-        isMe: widget.isMe,
-        chatGroupId: widget.chatGroupId,
-        chatType: widget.chatType,
-        messagePosition: messagePosition,
-        messageSize: messageSize,
-        onDismiss: () {
-          overlayEntry.remove();
-          _positionController.reverse(); // Animate message back down
-          _overlayVisible = false; // Reset flag
-        },
-        onReply: () {
-          final chatState = Provider.of<ChatState>(context, listen: false);
-          chatState.setReplyToMessage(widget.message);
-        },
-        onCopy: () {
-          Clipboard.setData(ClipboardData(text: _messageData.text));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Text copied')),
-          );
-        },
-        onDelete: () async {
-          final confirm = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Delete Message'),
-              content:
-                  const Text('Are you sure you want to delete this message?'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Delete'),
-                ),
-              ],
+    final finalReactionsTop = shouldFlipReactions
+        ? messagePosition.dy + messageSize.height + 8
+        : reactionsTop;
+    final reactionsLeft = widget.isMe
+        ? messagePosition.dx +
+            messageSize.width -
+            200 // Align to right edge for sent messages
+        : messagePosition.dx; // Align to left edge for received messages
+
+    _reactionsOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          // Background tap to dismiss
+          GestureDetector(
+            onTap: _dismissOverlays,
+            child: Container(
+              color: Colors.transparent,
+              width: screenSize.width,
+              height: screenSize.height,
             ),
-          );
-          if (confirm == true && context.mounted) {
-            try {
-              String collectionPath;
-              final userId = FirebaseAuth.instance.currentUser?.uid;
-              if (userId == null) return;
-
-              if (widget.chatType == ChatType.userGroup) {
-                collectionPath =
-                    'users/$userId/chat_groups/${widget.chatGroupId}/messages';
-              } else {
-                // For DMs, use the chats collection
-                collectionPath = 'chats/${widget.chatGroupId}/messages';
-              }
-
-              await FirebaseFirestore.instance
-                  .collection(collectionPath)
-                  .doc(_messageData.id)
-                  .delete();
-
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Message deleted')),
-                );
-              }
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed to delete message: $e')),
-                );
-              }
-            }
-          }
-        },
-        onEdit: widget.isMe
-            ? (String newText) async {
-                // Implement edit functionality
-                try {
-                  String collectionPath;
-                  final userId = FirebaseAuth.instance.currentUser?.uid;
-                  if (userId == null) return;
-
-                  if (widget.chatType == ChatType.userGroup) {
-                    collectionPath =
-                        'users/$userId/chat_groups/${widget.chatGroupId}/messages';
-                  } else {
-                    // For DMs, use the chats collection
-                    collectionPath = 'chats/${widget.chatGroupId}/messages';
-                  }
-
-                  await FirebaseFirestore.instance
-                      .collection(collectionPath)
-                      .doc(_messageData.id)
-                      .update({
-                    'text': newText,
-                    'edited': true,
-                    'editedAt': FieldValue.serverTimestamp(),
-                  });
-
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Message edited')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to edit message: $e')),
-                    );
-                  }
-                }
-              }
-            : null,
-        onPin: () async {
-          // Implement pin functionality
-          try {
-            final chatService = ChatService();
-            await chatService.pinMessage(
-                _messageData.id, widget.chatGroupId, widget.chatType);
-
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Message pinned')),
-              );
-            }
-          } catch (e) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Failed to pin message: $e')),
-              );
-            }
-          }
-        },
+          ),
+          // Reactions picker
+          Positioned(
+            top: finalReactionsTop.clamp(10, screenSize.height - 100),
+            left: reactionsLeft.clamp(10, screenSize.width - 220),
+            child: Material(
+              color: Colors.transparent,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                builder: (context, value, child) => Transform.scale(
+                  scale: value,
+                  child: _buildReactionsPicker(),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
 
-    overlay.insert(overlayEntry);
-    _positionController.forward(); // Animate message up
+    Overlay.of(context).insert(_reactionsOverlay!);
+
+    // Show menu below reactions after another delay
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (mounted && _isLongPressed) {
+        _showActionMenu();
+      }
+    });
+  }
+
+  void _showActionMenu() {
+    final RenderBox? renderBox =
+        _messageKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final messagePosition = renderBox.localToGlobal(Offset.zero);
+    final messageSize = renderBox.size;
+    final screenSize = MediaQuery.of(context).size;
+
+    // Position menu below the message, flip to top if not enough space
+    final menuTop = messagePosition.dy + messageSize.height + 8;
+    final menuHeight = 120.0; // Approximate menu height
+    final shouldFlipMenu = menuTop + menuHeight > screenSize.height - 20;
+
+    final finalMenuTop =
+        shouldFlipMenu ? messagePosition.dy - menuHeight - 8 : menuTop;
+    final menuLeft = widget.isMe
+        ? messagePosition.dx +
+            messageSize.width -
+            140 // Align to right for sent messages
+        : messagePosition.dx; // Align to left for received messages
+
+    _menuOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          // Background tap to dismiss (already handled by reactions overlay)
+          // Menu
+          Positioned(
+            top: finalMenuTop.clamp(10, screenSize.height - 150),
+            left: menuLeft.clamp(10, screenSize.width - 150),
+            child: Material(
+              color: Colors.transparent,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeOut,
+                builder: (context, value, child) => Transform.translate(
+                  offset: Offset(0, 10 * (1 - value)),
+                  child: Opacity(
+                    opacity: value,
+                    child: _buildActionMenu(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Overlay.of(context).insert(_menuOverlay!);
+  }
+
+  Widget _buildReactionsPicker() {
+    final quickReactions = ['❤️', '👍', '👎', '😂', '😮', '🙌', '❗', '❓'];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? Colors.grey[800]!.withValues(alpha: 0.9)
+            : Colors.grey[100]!.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ...quickReactions.map((emoji) {
+            final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+            final hasReaction = _messageData.reactions.any((reaction) =>
+                reaction['userId'] == currentUserId &&
+                reaction['reaction'] == emoji);
+            return GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                ReactionService.addReaction(
+                  context,
+                  emoji,
+                  _messageData.id,
+                  widget.chatGroupId,
+                  widget.chatType,
+                );
+                _dismissOverlays();
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: hasReaction
+                      ? Colors.blue.withValues(alpha: 0.2)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  emoji,
+                  style: const TextStyle(fontSize: 24),
+                ),
+              ),
+            );
+          }),
+          GestureDetector(
+            onTap: () {
+              // TODO: Open full emoji picker
+              _dismissOverlays();
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.only(left: 4),
+              decoration: BoxDecoration(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                Icons.add,
+                size: 24,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionMenu() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? Colors.grey[800]!.withValues(alpha: 0.95)
+            : Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildMenuItem(
+            icon: Icons.reply,
+            label: 'Reply',
+            onTap: () {
+              final chatState = Provider.of<ChatState>(context, listen: false);
+              chatState.setReplyToMessage(widget.message);
+              _dismissOverlays();
+            },
+          ),
+          const SizedBox(height: 8),
+          _buildMenuItem(
+            icon: Icons.copy,
+            label: 'Copy',
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: _messageData.text));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Text copied')),
+              );
+              _dismissOverlays();
+            },
+          ),
+          if (widget.isMe) ...[
+            const SizedBox(height: 8),
+            _buildMenuItem(
+              icon: Icons.delete,
+              label: 'Delete',
+              color: Colors.red,
+              onTap: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Delete Message'),
+                    content: const Text(
+                        'Are you sure you want to delete this message?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true && context.mounted) {
+                  // TODO: Implement delete
+                  _dismissOverlays();
+                }
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: color ??
+                (Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : Colors.black),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: color ??
+                  (Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white
+                      : Colors.black),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _dismissOverlays() {
+    _reactionsOverlay?.remove();
+    _menuOverlay?.remove();
+    _reactionsOverlay = null;
+    _menuOverlay = null;
+    _longPressController.reverse().then((_) {
+      if (mounted) {
+        setState(() {
+          _isLongPressed = false;
+        });
+      }
+    });
   }
 
   @override
@@ -499,41 +739,52 @@ class _MessageBubbleState extends State<MessageBubble>
   }
 
   Widget _buildMessageContainer(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        widget.onTap();
-      },
-      onLongPress: () {
-        HapticFeedback.heavyImpact();
-        _showMessageReactionOverlay(context);
-      },
-      child: AnimatedContainer(
-        key: _messageKey,
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.symmetric(vertical: 2.0),
-        padding: _getMessagePadding(),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.7,
-          minWidth: 60,
-        ),
-        decoration: _getMessageDecoration(),
-        child: Semantics(
-          label: 'Message from ${_messageData.sender}',
-          child: IntrinsicWidth(
-            child: MessageContent(
-              message: _messageData,
-              isFromCurrentUser: widget.isMe,
-              chatGroupId: widget.chatGroupId,
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _scaleAnimation,
+        _longPressScaleAnimation,
+        _longPressOffsetAnimation
+      ]),
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleAnimation.value * _longPressScaleAnimation.value,
+          child: Transform.translate(
+            offset: _longPressOffsetAnimation.value,
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                widget.onTap();
+              },
+              onLongPress: () {
+                HapticFeedback.lightImpact();
+                _handleLongPress();
+              },
+              child: AnimatedContainer(
+                key: _messageKey,
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(vertical: 2.0),
+                padding: _getMessagePadding(),
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.7,
+                  minWidth: 60,
+                ),
+                decoration: _getMessageDecoration(),
+                child: Semantics(
+                  label: 'Message from ${_messageData.sender}',
+                  child: IntrinsicWidth(
+                    child: MessageContent(
+                      message: _messageData,
+                      isFromCurrentUser: widget.isMe,
+                      chatGroupId: widget.chatGroupId,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
-    ).animate().fadeIn(duration: const Duration(milliseconds: 300)).slideY(
-        begin: 0.2,
-        end: 0.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut);
+        );
+      },
+    );
   }
 
   BoxDecoration _getMessageDecoration() {

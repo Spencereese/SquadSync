@@ -11,7 +11,6 @@ import 'chat_state.dart';
 import '../screens/notifications_screen.dart';
 import '../profile_tab.dart';
 import '../app_theme.dart';
-import 'widgets/squad_chat_tab.dart';
 import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
 import 'dialogs/group_actions_dialog.dart';
@@ -299,19 +298,20 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                           }
                         },
                       );
+                    } else {
+                      // Also show user groups when squad is selected (unified approach)
+                      return Consumer<ChatState>(
+                        builder: (context, chatState, child) {
+                          if (chatState.isDMView) {
+                            // Show DMs
+                            return const DirectMessagesTab();
+                          } else {
+                            // Show user groups with DM card
+                            return const UserGroupsTab();
+                          }
+                        },
+                      );
                     }
-
-                    return Consumer<ChatState>(
-                      builder: (context, chatState, child) {
-                        if (chatState.isDMView) {
-                          // Show DMs
-                          return const DirectMessagesTab();
-                        } else {
-                          // Show squads as chat groups (each squad IS a chat group)
-                          return const SquadChatTab();
-                        }
-                      },
-                    );
                   },
                 ),
               ),

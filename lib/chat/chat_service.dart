@@ -69,9 +69,7 @@ class ChatService {
 
     // Create new stream
     String collectionPath;
-    if (chatType == ChatType.squad) {
-      collectionPath = 'squads/$chatGroupId/messages';
-    } else if (chatType == ChatType.userGroup) {
+    if (chatType == ChatType.userGroup) {
       collectionPath =
           'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
     } else if (chatType == ChatType.dm) {
@@ -117,18 +115,15 @@ class ChatService {
       return _typingStream!;
     }
 
-    // Use different typing status paths for squad vs group chats
+    // Use different typing status paths for group chats vs DMs
     String typingPath;
     if (isUserGroup) {
-      typingPath = 'chat_groups/$chatGroupId/typing_status/status';
+      typingPath =
+          'users/${currentUser.uid}/chat_groups/$chatGroupId/typing_status/status';
     } else if (isDM) {
       typingPath = 'chats/$chatGroupId/typing_status/status';
     } else {
-      final squadId = _getCachedSquadId(context);
-      if (squadId == null) return Stream.value(null);
-      typingPath = chatGroupId != null
-          ? 'squads/$squadId/chat_groups/$chatGroupId/typing_status/status'
-          : 'squads/$squadId/chat_metadata/typing_status';
+      return Stream.value(null);
     }
 
     // Capture displayName synchronously to avoid async gap
@@ -254,9 +249,9 @@ class ChatService {
 
   // Add reaction to a message
   Future<void> addReaction(BuildContext context, String msgId, String reaction,
-      {String? chatGroupId}) async {
+      {String? chatGroupId, ChatType? chatType}) async {
     return _messageService.addReaction(context, msgId, reaction,
-        chatGroupId: chatGroupId);
+        chatGroupId: chatGroupId, chatType: chatType);
   }
 
   // Fetch historical messages from PostgreSQL (removed 30-day limit)
@@ -329,14 +324,16 @@ class ChatService {
         chatGroupId: chatGroupId);
   }
 
-  Future<void> pinMessage(String messageId, String squadId,
-      {String? chatGroupId}) async {
+  Future<void> pinMessage(
+      String messageId, String? chatGroupId, ChatType chatType) async {
     String collectionPath;
-    if (chatGroupId != null) {
-      collectionPath =
-          'users/${FirebaseAuth.instance.currentUser?.uid}/chat_groups/$chatGroupId/messages';
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+
+    if (chatType == ChatType.userGroup) {
+      collectionPath = 'users/$userId/chat_groups/$chatGroupId/messages';
     } else {
-      collectionPath = 'squads/$squadId/messages';
+      collectionPath = 'chats/$chatGroupId/messages';
     }
 
     await _firestore.collection(collectionPath).doc(messageId).update({
@@ -344,14 +341,16 @@ class ChatService {
     });
   }
 
-  Future<void> unpinMessage(String messageId, String squadId,
-      {String? chatGroupId}) async {
+  Future<void> unpinMessage(
+      String messageId, String? chatGroupId, ChatType chatType) async {
     String collectionPath;
-    if (chatGroupId != null) {
-      collectionPath =
-          'users/${FirebaseAuth.instance.currentUser?.uid}/chat_groups/$chatGroupId/messages';
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+
+    if (chatType == ChatType.userGroup) {
+      collectionPath = 'users/$userId/chat_groups/$chatGroupId/messages';
     } else {
-      collectionPath = 'squads/$squadId/messages';
+      collectionPath = 'chats/$chatGroupId/messages';
     }
 
     await _firestore.collection(collectionPath).doc(messageId).update({

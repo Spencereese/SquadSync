@@ -170,7 +170,10 @@ class _MessageReactionDialogState extends State<MessageReactionDialog> {
                               duration: const Duration(milliseconds: 100),
                               child: Text(
                                 emoji,
-                                style: const TextStyle(fontSize: 28),
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  decoration: TextDecoration.none,
+                                ),
                               ),
                             ),
                           ),

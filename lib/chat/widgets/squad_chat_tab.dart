@@ -270,7 +270,7 @@ class SquadChatTab extends StatelessWidget {
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (context) => ChatScreen(
-                              chatType: ChatType.squad,
+                              chatType: ChatType.dm,
                               chatGroupId: squadId,
                             ),
                           ),

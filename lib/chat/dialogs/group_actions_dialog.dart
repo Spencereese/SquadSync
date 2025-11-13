@@ -695,28 +695,15 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
     setState(() => _isLoading = true);
 
     try {
-      final squadState = Provider.of<SquadState>(context, listen: false);
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
-      // Create group document - use user-specific or squad-specific based on context
-      DocumentReference groupRef;
-
-      if (squadState.selectedSquadId != null) {
-        // Squad context - create squad group
-        groupRef = FirebaseFirestore.instance
-            .collection('squads')
-            .doc(squadState.selectedSquadId)
-            .collection('chat_groups')
-            .doc();
-      } else {
-        // No squad - create user-specific group
-        groupRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUser.uid)
-            .collection('chat_groups')
-            .doc();
-      }
+      // Create group document - always create user-specific groups
+      final groupRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc();
 
       await groupRef.set({
         'name': groupName,

@@ -76,11 +76,17 @@ class ThreadService {
     await batch.commit();
   }
 
-  /// Get thread data by ID
-  Future<ThreadData?> getThread(String threadId) async {
-    final doc = await _firestore.collection('threads').doc(threadId).get();
-    if (!doc.exists) return null;
-    return ThreadData.fromDocument(doc);
+  /// Get thread by root message ID
+  Future<ThreadData?> getThreadByRootMessageId(String rootMessageId) async {
+    final querySnapshot = await _firestore
+        .collection('threads')
+        .where('rootMessageId', isEqualTo: rootMessageId)
+        .where('isArchived', isEqualTo: false)
+        .limit(1)
+        .get();
+
+    if (querySnapshot.docs.isEmpty) return null;
+    return ThreadData.fromDocument(querySnapshot.docs.first);
   }
 
   /// Get all threads for a chat group

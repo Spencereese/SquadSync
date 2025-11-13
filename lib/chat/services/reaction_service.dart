@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import '../../squad_state.dart';
+import '../../services/ai_service.dart';
 
 class ReactionService {
   static Future<void> addReaction(
@@ -11,6 +10,7 @@ class ReactionService {
     String emoji,
     String messageId,
     String? chatGroupId,
+    ChatType chatType,
   ) async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
@@ -26,25 +26,19 @@ class ReactionService {
         return;
       }
 
-      // Get squad state to determine collection path
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      final squadId = squadState.selectedSquadId;
-
-      if (squadId == null) {
-        debugPrint('Reaction failed: No squad ID available');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Failed to add reaction: No squad context')),
-          );
-        }
-        return;
-      }
-
       // Determine collection path based on chat type
-      final collectionPath = chatGroupId != null
-          ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-          : 'squads/$squadId/chat';
+      String collectionPath;
+      if (chatType == ChatType.userGroup) {
+        // User group chats: users/{uid}/chat_groups/{groupId}/messages
+        collectionPath = chatGroupId != null
+            ? 'users/$userId/chat_groups/$chatGroupId/messages'
+            : 'users/$userId/chat_groups/default/messages'; // fallback
+      } else {
+        // DMs: chats/{chatGroupId}/messages
+        collectionPath = chatGroupId != null
+            ? 'chats/$chatGroupId/messages'
+            : 'chats/default/messages'; // fallback
+      }
 
       debugPrint(
           'Adding reaction: emoji=$emoji, messageId=$messageId, collection=$collectionPath');

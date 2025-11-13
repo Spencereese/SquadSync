@@ -37,9 +37,7 @@ class _MediaHistoryScreenState extends State<MediaHistoryScreen> {
     }
 
     String collectionPath;
-    if (widget.chatType == ChatType.squad) {
-      collectionPath = 'squads/${widget.chatGroupId}/messages';
-    } else if (widget.chatType == ChatType.userGroup) {
+    if (widget.chatType == ChatType.userGroup) {
       collectionPath =
           'users/${currentUser.uid}/chat_groups/${widget.chatGroupId}/messages';
     } else if (widget.chatType == ChatType.dm) {

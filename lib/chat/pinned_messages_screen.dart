@@ -39,9 +39,7 @@ class _PinnedMessagesScreenState extends State<PinnedMessagesScreen> {
     }
 
     String collectionPath;
-    if (widget.chatType == ChatType.squad) {
-      collectionPath = 'squads/${widget.chatGroupId}/messages';
-    } else if (widget.chatType == ChatType.userGroup) {
+    if (widget.chatType == ChatType.userGroup) {
       collectionPath =
           'users/${currentUser.uid}/chat_groups/${widget.chatGroupId}/messages';
     } else if (widget.chatType == ChatType.dm) {
@@ -183,6 +181,7 @@ class _PinnedMessagesScreenState extends State<PinnedMessagesScreen> {
                 onLongPress: () {},
                 sendingStatus: const {},
                 chatGroupId: widget.chatGroupId,
+                chatType: widget.chatType,
               ),
             ],
           ),
@@ -193,8 +192,8 @@ class _PinnedMessagesScreenState extends State<PinnedMessagesScreen> {
 
   Future<void> _unpinMessage(String messageId) async {
     try {
-      await _chatService.unpinMessage(messageId, widget.chatGroupId ?? '',
-          chatGroupId: widget.chatGroupId);
+      await _chatService.unpinMessage(
+          messageId, widget.chatGroupId, widget.chatType);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Message unpinned')),

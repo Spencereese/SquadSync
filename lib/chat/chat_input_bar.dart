@@ -140,8 +140,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Widget _buildTextField(BuildContext context, bool hasText) {
-    final isFocused = _focusNode.hasFocus;
-
     return Container(
       constraints: const BoxConstraints(
         minHeight: 36,
@@ -150,13 +148,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       decoration: BoxDecoration(
         color: Colors.grey[200], // Lighter background like iMessage
         borderRadius: BorderRadius.circular(20),
-        border: isFocused
-            ? Border.all(
-                color: const Color(
-                    0xFF007AFF), // iMessage blue border when focused
-                width: 1.5,
-              )
-            : null, // No border when not focused
+        border: null, // Remove blue border when focused
       ),
       child: Row(
         children: [

@@ -2,18 +2,21 @@ import 'package:flutter/material.dart';
 import '../models/thread_data.dart';
 import '../services/thread_service.dart';
 import 'thread_bubble.dart';
+import '../../services/ai_service.dart';
 
 /// Widget for displaying a list of threads in a chat
 class ThreadList extends StatefulWidget {
   final String chatGroupId;
   final String currentUserId;
   final VoidCallback? onThreadTap;
+  final ChatType chatType;
 
   const ThreadList({
     super.key,
     required this.chatGroupId,
     required this.currentUserId,
     this.onThreadTap,
+    required this.chatType,
   });
 
   @override
@@ -108,6 +111,8 @@ class _ThreadListState extends State<ThreadList> {
               thread: thread,
               currentUserId: widget.currentUserId,
               onTap: () => _onThreadSelected(thread),
+              chatGroupId: widget.chatGroupId,
+              chatType: widget.chatType,
             );
           },
         );
@@ -131,6 +136,8 @@ class _ThreadListState extends State<ThreadList> {
             currentUserId: widget.currentUserId,
             onTap: () {},
             showFullThread: true,
+            chatGroupId: widget.chatGroupId,
+            chatType: widget.chatType,
           ),
         ),
       ),

@@ -3,6 +3,7 @@ import '../models/message_data.dart';
 import '../models/thread_data.dart';
 import '../services/thread_service.dart';
 import '../message_bubble.dart';
+import '../../services/ai_service.dart';
 
 /// Widget for displaying threaded message conversations
 class ThreadBubble extends StatefulWidget {
@@ -10,6 +11,8 @@ class ThreadBubble extends StatefulWidget {
   final String currentUserId;
   final VoidCallback onTap;
   final bool showFullThread;
+  final String? chatGroupId;
+  final ChatType chatType;
 
   const ThreadBubble({
     super.key,
@@ -17,6 +20,8 @@ class ThreadBubble extends StatefulWidget {
     required this.currentUserId,
     required this.onTap,
     this.showFullThread = false,
+    this.chatGroupId,
+    this.chatType = ChatType.userGroup, // Default to userGroup for threads
   });
 
   @override
@@ -262,6 +267,8 @@ class _ThreadBubbleState extends State<ThreadBubble> {
             onTap: () {},
             onLongPress: () {},
             sendingStatus: const {},
+            chatGroupId: widget.chatGroupId,
+            chatType: widget.chatType,
           ),
         ),
       ],

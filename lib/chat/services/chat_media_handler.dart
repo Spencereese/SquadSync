@@ -207,31 +207,21 @@ class ChatMediaHandler {
       String downloadUrl =
           await _chatService.uploadMedia(file, fileName, false);
 
-      // Determine where to save the image URL based on chat type
-      final squadId = squadState.selectedSquadId;
-      if (squadId == null) return;
+      // User group chat image
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null || chatGroupId == null) return;
 
-      if (chatGroupId != null) {
-        // Update group chat image
-        await FirebaseFirestore.instance
-            .collection('squads')
-            .doc(squadId)
-            .collection('chat_groups')
-            .doc(chatGroupId)
-            .set({
-          'imageUrl': downloadUrl,
-          'timestamp': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } else {
-        // Update squad chat image
-        await FirebaseFirestore.instance
-            .collection('chat_metadata')
-            .doc('chat_config')
-            .set({
-          'imageUrl': downloadUrl,
-          'timestamp': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
+      final imageRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc(chatGroupId);
+
+      // Update the image URL in Firestore
+      await imageRef.set({
+        'imageUrl': downloadUrl,
+        'timestamp': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       // Update local state and provide feedback
       onImageUpdated(downloadUrl);

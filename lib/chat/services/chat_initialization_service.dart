@@ -1,10 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../squad_state.dart';
 import '../../services/ai_service.dart';
 import '../chat_state.dart';
-import '../../utils.dart';
 
 /// Service responsible for complex chat initialization logic
 class ChatInitializationService {
@@ -23,15 +23,6 @@ class ChatInitializationService {
     required String? initialMessage,
   }) async {
     final squadState = Provider.of<SquadState>(context, listen: false);
-
-    // Initialize squad chat if needed
-    await _initializeSquadChat(
-      context: context,
-      chatGroupId: chatGroupId,
-      chatType: chatType,
-      squadState: squadState,
-      setChatName: setChatName,
-    );
 
     // Update online status
     _updateOnlineStatus(true, squadState);
@@ -72,58 +63,6 @@ class ChatInitializationService {
     scrollToBottom();
   }
 
-  Future<void> _initializeSquadChat({
-    required BuildContext context,
-    required String? chatGroupId,
-    required ChatType chatType,
-    required SquadState squadState,
-    required Function(String) setChatName,
-  }) async {
-    if (chatType != ChatType.squad) return;
-
-    debugPrint('DEBUG ChatInitializationService: Initializing squad chat');
-
-    // Handle squad selection logic
-    if (chatGroupId != null) {
-      squadState.selectedSquadId = chatGroupId;
-    } else if (squadState.selectedSquadId == null) {
-      if (squadState.userSquadIds.isNotEmpty) {
-        squadState.selectedSquadId = squadState.userSquadIds.first;
-      } else {
-        if (context.mounted) {
-          showSnackBar(context, 'Please select or join a squad first');
-          Navigator.of(context).pop();
-          return;
-        }
-      }
-    }
-
-    // Set chat name from squad data
-    if (squadState.currentSquadData != null) {
-      setChatName(squadState.currentSquadData!['name'] ?? 'Squad Chat');
-    } else if (squadState.selectedSquadId != null) {
-      await _loadSquadData(
-          squadState.selectedSquadId!, squadState, setChatName);
-    }
-  }
-
-  Future<void> _loadSquadData(String squadId, SquadState squadState,
-      Function(String) setChatName) async {
-    try {
-      final squadDoc = await FirebaseFirestore.instance
-          .collection('squads')
-          .doc(squadId)
-          .get();
-      if (squadDoc.exists) {
-        squadState.dataManager.currentSquadData = squadDoc.data();
-        setChatName(squadDoc.data()?['name'] ?? 'Squad Chat');
-      }
-    } catch (e) {
-      debugPrint(
-          'DEBUG ChatInitializationService: Failed to load squad data: $e');
-    }
-  }
-
   Future<void> _loadChatDetails({
     required BuildContext context,
     required String? chatGroupId,
@@ -135,11 +74,13 @@ class ChatInitializationService {
     if (!context.mounted || chatGroupId == null) return;
 
     try {
-      final squadId = squadState.selectedSquadId;
-      if (squadId != null) {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      if (chatType == ChatType.userGroup) {
         final groupDoc = await FirebaseFirestore.instance
-            .collection('squads')
-            .doc(squadId)
+            .collection('users')
+            .doc(currentUser.uid)
             .collection('chat_groups')
             .doc(chatGroupId)
             .get();
@@ -150,6 +91,7 @@ class ChatInitializationService {
           setChatImageUrl(groupData['imageUrl']);
         }
       }
+      // For DMs, no additional loading needed
     } catch (e) {
       debugPrint('Error loading chat details: $e');
     }

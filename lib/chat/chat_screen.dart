@@ -97,31 +97,37 @@ class ChatScreenState extends State<ChatScreen>
       duration: const Duration(milliseconds: 300),
     );
 
-    // Initialize UI manager with current state
-    _uiManager.initialize(
-      initialChatName: _chatName,
-      initialChatImageUrl: _chatImageUrl,
-      initialIsMuted: _isMuted,
-    );
     _squadState = Provider.of<SquadState>(context, listen: false);
 
-    // Safety check: prevent opening squad chat with null chatGroupId
-    if (widget.chatType == ChatType.squad && widget.chatGroupId == null) {
+    // Safety check: prevent opening chat with null chatGroupId for user groups
+    if (widget.chatType == ChatType.userGroup && widget.chatGroupId == null) {
       debugPrint(
-          'DEBUG ChatScreen: Invalid squad chat initialization with null chatGroupId, popping');
+          'DEBUG ChatScreen: Invalid user group chat initialization with null chatGroupId, popping');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           Navigator.of(context).pop();
-          showSnackBar(context, 'Unable to open squad chat');
+          showSnackBar(context, 'Unable to open group chat');
         }
       });
       return;
+    }
+
+    // Save this chat group as the last used chat group
+    if (widget.chatType == ChatType.userGroup && widget.chatGroupId != null) {
+      _saveLastChatGroup(widget.chatGroupId!);
     }
 
     // Set chat name from widget parameters if provided (for chat groups)
     if (widget.chatGroupName != null) {
       _chatName = widget.chatGroupName!;
     }
+
+    // Initialize UI manager with current state AFTER setting the correct chat name
+    _uiManager.initialize(
+      initialChatName: _chatName,
+      initialChatImageUrl: _chatImageUrl,
+      initialIsMuted: _isMuted,
+    );
 
     // Defer heavy operations to after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -133,8 +139,14 @@ class ChatScreenState extends State<ChatScreen>
         chatGroupId: widget.chatGroupId,
         chatGroupName: widget.chatGroupName,
         chatType: widget.chatType,
-        setChatName: (name) => setState(() => _chatName = name),
-        setChatImageUrl: (url) => setState(() => _chatImageUrl = url),
+        setChatName: (name) {
+          setState(() => _chatName = name);
+          _uiManager.chatName = name;
+        },
+        setChatImageUrl: (url) {
+          setState(() => _chatImageUrl = url);
+          _uiManager.chatImageUrl = url;
+        },
         loadMoreMessages: _loadMoreMessages,
         scrollToBottom: _scrollToBottom,
         sendMessage: (message) {
@@ -316,6 +328,16 @@ class ChatScreenState extends State<ChatScreen>
     await _mediaHandler.stopRecording(context,
         chatGroupId: widget.chatGroupId, chatType: widget.chatType);
     _animationController.stop();
+  }
+
+  Future<void> _saveLastChatGroup(String chatGroupId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_chat_group', chatGroupId);
+      debugPrint('Saved last chat group: $chatGroupId');
+    } catch (e) {
+      debugPrint('Error saving last chat group: $e');
+    }
   }
 
   Future<void> _checkFirstMessage() async {
@@ -649,7 +671,7 @@ class ChatScreenState extends State<ChatScreen>
       builder: (context) => InviteMembersDialog(
         chatGroupId: widget.chatGroupId!,
         chatGroupName: _chatName,
-        isSquadGroup: widget.chatType == ChatType.squad,
+        isSquadGroup: widget.chatType == ChatType.userGroup,
       ),
     );
   }
@@ -941,16 +963,22 @@ class ChatScreenState extends State<ChatScreen>
                                   context: context,
                                   currentName: _chatName,
                                   onSave: (newName) async {
-                                    if (widget.chatGroupId != null &&
-                                        _squadState.selectedSquadId != null) {
+                                    if (widget.chatGroupId != null) {
                                       try {
-                                        // Update the chat group name in Firestore
-                                        await FirebaseFirestore.instance
-                                            .collection('squads')
-                                            .doc(_squadState.selectedSquadId!)
+                                        // User group: update in users/{uid}/chat_groups/{groupId}
+                                        final currentUser =
+                                            FirebaseAuth.instance.currentUser;
+                                        if (currentUser == null) return;
+
+                                        final groupRef = FirebaseFirestore
+                                            .instance
+                                            .collection('users')
+                                            .doc(currentUser.uid)
                                             .collection('chat_groups')
-                                            .doc(widget.chatGroupId!)
-                                            .set({
+                                            .doc(widget.chatGroupId!);
+
+                                        // Update the chat group name in Firestore
+                                        await groupRef.set({
                                           'name': newName,
                                           'timestamp':
                                               FieldValue.serverTimestamp(),
@@ -958,6 +986,8 @@ class ChatScreenState extends State<ChatScreen>
 
                                         // Update local state
                                         setState(() => _chatName = newName);
+                                        // Update UI manager
+                                        _uiManager.chatName = newName;
 
                                         if (mounted) {
                                           ScaffoldMessenger.of(context)
@@ -1006,7 +1036,8 @@ class ChatScreenState extends State<ChatScreen>
                             .animate()
                             .fadeIn(),
                         // Active Squad Header Card
-                        _uiManager.buildActiveSquadHeader(context),
+                        _uiManager.buildActiveSquadHeader(context,
+                            chatGroupId: widget.chatGroupId),
                         // Available Squads Widget
                         // const AvailableSquadsWidget(), // Removed - keeping only "Your Active Squad" widget
                         Expanded(

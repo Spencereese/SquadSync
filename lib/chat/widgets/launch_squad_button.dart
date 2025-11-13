@@ -16,18 +16,45 @@ class LaunchSquadButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      height: 56,
+      height: 60,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isEnabled
+              ? [
+                  theme.colorScheme.primary,
+                  theme.colorScheme.primary.withValues(alpha: 0.8),
+                ]
+              : [
+                  theme.colorScheme.surfaceContainerHighest,
+                  theme.colorScheme.surfaceContainerHighest,
+                ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: isEnabled
+            ? [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
       child: FilledButton(
         onPressed: (isLoading || !isEnabled) ? null : onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: theme.colorScheme.primary,
-          foregroundColor: theme.colorScheme.onPrimary,
-          disabledBackgroundColor: theme.colorScheme.surfaceContainerHighest,
+          backgroundColor: Colors.transparent,
+          foregroundColor: isEnabled
+              ? theme.colorScheme.onPrimary
+              : theme.colorScheme.onSurfaceVariant,
+          disabledBackgroundColor: Colors.transparent,
           disabledForegroundColor: theme.colorScheme.onSurfaceVariant,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
           ),
           elevation: 0,
           shadowColor: Colors.transparent,
@@ -37,13 +64,14 @@ class LaunchSquadButton extends StatelessWidget {
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.rocket_launch_rounded, size: 20),
-                  const SizedBox(width: 8),
+                  Icon(Icons.rocket_launch_rounded, size: 22),
+                  const SizedBox(width: 10),
                   Text(
                     'Launch Squad',
                     style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
                     ),
                   ),
                 ],

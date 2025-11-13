@@ -7,7 +7,10 @@ import '../../squad_state.dart';
 import '../../services/ai_service.dart';
 import '../chat_state.dart';
 import '../chat_service.dart';
-import '../message_bubble.dart';
+import '../thread_screen.dart';
+import '../widgets/message_group.dart';
+import '../models/message_group_data.dart';
+import '../models/message_data.dart';
 import 'chat_scroll_controller.dart';
 
 /// Service responsible for coordinating UI state and building complex UI components
@@ -235,7 +238,7 @@ class ChatUIManager {
   }
 
   /// Build the active squad header card
-  Widget buildActiveSquadHeader(BuildContext context) {
+  Widget buildActiveSquadHeader(BuildContext context, {String? chatGroupId}) {
     return Consumer<SquadState>(
       builder: (context, squadState, child) {
         final currentGame = squadState.currentGame;
@@ -259,6 +262,7 @@ class ChatUIManager {
             Navigator.pushNamed(context, '/squad', arguments: {
               'gameName': gameName,
               'game': currentGame,
+              'chatGroupId': chatGroupId,
             });
           },
           child: Container(
@@ -370,86 +374,48 @@ class ChatUIManager {
             }
 
             // Adjust index for loading indicator
-            final messageIndex =
+            final messageGroupIndex =
                 scrollController.isLoadingMore ? index - 1 : index;
-            var message = _processedMessages[messageIndex];
-            final data = message is DocumentSnapshot
-                ? message.data() as Map<String, dynamic>?
-                : message as Map<String, dynamic>;
-            if (data == null) return const SizedBox.shrink();
-
-            // Clean text
-            final cleanedData = Map<String, dynamic>.from(data);
-            if (cleanedData['content'] != null) {
-              cleanedData['content'] = cleanText(cleanedData['content']);
-            }
-            if (cleanedData['text'] != null) {
-              cleanedData['text'] = cleanText(cleanedData['text']);
-            }
-
-            // Mark as delivered
-            bool isMe = cleanedData['senderUid'] == _auth.currentUser?.uid;
-            if (!isMe && !(cleanedData['delivered'] ?? false)) {
-              if (message is DocumentSnapshot) {
-                markAsDelivered(message.id);
-              }
-            }
-
-            // Determine display properties
-            String? currentSender = getSender(message);
-            String? nextSender = index < _processedMessages.length - 1
-                ? getSender(_processedMessages[index + 1])
-                : null;
-            String? prevSender =
-                index > 0 ? getSender(_processedMessages[index - 1]) : null;
-
-            bool showSender = !isMe &&
-                (index == _processedMessages.length - 1 ||
-                    currentSender != nextSender);
-            bool showAvatar =
-                !isMe && (index == 0 || currentSender != prevSender);
-
-            int? currentTimestamp = getTimestampMs(message);
-            int? prevTimestamp = index > 0
-                ? getTimestampMs(_processedMessages[index - 1])
-                : null;
-            bool showTimestamp = index > 0 &&
-                currentTimestamp != null &&
-                prevTimestamp != null &&
-                DateTime.fromMillisecondsSinceEpoch(prevTimestamp)
-                        .difference(DateTime.fromMillisecondsSinceEpoch(
-                            currentTimestamp))
-                        .inMinutes >
-                    30;
-
-            bool showReadIndicator = !isMe &&
-                _lastReadByCache[cleanedData['senderUid'] ?? '']
-                        ?.contains(_auth.currentUser!.uid) ==
-                    true;
-
-            final senderUid = cleanedData['senderUid'] as String?;
-            final displayName = senderUid != null
-                ? _userDisplayNameCache[senderUid] ??
-                    squadState.getDisplayNameForUid(senderUid)
-                : 'Unknown';
-
-            cleanedData['sender'] = displayName;
+            final messageGroup =
+                _processedMessages[messageGroupIndex] as MessageGroupData;
 
             return GestureDetector(
               onLongPress: onMessageLongPress,
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: MessageBubble(
-                  message: cleanedData,
-                  isMe: isMe,
-                  showSender: showSender,
-                  showAvatar: showAvatar,
-                  showTimestamp: showTimestamp,
-                  showReadIndicator: showReadIndicator,
+                child: MessageGroup(
+                  parentMessage: messageGroup.parentMessage,
+                  replies: messageGroup.replies,
+                  isMe: messageGroup.parentMessage.senderUid ==
+                      _auth.currentUser?.uid,
+                  showSender:
+                      true, // Will be determined per message in MessageGroup
+                  showAvatar:
+                      true, // Will be determined per message in MessageGroup
+                  showTimestamp: true,
+                  showReadIndicator:
+                      false, // TODO: Implement per-message read indicators
                   onTap: onMessageTap,
                   onLongPress: () {}, // Handled by parent GestureDetector
-                  sendingStatus: chatState.sendingStatus,
+                  sendingStatus: {}, // TODO: Pass appropriate sending status
                   chatGroupId: chatGroupId,
+                  chatType: chatType,
+                  onViewThread: () {
+                    // Navigate to thread view
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ThreadScreen(
+                          chatGroupId: chatGroupId ?? '',
+                          currentUserId: _auth.currentUser?.uid ?? '',
+                          currentUserName: _userDisplayNameCache[
+                                  _auth.currentUser?.uid ?? ''] ??
+                              'Unknown',
+                          chatType: chatType,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             );
@@ -467,19 +433,17 @@ class ChatUIManager {
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-      padding: const EdgeInsets.all(8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.grey.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: Colors.blue.withValues(alpha: 0.3),
+          color: Colors.grey.withValues(alpha: 0.2),
           width: 1,
         ),
       ),
       child: Row(
         children: [
-          Icon(Icons.reply, size: 16, color: Colors.blue),
-          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -489,31 +453,41 @@ class ChatUIManager {
                   'Replying to $sender',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.blue[200],
+                    color: Colors.grey[400],
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  text.length > 100 ? '${text.substring(0, 100)}...' : text,
+                  text.length > 80 ? '${text.substring(0, 80)}...' : text,
                   style: const TextStyle(
                     fontSize: 14,
                     color: Colors.white,
+                    fontWeight: FontWeight.w400,
                   ),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          IconButton(
-            icon: Icon(Icons.close, size: 16, color: Colors.white70),
-            onPressed: () {
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () {
               chatState.clearReplyToMessage();
-              // Haptic feedback would be handled by caller
             },
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.close,
+                size: 14,
+                color: Colors.grey[400],
+              ),
+            ),
           ),
         ],
       ),
@@ -560,13 +534,62 @@ class ChatUIManager {
   /// Process messages for display
   void _processMessages(
       List<dynamic> messages, String Function(String) cleanText) {
-    _processedMessages = messages.where((message) {
+    // Convert messages to MessageData objects
+    final messageDataList = messages.where((message) {
       final data = message is DocumentSnapshot
           ? message.data() as Map<String, dynamic>?
           : message as Map<String, dynamic>;
       return data != null;
+    }).map((message) {
+      final data = message is DocumentSnapshot
+          ? message.data() as Map<String, dynamic>
+          : message as Map<String, dynamic>;
+      return MessageData.fromMap(data);
     }).toList();
 
+    // Group messages by reply relationships
+    final Map<String, MessageData> parentMessages = {};
+    final Map<String, List<MessageData>> repliesByParent = {};
+
+    for (final message in messageDataList) {
+      if (message.replyTo != null) {
+        // This is a reply
+        repliesByParent.putIfAbsent(message.replyTo!, () => []).add(message);
+      } else {
+        // This is a parent message
+        parentMessages[message.id] = message;
+      }
+    }
+
+    // Create message groups
+    final List<MessageGroupData> messageGroups = [];
+    final Set<String> processedMessageIds = {};
+
+    // Process parent messages and their replies
+    for (final parentMessage in messageDataList) {
+      if (processedMessageIds.contains(parentMessage.id)) continue;
+
+      if (parentMessage.replyTo == null) {
+        // This is a parent message
+        final replies = repliesByParent[parentMessage.id] ?? [];
+        messageGroups.add(MessageGroupData(
+          parentMessage: parentMessage,
+          replies: replies..sort((a, b) => a.timestamp.compareTo(b.timestamp)),
+        ));
+
+        // Mark all messages in this group as processed
+        processedMessageIds.add(parentMessage.id);
+        for (final reply in replies) {
+          processedMessageIds.add(reply.id);
+        }
+      }
+    }
+
+    // Sort message groups by timestamp (most recent first for reverse list)
+    messageGroups.sort((a, b) =>
+        b.parentMessage.timestamp.compareTo(a.parentMessage.timestamp));
+
+    _processedMessages = messageGroups;
     _needsMessageProcessing = false;
   }
 
@@ -657,6 +680,25 @@ class ChatUIManager {
                 ),
 
                 if (chatGroupId != null) ...[
+                  _buildMenuOption(
+                    icon: Icons.message,
+                    title: 'View Threads',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ThreadScreen(
+                            chatGroupId: chatGroupId,
+                            currentUserId: _auth.currentUser?.uid ?? '',
+                            currentUserName:
+                                squadState.displayName ?? 'Unknown',
+                            chatType: ChatType.userGroup,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   _buildMenuOption(
                     icon: Icons.person_add,
                     title: 'Invite Members',

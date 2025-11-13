@@ -224,13 +224,13 @@ class _PeacockModalState extends State<PeacockModal> {
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
-            color: theme.scaffoldBackgroundColor,
+            color: theme.colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 20,
-                offset: const Offset(0, -10),
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 25,
+                offset: const Offset(0, -5),
               ),
             ],
           ),
@@ -252,55 +252,71 @@ class _PeacockModalState extends State<PeacockModal> {
                 child: SingleChildScrollView(
                   controller: scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 24),
-                      // Game selection section
-                      GameSelectionCard(
-                        controller: _gameController,
-                        selectedGame: _selectedGame,
-                        onGameSelected: (game) {
-                          setState(() {
-                            _selectedGame = game;
-                            if (game != null && game['maxSpots'] != null) {
-                              _spots = (game['maxSpots'] as int).toDouble();
-                            } else if (game == null) {
-                              _spots = 4.0;
-                            }
-                          });
-                          HapticFeedback.lightImpact();
-                        },
-                      ),
-                      const SizedBox(height: 24),
+                  child: AnimatedOpacity(
+                    opacity: 1.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 32),
+                        // Game selection section
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOut,
+                          child: GameSelectionCard(
+                            controller: _gameController,
+                            selectedGame: _selectedGame,
+                            onGameSelected: (game) {
+                              setState(() {
+                                _selectedGame = game;
+                                if (game != null && game['maxSpots'] != null) {
+                                  _spots = (game['maxSpots'] as int).toDouble();
+                                } else if (game == null) {
+                                  _spots = 4.0;
+                                }
+                              });
+                              HapticFeedback.lightImpact();
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 32),
 
-                      // Group settings section
-                      GroupSettingsCard(
-                        spots: _spots.toInt(),
-                        selectedCircle: _selectedCircle,
-                        alertBackups: _alertBackups,
-                        maxSpots: _selectedGame?['maxSpots'],
-                        onSpotsChanged: (spots) {
-                          setState(() => _spots = spots.toDouble());
-                        },
-                        onCircleChanged: (circle) {
-                          setState(() => _selectedCircle = circle);
-                        },
-                        onAlertBackupsChanged: (alert) {
-                          setState(() => _alertBackups = alert);
-                        },
-                      ),
-                      const SizedBox(height: 32),
+                        // Group settings section
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOut,
+                          child: GroupSettingsCard(
+                            spots: _spots.toInt(),
+                            selectedCircle: _selectedCircle,
+                            alertBackups: _alertBackups,
+                            maxSpots: _selectedGame?['maxSpots'],
+                            onSpotsChanged: (spots) {
+                              setState(() => _spots = spots.toDouble());
+                            },
+                            onCircleChanged: (circle) {
+                              setState(() => _selectedCircle = circle);
+                            },
+                            onAlertBackupsChanged: (alert) {
+                              setState(() => _alertBackups = alert);
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 40),
 
-                      // Launch button
-                      LaunchSquadButton(
-                        isLoading: _isLoading,
-                        isEnabled: _gameController.text.isNotEmpty &&
-                            _selectedCircle != null,
-                        onPressed: _submitPeacock,
-                      ),
-                      const SizedBox(height: 24),
-                    ],
+                        // Launch button
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOut,
+                          child: LaunchSquadButton(
+                            isLoading: _isLoading,
+                            isEnabled: _gameController.text.isNotEmpty &&
+                                _selectedCircle != null,
+                            onPressed: _submitPeacock,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                      ],
+                    ),
                   ),
                 ),
               ),

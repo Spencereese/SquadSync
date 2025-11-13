@@ -3,18 +3,21 @@ import 'widgets/thread_list.dart';
 import 'widgets/thread_bubble.dart';
 import 'services/thread_service.dart';
 import 'models/thread_data.dart';
+import '../services/ai_service.dart';
 
 /// Screen for displaying and managing threads in a chat
 class ThreadScreen extends StatefulWidget {
   final String chatGroupId;
   final String currentUserId;
   final String currentUserName;
+  final ChatType chatType;
 
   const ThreadScreen({
     super.key,
     required this.chatGroupId,
     required this.currentUserId,
     required this.currentUserName,
+    required this.chatType,
   });
 
   @override
@@ -51,6 +54,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
         onThreadTap: () {
           // Handle thread selection if needed
         },
+        chatType: widget.chatType,
       ),
       floatingActionButton: CreateThreadButton(
         chatGroupId: widget.chatGroupId,
@@ -85,6 +89,8 @@ class _ThreadScreenState extends State<ThreadScreen> {
         currentUserId: widget.currentUserId,
         onTap: () {},
         showFullThread: true,
+        chatGroupId: widget.chatGroupId,
+        chatType: widget.chatType,
       ),
     );
   }

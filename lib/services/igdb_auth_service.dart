@@ -120,10 +120,9 @@ class IgdbAuthService {
   }
 
   /// Search games using IGDB API with Apicalypse query
+  /// If query is empty, returns popular games
   Future<List<Map<String, dynamic>>> searchGames(String query,
       {int limit = 10}) async {
-    if (query.isEmpty) return [];
-
     final token = await getAccessToken();
     if (token == null) {
       print('No IGDB access token available');
@@ -134,8 +133,15 @@ class IgdbAuthService {
       final clientId = await getClientId();
       if (clientId == null) return [];
 
-      // Apicalypse query: search by name, get name, slug, cover, summary, release date, genres
-      final queryBody = '''
+      // If query is empty, get popular games instead of searching
+      final queryBody = query.isEmpty
+          ? '''
+        fields name,slug,cover.url,summary,first_release_date,genres.name;
+        where rating > 70 & cover.url != null;
+        sort rating desc;
+        limit $limit;
+      '''
+          : '''
         search "$query";
         fields name,slug,cover.url,summary,first_release_date,genres.name;
         limit $limit;

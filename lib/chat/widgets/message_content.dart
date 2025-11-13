@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../link_preview.dart';
 import '../widgets/video_message.dart';
 import '../widgets/audio_message.dart';
@@ -83,35 +85,85 @@ class MessageContent extends StatelessWidget {
   }
 
   Widget _buildReplyIndicator() {
-    // For now, just show a simple reply indicator
-    // In a full implementation, you'd fetch the original message
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4.0),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Colors.blue.withValues(alpha: 0.3),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.reply, size: 14, color: Colors.blue),
-          const SizedBox(width: 4),
-          Text(
-            'Replying to message',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.blue[200],
-              fontStyle: FontStyle.italic,
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _fetchRepliedMessage(),
+      builder: (context, snapshot) {
+        final sender = snapshot.data?['sender'] ?? 'Unknown';
+        final text = snapshot.data?['text'] ??
+            snapshot.data?['content'] ??
+            'Message not found';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 4.0),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.blue.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.blue.withValues(alpha: 0.3),
+              width: 1,
             ),
           ),
-        ],
-      ),
+          child: Row(
+            children: [
+              Icon(Icons.reply, size: 14, color: Colors.blue),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Replying to $sender',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue[200],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      text,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  Future<Map<String, dynamic>?> _fetchRepliedMessage() async {
+    if (message.replyTo == null || chatGroupId == null) return null;
+
+    try {
+      // Determine the collection path based on chat type
+      String collectionPath;
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return null;
+
+      // For now, assume user group chats - this could be made more generic
+      collectionPath = 'users/$userId/chat_groups/$chatGroupId/messages';
+
+      final doc = await FirebaseFirestore.instance
+          .collection(collectionPath)
+          .doc(message.replyTo!)
+          .get();
+
+      if (doc.exists) {
+        return doc.data();
+      }
+    } catch (e) {
+      debugPrint('Error fetching replied message: $e');
+    }
+    return null;
   }
 
   Widget _buildTextContent(BuildContext context) {

@@ -640,7 +640,7 @@ class _SettingsTabState extends State<SettingsTab>
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
               onTap: () => _navigateToHistoryScreen(PollHistoryScreen(
                 chatGroupId: squadState.selectedSquadId,
-                chatType: ChatType.squad,
+                chatType: ChatType.dm,
               )),
             ),
             ListTile(
@@ -650,7 +650,7 @@ class _SettingsTabState extends State<SettingsTab>
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
               onTap: () => _navigateToHistoryScreen(MediaHistoryScreen(
                 chatGroupId: squadState.selectedSquadId,
-                chatType: ChatType.squad,
+                chatType: ChatType.dm,
               )),
             ),
             ListTile(
@@ -660,7 +660,7 @@ class _SettingsTabState extends State<SettingsTab>
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
               onTap: () => _navigateToHistoryScreen(PinnedMessagesScreen(
                 chatGroupId: squadState.selectedSquadId,
-                chatType: ChatType.squad,
+                chatType: ChatType.dm,
               )),
             ),
             const Divider(),

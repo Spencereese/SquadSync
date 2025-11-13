@@ -75,9 +75,7 @@ class AiService {
       } else if (chatType == ChatType.dm) {
         collectionPath = 'chats/$chatGroupId/messages';
       } else {
-        collectionPath = chatGroupId != null
-            ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-            : 'squads/$squadId/messages';
+        throw ArgumentError('Unsupported chat type: $chatType');
       }
 
       // Send Grok's response
@@ -102,12 +100,9 @@ class AiService {
       String collectionPath;
       if (chatType == ChatType.userGroup) {
         collectionPath = 'users/$userId/chat_groups/$chatGroupId/messages';
-      } else if (chatType == ChatType.dm) {
-        collectionPath = 'chats/$chatGroupId/messages';
       } else {
-        collectionPath = chatGroupId != null
-            ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-            : 'squads/$squadId/messages';
+        // DMs: chats/{chatGroupId}/messages
+        collectionPath = 'chats/$chatGroupId/messages';
       }
 
       final snapshot = await _firestore
@@ -201,4 +196,4 @@ Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
 }
 
 /// Enum for chat types (moved here for AiService usage)
-enum ChatType { squad, dm, userGroup }
+enum ChatType { dm, userGroup }

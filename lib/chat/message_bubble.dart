@@ -9,6 +9,7 @@ import '../services/ai_service.dart';
 import '../squad_state.dart';
 import 'models/message_data.dart';
 import 'widgets/message_content.dart';
+import 'widgets/message_reactions.dart';
 import 'widgets/message_avatar.dart';
 import 'widgets/message_sender.dart';
 import 'widgets/message_timestamp.dart';

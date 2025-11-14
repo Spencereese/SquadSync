@@ -12,6 +12,8 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback onPlusMenu;
   final ValueChanged<String> onTextChanged;
   final String quickReactionEmoji;
+  final String hintText;
+  final FocusNode? focusNode;
 
   const ChatInputBar({
     super.key,
@@ -25,6 +27,8 @@ class ChatInputBar extends StatefulWidget {
     required this.onPlusMenu,
     required this.onTextChanged,
     required this.quickReactionEmoji,
+    this.hintText = 'Message',
+    this.focusNode,
   });
 
   @override
@@ -32,13 +36,14 @@ class ChatInputBar extends StatefulWidget {
 }
 
 class _ChatInputBarState extends State<ChatInputBar> {
-  final FocusNode _focusNode = FocusNode();
+  late final FocusNode _focusNode;
   bool _showMentions = false;
   List<String> _mentionSuggestions = [];
 
   @override
   void initState() {
     super.initState();
+    _focusNode = widget.focusNode ?? FocusNode();
     _focusNode.addListener(() {
       setState(() {});
     });
@@ -47,7 +52,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    if (widget.focusNode == null) {
+      _focusNode.dispose();
+    }
     widget.controller.removeListener(_onTextChanged);
     super.dispose();
   }
@@ -165,7 +172,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 fontSize: 16,
               ),
               decoration: InputDecoration(
-                hintText: 'Message',
+                hintText: widget.hintText,
                 hintStyle: TextStyle(
                   color: Colors.grey[500], // Darker hint text
                   fontSize: 16,
@@ -175,6 +182,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   vertical: 8,
                 ),
                 border: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
                 isDense: true,
               ),
               textCapitalization: TextCapitalization.sentences,

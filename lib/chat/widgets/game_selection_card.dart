@@ -93,30 +93,29 @@ class _GameSelectionCardState extends State<GameSelectionCard> {
               );
             },
             suggestionsCallback: (pattern) async {
+              final gameManager =
+                  Provider.of<GameManager>(context, listen: false);
               final userManager =
                   Provider.of<UserManager>(context, listen: false);
               final pinnedGames = userManager.pinnedGames;
 
-              if (pattern.isEmpty) {
-                return pinnedGames
-                    .map((game) => {
-                          'name': game['name'],
-                          'slug': game['slug'] ??
-                              game['name']
-                                  ?.toString()
-                                  .toLowerCase()
-                                  .replaceAll(' ', '-'),
-                          'coverUrl': game['coverUrl'],
-                          'summary': game['summary'],
-                          'genres': game['genres'],
-                          'maxSpots': game['maxSpots'] ?? 4,
-                        })
-                    .toList();
-              }
+              final apiGames =
+                  await (gameManager as dynamic).searchGames(pattern);
 
-              final gameManager =
-                  Provider.of<GameManager>(context, listen: false);
-              return await (gameManager as dynamic).searchGames(pattern);
+              if (pattern.isEmpty) {
+                // For empty pattern, combine pinned and popular games from API
+                final allGames = [...pinnedGames, ...apiGames];
+                // Remove duplicates based on name
+                final seen = <String>{};
+                return allGames.where((game) {
+                  final name = game['name'] as String?;
+                  if (name == null || seen.contains(name)) return false;
+                  seen.add(name);
+                  return true;
+                }).toList();
+              } else {
+                return apiGames;
+              }
             },
             itemBuilder: (context, suggestion) {
               final game = suggestion as Map<String, dynamic>;

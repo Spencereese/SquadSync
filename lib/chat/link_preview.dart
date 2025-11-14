@@ -255,6 +255,8 @@ class RichTextWithLinks extends StatelessWidget {
   final TextStyle? style;
   final TextAlign textAlign;
   final bool isMe;
+  final int? maxLines;
+  final TextOverflow? overflow;
 
   const RichTextWithLinks({
     super.key,
@@ -262,6 +264,8 @@ class RichTextWithLinks extends StatelessWidget {
     this.style,
     this.textAlign = TextAlign.start,
     required this.isMe,
+    this.maxLines,
+    this.overflow,
   });
 
   @override
@@ -274,6 +278,8 @@ class RichTextWithLinks extends StatelessWidget {
         text,
         style: style,
         textAlign: textAlign,
+        maxLines: maxLines,
+        overflow: overflow,
       );
     }
 
@@ -304,6 +310,8 @@ class RichTextWithLinks extends StatelessWidget {
     return RichText(
       text: TextSpan(children: spans),
       textAlign: textAlign,
+      maxLines: maxLines,
+      overflow: overflow ?? TextOverflow.clip,
     );
   }
 

@@ -18,6 +18,7 @@ import 'chat_service.dart';
 
 import 'chat_state.dart';
 import 'dialogs/invite_members_dialog.dart';
+import 'message_bubble.dart';
 
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
@@ -51,6 +52,7 @@ class ChatScreen extends StatefulWidget {
 class ChatScreenState extends State<ChatScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
+  final FocusNode _inputFocusNode = FocusNode();
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // Service instances
@@ -66,6 +68,7 @@ class ChatScreenState extends State<ChatScreen>
   String? _chatImageUrl;
   final ChatService _chatService = ChatService();
   late SquadState _squadState;
+  late ChatState _chatState;
   bool _isMuted = false;
 
   // Cache for user display names to avoid FutureBuilder in ListView
@@ -98,6 +101,10 @@ class ChatScreenState extends State<ChatScreen>
     );
 
     _squadState = Provider.of<SquadState>(context, listen: false);
+
+    // Store ChatState reference for safe access in dispose
+    _chatState = Provider.of<ChatState>(context, listen: false);
+    _chatState.addListener(_onChatStateChanged);
 
     // Safety check: prevent opening chat with null chatGroupId for user groups
     if (widget.chatType == ChatType.userGroup && widget.chatGroupId == null) {
@@ -175,14 +182,27 @@ class ChatScreenState extends State<ChatScreen>
 
   @override
   void dispose() {
+    _chatState.removeListener(_onChatStateChanged);
     _onlineStatusManager.updateOnlineStatus(false, _squadState);
     _scrollControllerService.dispose();
     _messageController.dispose();
+    _inputFocusNode.dispose();
     _animationController.dispose();
     _mediaHandler.dispose();
     _typingManager.dispose();
     _saveDraftForHandoff();
     super.dispose();
+  }
+
+  void _onChatStateChanged() {
+    // Focus input when reply mode is activated
+    if (_chatState.replyToMessage != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _inputFocusNode.requestFocus();
+        }
+      });
+    }
   }
 
   Future<void> _loadMoreMessages() async {
@@ -1057,8 +1077,9 @@ class ChatScreenState extends State<ChatScreen>
                           ),
                         ),
                         // Reply preview
+                        // Reply preview above input bar
                         if (chatState.replyToMessage != null)
-                          _uiManager.buildReplyPreview(context, chatState),
+                          _buildReplyPreview(context, chatState),
                         // Typing indicator
                         if (chatState.typingUser != null)
                           _buildTypingIndicator(context, chatState.typingUser!),
@@ -1072,6 +1093,7 @@ class ChatScreenState extends State<ChatScreen>
                             ),
                             child: ChatInputBar(
                               controller: _messageController,
+                              focusNode: _inputFocusNode,
                               isRecording: chatState.isRecording,
                               isUploading: chatState.isUploading,
                               onSend: _sendMessage,
@@ -1088,17 +1110,28 @@ class ChatScreenState extends State<ChatScreen>
                                 );
                               },
                               quickReactionEmoji: chatState.quickReactionEmoji,
+                              hintText: chatState.replyToMessage != null
+                                  ? 'Reply'
+                                  : 'Message',
                             ),
                           ),
                         ),
                       ],
                     ),
-                    // Jump to bottom button
-                    if (_scrollControllerService.showJumpToBottom)
-                      _uiManager.buildJumpToBottomButton(
-                        bottomPadding: bottomPadding,
-                        onJumpToBottom: _scrollToBottom,
+                    // Selective blur overlay when replying (covers everything except reply preview)
+                    if (chatState.replyToMessage != null)
+                      Positioned.fill(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
+                          child: Container(
+                            color: Colors.black.withValues(alpha: 0.2),
+                          ),
+                        ),
                       ),
+                    // Reply preview above input bar
+                    if (chatState.replyToMessage != null)
+                      _buildReplyPreview(context, chatState),
+                    // Jump to bottom button
                   ],
                 ),
               ),
@@ -1106,6 +1139,65 @@ class ChatScreenState extends State<ChatScreen>
           },
         ),
         // Removed floating action button for peacock - now only in squad lobbies
+      ),
+    );
+  }
+
+  Widget _buildReplyPreview(BuildContext context, ChatState chatState) {
+    final replyMessage = chatState.replyToMessage!;
+    final isFromCurrentUser =
+        replyMessage['senderUid'] == FirebaseAuth.instance.currentUser?.uid;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Stack(
+        children: [
+          MessageBubble(
+            message: replyMessage,
+            isMe: isFromCurrentUser,
+            showSender: !isFromCurrentUser,
+            showAvatar: !isFromCurrentUser,
+            showTimestamp: true,
+            showReadIndicator: false,
+            onTap: () {}, // No action for reply preview
+            onLongPress: () {}, // No action for reply preview
+            sendingStatus: const {},
+            chatGroupId: widget.chatGroupId,
+            chatType: widget.chatType,
+          ),
+          // Close button positioned at the top right of the message bubble
+          Positioned(
+            top: 4,
+            right: isFromCurrentUser ? 4 : null,
+            left: isFromCurrentUser ? null : 4,
+            child: GestureDetector(
+              onTap: () => chatState.clearReplyToMessage(),
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.9),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outline
+                        .withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Icon(
+                  Icons.close,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

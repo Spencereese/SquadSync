@@ -1,16 +1,18 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import 'chat_state.dart';
+import 'chat_service.dart';
+import '../services/ai_service.dart';
+import '../squad_state.dart';
 import 'models/message_data.dart';
 import 'widgets/message_content.dart';
-import 'widgets/message_reactions.dart';
 import 'widgets/message_avatar.dart';
 import 'widgets/message_sender.dart';
 import 'widgets/message_timestamp.dart';
-import 'services/reaction_service.dart';
-import '../services/ai_service.dart';
+import 'widgets/imessage_reactions_bar.dart';
 
 /// Refactored MessageBubble using decomposed components
 /// This replaces the 1183-line monolithic MessageBubble with a clean, maintainable structure
@@ -46,21 +48,14 @@ class MessageBubble extends StatefulWidget {
   State<MessageBubble> createState() => _MessageBubbleState();
 }
 
-class _MessageBubbleState extends State<MessageBubble>
-    with TickerProviderStateMixin {
+class _MessageBubbleState extends State<MessageBubble> {
   late MessageData _messageData;
   bool _isGrokExpanded = false; // Track if Grok message is expanded
-  final GlobalKey _messageKey = GlobalKey(); // Key to get message position
-  late AnimationController _positionController;
-  late Animation<Offset> _positionAnimation;
-  late AnimationController _scaleController;
-  late Animation<double> _scaleAnimation;
+  final GlobalKey _messageKey = GlobalKey();
+  bool _shouldFloatUp = false; // Track if message should float up for menu
+  bool _isPressed = false; // Track if message is being pressed for animation
 
-  // Long press interaction state
-  bool _isLongPressed = false;
-  late AnimationController _longPressController;
-  late Animation<double> _longPressScaleAnimation;
-  late Animation<Offset> _longPressOffsetAnimation;
+  // Overlay references for dismissal
   OverlayEntry? _reactionsOverlay;
   OverlayEntry? _menuOverlay;
 
@@ -68,53 +63,6 @@ class _MessageBubbleState extends State<MessageBubble>
   void initState() {
     super.initState();
     _normalizeMessageData();
-
-    _positionController = AnimationController(
-      duration: const Duration(milliseconds: 200),
-      vsync: this,
-    );
-
-    _positionAnimation = Tween<Offset>(
-      begin: Offset.zero,
-      end: Offset.zero, // Disable position animation completely
-    ).animate(CurvedAnimation(
-      parent: _positionController,
-      curve: Curves.easeOut,
-    ));
-
-    _scaleController = AnimationController(
-      duration: const Duration(milliseconds: 200),
-      vsync: this,
-    );
-
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.02, // Slight growth effect
-    ).animate(CurvedAnimation(
-      parent: _scaleController,
-      curve: Curves.easeOut,
-    ));
-
-    _longPressController = AnimationController(
-      duration: const Duration(milliseconds: 150),
-      vsync: this,
-    );
-
-    _longPressScaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.05,
-    ).animate(CurvedAnimation(
-      parent: _longPressController,
-      curve: Curves.easeOut,
-    ));
-
-    _longPressOffsetAnimation = Tween<Offset>(
-      begin: Offset.zero,
-      end: const Offset(0, -2),
-    ).animate(CurvedAnimation(
-      parent: _longPressController,
-      curve: Curves.easeOut,
-    ));
   }
 
   @override
@@ -123,16 +71,6 @@ class _MessageBubbleState extends State<MessageBubble>
     if (oldWidget.message != widget.message) {
       _normalizeMessageData();
     }
-  }
-
-  @override
-  void dispose() {
-    _positionController.dispose();
-    _scaleController.dispose();
-    _longPressController.dispose();
-    _reactionsOverlay?.remove();
-    _menuOverlay?.remove();
-    super.dispose();
   }
 
   void _normalizeMessageData() {
@@ -146,361 +84,6 @@ class _MessageBubbleState extends State<MessageBubble>
     }
   }
 
-  void _handleLongPress() {
-    if (_isLongPressed) return; // Prevent multiple long presses
-
-    setState(() {
-      _isLongPressed = true;
-    });
-
-    // Start the lift animation
-    _longPressController.forward();
-
-    // Add background blur after 200ms
-    Future.delayed(const Duration(milliseconds: 200), () {
-      if (mounted && _isLongPressed) {
-        _showBackgroundBlur();
-      }
-    });
-
-    // Show reactions after a short delay
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (mounted && _isLongPressed) {
-        _showReactionsPicker();
-      }
-    });
-  }
-
-  void _showBackgroundBlur() {
-    // This would be implemented by adding a BackdropFilter to the parent widget
-    // For now, we'll just ensure the overlays provide the visual feedback
-  }
-
-  void _showReactionsPicker() {
-    final RenderBox? renderBox =
-        _messageKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-
-    final messagePosition = renderBox.localToGlobal(Offset.zero);
-    final messageSize = renderBox.size;
-    final screenSize = MediaQuery.of(context).size;
-
-    // Position reactions above the message, flip below if not enough space
-    final reactionsTop = messagePosition.dy - 60;
-    final shouldFlipReactions = reactionsTop < 20;
-
-    final finalReactionsTop = shouldFlipReactions
-        ? messagePosition.dy + messageSize.height + 8
-        : reactionsTop;
-    final reactionsLeft = widget.isMe
-        ? messagePosition.dx +
-            messageSize.width -
-            200 // Align to right edge for sent messages
-        : messagePosition.dx; // Align to left edge for received messages
-
-    _reactionsOverlay = OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          // Background tap to dismiss
-          GestureDetector(
-            onTap: _dismissOverlays,
-            child: Container(
-              color: Colors.transparent,
-              width: screenSize.width,
-              height: screenSize.height,
-            ),
-          ),
-          // Reactions picker
-          Positioned(
-            top: finalReactionsTop.clamp(10, screenSize.height - 100),
-            left: reactionsLeft.clamp(10, screenSize.width - 220),
-            child: Material(
-              color: Colors.transparent,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-                builder: (context, value, child) => Transform.scale(
-                  scale: value,
-                  child: _buildReactionsPicker(),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    Overlay.of(context).insert(_reactionsOverlay!);
-
-    // Show menu below reactions after another delay
-    Future.delayed(const Duration(milliseconds: 150), () {
-      if (mounted && _isLongPressed) {
-        _showActionMenu();
-      }
-    });
-  }
-
-  void _showActionMenu() {
-    final RenderBox? renderBox =
-        _messageKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-
-    final messagePosition = renderBox.localToGlobal(Offset.zero);
-    final messageSize = renderBox.size;
-    final screenSize = MediaQuery.of(context).size;
-
-    // Position menu below the message, flip to top if not enough space
-    final menuTop = messagePosition.dy + messageSize.height + 8;
-    final menuHeight = 120.0; // Approximate menu height
-    final shouldFlipMenu = menuTop + menuHeight > screenSize.height - 20;
-
-    final finalMenuTop =
-        shouldFlipMenu ? messagePosition.dy - menuHeight - 8 : menuTop;
-    final menuLeft = widget.isMe
-        ? messagePosition.dx +
-            messageSize.width -
-            140 // Align to right for sent messages
-        : messagePosition.dx; // Align to left for received messages
-
-    _menuOverlay = OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          // Background tap to dismiss (already handled by reactions overlay)
-          // Menu
-          Positioned(
-            top: finalMenuTop.clamp(10, screenSize.height - 150),
-            left: menuLeft.clamp(10, screenSize.width - 150),
-            child: Material(
-              color: Colors.transparent,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 150),
-                curve: Curves.easeOut,
-                builder: (context, value, child) => Transform.translate(
-                  offset: Offset(0, 10 * (1 - value)),
-                  child: Opacity(
-                    opacity: value,
-                    child: _buildActionMenu(),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    Overlay.of(context).insert(_menuOverlay!);
-  }
-
-  Widget _buildReactionsPicker() {
-    final quickReactions = ['❤️', '👍', '👎', '😂', '😮', '🙌', '❗', '❓'];
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? Colors.grey[800]!.withValues(alpha: 0.9)
-            : Colors.grey[100]!.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ...quickReactions.map((emoji) {
-            final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-            final hasReaction = _messageData.reactions.any((reaction) =>
-                reaction['userId'] == currentUserId &&
-                reaction['reaction'] == emoji);
-            return GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                ReactionService.addReaction(
-                  context,
-                  emoji,
-                  _messageData.id,
-                  widget.chatGroupId,
-                  widget.chatType,
-                );
-                _dismissOverlays();
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  color: hasReaction
-                      ? Colors.blue.withValues(alpha: 0.2)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  emoji,
-                  style: const TextStyle(fontSize: 24),
-                ),
-              ),
-            );
-          }),
-          GestureDetector(
-            onTap: () {
-              // TODO: Open full emoji picker
-              _dismissOverlays();
-            },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              margin: const EdgeInsets.only(left: 4),
-              decoration: BoxDecoration(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(
-                Icons.add,
-                size: 24,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionMenu() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? Colors.grey[800]!.withValues(alpha: 0.95)
-            : Colors.white.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildMenuItem(
-            icon: Icons.reply,
-            label: 'Reply',
-            onTap: () {
-              final chatState = Provider.of<ChatState>(context, listen: false);
-              chatState.setReplyToMessage(widget.message);
-              _dismissOverlays();
-            },
-          ),
-          const SizedBox(height: 8),
-          _buildMenuItem(
-            icon: Icons.copy,
-            label: 'Copy',
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: _messageData.text));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Text copied')),
-              );
-              _dismissOverlays();
-            },
-          ),
-          if (widget.isMe) ...[
-            const SizedBox(height: 8),
-            _buildMenuItem(
-              icon: Icons.delete,
-              label: 'Delete',
-              color: Colors.red,
-              onTap: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Delete Message'),
-                    content: const Text(
-                        'Are you sure you want to delete this message?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Delete'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirm == true && context.mounted) {
-                  // TODO: Implement delete
-                  _dismissOverlays();
-                }
-              },
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMenuItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    Color? color,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 20,
-            color: color ??
-                (Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white
-                    : Colors.black),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              color: color ??
-                  (Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white
-                      : Colors.black),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _dismissOverlays() {
-    _reactionsOverlay?.remove();
-    _menuOverlay?.remove();
-    _reactionsOverlay = null;
-    _menuOverlay = null;
-    _longPressController.reverse().then((_) {
-      if (mounted) {
-        setState(() {
-          _isLongPressed = false;
-        });
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     // Check if this is a Grok AI message for unique styling
@@ -509,68 +92,61 @@ class _MessageBubbleState extends State<MessageBubble>
     }
 
     // Standard layout for regular messages
-    return SlideTransition(
-      position: _positionAnimation,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-        child: Column(
-          crossAxisAlignment:
-              widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            if (widget.showTimestamp &&
-                _messageData.timestamp !=
-                    DateTime.fromMillisecondsSinceEpoch(0))
-              MessageTimestamp(timestamp: _messageData.timestamp),
-            Row(
-              mainAxisAlignment:
-                  widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (!widget.isMe && widget.showAvatar)
-                  MessageAvatar(
-                    senderName: _messageData.sender,
-                    isFromCurrentUser: widget.isMe,
-                  ),
-                if (!widget.isMe && widget.showAvatar) const SizedBox(width: 8),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: widget.isMe
-                        ? CrossAxisAlignment.end
-                        : CrossAxisAlignment.start,
-                    children: [
-                      if (widget.showSender && !widget.isMe)
-                        MessageSender(message: _messageData),
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          _buildMessageContainer(context),
-                          if (_messageData.reactions.isNotEmpty)
-                            Positioned(
-                              bottom: -8,
-                              right: widget.isMe ? -8 : null,
-                              left: widget.isMe ? null : -8,
-                              child: MessageReactions(
-                                reactions: _messageData.reactions,
-                                onReactionTap: (emoji) {
-                                  ReactionService.addReaction(
-                                    context,
-                                    emoji,
-                                    _messageData.id,
-                                    widget.chatGroupId,
-                                    widget.chatType,
-                                  );
-                                },
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: Column(
+        crossAxisAlignment:
+            widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          if (widget.showTimestamp &&
+              _messageData.timestamp != DateTime.fromMillisecondsSinceEpoch(0))
+            MessageTimestamp(timestamp: _messageData.timestamp),
+          Row(
+            mainAxisAlignment:
+                widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!widget.isMe && widget.showAvatar)
+                MessageAvatar(
+                  senderName: _messageData.sender,
+                  isFromCurrentUser: widget.isMe,
                 ),
-              ],
-            ),
-          ],
-        ),
+              if (!widget.isMe && widget.showAvatar) const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: widget.isMe
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    if (widget.showSender && !widget.isMe)
+                      MessageSender(message: _messageData),
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _buildMessageContainer(context),
+                        if (_messageData.reactions.isNotEmpty)
+                          Positioned(
+                            bottom:
+                                -12, // Position so 75% of reaction pill is on message bubble (25% visible)
+                            right: widget.isMe ? -4 : null,
+                            left: widget.isMe ? null : -4,
+                            child: MessageReactions(
+                              reactions: _messageData.reactions,
+                              onReactionTap: (emoji) {
+                                // Show reaction details and reopen reactions bar
+                                _showReactionDetails(emoji);
+                              },
+                              isOutgoing: widget.isMe,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -739,36 +315,161 @@ class _MessageBubbleState extends State<MessageBubble>
   }
 
   Widget _buildMessageContainer(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([
-        _scaleAnimation,
-        _longPressScaleAnimation,
-        _longPressOffsetAnimation
-      ]),
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value * _longPressScaleAnimation.value,
-          child: Transform.translate(
-            offset: _longPressOffsetAnimation.value,
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                widget.onTap();
-              },
-              onLongPress: () {
-                HapticFeedback.lightImpact();
-                _handleLongPress();
-              },
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        widget.onTap();
+      },
+      onTapDown: (_) {
+        setState(() {
+          _isPressed = true;
+        });
+      },
+      onTapUp: (_) {
+        setState(() {
+          _isPressed = false;
+        });
+      },
+      onTapCancel: () {
+        setState(() {
+          _isPressed = false;
+        });
+      },
+      onLongPress: () {
+        final RenderBox? renderBox =
+            _messageKey.currentContext?.findRenderObject() as RenderBox?;
+        if (renderBox == null) return;
+
+        final messagePosition = renderBox.localToGlobal(Offset.zero);
+        final messageSize = renderBox.size;
+        final screenSize = MediaQuery.of(context).size;
+
+        // Calculate floating offset early
+        final menuTop = messagePosition.dy + messageSize.height + -4;
+        final menuHeight = 200.0;
+        final shouldFlipMenu = menuTop + menuHeight > screenSize.height - 20;
+        final floatingOffset = shouldFlipMenu ? -220.0 : 0.0;
+
+        late final OverlayEntry reactionsOverlay;
+        late final OverlayEntry menuOverlay;
+
+        _reactionsOverlay = reactionsOverlay = OverlayEntry(
+          builder: (context) => Stack(
+            children: [
+              // Reactions bar - blur is handled within the IMessageReactionsBar widget
+              IMessageReactionsBar(
+                messageId: _messageData.id,
+                chatGroupId: widget.chatGroupId,
+                chatType: widget.chatType,
+                isOutgoing: widget.isMe,
+                onDismiss: _dismissOverlays,
+                messagePosition: messagePosition,
+                messageSize: messageSize,
+                floatingOffset: floatingOffset,
+              ),
+            ],
+          ),
+        );
+
+        // Position menu below the message bubble (similar to reaction picker logic but below instead of above)
+        final menuSpacing =
+            -12.0; // Spacing between message bubble and menu (same as reaction picker)
+
+        // Always position below the message bubble
+        final finalMenuTop = messagePosition.dy +
+            messageSize.height +
+            menuSpacing +
+            floatingOffset;
+
+        _menuOverlay = menuOverlay = OverlayEntry(
+          builder: (context) => Stack(
+            children: [
+              // Menu - no background blur needed
+              Positioned(
+                top: finalMenuTop.clamp(10, screenSize.height - 220),
+                left: widget.isMe
+                    ? null
+                    : 16.0, // Same padding as message bubble for incoming
+                right: widget.isMe
+                    ? 16.0
+                    : null, // Same padding as message bubble for outgoing
+                child: Material(
+                  color: Colors.transparent,
+                  elevation: 10, // Higher elevation to ensure it's on top
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                    builder: (context, value, child) => Transform.translate(
+                      offset: Offset(0, 10 * (1 - value)),
+                      child: Opacity(
+                        opacity: value,
+                        child: _buildActionMenu(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        // Float message bubble up if menu is above
+        setState(() {
+          _shouldFloatUp = shouldFlipMenu;
+        });
+
+        Overlay.of(context).insert(reactionsOverlay);
+        Overlay.of(context).insert(menuOverlay);
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            key: _messageKey,
+            duration: const Duration(milliseconds: 150),
+            margin: const EdgeInsets.symmetric(vertical: 2.0),
+            padding: _getMessagePadding(),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.7,
+              minWidth: 60,
+            ),
+            decoration: _getMessageDecoration(),
+            transform: Matrix4.identity()
+              ..setTranslationRaw(0.0, _shouldFloatUp ? -220.0 : 0.0, 0.0),
+            child: Semantics(
+              label: 'Message from ${_messageData.sender}',
+              child: IntrinsicWidth(
+                child: MessageContent(
+                  message: _messageData,
+                  isFromCurrentUser: widget.isMe,
+                  chatGroupId: widget.chatGroupId,
+                ),
+              ),
+            ),
+          ),
+          if (_isPressed)
+            Positioned.fill(
               child: AnimatedContainer(
-                key: _messageKey,
-                duration: const Duration(milliseconds: 200),
+                duration: const Duration(milliseconds: 150),
                 margin: const EdgeInsets.symmetric(vertical: 2.0),
                 padding: _getMessagePadding(),
                 constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width * 0.7,
                   minWidth: 60,
                 ),
-                decoration: _getMessageDecoration(),
+                decoration: _getMessageDecoration().copyWith(
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                transform: Matrix4.diagonal3Values(1.05, 1.05, 1.0)
+                  ..setTranslationRaw(0.0, _shouldFloatUp ? -220.0 : 0.0, 0.0),
                 child: Semantics(
                   label: 'Message from ${_messageData.sender}',
                   child: IntrinsicWidth(
@@ -781,10 +482,408 @@ class _MessageBubbleState extends State<MessageBubble>
                 ),
               ),
             ),
+        ],
+      ),
+    ).animate().fadeIn(duration: const Duration(milliseconds: 300)).slideY(
+        begin: 0.2,
+        end: 0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut);
+  }
+
+  Widget _buildActionMenu() {
+    return Container(
+      constraints: const BoxConstraints(
+        minWidth: 200,
+        maxWidth: 280,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 20,
+            spreadRadius: 1,
+            offset: const Offset(0, 8),
           ),
-        );
-      },
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            color: Colors.black
+                .withValues(alpha: 0.7), // Match reactions bar opacity
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Primary actions row
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildModernMenuItem(
+                      icon: Icons.reply,
+                      label: 'Reply',
+                      onTap: () {
+                        final chatState =
+                            Provider.of<ChatState>(context, listen: false);
+                        chatState.setReplyToMessage(_messageData.toMap());
+                        _dismissOverlays();
+                      },
+                    ),
+                    _buildDivider(),
+                    _buildModernMenuItem(
+                      icon: Icons.copy,
+                      label: 'Copy',
+                      onTap: () {
+                        Clipboard.setData(
+                            ClipboardData(text: _messageData.text));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Text copied')),
+                        );
+                        _dismissOverlays();
+                      },
+                    ),
+                  ],
+                ),
+                // Secondary actions
+                if (widget.isMe) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildModernMenuItem(
+                        icon: Icons.edit,
+                        label: 'Edit',
+                        onTap: () async {
+                          final TextEditingController editController =
+                              TextEditingController(text: _messageData.text);
+                          final result = await showDialog<String>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Edit Message'),
+                              content: TextField(
+                                controller: editController,
+                                decoration: const InputDecoration(
+                                  hintText: 'Edit your message...',
+                                  border: OutlineInputBorder(),
+                                ),
+                                maxLines: null,
+                                autofocus: true,
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(
+                                      context, editController.text.trim()),
+                                  child: const Text('Save'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (result != null &&
+                              result.isNotEmpty &&
+                              result != _messageData.text &&
+                              context.mounted) {
+                            try {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Message edited')),
+                              );
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content:
+                                          Text('Failed to edit message: $e')),
+                                );
+                              }
+                            }
+                          }
+                          _dismissOverlays();
+                        },
+                      ),
+                      _buildDivider(),
+                      _buildModernMenuItem(
+                        icon: Icons.delete,
+                        label: 'Delete',
+                        color: Colors.red,
+                        onTap: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.surface,
+                              elevation: 24,
+                              title: const Text('Delete Message'),
+                              content: const Text(
+                                  'Are you sure you want to delete this message?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Delete'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true && context.mounted) {
+                            try {
+                              final squadState = Provider.of<SquadState>(
+                                  context,
+                                  listen: false);
+                              await squadState.deleteMessage(_messageData.id);
+                              _dismissOverlays();
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('Message deleted')),
+                                );
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content:
+                                          Text('Failed to delete message: $e')),
+                                );
+                              }
+                            }
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+                // Additional actions
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildModernMenuItem(
+                      icon: Icons.notifications,
+                      label: 'Bump',
+                      onTap: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          // Get chat service from provider
+                          final chatService =
+                              Provider.of<ChatService>(context, listen: false);
+                          await chatService.bumpMessage(
+                            _messageData.id,
+                            widget.chatGroupId,
+                            widget.chatType,
+                          );
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('Message bumped')),
+                          );
+                        } catch (e) {
+                          messenger.showSnackBar(
+                            SnackBar(
+                                content: Text('Failed to bump message: $e')),
+                          );
+                        }
+                        _dismissOverlays();
+                      },
+                    ),
+                    _buildDivider(),
+                    _buildModernMenuItem(
+                      icon: Icons.push_pin,
+                      label: 'Pin',
+                      onTap: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('Message pinned')),
+                          );
+                        } catch (e) {
+                          messenger.showSnackBar(
+                            SnackBar(
+                                content: Text('Failed to pin message: $e')),
+                          );
+                        }
+                        _dismissOverlays();
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
+  }
+
+  Widget _buildModernMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 70, // Fixed width for consistent alignment
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 22,
+                color: color ?? Colors.white.withValues(alpha: 0.9),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: color ?? Colors.white.withValues(alpha: 0.9),
+                ),
+                textAlign:
+                    TextAlign.center, // Center text for consistent appearance
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Container(
+      width: 1,
+      height: 32,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      color: Colors.white.withValues(alpha: 0.2),
+    );
+  }
+
+  void _showReactionDetails(String tappedEmoji) {
+    final RenderBox? renderBox =
+        _messageKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final messagePosition = renderBox.localToGlobal(Offset.zero);
+    final messageSize = renderBox.size;
+
+    // Filter reactions to only show those with the tapped emoji
+    final emojiReactions = _messageData.reactions
+        .where((reaction) => reaction['reaction'] == tappedEmoji)
+        .toList();
+
+    // Create overlay showing reaction details at top center
+    final detailsOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 20,
+        left: 0,
+        right: 0,
+        child: Material(
+          color: Colors.transparent,
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Show the emoji
+                  Text(
+                    tappedEmoji,
+                    style: const TextStyle(fontSize: 32),
+                  ),
+                  const SizedBox(height: 8),
+                  // Show avatars of people who reacted
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: emojiReactions.map((reaction) {
+                      final userId = reaction['userId'];
+                      return Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[600],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Center(
+                          child: Text(
+                            userId?.toString().substring(0, 1).toUpperCase() ??
+                                '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Show details overlay
+    Overlay.of(context).insert(detailsOverlay);
+
+    // Auto-dismiss after 2 seconds and show reactions bar
+    Future.delayed(const Duration(seconds: 2), () {
+      detailsOverlay.remove();
+
+      // Reopen reactions bar
+      late final OverlayEntry reactionsOverlay;
+      reactionsOverlay = OverlayEntry(
+        builder: (context) => IMessageReactionsBar(
+          messageId: _messageData.id,
+          chatGroupId: widget.chatGroupId,
+          chatType: widget.chatType,
+          isOutgoing: widget.isMe,
+          onDismiss: () {
+            reactionsOverlay.remove();
+          },
+          messagePosition: messagePosition,
+          messageSize: messageSize,
+        ),
+      );
+      Overlay.of(context).insert(reactionsOverlay);
+    });
+  }
+
+  void _dismissOverlays() {
+    // Remove overlay entries if they exist
+    _reactionsOverlay?.remove();
+    _menuOverlay?.remove();
+
+    // Clear references
+    _reactionsOverlay = null;
+    _menuOverlay = null;
+
+    // Reset floating state when overlays are dismissed
+    setState(() {
+      _shouldFloatUp = false;
+    });
   }
 
   BoxDecoration _getMessageDecoration() {

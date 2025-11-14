@@ -7,10 +7,11 @@ import '../../squad_state.dart';
 import '../../services/ai_service.dart';
 import '../chat_state.dart';
 import '../chat_service.dart';
-import '../thread_screen.dart';
-import '../widgets/message_group.dart';
-import '../models/message_group_data.dart';
+import '../message_bubble.dart';
 import '../models/message_data.dart';
+import '../models/message_group_data.dart';
+import '../widgets/message_group.dart';
+import '../thread_screen.dart';
 import 'chat_scroll_controller.dart';
 
 /// Service responsible for coordinating UI state and building complex UI components
@@ -24,6 +25,10 @@ class ChatUIManager {
   String _chatName = 'Squad Chat';
   String? _chatImageUrl;
   bool _isMuted = false;
+
+  // Swipe state for timestamp reveal
+  final ValueNotifier<double> swipeOffset = ValueNotifier<double>(0.0);
+  final ValueNotifier<bool> isRevealingTimestamps = ValueNotifier<bool>(false);
 
   // Caches
   final Map<String, String> _userDisplayNameCache = {};
@@ -349,72 +354,151 @@ class ChatUIManager {
           );
         }
 
-        return ListView.builder(
-          controller: scrollController.scrollController,
-          reverse: true,
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-          itemCount: _processedMessages.length +
-              (scrollController.isLoadingMore ? 1 : 0),
-          itemBuilder: (context, index) {
-            // Show loading indicator at the top
-            if (index == 0 && scrollController.isLoadingMore) {
-              return const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.cyanAccent,
-                    ),
-                  ),
-                ),
-              );
-            }
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return ValueListenableBuilder<double>(
+              valueListenable: swipeOffset,
+              builder: (context, offset, child) {
+                return GestureDetector(
+                  onHorizontalDragUpdate: (details) {
+                    swipeOffset.value += details.delta.dx;
+                    swipeOffset.value = swipeOffset.value.clamp(0.0, 80.0);
+                    isRevealingTimestamps.value = swipeOffset.value > 20.0;
+                  },
+                  onHorizontalDragEnd: (details) {
+                    if (swipeOffset.value < 40.0) {
+                      swipeOffset.value = 0.0;
+                      isRevealingTimestamps.value = false;
+                    } else {
+                      swipeOffset.value = 80.0;
+                      isRevealingTimestamps.value = true;
+                    }
+                  },
+                  child: Stack(
+                    children: [
+                      // Main messages list
+                      ListView.builder(
+                        controller: scrollController.scrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8.0, vertical: 4.0),
+                        itemCount: _processedMessages.length +
+                            (scrollController.isLoadingMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          // Show loading indicator at the top
+                          if (index == 0 && scrollController.isLoadingMore) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.cyanAccent,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
 
-            // Adjust index for loading indicator
-            final messageGroupIndex =
-                scrollController.isLoadingMore ? index - 1 : index;
-            final messageGroup =
-                _processedMessages[messageGroupIndex] as MessageGroupData;
+                          // Adjust index for loading indicator
+                          final messageGroupIndex =
+                              scrollController.isLoadingMore
+                                  ? index - 1
+                                  : index;
+                          final messageGroup =
+                              _processedMessages[messageGroupIndex]
+                                  as MessageGroupData;
 
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4.0),
-              child: MessageGroup(
-                parentMessage: messageGroup.parentMessage,
-                replies: messageGroup.replies,
-                isMe: messageGroup.parentMessage.senderUid ==
-                    _auth.currentUser?.uid,
-                showSender:
-                    true, // Will be determined per message in MessageGroup
-                showAvatar:
-                    true, // Will be determined per message in MessageGroup
-                showTimestamp: true,
-                showReadIndicator:
-                    false, // TODO: Implement per-message read indicators
-                onTap: onMessageTap,
-                onLongPress: () {}, // Handled by individual MessageBubbles
-                sendingStatus: {}, // TODO: Pass appropriate sending status
-                chatGroupId: chatGroupId,
-                chatType: chatType,
-                onViewThread: () {
-                  // Navigate to thread view
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ThreadScreen(
-                        chatGroupId: chatGroupId ?? '',
-                        currentUserId: _auth.currentUser?.uid ?? '',
-                        currentUserName: _userDisplayNameCache[
-                                _auth.currentUser?.uid ?? ''] ??
-                            'Unknown',
-                        chatType: chatType,
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4.0),
+                            child: MessageGroup(
+                              parentMessage: messageGroup.parentMessage,
+                              replies: messageGroup.replies,
+                              isMe: messageGroup.parentMessage.senderUid ==
+                                  _auth.currentUser?.uid,
+                              showSender:
+                                  true, // Will be determined per message in MessageGroup
+                              showAvatar:
+                                  true, // Will be determined per message in MessageGroup
+                              showTimestamp:
+                                  false, // Timestamps shown via swipe overlay
+                              showReadIndicator:
+                                  false, // TODO: Implement per-message read indicators
+                              onTap: onMessageTap,
+                              onLongPress:
+                                  () {}, // Handled by individual MessageBubbles
+                              sendingStatus: {}, // TODO: Pass appropriate sending status
+                              chatGroupId: chatGroupId,
+                              chatType: chatType,
+                              onViewThread: () {
+                                // Navigate to thread view
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ThreadScreen(
+                                      chatGroupId: chatGroupId ?? '',
+                                      currentUserId:
+                                          _auth.currentUser?.uid ?? '',
+                                      currentUserName: _userDisplayNameCache[
+                                              _auth.currentUser?.uid ?? ''] ??
+                                          'Unknown',
+                                      chatType: chatType,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
                       ),
-                    ),
-                  );
-                },
-              ),
+                      // Timestamp overlay when swiping
+                      ValueListenableBuilder<bool>(
+                        valueListenable: isRevealingTimestamps,
+                        builder: (context, revealing, child) {
+                          if (!revealing) return const SizedBox.shrink();
+                          return Positioned.fill(
+                            child: Container(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              child: ListView.builder(
+                                controller: scrollController.scrollController,
+                                reverse: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8.0, vertical: 4.0),
+                                itemCount: _processedMessages.length +
+                                    (scrollController.isLoadingMore ? 1 : 0),
+                                itemBuilder: (context, index) {
+                                  if (index == 0 &&
+                                      scrollController.isLoadingMore) {
+                                    return const SizedBox.shrink();
+                                  }
+
+                                  final messageGroupIndex =
+                                      scrollController.isLoadingMore
+                                          ? index - 1
+                                          : index;
+                                  final messageGroup =
+                                      _processedMessages[messageGroupIndex]
+                                          as MessageGroupData;
+
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 4.0),
+                                    child: _buildTimestampOverlay(
+                                        messageGroup.parentMessage),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
             );
           },
         );
@@ -423,68 +507,40 @@ class ChatUIManager {
   }
 
   /// Build the reply preview widget
-  Widget buildReplyPreview(BuildContext context, ChatState chatState) {
+  Widget buildReplyPreview(BuildContext context, ChatState chatState,
+      SquadState squadState, ChatType chatType) {
     final replyMessage = chatState.replyToMessage!;
-    final sender = replyMessage['sender'] ?? 'Unknown';
-    final text = replyMessage['text'] ?? replyMessage['content'] ?? '';
+
+    // Determine if the reply message is from the current user
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isMe = replyMessage['senderUid'] == currentUser?.uid;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-      decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Colors.grey.withValues(alpha: 0.2),
-          width: 1,
-        ),
-      ),
-      child: Row(
+      child: Stack(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Replying to $sender',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[400],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  text.length > 80 ? '${text.substring(0, 80)}...' : text,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w400,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+          // Full-size tap detector for dismissing by tapping outside
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () {
+                chatState.clearReplyToMessage();
+              },
+              behavior: HitTestBehavior.translucent,
             ),
           ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () {
-              chatState.clearReplyToMessage();
-            },
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.close,
-                size: 14,
-                color: Colors.grey[400],
-              ),
-            ),
+          // The actual message bubble
+          MessageBubble(
+            message: replyMessage,
+            isMe: isMe,
+            showSender: !isMe, // Show sender name if not from current user
+            showAvatar: !isMe, // Show avatar if not from current user
+            showTimestamp: true,
+            showReadIndicator: false,
+            onTap: () {}, // No action needed for reply preview
+            onLongPress: () {}, // No action needed for reply preview
+            sendingStatus: chatState.sendingStatus,
+            chatGroupId: null, // Not needed for preview
+            chatType: chatType,
           ),
         ],
       ),
@@ -790,5 +846,53 @@ class ChatUIManager {
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20),
     );
+  }
+
+  /// Build timestamp overlay for swipe-to-reveal functionality
+  Widget _buildTimestampOverlay(MessageData message) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        margin: const EdgeInsets.only(right: 16.0),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          _formatTimestamp(message.timestamp),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Format timestamp for display
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+
+    if (difference.inDays == 0) {
+      // Today - show time
+      return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays == 1) {
+      // Yesterday
+      return 'Yesterday ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays < 7) {
+      // This week - show day name
+      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return '${days[timestamp.weekday - 1]} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else {
+      // Older - show date
+      return '${timestamp.month.toString().padLeft(2, '0')}/${timestamp.day.toString().padLeft(2, '0')} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    }
   }
 }

@@ -357,4 +357,43 @@ class ChatService {
       'pinned': false,
     });
   }
+
+  Future<void> bumpMessage(
+      String messageId, String? chatGroupId, ChatType chatType) async {
+    String collectionPath;
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+
+    if (chatType == ChatType.userGroup) {
+      collectionPath = 'users/$userId/chat_groups/$chatGroupId/messages';
+    } else {
+      collectionPath = 'chats/$chatGroupId/messages';
+    }
+
+    // Get the original message
+    final originalDoc =
+        await _firestore.collection(collectionPath).doc(messageId).get();
+    if (!originalDoc.exists) return;
+
+    final originalData = originalDoc.data()!;
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    // Create a new message copy with bumped metadata
+    final bumpedMessage = {
+      ...originalData,
+      'isBumped': true,
+      'originalId': messageId,
+      'bumpedBy': currentUser.displayName ?? currentUser.email ?? 'Unknown',
+      'timestamp': FieldValue.serverTimestamp(),
+      'timestamp_ms': DateTime.now().millisecondsSinceEpoch,
+      'id': null, // Let Firestore generate new ID
+    };
+
+    // Add the new bumped message
+    await _firestore.collection(collectionPath).add(bumpedMessage);
+
+    // TODO: Send notification to other users in the chat about the bumped message
+    // This could be implemented by creating a system message or using push notifications
+  }
 }

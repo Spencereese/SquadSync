@@ -353,6 +353,27 @@ class _JoinGroupTabState extends State<_JoinGroupTab> {
       final creatorUid = groupData['createdBy'];
       if (creatorUid == null) return;
 
+      // First, add the group to the current user's chat_groups collection
+      await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc(groupId)
+          .set({
+        'name': groupData['name'] ?? 'Unnamed Group',
+        'isPublic': groupData['isPublic'] ?? false,
+        'createdBy': creatorUid,
+        'createdAt': groupData['createdAt'] ?? FieldValue.serverTimestamp(),
+        'lastMessage': groupData['lastMessage'] ?? '',
+        'lastMessageTime':
+            groupData['lastMessageTime'] ?? FieldValue.serverTimestamp(),
+        'memberCount': (groupData['memberCount'] ?? 0) + 1,
+        'members': [...(groupData['members'] ?? []), currentUser.uid],
+        'imageUrl': groupData['imageUrl'],
+        'gameFocus': groupData['gameFocus'],
+      });
+
+      // Then update the creator's group document
       await _firestore
           .collection('users')
           .doc(creatorUid)

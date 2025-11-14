@@ -99,9 +99,14 @@ class MessageContent extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.blue.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Colors.blue.withValues(alpha: 0.3),
-              width: 1,
+            border: Border(
+              left: BorderSide(
+                color: Colors.blue.withValues(alpha: 0.3),
+                width: 3,
+              ),
+              right: BorderSide.none,
+              top: BorderSide.none,
+              bottom: BorderSide.none,
             ),
           ),
           child: Row(
@@ -173,6 +178,8 @@ class MessageContent extends StatelessWidget {
       crossAxisAlignment:
           isFromCurrentUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
+        // Add extra spacing for bumped messages
+        if (message.isBumped) const SizedBox(height: 8),
         Semantics(
           label: 'Message text: ${message.text}',
           child: RichTextWithLinks(
@@ -180,18 +187,29 @@ class MessageContent extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               color: isFromCurrentUser
-                  ? Colors.white
+                  ? (message.isBumped ? Colors.white : Colors.white)
                   : message.isAiResponse
                       ? Colors.white // White text for Grok messages
-                      : Colors
-                          .white70, // White for sent, light grey for received
-              fontWeight: FontWeight.normal,
+                      : message.isBumped
+                          ? Colors.white // Whiter text for bumped messages
+                          : Colors.white70, // Light grey for received
+              fontWeight:
+                  message.isBumped ? FontWeight.w600 : FontWeight.normal,
               backgroundColor: Colors.transparent,
             ),
             textAlign: isFromCurrentUser ? TextAlign.end : TextAlign.start,
             isMe: isFromCurrentUser,
+            // Remove text truncation for bumped messages
+            maxLines: message.isBumped
+                ? null
+                : 10, // Allow unlimited lines for bumped, limit others
+            overflow: message.isBumped
+                ? null
+                : TextOverflow.ellipsis, // No ellipsis for bumped
           ),
         ),
+        // Add extra spacing after bumped messages
+        if (message.isBumped) const SizedBox(height: 8),
         // Add link previews for the first URL found
         if (urls.isNotEmpty) _buildLinkPreview(urls.first),
       ],

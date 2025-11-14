@@ -1,6 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import '../../services/ai_service.dart';
 import '../chat_state.dart';
 import '../models/message_data.dart';
@@ -97,28 +99,43 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
     final quickReactions = chatState.quickReactionEmojis;
     final screenWidth = MediaQuery.of(context).size.width;
     final avatarSpace = 60.0; // Space for avatar (60px width + padding)
-    final messageMaxWidth = screenWidth * 0.7;
 
-    // Calculate positions based on message side
+    // Calculate positions - leave space on left for avatars, cover most screen width
+    final leftOffset = avatarSpace + 8.0; // Avatar space + small padding
+    final pillWidth =
+        screenWidth - leftOffset - 16.0; // Cover most width, small right margin
+
+    // Position above the message
+    final pillTop = widget.messagePosition != null
+        ? widget.messagePosition!.dy - 120 // Position well above message
+        : MediaQuery.of(context).size.height * 0.3;
+
+    // Connector position - depends on message alignment
     final isMessageOnRight = widget.isMe;
-    final messageAreaStart =
-        isMessageOnRight ? screenWidth - messageMaxWidth - 16 : avatarSpace;
-    final messageAreaEnd =
-        isMessageOnRight ? screenWidth - 16 : screenWidth - avatarSpace;
+    final connectorX = isMessageOnRight
+        ? screenWidth -
+            120 // Near right edge for outgoing messages (upper left of bubble)
+        : leftOffset +
+            60; // Near left edge for incoming messages (upper right of bubble)
 
     return GestureDetector(
       onTap: widget.onDismiss,
       child: Container(
-        color: Colors.black.withValues(alpha: 0.3), // Simplified backdrop
+        color: Colors.transparent, // Allow backdrop filter to show through
         child: Stack(
           children: [
-            // Reaction buttons - span full message area
+            // Backdrop blur for the entire overlay
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.3),
+              ),
+            ),
+
+            // Reactions pill - iMessage style
             Positioned(
-              top: widget.messagePosition != null
-                  ? widget.messagePosition!.dy - 80 // Position above message
-                  : MediaQuery.of(context).size.height * 0.3,
-              left: messageAreaStart,
-              right: screenWidth - messageAreaEnd,
+              top: pillTop,
+              left: leftOffset,
               child: AnimatedBuilder(
                 animation: Listenable.merge([_scaleAnimation, _fadeAnimation]),
                 builder: (context, child) {
@@ -127,51 +144,129 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
                     child: Transform.scale(
                       scale: _scaleAnimation.value,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
+                        width: pillWidth,
+                        height: 50,
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(20),
+                          color: Colors.black.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(25),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            width: 0.5,
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
+                              blurRadius: 20,
+                              spreadRadius: 5,
                             ),
                           ],
                         ),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.max,
-                            children: quickReactions.map((emoji) {
-                              return GestureDetector(
-                                onTap: () {
-                                  HapticFeedback.lightImpact();
-                                  ReactionService.addReaction(
-                                    context,
-                                    emoji,
-                                    widget.messageData.id,
-                                    widget.chatGroupId,
-                                    widget.chatType,
-                                  );
-                                  widget.onDismiss();
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  margin:
-                                      const EdgeInsets.symmetric(horizontal: 2),
-                                  child: Text(
-                                    emoji,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      decoration: TextDecoration.none,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(25),
+                          child: BackdropFilter(
+                            filter:
+                                ImageFilter.blur(sigmaX: 40.0, sigmaY: 40.0),
+                            child: Container(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              child: Row(
+                                children: [
+                                  // Grey smiley connector (start)
+                                  GestureDetector(
+                                    onTap: () => _showEmojiPicker(context),
+                                    child: Container(
+                                      width: 36,
+                                      height: 36,
+                                      margin: const EdgeInsets.symmetric(
+                                          horizontal: 4),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.grey.withValues(alpha: 0.2),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.emoji_emotions_outlined,
+                                        color: Colors.grey,
+                                        size: 18,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              );
-                            }).toList(),
+
+                                  // Horizontal swipeable emoji list
+                                  Expanded(
+                                    child: ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      physics: const BouncingScrollPhysics(),
+                                      padding: EdgeInsets.zero,
+                                      itemCount: quickReactions.length +
+                                          1, // +1 for end smiley
+                                      itemBuilder: (context, index) {
+                                        if (index == quickReactions.length) {
+                                          // Grey smiley at the end
+                                          return GestureDetector(
+                                            onTap: () =>
+                                                _showEmojiPicker(context),
+                                            child: Container(
+                                              width: 36,
+                                              height: 36,
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.grey
+                                                    .withValues(alpha: 0.2),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.emoji_emotions_outlined,
+                                                color: Colors.grey,
+                                                size: 18,
+                                              ),
+                                            ),
+                                          );
+                                        }
+
+                                        final emoji = quickReactions[index];
+                                        return GestureDetector(
+                                          onTap: () {
+                                            HapticFeedback.lightImpact();
+                                            ReactionService.addReaction(
+                                              context,
+                                              emoji,
+                                              widget.messageData.id,
+                                              widget.chatGroupId,
+                                              widget.chatType,
+                                            );
+                                            widget.onDismiss();
+                                          },
+                                          child: Container(
+                                            width: 36,
+                                            height: 36,
+                                            margin: const EdgeInsets.symmetric(
+                                                horizontal: 1),
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: Colors.transparent,
+                                            ),
+                                            child: Center(
+                                              child: Text(
+                                                emoji,
+                                                style: const TextStyle(
+                                                  fontSize: 22,
+                                                  decoration:
+                                                      TextDecoration.none,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -181,59 +276,40 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
               ),
             ),
 
-            // Message content - positioned in center, styled like original bubble
+            // Visual connector - small bubble/tail with grey smiley
             Positioned(
-              top: widget.messagePosition != null
-                  ? widget.messagePosition!.dy - 20 // Slight upward movement
-                  : MediaQuery.of(context).size.height * 0.45,
-              left: messageAreaStart,
-              right: screenWidth - messageAreaEnd,
+              top: pillTop + 42, // Just below the pill, slightly nestled
+              left: connectorX - 12, // Center the connector
               child: AnimatedBuilder(
                 animation: Listenable.merge([_scaleAnimation, _fadeAnimation]),
                 builder: (context, child) {
                   return Opacity(
                     opacity: _fadeAnimation.value,
                     child: Transform.scale(
-                      scale:
-                          _scaleAnimation.value * 1.05, // Slight growth effect
-                      child: Align(
-                        alignment: isMessageOnRight
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          constraints: BoxConstraints(
-                            maxWidth: messageMaxWidth,
+                      scale: _scaleAnimation.value,
+                      child: Container(
+                        width: 24,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.only(
+                            bottomLeft: Radius.circular(12),
+                            bottomRight: Radius.circular(12),
+                            topLeft: Radius.circular(6),
+                            topRight: Radius.circular(6),
                           ),
-                          decoration: BoxDecoration(
-                            color: widget.isMe
-                                ? const Color(
-                                    0xFF007AFF) // iMessage blue for sent messages
-                                : const Color(
-                                    0xFF2C2C2E), // Dark gray for received messages
-                            borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(21),
-                              topRight: const Radius.circular(21),
-                              bottomLeft: widget.isMe
-                                  ? const Radius.circular(21)
-                                  : const Radius.circular(4),
-                              bottomRight: widget.isMe
-                                  ? const Radius.circular(4)
-                                  : const Radius.circular(21),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '😊',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: MessageContent(
-                            message: widget.messageData,
-                            isFromCurrentUser: widget.isMe,
-                            chatGroupId: widget.chatGroupId,
                           ),
                         ),
                       ),
@@ -243,22 +319,68 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
               ),
             ),
 
-            // Action menu - positioned on same side of message
+            // Message content - positioned below the pill
             Positioned(
               top: widget.messagePosition != null
-                  ? widget.messagePosition!.dy -
-                      40 // Slightly above message center
-                  : MediaQuery.of(context).size.height * 0.4,
+                  ? widget.messagePosition!.dy + 20 // Below the connector
+                  : MediaQuery.of(context).size.height * 0.45,
+              left: isMessageOnRight ? screenWidth - 300 : leftOffset,
+              right: isMessageOnRight ? 16 : null,
+              child: AnimatedBuilder(
+                animation: Listenable.merge([_scaleAnimation, _fadeAnimation]),
+                builder: (context, child) {
+                  return Opacity(
+                    opacity: _fadeAnimation.value,
+                    child: Transform.scale(
+                      scale: _scaleAnimation.value * 1.02,
+                      child: Container(
+                        constraints: BoxConstraints(
+                          maxWidth: 280,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: widget.isMe
+                              ? const Color(0xFF007AFF) // iMessage blue
+                              : const Color(0xFF2C2C2E), // Dark gray
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(21),
+                            topRight: const Radius.circular(21),
+                            bottomLeft: widget.isMe
+                                ? const Radius.circular(21)
+                                : const Radius.circular(4),
+                            bottomRight: widget.isMe
+                                ? const Radius.circular(4)
+                                : const Radius.circular(21),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: MessageContent(
+                          message: widget.messageData,
+                          isFromCurrentUser: widget.isMe,
+                          chatGroupId: widget.chatGroupId,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // Action menu - positioned on same side as message
+            Positioned(
+              top: widget.messagePosition != null
+                  ? widget.messagePosition!.dy + 80
+                  : MediaQuery.of(context).size.height * 0.5,
               left: isMessageOnRight
-                  ? (screenWidth - messageAreaEnd + 8)
-                      .clamp(8.0, screenWidth - 148)
-                  : null, // Right of message area for right-aligned messages, clamped to screen
-              right: isMessageOnRight
-                  ? null
-                  : (messageAreaStart - 140).clamp(
-                      8.0,
-                      screenWidth -
-                          148), // Left of message area for left-aligned messages, clamped to screen
+                  ? (screenWidth - 160).clamp(16.0, screenWidth - 164)
+                  : leftOffset,
               child: AnimatedBuilder(
                 animation: Listenable.merge([_scaleAnimation, _fadeAnimation]),
                 builder: (context, child) {
@@ -389,6 +511,85 @@ class _MessageReactionOverlayState extends State<MessageReactionOverlay>
           ),
         ],
       ),
+    );
+  }
+
+  void _showEmojiPicker(BuildContext context) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.4,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Header with close button
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey, width: 0.5),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Choose Reaction',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 20,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Emoji picker
+              Expanded(
+                child: EmojiPicker(
+                  onEmojiSelected: (category, emoji) {
+                    ReactionService.addReaction(
+                      context,
+                      emoji.emoji,
+                      widget.messageData.id,
+                      widget.chatGroupId,
+                      widget.chatType,
+                    );
+                    Navigator.pop(context); // Close picker
+                    widget.onDismiss(); // Dismiss overlay
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

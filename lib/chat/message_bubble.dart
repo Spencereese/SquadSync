@@ -56,6 +56,10 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool _shouldFloatUp = false; // Track if message should float up for menu
   bool _isPressed = false; // Track if message is being pressed for animation
 
+  // Swipe to show timestamps
+  double _swipeOffset = 0.0; // Current swipe offset
+  bool _isSwiping = false; // Track if currently swiping
+
   // Overlay references for dismissal
   OverlayEntry? _reactionsOverlay;
   OverlayEntry? _menuOverlay;
@@ -319,6 +323,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
+        // Dismiss keyboard on tap
+        FocusScope.of(context).unfocus();
         widget.onTap();
       },
       onTapDown: (_) {
@@ -336,7 +342,31 @@ class _MessageBubbleState extends State<MessageBubble> {
           _isPressed = false;
         });
       },
+      onHorizontalDragStart: (details) {
+        // Dismiss keyboard on swipe start
+        FocusScope.of(context).unfocus();
+        setState(() {
+          _isSwiping = true;
+        });
+      },
+      onHorizontalDragUpdate: (details) {
+        // Only allow swiping left (negative delta) to reveal timestamps
+        if (details.delta.dx < 0) {
+          setState(() {
+            _swipeOffset = (_swipeOffset + details.delta.dx).clamp(-100.0, 0.0);
+          });
+        }
+      },
+      onHorizontalDragEnd: (details) {
+        setState(() {
+          _isSwiping = false;
+          // Animate back to original position
+          _swipeOffset = 0.0;
+        });
+      },
       onLongPress: () {
+        // Dismiss keyboard on long press
+        FocusScope.of(context).unfocus();
         final RenderBox? renderBox =
             _messageKey.currentContext?.findRenderObject() as RenderBox?;
         if (renderBox == null) return;
@@ -344,11 +374,14 @@ class _MessageBubbleState extends State<MessageBubble> {
         final messagePosition = renderBox.localToGlobal(Offset.zero);
         final messageSize = renderBox.size;
         final screenSize = MediaQuery.of(context).size;
+        final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
         // Calculate floating offset early
-        final menuTop = messagePosition.dy + messageSize.height + -4;
+        final menuSpacing = 8.0; // Small gap below message bubble
+        final menuTop = messagePosition.dy + messageSize.height + menuSpacing;
         final menuHeight = 200.0;
-        final shouldFlipMenu = menuTop + menuHeight > screenSize.height - 20;
+        final availableHeight = screenSize.height - keyboardHeight - 20;
+        final shouldFlipMenu = menuTop + menuHeight > availableHeight;
         final floatingOffset = shouldFlipMenu ? -220.0 : 0.0;
 
         late final OverlayEntry reactionsOverlay;
@@ -373,9 +406,6 @@ class _MessageBubbleState extends State<MessageBubble> {
         );
 
         // Position menu below the message bubble (similar to reaction picker logic but below instead of above)
-        final menuSpacing =
-            -12.0; // Spacing between message bubble and menu (same as reaction picker)
-
         // Always position below the message bubble
         final finalMenuTop = messagePosition.dy +
             messageSize.height +
@@ -387,7 +417,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             children: [
               // Menu - no background blur needed
               Positioned(
-                top: finalMenuTop.clamp(10, screenSize.height - 220),
+                top: finalMenuTop.clamp(10, availableHeight - 220),
                 left: widget.isMe
                     ? null
                     : 16.0, // Same padding as message bubble for incoming
@@ -396,7 +426,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                     : null, // Same padding as message bubble for outgoing
                 child: Material(
                   color: Colors.transparent,
-                  elevation: 10, // Higher elevation to ensure it's on top
+                  elevation:
+                      20, // Increased elevation to ensure it's above message bubbles
+                  shadowColor: Colors.black.withValues(alpha: 0.5),
                   child: TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0.0, end: 1.0),
                     duration: const Duration(milliseconds: 150),
@@ -420,15 +452,54 @@ class _MessageBubbleState extends State<MessageBubble> {
           _shouldFloatUp = shouldFlipMenu;
         });
 
+        // Insert overlays in correct order (reactions first, then menu on top)
         Overlay.of(context).insert(reactionsOverlay);
         Overlay.of(context).insert(menuOverlay);
       },
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          // Timestamp overlay (revealed when swiping left)
+          if (_swipeOffset < 0)
+            Positioned(
+              right: 16 +
+                  _swipeOffset
+                      .abs(), // Position on the right, revealed as we swipe
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: Opacity(
+                  opacity: (_swipeOffset / -100.0)
+                      .clamp(0.0, 1.0), // Fade in as we swipe
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      _formatTimestamp(_messageData.timestamp),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // Main message container with swipe animation
           AnimatedContainer(
             key: _messageKey,
-            duration: const Duration(milliseconds: 150),
+            duration:
+                _isSwiping ? Duration.zero : const Duration(milliseconds: 150),
             margin: const EdgeInsets.symmetric(vertical: 2.0),
             padding: _getMessagePadding(),
             constraints: BoxConstraints(
@@ -437,7 +508,8 @@ class _MessageBubbleState extends State<MessageBubble> {
             ),
             decoration: _getMessageDecoration(),
             transform: Matrix4.identity()
-              ..setTranslationRaw(0.0, _shouldFloatUp ? -220.0 : 0.0, 0.0),
+              ..setTranslationRaw(
+                  _swipeOffset, _shouldFloatUp ? -220.0 : 0.0, 0.0),
             child: Semantics(
               label: 'Message from ${_messageData.sender}',
               child: IntrinsicWidth(
@@ -449,6 +521,8 @@ class _MessageBubbleState extends State<MessageBubble> {
               ),
             ),
           ),
+
+          // Pressed state overlay
           if (_isPressed)
             Positioned.fill(
               child: AnimatedContainer(
@@ -470,7 +544,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                   ],
                 ),
                 transform: Matrix4.diagonal3Values(1.05, 1.05, 1.0)
-                  ..setTranslationRaw(0.0, _shouldFloatUp ? -220.0 : 0.0, 0.0),
+                  ..setTranslationRaw(
+                      _swipeOffset, _shouldFloatUp ? -220.0 : 0.0, 0.0),
                 child: Semantics(
                   label: 'Message from ${_messageData.sender}',
                   child: IntrinsicWidth(
@@ -885,6 +960,26 @@ class _MessageBubbleState extends State<MessageBubble> {
     setState(() {
       _shouldFloatUp = false;
     });
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+
+    if (difference.inDays == 0) {
+      // Today - show time only
+      return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays == 1) {
+      // Yesterday
+      return 'Yesterday ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays < 7) {
+      // This week - show day and time
+      final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return '${weekdays[timestamp.weekday - 1]} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else {
+      // Older - show date and time
+      return '${timestamp.month.toString().padLeft(2, '0')}/${timestamp.day.toString().padLeft(2, '0')} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    }
   }
 
   BoxDecoration _getMessageDecoration() {

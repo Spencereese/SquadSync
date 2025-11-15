@@ -230,11 +230,28 @@ class MessageService {
 
   // Delete a message
   Future<void> deleteMessage(String messageId, String squadId,
-      {String? chatGroupId}) async {
+      {String? chatGroupId, required ChatType chatType}) async {
     try {
-      final collectionPath = chatGroupId != null
-          ? 'squads/$squadId/chat_groups/$chatGroupId/messages'
-          : 'squads/$squadId/messages';
+      final isUserGroup = chatType == ChatType.userGroup;
+      final isDM = chatType == ChatType.dm;
+      final isSquad = chatType == ChatType.squad;
+
+      // Determine collection path based on chat type (same logic as sendMessage)
+      String collectionPath;
+      if (isUserGroup) {
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser == null) return;
+        collectionPath =
+            'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
+      } else if (isDM) {
+        collectionPath = 'chats/$chatGroupId/messages';
+      } else if (isSquad) {
+        // Squad chats: each squad IS the chat group
+        collectionPath = 'squads/$squadId/messages';
+      } else {
+        // Fallback for backward compatibility
+        collectionPath = 'squads/$squadId/messages';
+      }
 
       await _firestore.collection(collectionPath).doc(messageId).delete();
     } catch (e) {

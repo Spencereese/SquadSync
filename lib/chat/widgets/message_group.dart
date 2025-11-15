@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/message_data.dart';
 import '../message_bubble.dart';
+import '../chat_service.dart';
 import 'connecting_line_painter.dart';
 import '../../services/ai_service.dart';
 
@@ -19,6 +20,7 @@ class MessageGroup extends StatefulWidget {
   final String? chatGroupId;
   final ChatType chatType;
   final VoidCallback? onViewThread;
+  final ChatService? chatService;
 
   const MessageGroup({
     super.key,
@@ -35,6 +37,7 @@ class MessageGroup extends StatefulWidget {
     this.chatGroupId,
     required this.chatType,
     this.onViewThread,
+    this.chatService,
   });
 
   @override
@@ -49,6 +52,34 @@ class _MessageGroupState extends State<MessageGroup> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Timestamp header if needed
+        if (widget.parentMessage.shouldShowTimestamp)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  _formatTimestamp(widget.parentMessage.timestamp),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
         // Parent message
         MessageBubble(
           message: widget.parentMessage,
@@ -62,6 +93,7 @@ class _MessageGroupState extends State<MessageGroup> {
           sendingStatus: widget.sendingStatus,
           chatGroupId: widget.chatGroupId,
           chatType: widget.chatType,
+          chatService: widget.chatService,
         ),
 
         // Reply count label (if there are replies)
@@ -123,6 +155,7 @@ class _MessageGroupState extends State<MessageGroup> {
                     sendingStatus: widget.sendingStatus,
                     chatGroupId: widget.chatGroupId,
                     chatType: widget.chatType,
+                    chatService: widget.chatService,
                   ),
                 ),
               ],
@@ -131,5 +164,26 @@ class _MessageGroupState extends State<MessageGroup> {
         ],
       ],
     );
+  }
+
+  /// Format timestamp for display
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+
+    if (difference.inDays == 0) {
+      // Today - show time
+      return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays == 1) {
+      // Yesterday
+      return 'Yesterday ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays < 7) {
+      // This week - show day name
+      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return '${days[timestamp.weekday - 1]} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    } else {
+      // Older - show date
+      return '${timestamp.month.toString().padLeft(2, '0')}/${timestamp.day.toString().padLeft(2, '0')} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    }
   }
 }

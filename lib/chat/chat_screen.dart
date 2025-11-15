@@ -1170,6 +1170,7 @@ class ChatScreenState extends State<ChatScreen>
             sendingStatus: const {},
             chatGroupId: widget.chatGroupId,
             chatType: widget.chatType,
+            chatService: _chatService,
           ),
           // Close button positioned at the top right of the message bubble
           Positioned(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +52,30 @@ class ChatUIManager {
   set chatName(String value) => _chatName = value;
   set chatImageUrl(String? value) => _chatImageUrl = value;
   set isMuted(bool value) => _isMuted = value;
+
+  // Animation for swipe back
+  void _animateSwipeBack() {
+    const int steps = 10;
+    const Duration stepDuration = Duration(milliseconds: 16); // ~60fps
+    final double startOffset = swipeOffset.value;
+    int currentStep = 0;
+
+    Timer.periodic(stepDuration, (timer) {
+      currentStep++;
+      final progress = currentStep / steps;
+      // Spring-like easing: overshoot then settle
+      final easedProgress = 1 - math.pow(1 - progress, 3); // Cubic ease out
+      final newOffset = startOffset * (1 - easedProgress);
+
+      swipeOffset.value = newOffset;
+
+      if (currentStep >= steps) {
+        swipeOffset.value = 0.0;
+        timer.cancel();
+      }
+    });
+  }
+
   set processedMessages(List<dynamic> value) => _processedMessages = value;
   set needsMessageProcessing(bool value) => _needsMessageProcessing = value;
 
@@ -360,19 +385,22 @@ class ChatUIManager {
               valueListenable: swipeOffset,
               builder: (context, offset, child) {
                 return GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    // Allow tap events to pass through to parent for keyboard dismissal
+                  },
                   onHorizontalDragUpdate: (details) {
-                    swipeOffset.value += details.delta.dx;
-                    swipeOffset.value = swipeOffset.value.clamp(0.0, 80.0);
-                    isRevealingTimestamps.value = swipeOffset.value > 20.0;
+                    // Only update if drag is mostly horizontal to avoid interfering with vertical scroll
+                    if (details.delta.dx.abs() > details.delta.dy.abs()) {
+                      // Dismiss keyboard on swipe
+                      FocusScope.of(context).unfocus();
+                      swipeOffset.value += details.delta.dx;
+                      swipeOffset.value = swipeOffset.value.clamp(-40.0, 0.0);
+                    }
                   },
                   onHorizontalDragEnd: (details) {
-                    if (swipeOffset.value < 40.0) {
-                      swipeOffset.value = 0.0;
-                      isRevealingTimestamps.value = false;
-                    } else {
-                      swipeOffset.value = 80.0;
-                      isRevealingTimestamps.value = true;
-                    }
+                    // Animate back to 0 with spring effect
+                    _animateSwipeBack();
                   },
                   child: Stack(
                     children: [
@@ -413,84 +441,79 @@ class ChatUIManager {
 
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4.0),
-                            child: MessageGroup(
-                              parentMessage: messageGroup.parentMessage,
-                              replies: messageGroup.replies,
-                              isMe: messageGroup.parentMessage.senderUid ==
-                                  _auth.currentUser?.uid,
-                              showSender:
-                                  true, // Will be determined per message in MessageGroup
-                              showAvatar:
-                                  true, // Will be determined per message in MessageGroup
-                              showTimestamp:
-                                  false, // Timestamps shown via swipe overlay
-                              showReadIndicator:
-                                  false, // TODO: Implement per-message read indicators
-                              onTap: onMessageTap,
-                              onLongPress:
-                                  () {}, // Handled by individual MessageBubbles
-                              sendingStatus: {}, // TODO: Pass appropriate sending status
-                              chatGroupId: chatGroupId,
-                              chatType: chatType,
-                              onViewThread: () {
-                                // Navigate to thread view
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => ThreadScreen(
-                                      chatGroupId: chatGroupId ?? '',
-                                      currentUserId:
-                                          _auth.currentUser?.uid ?? '',
-                                      currentUserName: _userDisplayNameCache[
-                                              _auth.currentUser?.uid ?? ''] ??
-                                          'Unknown',
-                                      chatType: chatType,
+                            child: Stack(
+                              children: [
+                                Transform.translate(
+                                  offset: Offset(offset, 0),
+                                  child: MessageGroup(
+                                    parentMessage: messageGroup.parentMessage,
+                                    replies: messageGroup.replies,
+                                    isMe:
+                                        messageGroup.parentMessage.senderUid ==
+                                            _auth.currentUser?.uid,
+                                    showSender:
+                                        true, // Will be determined per message in MessageGroup
+                                    showAvatar:
+                                        true, // Will be determined per message in MessageGroup
+                                    showTimestamp: messageGroup.parentMessage
+                                        .shouldShowTimestamp, // Show timestamp based on time gap logic
+                                    showReadIndicator:
+                                        false, // TODO: Implement per-message read indicators
+                                    onTap: onMessageTap,
+                                    onLongPress:
+                                        () {}, // Handled by individual MessageBubbles
+                                    sendingStatus: {}, // TODO: Pass appropriate sending status
+                                    chatGroupId: chatGroupId,
+                                    chatType: chatType,
+                                    onViewThread: () {
+                                      // Navigate to thread view
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => ThreadScreen(
+                                            chatGroupId: chatGroupId ?? '',
+                                            currentUserId:
+                                                _auth.currentUser?.uid ?? '',
+                                            currentUserName:
+                                                _userDisplayNameCache[_auth
+                                                            .currentUser?.uid ??
+                                                        ''] ??
+                                                    'Unknown',
+                                            chatType: chatType,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    chatService: _chatService,
+                                  ),
+                                ),
+                                if (offset < -2)
+                                  Positioned(
+                                    right: 0,
+                                    top: messageGroup
+                                            .parentMessage.shouldShowTimestamp
+                                        ? 40
+                                        : 0,
+                                    height: 60,
+                                    child: Transform.translate(
+                                      offset: Offset(
+                                          (50 + offset * 1.25).clamp(0, 50), 0),
+                                      child: Container(
+                                        width: 50,
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          _formatTimestamp(messageGroup
+                                              .parentMessage.timestamp),
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                      // Timestamp overlay when swiping
-                      ValueListenableBuilder<bool>(
-                        valueListenable: isRevealingTimestamps,
-                        builder: (context, revealing, child) {
-                          if (!revealing) return const SizedBox.shrink();
-                          return Positioned.fill(
-                            child: Container(
-                              color: Colors.black.withValues(alpha: 0.1),
-                              child: ListView.builder(
-                                controller: scrollController.scrollController,
-                                reverse: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8.0, vertical: 4.0),
-                                itemCount: _processedMessages.length +
-                                    (scrollController.isLoadingMore ? 1 : 0),
-                                itemBuilder: (context, index) {
-                                  if (index == 0 &&
-                                      scrollController.isLoadingMore) {
-                                    return const SizedBox.shrink();
-                                  }
-
-                                  final messageGroupIndex =
-                                      scrollController.isLoadingMore
-                                          ? index - 1
-                                          : index;
-                                  final messageGroup =
-                                      _processedMessages[messageGroupIndex]
-                                          as MessageGroupData;
-
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 4.0),
-                                    child: _buildTimestampOverlay(
-                                        messageGroup.parentMessage),
-                                  );
-                                },
-                              ),
+                              ],
                             ),
                           );
                         },
@@ -541,6 +564,7 @@ class ChatUIManager {
             sendingStatus: chatState.sendingStatus,
             chatGroupId: null, // Not needed for preview
             chatType: chatType,
+            chatService: _chatService,
           ),
         ],
       ),
@@ -599,6 +623,29 @@ class ChatUIManager {
           : message as Map<String, dynamic>;
       return MessageData.fromMap(data);
     }).toList();
+
+    // Sort messages by timestamp (oldest first) for processing
+    messageDataList.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    // Mark messages that should show timestamps based on time gaps
+    const int timeGapThresholdMinutes =
+        30; // Show timestamp if gap > 30 minutes
+    DateTime? lastTimestamp;
+
+    for (final message in messageDataList) {
+      if (lastTimestamp == null) {
+        // First message always shows timestamp
+        message.shouldShowTimestamp = true;
+      } else {
+        final timeDifference = message.timestamp.difference(lastTimestamp);
+        if (timeDifference.inMinutes >= timeGapThresholdMinutes) {
+          message.shouldShowTimestamp = true;
+        } else {
+          message.shouldShowTimestamp = false;
+        }
+      }
+      lastTimestamp = message.timestamp;
+    }
 
     // Group messages by reply relationships
     final Map<String, MessageData> parentMessages = {};
@@ -849,50 +896,8 @@ class ChatUIManager {
   }
 
   /// Build timestamp overlay for swipe-to-reveal functionality
-  Widget _buildTimestampOverlay(MessageData message) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.only(right: 16.0),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.2),
-            width: 1,
-          ),
-        ),
-        child: Text(
-          _formatTimestamp(message.timestamp),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Format timestamp for display
+  /// Format timestamp for display - always military time (24-hour format)
   String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final difference = now.difference(timestamp);
-
-    if (difference.inDays == 0) {
-      // Today - show time
-      return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-    } else if (difference.inDays == 1) {
-      // Yesterday
-      return 'Yesterday ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-    } else if (difference.inDays < 7) {
-      // This week - show day name
-      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return '${days[timestamp.weekday - 1]} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-    } else {
-      // Older - show date
-      return '${timestamp.month.toString().padLeft(2, '0')}/${timestamp.day.toString().padLeft(2, '0')} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-    }
+    return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
   }
 }

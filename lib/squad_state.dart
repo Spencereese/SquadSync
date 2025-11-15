@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/ai_service.dart';
 import 'managers/game_manager.dart';
 import 'managers/squad_manager.dart';
 import 'managers/peacock_manager.dart';
@@ -963,7 +964,8 @@ class SquadState with ChangeNotifier {
     final squadId = selectedSquadId;
     if (squadId == null) return;
 
-    await chatService.deleteMessage(messageId, squadId);
+    await chatService.deleteMessage(messageId, squadId,
+        chatType: ChatType.squad);
   }
 
   void updatePreferredMode(String user, String? mode) {

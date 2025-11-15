@@ -6,6 +6,8 @@ import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../../squad_state.dart';
 import '../../managers/game_manager.dart';
 import '../../utils.dart';
+import '../../services/ai_service.dart';
+import '../chat_screen.dart';
 
 /// Unified dialog for all group-related actions: join, create, and browse public groups
 class GroupActionsDialog extends StatefulWidget {
@@ -386,6 +388,17 @@ class _JoinGroupTabState extends State<_JoinGroupTab> {
 
       if (mounted) {
         showSnackBar(context, 'Successfully joined group!');
+        // Close the dialog and navigate to the chat screen
+        Navigator.of(context).pop();
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatType: ChatType.userGroup,
+              chatGroupId: groupId,
+              chatGroupName: groupData['name'] ?? 'Unnamed Group',
+            ),
+          ),
+        );
         // Refresh search results and suggested groups
         _searchGroups(_searchController.text);
         _loadSuggestedGroups();

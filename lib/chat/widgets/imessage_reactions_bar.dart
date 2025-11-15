@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../services/reaction_service.dart';
 import '../../services/ai_service.dart';
 
@@ -212,69 +211,60 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
   }
 
   Widget _buildReactionsPill(double width) {
-    return Material(
-      elevation: 15, // High elevation to ensure it's above message bubbles
-      shadowColor: Colors.black.withValues(alpha: 0.4),
-      child: Container(
-        width: width,
-        height: 56,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 20,
-              spreadRadius: 2,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.7),
-              child: Row(
-                children: [
-                  // Horizontal scrollable emoji list
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount:
-                          _commonEmojis.length + 1, // +1 for the smiley at end
-                      itemBuilder: (context, index) {
-                        if (index == _commonEmojis.length) {
-                          // Grey smiley at the end
-                          return _buildEmojiButton(
-                            '😊',
-                            isGreyedOut: true,
-                            onTap: _openEmojiPicker,
-                          );
-                        }
-
-                        final emoji = _commonEmojis[index];
+    return Container(
+      width: width,
+      height: 56,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 20,
+            spreadRadius: 2,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.7),
+            child: Row(
+              children: [
+                // Horizontal scrollable emoji list
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount:
+                        _commonEmojis.length + 1, // +1 for the smiley at end
+                    itemBuilder: (context, index) {
+                      if (index == _commonEmojis.length) {
+                        // Grey smiley at the end
                         return _buildEmojiButton(
-                          emoji,
-                          onTap: () => _addReaction(emoji),
+                          '😊',
+                          isGreyedOut: true,
+                          onTap: _openEmojiPicker,
                         );
-                      },
-                    ),
+                      }
+
+                      final emoji = _commonEmojis[index];
+                      return _buildEmojiButton(
+                        emoji,
+                        onTap: () => _addReaction(emoji),
+                      );
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
       ),
-    ).animate().slideY(
-          duration: const Duration(milliseconds: 300),
-          begin: -0.2,
-          end: 0.0,
-          curve: Curves.easeOutBack,
-        );
+    );
   }
 
   Widget _buildEmojiButton(
@@ -311,36 +301,32 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
   }
 
   Widget _buildConnector() {
-    return Material(
-      elevation: 15, // High elevation to ensure it's above message bubbles
-      shadowColor: Colors.black.withValues(alpha: 0.4),
-      child: Container(
-        width: 32, // Circle size
-        height: 32, // Circle size - now a full circle
-        decoration: BoxDecoration(
-          borderRadius:
-              BorderRadius.circular(16), // Half of size for perfect circle
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 20,
-              spreadRadius: 2,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.7),
-              child: Center(
-                child: Icon(
-                  Icons.tag_faces, // Material Design smiley face icon
-                  size: 16, // Larger icon for the bigger circle
-                  color: const Color(0xFF666666), // Grey color
-                ),
+    return Container(
+      width: 32, // Circle size
+      height: 32, // Circle size - now a full circle
+      decoration: BoxDecoration(
+        borderRadius:
+            BorderRadius.circular(16), // Half of size for perfect circle
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 20,
+            spreadRadius: 2,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.7),
+            child: Center(
+              child: Icon(
+                Icons.tag_faces, // Material Design smiley face icon
+                size: 16, // Larger icon for the bigger circle
+                color: const Color(0xFF666666), // Grey color
               ),
             ),
           ),

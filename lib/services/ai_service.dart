@@ -186,7 +186,7 @@ Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
           .toList();
 
       return lines
-          .where((line) => line.length > 0 && line.length < 50)
+          .where((line) => line.isNotEmpty && line.length < 50)
           .toList();
     } catch (e) {
       print('Error generating poll options: $e');
@@ -196,4 +196,4 @@ Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
 }
 
 /// Enum for chat types (moved here for AiService usage)
-enum ChatType { dm, userGroup }
+enum ChatType { dm, userGroup, squad }

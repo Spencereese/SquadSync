@@ -12,7 +12,6 @@ import 'widgets/message_content.dart';
 import 'widgets/message_reactions.dart';
 import 'widgets/message_avatar.dart';
 import 'widgets/message_sender.dart';
-import 'widgets/message_timestamp.dart';
 import 'widgets/imessage_reactions_bar.dart';
 
 /// Refactored MessageBubble using decomposed components
@@ -29,6 +28,7 @@ class MessageBubble extends StatefulWidget {
   final Map<String, bool> sendingStatus;
   final String? chatGroupId;
   final ChatType chatType;
+  final ChatService? chatService; // Add optional ChatService parameter
 
   const MessageBubble({
     super.key,
@@ -43,6 +43,7 @@ class MessageBubble extends StatefulWidget {
     required this.sendingStatus,
     this.chatGroupId,
     required this.chatType,
+    this.chatService, // Optional parameter
   });
 
   @override
@@ -53,12 +54,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   late MessageData _messageData;
   bool _isGrokExpanded = false; // Track if Grok message is expanded
   final GlobalKey _messageKey = GlobalKey();
-  bool _shouldFloatUp = false; // Track if message should float up for menu
   bool _isPressed = false; // Track if message is being pressed for animation
-
-  // Swipe to show timestamps
-  double _swipeOffset = 0.0; // Current swipe offset
-  bool _isSwiping = false; // Track if currently swiping
 
   // Overlay references for dismissal
   OverlayEntry? _reactionsOverlay;
@@ -103,9 +99,6 @@ class _MessageBubbleState extends State<MessageBubble> {
         crossAxisAlignment:
             widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          if (widget.showTimestamp &&
-              _messageData.timestamp != DateTime.fromMillisecondsSinceEpoch(0))
-            MessageTimestamp(timestamp: _messageData.timestamp),
           Row(
             mainAxisAlignment:
                 widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -161,9 +154,6 @@ class _MessageBubbleState extends State<MessageBubble> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Column(
         children: [
-          if (widget.showTimestamp &&
-              _messageData.timestamp != DateTime.fromMillisecondsSinceEpoch(0))
-            MessageTimestamp(timestamp: _messageData.timestamp),
           // HAL-like collapsed state initially
           Center(
             child: AnimatedSwitcher(
@@ -342,28 +332,6 @@ class _MessageBubbleState extends State<MessageBubble> {
           _isPressed = false;
         });
       },
-      onHorizontalDragStart: (details) {
-        // Dismiss keyboard on swipe start
-        FocusScope.of(context).unfocus();
-        setState(() {
-          _isSwiping = true;
-        });
-      },
-      onHorizontalDragUpdate: (details) {
-        // Only allow swiping left (negative delta) to reveal timestamps
-        if (details.delta.dx < 0) {
-          setState(() {
-            _swipeOffset = (_swipeOffset + details.delta.dx).clamp(-100.0, 0.0);
-          });
-        }
-      },
-      onHorizontalDragEnd: (details) {
-        setState(() {
-          _isSwiping = false;
-          // Animate back to original position
-          _swipeOffset = 0.0;
-        });
-      },
       onLongPress: () {
         // Dismiss keyboard on long press
         FocusScope.of(context).unfocus();
@@ -377,7 +345,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
         // Calculate floating offset early
-        final menuSpacing = 8.0; // Small gap below message bubble
+        final menuSpacing = 4.0; // Small gap below message bubble
         final menuTop = messagePosition.dy + messageSize.height + menuSpacing;
         final menuHeight = 200.0;
         final availableHeight = screenSize.height - keyboardHeight - 20;
@@ -415,6 +383,13 @@ class _MessageBubbleState extends State<MessageBubble> {
         _menuOverlay = menuOverlay = OverlayEntry(
           builder: (context) => Stack(
             children: [
+              // Full-screen background to dismiss menu when tapped
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: _dismissOverlays,
+                  behavior: HitTestBehavior.translucent,
+                ),
+              ),
               // Menu - no background blur needed
               Positioned(
                 top: finalMenuTop.clamp(10, availableHeight - 220),
@@ -447,11 +422,6 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
         );
 
-        // Float message bubble up if menu is above
-        setState(() {
-          _shouldFloatUp = shouldFlipMenu;
-        });
-
         // Insert overlays in correct order (reactions first, then menu on top)
         Overlay.of(context).insert(reactionsOverlay);
         Overlay.of(context).insert(menuOverlay);
@@ -459,57 +429,16 @@ class _MessageBubbleState extends State<MessageBubble> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Timestamp overlay (revealed when swiping left)
-          if (_swipeOffset < 0)
-            Positioned(
-              right: 16 +
-                  _swipeOffset
-                      .abs(), // Position on the right, revealed as we swipe
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: Opacity(
-                  opacity: (_swipeOffset / -100.0)
-                      .clamp(0.0, 1.0), // Fade in as we swipe
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        width: 1,
-                      ),
-                    ),
-                    child: Text(
-                      _formatTimestamp(_messageData.timestamp),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
           // Main message container with swipe animation
           AnimatedContainer(
             key: _messageKey,
-            duration:
-                _isSwiping ? Duration.zero : const Duration(milliseconds: 150),
+            duration: const Duration(milliseconds: 150),
             margin: const EdgeInsets.symmetric(vertical: 2.0),
             padding: _getMessagePadding(),
             constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.7,
-              minWidth: 60,
             ),
             decoration: _getMessageDecoration(),
-            transform: Matrix4.identity()
-              ..setTranslationRaw(
-                  _swipeOffset, _shouldFloatUp ? -220.0 : 0.0, 0.0),
             child: Semantics(
               label: 'Message from ${_messageData.sender}',
               child: IntrinsicWidth(
@@ -531,7 +460,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                 padding: _getMessagePadding(),
                 constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width * 0.7,
-                  minWidth: 60,
                 ),
                 decoration: _getMessageDecoration().copyWith(
                   boxShadow: [
@@ -543,9 +471,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ),
                   ],
                 ),
-                transform: Matrix4.diagonal3Values(1.05, 1.05, 1.0)
-                  ..setTranslationRaw(
-                      _swipeOffset, _shouldFloatUp ? -220.0 : 0.0, 0.0),
                 child: Semantics(
                   label: 'Message from ${_messageData.sender}',
                   child: IntrinsicWidth(
@@ -634,6 +559,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         icon: Icons.edit,
                         label: 'Edit',
                         onTap: () async {
+                          _dismissOverlays(); // Dismiss menu before showing dialog
                           final TextEditingController editController =
                               TextEditingController(text: _messageData.text);
                           final result = await showDialog<String>(
@@ -681,7 +607,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                               }
                             }
                           }
-                          _dismissOverlays();
                         },
                       ),
                       _buildDivider(),
@@ -690,6 +615,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         label: 'Delete',
                         color: Colors.red,
                         onTap: () async {
+                          _dismissOverlays(); // Dismiss menu before showing dialog
                           final confirm = await showDialog<bool>(
                             context: context,
                             builder: (context) => AlertDialog(
@@ -714,16 +640,25 @@ class _MessageBubbleState extends State<MessageBubble> {
                           );
                           if (confirm == true && context.mounted) {
                             try {
+                              // Use the provided chatService or try to get from Provider
+                              final chatService = widget.chatService ??
+                                  Provider.of<ChatService>(context,
+                                      listen: false);
                               final squadState = Provider.of<SquadState>(
                                   context,
                                   listen: false);
-                              await squadState.deleteMessage(_messageData.id);
-                              _dismissOverlays();
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text('Message deleted')),
-                                );
+                              final squadId = squadState.selectedSquadId;
+                              if (squadId != null) {
+                                await chatService.deleteMessage(
+                                    _messageData.id, squadId,
+                                    chatGroupId: widget.chatGroupId,
+                                    chatType: widget.chatType);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text('Message deleted')),
+                                  );
+                                }
                               }
                             } catch (e) {
                               if (context.mounted) {
@@ -751,8 +686,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                       onTap: () async {
                         final messenger = ScaffoldMessenger.of(context);
                         try {
-                          // Get chat service from provider
-                          final chatService =
+                          // Use the provided chatService or try to get from Provider
+                          final chatService = widget.chatService ??
                               Provider.of<ChatService>(context, listen: false);
                           await chatService.bumpMessage(
                             _messageData.id,
@@ -955,31 +890,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     // Clear references
     _reactionsOverlay = null;
     _menuOverlay = null;
-
-    // Reset floating state when overlays are dismissed
-    setState(() {
-      _shouldFloatUp = false;
-    });
-  }
-
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final difference = now.difference(timestamp);
-
-    if (difference.inDays == 0) {
-      // Today - show time only
-      return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-    } else if (difference.inDays == 1) {
-      // Yesterday
-      return 'Yesterday ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-    } else if (difference.inDays < 7) {
-      // This week - show day and time
-      final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return '${weekdays[timestamp.weekday - 1]} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-    } else {
-      // Older - show date and time
-      return '${timestamp.month.toString().padLeft(2, '0')}/${timestamp.day.toString().padLeft(2, '0')} ${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-    }
   }
 
   BoxDecoration _getMessageDecoration() {

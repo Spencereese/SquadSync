@@ -319,9 +319,9 @@ class ChatService {
   }
 
   Future<void> deleteMessage(String messageId, String squadId,
-      {String? chatGroupId}) async {
+      {String? chatGroupId, required ChatType chatType}) async {
     return _messageService.deleteMessage(messageId, squadId,
-        chatGroupId: chatGroupId);
+        chatGroupId: chatGroupId, chatType: chatType);
   }
 
   Future<void> pinMessage(

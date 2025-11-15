@@ -25,6 +25,7 @@ class MessageData {
   final bool isBumped;
   final String? originalId;
   final String? bumpedBy;
+  bool shouldShowTimestamp;
 
   MessageData({
     required this.id,
@@ -50,6 +51,7 @@ class MessageData {
     this.isBumped = false,
     this.originalId,
     this.bumpedBy,
+    this.shouldShowTimestamp = false,
   }) : timestamp = timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Factory constructor to create MessageData from Firestore DocumentSnapshot
@@ -100,6 +102,7 @@ class MessageData {
       isBumped: data['isBumped'] ?? false,
       originalId: data['originalId'],
       bumpedBy: data['bumpedBy'],
+      shouldShowTimestamp: false, // Will be set by message processing logic
     );
   }
 
@@ -144,6 +147,7 @@ class MessageData {
       isBumped: data['isBumped'] ?? false,
       originalId: data['originalId'],
       bumpedBy: data['bumpedBy'],
+      shouldShowTimestamp: false, // Will be set by message processing logic
     );
   }
 

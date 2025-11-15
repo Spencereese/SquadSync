@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_code_scanner/qr_code_scanner.dart';
 import '../../utils.dart';
+import '../../services/ai_service.dart';
+import '../chat_screen.dart';
 
 /// Enhanced dialog for joining groups via codes, links, or QR scanning
 class JoinGroupDialog extends StatefulWidget {
@@ -196,6 +198,16 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
       if (mounted) {
         showSnackBar(context, 'Successfully joined ${groupData['name']}!');
         Navigator.pop(context);
+        // Navigate to the chat screen
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatType: ChatType.userGroup,
+              chatGroupId: groupId,
+              chatGroupName: groupData['name'] ?? 'Unnamed Group',
+            ),
+          ),
+        );
       }
     } catch (e) {
       debugPrint('Error joining group: $e');

@@ -182,6 +182,7 @@ class _PinnedMessagesScreenState extends State<PinnedMessagesScreen> {
                 sendingStatus: const {},
                 chatGroupId: widget.chatGroupId,
                 chatType: widget.chatType,
+                chatService: _chatService,
               ),
             ],
           ),

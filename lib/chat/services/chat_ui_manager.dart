@@ -12,7 +12,6 @@ import '../message_bubble.dart';
 import '../models/message_data.dart';
 import '../models/message_group_data.dart';
 import '../widgets/message_group.dart';
-import '../thread_screen.dart';
 import 'chat_scroll_controller.dart';
 
 /// Service responsible for coordinating UI state and building complex UI components
@@ -465,25 +464,6 @@ class ChatUIManager {
                                     sendingStatus: {}, // TODO: Pass appropriate sending status
                                     chatGroupId: chatGroupId,
                                     chatType: chatType,
-                                    onViewThread: () {
-                                      // Navigate to thread view
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => ThreadScreen(
-                                            chatGroupId: chatGroupId ?? '',
-                                            currentUserId:
-                                                _auth.currentUser?.uid ?? '',
-                                            currentUserName:
-                                                _userDisplayNameCache[_auth
-                                                            .currentUser?.uid ??
-                                                        ''] ??
-                                                    'Unknown',
-                                            chatType: chatType,
-                                          ),
-                                        ),
-                                      );
-                                    },
                                     chatService: _chatService,
                                   ),
                                 ),
@@ -647,45 +627,18 @@ class ChatUIManager {
       lastTimestamp = message.timestamp;
     }
 
-    // Group messages by reply relationships
-    final Map<String, MessageData> parentMessages = {};
-    final Map<String, List<MessageData>> repliesByParent = {};
+    // Create message groups (simplified - no thread grouping)
+    final List<MessageGroupData> messageGroups = [];
 
     for (final message in messageDataList) {
-      if (message.replyTo != null) {
-        // This is a reply
-        repliesByParent.putIfAbsent(message.replyTo!, () => []).add(message);
-      } else {
-        // This is a parent message
-        parentMessages[message.id] = message;
-      }
+      // Each message is its own group with no replies
+      messageGroups.add(MessageGroupData(
+        parentMessage: message,
+        replies: [],
+      ));
     }
 
-    // Create message groups
-    final List<MessageGroupData> messageGroups = [];
-    final Set<String> processedMessageIds = {};
-
-    // Process parent messages and their replies
-    for (final parentMessage in messageDataList) {
-      if (processedMessageIds.contains(parentMessage.id)) continue;
-
-      if (parentMessage.replyTo == null) {
-        // This is a parent message
-        final replies = repliesByParent[parentMessage.id] ?? [];
-        messageGroups.add(MessageGroupData(
-          parentMessage: parentMessage,
-          replies: replies..sort((a, b) => a.timestamp.compareTo(b.timestamp)),
-        ));
-
-        // Mark all messages in this group as processed
-        processedMessageIds.add(parentMessage.id);
-        for (final reply in replies) {
-          processedMessageIds.add(reply.id);
-        }
-      }
-    }
-
-    // Sort message groups by timestamp (most recent first for reverse list)
+    // Sort messages by timestamp (most recent first for reverse list)
     messageGroups.sort((a, b) =>
         b.parentMessage.timestamp.compareTo(a.parentMessage.timestamp));
 
@@ -780,25 +733,6 @@ class ChatUIManager {
                 ),
 
                 if (chatGroupId != null) ...[
-                  _buildMenuOption(
-                    icon: Icons.message,
-                    title: 'View Threads',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ThreadScreen(
-                            chatGroupId: chatGroupId,
-                            currentUserId: _auth.currentUser?.uid ?? '',
-                            currentUserName:
-                                squadState.displayName ?? 'Unknown',
-                            chatType: ChatType.userGroup,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
                   _buildMenuOption(
                     icon: Icons.person_add,
                     title: 'Invite Members',

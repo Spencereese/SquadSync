@@ -19,7 +19,6 @@ class MessageGroup extends StatefulWidget {
   final Map<String, bool> sendingStatus;
   final String? chatGroupId;
   final ChatType chatType;
-  final VoidCallback? onViewThread;
   final ChatService? chatService;
 
   const MessageGroup({
@@ -36,7 +35,6 @@ class MessageGroup extends StatefulWidget {
     required this.sendingStatus,
     this.chatGroupId,
     required this.chatType,
-    this.onViewThread,
     this.chatService,
   });
 
@@ -45,8 +43,6 @@ class MessageGroup extends StatefulWidget {
 }
 
 class _MessageGroupState extends State<MessageGroup> {
-  bool _isExpanded = true;
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -96,31 +92,8 @@ class _MessageGroupState extends State<MessageGroup> {
           chatService: widget.chatService,
         ),
 
-        // Reply count label (if there are replies)
+        // Replies (if any)
         if (widget.replies.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(left: 60, top: 4, bottom: 4),
-            child: GestureDetector(
-              onTap: widget.onViewThread ??
-                  () {
-                    setState(() {
-                      _isExpanded = !_isExpanded;
-                    });
-                  },
-              child: Text(
-                '${widget.replies.length} ${widget.replies.length == 1 ? 'Reply' : 'Replies'}',
-                style: TextStyle(
-                  color: Colors.blue[400],
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-        ],
-
-        // Replies (if expanded)
-        if (_isExpanded && widget.replies.isNotEmpty) ...[
           ...widget.replies.asMap().entries.map((entry) {
             final index = entry.key;
             final reply = entry.value;

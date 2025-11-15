@@ -37,7 +37,7 @@ class MessageReactions extends StatelessWidget {
 
     return Container(
       margin: EdgeInsets.only(
-        bottom: 4,
+        bottom: 8,
         left: isOutgoing ? 8 : 0,
         right: isOutgoing ? 0 : 8,
       ),
@@ -64,12 +64,12 @@ class MessageReactions extends StatelessWidget {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark
               ? Colors.grey[800]!.withValues(alpha: 0.9)
               : Colors.grey[200]!.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: Theme.of(context).brightness == Brightness.dark
                 ? Colors.grey[600]!.withValues(alpha: 0.3)

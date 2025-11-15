@@ -14,17 +14,17 @@ class MessageData {
   final bool delivered;
   final bool read;
   final List<Map<String, dynamic>> reactions;
-  final String? replyTo;
   final String? pollId;
   final bool isAiResponse;
   final bool pinned;
   final MessageType type;
   final MessageStatus status;
-  final String? threadId;
-  final int threadDepth;
   final bool isBumped;
   final String? originalId;
   final String? bumpedBy;
+  final bool edited;
+  final DateTime? editedAt;
+  final String? replyTo;
   bool shouldShowTimestamp;
 
   MessageData({
@@ -40,17 +40,17 @@ class MessageData {
     this.delivered = false,
     this.read = false,
     this.reactions = const [],
-    this.replyTo,
     this.pollId,
     this.isAiResponse = false,
     this.pinned = false,
     this.type = MessageType.text,
     this.status = MessageStatus.sent,
-    this.threadId,
-    this.threadDepth = 0,
     this.isBumped = false,
     this.originalId,
     this.bumpedBy,
+    this.edited = false,
+    this.editedAt,
+    this.replyTo,
     this.shouldShowTimestamp = false,
   }) : timestamp = timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -93,15 +93,17 @@ class MessageData {
               ?.whereType<Map<String, dynamic>>()
               .toList() ??
           [],
-      replyTo: data['replyTo'] ?? data['reply_to'],
       pollId: data['pollId'],
       isAiResponse: isAiResponse,
       pinned: data['pinned'] ?? false,
-      threadId: data['threadId'],
-      threadDepth: data['threadDepth'] ?? 0,
       isBumped: data['isBumped'] ?? false,
       originalId: data['originalId'],
       bumpedBy: data['bumpedBy'],
+      edited: data['edited'] ?? false,
+      editedAt: data['editedAt'] is Timestamp
+          ? (data['editedAt'] as Timestamp).toDate()
+          : null,
+      replyTo: data['replyTo'],
       shouldShowTimestamp: false, // Will be set by message processing logic
     );
   }
@@ -138,15 +140,17 @@ class MessageData {
               ?.whereType<Map<String, dynamic>>()
               .toList() ??
           [],
-      replyTo: data['replyTo'] ?? data['reply_to'],
       pollId: data['pollId'],
       isAiResponse: isAiResponse,
       pinned: data['pinned'] ?? false,
-      threadId: data['threadId'],
-      threadDepth: data['threadDepth'] is int ? data['threadDepth'] : 0,
       isBumped: data['isBumped'] ?? false,
       originalId: data['originalId'],
       bumpedBy: data['bumpedBy'],
+      edited: data['edited'] ?? false,
+      editedAt: data['editedAt'] is Timestamp
+          ? (data['editedAt'] as Timestamp).toDate()
+          : null,
+      replyTo: data['replyTo'],
       shouldShowTimestamp: false, // Will be set by message processing logic
     );
   }
@@ -177,14 +181,14 @@ class MessageData {
       'delivered': delivered,
       'read': read,
       'reactions': reactions,
-      'replyTo': replyTo,
       'pollId': pollId,
       'isAiResponse': isAiResponse,
-      'threadId': threadId,
-      'threadDepth': threadDepth,
       'isBumped': isBumped,
       'originalId': originalId,
       'bumpedBy': bumpedBy,
+      'edited': edited,
+      'editedAt': editedAt?.millisecondsSinceEpoch,
+      'replyTo': replyTo,
     };
   }
 }

@@ -9,6 +9,7 @@ import '../services/ai_service.dart';
 import '../services/media_service.dart';
 import '../services/message_service.dart';
 import 'package:flutter/material.dart';
+import 'models/message_data.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -167,8 +168,8 @@ class ChatService {
     List<Map<String, dynamic>> videos = const [],
     List<Map<String, dynamic>> audio = const [],
     List<Map<String, dynamic>> reactions = const [],
-    String? replyTo,
     String? pollId,
+    String? replyTo,
     String? chatGroupId,
     required ChatType chatType,
   }) async {
@@ -183,8 +184,8 @@ class ChatService {
       videos: videos,
       audio: audio,
       reactions: reactions,
-      replyTo: replyTo,
       pollId: pollId,
+      replyTo: replyTo,
       chatGroupId: chatGroupId,
       chatType: chatType,
     );
@@ -324,6 +325,12 @@ class ChatService {
         chatGroupId: chatGroupId, chatType: chatType);
   }
 
+  Future<void> editMessage(String messageId, String newText, String squadId,
+      {String? chatGroupId, required ChatType chatType}) async {
+    return _messageService.editMessage(messageId, newText, squadId,
+        chatGroupId: chatGroupId, chatType: chatType);
+  }
+
   Future<void> pinMessage(
       String messageId, String? chatGroupId, ChatType chatType) async {
     String collectionPath;
@@ -395,5 +402,23 @@ class ChatService {
 
     // TODO: Send notification to other users in the chat about the bumped message
     // This could be implemented by creating a system message or using push notifications
+  }
+
+  /// Get a single message by ID for reply previews
+  Future<MessageData?> getMessageById(String messageId,
+      {String? chatGroupId}) async {
+    try {
+      final collectionPath =
+          chatGroupId != null ? 'chat_groups/$chatGroupId/messages' : 'chat';
+      final doc =
+          await _firestore.collection(collectionPath).doc(messageId).get();
+
+      if (!doc.exists) return null;
+
+      return MessageData.fromDocument(doc);
+    } catch (e) {
+      debugPrint('Error getting message by ID: $e');
+      return null;
+    }
   }
 }

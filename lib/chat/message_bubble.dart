@@ -125,7 +125,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         if (_messageData.reactions.isNotEmpty)
                           Positioned(
                             bottom:
-                                -12, // Position so 75% of reaction pill is on message bubble (25% visible)
+                                -20, // Position lower so reactions appear more overlapped with message bubble
                             right: widget.isMe ? -4 : null,
                             left: widget.isMe ? null : -4,
                             child: MessageReactions(
@@ -446,6 +446,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   message: _messageData,
                   isFromCurrentUser: widget.isMe,
                   chatGroupId: widget.chatGroupId,
+                  chatService: widget.chatService,
                 ),
               ),
             ),
@@ -478,6 +479,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                       message: _messageData,
                       isFromCurrentUser: widget.isMe,
                       chatGroupId: widget.chatGroupId,
+                      chatService: widget.chatService,
                     ),
                   ),
                 ),
@@ -594,9 +596,26 @@ class _MessageBubbleState extends State<MessageBubble> {
                               result != _messageData.text &&
                               context.mounted) {
                             try {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Message edited')),
-                              );
+                              // Use the provided chatService or try to get from Provider
+                              final chatService = widget.chatService ??
+                                  Provider.of<ChatService>(context,
+                                      listen: false);
+                              final squadState = Provider.of<SquadState>(
+                                  context,
+                                  listen: false);
+                              final squadId = squadState.selectedSquadId;
+                              if (squadId != null) {
+                                await chatService.editMessage(
+                                    _messageData.id, result, squadId,
+                                    chatGroupId: widget.chatGroupId,
+                                    chatType: widget.chatType);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text('Message edited')),
+                                  );
+                                }
+                              }
                             } catch (e) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(

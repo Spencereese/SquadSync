@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../link_preview.dart';
 import '../widgets/video_message.dart';
 import '../widgets/audio_message.dart';
@@ -9,6 +8,9 @@ import '../poll_message_bubble.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
 import '../models/message_data.dart';
+import '../../services/ai_service.dart';
+import '../chat_service.dart';
+import '../message_bubble.dart';
 
 /// Message content renderer - handles text, media, and special formatting
 class MessageContent extends StatelessWidget {
@@ -16,6 +18,7 @@ class MessageContent extends StatelessWidget {
   final bool isFromCurrentUser;
   final VoidCallback? onMediaTap;
   final String? chatGroupId;
+  final ChatService? chatService;
 
   const MessageContent({
     super.key,
@@ -23,6 +26,7 @@ class MessageContent extends StatelessWidget {
     required this.isFromCurrentUser,
     this.onMediaTap,
     this.chatGroupId,
+    this.chatService,
   });
 
   @override
@@ -44,8 +48,89 @@ class MessageContent extends StatelessWidget {
       crossAxisAlignment:
           isFromCurrentUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
-        // Add reply indicator if this is a reply
-        if (message.replyTo != null) _buildReplyIndicator(),
+        if (message.replyTo?.isNotEmpty == true)
+          FutureBuilder<MessageData?>(
+            future: chatService?.getMessageById(message.replyTo!,
+                chatGroupId: chatGroupId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8.0),
+                  padding: const EdgeInsets.all(8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8.0),
+                    border: Border(
+                      left: BorderSide(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                        width: 3.0,
+                      ),
+                    ),
+                  ),
+                  child: const Text(
+                    'Loading reply...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                );
+              }
+
+              final repliedMessage = snapshot.data;
+              if (repliedMessage == null) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8.0),
+                  padding: const EdgeInsets.all(8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8.0),
+                    border: Border(
+                      left: BorderSide(
+                        color: Colors.red.withValues(alpha: 0.3),
+                        width: 3.0,
+                      ),
+                    ),
+                  ),
+                  child: const Text(
+                    'Original message not found',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.red,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                );
+              }
+
+              // Determine if the replied message is from the current user
+              final currentUserUid =
+                  FirebaseAuth.instance.currentUser?.uid ?? '';
+              final isRepliedMessageFromMe =
+                  repliedMessage.senderUid == currentUserUid;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8.0),
+                child: MessageBubble(
+                  message: repliedMessage,
+                  isMe: isRepliedMessageFromMe,
+                  showSender: !isRepliedMessageFromMe,
+                  showAvatar: !isRepliedMessageFromMe,
+                  showTimestamp: true,
+                  showReadIndicator: false,
+                  onTap: () {
+                    // TODO: Implement scroll to message
+                  },
+                  onLongPress: () {},
+                  sendingStatus: const {}, // Not applicable for quoted messages
+                  chatGroupId: chatGroupId,
+                  chatType: ChatType.squad, // Default to squad
+                  chatService: chatService,
+                ),
+              );
+            },
+          ),
         if (message.text.isNotEmpty) _buildTextContent(context),
         if (message.photos.isNotEmpty) _buildImageContent(context),
         if (message.videoUrl?.isNotEmpty == true) _buildVideoContent(),
@@ -82,93 +167,6 @@ class MessageContent extends StatelessWidget {
         );
       },
     );
-  }
-
-  Widget _buildReplyIndicator() {
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: _fetchRepliedMessage(),
-      builder: (context, snapshot) {
-        final sender = snapshot.data?['sender'] ?? 'Unknown';
-        final text = snapshot.data?['text'] ??
-            snapshot.data?['content'] ??
-            'Message not found';
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 4.0),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.blue.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border(
-              left: BorderSide(
-                color: Colors.blue.withValues(alpha: 0.3),
-                width: 3,
-              ),
-              right: BorderSide.none,
-              top: BorderSide.none,
-              bottom: BorderSide.none,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.reply, size: 14, color: Colors.blue),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Replying to $sender',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue[200],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      text,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.8),
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<Map<String, dynamic>?> _fetchRepliedMessage() async {
-    if (message.replyTo == null || chatGroupId == null) return null;
-
-    try {
-      // Determine the collection path based on chat type
-      String collectionPath;
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) return null;
-
-      // For now, assume user group chats - this could be made more generic
-      collectionPath = 'users/$userId/chat_groups/$chatGroupId/messages';
-
-      final doc = await FirebaseFirestore.instance
-          .collection(collectionPath)
-          .doc(message.replyTo!)
-          .get();
-
-      if (doc.exists) {
-        return doc.data();
-      }
-    } catch (e) {
-      debugPrint('Error fetching replied message: $e');
-    }
-    return null;
   }
 
   Widget _buildTextContent(BuildContext context) {

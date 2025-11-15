@@ -8,8 +8,6 @@ import 'dart:io';
 import 'dart:async';
 import '../squad_state.dart';
 import '../services/ai_service.dart';
-import '../chat/services/thread_service.dart';
-import '../chat/models/thread_data.dart';
 import '../chat/sqlite_helper.dart';
 
 /// Result of a message send operation
@@ -63,8 +61,8 @@ class MessageService {
     List<Map<String, dynamic>> videos = const [],
     List<Map<String, dynamic>> audio = const [],
     List<Map<String, dynamic>> reactions = const [],
-    String? replyTo,
     String? pollId,
+    String? replyTo,
     String? chatGroupId,
     required ChatType chatType,
   }) async {
@@ -104,8 +102,8 @@ class MessageService {
       'videos': videos,
       'audio': audio,
       'reactions': reactions,
-      'reply_to': replyTo,
       'pollId': pollId,
+      'replyTo': replyTo,
       'delivered': false,
       'read': false,
       'timestamp': FieldValue.serverTimestamp(),
@@ -155,12 +153,6 @@ class MessageService {
       await _retryOperation(() async {
         await _firestore.collection(collectionPath).doc(msgId).set(messageData);
       });
-
-      // Handle thread creation/joining for replies
-      if (replyTo != null) {
-        await _handleReplyThread(
-            replyTo, msgId, senderUid, chatGroupId, chatType);
-      }
 
       // Update group metadata if this is a group chat (not for squad chats since squads ARE the chat groups)
       if (chatGroupId != null) {
@@ -256,6 +248,42 @@ class MessageService {
       await _firestore.collection(collectionPath).doc(messageId).delete();
     } catch (e) {
       debugPrint('Error deleting message: $e');
+    }
+  }
+
+  // Edit a message
+  Future<void> editMessage(String messageId, String newText, String squadId,
+      {String? chatGroupId, required ChatType chatType}) async {
+    try {
+      final isUserGroup = chatType == ChatType.userGroup;
+      final isDM = chatType == ChatType.dm;
+      final isSquad = chatType == ChatType.squad;
+
+      // Determine collection path based on chat type (same logic as sendMessage)
+      String collectionPath;
+      if (isUserGroup) {
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser == null) return;
+        collectionPath =
+            'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
+      } else if (isDM) {
+        collectionPath = 'chats/$chatGroupId/messages';
+      } else if (isSquad) {
+        // Squad chats: each squad IS the chat group
+        collectionPath = 'squads/$squadId/messages';
+      } else {
+        // Fallback for backward compatibility
+        collectionPath = 'squads/$squadId/messages';
+      }
+
+      await _firestore.collection(collectionPath).doc(messageId).update({
+        'text': newText,
+        'edited': true,
+        'editedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Error editing message: $e');
+      rethrow;
     }
   }
 
@@ -529,88 +557,6 @@ class MessageService {
       return 'Network connection error. Please check your internet connection';
     } else {
       return 'An unexpected error occurred. Please try again';
-    }
-  }
-
-  // Handle thread creation/joining when replying to a message
-  Future<void> _handleReplyThread(String replyToMessageId, String newMessageId,
-      String senderUid, String? chatGroupId, ChatType chatType) async {
-    try {
-      // Import the thread service here to avoid circular imports
-      final threadService = ThreadService();
-
-      // Check if a thread already exists for this root message
-      ThreadData? existingThread =
-          await threadService.getThreadByRootMessageId(replyToMessageId);
-
-      String threadId;
-      if (existingThread != null) {
-        // Thread already exists, use it
-        threadId = existingThread.id;
-      } else {
-        // Create a new thread for this message
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) return;
-
-        // Get the root message to extract title/sender info
-        String threadTitle = 'Thread';
-        String creatorName = 'Unknown';
-
-        try {
-          // Try to get the root message data for better thread title
-          String rootCollectionPath;
-          if (chatType == ChatType.userGroup) {
-            rootCollectionPath =
-                'users/${user.uid}/chat_groups/$chatGroupId/messages';
-          } else if (chatType == ChatType.dm) {
-            rootCollectionPath = 'chats/$chatGroupId/messages';
-          } else {
-            // For squad chats, we need the squadId - this might need adjustment
-            return; // Skip thread creation for squad chats for now
-          }
-
-          final rootMessageDoc = await _firestore
-              .collection(rootCollectionPath)
-              .doc(replyToMessageId)
-              .get();
-          if (rootMessageDoc.exists) {
-            final rootMessageData = rootMessageDoc.data();
-            final rootText = rootMessageData?['text'] as String? ?? '';
-            creatorName = rootMessageData?['sender'] as String? ?? 'Unknown';
-
-            // Create a meaningful thread title from the root message
-            threadTitle = rootText.length > 50
-                ? '${rootText.substring(0, 50)}...'
-                : rootText.isNotEmpty
-                    ? rootText
-                    : 'Thread';
-          }
-        } catch (e) {
-          // If we can't get the root message, use default title
-          debugPrint('Could not get root message for thread title: $e');
-        }
-
-        threadId = await threadService.createThread(
-          rootMessageId: replyToMessageId,
-          chatGroupId: chatGroupId ?? '',
-          creatorUid: user.uid,
-          creatorName: creatorName,
-          title: threadTitle,
-          type: ThreadType.reply,
-        );
-      }
-
-      // Add the new message to the thread
-      await threadService.addMessageToThread(
-        threadId: threadId,
-        messageId: newMessageId,
-        senderUid: senderUid,
-        depth: 1, // First level reply
-        parentMessageId: replyToMessageId,
-      );
-    } catch (e) {
-      debugPrint('Error handling reply thread: $e');
-      // Don't fail the message send if thread creation fails
     }
   }
 

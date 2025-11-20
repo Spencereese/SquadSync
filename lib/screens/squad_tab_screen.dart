@@ -45,10 +45,12 @@ class _SquadTabScreenContent extends ConsumerStatefulWidget {
       {this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
-  ConsumerState<_SquadTabScreenContent> createState() => _SquadTabScreenContentState();
+  ConsumerState<_SquadTabScreenContent> createState() =>
+      _SquadTabScreenContentState();
 }
 
-class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> {
+class _SquadTabScreenContentState
+    extends ConsumerState<_SquadTabScreenContent> {
   late PageController _pageController;
   double _currentPage = 0.0;
   bool _hasActiveLobbies = false;
@@ -137,7 +139,8 @@ class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> 
     );
   }
 
-  Widget _buildDashboardInterface(BuildContext context, SquadStateData squadState) {
+  Widget _buildDashboardInterface(
+      BuildContext context, SquadStateData squadState) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Squad Lobbies'),
@@ -168,7 +171,8 @@ class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> 
     );
   }
 
-  Widget _buildFullSquadInterface(BuildContext context, SquadStateData squadState) {
+  Widget _buildFullSquadInterface(
+      BuildContext context, SquadStateData squadState) {
     // Import and use the original SquadTab widget for full squad management
     return SquadTab(
         lobbyId: widget.lobbyId,
@@ -432,8 +436,8 @@ class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> 
     );
   }
 
-  Widget _buildPinnedGamesCarousel(
-      BuildContext context, List<Map<String, dynamic>> pinnedGames, WidgetRef ref) {
+  Widget _buildPinnedGamesCarousel(BuildContext context,
+      List<Map<String, dynamic>> pinnedGames, WidgetRef ref) {
     if (pinnedGames.isEmpty) {
       return Container(
         height: 450, // Increased by 10% from 409
@@ -533,8 +537,8 @@ class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> 
     );
   }
 
-  Widget _buildLayeredCarouselItem(
-      BuildContext context, int index, List<Map<String, dynamic>> games, WidgetRef ref) {
+  Widget _buildLayeredCarouselItem(BuildContext context, int index,
+      List<Map<String, dynamic>> games, WidgetRef ref) {
     final game = games[index];
 
     // Handle the "Add Game" card
@@ -692,183 +696,106 @@ class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> 
   }
 
   void _startNewLobby(BuildContext context, WidgetRef ref) {
-
     final userManager = ref.read(userManagerProvider);
 
     final pinnedGames = userManager.pinnedGames;
 
     if (pinnedGames.isEmpty) {
-
       ScaffoldMessenger.of(context).showSnackBar(
-
-        const SnackBar(content: Text('No pinned games to choose from. Pin some games first!')),
-
+        const SnackBar(
+            content:
+                Text('No pinned games to choose from. Pin some games first!')),
       );
-
     } else {
-
       // Show game selection modal
 
       showModalBottomSheet(
-
         context: context,
-
         isScrollControlled: true,
-
         backgroundColor: Colors.transparent,
-
         barrierColor: Colors.black.withValues(alpha: 0.5),
-
         builder: (context) => BackdropFilter(
-
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-
           child: DraggableScrollableSheet(
-
             initialChildSize: 0.7,
-
             minChildSize: 0.5,
-
             maxChildSize: 0.9,
-
             builder: (context, scrollController) => Container(
-
               decoration: BoxDecoration(
-
                 color: AppTheme.darkTheme.scaffoldBackgroundColor,
-
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
               ),
-
               child: Column(
-
                 children: [
-
                   Container(
-
                     height: 4,
-
                     width: 40,
-
                     margin: const EdgeInsets.symmetric(vertical: 12),
-
                     decoration: BoxDecoration(
-
                       color: Colors.grey[600],
-
                       borderRadius: BorderRadius.circular(2),
-
                     ),
-
                   ),
-
                   Expanded(
-
                     child: ListView.builder(
-
                       controller: scrollController,
-
                       itemCount: pinnedGames.length,
-
                       itemBuilder: (context, index) {
-
                         final game = pinnedGames[index];
 
                         return ListTile(
-
                           leading: game['coverUrl'] != null
-
                               ? ClipRRect(
-
                                   borderRadius: BorderRadius.circular(8),
-
                                   child: CachedNetworkImage(
-
                                     imageUrl: game['coverUrl'],
-
                                     width: 40,
-
                                     height: 40,
-
                                     fit: BoxFit.cover,
-
                                     placeholder: (context, url) => Container(
-
                                       color: Colors.grey[800],
-
-                                      child: const Icon(Icons.videogame_asset, size: 20),
-
+                                      child: const Icon(Icons.videogame_asset,
+                                          size: 20),
                                     ),
-
-                                    errorWidget: (context, url, error) => Container(
-
+                                    errorWidget: (context, url, error) =>
+                                        Container(
                                       color: Colors.grey[800],
-
-                                      child: const Icon(Icons.videogame_asset, size: 20),
-
+                                      child: const Icon(Icons.videogame_asset,
+                                          size: 20),
                                     ),
-
                                   ),
-
                                 )
-
                               : Container(
-
                                   width: 40,
-
                                   height: 40,
-
                                   decoration: BoxDecoration(
-
                                     color: Colors.grey[800],
-
                                     borderRadius: BorderRadius.circular(8),
-
                                   ),
-
-                                  child: const Icon(Icons.videogame_asset, color: Colors.cyanAccent),
-
+                                  child: const Icon(Icons.videogame_asset,
+                                      color: Colors.cyanAccent),
                                 ),
-
                           title: Text(
-
                             game['name'] ?? 'Unknown Game',
-
                             style: const TextStyle(color: Colors.white),
-
                           ),
-
                           onTap: () {
-
                             Navigator.of(context).pop();
 
                             _startLobbyForGame(context, game);
-
                           },
-
                         );
-
                       },
-
                     ),
-
                   ),
-
                 ],
-
               ),
-
             ),
-
           ),
-
         ),
-
       );
-
     }
-
   }
 
   void _startLobbyForGame(
@@ -907,8 +834,7 @@ class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> 
           ? 3600
           : 300; // 60 minutes for solo, 5 minutes for groups
 
-      notifier.dataManager.gameSquadSpots[gameName]![0] =
-          '${user.uid}_calling';
+      notifier.dataManager.gameSquadSpots[gameName]![0] = '${user.uid}_calling';
       notifier.dataManager.gameSpotTimers[gameName]![0] = {
         'startTime': DateTime.now().millisecondsSinceEpoch,
         'duration': timerDuration, // Dynamic duration based on solo status
@@ -925,7 +851,8 @@ class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> 
       notifier.persistenceManager.markFieldChanged('spotTimers');
       notifier.persistenceManager.markFieldChanged('globalStatuses');
       notifier.uiManager.setNewSquadSpot(true, gameName);
-      await notifier.persistenceManager.updateFirestoreAsync(memberDisplayNames: squadState.memberDisplayNames, force: true);
+      await notifier.persistenceManager.updateFirestoreAsync(
+          memberDisplayNames: squadState.memberDisplayNames, force: true);
 
       // Create peacock document in Firestore for lobby visibility
       final peacockData = {
@@ -1008,7 +935,10 @@ class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> 
 
       if (nextSpot < maxSpots) {
         // Call the spot to trigger timer logic
-        ref.read(squadStateNotifierProvider.notifier).spotManagementService.callSpotForGame(nextSpot, gameName);
+        ref
+            .read(squadStateNotifierProvider.notifier)
+            .spotManagementService
+            .callSpotForGame(nextSpot, gameName);
       }
     } catch (e) {
       // If spot calling fails, continue anyway

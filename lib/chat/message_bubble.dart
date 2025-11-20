@@ -2,11 +2,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as p;
 import 'chat_state.dart';
 import 'chat_service.dart';
 import '../services/ai_service.dart';
-import '../squad_state.dart';
+import '../providers.dart';
 import 'models/message_data.dart';
 import 'widgets/message_content.dart';
 import 'widgets/message_reactions.dart';
@@ -240,7 +241,7 @@ class _BubbleReactions extends StatelessWidget {
 
 /// Refactored MessageBubble using decomposed components
 /// This replaces the 1183-line monolithic MessageBubble with a clean, maintainable structure
-class MessageBubble extends StatefulWidget {
+class MessageBubble extends ConsumerStatefulWidget {
   final dynamic message; // Keep for backward compatibility during transition
   final bool isMe;
   final bool showSender;
@@ -271,14 +272,13 @@ class MessageBubble extends StatefulWidget {
   });
 
   @override
-  State<MessageBubble> createState() => _MessageBubbleState();
+  ConsumerState<MessageBubble> createState() => _MessageBubbleState();
 }
 
-class _MessageBubbleState extends State<MessageBubble> {
+class _MessageBubbleState extends ConsumerState<MessageBubble> {
   late MessageData _messageData;
   bool _isGrokExpanded = false; // Track if Grok message is expanded
   final GlobalKey _messageKey = GlobalKey();
-  bool _isPressed = false; // Track if message is being pressed for animation
 
   // Overlay references for dismissal
   OverlayEntry? _reactionsOverlay;
@@ -325,10 +325,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
     final menuSpacing = 4.0;
-    final menuTop = messagePosition.dy + messageSize.height + menuSpacing;
-    final menuHeight = 200.0;
     final availableHeight = screenSize.height - keyboardHeight - 20;
-    final shouldFlipMenu = menuTop + menuHeight > availableHeight;
 
     late final OverlayEntry reactionsOverlay;
     late final OverlayEntry menuOverlay;
@@ -609,191 +606,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  Widget _buildMessageContainer(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        // Dismiss keyboard on tap
-        FocusScope.of(context).unfocus();
-        widget.onTap();
-      },
-      onTapDown: (_) {
-        setState(() {
-          _isPressed = true;
-        });
-      },
-      onTapUp: (_) {
-        setState(() {
-          _isPressed = false;
-        });
-      },
-      onTapCancel: () {
-        setState(() {
-          _isPressed = false;
-        });
-      },
-      onLongPress: () {
-        // Dismiss keyboard on long press
-        FocusScope.of(context).unfocus();
-        final RenderBox? renderBox =
-            _messageKey.currentContext?.findRenderObject() as RenderBox?;
-        if (renderBox == null) return;
-
-        final messagePosition = renderBox.localToGlobal(Offset.zero);
-        final messageSize = renderBox.size;
-        final screenSize = MediaQuery.of(context).size;
-        final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-
-        // Calculate floating offset early
-        final menuSpacing = 4.0; // Small gap below message bubble
-        final menuTop = messagePosition.dy + messageSize.height + menuSpacing;
-        final menuHeight = 200.0;
-        final availableHeight = screenSize.height - keyboardHeight - 20;
-        final shouldFlipMenu = menuTop + menuHeight > availableHeight;
-        final floatingOffset = shouldFlipMenu ? -220.0 : 0.0;
-
-        late final OverlayEntry reactionsOverlay;
-        late final OverlayEntry menuOverlay;
-
-        _reactionsOverlay = reactionsOverlay = OverlayEntry(
-          builder: (context) => Stack(
-            children: [
-              // Reactions bar - blur is handled within the IMessageReactionsBar widget
-              IMessageReactionsBar(
-                messageId: _messageData.id,
-                chatGroupId: widget.chatGroupId,
-                chatType: widget.chatType,
-                isOutgoing: widget.isMe,
-                onDismiss: _dismissOverlays,
-                messagePosition: messagePosition,
-                messageSize: messageSize,
-                floatingOffset: floatingOffset,
-              ),
-            ],
-          ),
-        );
-
-        // Position menu below the message bubble (similar to reaction picker logic but below instead of above)
-        // Always position below the message bubble
-        final finalMenuTop = messagePosition.dy +
-            messageSize.height +
-            menuSpacing +
-            floatingOffset;
-
-        _menuOverlay = menuOverlay = OverlayEntry(
-          builder: (context) => Stack(
-            children: [
-              // Full-screen background to dismiss menu when tapped
-              Positioned.fill(
-                child: GestureDetector(
-                  onTap: _dismissOverlays,
-                  behavior: HitTestBehavior.translucent,
-                ),
-              ),
-              // Menu - no background blur needed
-              Positioned(
-                top: finalMenuTop.clamp(10, availableHeight - 220),
-                left: widget.isMe
-                    ? null
-                    : 16.0, // Same padding as message bubble for incoming
-                right: widget.isMe
-                    ? 16.0
-                    : null, // Same padding as message bubble for outgoing
-                child: Material(
-                  color: Colors.transparent,
-                  elevation:
-                      20, // Increased elevation to ensure it's above message bubbles
-                  shadowColor: Colors.black.withValues(alpha: 0.5),
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
-                    builder: (context, value, child) => Transform.translate(
-                      offset: Offset(0, 10 * (1 - value)),
-                      child: Opacity(
-                        opacity: value,
-                        child: _buildActionMenu(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-
-        // Insert overlays in correct order (reactions first, then menu on top)
-        Overlay.of(context).insert(reactionsOverlay);
-        Overlay.of(context).insert(menuOverlay);
-      },
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Main message container with swipe animation
-          AnimatedContainer(
-            key: _messageKey,
-            duration: const Duration(milliseconds: 150),
-            margin: const EdgeInsets.symmetric(vertical: 2.0),
-            padding: _getMessagePadding(),
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.7,
-            ),
-            decoration: _getMessageDecoration(),
-            child: Semantics(
-              label: 'Message from ${_messageData.sender}',
-              child: IntrinsicWidth(
-                child: MessageContent(
-                  message: _messageData,
-                  isFromCurrentUser: widget.isMe,
-                  chatGroupId: widget.chatGroupId,
-                  chatService: widget.chatService,
-                ),
-              ),
-            ),
-          ),
-
-          // Pressed state overlay
-          if (_isPressed)
-            Positioned.fill(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                margin: const EdgeInsets.symmetric(vertical: 2.0),
-                padding: _getMessagePadding(),
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.7,
-                ),
-                decoration: _getMessageDecoration().copyWith(
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      spreadRadius: 2,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Semantics(
-                  label: 'Message from ${_messageData.sender}',
-                  child: IntrinsicWidth(
-                    child: MessageContent(
-                      message: _messageData,
-                      isFromCurrentUser: widget.isMe,
-                      chatGroupId: widget.chatGroupId,
-                      chatService: widget.chatService,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    ).animate().fadeIn(duration: const Duration(milliseconds: 300)).slideY(
-        begin: 0.2,
-        end: 0.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut);
-  }
-
   Widget _buildActionMenu() {
     return Container(
       constraints: const BoxConstraints(
@@ -831,7 +643,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                       label: 'Reply',
                       onTap: () {
                         final chatState =
-                            Provider.of<ChatState>(context, listen: false);
+                            p.Provider.of<ChatState>(context, listen: false);
                         chatState.setReplyToMessage(_messageData.toMap());
                         _dismissOverlays();
                       },
@@ -898,11 +710,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                             try {
                               // Use the provided chatService or try to get from Provider
                               final chatService = widget.chatService ??
-                                  Provider.of<ChatService>(context,
+                                  p.Provider.of<ChatService>(context,
                                       listen: false);
-                              final squadState = Provider.of<SquadState>(
-                                  context,
-                                  listen: false);
+                              final squadState =
+                                  ref.read(squadStateNotifierProvider);
                               final squadId = squadState.selectedSquadId;
                               if (squadId != null) {
                                 await chatService.editMessage(
@@ -961,11 +772,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                             try {
                               // Use the provided chatService or try to get from Provider
                               final chatService = widget.chatService ??
-                                  Provider.of<ChatService>(context,
+                                  p.Provider.of<ChatService>(context,
                                       listen: false);
-                              final squadState = Provider.of<SquadState>(
-                                  context,
-                                  listen: false);
+                              final squadState =
+                                  ref.read(squadStateNotifierProvider);
                               final squadId = squadState.selectedSquadId;
                               if (squadId != null) {
                                 await chatService.deleteMessage(
@@ -1007,7 +817,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                         try {
                           // Use the provided chatService or try to get from Provider
                           final chatService = widget.chatService ??
-                              Provider.of<ChatService>(context, listen: false);
+                              p.Provider.of<ChatService>(context,
+                                  listen: false);
                           await chatService.bumpMessage(
                             _messageData.id,
                             widget.chatGroupId,
@@ -1101,66 +912,6 @@ class _MessageBubbleState extends State<MessageBubble> {
       margin: const EdgeInsets.symmetric(horizontal: 4),
       color: Colors.white.withValues(alpha: 0.2),
     );
-  }
-
-  BoxDecoration _getMessageDecoration() {
-    // Futuristic design for Grok AI messages
-    if (_messageData.isGrokMessage) {
-      return BoxDecoration(
-        color: const Color(0xFF0A0A0A), // Very dark background
-        border: Border.all(
-          color: const Color(0xFF8B0000), // Dark red border
-          width: 1.5,
-        ),
-        borderRadius: BorderRadius.circular(2), // Sharp, angular corners
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF8B0000).withValues(alpha: 0.3),
-            blurRadius: 8,
-            spreadRadius: 1,
-            offset: const Offset(0, 0),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.7),
-            blurRadius: 15,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      );
-    }
-
-    // iMessage-style bubbles
-    return BoxDecoration(
-      color: widget.isMe
-          ? const Color(0xFF007AFF) // iMessage blue for sent messages
-          : const Color(
-              0xFF2C2C2E), // Dark gray for received messages in dark theme
-      borderRadius: BorderRadius.only(
-        topLeft: const Radius.circular(16),
-        topRight: const Radius.circular(16),
-        bottomLeft:
-            widget.isMe ? const Radius.circular(16) : const Radius.circular(4),
-        bottomRight:
-            widget.isMe ? const Radius.circular(4) : const Radius.circular(16),
-      ),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.1),
-          blurRadius: 4,
-          offset: const Offset(0, 1),
-        ),
-      ],
-    );
-  }
-
-  EdgeInsets _getMessagePadding() {
-    // Compact padding for futuristic Grok messages
-    if (_messageData.isGrokMessage) {
-      return const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0);
-    }
-
-    // iMessage-style padding - generous for comfortable reading
-    return const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0);
   }
 
   void _showReactionDetails(String tappedEmoji) {

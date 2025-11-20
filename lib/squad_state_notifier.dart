@@ -431,6 +431,45 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
 
   // Add more delegated methods as needed...
 
+  void clearNotifications(int tabIndex) {
+    notificationCoordinator.clearNotificationsForTab(tabIndex);
+  }
+
+  // Update methods for profile settings
+  void updateTiltEnabled(bool value) {
+    state = state.copyWith(tiltEnabled: value);
+  }
+
+  void updateProfileImage(String? url) {
+    state = state.copyWith(profileImage: url);
+  }
+
+  void updateDisplayName(String? name) {
+    state = state.copyWith(displayName: name);
+  }
+
+  // Reset method for sign out
+  void reset() {
+    state = const SquadStateData();
+  }
+
+  // Call spot for game
+  void callSpotForGame(int spot, String gameName) {
+    final currentSpots =
+        List<String?>.from(state.gameSquadSpots[gameName] ?? []);
+    while (currentSpots.length <= spot) {
+      currentSpots.add(null);
+    }
+    currentSpots[spot] = FirebaseAuth.instance.currentUser!.uid;
+    state = state.copyWith(
+      gameSquadSpots: {...state.gameSquadSpots, gameName: currentSpots},
+      globalStatuses: {
+        ...state.globalStatuses,
+        state.displayName ?? '': 'Ready'
+      },
+    );
+  }
+
   @override
   void dispose() {
     _timer?.cancel();

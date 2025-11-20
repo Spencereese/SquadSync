@@ -2,23 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'squad_state.dart';
 import '../managers/user_manager.dart';
 import '../chat/chat_state.dart';
 import '../chat/chat_groups_screen.dart';
+import '../providers.dart';
+import '../squad_state_notifier.dart';
 import 'package:flutter/services.dart';
 
-class ProfileTab extends StatefulWidget {
+class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
 
   @override
-  State<ProfileTab> createState() => _ProfileTabState();
+  ConsumerState<ProfileTab> createState() => _ProfileTabState();
 }
 
-class _ProfileTabState extends State<ProfileTab>
+class _ProfileTabState extends ConsumerState<ProfileTab>
     with SingleTickerProviderStateMixin {
   late TextEditingController _nameController;
   late TextEditingController _feedbackController;
@@ -53,7 +55,6 @@ class _ProfileTabState extends State<ProfileTab>
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    final squadState = Provider.of<SquadState>(context, listen: false);
     setState(() {
       _isDarkTheme = prefs.getBool('isDarkTheme') ?? true;
       _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
@@ -62,17 +63,20 @@ class _ProfileTabState extends State<ProfileTab>
       // Load privacy settings
       _onlineStatusVisible = prefs.getBool('onlineStatusVisible') ?? true;
     });
-    squadState.updateTiltEnabled(_tiltEnabled); // Sync with SquadState
+    ref
+        .read(squadStateNotifierProvider.notifier)
+        .updateTiltEnabled(_tiltEnabled); // Sync with SquadState
     _animationController.forward();
   }
 
-  Future<void> _saveSettings(
-      String key, dynamic value, SquadState squadState) async {
+  Future<void> _saveSettings(String key, dynamic value) async {
     final prefs = await SharedPreferences.getInstance();
     if (value is bool) {
       await prefs.setBool(key, value);
       if (key == 'tiltEnabled') {
-        squadState.updateTiltEnabled(value); // Update SquadState
+        ref
+            .read(squadStateNotifierProvider.notifier)
+            .updateTiltEnabled(value); // Update SquadState
       }
     }
     if (value is String?) await prefs.setString(key, value ?? '');
@@ -82,15 +86,16 @@ class _ProfileTabState extends State<ProfileTab>
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile == null || !mounted) return;
-    final squadState = Provider.of<SquadState>(context, listen: false);
     File imageFile = File(pickedFile.path);
     String uid = FirebaseAuth.instance.currentUser!.uid;
     Reference storageRef =
         FirebaseStorage.instance.ref().child('profile_pics/$uid.jpg');
     await storageRef.putFile(imageFile);
     String downloadUrl = await storageRef.getDownloadURL();
-    squadState.updateProfileImage(downloadUrl);
-    await _saveSettings('profileImageUrl', downloadUrl, squadState);
+    ref
+        .read(squadStateNotifierProvider.notifier)
+        .updateProfileImage(downloadUrl);
+    await _saveSettings('profileImageUrl', downloadUrl);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -99,10 +104,11 @@ class _ProfileTabState extends State<ProfileTab>
     }
   }
 
-  void _updateDisplayName(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+  void _updateDisplayName() {
     if (_nameController.text.isNotEmpty && mounted) {
-      squadState.updateDisplayName(_nameController.text);
+      ref
+          .read(squadStateNotifierProvider.notifier)
+          .updateDisplayName(_nameController.text);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Display name updated!')),
       );
@@ -111,7 +117,7 @@ class _ProfileTabState extends State<ProfileTab>
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context);
+    final squadState = ref.watch(squadStateNotifierProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -197,8 +203,7 @@ class _ProfileTabState extends State<ProfileTab>
                       value: _isDarkTheme,
                       onChanged: (value) {
                         setState(() => _isDarkTheme = value);
-                        _saveSettings('isDarkTheme', value,
-                            Provider.of<SquadState>(context, listen: false));
+                        _saveSettings('isDarkTheme', value);
                       },
                       secondary:
                           const Icon(Icons.brightness_6, color: Colors.cyan),
@@ -210,8 +215,7 @@ class _ProfileTabState extends State<ProfileTab>
                       value: _tiltEnabled,
                       onChanged: (value) {
                         setState(() => _tiltEnabled = value);
-                        _saveSettings('tiltEnabled', value,
-                            Provider.of<SquadState>(context, listen: false));
+                        _saveSettings('tiltEnabled', value);
                       },
                       secondary:
                           const Icon(Icons.threed_rotation, color: Colors.cyan),
@@ -224,8 +228,7 @@ class _ProfileTabState extends State<ProfileTab>
                       value: _notificationsEnabled,
                       onChanged: (value) {
                         setState(() => _notificationsEnabled = value);
-                        _saveSettings('notificationsEnabled', value,
-                            Provider.of<SquadState>(context, listen: false));
+                        _saveSettings('notificationsEnabled', value);
                       },
                       secondary:
                           const Icon(Icons.notifications, color: Colors.cyan),
@@ -237,8 +240,7 @@ class _ProfileTabState extends State<ProfileTab>
                       value: _soundsEnabled,
                       onChanged: (value) {
                         setState(() => _soundsEnabled = value);
-                        _saveSettings('soundsEnabled', value,
-                            Provider.of<SquadState>(context, listen: false));
+                        _saveSettings('soundsEnabled', value);
                       },
                       secondary:
                           const Icon(Icons.volume_up, color: Colors.cyan),
@@ -250,8 +252,7 @@ class _ProfileTabState extends State<ProfileTab>
                       value: _onlineStatusVisible,
                       onChanged: (value) {
                         setState(() => _onlineStatusVisible = value);
-                        _saveSettings('onlineStatusVisible', value,
-                            Provider.of<SquadState>(context, listen: false));
+                        _saveSettings('onlineStatusVisible', value);
                       },
                       secondary:
                           const Icon(Icons.access_time, color: Colors.cyan),
@@ -301,7 +302,7 @@ class _ProfileTabState extends State<ProfileTab>
     );
   }
 
-  Widget _buildProfileCard(SquadState squadState) {
+  Widget _buildProfileCard(SquadStateData squadState) {
     return Card(
       color: Colors.grey[900],
       child: Padding(
@@ -360,7 +361,7 @@ class _ProfileTabState extends State<ProfileTab>
                       ),
                       TextButton(
                         onPressed: () {
-                          _updateDisplayName(context);
+                          _updateDisplayName();
                           Navigator.pop(context);
                         },
                         child: const Text('Save'),
@@ -420,7 +421,7 @@ class _ProfileTabState extends State<ProfileTab>
         ),
         const SizedBox(height: 16),
         // Friends list or search results
-        Consumer<UserManager>(
+        p.Consumer<UserManager>(
           builder: (context, userManager, child) {
             final searchQuery = _searchController.text.trim();
 
@@ -579,7 +580,7 @@ class _ProfileTabState extends State<ProfileTab>
   void _sendFriendRequest(
       BuildContext context, String userId, String displayName) async {
     try {
-      final userManager = Provider.of<UserManager>(context, listen: false);
+      final userManager = p.Provider.of<UserManager>(context, listen: false);
       await userManager.sendFriendRequest(userId);
 
       if (mounted) {
@@ -758,7 +759,7 @@ class _ProfileTabState extends State<ProfileTab>
           ),
         ),
         const SizedBox(height: 8),
-        Consumer<UserManager>(
+        p.Consumer<UserManager>(
           builder: (context, userManager, child) {
             return StreamBuilder<List<Map<String, dynamic>>>(
               stream: userManager.streamPendingRequests(),
@@ -809,7 +810,7 @@ class _ProfileTabState extends State<ProfileTab>
 
   Widget _buildPendingRequestTile(
       BuildContext context, Map<String, dynamic> request) {
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userManager = p.Provider.of<UserManager>(context, listen: false);
 
     return FutureBuilder<Map<String, dynamic>?>(
       future: userManager.getCachedSenderDetails(request['senderId']),
@@ -854,11 +855,11 @@ class _ProfileTabState extends State<ProfileTab>
   }
 
   void _startDMWithFriend(BuildContext context, String friendId) async {
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userManager = p.Provider.of<UserManager>(context, listen: false);
     final chatId = await userManager.startDMThread(friendId);
     if (chatId != null && mounted) {
       // Navigate to Chat tab with DM filter
-      final chatState = Provider.of<ChatState>(context, listen: false);
+      final chatState = p.Provider.of<ChatState>(context, listen: false);
       chatState.setDMView(true);
       Navigator.push(
         context,
@@ -877,7 +878,7 @@ class _ProfileTabState extends State<ProfileTab>
   }
 
   void _removeFriend(BuildContext context, String friendId) async {
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userManager = p.Provider.of<UserManager>(context, listen: false);
     await userManager.removeFriend(friendId);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend removed')),
@@ -885,7 +886,7 @@ class _ProfileTabState extends State<ProfileTab>
   }
 
   void _acceptFriendRequest(BuildContext context, String requesterId) async {
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userManager = p.Provider.of<UserManager>(context, listen: false);
     await userManager.acceptFriendRequest(requesterId);
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -894,7 +895,7 @@ class _ProfileTabState extends State<ProfileTab>
   }
 
   void _declineFriendRequest(BuildContext context, String requesterId) async {
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userManager = p.Provider.of<UserManager>(context, listen: false);
     await userManager.declineFriendRequest(requesterId);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend request declined')),
@@ -925,8 +926,7 @@ class _ProfileTabState extends State<ProfileTab>
 
     if (confirmed == true) {
       // Reset SquadState before signing out to prevent state persistence
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      squadState.reset();
+      ref.read(squadStateNotifierProvider.notifier).reset();
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('profileImageUrl');

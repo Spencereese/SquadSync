@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../squad_state.dart';
+import '../providers.dart';
+import '../squad_state_notifier.dart';
 import '../services/ai_service.dart';
 import 'chat_screen.dart';
 import 'chat_state.dart';
@@ -16,14 +18,14 @@ import 'widgets/direct_messages_tab.dart';
 import 'dialogs/group_actions_dialog.dart';
 import 'dialogs/add_friend_dialog.dart';
 
-class ChatGroupsScreen extends StatefulWidget {
+class ChatGroupsScreen extends ConsumerStatefulWidget {
   const ChatGroupsScreen({super.key});
 
   @override
-  State<ChatGroupsScreen> createState() => _ChatGroupsScreenState();
+  ConsumerState<ChatGroupsScreen> createState() => _ChatGroupsScreenState();
 }
 
-class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
+class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   late PageController _pageController;
@@ -94,8 +96,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
   }
 
   void _clearNotification(int index) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    squadState.clearNotifications(index);
+    ref.read(squadStateNotifierProvider.notifier).clearNotifications(index);
   }
 
   bool _updateNavOpacity(ScrollNotification notification) {
@@ -119,7 +120,8 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
     return true;
   }
 
-  Widget _buildTabItem(int index, int selectedIndex, SquadState squadState) {
+  Widget _buildTabItem(
+      int index, int selectedIndex, SquadStateData squadState) {
     bool isSelected = selectedIndex == index;
     final tabs = [
       'assets/images/chat.png',
@@ -222,16 +224,17 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
     );
   }
 
-  List<Widget> _buildPages(BuildContext context, bool isKeyboardVisible) {
+  List<Widget> _buildPages(
+      BuildContext context, bool isKeyboardVisible, SquadStateData squadState) {
     return [
-      _buildChatGroupsPage(),
+      _buildChatGroupsPage(squadState),
       const NotificationsScreen(),
       const ProfileTab(),
     ];
   }
 
-  Widget _buildChatGroupsPage() {
-    return Consumer<ChatState>(
+  Widget _buildChatGroupsPage(SquadStateData squadState) {
+    return p.Consumer<ChatState>(
       builder: (context, chatState, child) => Scaffold(
         appBar: AppBar(
           title: const Text('Chats'),
@@ -269,62 +272,14 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
             ],
           ],
         ),
-        body: Container(
-          color: Colors.black,
-          child: Column(
-            children: [
-              Expanded(
-                child: Consumer<SquadState>(
-                  builder: (context, squadState, child) {
-                    // Check if user is authenticated
-                    final currentUser = FirebaseAuth.instance.currentUser;
-                    if (currentUser == null) {
-                      return const Center(
-                        child:
-                            CircularProgressIndicator(color: Colors.cyanAccent),
-                      );
-                    }
-
-                    if (squadState.selectedSquadId == null) {
-                      // Show user-specific groups instead of squad groups
-                      return Consumer<ChatState>(
-                        builder: (context, chatState, child) {
-                          if (chatState.isDMView) {
-                            // Show DMs
-                            return const DirectMessagesTab();
-                          } else {
-                            // Show user groups with DM card
-                            return const UserGroupsTab();
-                          }
-                        },
-                      );
-                    } else {
-                      // Also show user groups when squad is selected (unified approach)
-                      return Consumer<ChatState>(
-                        builder: (context, chatState, child) {
-                          if (chatState.isDMView) {
-                            // Show DMs
-                            return const DirectMessagesTab();
-                          } else {
-                            // Show user groups with DM card
-                            return const UserGroupsTab();
-                          }
-                        },
-                      );
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
+        body: _buildChatContent(squadState),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context);
+    final squadState = ref.watch(squadStateNotifierProvider);
     final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
     // Show loading screen while initializing or loading initial data
@@ -377,7 +332,7 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
                 child: PageView(
                   controller: _pageController,
                   physics: const ClampingScrollPhysics(),
-                  children: _buildPages(context, isKeyboardVisible),
+                  children: _buildPages(context, isKeyboardVisible, squadState),
                 ),
               ),
             ),
@@ -425,12 +380,50 @@ class _ChatGroupsScreenState extends State<ChatGroupsScreen> {
     );
   }
 
+  Widget _buildChatContent(SquadStateData squadState) {
+    // Check if user is authenticated
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.cyanAccent),
+      );
+    }
+
+    if (squadState.selectedSquadId == null) {
+      // Show user-specific groups instead of squad groups
+      return p.Consumer<ChatState>(
+        builder: (context, chatState, child) {
+          if (chatState.isDMView) {
+            // Show DMs
+            return const DirectMessagesTab();
+          } else {
+            // Show user groups with DM card
+            return const UserGroupsTab();
+          }
+        },
+      );
+    } else {
+      // Also show user groups when squad is selected (unified approach)
+      return p.Consumer<ChatState>(
+        builder: (context, chatState, child) {
+          if (chatState.isDMView) {
+            // Show DMs
+            return const DirectMessagesTab();
+          } else {
+            // Show user groups with DM card
+            return const UserGroupsTab();
+          }
+        },
+      );
+    }
+  }
+
   void _checkLastChatGroup() async {
     final prefs = await SharedPreferences.getInstance();
     final lastGroupId = prefs.getString('last_chat_group');
     if (lastGroupId != null && mounted) {
       // Check if the group still exists and user has access
-      final squadState = Provider.of<SquadState>(context, listen: false);
+      final squadState = ref.read(squadStateNotifierProvider);
       final groupDoc = await _firestore
           .collection('squads')
           .doc(squadState.selectedSquadId)

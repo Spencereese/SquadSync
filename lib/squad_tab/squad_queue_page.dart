@@ -1,24 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../chat/chat_groups_screen.dart' as chat_groups;
 import '../screens/notifications_screen.dart';
 import '../profile_tab.dart';
 import '../app_theme.dart';
-import '../squad_state.dart';
+import '../providers.dart';
 import 'widgets/bottom_navigation_widget.dart';
 import 'widgets/loading_screen_widget.dart';
 import 'mixins/keyboard_handler.dart';
 import 'managers/page_navigation_manager.dart';
 
-class SquadQueuePage extends StatefulWidget {
+class SquadQueuePage extends ConsumerStatefulWidget {
   const SquadQueuePage({super.key});
 
   @override
-  State<SquadQueuePage> createState() => SquadQueuePageState();
+  ConsumerState<SquadQueuePage> createState() => SquadQueuePageState();
 }
 
-class SquadQueuePageState extends State<SquadQueuePage> with KeyboardHandler {
+class SquadQueuePageState extends ConsumerState<SquadQueuePage>
+    with KeyboardHandler {
   late PageNavigationManager _navigationManager;
 
   @override
@@ -39,8 +39,7 @@ class SquadQueuePageState extends State<SquadQueuePage> with KeyboardHandler {
   }
 
   void _clearNotification(int index) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    squadState.clearNotifications(index);
+    ref.read(squadStateNotifierProvider.notifier).clearNotifications(index);
   }
 
   bool _updateNavOpacity(ScrollNotification notification) {
@@ -49,7 +48,7 @@ class SquadQueuePageState extends State<SquadQueuePage> with KeyboardHandler {
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context);
+    final squadState = ref.watch(squadStateNotifierProvider);
     final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
     // Show loading screen while initializing or loading initial data

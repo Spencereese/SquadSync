@@ -245,6 +245,473 @@ final userStatsProvider = AutoDisposeProvider<Map<String, dynamic>>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef UserStatsRef = AutoDisposeProviderRef<Map<String, dynamic>>;
+String _$squadSpotsForGameHash() => r'c085a25a447102fd6e16c16bf7ac1ef09ccc208e';
+
+/// Squad-specific generated providers with tree-shaking benefits
+/// Tree-shaking: Only rebuilds when specific state slices change
+///
+/// Copied from [squadSpotsForGame].
+@ProviderFor(squadSpotsForGame)
+const squadSpotsForGameProvider = SquadSpotsForGameFamily();
+
+/// Squad-specific generated providers with tree-shaking benefits
+/// Tree-shaking: Only rebuilds when specific state slices change
+///
+/// Copied from [squadSpotsForGame].
+class SquadSpotsForGameFamily extends Family<List<String?>> {
+  /// Squad-specific generated providers with tree-shaking benefits
+  /// Tree-shaking: Only rebuilds when specific state slices change
+  ///
+  /// Copied from [squadSpotsForGame].
+  const SquadSpotsForGameFamily();
+
+  /// Squad-specific generated providers with tree-shaking benefits
+  /// Tree-shaking: Only rebuilds when specific state slices change
+  ///
+  /// Copied from [squadSpotsForGame].
+  SquadSpotsForGameProvider call(
+    String gameName,
+  ) {
+    return SquadSpotsForGameProvider(
+      gameName,
+    );
+  }
+
+  @override
+  SquadSpotsForGameProvider getProviderOverride(
+    covariant SquadSpotsForGameProvider provider,
+  ) {
+    return call(
+      provider.gameName,
+    );
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'squadSpotsForGameProvider';
+}
+
+/// Squad-specific generated providers with tree-shaking benefits
+/// Tree-shaking: Only rebuilds when specific state slices change
+///
+/// Copied from [squadSpotsForGame].
+class SquadSpotsForGameProvider extends AutoDisposeProvider<List<String?>> {
+  /// Squad-specific generated providers with tree-shaking benefits
+  /// Tree-shaking: Only rebuilds when specific state slices change
+  ///
+  /// Copied from [squadSpotsForGame].
+  SquadSpotsForGameProvider(
+    String gameName,
+  ) : this._internal(
+          (ref) => squadSpotsForGame(
+            ref as SquadSpotsForGameRef,
+            gameName,
+          ),
+          from: squadSpotsForGameProvider,
+          name: r'squadSpotsForGameProvider',
+          debugGetCreateSourceHash:
+              const bool.fromEnvironment('dart.vm.product')
+                  ? null
+                  : _$squadSpotsForGameHash,
+          dependencies: SquadSpotsForGameFamily._dependencies,
+          allTransitiveDependencies:
+              SquadSpotsForGameFamily._allTransitiveDependencies,
+          gameName: gameName,
+        );
+
+  SquadSpotsForGameProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.gameName,
+  }) : super.internal();
+
+  final String gameName;
+
+  @override
+  Override overrideWith(
+    List<String?> Function(SquadSpotsForGameRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: SquadSpotsForGameProvider._internal(
+        (ref) => create(ref as SquadSpotsForGameRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        gameName: gameName,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<List<String?>> createElement() {
+    return _SquadSpotsForGameProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is SquadSpotsForGameProvider && other.gameName == gameName;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, gameName.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin SquadSpotsForGameRef on AutoDisposeProviderRef<List<String?>> {
+  /// The parameter `gameName` of this provider.
+  String get gameName;
+}
+
+class _SquadSpotsForGameProviderElement
+    extends AutoDisposeProviderElement<List<String?>>
+    with SquadSpotsForGameRef {
+  _SquadSpotsForGameProviderElement(super.provider);
+
+  @override
+  String get gameName => (origin as SquadSpotsForGameProvider).gameName;
+}
+
+String _$spotTimersForGameHash() => r'92dcd0cf37eeed51e355ce3ed25ed9bfe37831b8';
+
+/// See also [spotTimersForGame].
+@ProviderFor(spotTimersForGame)
+const spotTimersForGameProvider = SpotTimersForGameFamily();
+
+/// See also [spotTimersForGame].
+class SpotTimersForGameFamily extends Family<List<Map<String, dynamic>?>> {
+  /// See also [spotTimersForGame].
+  const SpotTimersForGameFamily();
+
+  /// See also [spotTimersForGame].
+  SpotTimersForGameProvider call(
+    String gameName,
+  ) {
+    return SpotTimersForGameProvider(
+      gameName,
+    );
+  }
+
+  @override
+  SpotTimersForGameProvider getProviderOverride(
+    covariant SpotTimersForGameProvider provider,
+  ) {
+    return call(
+      provider.gameName,
+    );
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'spotTimersForGameProvider';
+}
+
+/// See also [spotTimersForGame].
+class SpotTimersForGameProvider
+    extends AutoDisposeProvider<List<Map<String, dynamic>?>> {
+  /// See also [spotTimersForGame].
+  SpotTimersForGameProvider(
+    String gameName,
+  ) : this._internal(
+          (ref) => spotTimersForGame(
+            ref as SpotTimersForGameRef,
+            gameName,
+          ),
+          from: spotTimersForGameProvider,
+          name: r'spotTimersForGameProvider',
+          debugGetCreateSourceHash:
+              const bool.fromEnvironment('dart.vm.product')
+                  ? null
+                  : _$spotTimersForGameHash,
+          dependencies: SpotTimersForGameFamily._dependencies,
+          allTransitiveDependencies:
+              SpotTimersForGameFamily._allTransitiveDependencies,
+          gameName: gameName,
+        );
+
+  SpotTimersForGameProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.gameName,
+  }) : super.internal();
+
+  final String gameName;
+
+  @override
+  Override overrideWith(
+    List<Map<String, dynamic>?> Function(SpotTimersForGameRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: SpotTimersForGameProvider._internal(
+        (ref) => create(ref as SpotTimersForGameRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        gameName: gameName,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<List<Map<String, dynamic>?>> createElement() {
+    return _SpotTimersForGameProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is SpotTimersForGameProvider && other.gameName == gameName;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, gameName.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin SpotTimersForGameRef
+    on AutoDisposeProviderRef<List<Map<String, dynamic>?>> {
+  /// The parameter `gameName` of this provider.
+  String get gameName;
+}
+
+class _SpotTimersForGameProviderElement
+    extends AutoDisposeProviderElement<List<Map<String, dynamic>?>>
+    with SpotTimersForGameRef {
+  _SpotTimersForGameProviderElement(super.provider);
+
+  @override
+  String get gameName => (origin as SpotTimersForGameProvider).gameName;
+}
+
+String _$statusesForGameHash() => r'bc15670fecdd141162a1821762a6aa84439dd17f';
+
+/// See also [statusesForGame].
+@ProviderFor(statusesForGame)
+const statusesForGameProvider = StatusesForGameFamily();
+
+/// See also [statusesForGame].
+class StatusesForGameFamily extends Family<Map<String, String>> {
+  /// See also [statusesForGame].
+  const StatusesForGameFamily();
+
+  /// See also [statusesForGame].
+  StatusesForGameProvider call(
+    String gameName,
+  ) {
+    return StatusesForGameProvider(
+      gameName,
+    );
+  }
+
+  @override
+  StatusesForGameProvider getProviderOverride(
+    covariant StatusesForGameProvider provider,
+  ) {
+    return call(
+      provider.gameName,
+    );
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'statusesForGameProvider';
+}
+
+/// See also [statusesForGame].
+class StatusesForGameProvider extends AutoDisposeProvider<Map<String, String>> {
+  /// See also [statusesForGame].
+  StatusesForGameProvider(
+    String gameName,
+  ) : this._internal(
+          (ref) => statusesForGame(
+            ref as StatusesForGameRef,
+            gameName,
+          ),
+          from: statusesForGameProvider,
+          name: r'statusesForGameProvider',
+          debugGetCreateSourceHash:
+              const bool.fromEnvironment('dart.vm.product')
+                  ? null
+                  : _$statusesForGameHash,
+          dependencies: StatusesForGameFamily._dependencies,
+          allTransitiveDependencies:
+              StatusesForGameFamily._allTransitiveDependencies,
+          gameName: gameName,
+        );
+
+  StatusesForGameProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.gameName,
+  }) : super.internal();
+
+  final String gameName;
+
+  @override
+  Override overrideWith(
+    Map<String, String> Function(StatusesForGameRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: StatusesForGameProvider._internal(
+        (ref) => create(ref as StatusesForGameRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        gameName: gameName,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<Map<String, String>> createElement() {
+    return _StatusesForGameProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is StatusesForGameProvider && other.gameName == gameName;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, gameName.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin StatusesForGameRef on AutoDisposeProviderRef<Map<String, String>> {
+  /// The parameter `gameName` of this provider.
+  String get gameName;
+}
+
+class _StatusesForGameProviderElement
+    extends AutoDisposeProviderElement<Map<String, String>>
+    with StatusesForGameRef {
+  _StatusesForGameProviderElement(super.provider);
+
+  @override
+  String get gameName => (origin as StatusesForGameProvider).gameName;
+}
+
+String _$isUserInSquadHash() => r'e21be4f28a9b64a98886f6248d104f5c5568f24b';
+
+/// See also [isUserInSquad].
+@ProviderFor(isUserInSquad)
+final isUserInSquadProvider = AutoDisposeProvider<bool>.internal(
+  isUserInSquad,
+  name: r'isUserInSquadProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$isUserInSquadHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef IsUserInSquadRef = AutoDisposeProviderRef<bool>;
+String _$activeSquadMembersCountHash() =>
+    r'800c696dcc9d0d29bff77e008a7523885b9ebecf';
+
+/// See also [activeSquadMembersCount].
+@ProviderFor(activeSquadMembersCount)
+final activeSquadMembersCountProvider = AutoDisposeProvider<int>.internal(
+  activeSquadMembersCount,
+  name: r'activeSquadMembersCountProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$activeSquadMembersCountHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ActiveSquadMembersCountRef = AutoDisposeProviderRef<int>;
+String _$squadHealthStatusHash() => r'0d35cba7aadcb3bc020ea51298120f3bc3194fd5';
+
+/// Provider for computed squad health status
+///
+/// Copied from [squadHealthStatus].
+@ProviderFor(squadHealthStatus)
+final squadHealthStatusProvider = AutoDisposeProvider<String>.internal(
+  squadHealthStatus,
+  name: r'squadHealthStatusProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$squadHealthStatusHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef SquadHealthStatusRef = AutoDisposeProviderRef<String>;
 String _$counterHash() => r'4243b34530f53accfd9014a9f0e316fe304ada3e';
 
 /// Example of Riverpod code generation for better performance

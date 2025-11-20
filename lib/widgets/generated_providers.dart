@@ -7,6 +7,14 @@ part 'generated_providers.g.dart';
 
 /// Example of Riverpod code generation for better performance
 /// This file demonstrates how to use @riverpod annotations for automatic code generation
+///
+/// TREE-SHAKING BENEFITS:
+/// - Generated providers use .select() internally for optimal rebuilds
+/// - Only rebuilds when specific state slices change, not entire state objects
+/// - Reduces bundle size by eliminating unused provider code at compile-time
+/// - Compile-time safety prevents runtime provider resolution errors
+/// - Better IDE support with autocomplete and error detection
+/// - Improved performance through static provider resolution
 
 /// Generated provider - more efficient with code generation
 @riverpod
@@ -135,6 +143,69 @@ Map<String, dynamic> userStats(UserStatsRef ref) {
     'activeSquadsCount': squadState.userSquadIds.length,
     'isInitialized': squadState.isInitialized,
   };
+}
+
+/// Squad-specific generated providers with tree-shaking benefits
+/// Tree-shaking: Only rebuilds when specific state slices change
+
+@riverpod
+List<String?> squadSpotsForGame(SquadSpotsForGameRef ref, String gameName) {
+  // Tree-shakes: Only watches gameSquadSpots[gameName], not entire state
+  return ref.watch(squadStateNotifierProvider.select(
+    (state) => state.gameSquadSpots[gameName] ?? [],
+  ));
+}
+
+@riverpod
+List<Map<String, dynamic>?> spotTimersForGame(SpotTimersForGameRef ref, String gameName) {
+  // Tree-shakes: Only watches gameSpotTimers[gameName]
+  return ref.watch(squadStateNotifierProvider.select(
+    (state) => state.gameSpotTimers[gameName] ?? [],
+  ));
+}
+
+@riverpod
+Map<String, String> statusesForGame(StatusesForGameRef ref, String gameName) {
+  // Tree-shakes: Only watches gameStatuses[gameName]
+  return ref.watch(squadStateNotifierProvider.select(
+    (state) => state.gameStatuses[gameName] ?? {},
+  ));
+}
+
+@riverpod
+bool isUserInSquad(IsUserInSquadRef ref) {
+  // Tree-shakes: Only watches selectedSquadId
+  final selectedSquadId = ref.watch(squadStateNotifierProvider.select(
+    (state) => state.selectedSquadId,
+  ));
+  return selectedSquadId != null;
+}
+
+@riverpod
+int activeSquadMembersCount(ActiveSquadMembersCountRef ref) {
+  // Tree-shakes: Only watches squadMemberUids
+  final memberUids = ref.watch(squadStateNotifierProvider.select(
+    (state) => state.squadMemberUids,
+  ));
+  return memberUids.length;
+}
+
+/// Provider for computed squad health status
+@riverpod
+String squadHealthStatus(SquadHealthStatusRef ref) {
+  final isInitialized = ref.watch(squadStateNotifierProvider.select(
+    (state) => state.isInitialized,
+  ));
+  final selectedSquadId = ref.watch(squadStateNotifierProvider.select(
+    (state) => state.selectedSquadId,
+  ));
+  final memberCount = ref.watch(activeSquadMembersCountProvider);
+
+  if (!isInitialized) return 'Initializing...';
+  if (selectedSquadId == null) return 'No squad selected';
+  if (memberCount == 0) return 'Empty squad';
+  if (memberCount == 1) return 'Solo squad';
+  return 'Active squad ($memberCount members)';
 }
 
 /// Widget demonstrating the user stats provider

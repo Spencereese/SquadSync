@@ -34,6 +34,11 @@ import 'services/services.dart';
 import 'app_theme.dart';
 import 'squad_state_notifier.dart';
 
+// LEGACY PROVIDERS - TODO: Remove after full Riverpod migration
+// These ChangeNotifierProvider instances are kept for backward compatibility
+// during partial migration. New code should use Riverpod StateNotifierProvider
+// and generated providers for better performance and tree-shaking.
+
 // Provider for Theme
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeData>((ref) {
   return ThemeNotifier();
@@ -48,6 +53,9 @@ class ThemeNotifier extends StateNotifier<ThemeData> {
     state = isDark ? AppTheme.darkTheme : AppTheme.lightTheme;
   }
 }
+
+// LEGACY PROVIDERS - Keep for backward compatibility during migration
+// TODO: Gradually replace with Riverpod StateNotifierProvider and generated providers
 
 // Provider for UserManager
 final userManagerProvider = ChangeNotifierProvider<UserManager>((ref) {

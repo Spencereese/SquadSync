@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'managers/game_manager.dart';
@@ -481,10 +482,14 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
         state = state.copyWith(
           selectedSquadId: squadId,
           currentSquadData: data,
-          gameSquadSpots: Map<String, List<String?>>.from(data['gameSquadSpots'] ?? {}),
-          gameSpotTimers: Map<String, List<Map<String, dynamic>?>>.from(data['gameSpotTimers'] ?? {}),
-          gameStatuses: Map<String, Map<String, String>>.from(data['gameStatuses'] ?? {}),
-          globalStatuses: Map<String, String>.from(data['globalStatuses'] ?? {}),
+          gameSquadSpots:
+              Map<String, List<String?>>.from(data['gameSquadSpots'] ?? {}),
+          gameSpotTimers: Map<String, List<Map<String, dynamic>?>>.from(
+              data['gameSpotTimers'] ?? {}),
+          gameStatuses:
+              Map<String, Map<String, String>>.from(data['gameStatuses'] ?? {}),
+          globalStatuses:
+              Map<String, String>.from(data['globalStatuses'] ?? {}),
           currentGame: data['currentGame'],
           tiltEnabled: data['tiltEnabled'] ?? false,
           profileImage: data['profileImage'],

@@ -234,6 +234,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
   Widget build(BuildContext context) {
     return ProviderScope(
       child: p.MultiProvider(
+        // Legacy Provider support - TODO: Remove after full migration
         providers: [
           p.ChangeNotifierProvider(create: (_) => SquadState()),
           p.ChangeNotifierProvider(create: (_) => ChatState()),

@@ -24,7 +24,6 @@ import 'managers/squad_membership_service.dart';
 import 'managers/spot_management_service.dart';
 import 'chat/chat_service.dart';
 import 'services/services.dart';
-import 'services/cache_service.dart';
 
 /// State class for SquadStateNotifier
 class SquadStateData {
@@ -468,6 +467,46 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
         state.displayName ?? '': 'Ready'
       },
     );
+  }
+
+  // Load squad data from Firestore
+  Future<void> loadSquadData(String squadId) async {
+    try {
+      final squadDoc = await FirebaseFirestore.instance
+          .collection('squads')
+          .doc(squadId)
+          .get();
+      if (squadDoc.exists) {
+        final data = squadDoc.data()!;
+        state = state.copyWith(
+          selectedSquadId: squadId,
+          currentSquadData: data,
+          gameSquadSpots: Map<String, List<String?>>.from(data['gameSquadSpots'] ?? {}),
+          gameSpotTimers: Map<String, List<Map<String, dynamic>?>>.from(data['gameSpotTimers'] ?? {}),
+          gameStatuses: Map<String, Map<String, String>>.from(data['gameStatuses'] ?? {}),
+          globalStatuses: Map<String, String>.from(data['globalStatuses'] ?? {}),
+          currentGame: data['currentGame'],
+          tiltEnabled: data['tiltEnabled'] ?? false,
+          profileImage: data['profileImage'],
+          displayName: data['displayName'],
+        );
+      }
+    } catch (e) {
+      // Error loading squad data - could add logging here
+      rethrow;
+    }
+  }
+
+  // Update spot timers
+  void updateSpotTimers(String gameName, List<Map<String, dynamic>?> timers) {
+    try {
+      state = state.copyWith(
+        gameSpotTimers: {...state.gameSpotTimers, gameName: timers},
+      );
+    } catch (e) {
+      // Error updating spot timers - could add logging here
+      rethrow;
+    }
   }
 
   @override

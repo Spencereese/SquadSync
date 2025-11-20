@@ -68,7 +68,8 @@ class AvailableSquadsWidget extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              ...availableSquads.map((doc) => _buildSquadItem(context, localRef, doc)),
+              ...availableSquads
+                  .map((doc) => _buildSquadItem(context, localRef, doc)),
             ],
           ),
         );
@@ -76,7 +77,8 @@ class AvailableSquadsWidget extends ConsumerWidget {
     );
   }
 
-  Widget _buildSquadItem(BuildContext context, WidgetRef ref, DocumentSnapshot doc) {
+  Widget _buildSquadItem(
+      BuildContext context, WidgetRef ref, DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final gameName = data['game']?['name'] ?? 'Unknown Game';
     final maxSpots = data['spots'] ?? 4;

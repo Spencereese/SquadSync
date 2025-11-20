@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'models/message_data.dart';
 import '../services/ai_service.dart';
+import '../services/reaction_service.dart' as reaction_service;
 
-class MediaHistoryScreen extends StatefulWidget {
+class MediaHistoryScreen extends ConsumerStatefulWidget {
   final String? chatGroupId;
   final ChatType chatType;
 
@@ -15,10 +17,10 @@ class MediaHistoryScreen extends StatefulWidget {
   });
 
   @override
-  State<MediaHistoryScreen> createState() => _MediaHistoryScreenState();
+  ConsumerState<MediaHistoryScreen> createState() => _MediaHistoryScreenState();
 }
 
-class _MediaHistoryScreenState extends State<MediaHistoryScreen> {
+class _MediaHistoryScreenState extends ConsumerState<MediaHistoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _filterType = 'all'; // all, images, videos, audio
@@ -134,7 +136,7 @@ class _MediaHistoryScreenState extends State<MediaHistoryScreen> {
               // Media type filter
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _filterType,
+                  initialValue: _filterType,
                   decoration: const InputDecoration(
                     labelText: 'Media Type',
                     border: OutlineInputBorder(),
@@ -158,7 +160,7 @@ class _MediaHistoryScreenState extends State<MediaHistoryScreen> {
               // Sort order
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _sortBy,
+                  initialValue: _sortBy,
                   decoration: const InputDecoration(
                     labelText: 'Sort By',
                     border: OutlineInputBorder(),

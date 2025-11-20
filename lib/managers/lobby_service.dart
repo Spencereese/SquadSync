@@ -88,4 +88,16 @@ class LobbyService {
       Map<String, dynamic> lobby, String currentUserId) {
     return _dataManager.hasBlockedPlayersInLobby(lobby, currentUserId);
   }
+
+  /// Start a voice room for a squad
+  /// Returns the voice room ID
+  String startVoiceRoom(String squadId, String squadName) {
+    // Generate a unique room ID based on squad ID
+    final roomId = 'voice_${squadId}_${DateTime.now().millisecondsSinceEpoch}';
+
+    // Here you would typically store the voice room info in Firestore
+    // and notify squad members about the voice room
+
+    return roomId;
+  }
 }

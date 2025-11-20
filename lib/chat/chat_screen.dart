@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert'; // Added for utf8
 import 'dart:async'; // Added for StreamSubscription
@@ -29,6 +29,7 @@ import 'services/chat_media_handler.dart';
 import 'services/chat_typing_manager.dart';
 import 'services/chat_ui_manager.dart';
 import 'chat_settings_menu.dart'; // Importing ChatSettingsMenu
+import 'media_history_screen.dart'; // Importing MediaHistoryScreen
 
 // import 'available_squads_widget.dart'; // Removed - no longer used
 
@@ -99,10 +100,10 @@ class ChatScreenState extends State<ChatScreen>
       duration: const Duration(milliseconds: 300),
     );
 
-    _squadState = Provider.of<SquadState>(context, listen: false);
+    _squadState = p.Provider.of<SquadState>(context, listen: false);
 
     // Store ChatState reference for safe access in dispose
-    _chatState = Provider.of<ChatState>(context, listen: false);
+    _chatState = p.Provider.of<ChatState>(context, listen: false);
     _chatState.addListener(_onChatStateChanged);
 
     // Safety check: prevent opening chat with null chatGroupId for user groups
@@ -259,7 +260,7 @@ class ChatScreenState extends State<ChatScreen>
     }
 
     // Check if user is banned
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = p.Provider.of<SquadState>(context, listen: false);
     final currentUserName = squadState.displayName;
     if (currentUserName != null && squadState.isBanned(currentUserName)) {
       if (mounted) {
@@ -272,7 +273,7 @@ class ChatScreenState extends State<ChatScreen>
       return;
     }
 
-    final chatState = Provider.of<ChatState>(context, listen: false);
+    final chatState = p.Provider.of<ChatState>(context, listen: false);
     String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     chatState.updateSendingStatus(tempId, true);
 
@@ -440,7 +441,7 @@ class ChatScreenState extends State<ChatScreen>
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
-                        Consumer<SquadState>(
+                        p.Consumer<SquadState>(
                           builder: (context, squadState, _) {
                             final memberCount = squadState.statuses.length;
                             return Text(
@@ -486,7 +487,7 @@ class ChatScreenState extends State<ChatScreen>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Consumer<SquadState>(
+                  p.Consumer<SquadState>(
                     builder: (context, squadState, _) {
                       final members = squadState.statuses.entries.map((entry) {
                         final uid = entry.key;
@@ -942,7 +943,7 @@ class ChatScreenState extends State<ChatScreen>
       top: true,
       bottom: false,
       child: Scaffold(
-        body: Consumer<ChatState>(
+        body: p.Consumer<ChatState>(
           builder: (context, chatState, _) {
             final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
             final bottomPadding = keyboardHeight > 0 ? keyboardHeight : 16.0;
@@ -1049,6 +1050,17 @@ class ChatScreenState extends State<ChatScreen>
                                 },
                                 onQuickReactionPicker: () {
                                   // This will be implemented when we integrate with ChatSettingsMenu
+                                },
+                                onViewMediaGallery: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => MediaHistoryScreen(
+                                        chatGroupId: widget.chatGroupId,
+                                        chatType: widget.chatType,
+                                      ),
+                                    ),
+                                  );
                                 },
                               )
                               .animate()

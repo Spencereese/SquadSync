@@ -1,6 +1,111 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'interfaces.dart';
+import 'grok_service.dart';
+import '../managers/notification_manager.dart';
+import '../chat/sqlite_helper.dart';
+
+/// QueryBuilder for building optimized discovery queries
+class QueryBuilder {
+  final FirebaseFirestore _firestore;
+
+  QueryBuilder({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  /// Builds a query for suggested groups with semantic filtering
+  /// Cost: ~20 reads (limit 20), plus Grok API call for scoring
+  Future<Stream<List<Map<String, dynamic>>>> buildSuggestedGroupsQuery(
+    String searchTerm,
+    String gameName,
+    GrokService grokService,
+    NotificationManager notificationManager,
+    SQLiteHelper sqliteHelper,
+  ) async {
+    // First, try to get cached results from SQLite
+    final cachedGroups =
+        await sqliteHelper.getCachedGroups(gameName, searchTerm);
+    if (cachedGroups.isNotEmpty) {
+      // Return cached stream
+      return Stream.value(cachedGroups);
+    }
+
+    // Build the optimized query with required indexes
+    Query<Map<String, dynamic>> query =
+        _firestore.collection('chat_groups').where('isPublic', isEqualTo: true);
+
+    if (gameName.isNotEmpty) {
+      query = query.where('gameName', isEqualTo: gameName);
+    }
+
+    query = query
+        .orderBy('memberCount', descending: true)
+        .orderBy('lastMessageTime', descending: true)
+        .limit(20);
+
+    try {
+      final stream = query.snapshots();
+
+      // Process results with semantic filtering
+      return stream.asyncMap((snapshot) async {
+        final docs = snapshot.docs;
+        final groups = docs.map((d) => d.data()).toList();
+
+        if (searchTerm.isNotEmpty && groups.isNotEmpty) {
+          // Get relevance scores from Grok
+          final groupNames = groups.map((g) => g['name'] as String).toList();
+          final scores =
+              await grokService.scoreRelevance(searchTerm, groupNames);
+
+          // Filter and sort by relevance
+          final scoredGroups = groups.map((group) {
+            final name = group['name'] as String;
+            final score = scores[name] ?? 0.0;
+            return {'group': group, 'score': score};
+          }).toList();
+
+          scoredGroups.sort(
+              (a, b) => (b['score'] as double).compareTo(a['score'] as double));
+
+          final filteredGroups = scoredGroups
+              .take(10)
+              .map((s) => s['group'] as Map<String, dynamic>)
+              .toList();
+
+          // Cache the results
+          await sqliteHelper.cacheGroups(filteredGroups, gameName, searchTerm);
+
+          return filteredGroups;
+        } else {
+          // Cache without filtering
+          await sqliteHelper.cacheGroups(groups, gameName, searchTerm);
+
+          return groups;
+        }
+      });
+    } on FirebaseException catch (e) {
+      if (e.code == 'failed-precondition') {
+        // Index missing, fallback to simpler query
+        notificationManager.showNotification(
+            title: 'Search optimized', body: 'Creating index...');
+
+        final fallbackQuery = _firestore
+            .collection('chat_groups')
+            .where('isPublic', isEqualTo: true)
+            .limit(20);
+
+        final stream = fallbackQuery.snapshots();
+
+        // Cache fallback results
+        return stream.map((snapshot) {
+          final groups = snapshot.docs.map((d) => d.data()).toList();
+          sqliteHelper.cacheGroups(groups, gameName, searchTerm);
+          return groups;
+        });
+      }
+      rethrow;
+    }
+  }
+}
 
 /// Generic field serializer for Firestore operations
 class FirestoreFieldSerializer<T> {
@@ -19,12 +124,18 @@ class FirestoreFieldSerializer<T> {
 
 /// Service for handling Firestore operations and data serialization
 class FirestoreService implements IFirestoreService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
   final Set<String> _changedFields = {};
   DateTime _lastUpdate = DateTime.now();
   static const int _updateInterval = 5;
 
   final Map<String, FirestoreFieldSerializer> _fieldSerializers = {};
+
+  FirestoreService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        queryBuilder = QueryBuilder(firestore: firestore);
+
+  final QueryBuilder queryBuilder;
 
   /// Register a field serializer
   @override

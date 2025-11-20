@@ -1,5 +1,8 @@
 # SquadSync - Squad Gaming App
 
+[![CI/CD Pipeline](https://github.com/Spencereese/SquadSync/actions/workflows/test.yml/badge.svg)](https://github.com/Spencereese/SquadSync/actions/workflows/test.yml)
+[![Coverage](https://img.shields.io/badge/coverage-70%25-brightgreen)](https://github.com/Spencereese/SquadSync/actions/workflows/test.yml)
+
 A Flutter-based squad gaming app with real-time chat, spot management, and server-side timer functionality.
 
 ## Features

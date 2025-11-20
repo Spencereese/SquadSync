@@ -14,6 +14,230 @@ import 'widgets/message_avatar.dart';
 import 'widgets/message_sender.dart';
 import 'widgets/imessage_reactions_bar.dart';
 
+/// Sub-widget for the bubble header (avatar and sender)
+class _BubbleHeader extends StatelessWidget {
+  final MessageData messageData;
+  final bool isMe;
+  final bool showSender;
+  final bool showAvatar;
+
+  const _BubbleHeader({
+    required this.messageData,
+    required this.isMe,
+    required this.showSender,
+    required this.showAvatar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isMe) return const SizedBox.shrink();
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (showAvatar)
+          MessageAvatar(
+            senderName: messageData.sender,
+            isFromCurrentUser: isMe,
+          ),
+        if (showAvatar) const SizedBox(width: 8),
+        if (showSender) MessageSender(message: messageData),
+      ],
+    );
+  }
+}
+
+/// Sub-widget for the bubble content (message container)
+class _BubbleContent extends StatefulWidget {
+  final MessageData messageData;
+  final bool isMe;
+  final String? chatGroupId;
+  final ChatService? chatService;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final Function(Offset, Size, double) onLongPressDetails;
+
+  const _BubbleContent({
+    required this.messageData,
+    required this.isMe,
+    this.chatGroupId,
+    this.chatService,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onLongPressDetails,
+  });
+
+  @override
+  State<_BubbleContent> createState() => _BubbleContentState();
+}
+
+class _BubbleContentState extends State<_BubbleContent> {
+  final GlobalKey _messageKey = GlobalKey();
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        // Remove haptics to avoid overload
+        FocusScope.of(context).unfocus();
+        widget.onTap();
+      },
+      onTapDown: (_) {
+        setState(() => _isPressed = true);
+      },
+      onTapUp: (_) {
+        setState(() => _isPressed = false);
+      },
+      onTapCancel: () {
+        setState(() => _isPressed = false);
+      },
+      onLongPress: () {
+        FocusScope.of(context).unfocus();
+        final RenderBox? renderBox =
+            _messageKey.currentContext?.findRenderObject() as RenderBox?;
+        if (renderBox == null) return;
+
+        final messagePosition = renderBox.localToGlobal(Offset.zero);
+        final messageSize = renderBox.size;
+        final screenSize = MediaQuery.of(context).size;
+        final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
+        final menuSpacing = 4.0;
+        final menuTop = messagePosition.dy + messageSize.height + menuSpacing;
+        final menuHeight = 200.0;
+        final availableHeight = screenSize.height - keyboardHeight - 20;
+        final shouldFlipMenu = menuTop + menuHeight > availableHeight;
+        final floatingOffset = shouldFlipMenu ? -220.0 : 0.0;
+
+        widget.onLongPressDetails(messagePosition, messageSize, floatingOffset);
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            key: _messageKey,
+            duration: const Duration(milliseconds: 150),
+            margin: const EdgeInsets.symmetric(vertical: 2.0),
+            padding: _getMessagePadding(),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.7,
+            ),
+            decoration: _getMessageDecoration().copyWith(
+              boxShadow: _isPressed
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : _getMessageDecoration().boxShadow,
+            ),
+            child: Semantics(
+              label: 'Message from ${widget.messageData.sender}',
+              child: IntrinsicWidth(
+                child: MessageContent(
+                  message: widget.messageData,
+                  isFromCurrentUser: widget.isMe,
+                  chatGroupId: widget.chatGroupId,
+                  chatService: widget.chatService,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ).animate().fadeIn(duration: const Duration(milliseconds: 300)).slideY(
+          begin: 0.2,
+          end: 0.0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut),
+    );
+  }
+
+  BoxDecoration _getMessageDecoration() {
+    if (widget.messageData.isGrokMessage) {
+      return BoxDecoration(
+        color: const Color(0xFF0A0A0A),
+        border: Border.all(
+          color: const Color(0xFF8B0000),
+          width: 1.5,
+        ),
+        borderRadius: BorderRadius.circular(2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF8B0000).withValues(alpha: 0.3),
+            blurRadius: 8,
+            spreadRadius: 1,
+            offset: const Offset(0, 0),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.7),
+            blurRadius: 15,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      );
+    }
+
+    return BoxDecoration(
+      color: widget.isMe ? const Color(0xFF007AFF) : const Color(0xFF2C2C2E),
+      borderRadius: BorderRadius.only(
+        topLeft: const Radius.circular(16),
+        topRight: const Radius.circular(16),
+        bottomLeft:
+            widget.isMe ? const Radius.circular(16) : const Radius.circular(4),
+        bottomRight:
+            widget.isMe ? const Radius.circular(4) : const Radius.circular(16),
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.1),
+          blurRadius: 4,
+          offset: const Offset(0, 1),
+        ),
+      ],
+    );
+  }
+
+  EdgeInsets _getMessagePadding() {
+    if (widget.messageData.isGrokMessage) {
+      return const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0);
+    }
+    return const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0);
+  }
+}
+
+/// Sub-widget for bubble reactions
+class _BubbleReactions extends StatelessWidget {
+  final List<Map<String, dynamic>> reactions;
+  final bool isOutgoing;
+  final ValueChanged<String> onReactionTap;
+
+  const _BubbleReactions({
+    required this.reactions,
+    required this.isOutgoing,
+    required this.onReactionTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (reactions.isEmpty) return const SizedBox.shrink();
+
+    return Positioned(
+      bottom: -20,
+      right: isOutgoing ? -4 : null,
+      left: isOutgoing ? null : -4,
+      child: MessageReactions(
+        reactions: reactions,
+        onReactionTap: onReactionTap,
+        isOutgoing: isOutgoing,
+      ),
+    );
+  }
+}
+
 /// Refactored MessageBubble using decomposed components
 /// This replaces the 1183-line monolithic MessageBubble with a clean, maintainable structure
 class MessageBubble extends StatefulWidget {
@@ -85,6 +309,89 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
   }
 
+  void _dismissOverlays() {
+    // Remove overlay entries if they exist
+    _reactionsOverlay?.remove();
+    _menuOverlay?.remove();
+
+    // Clear references
+    _reactionsOverlay = null;
+    _menuOverlay = null;
+  }
+
+  void _showOverlays(
+      Offset messagePosition, Size messageSize, double floatingOffset) {
+    final screenSize = MediaQuery.of(context).size;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
+    final menuSpacing = 4.0;
+    final menuTop = messagePosition.dy + messageSize.height + menuSpacing;
+    final menuHeight = 200.0;
+    final availableHeight = screenSize.height - keyboardHeight - 20;
+    final shouldFlipMenu = menuTop + menuHeight > availableHeight;
+
+    late final OverlayEntry reactionsOverlay;
+    late final OverlayEntry menuOverlay;
+
+    _reactionsOverlay = reactionsOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          IMessageReactionsBar(
+            messageId: _messageData.id,
+            chatGroupId: widget.chatGroupId,
+            chatType: widget.chatType,
+            isOutgoing: widget.isMe,
+            onDismiss: _dismissOverlays,
+            messagePosition: messagePosition,
+            messageSize: messageSize,
+            floatingOffset: floatingOffset,
+          ),
+        ],
+      ),
+    );
+
+    final finalMenuTop =
+        messagePosition.dy + messageSize.height + menuSpacing + floatingOffset;
+
+    _menuOverlay = menuOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _dismissOverlays,
+              behavior: HitTestBehavior.translucent,
+            ),
+          ),
+          Positioned(
+            top: finalMenuTop.clamp(10, availableHeight - 220),
+            left: widget.isMe ? null : 16.0,
+            right: widget.isMe ? 16.0 : null,
+            child: Material(
+              color: Colors.transparent,
+              elevation: 20,
+              shadowColor: Colors.black.withValues(alpha: 0.5),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeOut,
+                builder: (context, value, child) => Transform.translate(
+                  offset: Offset(0, 10 * (1 - value)),
+                  child: Opacity(
+                    opacity: value,
+                    child: _buildActionMenu(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Overlay.of(context).insert(reactionsOverlay);
+    Overlay.of(context).insert(menuOverlay);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Check if this is a Grok AI message for unique styling
@@ -104,41 +411,34 @@ class _MessageBubbleState extends State<MessageBubble> {
                 widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              if (!widget.isMe && widget.showAvatar)
-                MessageAvatar(
-                  senderName: _messageData.sender,
-                  isFromCurrentUser: widget.isMe,
+              if (!widget.isMe)
+                _BubbleHeader(
+                  messageData: _messageData,
+                  isMe: widget.isMe,
+                  showSender: widget.showSender,
+                  showAvatar: widget.showAvatar,
                 ),
-              if (!widget.isMe && widget.showAvatar) const SizedBox(width: 8),
               Flexible(
-                child: Column(
-                  crossAxisAlignment: widget.isMe
-                      ? CrossAxisAlignment.end
-                      : CrossAxisAlignment.start,
+                child: Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    if (widget.showSender && !widget.isMe)
-                      MessageSender(message: _messageData),
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _buildMessageContainer(context),
-                        if (_messageData.reactions.isNotEmpty)
-                          Positioned(
-                            bottom:
-                                -20, // Position lower so reactions appear more overlapped with message bubble
-                            right: widget.isMe ? -4 : null,
-                            left: widget.isMe ? null : -4,
-                            child: MessageReactions(
-                              reactions: _messageData.reactions,
-                              onReactionTap: (emoji) {
-                                // Show reaction details and reopen reactions bar
-                                _showReactionDetails(emoji);
-                              },
-                              isOutgoing: widget.isMe,
-                            ),
-                          ),
-                      ],
+                    _BubbleContent(
+                      messageData: _messageData,
+                      isMe: widget.isMe,
+                      chatGroupId: widget.chatGroupId,
+                      chatService: widget.chatService,
+                      onTap: widget.onTap,
+                      onLongPress: widget.onLongPress,
+                      onLongPressDetails: (position, size, offset) {
+                        _showOverlays(position, size, offset);
+                      },
                     ),
+                    if (_messageData.reactions.isNotEmpty)
+                      _BubbleReactions(
+                        reactions: _messageData.reactions,
+                        isOutgoing: widget.isMe,
+                        onReactionTap: (emoji) => _showReactionDetails(emoji),
+                      ),
                   ],
                 ),
               ),
@@ -803,6 +1103,66 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
+  BoxDecoration _getMessageDecoration() {
+    // Futuristic design for Grok AI messages
+    if (_messageData.isGrokMessage) {
+      return BoxDecoration(
+        color: const Color(0xFF0A0A0A), // Very dark background
+        border: Border.all(
+          color: const Color(0xFF8B0000), // Dark red border
+          width: 1.5,
+        ),
+        borderRadius: BorderRadius.circular(2), // Sharp, angular corners
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF8B0000).withValues(alpha: 0.3),
+            blurRadius: 8,
+            spreadRadius: 1,
+            offset: const Offset(0, 0),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.7),
+            blurRadius: 15,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      );
+    }
+
+    // iMessage-style bubbles
+    return BoxDecoration(
+      color: widget.isMe
+          ? const Color(0xFF007AFF) // iMessage blue for sent messages
+          : const Color(
+              0xFF2C2C2E), // Dark gray for received messages in dark theme
+      borderRadius: BorderRadius.only(
+        topLeft: const Radius.circular(16),
+        topRight: const Radius.circular(16),
+        bottomLeft:
+            widget.isMe ? const Radius.circular(16) : const Radius.circular(4),
+        bottomRight:
+            widget.isMe ? const Radius.circular(4) : const Radius.circular(16),
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.1),
+          blurRadius: 4,
+          offset: const Offset(0, 1),
+        ),
+      ],
+    );
+  }
+
+  EdgeInsets _getMessagePadding() {
+    // Compact padding for futuristic Grok messages
+    if (_messageData.isGrokMessage) {
+      return const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0);
+    }
+
+    // iMessage-style padding - generous for comfortable reading
+    return const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0);
+  }
+
   void _showReactionDetails(String tappedEmoji) {
     final RenderBox? renderBox =
         _messageKey.currentContext?.findRenderObject() as RenderBox?;
@@ -899,75 +1259,5 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
       Overlay.of(context).insert(reactionsOverlay);
     });
-  }
-
-  void _dismissOverlays() {
-    // Remove overlay entries if they exist
-    _reactionsOverlay?.remove();
-    _menuOverlay?.remove();
-
-    // Clear references
-    _reactionsOverlay = null;
-    _menuOverlay = null;
-  }
-
-  BoxDecoration _getMessageDecoration() {
-    // Futuristic design for Grok AI messages
-    if (_messageData.isGrokMessage) {
-      return BoxDecoration(
-        color: const Color(0xFF0A0A0A), // Very dark background
-        border: Border.all(
-          color: const Color(0xFF8B0000), // Dark red border
-          width: 1.5,
-        ),
-        borderRadius: BorderRadius.circular(2), // Sharp, angular corners
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF8B0000).withValues(alpha: 0.3),
-            blurRadius: 8,
-            spreadRadius: 1,
-            offset: const Offset(0, 0),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.7),
-            blurRadius: 15,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      );
-    }
-
-    // iMessage-style bubbles
-    return BoxDecoration(
-      color: widget.isMe
-          ? const Color(0xFF007AFF) // iMessage blue for sent messages
-          : const Color(
-              0xFF2C2C2E), // Dark gray for received messages in dark theme
-      borderRadius: BorderRadius.only(
-        topLeft: const Radius.circular(21),
-        topRight: const Radius.circular(21),
-        bottomLeft:
-            widget.isMe ? const Radius.circular(21) : const Radius.circular(4),
-        bottomRight:
-            widget.isMe ? const Radius.circular(4) : const Radius.circular(21),
-      ),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.1),
-          blurRadius: 4,
-          offset: const Offset(0, 1),
-        ),
-      ],
-    );
-  }
-
-  EdgeInsets _getMessagePadding() {
-    // Compact padding for futuristic Grok messages
-    if (_messageData.isGrokMessage) {
-      return const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0);
-    }
-
-    // iMessage-style padding - generous for comfortable reading
-    return const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0);
   }
 }

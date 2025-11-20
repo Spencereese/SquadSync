@@ -1,41 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Core color palette - these are static and shared across themes
-  static const primaryColor =
-      Color(0xFF1A237E); // Deep indigo for primary elements
-  static const secondaryColor =
-      Color(0xFF3F51B5); // Lighter indigo for secondary accents
-  static const accentColor =
-      Colors.cyanAccent; // Bright cyan for highlights and calls-to-action
-  static const errorColor =
-      Colors.redAccent; // Red for errors and destructive actions like logout
-  static const hintColor =
-      Colors.grey; // Neutral grey for hints and placeholders
+  // Core color palette - high-contrast dark theme with subtle blue accents
+  static const primaryColor = Color(0xFF007AFF); // iMessage blue for primary
+  static const secondaryColor = Color(0xFF5AC8FA); // Light blue for secondary
+  static const accentColor = Color(0xFF007AFF); // Subtle blue accents
+  static const errorColor = Color(0xFFFF3B30); // iOS red for errors
+  static const hintColor = Color(0xFF8E8E93); // Neutral gray for hints
 
   // Light/dark specific colors
   static const lightBackgroundColor = Colors.white;
   static const lightTextColor = Colors.black;
-  static const darkBackgroundColor = Colors
-      .transparent; // Transparent for dark mode (assuming custom background)
+  static const darkBackgroundColor = Colors.black; // Pure black for dark mode
   static const darkTextColor = Colors.white;
-  static const cardDarkColor =
-      Color(0xFF121212); // Slightly darker card for dark mode
+  static const cardDarkColor = Color(0xFF1C1C1E); // Dark gray for cards
   static const cardLightColor =
-      Color(0xFFE0E0E0); // Light grey for cards in light mode
+      Color(0xFFF2F2F7); // Light gray for light mode cards
 
-  // Common TextTheme - applied to both light and dark, with color overrides where needed
-  static const commonTextTheme = TextTheme(
-    bodyMedium: TextStyle(fontSize: 16.0, fontWeight: FontWeight.normal),
-    titleLarge: TextStyle(fontSize: 20.0, fontWeight: FontWeight.bold),
-    labelLarge:
-        TextStyle(fontSize: 16.0, fontWeight: FontWeight.w600), // Button text
-    headlineMedium: TextStyle(fontSize: 24.0, fontWeight: FontWeight.bold),
-    // Added more styles for completeness (e.g., for subtitles, captions)
-    titleMedium: TextStyle(fontSize: 18.0, fontWeight: FontWeight.w600),
-    bodySmall: TextStyle(fontSize: 14.0),
-    labelSmall: TextStyle(fontSize: 12.0, fontWeight: FontWeight.w500),
-    headlineSmall: TextStyle(fontSize: 20.0, fontWeight: FontWeight.bold),
+  // Common TextTheme - using Google Fonts Roboto for clean typography
+  static final commonTextTheme = GoogleFonts.robotoTextTheme().copyWith(
+    bodyMedium:
+        GoogleFonts.roboto(fontSize: 16.0, fontWeight: FontWeight.normal),
+    titleLarge: GoogleFonts.roboto(fontSize: 20.0, fontWeight: FontWeight.bold),
+    labelLarge: GoogleFonts.roboto(fontSize: 16.0, fontWeight: FontWeight.w600),
+    headlineMedium:
+        GoogleFonts.roboto(fontSize: 24.0, fontWeight: FontWeight.bold),
+    titleMedium:
+        GoogleFonts.roboto(fontSize: 18.0, fontWeight: FontWeight.w600),
+    bodySmall: GoogleFonts.roboto(fontSize: 14.0),
+    labelSmall: GoogleFonts.roboto(fontSize: 12.0, fontWeight: FontWeight.w500),
+    headlineSmall:
+        GoogleFonts.roboto(fontSize: 20.0, fontWeight: FontWeight.bold),
   );
 
   // Common BottomNavigationBarThemeData - shared logic with color overrides
@@ -77,14 +73,13 @@ class AppTheme {
     );
   }
 
-  // Common CardTheme - with color override
+  // Common CardTheme - minimal elevation for professional look
   static CardThemeData _cardTheme(Color cardColor) {
     return CardThemeData(
       color: cardColor,
-      elevation: 4.0,
+      elevation: 1.0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12.0),
-        side: BorderSide(color: accentColor.withAlpha(76), width: 1.0),
       ),
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
     );
@@ -100,13 +95,13 @@ class AppTheme {
     );
   }
 
-  // Light Theme - Using Material 3 ColorScheme for better harmony and future-proofing
+  // Light Theme - Using Material 3 ColorScheme
   static final ThemeData lightTheme = ThemeData(
-    useMaterial3: true, // Enable Material 3 for improved design system
+    useMaterial3: true,
     colorScheme: ColorScheme.light(
       primary: primaryColor,
       secondary: secondaryColor,
-      tertiary: accentColor, // Using tertiary for accents like cyan
+      tertiary: accentColor,
       error: errorColor,
       surface: cardLightColor,
       onSurface: lightTextColor,
@@ -124,7 +119,6 @@ class AppTheme {
     bottomNavigationBarTheme:
         _bottomNavTheme(accentColor, Colors.grey[600]!, lightBackgroundColor),
     sliderTheme: commonSliderTheme,
-    // Additional Material 3 tweaks: Input decoration for forms/chat inputs
     inputDecorationTheme: InputDecorationTheme(
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.0)),
       focusedBorder: OutlineInputBorder(
@@ -133,11 +127,15 @@ class AppTheme {
       ),
       hintStyle: TextStyle(color: hintColor),
     ),
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    }),
   );
 
-  // Dark Theme - Mirroring light with dark-specific colors
+  // Dark Theme - Default dark mode with high-contrast blacks/grays and subtle blue accents
   static final ThemeData darkTheme = ThemeData(
-    useMaterial3: true, // Enable Material 3
+    useMaterial3: true,
     colorScheme: ColorScheme.dark(
       primary: primaryColor,
       secondary: secondaryColor,
@@ -159,7 +157,6 @@ class AppTheme {
     bottomNavigationBarTheme:
         _bottomNavTheme(accentColor, Colors.grey[600]!, Colors.black),
     sliderTheme: commonSliderTheme,
-    // Matching input decoration for dark mode
     inputDecorationTheme: InputDecorationTheme(
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.0)),
       focusedBorder: OutlineInputBorder(
@@ -168,5 +165,21 @@ class AppTheme {
       ),
       hintStyle: TextStyle(color: hintColor),
     ),
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    }),
+  );
+
+  static const darkGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Colors.black, Color(0xFF1a1a2e)],
+  );
+
+  static const lightGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Colors.white, Color(0xFFF5F5F5)],
   );
 }

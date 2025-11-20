@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../squad_state.dart';
 import '../managers/game_manager.dart';
 import '../managers/squad_manager.dart';
 import '../managers/user_manager.dart';
+import '../managers/availability_manager.dart';
+import '../services/grok_service.dart';
+import '../providers.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'squad_dialogs.dart';
@@ -120,7 +124,7 @@ class ClaimSpotFAB extends StatelessWidget {
           if (status == 'called') {
             return FloatingActionButton.extended(
               onPressed: () => lockSpot(
-                  context, Provider.of<SquadState>(context, listen: false)),
+                  context, p.Provider.of<SquadState>(context, listen: false)),
               backgroundColor: Colors.yellowAccent,
               icon: const Icon(Icons.lock),
               label: const Text('Lock Spot'),
@@ -128,7 +132,7 @@ class ClaimSpotFAB extends StatelessWidget {
           } else if (status == 'ready') {
             return FloatingActionButton.extended(
               onPressed: () => callSpot(
-                  context, Provider.of<SquadState>(context, listen: false)),
+                  context, p.Provider.of<SquadState>(context, listen: false)),
               backgroundColor: Colors.orangeAccent,
               icon: const Icon(Icons.call),
               label: const Text('Call Spot'),
@@ -180,11 +184,18 @@ class _SquadTabContentState extends State<_SquadTabContent> {
   String? _circle;
   List<String> _friends = [];
 
+  // Quick Join enhancements
+  List<Map<String, dynamic>> _suggestedLobbies = [];
+  bool _isLoadingSuggestions = false;
+  DateTime? _lastSuggestionFetch;
+  final Duration _debounceDuration = const Duration(milliseconds: 500);
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _currentContext = context;
-    final squadState = Provider.of<SquadState>(_currentContext, listen: false);
+    final squadState =
+        p.Provider.of<SquadState>(_currentContext, listen: false);
     if (squadState.context == null) {
       squadState.initialize(_currentContext);
     }
@@ -197,9 +208,9 @@ class _SquadTabContentState extends State<_SquadTabContent> {
       });
     } else if (widget.gameName != null) {
       final gameManager =
-          Provider.of<GameManager>(_currentContext, listen: false);
+          p.Provider.of<GameManager>(_currentContext, listen: false);
       final userManager =
-          Provider.of<UserManager>(_currentContext, listen: false);
+          p.Provider.of<UserManager>(_currentContext, listen: false);
       if (squadState.currentGame == null ||
           squadState.currentGame!['name'] != widget.gameName) {
         // First, try to find the game in pinned games (most likely source for quick start)
@@ -235,7 +246,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           gameManager.searchGames(widget.gameName!).then((searchResults) {
             if (searchResults.isNotEmpty && mounted) {
               final squadState =
-                  Provider.of<SquadState>(_currentContext, listen: false);
+                  p.Provider.of<SquadState>(_currentContext, listen: false);
               // Only update if currentGame is still the basic fallback (has empty summary)
               if (squadState.currentGame?['summary'] == '' &&
                   squadState.currentGame?['name'] == widget.gameName) {
@@ -285,7 +296,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
     try {
       final squadState =
-          Provider.of<SquadState>(_currentContext, listen: false);
+          p.Provider.of<SquadState>(_currentContext, listen: false);
       final chatGroupDoc = await FirebaseFirestore.instance
           .collection('squads')
           .doc(squadState.selectedSquadId)
@@ -328,10 +339,11 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
   Future<void> _fetchFriends() async {
     final userManager =
-        Provider.of<UserManager>(_currentContext, listen: false);
+        p.Provider.of<UserManager>(_currentContext, listen: false);
     final friendsStream = userManager.streamFriends();
 
-    friendsStream.listen((friends) {
+    // Debounce the stream
+    await for (final friends in friendsStream) {
       if (mounted) {
         final friendNames = friends
             .map((f) => f['displayName'] as String? ?? '')
@@ -341,7 +353,64 @@ class _SquadTabContentState extends State<_SquadTabContent> {
           _friends = friendNames;
         });
       }
+      // Wait for debounce duration before processing next
+      await Future.delayed(_debounceDuration);
+    }
+  }
+
+  Future<void> _fetchQuickJoinSuggestions() async {
+    if (_lastSuggestionFetch != null &&
+        DateTime.now().difference(_lastSuggestionFetch!) < _debounceDuration) {
+      return; // Debounce
+    }
+
+    setState(() {
+      _isLoadingSuggestions = true;
     });
+
+    try {
+      final userManager =
+          p.Provider.of<UserManager>(_currentContext, listen: false);
+      final availabilityManager =
+          p.Provider.of<AvailabilityManager>(_currentContext, listen: false);
+
+      final pinnedGames = userManager.pinnedGames;
+      if (pinnedGames.isNotEmpty) {
+        _suggestedLobbies =
+            await availabilityManager.suggestLobbies(pinnedGames);
+      } else {
+        _suggestedLobbies = [];
+      }
+
+      _lastSuggestionFetch = DateTime.now();
+    } catch (e) {
+      print('Error fetching quick join suggestions: $e');
+      _suggestedLobbies = [];
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingSuggestions = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleQuickJoin() async {
+    await _fetchQuickJoinSuggestions();
+
+    if (_suggestedLobbies.isNotEmpty) {
+      // Navigate to the first suggested lobby or show a dialog
+      final lobby = _suggestedLobbies.first;
+      // For now, just show a snackbar
+      ScaffoldMessenger.of(_currentContext).showSnackBar(
+        SnackBar(content: Text('Suggested lobby: ${lobby['gameName']}')),
+      );
+    } else {
+      ScaffoldMessenger.of(_currentContext).showSnackBar(
+        const SnackBar(
+            content: Text('No public lobbies found for your pinned games')),
+      );
+    }
   }
 
   List<String> _getMembersForCircle() {
@@ -358,7 +427,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
       case 'Public':
         // Show friends plus anyone who has joined spots
         final squadState =
-            Provider.of<SquadState>(_currentContext, listen: false);
+            p.Provider.of<SquadState>(_currentContext, listen: false);
         final gameName = widget.gameName ?? '';
         final gameSquadSpots = squadState.gameSquadSpots[gameName] ?? [];
         final joinedUsers = gameSquadSpots
@@ -374,7 +443,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SquadState>(
+    return p.Consumer<SquadState>(
       builder: (context, squadState, child) {
         // Always show the squad spots interface, regardless of selectedSquadId
         return Scaffold(
@@ -394,6 +463,47 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     child: SquadHeader(lobbyId: widget.lobbyId),
+                  ),
+                ),
+
+                // Quick Join button
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 8.0),
+                    child: Consumer(
+                      builder: (context, ref, child) {
+                        final pinnedGames = ref.watch(userManagerProvider
+                            .select((userManager) => userManager.pinnedGames));
+                        return ElevatedButton.icon(
+                          onPressed:
+                              pinnedGames.isNotEmpty ? _handleQuickJoin : null,
+                          icon: _isLoadingSuggestions
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.electric_bolt,
+                                  color: Colors.white),
+                          label: Text(
+                            _isLoadingSuggestions
+                                ? 'Finding Lobbies...'
+                                : 'Quick Join',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF007AFF),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
 
@@ -463,10 +573,10 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
   void _togglePeacockMember(String member, bool isInPeacock) {
     if (isInPeacock) {
-      Provider.of<SquadState>(_currentContext, listen: false)
+      p.Provider.of<SquadState>(_currentContext, listen: false)
           .removeFromPeacock(member);
     } else {
-      Provider.of<SquadState>(_currentContext, listen: false)
+      p.Provider.of<SquadState>(_currentContext, listen: false)
           .addToPeacock(member);
     }
     setState(() {});
@@ -487,7 +597,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     if (user == null || widget.lobbyId == null) return;
 
     try {
-      final squadManager = Provider.of<SquadManager>(context, listen: false);
+      final squadManager = p.Provider.of<SquadManager>(context, listen: false);
       await squadManager.claimPeacockSpot(
           widget.lobbyId!, user.uid, widget.gameName!);
 
@@ -507,7 +617,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     if (user == null || widget.lobbyId == null) return;
 
     try {
-      final squadManager = Provider.of<SquadManager>(context, listen: false);
+      final squadManager = p.Provider.of<SquadManager>(context, listen: false);
       await squadManager.lockPeacockSpot(
           widget.lobbyId!, user.uid, widget.gameName!);
 

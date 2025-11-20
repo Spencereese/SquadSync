@@ -8,6 +8,8 @@ import '../services/interfaces.dart';
 class GameManager with ChangeNotifier implements IGameManager {
   static const String _backendUrl =
       'https://squadsync-backend-756172684661.us-central1.run.app'; // Replace with your deployed backend URL
+  final FirebaseFirestore _firestore;
+  final http.Client _httpClient;
   Map<String, dynamic>? _currentGame;
   List<Map<String, dynamic>> _availableGames = [
     {
@@ -106,9 +108,16 @@ class GameManager with ChangeNotifier implements IGameManager {
   Set<String> _mutedGames = {};
   Set<String> _hiddenGames = {};
 
-  GameManager() {
+  GameManager(
+      {FirebaseFirestore? firestore,
+      http.Client? httpClient,
+      bool skipInitialization = false})
+      : _firestore = firestore ?? FirebaseFirestore.instance,
+        _httpClient = httpClient ?? http.Client() {
     // Try to fetch games from API in the background
-    _initializeGames();
+    if (!skipInitialization) {
+      _initializeGames();
+    }
   }
 
   Future<void> _initializeGames() async {
@@ -272,7 +281,7 @@ class GameManager with ChangeNotifier implements IGameManager {
     try {
       // Call backend IGDB search
       print('GameManager: Attempting backend IGDB search...');
-      final response = await http.get(
+      final response = await _httpClient.get(
         Uri.parse(
             '$_backendUrl/igdb/search?q=${Uri.encodeComponent(query)}&limit=10'),
       );
@@ -285,13 +294,11 @@ class GameManager with ChangeNotifier implements IGameManager {
             'GameManager: Backend IGDB search returned ${igdbResults.length} results');
         if (igdbResults.isNotEmpty) {
           // Cache results in Firestore for future offline access
-          final batch = FirebaseFirestore.instance.batch();
+          final batch = _firestore.batch();
           for (final game in igdbResults) {
             final gameData = Map<String, dynamic>.from(game);
             gameData['name_lowercase'] = game['name']?.toString().toLowerCase();
-            final docRef = FirebaseFirestore.instance
-                .collection('games')
-                .doc(game['slug']);
+            final docRef = _firestore.collection('games').doc(game['slug']);
             batch.set(docRef, gameData, SetOptions(merge: true));
           }
           await batch.commit();
@@ -307,7 +314,7 @@ class GameManager with ChangeNotifier implements IGameManager {
 
     // Fallback to Firestore search
     try {
-      final snapshot = await FirebaseFirestore.instance
+      final snapshot = await _firestore
           .collection('games')
           .where('name', isGreaterThanOrEqualTo: query)
           .where('name', isLessThanOrEqualTo: '$query\uf8ff')
@@ -362,13 +369,13 @@ class GameManager with ChangeNotifier implements IGameManager {
         'escape from tarkov'
       ];
 
-      final batch = FirebaseFirestore.instance.batch();
+      final batch = _firestore.batch();
       int totalFetched = 0;
 
       for (final query in popularQueries) {
         if (totalFetched >= pageSize) break;
 
-        final response = await http.get(
+        final response = await _httpClient.get(
           Uri.parse(
               '$_backendUrl/igdb/search?q=${Uri.encodeComponent(query)}&limit=3'),
         );
@@ -378,9 +385,7 @@ class GameManager with ChangeNotifier implements IGameManager {
           for (final game in results) {
             if (totalFetched >= pageSize) break;
 
-            final docRef = FirebaseFirestore.instance
-                .collection('games')
-                .doc(game['slug']);
+            final docRef = _firestore.collection('games').doc(game['slug']);
             batch.set(docRef, game, SetOptions(merge: true));
             totalFetched++;
           }
@@ -407,7 +412,7 @@ class GameManager with ChangeNotifier implements IGameManager {
       if (gameName == null || gameName.isEmpty) return game;
 
       // Search IGDB for this game via backend
-      final response = await http.get(
+      final response = await _httpClient.get(
         Uri.parse(
             '$_backendUrl/igdb/search?q=${Uri.encodeComponent(gameName)}&limit=5'),
       );

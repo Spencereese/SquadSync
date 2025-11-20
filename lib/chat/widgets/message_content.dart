@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../link_preview.dart';
 import '../widgets/video_message.dart';
 import '../widgets/audio_message.dart';
@@ -11,6 +12,7 @@ import '../models/message_data.dart';
 import '../../services/ai_service.dart';
 import '../chat_service.dart';
 import '../message_bubble.dart';
+import '../../services/reaction_service.dart' as reaction_service;
 
 /// Message content renderer - handles text, media, and special formatting
 class MessageContent extends StatelessWidget {
@@ -19,6 +21,7 @@ class MessageContent extends StatelessWidget {
   final VoidCallback? onMediaTap;
   final String? chatGroupId;
   final ChatService? chatService;
+  final ChatType? chatType;
 
   const MessageContent({
     super.key,
@@ -27,6 +30,7 @@ class MessageContent extends StatelessWidget {
     this.onMediaTap,
     this.chatGroupId,
     this.chatService,
+    this.chatType,
   });
 
   @override
@@ -135,6 +139,8 @@ class MessageContent extends StatelessWidget {
         if (message.photos.isNotEmpty) _buildImageContent(context),
         if (message.videoUrl?.isNotEmpty == true) _buildVideoContent(),
         if (message.audioUrl?.isNotEmpty == true) _buildAudioContent(),
+        // Add subtle status indicators for sent messages
+        if (isFromCurrentUser) _buildStatusIndicators(),
       ],
     );
   }
@@ -339,9 +345,61 @@ class MessageContent extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildStatusIndicators() {
+    if (!isFromCurrentUser) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 2.0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Subtle delivery/read indicators
+          if (message.status == MessageStatus.delivered ||
+              message.status == MessageStatus.read)
+            Icon(
+              message.status == MessageStatus.read
+                  ? Icons.done_all
+                  : Icons.done,
+              size: 12,
+              color: message.status == MessageStatus.read
+                  ? Colors.blue.withValues(alpha: 0.7)
+                  : Colors.grey.withValues(alpha: 0.5),
+            ),
+          // Subtle timestamp for sent messages
+          if (message.status != MessageStatus.sending)
+            Padding(
+              padding: const EdgeInsets.only(left: 4.0),
+              child: Text(
+                _formatTime(message.timestamp),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey.withValues(alpha: 0.6),
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    final now = DateTime.now();
+    final difference = now.difference(time);
+
+    if (difference.inDays == 0) {
+      return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      return '${time.month}/${time.day}';
+    }
+  }
 }
 
-// Helper functions that were in the original file
 String fixMediaUrl(String? url) {
   if (url == null || url.isEmpty) return '';
   return url.startsWith('http')

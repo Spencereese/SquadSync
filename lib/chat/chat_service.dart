@@ -191,43 +191,9 @@ class ChatService {
     );
   }
 
-  // Upload media to Firebase Storage with progress tracking
-  MediaUploadTask uploadMediaWithProgress(
-    File file,
-    String fileName, {
-    Function(double progress)? onProgress,
-    Function(String url)? onComplete,
-    Function(String error)? onError,
-  }) {
-    return _mediaService.uploadMediaWithProgress(
-      file,
-      fileName,
-      onProgress: onProgress,
-      onComplete: onComplete,
-      onError: onError,
-    );
-  }
-
   // Legacy method for backward compatibility
   Future<String> uploadMedia(File file, String fileName, bool isVideo) async {
     return _mediaService.uploadMedia(file, fileName, isVideo);
-  }
-
-  // Upload audio to Firebase Storage with progress tracking
-  MediaUploadTask uploadAudioWithProgress(
-    File file,
-    String fileName, {
-    Function(double progress)? onProgress,
-    Function(String url)? onComplete,
-    Function(String error)? onError,
-  }) {
-    return _mediaService.uploadAudioWithProgress(
-      file,
-      fileName,
-      onProgress: onProgress,
-      onComplete: onComplete,
-      onError: onError,
-    );
   }
 
   // Legacy method for backward compatibility

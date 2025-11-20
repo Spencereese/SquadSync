@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import '../../squad_state.dart';
 import '../../services/ai_service.dart';
@@ -12,6 +13,7 @@ import '../message_bubble.dart';
 import '../models/message_data.dart';
 import '../models/message_group_data.dart';
 import '../widgets/message_group.dart';
+import '../chat_settings_menu.dart';
 import 'chat_scroll_controller.dart';
 
 /// Service responsible for coordinating UI state and building complex UI components
@@ -104,6 +106,7 @@ class ChatUIManager {
     required Future<void> Function() onClearChat,
     required VoidCallback onQuickReactionPicker,
     required VoidCallback onInviteMembers,
+    required VoidCallback onViewMediaGallery,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -140,6 +143,7 @@ class ChatUIManager {
                     onReportBug: onReportBug,
                     onLeaveGroup: onLeaveGroup,
                     onInviteMembers: onInviteMembers,
+                    onViewMediaGallery: onViewMediaGallery,
                   ),
                   child: Semantics(
                     label: 'Chat options',
@@ -465,7 +469,7 @@ class ChatUIManager {
                                     chatGroupId: chatGroupId,
                                     chatType: chatType,
                                     chatService: _chatService,
-                                  ),
+                                  ).animate().fadeIn(duration: 300.ms),
                                 ),
                                 if (offset < -2)
                                   Positioned(
@@ -660,172 +664,23 @@ class ChatUIManager {
     required VoidCallback onReportBug,
     required VoidCallback onLeaveGroup,
     required VoidCallback onInviteMembers,
+    required VoidCallback onViewMediaGallery,
   }) {
-    showModalBottomSheet(
+    ChatSettingsMenu.showChatOptions(
       context: context,
-      backgroundColor: Colors.black.withValues(alpha: 0.9),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (BuildContext context) {
-        return Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Group name header
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      if (_chatImageUrl != null)
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundImage: NetworkImage(_chatImageUrl!),
-                        )
-                      else
-                        const CircleAvatar(
-                          radius: 24,
-                          child: Icon(Icons.group, color: Colors.cyanAccent),
-                        ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _chatName,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            Text(
-                              '${squadState.statuses.length} members',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.white.withValues(alpha: 0.7),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Divider(color: Colors.white24),
-                const SizedBox(height: 10),
-
-                // Menu options
-                _buildMenuOption(
-                  icon: Icons.info_outline,
-                  title: 'Group Info',
-                  onTap: () {
-                    Navigator.pop(context);
-                    onViewGroupInfo();
-                  },
-                ),
-
-                if (chatGroupId != null) ...[
-                  _buildMenuOption(
-                    icon: Icons.person_add,
-                    title: 'Invite Members',
-                    onTap: () {
-                      Navigator.pop(context);
-                      onInviteMembers();
-                    },
-                  ),
-                  _buildMenuOption(
-                    icon: Icons.edit,
-                    title: 'Change Group Name',
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await onChangeChatName();
-                    },
-                  ),
-                  _buildMenuOption(
-                    icon: Icons.photo_camera,
-                    title: 'Change Group Photo',
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await onChangeChatImage();
-                    },
-                  ),
-                  _buildMenuOption(
-                    icon: Icons.clear_all,
-                    title: 'Clear Chat',
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await onClearChat();
-                    },
-                  ),
-                  _buildMenuOption(
-                    icon: Icons.logout,
-                    title: 'Leave Group',
-                    textColor: Colors.red,
-                    onTap: () {
-                      Navigator.pop(context);
-                      onLeaveGroup();
-                    },
-                  ),
-                ],
-
-                const Divider(color: Colors.white24),
-                const SizedBox(height: 10),
-
-                _buildMenuOption(
-                  icon:
-                      _isMuted ? Icons.notifications_off : Icons.notifications,
-                  title:
-                      _isMuted ? 'Unmute Notifications' : 'Mute Notifications',
-                  onTap: () {
-                    Navigator.pop(context);
-                    onToggleNotifications();
-                  },
-                ),
-
-                _buildMenuOption(
-                  icon: Icons.bug_report,
-                  title: 'Report Bug',
-                  onTap: () {
-                    Navigator.pop(context);
-                    onReportBug();
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
+      onSearchMessages: () {
+        // TODO: Implement search messages
       },
-    );
-  }
-
-  Widget _buildMenuOption({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    Color? textColor,
-  }) {
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: textColor ?? Colors.cyanAccent,
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: textColor ?? Colors.white,
-          fontSize: 16,
-        ),
-      ),
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      onChangeChatName: onChangeChatName,
+      onChangeChatImage: onChangeChatImage,
+      onClearChat: onClearChat,
+      onQuickReactionPicker: onQuickReactionPicker,
+      onToggleNotifications: onToggleNotifications,
+      isMuted: false, // TODO: Get actual mute status
+      onViewGroupInfo: onViewGroupInfo,
+      onReportBug: onReportBug,
+      onLeaveGroup: onLeaveGroup,
+      onViewMediaGallery: onViewMediaGallery,
     );
   }
 

@@ -10,6 +10,7 @@ import '../../squad_state.dart';
 import '../../services/ai_service.dart';
 import '../chat_service.dart';
 import '../chat_state.dart';
+import '../../services/media_service.dart';
 
 /// Service responsible for handling media operations in chat including
 /// image picking, audio recording, and media uploading
@@ -46,8 +47,12 @@ class ChatMediaHandler {
 
       String fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${user.uid}.${isVideo ? 'mp4' : 'jpg'}';
+
+      // Use new media service with signed URLs
+      final mediaService = MediaService();
       String downloadUrl =
-          await _chatService.uploadMedia(file, fileName, isVideo);
+          await mediaService.uploadMediaWithSignedUrl(file, fileName);
+
       final timestampMs = DateTime.now().millisecondsSinceEpoch;
 
       await _chatService.sendMessage(

@@ -3,14 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../squad_state.dart';
+import '../providers.dart';
+import '../squad_state_notifier.dart';
 import '../managers/squad_manager.dart';
 import '../managers/user_manager.dart';
+import '../managers/availability_manager.dart';
 import '../managers/notification_manager.dart';
+import '../services/grok_service.dart';
 import '../chat/peacock_modal.dart';
 import '../squad_tab/squad_tab.dart';
+import '../app_theme.dart';
 
 class SquadTabScreen extends StatelessWidget {
   final String? lobbyId;
@@ -31,7 +35,7 @@ class SquadTabScreen extends StatelessWidget {
   }
 }
 
-class _SquadTabScreenContent extends StatefulWidget {
+class _SquadTabScreenContent extends ConsumerStatefulWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
@@ -41,10 +45,10 @@ class _SquadTabScreenContent extends StatefulWidget {
       {this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
-  _SquadTabScreenContentState createState() => _SquadTabScreenContentState();
+  ConsumerState<_SquadTabScreenContent> createState() => _SquadTabScreenContentState();
 }
 
-class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
+class _SquadTabScreenContentState extends ConsumerState<_SquadTabScreenContent> {
   late PageController _pageController;
   double _currentPage = 0.0;
   bool _hasActiveLobbies = false;
@@ -82,7 +86,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     if (widget.lobbyId != null) {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        final squadManager = Provider.of<SquadManager>(context, listen: false);
+        final squadManager = ref.read(squadManagerProvider);
         await squadManager.addViewer(widget.lobbyId!, user.uid);
       }
     }
@@ -92,8 +96,8 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     if (widget.lobbyId != null) {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        final squadManager = Provider.of<SquadManager>(context, listen: false);
-        final squadState = Provider.of<SquadState>(context, listen: false);
+        final squadManager = ref.read(squadManagerProvider);
+        final squadState = ref.read(squadStateNotifierProvider);
 
         // Check if user has a spot assigned
         final gameName = widget.gameName ?? '';
@@ -113,8 +117,9 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SquadState>(
-      builder: (context, squadState, child) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final squadState = ref.watch(squadStateNotifierProvider);
         // If gameName is provided, show full squad management interface
         // (lobbyId is optional - SquadTab can handle showing spots for a game)
         if (widget.gameName != null) {
@@ -132,7 +137,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     );
   }
 
-  Widget _buildDashboardInterface(BuildContext context, SquadState squadState) {
+  Widget _buildDashboardInterface(BuildContext context, SquadStateData squadState) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Squad Lobbies'),
@@ -148,6 +153,11 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         ),
         child: Column(
           children: [
+            // Quick Join Button
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: QuickJoinButton(),
+            ),
             // Active Lobbies Section (Top - contains lobbies and carousel)
             Expanded(
               child: _buildActiveLobbiesSection(context),
@@ -158,7 +168,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     );
   }
 
-  Widget _buildFullSquadInterface(BuildContext context, SquadState squadState) {
+  Widget _buildFullSquadInterface(BuildContext context, SquadStateData squadState) {
     // Import and use the original SquadTab widget for full squad management
     return SquadTab(
         lobbyId: widget.lobbyId,
@@ -168,7 +178,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   }
 
   Widget _buildActiveLobbiesSection(BuildContext context) {
-    final squadManager = Provider.of<SquadManager>(context, listen: false);
+    final squadManager = ref.read(squadManagerProvider);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const SizedBox.shrink();
 
@@ -223,10 +233,11 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                             fontWeight: FontWeight.bold),
                       ),
                     ),
-                    Consumer<UserManager>(
-                      builder: (context, userManager, child) {
+                    Consumer(
+                      builder: (context, ref, child) {
+                        final userManager = ref.watch(userManagerProvider);
                         return _buildPinnedGamesCarousel(
-                            context, userManager.pinnedGames);
+                            context, userManager.pinnedGames, ref);
                       },
                     ),
 
@@ -251,10 +262,9 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
                             (peacock['filled'] as List<dynamic>?)?.length ?? 0;
                         final filledList =
                             (peacock['filled'] as List<dynamic>?) ?? [];
-                        final squadState =
-                            Provider.of<SquadState>(context, listen: false);
                         final filledNames = filledList.map((uid) {
-                          return squadState
+                          return ref
+                              .read(squadStateNotifierProvider.notifier)
                               .getDisplayNameForUid(uid.toString());
                         }).toList();
                         final isOwn = hostUid == user.uid;
@@ -423,7 +433,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   }
 
   Widget _buildPinnedGamesCarousel(
-      BuildContext context, List<Map<String, dynamic>> pinnedGames) {
+      BuildContext context, List<Map<String, dynamic>> pinnedGames, WidgetRef ref) {
     if (pinnedGames.isEmpty) {
       return Container(
         height: 450, // Increased by 10% from 409
@@ -447,7 +457,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed: () => _startNewLobby(context),
+              onPressed: () => _startNewLobby(context, ref),
               icon: const Icon(Icons.add),
               label: const Text('Add Game'),
               style: ElevatedButton.styleFrom(
@@ -483,7 +493,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
             itemBuilder: (context, index) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: _buildLayeredCarouselItem(context, index, allGames),
+                child: _buildLayeredCarouselItem(context, index, allGames, ref),
               );
             },
           ),
@@ -524,7 +534,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
   }
 
   Widget _buildLayeredCarouselItem(
-      BuildContext context, int index, List<Map<String, dynamic>> games) {
+      BuildContext context, int index, List<Map<String, dynamic>> games, WidgetRef ref) {
     final game = games[index];
 
     // Handle the "Add Game" card
@@ -542,7 +552,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
             child: Opacity(
               opacity: opacity,
               child: GestureDetector(
-                onTap: () => _startNewLobby(context),
+                onTap: () => _startNewLobby(context, ref),
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
@@ -611,8 +621,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
               onTap: () => _startLobbyForGame(context, game),
               onLongPress: () async {
                 // Get the userManager from the Consumer context
-                final userManager =
-                    Provider.of<UserManager>(context, listen: false);
+                final userManager = ref.read(userManagerProvider);
                 await userManager.removePinnedGame(game['name']);
                 // Show feedback that game was removed
                 if (mounted) {
@@ -682,23 +691,190 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     );
   }
 
-  void _startNewLobby(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.5),
-      builder: (context) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
-        child: const PeacockModal(),
-      ),
-    );
+  void _startNewLobby(BuildContext context, WidgetRef ref) {
+
+    final userManager = ref.read(userManagerProvider);
+
+    final pinnedGames = userManager.pinnedGames;
+
+    if (pinnedGames.isEmpty) {
+
+      ScaffoldMessenger.of(context).showSnackBar(
+
+        const SnackBar(content: Text('No pinned games to choose from. Pin some games first!')),
+
+      );
+
+    } else {
+
+      // Show game selection modal
+
+      showModalBottomSheet(
+
+        context: context,
+
+        isScrollControlled: true,
+
+        backgroundColor: Colors.transparent,
+
+        barrierColor: Colors.black.withValues(alpha: 0.5),
+
+        builder: (context) => BackdropFilter(
+
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+
+          child: DraggableScrollableSheet(
+
+            initialChildSize: 0.7,
+
+            minChildSize: 0.5,
+
+            maxChildSize: 0.9,
+
+            builder: (context, scrollController) => Container(
+
+              decoration: BoxDecoration(
+
+                color: AppTheme.darkTheme.scaffoldBackgroundColor,
+
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+
+              ),
+
+              child: Column(
+
+                children: [
+
+                  Container(
+
+                    height: 4,
+
+                    width: 40,
+
+                    margin: const EdgeInsets.symmetric(vertical: 12),
+
+                    decoration: BoxDecoration(
+
+                      color: Colors.grey[600],
+
+                      borderRadius: BorderRadius.circular(2),
+
+                    ),
+
+                  ),
+
+                  Expanded(
+
+                    child: ListView.builder(
+
+                      controller: scrollController,
+
+                      itemCount: pinnedGames.length,
+
+                      itemBuilder: (context, index) {
+
+                        final game = pinnedGames[index];
+
+                        return ListTile(
+
+                          leading: game['coverUrl'] != null
+
+                              ? ClipRRect(
+
+                                  borderRadius: BorderRadius.circular(8),
+
+                                  child: CachedNetworkImage(
+
+                                    imageUrl: game['coverUrl'],
+
+                                    width: 40,
+
+                                    height: 40,
+
+                                    fit: BoxFit.cover,
+
+                                    placeholder: (context, url) => Container(
+
+                                      color: Colors.grey[800],
+
+                                      child: const Icon(Icons.videogame_asset, size: 20),
+
+                                    ),
+
+                                    errorWidget: (context, url, error) => Container(
+
+                                      color: Colors.grey[800],
+
+                                      child: const Icon(Icons.videogame_asset, size: 20),
+
+                                    ),
+
+                                  ),
+
+                                )
+
+                              : Container(
+
+                                  width: 40,
+
+                                  height: 40,
+
+                                  decoration: BoxDecoration(
+
+                                    color: Colors.grey[800],
+
+                                    borderRadius: BorderRadius.circular(8),
+
+                                  ),
+
+                                  child: const Icon(Icons.videogame_asset, color: Colors.cyanAccent),
+
+                                ),
+
+                          title: Text(
+
+                            game['name'] ?? 'Unknown Game',
+
+                            style: const TextStyle(color: Colors.white),
+
+                          ),
+
+                          onTap: () {
+
+                            Navigator.of(context).pop();
+
+                            _startLobbyForGame(context, game);
+
+                          },
+
+                        );
+
+                      },
+
+                    ),
+
+                  ),
+
+                ],
+
+              ),
+
+            ),
+
+          ),
+
+        ),
+
+      );
+
+    }
+
   }
 
   void _startLobbyForGame(
       BuildContext context, Map<String, dynamic> game) async {
     // Update lastPlayed for this game
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userManager = ref.read(userManagerProvider);
     userManager.updateGameLastPlayed(game['name']);
 
     // Directly create a lobby instead of showing the peacock modal
@@ -707,48 +883,49 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
 
   Future<void> _createQuickStartLobby(
       BuildContext context, Map<String, dynamic> game) async {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = ref.read(squadStateNotifierProvider);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     final gameName = game['name'];
     final maxSpots = game['maxSpots'] ?? 4;
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userManager = ref.read(userManagerProvider);
     final selectedCircle = userManager.alertCircles.first;
 
     try {
       // Set creator in spot 0 with 5-minute calling timer
-      squadState.dataManager.gameSquadSpots[gameName] ??=
+      final notifier = ref.read(squadStateNotifierProvider.notifier);
+      notifier.dataManager.gameSquadSpots[gameName] ??=
           List.filled(maxSpots, null);
-      squadState.dataManager.gameSpotTimers[gameName] ??=
+      notifier.dataManager.gameSpotTimers[gameName] ??=
           List.filled(maxSpots, null);
 
       // Check if player is solo to determine timer duration
       final isSoloPlayer =
-          squadState.isPlayingSolo(squadState.displayName ?? '');
+          notifier.dataManager.isPlayingSolo(squadState.displayName ?? '');
       final timerDuration = isSoloPlayer
           ? 3600
           : 300; // 60 minutes for solo, 5 minutes for groups
 
-      squadState.dataManager.gameSquadSpots[gameName]![0] =
+      notifier.dataManager.gameSquadSpots[gameName]![0] =
           '${user.uid}_calling';
-      squadState.dataManager.gameSpotTimers[gameName]![0] = {
+      notifier.dataManager.gameSpotTimers[gameName]![0] = {
         'startTime': DateTime.now().millisecondsSinceEpoch,
         'duration': timerDuration, // Dynamic duration based on solo status
         'calling': true,
         'peacockCreated':
             true, // Flag to distinguish from regular calling spots
       };
-      squadState.dataManager
+      notifier.dataManager
               .globalStatuses[squadState.displayName ?? 'Unknown Player'] =
           'Calling';
 
       // Mark fields as changed for persistence
-      squadState.persistenceManager.markFieldChanged('squadSpots');
-      squadState.persistenceManager.markFieldChanged('spotTimers');
-      squadState.persistenceManager.markFieldChanged('globalStatuses');
-      squadState.uiManager.setNewSquadSpot(true, gameName);
-      squadState.updateFirestoreAsync(force: true);
+      notifier.persistenceManager.markFieldChanged('squadSpots');
+      notifier.persistenceManager.markFieldChanged('spotTimers');
+      notifier.persistenceManager.markFieldChanged('globalStatuses');
+      notifier.uiManager.setNewSquadSpot(true, gameName);
+      await notifier.persistenceManager.updateFirestoreAsync(memberDisplayNames: squadState.memberDisplayNames, force: true);
 
       // Create peacock document in Firestore for lobby visibility
       final peacockData = {
@@ -781,11 +958,10 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
       }, SetOptions(merge: true));
 
       // Update user status to indicate they're looking for squad
-      squadState.dataManager.setStatus(user.uid, 'Looking for squad');
+      notifier.dataManager.setStatus(user.uid, 'Looking for squad');
 
       // Trigger notification
-      final notificationManager =
-          Provider.of<NotificationManager>(context, listen: false);
+      final notificationManager = ref.read(notificationManagerProvider);
       await notificationManager.showNotification(
         title: 'Game Lobby Created',
         body: 'Looking for $maxSpots spots in $gameName',
@@ -814,8 +990,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final squadManager = Provider.of<SquadManager>(context, listen: false);
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadManager = ref.read(squadManagerProvider);
 
     // Join the lobby in Firestore
     await squadManager.joinLobby(peacockId, user.uid);
@@ -833,7 +1008,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
 
       if (nextSpot < maxSpots) {
         // Call the spot to trigger timer logic
-        squadState.callSpotForGame(nextSpot, gameName);
+        ref.read(squadStateNotifierProvider.notifier).spotManagementService.callSpotForGame(nextSpot, gameName);
       }
     } catch (e) {
       // If spot calling fails, continue anyway
@@ -850,7 +1025,7 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final squadManager = Provider.of<SquadManager>(context, listen: false);
+    final squadManager = ref.read(squadManagerProvider);
 
     // Show confirmation dialog
     final confirmed = await showDialog<bool>(
@@ -887,5 +1062,153 @@ class _SquadTabScreenContentState extends State<_SquadTabScreenContent> {
         );
       }
     }
+  }
+}
+
+class QuickJoinButton extends StatefulWidget {
+  const QuickJoinButton({super.key});
+
+  @override
+  State<QuickJoinButton> createState() => _QuickJoinButtonState();
+}
+
+class _QuickJoinButtonState extends State<QuickJoinButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) {
+        setState(() {
+          _isPressed = true;
+        });
+      },
+      onTapUp: (_) {
+        setState(() {
+          _isPressed = false;
+        });
+      },
+      onTapCancel: () {
+        setState(() {
+          _isPressed = false;
+        });
+      },
+      child: AnimatedScale(
+        scale: _isPressed ? 0.95 : 1.0,
+        duration: const Duration(milliseconds: 100),
+        child: ElevatedButton.icon(
+          onPressed: () async {
+            // Add haptic feedback
+            HapticFeedback.lightImpact();
+
+            final userManager = ref.read(userManagerProvider);
+            final grokService = ref.read(grokServiceProvider);
+            final availabilityManager = ref.read(availabilityManagerProvider);
+
+            // Get pinned games
+            final pinnedGames = userManager.pinnedGames;
+
+            if (pinnedGames.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content:
+                        Text('No pinned games found. Pin some games first!')),
+              );
+              return;
+            }
+
+            // Show loading
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => const AlertDialog(
+                content: Row(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(width: 16),
+                    Text('Getting suggestions from Grok...'),
+                  ],
+                ),
+              ),
+            );
+
+            try {
+              // Get Grok suggestions
+              final grokResponse =
+                  await grokService.suggestSquadsForPinnedGames(pinnedGames);
+
+              // Get public lobbies
+              final suggestedLobbies =
+                  await availabilityManager.suggestLobbies(pinnedGames);
+
+              // Close loading dialog
+              Navigator.of(context).pop();
+
+              // Show suggestions dialog
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Quick Join Suggestions'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Grok says: $grokResponse'),
+                        const SizedBox(height: 16),
+                        const Text('Available Public Lobbies:',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        ...suggestedLobbies.map((lobby) => ListTile(
+                              title: Text(lobby['gameName'] ?? 'Unknown Game'),
+                              subtitle: Text(
+                                  'Spots: ${(lobby['filled'] as List?)?.length ?? 0}/${lobby['spots'] ?? 4}'),
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                // Navigate to the lobby
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => SquadTabScreen(
+                                      lobbyId: lobby['id'],
+                                      gameName: lobby['gameName'],
+                                      game: {
+                                        'name': lobby['gameName'],
+                                        'maxSpots': lobby['spots'] ?? 4
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                            )),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              );
+            } catch (e) {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to get suggestions: $e')),
+              );
+            }
+          },
+          icon: Icon(Icons.auto_awesome),
+          label: const Text('Quick Join'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

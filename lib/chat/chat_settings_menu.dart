@@ -20,6 +20,7 @@ class ChatSettingsMenu {
     required VoidCallback onViewGroupInfo,
     required VoidCallback onReportBug,
     required VoidCallback onLeaveGroup,
+    required VoidCallback onViewMediaGallery,
   }) {
     HapticFeedback.lightImpact();
     showModalBottomSheet(
@@ -104,6 +105,17 @@ class ChatSettingsMenu {
               },
             ),
             _buildSectionTitle(context, 'Chat Management'),
+            ListTile(
+              leading: Image.asset('assets/images/gallery_icon.png',
+                  width: 24, height: 24),
+              title: const Text('Media Gallery'),
+              trailing: Icon(Icons.arrow_forward_ios,
+                  size: 16, color: AppTheme.hintColor),
+              onTap: () {
+                Navigator.pop(context);
+                onViewMediaGallery();
+              },
+            ),
             ListTile(
               leading: Image.asset('assets/images/search_icon.png',
                   width: 24, height: 24),

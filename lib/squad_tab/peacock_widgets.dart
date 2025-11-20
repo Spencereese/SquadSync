@@ -1,5 +1,100 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../squad_state.dart';
+import '../services/timer_service.dart';
+
+class PeacockTimerDisplay extends ConsumerStatefulWidget {
+  final String player;
+
+  const PeacockTimerDisplay({
+    super.key,
+    required this.player,
+  });
+
+  @override
+  ConsumerState<PeacockTimerDisplay> createState() =>
+      _PeacockTimerDisplayState();
+}
+
+class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
+  static const Duration _totalDuration = Duration(seconds: 3600); // 1 hour
+  bool _hasExpired = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final key = 'peacock_${widget.player}';
+    final timerService = ref.watch(timerServiceProvider);
+
+    return StreamBuilder<Duration>(
+      stream: timerService.observeTimer(key),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            width: 60,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+
+        final remaining = snapshot.data ?? Duration.zero;
+        final progress = remaining.inSeconds / _totalDuration.inSeconds;
+
+        // Update formatted time
+        final minutes = remaining.inMinutes;
+        final seconds = remaining.inSeconds % 60;
+        final formatted =
+            '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
+        // Haptic feedback on expiration
+        if (remaining == Duration.zero && !_hasExpired) {
+          _hasExpired = true;
+          HapticFeedback.vibrate();
+        } else if (remaining > Duration.zero) {
+          _hasExpired = false;
+        }
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              formatted,
+              style: TextStyle(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: 60,
+              height: 4,
+              child: LinearProgressIndicator(
+                value: progress.clamp(0.0, 1.0),
+                backgroundColor:
+                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  progress > 0.5
+                      ? Colors.tealAccent
+                      : progress > 0.25
+                          ? Colors.orangeAccent
+                          : Colors.redAccent,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+}
 
 class PeacockWidgets {
   static Widget buildPeacockSpot(BuildContext context, SquadState squadState,
@@ -143,7 +238,6 @@ class PeacockWidgets {
       MapEntry<String, Map<String, dynamic>?> entry, SquadState squadState) {
     final timer = entry.value;
     if (timer == null) return const SizedBox.shrink();
-    final remainingTime = squadState.getPeacockTimerDisplay(entry.key);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -152,7 +246,7 @@ class PeacockWidgets {
         const SizedBox(width: 8),
         _buildStatusChip('Strutting'),
         const SizedBox(width: 8),
-        Text('($remainingTime)', style: Theme.of(context).textTheme.bodySmall),
+        PeacockTimerDisplay(player: entry.key),
       ],
     );
   }

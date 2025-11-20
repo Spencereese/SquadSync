@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as provider;
 import '../../squad_state.dart';
 import '../../managers/squad_manager.dart';
 import '../../managers/user_manager.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'game_alerts_display.dart';
+import '../../chat/voice_room_screen.dart';
 
 /// SquadControls component - handles action buttons and controls
 /// Extracted from the monolithic SquadTab to improve maintainability
@@ -13,18 +14,19 @@ class SquadControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SquadState>(
+    return provider.Consumer<SquadState>(
       builder: (context, squadState, child) {
         return SliverToBoxAdapter(
           child: Column(
             children: [
-              // Win/Loss buttons
+              // Win/Loss/Voice buttons
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _WinButton(),
+                    _VoiceRoomButton(),
                     _LossButton(),
                   ],
                 ),
@@ -60,8 +62,9 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    final squadManager = Provider.of<SquadManager>(context, listen: false);
+    final squadState = provider.Provider.of<SquadState>(context, listen: false);
+    final squadManager =
+        provider.Provider.of<SquadManager>(context, listen: false);
 
     if (squadState.selectedSquadId != null) {
       final alerts =
@@ -77,8 +80,9 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    final squadManager = Provider.of<SquadManager>(context, listen: false);
+    final squadState = provider.Provider.of<SquadState>(context, listen: false);
+    final squadManager =
+        provider.Provider.of<SquadManager>(context, listen: false);
 
     if (squadState.selectedSquadId == null) return;
 
@@ -112,8 +116,9 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    final squadManager = Provider.of<SquadManager>(context, listen: false);
+    final squadState = provider.Provider.of<SquadState>(context, listen: false);
+    final squadManager =
+        provider.Provider.of<SquadManager>(context, listen: false);
 
     if (squadState.selectedSquadId == null) return;
 
@@ -138,8 +143,9 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
   }
 
   void _showAlertDialog() {
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final squadState = provider.Provider.of<SquadState>(context, listen: false);
+    final userManager =
+        provider.Provider.of<UserManager>(context, listen: false);
 
     showDialog(
       context: context,
@@ -256,7 +262,7 @@ class _WinButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = provider.Provider.of<SquadState>(context, listen: false);
     return ElevatedButton(
       onPressed: squadState.recordWin,
       style: ElevatedButton.styleFrom(
@@ -280,13 +286,56 @@ class _WinButton extends StatelessWidget {
   }
 }
 
+/// Voice room button widget - extracted for better performance
+class _VoiceRoomButton extends StatelessWidget {
+  const _VoiceRoomButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final squadState = provider.Provider.of<SquadState>(context, listen: false);
+
+    return ElevatedButton.icon(
+      onPressed: () {
+        if (squadState.selectedSquadId == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No squad selected')),
+          );
+          return;
+        }
+
+        // Navigate to voice room screen
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => VoiceRoomScreen(
+              roomId: squadState.selectedSquadId!,
+              roomName: squadState.currentSquad?['name'] ?? 'Voice Room',
+            ),
+          ),
+        );
+      },
+      icon: const Icon(Icons.mic, color: Colors.white),
+      label: const Text('Voice Room'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.blueAccent,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        textStyle: const TextStyle(fontSize: 16),
+        elevation: 4,
+        shadowColor: Colors.blueAccent.withValues(alpha: 0.3),
+      ),
+    );
+  }
+}
+
 /// Loss button widget - extracted for better performance
 class _LossButton extends StatelessWidget {
   const _LossButton();
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = provider.Provider.of<SquadState>(context, listen: false);
     return ElevatedButton(
       onPressed: squadState.recordLoss,
       style: ElevatedButton.styleFrom(

@@ -40,4 +40,32 @@ class AvailabilityManager with ChangeNotifier {
       notifyListeners();
     });
   }
+
+  /// Query public lobbies for a specific game
+  Future<List<Map<String, dynamic>>> getPublicLobbies(String gameName) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('peacocks')
+          .where('gameName', isEqualTo: gameName)
+          .where('isPublic', isEqualTo: true)
+          .get();
+
+      return querySnapshot.docs.map((doc) => doc.data()).toList();
+    } catch (e) {
+      print('Error fetching public lobbies: $e');
+      return [];
+    }
+  }
+
+  /// Suggest lobbies based on user's pinned games
+  Future<List<Map<String, dynamic>>> suggestLobbies(
+      List<Map<String, dynamic>> pinnedGames) async {
+    List<Map<String, dynamic>> suggestions = [];
+    for (var game in pinnedGames) {
+      final gameName = game['name'] as String;
+      final lobbies = await getPublicLobbies(gameName);
+      suggestions.addAll(lobbies);
+    }
+    return suggestions;
+  }
 }

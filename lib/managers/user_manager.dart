@@ -8,6 +8,7 @@ import '../services/interfaces.dart';
 
 /// Manages user profiles, blocking, and preferences
 class UserManager with ChangeNotifier implements IUserManager {
+  final FirebaseFirestore _firestore;
   String? _profileImage;
   String? _displayName;
   Map<String, String?> memberProfileImages = {};
@@ -33,6 +34,9 @@ class UserManager with ChangeNotifier implements IUserManager {
 
   // Cache for pending request sender details futures
   final Map<String, Future<Map<String, dynamic>?>> _senderDetailFutures = {};
+
+  UserManager({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   String? get profileImage => _profileImage;
   String? get displayName => _displayName;
@@ -71,8 +75,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     }
 
     try {
-      final doc =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc = await _firestore.collection('users').doc(uid).get();
 
       if (doc.exists) {
         final data = doc.data()!;
@@ -127,10 +130,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     if (user == null) return;
 
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      final doc = await _firestore.collection('users').doc(user.uid).get();
       final data = doc.data();
       if (data != null && data['pinnedGames'] != null) {
         pinnedGames = List<Map<String, dynamic>>.from(data['pinnedGames']);
@@ -142,7 +142,7 @@ class UserManager with ChangeNotifier implements IUserManager {
             try {
               // First try by slug if available
               if (game['slug'] != null) {
-                final cachedGame = await FirebaseFirestore.instance
+                final cachedGame = await _firestore
                     .collection('games')
                     .doc(game['slug'])
                     .get();
@@ -162,7 +162,7 @@ class UserManager with ChangeNotifier implements IUserManager {
                 // Fallback: search by name
                 final query = game['name']?.toString().toLowerCase() ?? '';
                 if (query.isNotEmpty) {
-                  final snapshot = await FirebaseFirestore.instance
+                  final snapshot = await _firestore
                       .collection('games')
                       .where('name', isGreaterThanOrEqualTo: query)
                       .where('name', isLessThanOrEqualTo: '$query\uf8ff')
@@ -218,7 +218,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     notifyListeners();
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      await _firestore.collection('users').doc(user.uid).set({
         'pinnedGames': pinnedGames,
       }, SetOptions(merge: true));
     } catch (e) {
@@ -238,7 +238,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     notifyListeners();
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      await _firestore.collection('users').doc(user.uid).set({
         'pinnedGames': pinnedGames,
       }, SetOptions(merge: true));
     } catch (e) {
@@ -265,7 +265,7 @@ class UserManager with ChangeNotifier implements IUserManager {
       notifyListeners();
 
       try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        await _firestore.collection('users').doc(user.uid).set({
           'pinnedGames': pinnedGames,
         }, SetOptions(merge: true));
       } catch (e) {
@@ -280,10 +280,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     if (user == null) return;
 
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      final doc = await _firestore.collection('users').doc(user.uid).get();
       final data = doc.data();
       if (data != null && data['mutedGames'] != null) {
         mutedGames = Set<String>.from(data['mutedGames']);
@@ -302,7 +299,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     notifyListeners();
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      await _firestore.collection('users').doc(user.uid).set({
         'mutedGames': mutedGames.toList(),
       }, SetOptions(merge: true));
     } catch (e) {
@@ -318,7 +315,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     notifyListeners();
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      await _firestore.collection('users').doc(user.uid).set({
         'mutedGames': mutedGames.toList(),
       }, SetOptions(merge: true));
     } catch (e) {
@@ -338,7 +335,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     notifyListeners();
 
     try {
-      await FirebaseFirestore.instance
+      await _firestore
           .collection('users')
           .doc(user.uid)
           .update({'mutedGames': []});
@@ -353,7 +350,7 @@ class UserManager with ChangeNotifier implements IUserManager {
       if (currentUser == null) return [];
 
       // Search users by display name (case insensitive)
-      final snapshot = await FirebaseFirestore.instance
+      final snapshot = await _firestore
           .collection('users')
           .where('displayName', isGreaterThanOrEqualTo: query)
           .where('displayName', isLessThanOrEqualTo: '$query\uf8ff')
@@ -380,14 +377,12 @@ class UserManager with ChangeNotifier implements IUserManager {
       final chatId = uids.join('_');
 
       // Check if DM already exists
-      final existingChat = await FirebaseFirestore.instance
-          .collection('chats')
-          .doc(chatId)
-          .get();
+      final existingChat =
+          await _firestore.collection('chats').doc(chatId).get();
 
       if (!existingChat.exists) {
         // Create new DM chat
-        await FirebaseFirestore.instance.collection('chats').doc(chatId).set({
+        await _firestore.collection('chats').doc(chatId).set({
           'participants': uids,
           'type': 'dm',
           'createdAt': FieldValue.serverTimestamp(),
@@ -443,7 +438,7 @@ class UserManager with ChangeNotifier implements IUserManager {
       List<String>? lastFriendsUids;
       List<Map<String, dynamic>>? lastFriendsList;
 
-      return FirebaseFirestore.instance
+      return _firestore
           .collection('users')
           .doc(currentUser.uid)
           .snapshots()
@@ -473,7 +468,7 @@ class UserManager with ChangeNotifier implements IUserManager {
           }
 
           // Get friend details
-          final snapshot = await FirebaseFirestore.instance
+          final snapshot = await _firestore
               .collection('users')
               .where(FieldPath.documentId, whereIn: friendsUids)
               .get();
@@ -513,7 +508,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return Stream.value([]);
 
-    return FirebaseFirestore.instance
+    return _firestore
         .collection('friendRequests')
         .where('receiverId', isEqualTo: currentUser.uid)
         .where('status', isEqualTo: 'pending')
@@ -545,10 +540,10 @@ class UserManager with ChangeNotifier implements IUserManager {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
-    final batch = FirebaseFirestore.instance.batch();
+    final batch = _firestore.batch();
 
     // Update request status
-    final requestQuery = await FirebaseFirestore.instance
+    final requestQuery = await _firestore
         .collection('friendRequests')
         .where('senderId', isEqualTo: requesterId)
         .where('receiverId', isEqualTo: currentUser.uid)
@@ -560,10 +555,8 @@ class UserManager with ChangeNotifier implements IUserManager {
     }
 
     // Add to both users' friends lists
-    final currentUserRef =
-        FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
-    final requesterRef =
-        FirebaseFirestore.instance.collection('users').doc(requesterId);
+    final currentUserRef = _firestore.collection('users').doc(currentUser.uid);
+    final requesterRef = _firestore.collection('users').doc(requesterId);
 
     // Get current friends lists
     final currentUserDoc = await currentUserRef.get();
@@ -592,14 +585,14 @@ class UserManager with ChangeNotifier implements IUserManager {
     if (currentUser == null) return;
 
     // Update request status
-    final requestQuery = await FirebaseFirestore.instance
+    final requestQuery = await _firestore
         .collection('friendRequests')
         .where('senderId', isEqualTo: requesterId)
         .where('receiverId', isEqualTo: currentUser.uid)
         .where('status', isEqualTo: 'pending')
         .get();
 
-    final batch = FirebaseFirestore.instance.batch();
+    final batch = _firestore.batch();
     for (final doc in requestQuery.docs) {
       batch.update(doc.reference, {'status': 'declined'});
     }
@@ -612,7 +605,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     if (currentUser == null) return;
 
     // Check if request already exists
-    final existingRequest = await FirebaseFirestore.instance
+    final existingRequest = await _firestore
         .collection('friendRequests')
         .where('senderId', isEqualTo: currentUser.uid)
         .where('receiverId', isEqualTo: receiverId)
@@ -625,7 +618,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     }
 
     // Create new friend request
-    await FirebaseFirestore.instance.collection('friendRequests').add({
+    await _firestore.collection('friendRequests').add({
       'senderId': currentUser.uid,
       'receiverId': receiverId,
       'status': 'pending',
@@ -637,13 +630,11 @@ class UserManager with ChangeNotifier implements IUserManager {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
-    final batch = FirebaseFirestore.instance.batch();
+    final batch = _firestore.batch();
 
     // Remove from both users' friends lists
-    final currentUserRef =
-        FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
-    final friendRef =
-        FirebaseFirestore.instance.collection('users').doc(friendId);
+    final currentUserRef = _firestore.collection('users').doc(currentUser.uid);
+    final friendRef = _firestore.collection('users').doc(friendId);
 
     // Get current friends lists
     final currentUserDoc = await currentUserRef.get();
@@ -672,7 +663,7 @@ class UserManager with ChangeNotifier implements IUserManager {
     if (user == null) throw Exception('User not authenticated');
 
     final packageInfo = await PackageInfo.fromPlatform();
-    await FirebaseFirestore.instance.collection('feedback').add({
+    await _firestore.collection('feedback').add({
       'type': type,
       'page': page,
       'content': content,
@@ -707,5 +698,37 @@ class UserManager with ChangeNotifier implements IUserManager {
       }
     }
     return true;
+  }
+
+  /// Fetch public groups from Firestore
+  Future<List<Map<String, dynamic>>> fetchPublicGroups() async {
+    try {
+      final querySnapshot = await _firestore
+          .collection('chat_groups')
+          .where('isPublic', isEqualTo: true)
+          .get();
+
+      return querySnapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+    } catch (e) {
+      debugPrint('Error fetching public groups: $e');
+      return [];
+    }
+  }
+
+  /// Perform semantic search for relevant gaming squads
+  Future<List<Map<String, dynamic>>> searchRelevantSquads(String query) async {
+    // This would integrate with X semantic search API
+    // For now, return public groups filtered by query
+    final publicGroups = await fetchPublicGroups();
+    return publicGroups.where((group) {
+      final name = group['name']?.toString().toLowerCase() ?? '';
+      final description = group['description']?.toString().toLowerCase() ?? '';
+      final lowerQuery = query.toLowerCase();
+      return name.contains(lowerQuery) || description.contains(lowerQuery);
+    }).toList();
   }
 }

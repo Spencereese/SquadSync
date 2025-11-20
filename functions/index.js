@@ -294,3 +294,99 @@ exports.notifyLobbyFull = functions.firestore
       return null;
     }
   });
+
+// Scheduled function to monitor Firestore costs and high-read collections
+exports.monitorFirestoreCosts = functions.pubsub
+  .schedule('every 24 hours')
+  .onRun(async (context) => {
+    const db = admin.firestore();
+    
+    try {
+      // Get usage statistics for high-read collections
+      const collections = ['chat_groups', 'chats', 'users', 'schedules'];
+      const costReport = {
+        timestamp: new Date().toISOString(),
+        collections: {},
+        recommendations: []
+      };
+
+      for (const collectionName of collections) {
+        try {
+          // Count documents in collection (rough estimate of read costs)
+          const snapshot = await db.collection(collectionName).limit(1).get();
+          const docCount = await _getCollectionSize(db, collectionName);
+          
+          costReport.collections[collectionName] = {
+            documentCount: docCount,
+            estimatedDailyReads: _estimateDailyReads(collectionName, docCount),
+            costLevel: _calculateCostLevel(collectionName, docCount)
+          };
+
+          // Add recommendations for high-cost collections
+          if (costReport.collections[collectionName].costLevel === 'high') {
+            costReport.recommendations.push({
+              collection: collectionName,
+              action: 'Consider implementing pagination, caching, or query optimization',
+              estimatedSavings: `~${Math.round(docCount * 0.1)} reads/day`
+            });
+          }
+        } catch (error) {
+          console.error(`Error monitoring collection ${collectionName}:`, error);
+        }
+      }
+
+      // Log cost report
+      console.log('Firestore Cost Monitoring Report:', JSON.stringify(costReport, null, 2));
+
+      // Store report in Firestore for historical tracking
+      await db.collection('analytics').doc('firestore_costs').set({
+        lastReport: costReport,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      return costReport;
+    } catch (error) {
+      console.error('Error in monitorFirestoreCosts function:', error);
+      return null;
+    }
+  });
+
+// Helper function to estimate collection size
+async function _getCollectionSize(db, collectionName) {
+  try {
+    const snapshot = await db.collection(collectionName).get();
+    return snapshot.size;
+  } catch (error) {
+    console.error(`Error getting size for ${collectionName}:`, error);
+    return 0;
+  }
+}
+
+// Helper function to estimate daily reads based on collection type
+function _estimateDailyReads(collectionName, docCount) {
+  const multipliers = {
+    'chat_groups': 50, // Discovery queries
+    'chats': 100, // Real-time chat messages
+    'users': 20, // User profile accesses
+    'schedules': 10 // Schedule/event queries
+  };
+  
+  return docCount * (multipliers[collectionName] || 1);
+}
+
+// Helper function to calculate cost level
+function _calculateCostLevel(collectionName, docCount) {
+  const thresholds = {
+    'chat_groups': { medium: 1000, high: 5000 },
+    'chats': { medium: 10000, high: 50000 },
+    'users': { medium: 5000, high: 20000 },
+    'schedules': { medium: 1000, high: 5000 }
+  };
+  
+  const threshold = thresholds[collectionName];
+  if (!threshold) return 'low';
+  
+  if (docCount >= threshold.high) return 'high';
+  if (docCount >= threshold.medium) return 'medium';
+  return 'low';
+}

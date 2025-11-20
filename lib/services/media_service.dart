@@ -1,165 +1,118 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 /// Service responsible for media upload operations including images, videos, and audio.
-/// Handles Firebase Storage uploads with progress tracking and error handling.
+/// Handles Firebase Storage uploads with progress tracking and signed URL generation.
 class MediaService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
+  static const String _backendUrl =
+      'http://localhost:8080'; // Update with your backend URL
 
-  /// Upload media (image/video) to Firebase Storage with progress tracking
-  MediaUploadTask uploadMediaWithProgress(
+  /// Upload media (image/video) to Firebase Storage and get signed URL
+  Future<String> uploadMediaWithSignedUrl(
     File file,
     String fileName, {
     Function(double progress)? onProgress,
-    Function(String url)? onComplete,
     Function(String error)? onError,
-  }) {
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       onError?.call('User must be authenticated to upload media');
       throw Exception('User must be authenticated to upload media');
     }
 
-    final taskId = 'media_${DateTime.now().millisecondsSinceEpoch}';
-    Reference ref = _storage.ref().child('chat_media/$fileName');
+    try {
+      // First upload to Firebase Storage
+      final uploadTask =
+          _storage.ref().child('chat_media/$fileName').putFile(file);
 
-    final uploadTask = ref.putFile(file);
-    return MediaUploadTask(
-      taskId,
-      uploadTask,
-      onProgress: onProgress,
-      onComplete: (url) {
-        HapticFeedback.lightImpact();
-        onComplete?.call(url);
-      },
-      onError: onError,
-    );
+      // Track progress
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+        onProgress?.call(progress);
+      });
+
+      final snapshot = await uploadTask;
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+
+      // Get signed URL from backend
+      final signedUrl = await _getSignedUrl(fileName);
+      return signedUrl ??
+          downloadUrl; // Fallback to direct URL if signed URL fails
+    } catch (e) {
+      onError?.call('Upload failed: $e');
+      throw Exception('Failed to upload media: $e');
+    }
+  }
+
+  /// Get signed URL for media file from backend
+  Future<String?> _getSignedUrl(String fileName) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_backendUrl/generate-signed-url'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'fileName': fileName}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['signedUrl'];
+      }
+      return null;
+    } catch (e) {
+      print('Failed to get signed URL: $e');
+      return null;
+    }
   }
 
   /// Legacy method for backward compatibility - upload media without progress tracking
   Future<String> uploadMedia(File file, String fileName, bool isVideo) async {
-    final completer = Completer<String>();
-    String? error;
-
-    uploadMediaWithProgress(
-      file,
-      fileName,
-      onComplete: (url) => completer.complete(url),
-      onError: (err) {
-        error = err;
-        completer.completeError(Exception(err));
-      },
-    );
-
-    try {
-      return await completer.future;
-    } catch (e) {
-      throw Exception(error ?? 'Failed to upload media: $e');
-    }
+    return uploadMediaWithSignedUrl(file, fileName);
   }
 
-  /// Upload audio to Firebase Storage with progress tracking
-  MediaUploadTask uploadAudioWithProgress(
+  /// Upload audio to Firebase Storage and get signed URL
+  Future<String> uploadAudioWithSignedUrl(
     File file,
     String fileName, {
     Function(double progress)? onProgress,
-    Function(String url)? onComplete,
     Function(String error)? onError,
-  }) {
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       onError?.call('User must be authenticated to upload audio');
       throw Exception('User must be authenticated to upload audio');
     }
 
-    final taskId = 'audio_${DateTime.now().millisecondsSinceEpoch}';
-    Reference ref = _storage.ref().child('chat_audio/$fileName');
+    try {
+      // First upload to Firebase Storage
+      final uploadTask =
+          _storage.ref().child('chat_audio/$fileName').putFile(file);
 
-    final uploadTask = ref.putFile(file);
-    return MediaUploadTask(
-      taskId,
-      uploadTask,
-      onProgress: onProgress,
-      onComplete: (url) {
-        HapticFeedback.lightImpact();
-        onComplete?.call(url);
-      },
-      onError: onError,
-    );
+      // Track progress
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+        onProgress?.call(progress);
+      });
+
+      final snapshot = await uploadTask;
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+
+      // Get signed URL from backend
+      final signedUrl = await _getSignedUrl(fileName);
+      return signedUrl ??
+          downloadUrl; // Fallback to direct URL if signed URL fails
+    } catch (e) {
+      onError?.call('Audio upload failed: $e');
+      throw Exception('Failed to upload audio: $e');
+    }
   }
 
   /// Legacy method for backward compatibility - upload audio without progress tracking
   Future<String> uploadAudio(File file, String fileName) async {
-    final completer = Completer<String>();
-    String? error;
-
-    uploadAudioWithProgress(
-      file,
-      fileName,
-      onComplete: (url) => completer.complete(url),
-      onError: (err) {
-        error = err;
-        completer.completeError(Exception(err));
-      },
-    );
-
-    try {
-      return await completer.future;
-    } catch (e) {
-      throw Exception(error ?? 'Failed to upload audio: $e');
-    }
+    return uploadAudioWithSignedUrl(file, fileName);
   }
-}
-
-/// Represents a cancellable media upload task
-class MediaUploadTask {
-  final String taskId;
-  final UploadTask _uploadTask;
-  final Function(double progress)? onProgress;
-  final Function(String url)? onComplete;
-  final Function(String error)? onError;
-
-  bool _isCancelled = false;
-
-  MediaUploadTask(
-    this.taskId,
-    this._uploadTask, {
-    this.onProgress,
-    this.onComplete,
-    this.onError,
-  }) {
-    // Listen to upload progress
-    _uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-      if (_isCancelled) return;
-
-      final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-      onProgress?.call(progress);
-
-      if (snapshot.state == TaskState.success) {
-        snapshot.ref.getDownloadURL().then((url) {
-          if (!_isCancelled) {
-            onComplete?.call(url);
-          }
-        }).catchError((error) {
-          if (!_isCancelled) {
-            onError?.call('Failed to get download URL: $error');
-          }
-        });
-      } else if (snapshot.state == TaskState.error) {
-        if (!_isCancelled) {
-          onError?.call('Upload failed: ${snapshot.state}');
-        }
-      }
-    });
-  }
-
-  void cancel() {
-    _isCancelled = true;
-    _uploadTask.cancel();
-  }
-
-  bool get isCancelled => _isCancelled;
 }

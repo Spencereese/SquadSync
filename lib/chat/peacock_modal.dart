@@ -6,6 +6,9 @@ import 'package:provider/provider.dart';
 import '../squad_state.dart';
 import '../managers/user_manager.dart';
 import '../managers/notification_manager.dart';
+import '../managers/lobby_service.dart';
+import '../managers/squad_data_manager.dart';
+import '../managers/squad_persistence_service.dart';
 import 'widgets/peacock_modal_header.dart';
 import 'widgets/game_selection_card.dart';
 import 'widgets/group_settings_card.dart';
@@ -122,6 +125,18 @@ class _PeacockModalState extends State<PeacockModal> {
         'createdAt': Timestamp.now(),
         'circle': _selectedCircle,
       };
+
+      await FirebaseFirestore.instance.collection('peacocks').add(peacockData);
+
+      // Start voice room for the squad
+      final lobbyService = LobbyService(
+        dataManager: squadState.dataManager,
+        persistenceService: squadState.persistenceService,
+      );
+      final voiceRoomId = lobbyService.startVoiceRoom(user.uid, gameName);
+
+      // Add voice room info to peacock data
+      peacockData['voiceRoomId'] = voiceRoomId;
 
       await FirebaseFirestore.instance.collection('peacocks').add(peacockData);
 

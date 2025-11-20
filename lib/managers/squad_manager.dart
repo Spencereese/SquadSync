@@ -3,10 +3,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
 import '../services/interfaces.dart';
+import '../services/app_flow_manager.dart';
 
 /// Manages squad spots, assignments, and timers
 class SquadManager with ChangeNotifier implements ISquadManager {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final AppFlowManager? _analytics;
+
+  SquadManager({AppFlowManager? analytics}) : _analytics = analytics;
   // Game-specific squad spots: Map<gameName, List<String?>>
   Map<String, List<String?>> gameSquadSpots = {};
   // Game-specific spot timers: Map<gameName, List<Map<String, dynamic>?>>
@@ -161,6 +165,17 @@ class SquadManager with ChangeNotifier implements ISquadManager {
     };
 
     await _firestore.collection('squads').doc(squadId).set(squadData);
+
+    // Track squad creation analytics
+    if (_analytics != null) {
+      await _analytics.trackSquadCreated(
+        userId: user.uid,
+        squadId: squadId,
+        squadName: name,
+        memberCount: 1, // Creator is the first member
+      );
+    }
+
     // Note: No longer auto-assigning creator to a spot - users can claim manually
     return squadId;
   }
@@ -190,6 +205,16 @@ class SquadManager with ChangeNotifier implements ISquadManager {
     await _firestore.collection('squads').doc(squadDoc.id).update({
       'members': FieldValue.arrayUnion([user.uid]),
     });
+
+    // Track squad join analytics
+    if (_analytics != null) {
+      await _analytics.trackSquadJoined(
+        userId: user.uid,
+        squadId: squadDoc.id,
+        squadName: data['name'] ?? 'Unknown Squad',
+        joinMethod: 'invite_code',
+      );
+    }
 
     // Note: No longer auto-assigning spots on join - users can claim manually
     return true;

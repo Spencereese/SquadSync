@@ -36,6 +36,15 @@ class SQLiteHelper {
             chat_group_id TEXT
           )
         ''');
+        await db.execute('''
+          CREATE TABLE groups_cache (
+            id TEXT PRIMARY KEY,
+            game_name TEXT,
+            search_term TEXT,
+            data TEXT,
+            cached_at INTEGER
+          )
+        ''');
         // Create indexes for better query performance
         await db.execute(
             'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
@@ -43,6 +52,8 @@ class SQLiteHelper {
             'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
         await db.execute(
             'CREATE INDEX idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
+        await db.execute(
+            'CREATE INDEX idx_groups_cache ON groups_cache(game_name, search_term)');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -170,6 +181,50 @@ class SQLiteHelper {
     } catch (e) {
       debugPrint('Failed to fetch messages from SQLite: $e');
       return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedGroups(
+      String gameName, String searchTerm) async {
+    try {
+      final db = await database;
+      final results = await db.query(
+        'groups_cache',
+        where: 'game_name = ? AND search_term = ?',
+        whereArgs: [gameName, searchTerm],
+        orderBy: 'cached_at DESC',
+        limit: 1,
+      );
+      if (results.isNotEmpty) {
+        final data = results.first['data'] as String;
+        return List<Map<String, dynamic>>.from(json.decode(data));
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Failed to get cached groups: $e');
+      return [];
+    }
+  }
+
+  Future<void> cacheGroups(List<Map<String, dynamic>> groups, String gameName,
+      String searchTerm) async {
+    try {
+      final db = await database;
+      final id = '$gameName|$searchTerm';
+      final data = json.encode(groups);
+      await db.insert(
+        'groups_cache',
+        {
+          'id': id,
+          'game_name': gameName,
+          'search_term': searchTerm,
+          'data': data,
+          'cached_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      debugPrint('Failed to cache groups: $e');
     }
   }
 }

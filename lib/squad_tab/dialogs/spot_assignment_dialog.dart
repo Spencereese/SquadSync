@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers.dart';
 
 class SpotAssignmentDialog {
-  static void show(BuildContext context, SquadState squadState, int index) {
-    final availablePlayers = squadState.getFilteredMembers
-        .where((player) => !squadState.squadSpots.contains(player))
+  static void show(BuildContext context, WidgetRef ref, int index) {
+    final gameName = ref.read(squadStateNotifierProvider.select((state) => state.currentGame?['name'] ?? ''));
+    final squadMemberUids = ref.read(squadStateNotifierProvider.select((state) => state.squadMemberUids));
+    final memberDisplayNames = ref.read(squadStateNotifierProvider.select((state) => state.memberDisplayNames));
+    final gameSquadSpots = ref.read(squadStateNotifierProvider.select((state) => state.gameSquadSpots[gameName] ?? []));
+
+    final availablePlayers = squadMemberUids
+        .where((uid) => !gameSquadSpots.contains(uid))
+        .map((uid) => memberDisplayNames[uid] ?? 'Unknown')
         .toList();
 
     if (availablePlayers.isEmpty) return;
@@ -28,7 +35,9 @@ class SpotAssignmentDialog {
             ...availablePlayers.map((player) => ListTile(
                   title: Text(player),
                   onTap: () {
-                    squadState.assignSpot(index, player);
+                    // Find the UID for the selected player
+                    final uid = memberDisplayNames.entries.firstWhere((entry) => entry.value == player).key;
+                    ref.read(squadStateNotifierProvider.notifier).assignSpot(gameName, index, uid);
                     Navigator.pop(dialogContext);
                   },
                 )),

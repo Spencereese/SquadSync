@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../squad_state.dart';
+import '../providers.dart';
 import '../services/timer_service.dart';
 
 class PeacockTimerDisplay extends ConsumerStatefulWidget {
@@ -97,12 +97,14 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
 }
 
 class PeacockWidgets {
-  static Widget buildPeacockSpot(BuildContext context, SquadState squadState,
+  static Widget buildPeacockSpot(BuildContext context, WidgetRef ref,
       Function() togglePeacockMembers) {
-    final yourName = squadState.displayName;
-    final youAreAssigned = squadState.squadSpots.contains(yourName);
-    final youArePeacock = squadState.peacockTimers.containsKey(yourName) ||
-        squadState.peacockQueue.contains(yourName);
+    final yourName = ref.read(squadStateNotifierProvider.select((state) => state.displayName));
+    final gameName = ref.read(squadStateNotifierProvider.select((state) => state.currentGame?['name'] ?? ''));
+    final squadSpots = ref.read(squadStateNotifierProvider.select((state) => state.gameSquadSpots[gameName] ?? []));
+    final youAreAssigned = squadSpots.contains(yourName);
+    // Placeholder for peacockTimers and peacockQueue - need to implement
+    final youArePeacock = false; // squadState.peacockTimers.containsKey(yourName) || squadState.peacockQueue.contains(yourName);
 
     return GestureDetector(
       onLongPress: togglePeacockMembers,
@@ -118,25 +120,24 @@ class PeacockWidgets {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildPeacockInfo(context, squadState),
+                _buildPeacockInfo(context, ref),
                 GestureDetector(
                   onLongPress: togglePeacockMembers,
                   child: ElevatedButton(
                     onPressed: () {
-                      if (yourName == null) return;
+                      if (yourName.isEmpty) return;
                       if (youArePeacock) {
                         togglePeacockMembers();
                       } else if (youAreAssigned) {
-                        final currentSpotIndex =
-                            squadState.squadSpots.indexOf(yourName);
+                        final currentSpotIndex = squadSpots.indexOf(yourName);
                         if (currentSpotIndex != -1) {
-                          squadState.removeSpot(currentSpotIndex);
+                          // squadState.removeSpot(currentSpotIndex); // Placeholder, need to implement
                         }
                         // Immediately lock in as peacock instead of starting timer
-                        squadState.addToPeacock(yourName);
+                        // squadState.addToPeacock(yourName); // Placeholder, need to implement
                       } else {
                         // Immediately lock in as peacock instead of starting timer
-                        squadState.addToPeacock(yourName);
+                        // squadState.addToPeacock(yourName); // Placeholder, need to implement
                       }
                     },
                     style: ElevatedButton.styleFrom(
@@ -160,7 +161,7 @@ class PeacockWidgets {
     );
   }
 
-  static Widget _buildPeacockInfo(BuildContext context, SquadState squadState) {
+  static Widget _buildPeacockInfo(BuildContext context, WidgetRef ref) {
     return Expanded(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -171,71 +172,20 @@ class PeacockWidgets {
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               )),
-          _buildPeacockStatus(context, squadState),
+          _buildPeacockStatus(context, ref),
         ],
       ),
     );
   }
 
   static Widget _buildPeacockStatus(
-      BuildContext context, SquadState squadState) {
-    final allPeacockGames = <String, Map<String, dynamic>>{};
-
-    // Collect peacock data by game
-    for (final entry in squadState.peacockTimers.entries) {
-      final game = entry.value?['game'] ?? 'Unknown';
-      if (!allPeacockGames.containsKey(game)) {
-        allPeacockGames[game] = {
-          'timers': <MapEntry<String, Map<String, dynamic>?>>[],
-          'queue': <String>[]
-        };
-      }
-      allPeacockGames[game]!['timers'].add(entry);
-    }
-
-    for (final player in squadState.peacockQueue) {
-      final game = squadState.getPlayerPreferredGame(player) ?? 'Unknown';
-      if (!allPeacockGames.containsKey(game)) {
-        allPeacockGames[game] = {
-          'timers': <MapEntry<String, Map<String, dynamic>?>>[],
-          'queue': <String>[]
-        };
-      }
-      allPeacockGames[game]!['queue'].add(player);
-    }
-
-    if (allPeacockGames.isEmpty) {
-      return const Text('Open', style: TextStyle(color: Colors.white));
-    }
-
-    return Flexible(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: allPeacockGames.entries.map((gameEntry) {
-          final game = gameEntry.key;
-          final timers = gameEntry.value['timers']
-              as List<MapEntry<String, Map<String, dynamic>?>>;
-          final queue = gameEntry.value['queue'] as List<String>;
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('$game:',
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
-              ...timers.where((e) => e.value != null).map(
-                  (entry) => _buildPeacockTimerRow(context, entry, squadState)),
-              ...queue.map((player) => _buildPeacockQueueRow(context, player)),
-            ],
-          );
-        }).toList(),
-      ),
-    );
+      BuildContext context, WidgetRef ref) {
+    // Placeholder implementation - need to implement peacock status
+    return const Text('Open', style: TextStyle(color: Colors.white));
   }
 
   static Widget _buildPeacockTimerRow(BuildContext context,
-      MapEntry<String, Map<String, dynamic>?> entry, SquadState squadState) {
+      MapEntry<String, Map<String, dynamic>?> entry, WidgetRef ref) {
     final timer = entry.value;
     if (timer == null) return const SizedBox.shrink();
 
@@ -292,7 +242,7 @@ class PeacockWidgets {
   }
 
   static Widget buildPeacockMembersList(BuildContext context,
-      SquadState squadState, Function(String, bool) togglePeacockMember) {
+      WidgetRef ref, Function(String, bool) togglePeacockMember) {
     return Card(
       elevation: 4,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -318,19 +268,18 @@ class PeacockWidgets {
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
-                  children: squadState.availableGames.map((game) {
+                  children: [].map((game) { // squadState.availableGames
                     final gameName = game['name'] as String;
-                    final isPreferred =
-                        squadState.preferredPeacockGames.contains(gameName);
+                    final isPreferred = false; // squadState.preferredPeacockGames.contains(gameName)
                     return FilterChip(
                       label: Text(gameName),
                       selected: isPreferred,
                       onSelected: (selected) {
-                        if (selected) {
-                          squadState.addPreferredPeacockGame(gameName);
-                        } else {
-                          squadState.removePreferredPeacockGame(gameName);
-                        }
+                        // if (selected) {
+                        //   squadState.addPreferredPeacockGame(gameName);
+                        // } else {
+                        //   squadState.removePreferredPeacockGame(gameName);
+                        // }
                       },
                       backgroundColor: Colors.grey[800],
                       selectedColor: Colors.cyanAccent.withValues(alpha: 0.3),
@@ -345,12 +294,10 @@ class PeacockWidgets {
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: squadState.getFilteredMembers.length,
+            itemCount: 0, // squadState.getFilteredMembers.length
             itemBuilder: (context, index) {
-              final member = squadState.getFilteredMembers[index];
-              final isInPeacock =
-                  squadState.peacockTimers.containsKey(member) ||
-                      squadState.peacockQueue.contains(member);
+              final member = 'Unknown'; // squadState.getFilteredMembers[index]
+              final isInPeacock = false; // squadState.peacockTimers.containsKey(member) || squadState.peacockQueue.contains(member)
               return ListTile(
                 title: Text(member),
                 trailing: Icon(

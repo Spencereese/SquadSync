@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../squad_state.dart';
-import '../managers/user_manager.dart';
-import 'dialogs/join_lobby_dialog.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers.dart';
 
 class MemberWidgets {
   static Widget buildPlayerStatusRow(
-      BuildContext context, String player, SquadState squadState) {
-    final status = squadState.statuses[player] ?? 'Offline';
-    final timerIndex = squadState.squadSpots.indexOf(player);
-    final timerDisplay =
-        timerIndex != -1 ? squadState.getSpotTimerDisplay(timerIndex) : null;
-    final streak = squadState.currentStreaks[player] ?? 0;
-    final banCount = squadState.getBanCount(player);
-    final gameName = squadState.currentGame?['name'] ?? '';
+      BuildContext context, WidgetRef ref, String player) {
+    final gameName = ref.read(squadStateNotifierProvider.select((state) => state.currentGame?['name'] ?? ''));
+    final globalStatuses = ref.read(squadStateNotifierProvider.select((state) => state.globalStatuses));
+    final gameStatuses = ref.read(squadStateNotifierProvider.select((state) => state.gameStatuses[gameName] ?? {}));
+    final status = gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
+    final squadSpots = ref.read(squadStateNotifierProvider.select((state) => state.gameSquadSpots[gameName] ?? []));
+    final timerIndex = squadSpots.indexOf(player);
+    final timerDisplay = timerIndex != -1 ? 'Timer' : null; // Placeholder, need to implement getSpotTimerDisplay
+    final streak = 0; // Placeholder, need to implement currentStreaks
+    final banCount = 0; // Placeholder, need to implement getBanCount
 
     return Padding(
       padding: const EdgeInsets.only(top: 4),
@@ -73,8 +73,11 @@ class MemberWidgets {
   }
 
   static Widget _buildMemberSubtitle(
-      BuildContext context, String player, SquadState squadState) {
-    final status = squadState.statuses[player] ?? 'Offline';
+      BuildContext context, WidgetRef ref, String player) {
+    final gameName = ref.read(squadStateNotifierProvider.select((state) => state.currentGame?['name'] ?? ''));
+    final globalStatuses = ref.read(squadStateNotifierProvider.select((state) => state.globalStatuses));
+    final gameStatuses = ref.read(squadStateNotifierProvider.select((state) => state.gameStatuses[gameName] ?? {}));
+    final status = gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
     final statusColor = _getMemberStatusColor(status);
 
     return Row(
@@ -83,27 +86,29 @@ class MemberWidgets {
           status,
           style: TextStyle(color: statusColor),
         ),
-        if (squadState.getPlayerGame(player) != null) ...[
-          const SizedBox(width: 8),
-          Text(
-            'Playing: ${squadState.getPlayerGame(player)}',
-            style: TextStyle(color: Colors.blueAccent, fontSize: 12),
-          ),
-        ],
+        // Placeholder for getPlayerGame - need to implement
+        // if (getPlayerGame(player) != null) ...[
+        //   const SizedBox(width: 8),
+        //   Text(
+        //     'Playing: ${getPlayerGame(player)}',
+        //     style: TextStyle(color: Colors.blueAccent, fontSize: 12),
+        //   ),
+        // ],
       ],
     );
   }
 
   static Widget _buildMemberActions(
       BuildContext context,
+      WidgetRef ref,
       String player,
-      SquadState squadState,
-      Function(BuildContext, ScaffoldMessengerState, SquadState, String)
+      Function(BuildContext, ScaffoldMessengerState, WidgetRef, String)
           showComplaintDialog,
       {String? circle,
       List<String>? friends}) {
-    final streak = squadState.currentStreaks[player] ?? 0;
-    final banCount = squadState.getBanCount(player);
+    final streak = 0; // Placeholder, need to implement currentStreaks
+    final banCount = 0; // Placeholder, need to implement getBanCount
+    final displayName = ref.read(squadStateNotifierProvider.select((state) => state.displayName));
 
     // Check if player is a friend
     final isFriend = friends?.contains(player) ?? false;
@@ -126,7 +131,7 @@ class MemberWidgets {
         ],
         if (circle == 'Public' &&
             !isFriend &&
-            player != squadState.displayName) ...[
+            player != displayName) ...[
           const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.person_add,
@@ -134,7 +139,7 @@ class MemberWidgets {
             tooltip: 'Send Friend Request',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            onPressed: () => _sendFriendRequest(context, player, squadState),
+            onPressed: () => _sendFriendRequest(context, ref, player),
           ),
         ],
         const SizedBox(width: 8),
@@ -145,7 +150,7 @@ class MemberWidgets {
           constraints: const BoxConstraints(),
           onPressed: () {
             final messenger = ScaffoldMessenger.of(context);
-            showComplaintDialog(context, messenger, squadState, player);
+            showComplaintDialog(context, messenger, ref, player);
           },
         ),
       ],
@@ -193,30 +198,32 @@ class MemberWidgets {
 
   static Widget buildMemberCard(
       BuildContext context,
+      WidgetRef ref,
       String player,
-      SquadState squadState,
-      Function(BuildContext, String, SquadState) showBlockDialog,
-      Function(BuildContext, ScaffoldMessengerState, SquadState, String)
+      Function(BuildContext, String, WidgetRef) showBlockDialog,
+      Function(BuildContext, ScaffoldMessengerState, WidgetRef, String)
           showComplaintDialog,
       {String? circle,
       List<String>? friends}) {
+    final displayName = ref.read(squadStateNotifierProvider.select((state) => state.displayName));
+    // Placeholder for isPlayingSolo - need to implement
+    // final isPlayingSolo = false;
     return Semantics(
       label: 'Member: $player',
       child: GestureDetector(
         onLongPress: () {
-          if (player == squadState.displayName &&
-              squadState.isPlayingSolo(player)) {
-            // Stop solo play for current user
-            squadState.stopSoloGame();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Stopped solo play'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          } else {
-            JoinLobbyDialog.show(context, player, squadState);
-          }
+          // Placeholder for solo play logic - need to implement
+          // if (player == displayName && isPlayingSolo) {
+          //   // Stop solo play for current user
+          //   ScaffoldMessenger.of(context).showSnackBar(
+          //     const SnackBar(
+          //       content: Text('Stopped solo play'),
+          //       backgroundColor: Colors.orange,
+          //     ),
+          //   );
+          // } else {
+            // JoinLobbyDialog.show(context, player, ref); // Placeholder, need to update JoinLobbyDialog
+          // }
         },
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -235,9 +242,9 @@ class MemberWidgets {
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.bold),
             ),
-            subtitle: _buildMemberSubtitle(context, player, squadState),
+            subtitle: _buildMemberSubtitle(context, ref, player),
             trailing: _buildMemberActions(
-                context, player, squadState, showComplaintDialog,
+                context, ref, player, showComplaintDialog,
                 circle: circle, friends: friends),
           ),
         ),
@@ -246,9 +253,10 @@ class MemberWidgets {
   }
 
   static void _sendFriendRequest(
-      BuildContext context, String player, SquadState squadState) async {
-    final playerUid = squadState.getUidForDisplayName(player);
-    if (playerUid == null) {
+      BuildContext context, WidgetRef ref, String player) async {
+    final memberDisplayNames = ref.read(squadStateNotifierProvider.select((state) => state.memberDisplayNames));
+    final playerUid = memberDisplayNames.entries.firstWhere((entry) => entry.value == player, orElse: () => MapEntry('', '')).key;
+    if (playerUid.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Unable to send friend request')),
       );
@@ -256,8 +264,8 @@ class MemberWidgets {
     }
 
     try {
-      final userManager = Provider.of<UserManager>(context, listen: false);
-      await userManager.sendFriendRequest(playerUid);
+      // final userManager = ref.read(userManagerProvider); // Placeholder, need to implement userManagerProvider
+      // await userManager.sendFriendRequest(playerUid);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

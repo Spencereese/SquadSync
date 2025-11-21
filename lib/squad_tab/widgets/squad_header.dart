@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import '../../squad_state.dart';
-import '../../managers/game_manager.dart';
-import '../dialogs/settings_dialog.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'game_selector.dart';
 
 /// SquadHeader component - handles navigation and game info display
 /// Extracted from the monolithic SquadTab to improve maintainability
-class SquadHeader extends StatelessWidget {
+class SquadHeader extends ConsumerWidget {
   final String? lobbyId;
 
   const SquadHeader({
@@ -17,71 +14,63 @@ class SquadHeader extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer<SquadState>(
-      builder: (context, squadState, child) {
-        return Padding(
-          padding: const EdgeInsets.only(
-            top: 40.0, // Add top padding to avoid phone settings/clock
-          ),
-          child: Column(
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        top: 40.0, // Add top padding to avoid phone settings/clock
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Back button
-                  Semantics(
-                    label: 'Go back to lobby selection',
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: Colors.cyanAccent,
-                        size: 28,
-                      ),
-                      onPressed: () => Navigator.of(context).pop(),
-                      tooltip: 'Back to lobbies',
-                    ),
+              // Back button
+              Semantics(
+                label: 'Go back to lobby selection',
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: Colors.cyanAccent,
+                    size: 28,
                   ),
+                  onPressed: () => Navigator.of(context).pop(),
+                  tooltip: 'Back to lobbies',
+                ),
+              ),
 
-                  // Centered game selector - clickable to show game selection
-                  Expanded(
-                    child: Center(
-                      child: GameSelector(
-                        onGameTap: () =>
-                            _showGameSelectionDialog(context, squadState),
-                      ),
-                    ),
+              // Centered game selector - clickable to show game selection
+              Expanded(
+                child: Center(
+                  child: GameSelector(
+                    onGameTap: () =>
+                        _showGameSelectionDialog(context, ref),
                   ),
+                ),
+              ),
 
-                  // Settings button
-                  Semantics(
-                    label: 'Open squad settings',
-                    child: IconButton(
-                      icon: Image.asset(
-                        'assets/images/settings_gear.png',
-                        width: 28,
-                        height: 28,
-                        color: Colors.grey[400],
-                      ),
-                      onPressed: () => SettingsDialog.show(
-                        context,
-                        squadState,
-                        lobbyId: lobbyId,
-                      ),
-                      tooltip: 'Settings',
-                    ),
+              // Settings button
+              Semantics(
+                label: 'Open squad settings',
+                child: IconButton(
+                  icon: Image.asset(
+                    'assets/images/settings_gear.png',
+                    width: 28,
+                    height: 28,
+                    color: Colors.grey[400],
                   ),
-                ],
+                  onPressed: () {}, // SettingsDialog.show(context, ref, lobbyId: lobbyId), // Placeholder, need to update SettingsDialog
+                  tooltip: 'Settings',
+                ),
               ),
             ],
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
-  void _showGameSelectionDialog(BuildContext context, SquadState squadState) {
+  void _showGameSelectionDialog(BuildContext context, WidgetRef ref) {
     final TextEditingController gameController = TextEditingController();
     Map<String, dynamic>? selectedGame;
 
@@ -114,14 +103,13 @@ class SquadHeader extends StatelessWidget {
                   ),
                   onChanged: (value) async {
                     if (value.isNotEmpty) {
-                      final gameManager =
-                          Provider.of<GameManager>(context, listen: false);
-                      final results = await gameManager.searchGames(value);
-                      if (results.isNotEmpty) {
-                        setState(() {
-                          selectedGame = results.first;
-                        });
-                      }
+                      // final gameManager = Provider.of<GameManager>(context, listen: false);
+                      // final results = await gameManager.searchGames(value);
+                      // if (results.isNotEmpty) {
+                      //   setState(() {
+                      //     selectedGame = results.first;
+                      //   });
+                      // }
                     }
                   },
                 ),
@@ -135,9 +123,9 @@ class SquadHeader extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        if (selectedGame!['coverUrl'] != null)
+                        if (selectedGame['coverUrl'] != null)
                           Image.network(
-                            selectedGame!['coverUrl'],
+                            selectedGame['coverUrl'],
                             width: 40,
                             height: 40,
                             fit: BoxFit.cover,
@@ -153,18 +141,18 @@ class SquadHeader extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                selectedGame!['name'] ?? 'Unknown Game',
+                                selectedGame['name'] ?? 'Unknown Game',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              if (selectedGame!['summary'] != null &&
-                                  selectedGame!['summary']
+                              if (selectedGame['summary'] != null &&
+                                  selectedGame['summary']
                                       .toString()
                                       .isNotEmpty)
                                 Text(
-                                  selectedGame!['summary'].toString(),
+                                  selectedGame['summary'].toString(),
                                   style: const TextStyle(
                                     color: Colors.grey,
                                     fontSize: 12,
@@ -191,17 +179,13 @@ class SquadHeader extends StatelessWidget {
             TextButton(
               onPressed: selectedGame != null
                   ? () {
-                      squadState.currentGame = selectedGame;
-                      // Mark fields as changed for persistence
-                      squadState.persistenceManager
-                          .markFieldChanged('currentGame');
-                      squadState.updateFirestoreAsync(force: true);
+                      // ref.read(squadStateNotifierProvider.notifier).state = ref.read(squadStateNotifierProvider).copyWith(currentGame: selectedGame); // Placeholder, need to implement
                       Navigator.pop(context);
                       HapticFeedback.lightImpact();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                             content:
-                                Text('Switched to ${selectedGame!['name']}')),
+                                Text('Switched to ${selectedGame['name']}')),
                       );
                     }
                   : null,

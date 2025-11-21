@@ -211,7 +211,7 @@ class LegacySquadState extends ChangeNotifier {
   }
 
   Future<void> assignSpot(String gameName, int spotIndex, String uid) async {
-    // Stub implementation
+    // Implementation moved to SquadStateNotifier
   }
 
   String getSpotTimerDisplay(String gameName, int spotIndex) {
@@ -742,6 +742,16 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
       // Error updating spot timers - could add logging here
       rethrow;
     }
+  }
+
+  Future<void> assignSpot(String gameName, int spotIndex, String uid) async {
+    final updatedSpots = Map<String, List<String?>>.from(state.gameSquadSpots);
+    if (!updatedSpots.containsKey(gameName)) {
+      final maxSpots = state.currentGame?['maxSpots'] ?? 4;
+      updatedSpots[gameName] = List.filled(maxSpots, null);
+    }
+    updatedSpots[gameName]![spotIndex] = uid;
+    state = state.copyWith(gameSquadSpots: updatedSpots);
   }
 
   @override

@@ -988,6 +988,25 @@ class MockSquadStateNotifier extends _i1.Mock
       );
 
   @override
+  _i29.Future<void> assignSpot(
+    String? gameName,
+    int? spotIndex,
+    String? uid,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #assignSpot,
+          [
+            gameName,
+            spotIndex,
+            uid,
+          ],
+        ),
+        returnValue: _i29.Future<void>.value(),
+        returnValueForMissingStub: _i29.Future<void>.value(),
+      ) as _i29.Future<void>);
+
+  @override
   void dispose() => super.noSuchMethod(
         Invocation.method(
           #dispose,

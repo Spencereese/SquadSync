@@ -320,8 +320,7 @@ class DirectMessagesTab extends StatelessWidget {
                 future: _getUserProfile(otherUserId),
                 builder: (context, userSnapshot) {
                   final userData = userSnapshot.data;
-                  final displayName =
-                      safeDisplayName(userData?['displayName']);
+                  final displayName = safeDisplayName(userData?['displayName']);
                   final profileImage = userData?['profileImage'];
 
                   return ListTile(

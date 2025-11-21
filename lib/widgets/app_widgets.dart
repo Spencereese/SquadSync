@@ -87,8 +87,7 @@ class AuthWrapper extends ConsumerWidget {
           debugPrint('User authenticated: ${user.uid}');
           // User is authenticated, initialize SquadState and show main app
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            p.Provider.of<SquadState>(context, listen: false)
-                .initialize();
+            p.Provider.of<SquadState>(context, listen: false).initialize();
             p.Provider.of<UserManager>(context, listen: false)
                 .fetchPinnedGames();
           });

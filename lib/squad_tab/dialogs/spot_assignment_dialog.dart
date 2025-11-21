@@ -4,10 +4,14 @@ import '../../providers.dart';
 
 class SpotAssignmentDialog {
   static void show(BuildContext context, WidgetRef ref, int index) {
-    final gameName = ref.read(squadStateNotifierProvider.select((state) => state.currentGame?['name'] ?? ''));
-    final squadMemberUids = ref.read(squadStateNotifierProvider.select((state) => state.squadMemberUids));
-    final memberDisplayNames = ref.read(squadStateNotifierProvider.select((state) => state.memberDisplayNames));
-    final gameSquadSpots = ref.read(squadStateNotifierProvider.select((state) => state.gameSquadSpots[gameName] ?? []));
+    final gameName = ref.read(squadStateNotifierProvider
+        .select((state) => state.currentGame?['name'] ?? ''));
+    final squadMemberUids = ref.read(
+        squadStateNotifierProvider.select((state) => state.squadMemberUids));
+    final memberDisplayNames = ref.read(
+        squadStateNotifierProvider.select((state) => state.memberDisplayNames));
+    final gameSquadSpots = ref.read(squadStateNotifierProvider
+        .select((state) => state.gameSquadSpots[gameName] ?? []));
 
     final availablePlayers = squadMemberUids
         .where((uid) => !gameSquadSpots.contains(uid))
@@ -36,8 +40,12 @@ class SpotAssignmentDialog {
                   title: Text(player),
                   onTap: () {
                     // Find the UID for the selected player
-                    final uid = memberDisplayNames.entries.firstWhere((entry) => entry.value == player).key;
-                    ref.read(squadStateNotifierProvider.notifier).assignSpot(gameName, index, uid);
+                    final uid = memberDisplayNames.entries
+                        .firstWhere((entry) => entry.value == player)
+                        .key;
+                    ref
+                        .read(squadStateNotifierProvider.notifier)
+                        .assignSpot(gameName, index, uid);
                     Navigator.pop(dialogContext);
                   },
                 )),

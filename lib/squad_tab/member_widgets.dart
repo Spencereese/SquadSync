@@ -5,13 +5,19 @@ import '../providers.dart';
 class MemberWidgets {
   static Widget buildPlayerStatusRow(
       BuildContext context, WidgetRef ref, String player) {
-    final gameName = ref.read(squadStateNotifierProvider.select((state) => state.currentGame?['name'] ?? ''));
-    final globalStatuses = ref.read(squadStateNotifierProvider.select((state) => state.globalStatuses));
-    final gameStatuses = ref.read(squadStateNotifierProvider.select((state) => state.gameStatuses[gameName] ?? {}));
+    final gameName = ref.read(squadStateNotifierProvider
+        .select((state) => state.currentGame?['name'] ?? ''));
+    final globalStatuses = ref.read(
+        squadStateNotifierProvider.select((state) => state.globalStatuses));
+    final gameStatuses = ref.read(squadStateNotifierProvider
+        .select((state) => state.gameStatuses[gameName] ?? {}));
     final status = gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
-    final squadSpots = ref.read(squadStateNotifierProvider.select((state) => state.gameSquadSpots[gameName] ?? []));
+    final squadSpots = ref.read(squadStateNotifierProvider
+        .select((state) => state.gameSquadSpots[gameName] ?? []));
     final timerIndex = squadSpots.indexOf(player);
-    final timerDisplay = timerIndex != -1 ? 'Timer' : null; // Placeholder, need to implement getSpotTimerDisplay
+    final timerDisplay = timerIndex != -1
+        ? 'Timer'
+        : null; // Placeholder, need to implement getSpotTimerDisplay
     final streak = 0; // Placeholder, need to implement currentStreaks
     final banCount = 0; // Placeholder, need to implement getBanCount
 
@@ -74,9 +80,12 @@ class MemberWidgets {
 
   static Widget _buildMemberSubtitle(
       BuildContext context, WidgetRef ref, String player) {
-    final gameName = ref.read(squadStateNotifierProvider.select((state) => state.currentGame?['name'] ?? ''));
-    final globalStatuses = ref.read(squadStateNotifierProvider.select((state) => state.globalStatuses));
-    final gameStatuses = ref.read(squadStateNotifierProvider.select((state) => state.gameStatuses[gameName] ?? {}));
+    final gameName = ref.read(squadStateNotifierProvider
+        .select((state) => state.currentGame?['name'] ?? ''));
+    final globalStatuses = ref.read(
+        squadStateNotifierProvider.select((state) => state.globalStatuses));
+    final gameStatuses = ref.read(squadStateNotifierProvider
+        .select((state) => state.gameStatuses[gameName] ?? {}));
     final status = gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
     final statusColor = _getMemberStatusColor(status);
 
@@ -108,7 +117,8 @@ class MemberWidgets {
       List<String>? friends}) {
     final streak = 0; // Placeholder, need to implement currentStreaks
     final banCount = 0; // Placeholder, need to implement getBanCount
-    final displayName = ref.read(squadStateNotifierProvider.select((state) => state.displayName));
+    final displayName = ref
+        .read(squadStateNotifierProvider.select((state) => state.displayName));
 
     // Check if player is a friend
     final isFriend = friends?.contains(player) ?? false;
@@ -129,9 +139,7 @@ class MemberWidgets {
           Text('$banCount',
               style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
         ],
-        if (circle == 'Public' &&
-            !isFriend &&
-            player != displayName) ...[
+        if (circle == 'Public' && !isFriend && player != displayName) ...[
           const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.person_add,
@@ -205,7 +213,8 @@ class MemberWidgets {
           showComplaintDialog,
       {String? circle,
       List<String>? friends}) {
-    final displayName = ref.read(squadStateNotifierProvider.select((state) => state.displayName));
+    final displayName = ref
+        .read(squadStateNotifierProvider.select((state) => state.displayName));
     // Placeholder for isPlayingSolo - need to implement
     // final isPlayingSolo = false;
     return Semantics(
@@ -222,7 +231,7 @@ class MemberWidgets {
           //     ),
           //   );
           // } else {
-            // JoinLobbyDialog.show(context, player, ref); // Placeholder, need to update JoinLobbyDialog
+          // JoinLobbyDialog.show(context, player, ref); // Placeholder, need to update JoinLobbyDialog
           // }
         },
         child: Card(
@@ -254,8 +263,12 @@ class MemberWidgets {
 
   static void _sendFriendRequest(
       BuildContext context, WidgetRef ref, String player) async {
-    final memberDisplayNames = ref.read(squadStateNotifierProvider.select((state) => state.memberDisplayNames));
-    final playerUid = memberDisplayNames.entries.firstWhere((entry) => entry.value == player, orElse: () => MapEntry('', '')).key;
+    final memberDisplayNames = ref.read(
+        squadStateNotifierProvider.select((state) => state.memberDisplayNames));
+    final playerUid = memberDisplayNames.entries
+        .firstWhere((entry) => entry.value == player,
+            orElse: () => MapEntry('', ''))
+        .key;
     if (playerUid.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Unable to send friend request')),

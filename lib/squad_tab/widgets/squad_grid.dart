@@ -1,55 +1,61 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../squad_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers.dart';
 import '../dialogs/spot_assignment_dialog.dart';
 
 /// SquadGrid component - handles the display of spot cards and assignment logic
 /// Extracted from the monolithic SquadTab to improve maintainability
-class SquadGrid extends StatelessWidget {
+class SquadGrid extends ConsumerWidget {
   const SquadGrid({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer<SquadState>(
-      builder: (context, squadState, child) {
-        final maxSpots = squadState.currentGame?['maxSpots'] ?? 4;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentGame = ref
+        .watch(squadStateNotifierProvider.select((state) => state.currentGame));
+    final maxSpots = currentGame?['maxSpots'] ?? 4;
 
-        return SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => SpotCard(
-              key: ValueKey('spot_$index'),
-              index: index,
-              squadState: squadState,
-            ),
-            childCount: maxSpots,
-          ),
-        );
-      },
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => SpotCard(
+          key: ValueKey('spot_$index'),
+          index: index,
+        ),
+        childCount: maxSpots,
+      ),
     );
   }
 }
 
 /// SpotCard - Individual spot card widget with optimized rebuilds
-class SpotCard extends StatelessWidget {
+class SpotCard extends ConsumerWidget {
   final int index;
-  final SquadState squadState;
 
   const SpotCard({
     super.key,
     required this.index,
-    required this.squadState,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final spotName = squadState.squadSpots[index];
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gameName = ref.watch(squadStateNotifierProvider
+        .select((state) => state.currentGame?['name'] ?? ''));
+    final squadSpots = ref.watch(squadStateNotifierProvider
+        .select((state) => state.gameSquadSpots[gameName] ?? []));
+    final spotTimers = ref.watch(squadStateNotifierProvider
+        .select((state) => state.gameSpotTimers[gameName] ?? []));
+    final globalStatuses = ref.watch(
+        squadStateNotifierProvider.select((state) => state.globalStatuses));
+    final displayName = ref
+        .watch(squadStateNotifierProvider.select((state) => state.displayName));
+
+    final spotName = index < squadSpots.length ? squadSpots[index] : null;
     final hasOccupant = spotName != null;
-    final yourName = squadState.displayName;
-    final isReady = squadState.statuses[spotName] == 'Ready';
+    final yourName = displayName;
+    final isReady = globalStatuses[spotName] == 'Ready';
 
     // Check if any buttons will be shown
-    final hasTimer = squadState.spotTimers[index] != null;
-    final isCalling = squadState.statuses[spotName] == 'Calling';
+    final hasTimer = index < spotTimers.length && spotTimers[index] != null;
+    final isCalling = globalStatuses[spotName] == 'Calling';
     final hasCallButton = !hasOccupant;
     final hasLockButton =
         hasOccupant && hasTimer && isCalling && spotName == yourName;
@@ -60,9 +66,11 @@ class SpotCard extends StatelessWidget {
     return GestureDetector(
       onLongPress: () {
         if (hasOccupant) {
-          squadState.removeSpot(index);
+          ref
+              .read(squadStateNotifierProvider.notifier)
+              .removeSpot(gameName, index);
         } else {
-          SpotAssignmentDialog.show(context, squadState, index);
+          SpotAssignmentDialog.show(context, ref, index);
         }
       },
       onTap: hasAnyButton
@@ -70,20 +78,25 @@ class SpotCard extends StatelessWidget {
           : () {
               if (!hasOccupant) {
                 // Claim the empty spot
-                squadState.claimSpot(index);
+                ref
+                    .read(squadStateNotifierProvider.notifier)
+                    .claimSpot(gameName, index);
               } else if (hasOccupant && spotName == yourName) {
-                final status = squadState.statuses[spotName];
+                final status = globalStatuses[spotName];
                 if (status == 'Ready') {
-                  squadState.lockSpot(index);
+                  ref
+                      .read(squadStateNotifierProvider.notifier)
+                      .lockSpot(gameName, index);
                 } else if (status != 'Calling') {
                   // Allow leaving spot by tapping when not ready and not calling
-                  squadState.removeSpot(index);
+                  ref
+                      .read(squadStateNotifierProvider.notifier)
+                      .removeSpot(gameName, index);
                 }
                 // Don't remove spot when calling - let the Lock button handle it
-              } else if (hasOccupant &&
-                  squadState.squadSpots.contains(yourName)) {
+              } else if (hasOccupant && squadSpots.contains(yourName)) {
                 // You're already in a spot, allow assigning others
-                SpotAssignmentDialog.show(context, squadState, index);
+                SpotAssignmentDialog.show(context, ref, index);
               }
             },
       child: Semantics(
@@ -97,7 +110,7 @@ class SpotCard extends StatelessWidget {
               backgroundColor:
                   hasOccupant ? Colors.cyanAccent : Colors.grey[600],
               child: Text(
-                hasOccupant ? spotName[0].toUpperCase() : '${index + 1}',
+                hasOccupant ? spotName![0].toUpperCase() : '${index + 1}',
                 style: TextStyle(
                     color: hasOccupant ? Colors.black : Colors.white,
                     fontWeight: FontWeight.bold),

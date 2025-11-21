@@ -43,8 +43,7 @@ class SquadHeader extends ConsumerWidget {
               Expanded(
                 child: Center(
                   child: GameSelector(
-                    onGameTap: () =>
-                        _showGameSelectionDialog(context, ref),
+                    onGameTap: () => _showGameSelectionDialog(context, ref),
                   ),
                 ),
               ),
@@ -59,7 +58,8 @@ class SquadHeader extends ConsumerWidget {
                     height: 28,
                     color: Colors.grey[400],
                   ),
-                  onPressed: () {}, // SettingsDialog.show(context, ref, lobbyId: lobbyId), // Placeholder, need to update SettingsDialog
+                  onPressed:
+                      () {}, // SettingsDialog.show(context, ref, lobbyId: lobbyId), // Placeholder, need to update SettingsDialog
                   tooltip: 'Settings',
                 ),
               ),
@@ -148,9 +148,7 @@ class SquadHeader extends ConsumerWidget {
                                 ),
                               ),
                               if (selectedGame['summary'] != null &&
-                                  selectedGame['summary']
-                                      .toString()
-                                      .isNotEmpty)
+                                  selectedGame['summary'].toString().isNotEmpty)
                                 Text(
                                   selectedGame['summary'].toString(),
                                   style: const TextStyle(

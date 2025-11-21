@@ -102,6 +102,46 @@ void main() {
     });
   });
 
+  group('UserManager - getDisplayNameForUid', () {
+    test('should return displayName from cache on hit', () async {
+      // Arrange
+      const uid = 'user1';
+      final firestoreData = {
+        'displayName': 'Test User',
+        'profileImage': 'https://example.com/image.jpg'
+      };
+
+      // Add data to fake Firestore and cache it
+      await fakeFirestore.collection('users').doc(uid).set(firestoreData);
+      await userManager.getUserProfile(uid); // Cache it
+
+      // Act
+      final displayName = userManager.getDisplayNameForUid(uid);
+
+      // Assert
+      expect(displayName, 'Test User');
+    });
+
+    test('should return "Unknown User" on null uid', () {
+      // Act
+      final displayName = userManager.getDisplayNameForUid('');
+
+      // Assert
+      expect(displayName, 'Unknown User');
+    });
+
+    test('should return "Unknown User" on cache miss', () {
+      // Arrange
+      const uid = 'nonexistent';
+
+      // Act
+      final displayName = userManager.getDisplayNameForUid(uid);
+
+      // Assert
+      expect(displayName, 'Unknown User');
+    });
+  });
+
   // Note: Tests for methods requiring FirebaseAuth (fetchPinnedGames, addPinnedGame, etc.)
   // are omitted due to complexity of mocking FirebaseAuth in unit tests.
   // These would be better tested in integration tests or with proper FirebaseAuth mocking.

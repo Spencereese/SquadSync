@@ -92,6 +92,15 @@ class UserManager with ChangeNotifier implements IUserManager {
     return null;
   }
 
+  String getDisplayNameForUid(String uid) {
+    // Check cache first
+    if (_userProfileCache.containsKey(uid)) {
+      return _userProfileCache[uid]!['displayName'] ?? 'Unknown User';
+    }
+    // Return fallback if not cached
+    return 'Unknown User';
+  }
+
   Future<Map<String, dynamic>?> getCachedSenderDetails(String senderId) {
     if (_senderDetailFutures.containsKey(senderId)) {
       return _senderDetailFutures[senderId]!;

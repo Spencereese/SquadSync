@@ -4,6 +4,7 @@
 **CRITICAL**: Never commit credentials to version control. Use environment variables for all secrets:
 - Firebase service account credentials: `GOOGLE_CLOUD_CREDENTIALS` environment variable
 - Database credentials: `DB_USER`, `DB_HOST`, `DB_NAME`, `DB_PASSWORD`, `DB_PORT`
+- Agora RTC credentials: `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE` environment variables
 - Reference `backend/.env.example` for required environment variables
 
 ## Project Overview
@@ -86,6 +87,7 @@ SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
 - **Features**: Mute/unmute, join/leave, speaking indicators, host controls
 - **Permissions**: Microphone access with proper error handling
 - **Real-time updates**: Participant status changes and audio volume detection
+- **Configured for production with env vars AGORA_APP_ID and AGORA_APP_CERTIFICATE via flutter_dotenv; latest SDK ^6.5.3 for bug fixes and stability**
 
 ## Discovery & User Search
 - **DiscoveryScreen**: Find and join public groups and squads

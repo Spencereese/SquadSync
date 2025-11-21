@@ -5,6 +5,7 @@ const cors = require('cors');
 const { Storage } = require('@google-cloud/storage');
 const { Firestore } = require('@google-cloud/firestore');
 const axios = require('axios');
+const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 require('dotenv').config();
 
 const app = express();
@@ -496,6 +497,41 @@ async function getYouTubeVideoInfo(videoId) {
   }
   return null;
 }
+
+// Agora RTC Token Generation
+app.post('/agora/token', (req, res) => {
+  try {
+    const { channelName, uid } = req.body;
+    const appId = process.env.AGORA_APP_ID;
+    const appCertificate = process.env.AGORA_APP_CERTIFICATE;
+
+    if (!appId || !appCertificate) {
+      return res.status(500).json({ error: 'Agora credentials not configured' });
+    }
+
+    if (!channelName || uid === undefined) {
+      return res.status(400).json({ error: 'channelName and uid are required' });
+    }
+
+    const expirationTimeInSeconds = 3600; // 1 hour
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
+
+    const token = RtcTokenBuilder.buildTokenWithUid(
+      appId,
+      appCertificate,
+      channelName,
+      uid,
+      RtcRole.PUBLISHER,
+      privilegeExpiredTs
+    );
+
+    res.json({ token });
+  } catch (error) {
+    console.error('Error generating Agora token:', error);
+    res.status(500).json({ error: 'Failed to generate token' });
+  }
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));

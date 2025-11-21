@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart' as provider;
+import 'package:provider/Provider.dart' as provider;
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../managers/game_manager.dart';
 import '../../chat/chat_groups_screen.dart';
@@ -107,13 +108,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           const Spacer(),
           ElevatedButton(
             onPressed:
-                _displayNameController.text.isNotEmpty ? _nextStep : null,
+                (_displayNameController.text.isNotEmpty && !_isUploadingAvatar)
+                    ? _nextStep
+                    : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF007AFF),
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 50),
             ),
-            child: const Text('Next'),
+            child: _isUploadingAvatar
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Next'),
           ),
         ],
       ),
@@ -189,48 +201,84 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   void _nextStep() async {
-    if (_avatarFile != null) {
-      setState(() {
-        _isUploadingAvatar = true;
-      });
-      await _uploadAvatar();
+    setState(() {
+      _isUploadingAvatar = true;
+    });
+
+    try {
+      debugPrint('Starting profile save...');
+      String? avatarUrl;
+      if (_avatarFile != null) {
+        debugPrint('Uploading avatar...');
+        avatarUrl = await _uploadAvatar();
+        debugPrint('Avatar uploaded: $avatarUrl');
+      }
+
+      // Save display name and avatar URL
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        debugPrint('Saving to Firestore for user: ${user.uid}');
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'displayName': _displayNameController.text,
+          'avatarUrl': avatarUrl,
+        }, SetOptions(merge: true));
+        debugPrint('Profile saved successfully');
+      } else {
+        debugPrint('No current user found');
+        throw Exception('User not authenticated');
+      }
+
+      debugPrint('Navigating to next step...');
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    } catch (e) {
+      debugPrint('Error in _nextStep: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save profile: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingAvatar = false;
+        });
+      }
+    }
+  }
+
+  Future<String?> _uploadAvatar() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _avatarFile == null) return null;
+
+    setState(() {
+      _isUploadingAvatar = true;
+    });
+
+    try {
+      debugPrint('Starting avatar upload for user: ${user.uid}');
+      final ref =
+          FirebaseStorage.instance.ref().child('avatars/${user.uid}.jpg');
+      final uploadTask = ref.putFile(_avatarFile!);
+
+      // Wait for upload to complete
+      final snapshot = await uploadTask.whenComplete(() => null);
+      debugPrint('Upload task completed');
+
+      // Get download URL
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+      debugPrint('Download URL obtained: $downloadUrl');
+      return downloadUrl;
+    } catch (e) {
+      debugPrint('Error uploading avatar: $e');
+      throw Exception('Failed to upload avatar: $e');
+    } finally {
       setState(() {
         _isUploadingAvatar = false;
       });
     }
-
-    // Save display name
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'displayName': _displayNameController.text,
-        'avatarUrl': _avatarFile != null ? await _getAvatarUrl() : null,
-      }, SetOptions(merge: true));
-    }
-
-    _pageController.nextPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  Future<void> _uploadAvatar() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null && _avatarFile != null) {
-      final ref =
-          FirebaseStorage.instance.ref().child('avatars/${user.uid}.jpg');
-      await ref.putFile(_avatarFile!);
-    }
-  }
-
-  Future<String?> _getAvatarUrl() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final ref =
-          FirebaseStorage.instance.ref().child('avatars/${user.uid}.jpg');
-      return await ref.getDownloadURL();
-    }
-    return null;
   }
 
   void _searchGames() async {

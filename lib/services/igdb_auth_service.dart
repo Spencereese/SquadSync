@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// IGDB (Internet Game Database) authentication and search service
 /// Uses Twitch OAuth2 for authentication and Apicalypse query language
@@ -19,38 +20,25 @@ class IgdbAuthService {
     _storage ??= await SharedPreferences.getInstance();
   }
 
-  /// Store IGDB credentials securely (call once during dev setup)
-  Future<void> storeCredentials() async {
-    await _ensureStorage();
-    const clientId = 'yq7hidzec8wv7khe9niom9m6znzrxf';
-    const clientSecret = '4ycghqkzf2ylgxbilypdxu4ga937u5';
-
-    await _storage!.setString(_clientIdKey, clientId);
-    await _storage!.setString(_clientSecretKey, clientSecret);
-    print('IGDB credentials stored securely');
-  }
-
   /// Get stored client ID
-  Future<String?> getClientId() async {
-    await _ensureStorage();
-    return _storage!.getString(_clientIdKey);
+  String? getClientId() {
+    return dotenv.env['IGDB_CLIENT_ID'];
   }
 
   /// Get stored client secret
-  Future<String?> getClientSecret() async {
-    await _ensureStorage();
-    return _storage!.getString(_clientSecretKey);
+  String? getClientSecret() {
+    return dotenv.env['IGDB_CLIENT_SECRET'];
   }
 
   /// Fetch or retrieve access token
-  Future<String?> getAccessToken() async {
+  Future<String> getAccessToken() async {
     await _ensureStorage();
     // Check if we have a valid cached token
     if (_accessToken != null &&
         _tokenExpiry != null &&
         DateTime.now()
             .isBefore(_tokenExpiry!.subtract(const Duration(minutes: 5)))) {
-      return _accessToken;
+      return _accessToken!;
     }
 
     // Try to load from storage
@@ -63,7 +51,7 @@ class IgdbAuthService {
           .isBefore(expiry.subtract(const Duration(minutes: 5)))) {
         _accessToken = storedToken;
         _tokenExpiry = expiry;
-        return _accessToken;
+        return _accessToken!;
       }
     }
 
@@ -72,50 +60,39 @@ class IgdbAuthService {
   }
 
   /// Fetch new access token from Twitch OAuth2
-  Future<String?> _fetchNewToken() async {
-    try {
-      final clientId = await getClientId();
-      final clientSecret = await getClientSecret();
+  Future<String> _fetchNewToken() async {
+    final clientId = getClientId();
+    final clientSecret = getClientSecret();
 
-      if (clientId == null || clientSecret == null) {
-        print('IGDB credentials not found. Call storeCredentials() first.');
-        return null;
-      }
+    if (clientId == null || clientSecret == null) {
+      throw Exception('IGDB credentials not found in environment variables.');
+    }
 
-      final response = await http.post(
-        Uri.parse('https://id.twitch.tv/oauth2/token'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {
-          'client_id': clientId,
-          'client_secret': clientSecret,
-          'grant_type': 'client_credentials',
-        },
-      );
+    final response = await http.post(
+      Uri.parse('https://id.twitch.tv/oauth2/token'),
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: {
+        'client_id': clientId,
+        'client_secret': clientSecret,
+        'grant_type': 'client_credentials',
+      },
+    );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        _accessToken = data['access_token'];
-        final expiresIn = data['expires_in'] as int;
-        _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      _accessToken = data['access_token'];
+      final expiresIn = data['expires_in'] as int;
+      _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
 
-        // Cache token
-        await _storage!.setString(_tokenKey, _accessToken!);
-        await _storage!
-            .setString(_tokenExpiryKey, _tokenExpiry!.toIso8601String());
+      // Cache token
+      await _storage!.setString(_tokenKey, _accessToken!);
+      await _storage!
+          .setString(_tokenExpiryKey, _tokenExpiry!.toIso8601String());
 
-        return _accessToken;
-      } else {
-        print(
-            'Failed to fetch IGDB token: ${response.statusCode} - ${response.body}');
-        return null;
-      }
-    } catch (e) {
-      print('Error fetching IGDB token: $e');
-      print('Error type: ${e.runtimeType}');
-      if (e is http.ClientException) {
-        print('ClientException details: ${e.message}');
-      }
-      return null;
+      return _accessToken!;
+    } else {
+      throw Exception(
+          'Failed to fetch IGDB token: ${response.statusCode} - ${response.body}');
     }
   }
 
@@ -124,15 +101,11 @@ class IgdbAuthService {
   Future<List<Map<String, dynamic>>> searchGames(String query,
       {int limit = 10}) async {
     final token = await getAccessToken();
-    if (token == null) {
-      print('No IGDB access token available');
-      return [];
-    }
+
+    final clientId = getClientId();
+    if (clientId == null) throw Exception('IGDB client ID not found.');
 
     try {
-      final clientId = await getClientId();
-      if (clientId == null) return [];
-
       // If query is empty, get popular games instead of searching
       final queryBody = query.isEmpty
           ? '''
@@ -187,23 +160,11 @@ class IgdbAuthService {
             'maxSpots': 6, // Default max spots for IGDB games
           };
         }).toList();
-      } else if (response.statusCode == 429) {
-        // Rate limited - implement exponential backoff
-        print('IGDB rate limited. Implementing backoff...');
-        await Future.delayed(const Duration(seconds: 2));
-        return await searchGames(query, limit: limit); // Retry once
       } else {
-        print('IGDB search failed: ${response.statusCode} - ${response.body}');
-        return [];
+        throw Exception('IGDB search failed: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
-      print('Error searching IGDB: $e');
-      print('Error type: ${e.runtimeType}');
-      if (e is http.ClientException) {
-        print('ClientException details: ${e.message}');
-        print('URI: ${e.uri}');
-      }
-      return [];
+      throw Exception('Error searching IGDB: $e');
     }
   }
 

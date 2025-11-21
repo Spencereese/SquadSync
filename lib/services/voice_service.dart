@@ -4,8 +4,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'agora_config.dart';
 import '../managers/notification_manager.dart';
+import 'app_flow_manager.dart';
 
 /// Voice room participant state
 class VoiceParticipant {
@@ -87,6 +89,8 @@ class VoiceRoomNotifier extends StateNotifier<VoiceRoomState> {
   final RtcEngine Function() _engineFactory;
   final Future<PermissionStatus> Function() _requestPermission;
   final NotificationManager? _notificationManager;
+  final AppFlowManager? _appFlowManager;
+  DateTime? _joinTime;
 
   VoiceRoomNotifier(
     String roomId,
@@ -94,10 +98,12 @@ class VoiceRoomNotifier extends StateNotifier<VoiceRoomState> {
     RtcEngine Function()? engineFactory,
     Future<PermissionStatus> Function()? requestPermission,
     NotificationManager? notificationManager,
+    AppFlowManager? appFlowManager,
   })  : _engineFactory = engineFactory ?? createAgoraRtcEngine,
         _requestPermission =
             requestPermission ?? (() async => Permission.microphone.request()),
         _notificationManager = notificationManager,
+        _appFlowManager = appFlowManager,
         super(VoiceRoomState(roomId: roomId, roomName: roomName));
 
   Future<void> initialize() async {
@@ -134,6 +140,7 @@ class VoiceRoomNotifier extends StateNotifier<VoiceRoomState> {
       // Set up event handlers
       _engine!.registerEventHandler(RtcEngineEventHandler(
         onJoinChannelSuccess: (connection, elapsed) {
+          _joinTime = DateTime.now();
           _addParticipant(connection.localUid.toString(), 'You', isHost: true);
           state = state.copyWith(isJoined: true, isLoading: false);
         },
@@ -152,11 +159,16 @@ class VoiceRoomNotifier extends StateNotifier<VoiceRoomState> {
         },
       ));
 
-      // Set audio profile for voice chat
+      // Enable audio mixing if needed for SDK 6.5.3 optimizations
       await _engine!.setAudioProfile(
         profile: AudioProfileType.audioProfileMusicHighQuality,
         scenario: AudioScenarioType.audioScenarioChatroom,
       );
+
+      // Additional SDK 6.5.3 optimizations
+      await _engine!.setParameters('{"che.audio.enable.audio_mixing": true}');
+      await _engine!
+          .setParameters('{"che.audio.enable.ear_monitoring": false}');
     } catch (e) {
       state = state.copyWith(error: e.toString(), isLoading: false);
     }
@@ -227,6 +239,14 @@ class VoiceRoomNotifier extends StateNotifier<VoiceRoomState> {
           ),
         );
       }
+
+      // Track analytics
+      final userId = FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
+      await _appFlowManager?.trackVoiceSession(
+        userId: userId,
+        roomId: state.roomId,
+        duration: Duration.zero, // Will be updated on leave
+      );
     } catch (e) {
       state = state.copyWith(error: e.toString());
     }
@@ -237,6 +257,19 @@ class VoiceRoomNotifier extends StateNotifier<VoiceRoomState> {
 
     try {
       await _engine!.leaveChannel();
+
+      // Track session duration
+      if (_joinTime != null) {
+        final duration = DateTime.now().difference(_joinTime!);
+        final userId = FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
+        await _appFlowManager?.trackVoiceSession(
+          userId: userId,
+          roomId: state.roomId,
+          duration: duration,
+        );
+        _joinTime = null;
+      }
+
       state = state.copyWith(
         isJoined: false,
         participants: [],

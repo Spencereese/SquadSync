@@ -137,6 +137,22 @@ class AppFlowManager {
     );
   }
 
+  /// Track voice session
+  Future<void> trackVoiceSession({
+    required String userId,
+    required String roomId,
+    required Duration duration,
+  }) async {
+    await _analytics.logEvent(
+      name: 'voice_join',
+      parameters: {
+        'user_id': userId,
+        'room_id': roomId,
+        'duration_seconds': duration.inSeconds,
+      },
+    );
+  }
+
   /// Track user engagement
   Future<void> trackUserEngagement({
     required String userId,

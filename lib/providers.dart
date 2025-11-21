@@ -302,6 +302,8 @@ final voiceRoomProvider =
     StateNotifierProvider.family<VoiceRoomNotifier, VoiceRoomState, String>(
         (ref, roomId) {
   final notificationManager = ref.watch(notificationManagerProvider);
+  final appFlowManager = ref.watch(appFlowManagerProvider);
   return VoiceRoomNotifier(roomId, 'Voice Room $roomId',
-      notificationManager: notificationManager); // Default name, can be updated
+      notificationManager: notificationManager,
+      appFlowManager: appFlowManager); // Default name, can be updated
 });

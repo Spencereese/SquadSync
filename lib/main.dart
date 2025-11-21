@@ -39,6 +39,11 @@ Future<void> _initializeFirebase() async {
     );
     debugPrint('Firebase initialized successfully');
 
+    // Debug assertions for null safety
+    if (kDebugMode) {
+      assert(Firebase.apps.isNotEmpty, 'Firebase not initialized');
+    }
+
     // Initialize Firebase Analytics
     await FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(true);
     debugPrint('Firebase Analytics initialized');

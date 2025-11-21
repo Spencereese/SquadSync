@@ -564,7 +564,7 @@ class _SettingsTabState extends State<SettingsTab>
                   _showPreferredModeDialog();
                 } else {
                   _saveSettings('preferredMode', '', squadState);
-                  squadState.updatePreferredMode(squadState.displayName, null);
+                  squadState.updatePreferredMode(squadState.displayName, '');
                 }
               },
               secondary: const Icon(Icons.group),

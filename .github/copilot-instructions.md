@@ -88,6 +88,7 @@ SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
 - **Inline video playback**: Videos play directly in chat with custom controls using `VideoLinkPreview`
 - **Mounted checks**: Always check `mounted` before setState in async operations
 - **Stream cleanup**: Dispose StreamSubscriptions in `dispose()` methods
+- **Null safety enforced with safe helpers in utils.dart (e.g., safeDisplayName ?? 'Unknown') to prevent String? errors**
 
 ## Development Workflows
 

@@ -107,24 +107,29 @@ class RatingDialog {
                         Map<String, Map<String, int>> newRatings = {};
                         for (var player in walkingPlayers) {
                           newRatings[player] = {
-                            'Vibes': squadState
-                                .dailyRatings[player]!['Vibes']!,
-                            'Comms': squadState
-                                .dailyRatings[player]!['Comms']!,
-                            'Gunny': squadState
-                                .dailyRatings[player]!['Gunny']!,
-                            'Wingman': squadState
-                                .dailyRatings[player]!['Wingman']!,
+                            'Vibes': squadState.dailyRatings[player]!['Vibes']!,
+                            'Comms': squadState.dailyRatings[player]!['Comms']!,
+                            'Gunny': squadState.dailyRatings[player]!['Gunny']!,
+                            'Wingman':
+                                squadState.dailyRatings[player]!['Wingman']!,
                           };
                           // Update daily and all-time ratings
-                          squadState.dailyRatings[player]!['Vibes'] = newRatings[player]!['Vibes']!;
-                          squadState.dailyRatings[player]!['Comms'] = newRatings[player]!['Comms']!;
-                          squadState.dailyRatings[player]!['Gunny'] = newRatings[player]!['Gunny']!;
-                          squadState.dailyRatings[player]!['Wingman'] = newRatings[player]!['Wingman']!;
-                          squadState.allTimeRatings[player]!['Vibes'] = newRatings[player]!['Vibes']!;
-                          squadState.allTimeRatings[player]!['Comms'] = newRatings[player]!['Comms']!;
-                          squadState.allTimeRatings[player]!['Gunny'] = newRatings[player]!['Gunny']!;
-                          squadState.allTimeRatings[player]!['Wingman'] = newRatings[player]!['Wingman']!;
+                          squadState.dailyRatings[player]!['Vibes'] =
+                              newRatings[player]!['Vibes']!;
+                          squadState.dailyRatings[player]!['Comms'] =
+                              newRatings[player]!['Comms']!;
+                          squadState.dailyRatings[player]!['Gunny'] =
+                              newRatings[player]!['Gunny']!;
+                          squadState.dailyRatings[player]!['Wingman'] =
+                              newRatings[player]!['Wingman']!;
+                          squadState.allTimeRatings[player]!['Vibes'] =
+                              newRatings[player]!['Vibes']!;
+                          squadState.allTimeRatings[player]!['Comms'] =
+                              newRatings[player]!['Comms']!;
+                          squadState.allTimeRatings[player]!['Gunny'] =
+                              newRatings[player]!['Gunny']!;
+                          squadState.allTimeRatings[player]!['Wingman'] =
+                              newRatings[player]!['Wingman']!;
                         }
                         squadState.updateFirestore();
                         Navigator.pop(context);

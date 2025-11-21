@@ -54,7 +54,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!context.mounted) return;
     setState(() {
       _isDarkTheme = prefs.getBool('isDarkTheme') ?? true;
       _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
@@ -85,7 +85,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   Future<void> _updateProfilePicture() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile == null || !mounted) return;
+    if (pickedFile == null || !context.mounted) return;
     File imageFile = File(pickedFile.path);
     String uid = FirebaseAuth.instance.currentUser!.uid;
     Reference storageRef =
@@ -97,15 +97,15 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         .updateProfileImage(downloadUrl);
     await _saveSettings('profileImageUrl', downloadUrl);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile picture updated!')),
-      );
-    }
+    if (!context.mounted) return;
+    // ignore: use_build_context_synchronously
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile picture updated!')),
+    );
   }
 
   void _updateDisplayName() {
-    if (_nameController.text.isNotEmpty && mounted) {
+    if (_nameController.text.isNotEmpty && context.mounted) {
       ref
           .read(squadStateNotifierProvider.notifier)
           .updateDisplayName(_nameController.text);
@@ -583,7 +583,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
       final userManager = p.Provider.of<UserManager>(context, listen: false);
       await userManager.sendFriendRequest(userId);
 
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -610,7 +610,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                       Text(
                         'Request sent to $displayName',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 230),
                           fontSize: 14,
                         ),
                       ),
@@ -637,7 +637,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -664,7 +664,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                       Text(
                         'Could not send request to $displayName',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 230),
                           fontSize: 14,
                         ),
                       ),
@@ -857,7 +857,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   void _startDMWithFriend(BuildContext context, String friendId) async {
     final userManager = p.Provider.of<UserManager>(context, listen: false);
     final chatId = await userManager.startDMThread(friendId);
-    if (chatId != null && mounted) {
+    if (chatId != null && context.mounted) {
       // Navigate to Chat tab with DM filter
       final chatState = p.Provider.of<ChatState>(context, listen: false);
       chatState.setDMView(true);
@@ -880,6 +880,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   void _removeFriend(BuildContext context, String friendId) async {
     final userManager = p.Provider.of<UserManager>(context, listen: false);
     await userManager.removeFriend(friendId);
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend removed')),
     );
@@ -888,6 +889,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   void _acceptFriendRequest(BuildContext context, String requesterId) async {
     final userManager = p.Provider.of<UserManager>(context, listen: false);
     await userManager.acceptFriendRequest(requesterId);
+    if (!context.mounted) return;
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend request accepted')),
@@ -897,6 +899,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   void _declineFriendRequest(BuildContext context, String requesterId) async {
     final userManager = p.Provider.of<UserManager>(context, listen: false);
     await userManager.declineFriendRequest(requesterId);
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend request declined')),
     );
@@ -964,13 +967,13 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         // Clear any cached data we store
         await prefs.remove('cached_user_data');
 
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Cache cleared successfully')),
           );
         }
       } catch (e) {
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Failed to clear cache: $e')),
           );

@@ -24,7 +24,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounceTimer;
   String _currentSearchTerm = '';
-  String _selectedGame = 'All Games'; // Default to all games
+  final String _selectedGame = 'All Games'; // Default to all games
   bool _hasIndexError = false;
   String? _indexErrorUrl;
 

@@ -6,7 +6,7 @@ part of 'squad_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$squadSpotsHash() => r'112b4750e053bd1a8f22cb5cc365c92722f77d85';
+String _$squadSpotsHash() => r'3d54c62fb011c0c0bf5e70caba338e5b505aea63';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -60,7 +60,7 @@ class SquadSpotsFamily extends Family<List<String?>> {
   ///
   /// Copied from [squadSpots].
   SquadSpotsProvider call(
-    String gameName,
+    String? gameName,
   ) {
     return SquadSpotsProvider(
       gameName,
@@ -105,7 +105,7 @@ class SquadSpotsProvider extends AutoDisposeProvider<List<String?>> {
   ///
   /// Copied from [squadSpots].
   SquadSpotsProvider(
-    String gameName,
+    String? gameName,
   ) : this._internal(
           (ref) => squadSpots(
             ref as SquadSpotsRef,
@@ -133,7 +133,7 @@ class SquadSpotsProvider extends AutoDisposeProvider<List<String?>> {
     required this.gameName,
   }) : super.internal();
 
-  final String gameName;
+  final String? gameName;
 
   @override
   Override overrideWith(
@@ -176,7 +176,7 @@ class SquadSpotsProvider extends AutoDisposeProvider<List<String?>> {
 // ignore: unused_element
 mixin SquadSpotsRef on AutoDisposeProviderRef<List<String?>> {
   /// The parameter `gameName` of this provider.
-  String get gameName;
+  String? get gameName;
 }
 
 class _SquadSpotsProviderElement
@@ -184,10 +184,10 @@ class _SquadSpotsProviderElement
   _SquadSpotsProviderElement(super.provider);
 
   @override
-  String get gameName => (origin as SquadSpotsProvider).gameName;
+  String? get gameName => (origin as SquadSpotsProvider).gameName;
 }
 
-String _$spotTimersHash() => r'e073567f202f9fe4750f07dedbdfd2be15f8ca5b';
+String _$spotTimersHash() => r'a10dd3436aeb8211a54a6e2805bc326c6ffeca3f';
 
 /// Provider for spot timers by game name
 /// Tree-shakes: Only rebuilds when gameSpotTimers[gameName] changes
@@ -212,7 +212,7 @@ class SpotTimersFamily extends Family<List<Map<String, dynamic>?>> {
   ///
   /// Copied from [spotTimers].
   SpotTimersProvider call(
-    String gameName,
+    String? gameName,
   ) {
     return SpotTimersProvider(
       gameName,
@@ -254,7 +254,7 @@ class SpotTimersProvider
   ///
   /// Copied from [spotTimers].
   SpotTimersProvider(
-    String gameName,
+    String? gameName,
   ) : this._internal(
           (ref) => spotTimers(
             ref as SpotTimersRef,
@@ -282,7 +282,7 @@ class SpotTimersProvider
     required this.gameName,
   }) : super.internal();
 
-  final String gameName;
+  final String? gameName;
 
   @override
   Override overrideWith(
@@ -325,7 +325,7 @@ class SpotTimersProvider
 // ignore: unused_element
 mixin SpotTimersRef on AutoDisposeProviderRef<List<Map<String, dynamic>?>> {
   /// The parameter `gameName` of this provider.
-  String get gameName;
+  String? get gameName;
 }
 
 class _SpotTimersProviderElement
@@ -334,10 +334,10 @@ class _SpotTimersProviderElement
   _SpotTimersProviderElement(super.provider);
 
   @override
-  String get gameName => (origin as SpotTimersProvider).gameName;
+  String? get gameName => (origin as SpotTimersProvider).gameName;
 }
 
-String _$gameStatusesHash() => r'546b54c43c4030a8a48d03d7714c7761125b08e6';
+String _$gameStatusesHash() => r'ea438323405978f388ccc698309fced350dada25';
 
 /// Provider for game statuses by game name
 /// Tree-shakes: Only rebuilds when gameStatuses[gameName] changes
@@ -362,7 +362,7 @@ class GameStatusesFamily extends Family<Map<String, String>> {
   ///
   /// Copied from [gameStatuses].
   GameStatusesProvider call(
-    String gameName,
+    String? gameName,
   ) {
     return GameStatusesProvider(
       gameName,
@@ -403,7 +403,7 @@ class GameStatusesProvider extends AutoDisposeProvider<Map<String, String>> {
   ///
   /// Copied from [gameStatuses].
   GameStatusesProvider(
-    String gameName,
+    String? gameName,
   ) : this._internal(
           (ref) => gameStatuses(
             ref as GameStatusesRef,
@@ -431,7 +431,7 @@ class GameStatusesProvider extends AutoDisposeProvider<Map<String, String>> {
     required this.gameName,
   }) : super.internal();
 
-  final String gameName;
+  final String? gameName;
 
   @override
   Override overrideWith(
@@ -474,7 +474,7 @@ class GameStatusesProvider extends AutoDisposeProvider<Map<String, String>> {
 // ignore: unused_element
 mixin GameStatusesRef on AutoDisposeProviderRef<Map<String, String>> {
   /// The parameter `gameName` of this provider.
-  String get gameName;
+  String? get gameName;
 }
 
 class _GameStatusesProviderElement
@@ -483,7 +483,7 @@ class _GameStatusesProviderElement
   _GameStatusesProviderElement(super.provider);
 
   @override
-  String get gameName => (origin as GameStatusesProvider).gameName;
+  String? get gameName => (origin as GameStatusesProvider).gameName;
 }
 
 String _$globalStatusesHash() => r'0b22967810419469231fd365bf25caf00aab8427';

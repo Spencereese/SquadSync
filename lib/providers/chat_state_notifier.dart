@@ -57,7 +57,7 @@ class ChatStateNotifier extends StateNotifier<ChatStateData> {
   final Ref ref;
   StreamSubscription<QuerySnapshot>? _messagesSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
-  Map<String, Timer> _typingTimers = {}; // Per-user typing timers
+  final Map<String, Timer> _typingTimers = {}; // Per-user typing timers
   String? _currentChatGroupId;
   DocumentSnapshot? _lastDocument;
 
@@ -89,7 +89,9 @@ class ChatStateNotifier extends StateNotifier<ChatStateData> {
     ref.onDispose(() {
       _messagesSubscription?.cancel();
       _connectivitySubscription?.cancel();
-      _typingTimers.values.forEach((timer) => timer.cancel());
+      for (var timer in _typingTimers.values) {
+        timer.cancel();
+      }
       _typingTimers.clear();
     });
 

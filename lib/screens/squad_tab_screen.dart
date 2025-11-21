@@ -7,12 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers.dart';
 import '../squad_state_notifier.dart';
-import '../managers/squad_manager.dart';
-import '../managers/user_manager.dart';
-import '../managers/availability_manager.dart';
-import '../managers/notification_manager.dart';
-import '../services/grok_service.dart';
-import '../chat/peacock_modal.dart';
 import '../squad_tab/squad_tab.dart';
 import '../app_theme.dart';
 
@@ -119,28 +113,24 @@ class _SquadTabScreenContentState
 
   @override
   Widget build(BuildContext context) {
-    return Consumer(
-      builder: (context, ref, child) {
-        final squadState = ref.watch(squadStateNotifierProvider);
-        // If gameName is provided, show full squad management interface
-        // (lobbyId is optional - SquadTab can handle showing spots for a game)
-        if (widget.gameName != null) {
-          return _buildFullSquadInterface(context, squadState);
-        }
+    final squadState = ref.watch(squadStateNotifierProvider);
+    // If gameName is provided, show full squad management interface
+    // (lobbyId is optional - SquadTab can handle showing spots for a game)
+    if (widget.gameName != null) {
+      return _buildFullSquadInterface(context, squadState);
+    }
 
-        // If no squad selected, show squad selection/dashboard instead of welcome screen
-        if (squadState.selectedSquadId == null) {
-          return _buildDashboardInterface(context, squadState);
-        }
+    // If no squad selected, show squad selection/dashboard instead of welcome screen
+    if (squadState.selectedSquadId == null) {
+      return _buildDashboardInterface(context, squadState, ref);
+    }
 
-        // Otherwise, show the dashboard with active lobbies
-        return _buildDashboardInterface(context, squadState);
-      },
-    );
+    // Otherwise, show the dashboard with active lobbies
+    return _buildDashboardInterface(context, squadState, ref);
   }
 
   Widget _buildDashboardInterface(
-      BuildContext context, SquadStateData squadState) {
+      BuildContext context, SquadStateData squadState, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Squad Lobbies'),
@@ -1029,9 +1019,10 @@ class _QuickJoinButtonState extends State<QuickJoinButton> {
             // Add haptic feedback
             HapticFeedback.lightImpact();
 
-            final userManager = ref.read(userManagerProvider);
-            final grokService = ref.read(grokServiceProvider);
-            final availabilityManager = ref.read(availabilityManagerProvider);
+            final container = ProviderScope.containerOf(context);
+            final userManager = container.read(userManagerProvider);
+            final grokService = container.read(grokServiceProvider);
+            final availabilityManager = container.read(availabilityManagerProvider);
 
             // Get pinned games
             final pinnedGames = userManager.pinnedGames;

@@ -30,7 +30,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   // Step 2: Games
   final TextEditingController _gameSearchController = TextEditingController();
   List<Map<String, dynamic>> _searchResults = [];
-  List<Map<String, dynamic>> _pinnedGames = [];
+  final List<Map<String, dynamic>> _pinnedGames = [];
   bool _isSearching = false;
 
   @override
@@ -253,6 +253,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   void _completeOnboarding() async {
+    final container = ProviderScope.containerOf(context);
+    final analytics = container.read(appFlowManagerProvider);
+
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
@@ -260,14 +263,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       }, SetOptions(merge: true));
 
       // Track onboarding completion analytics
-      final container = ProviderScope.containerOf(context);
-      final analytics = container.read(appFlowManagerProvider);
       await analytics.trackOnboardingCompleted(
         userId: user.uid,
         gamesPinned: _pinnedGames.length,
         timeSpent: DateTime.now().difference(_onboardingStartTime),
       );
     }
+
+    if (!mounted) return;
 
     // Update onboarding status - assuming it's handled elsewhere or add to shared preferences
     // For now, just navigate

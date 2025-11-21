@@ -1,7 +1,5 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import '../squad_state_notifier.dart';
-import 'providers.dart';
+import '../providers.dart';
 
 part 'squad_providers.g.dart';
 
@@ -11,7 +9,8 @@ part 'squad_providers.g.dart';
 /// Provider for squad spots by game name
 /// Tree-shakes: Only rebuilds when gameSquadSpots[gameName] changes
 @riverpod
-List<String?> squadSpots(SquadSpotsRef ref, String gameName) {
+List<String?> squadSpots(SquadSpotsRef ref, String? gameName) {
+  if (gameName == null) return [];
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameSquadSpots[gameName] ?? [],
   ));
@@ -20,7 +19,8 @@ List<String?> squadSpots(SquadSpotsRef ref, String gameName) {
 /// Provider for spot timers by game name
 /// Tree-shakes: Only rebuilds when gameSpotTimers[gameName] changes
 @riverpod
-List<Map<String, dynamic>?> spotTimers(SpotTimersRef ref, String gameName) {
+List<Map<String, dynamic>?> spotTimers(SpotTimersRef ref, String? gameName) {
+  if (gameName == null) return [];
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameSpotTimers[gameName] ?? [],
   ));
@@ -29,7 +29,8 @@ List<Map<String, dynamic>?> spotTimers(SpotTimersRef ref, String gameName) {
 /// Provider for game statuses by game name
 /// Tree-shakes: Only rebuilds when gameStatuses[gameName] changes
 @riverpod
-Map<String, String> gameStatuses(GameStatusesRef ref, String gameName) {
+Map<String, String> gameStatuses(GameStatusesRef ref, String? gameName) {
+  if (gameName == null) return {};
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameStatuses[gameName] ?? {},
   ));

@@ -74,7 +74,7 @@ class LegacySquadState extends ChangeNotifier {
   dynamic recordLoss;
 
   // State data
-  SquadStateData get squadStateData => const SquadStateData();
+  SquadStateData get squadStateData => const SquadStateData(displayName: 'Unknown User');
 
   // Methods for compatibility
   Stream<List<Map<String, dynamic>>> getActivePeacockAlerts(String gameName) {
@@ -265,7 +265,7 @@ class SquadStateData {
   final bool isInitialized;
   final bool isInitialDataLoaded;
   final String? profileImage;
-  final String? displayName;
+  final String displayName;
   final Map<String, String?> memberProfileImages;
 
   // Game-specific data
@@ -311,7 +311,7 @@ class SquadStateData {
     this.isInitialized = false,
     this.isInitialDataLoaded = false,
     this.profileImage,
-    this.displayName,
+    required this.displayName,
     this.memberProfileImages = const {},
     this.gameSquadSpots = const {},
     this.gameSpotTimers = const {},
@@ -476,7 +476,7 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     required this.authService,
     required this.audioService,
     required this.cacheService,
-  }) : super(const SquadStateData());
+  }) : super(const SquadStateData(displayName: 'Unknown User'));
 
   // Computed properties for backward compatibility
   List<String?> get squadSpots {
@@ -528,9 +528,8 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     if (uid.contains('_calling')) {
       final actualUid = uid.split('_calling')[0];
       // Check if this is the current user
-      if (actualUid == FirebaseAuth.instance.currentUser?.uid &&
-          state.displayName != null) {
-        return state.displayName!;
+      if (actualUid == FirebaseAuth.instance.currentUser?.uid) {
+        return state.displayName;
       }
       if (state.memberDisplayNames.containsKey(actualUid)) {
         return state.memberDisplayNames[actualUid]!;
@@ -538,16 +537,15 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     }
 
     // Check if this is the current user
-    if (uid == FirebaseAuth.instance.currentUser?.uid &&
-        state.displayName != null) {
-      return state.displayName!;
+    if (uid == FirebaseAuth.instance.currentUser?.uid) {
+      return state.displayName;
     }
 
     if (state.memberDisplayNames.containsKey(uid)) {
       return state.memberDisplayNames[uid]!;
     }
     // Return a user-friendly fallback instead of showing UID
-    return 'User';
+    return 'Unknown User';
   }
 
   String? getUidForDisplayName(String displayName) {
@@ -684,7 +682,7 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
 
   // Reset method for sign out
   void reset() {
-    state = const SquadStateData();
+    state = const SquadStateData(displayName: 'Unknown User');
   }
 
   // Call spot for game
@@ -699,7 +697,7 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
       gameSquadSpots: {...state.gameSquadSpots, gameName: currentSpots},
       globalStatuses: {
         ...state.globalStatuses,
-        state.displayName ?? '': 'Ready'
+        state.displayName: 'Ready'
       },
     );
   }

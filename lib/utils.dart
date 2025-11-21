@@ -98,3 +98,6 @@ double calculateAverage(List<int> ratings) {
     return 0.0;
   }
 }
+
+// Safe display name helper
+String safeDisplayName(String? name) => name ?? 'Unknown User';

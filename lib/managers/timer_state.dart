@@ -90,7 +90,7 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
 
   /// Get display string for a spot timer
   String getSpotTimerDisplay(int index, String gameName) {
-    final key = 'spot_${gameName}_${index}';
+    final key = 'spot_${gameName}_$index';
     final cacheKey = key;
 
     // Check cache
@@ -124,7 +124,7 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
 
   /// Update spot timer using TimerService
   void updateSpotTimer(String gameName, int spotIndex, Duration duration) {
-    final key = 'spot_${gameName}_${spotIndex}';
+    final key = 'spot_${gameName}_$spotIndex';
     _timerService.startTimer(key, duration, () {
       removeSpot(spotIndex, gameName);
     });
@@ -207,7 +207,7 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
     updateFirestore();
 
     // Stop timer
-    final key = 'spot_${gameName}_${index}';
+    final key = 'spot_${gameName}_$index';
     _timerService.stopTimer(key);
     state = {...state}..remove(key);
   }

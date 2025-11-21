@@ -34,6 +34,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool _isSearching = false;
 
   @override
+  void initState() {
+    super.initState();
+    _displayNameController.addListener(() {
+      setState(() {});
+    });
+  }
+
+  @override
   void dispose() {
     _pageController.dispose();
     _displayNameController.dispose();

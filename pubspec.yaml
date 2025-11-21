@@ -53,10 +53,11 @@ dependencies:
   qr_flutter: ^4.1.0
   qr_code_scanner: ^1.0.1
   badges: ^3.1.2
-  agora_rtc_engine: ^6.3.0
+  agora_rtc_engine: ^6.5.3
   permission_handler: ^11.3.1
   cloud_functions: ^6.0.4
   connectivity_plus: ^6.1.0
+  flutter_dotenv: ^5.1.0
 
 dev_dependencies:
   flutter_test:

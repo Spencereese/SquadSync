@@ -227,7 +227,7 @@ class LegacySquadState extends ChangeNotifier {
   }
 
   Future<void> removeSpot(String gameName, int spotIndex) async {
-    // Stub implementation
+    await spotManagementService.removeSpot(spotIndex);
   }
 
   Future<void> addToPeacock(String gameName) async {
@@ -752,6 +752,26 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     }
     updatedSpots[gameName]![spotIndex] = uid;
     state = state.copyWith(gameSquadSpots: updatedSpots);
+  }
+
+  Future<void> removeSpot(String gameName, int spotIndex) async {
+    final updatedSpots = Map<String, List<String?>>.from(state.gameSquadSpots);
+    if (updatedSpots.containsKey(gameName) && spotIndex < updatedSpots[gameName]!.length) {
+      updatedSpots[gameName]![spotIndex] = null;
+      state = state.copyWith(gameSquadSpots: updatedSpots);
+    }
+  }
+
+  Future<void> claimSpot(String gameName, int spotIndex) async {
+    final currentUser = authService.currentUser;
+    if (currentUser != null) {
+      await assignSpot(gameName, spotIndex, currentUser.uid);
+    }
+  }
+
+  Future<void> lockSpot(String gameName, int spotIndex) async {
+    // For now, just assign to a special value or handle differently
+    // This might need more implementation based on requirements
   }
 
   @override

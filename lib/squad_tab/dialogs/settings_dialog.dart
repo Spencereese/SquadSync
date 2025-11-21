@@ -35,7 +35,7 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.redAccent),
               title: const Text('Clear All Spots'),
               onTap: () {
-                squadState.clearAllSpots();
+                squadState.clearAllSpots(squadState.currentGame?['name'] ?? '');
                 Navigator.pop(context);
               },
             ),
@@ -44,7 +44,7 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.blueGrey),
               title: const Text('Reset Timers'),
               onTap: () {
-                squadState.resetTimers();
+                squadState.resetTimers(squadState.currentGame?['name'] ?? '');
                 Navigator.pop(context);
               },
             ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../squad_state.dart';
 import 'dialogs/block_dialog.dart';
 import 'dialogs/complaint_dialog.dart';
@@ -10,25 +11,27 @@ import 'dialogs/join_lobby_dialog.dart';
 class SquadDialogs {
   /// Show block/unblock player dialog
   static void showBlockDialog(
-      BuildContext context, String player, SquadState squadState) {
-    BlockDialog.show(context, player, squadState);
+      BuildContext context, String player, WidgetRef ref) {
+    BlockDialog.show(context, player);
   }
 
   /// Show complaint filing dialog
   static void showComplaintDialog(BuildContext context,
-      ScaffoldMessengerState messenger, SquadState squadState, String player) {
-    ComplaintDialog.show(context, messenger, squadState, player);
+      ScaffoldMessengerState messenger, WidgetRef ref, String player) {
+    ComplaintDialog.show(context, messenger, player);
   }
 
   /// Show player rating dialog
   static void showRatingsDialog(BuildContext context,
-      ScaffoldMessengerState messenger, SquadState squadState, String player) {
+      ScaffoldMessengerState messenger, WidgetRef ref, String player) {
+    final squadState = ref.read(squadStateNotifierProvider.notifier) as SquadState;
     RatingsDialog.show(context, messenger, squadState, player);
   }
 
   /// Show join lobby dialog
   static void showJoinLobbyDialog(
-      BuildContext context, String player, SquadState squadState) {
+      BuildContext context, String player, WidgetRef ref) {
+    final squadState = ref.read(squadStateNotifierProvider.notifier) as SquadState;
     JoinLobbyDialog.show(context, player, squadState);
   }
 }

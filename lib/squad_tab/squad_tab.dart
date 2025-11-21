@@ -19,19 +19,17 @@ import 'widgets/squad_controls.dart';
 import 'widgets/squad_header.dart';
 import 'widgets/game_alerts_display.dart';
 
-class MembersSection extends StatelessWidget {
-  final SquadState squadState;
+class MembersSection extends ConsumerWidget {
   final String? chatGroupId;
   final List<String> chatGroupMembers;
   final String? circle;
   final List<String>? friends;
-  final Function(BuildContext, String, SquadState) showBlockDialog;
-  final Function(BuildContext, ScaffoldMessengerState, SquadState, String)
+  final Function(BuildContext, String, WidgetRef) showBlockDialog;
+  final Function(BuildContext, ScaffoldMessengerState, WidgetRef, String)
       showComplaintDialog;
 
   const MembersSection({
     Key? key,
-    required this.squadState,
     this.chatGroupId,
     required this.chatGroupMembers,
     this.circle,
@@ -41,11 +39,12 @@ class MembersSection extends StatelessWidget {
   }) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Use provided members list (computed based on circle), otherwise fall back to squad members
+    final squadState = ref.watch(squadStateNotifierProvider);
     final membersToShow = chatGroupMembers.isNotEmpty
         ? chatGroupMembers
-        : squadState.getFilteredMembers;
+        : squadState.squadMemberUids;
 
     if (membersToShow.isEmpty) {
       return const SliverToBoxAdapter(
@@ -68,7 +67,7 @@ class MembersSection extends StatelessWidget {
             itemCount: membersToShow.length,
             itemBuilder: (context, index) {
               final player = membersToShow[index];
-              return MemberWidgets.buildMemberCard(context, player, squadState,
+              return MemberWidgets.buildMemberCard(context, ref, player,
                   showBlockDialog, showComplaintDialog,
                   circle: circle, friends: friends);
             },
@@ -197,7 +196,7 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     final squadState =
         p.Provider.of<SquadState>(_currentContext, listen: false);
     if (squadState.context == null) {
-      squadState.initialize(_currentContext);
+      squadState.initialize();
     }
 
     // Set currentGame if gameName is provided but currentGame is not set or doesn't match
@@ -513,8 +512,11 @@ class _SquadTabContentState extends State<_SquadTabContent> {
                 // Peacock members section (conditionally shown)
                 SliverToBoxAdapter(
                   child: _showPeacockMembers
-                      ? PeacockWidgets.buildPeacockMembersList(
-                          context, squadState, _togglePeacockMember)
+                      ? Consumer(
+                          builder: (context, ref, child) =>
+                              PeacockWidgets.buildPeacockMembersList(
+                                  context, ref, _togglePeacockMember),
+                        )
                       : const SizedBox.shrink(),
                 ),
 
@@ -543,7 +545,6 @@ class _SquadTabContentState extends State<_SquadTabContent> {
 
                 // Members list
                 MembersSection(
-                  squadState: squadState,
                   chatGroupId: widget.chatGroupId,
                   chatGroupMembers: _getMembersForCircle(),
                   circle: _circle,
@@ -582,14 +583,13 @@ class _SquadTabContentState extends State<_SquadTabContent> {
     setState(() {});
   }
 
-  void _showBlockDialog(
-      BuildContext context, String player, SquadState squadState) {
-    SquadDialogs.showBlockDialog(context, player, squadState);
+  void _showBlockDialog(BuildContext context, String player, WidgetRef ref) {
+    SquadDialogs.showBlockDialog(context, player, ref);
   }
 
   void _showComplaintDialog(BuildContext context,
-      ScaffoldMessengerState messenger, SquadState squadState, String player) {
-    SquadDialogs.showComplaintDialog(context, messenger, squadState, player);
+      ScaffoldMessengerState messenger, WidgetRef ref, String player) {
+    SquadDialogs.showComplaintDialog(context, messenger, ref, player);
   }
 
   Future<void> _callSpot(BuildContext context, SquadState squadState) async {

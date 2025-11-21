@@ -202,7 +202,7 @@ class GameSelector extends StatelessWidget {
                       // Mark fields as changed for persistence
                       squadState.persistenceManager
                           .markFieldChanged('currentGame');
-                      squadState.updateFirestoreAsync(force: true);
+                      squadState.updateFirestoreAsync();
                       Navigator.pop(context);
                       HapticFeedback.lightImpact();
                       ScaffoldMessenger.of(context).showSnackBar(

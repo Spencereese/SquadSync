@@ -18,7 +18,7 @@ class DeleteGameDialog {
           ),
           TextButton(
             onPressed: () {
-              squadState.deleteGame(index);
+              squadState.deleteGame(game['name']);
               // Defer navigation to avoid _debugLocked assertion
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (Navigator.canPop(dialogContext)) {

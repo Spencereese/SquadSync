@@ -121,9 +121,9 @@ class SpotCard extends ConsumerWidget {
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.bold),
             ),
-            subtitle: _buildSpotSubtitle(context, index, spotName, squadState),
+            subtitle: _buildSpotSubtitle(context, index, spotName, spotTimers, globalStatuses),
             trailing:
-                _buildSpotActions(context, index, hasOccupant, squadState),
+                _buildSpotActions(context, index, hasOccupant, spotName, displayName, spotTimers, globalStatuses, ref, gameName),
           ),
         ),
       ),
@@ -131,12 +131,11 @@ class SpotCard extends ConsumerWidget {
   }
 
   Widget _buildSpotSubtitle(BuildContext context, int index, String? spotName,
-      SquadState squadState) {
-    final hasTimer = squadState.spotTimers[index] != null;
-    final timerDisplay =
-        hasTimer ? squadState.getSpotTimerDisplay(index) : null;
+      List<Map<String, dynamic>?> spotTimers, Map<String, String> globalStatuses) {
+    final hasTimer = spotTimers[index] != null;
+    final timerDisplay = hasTimer ? _getTimerDisplay(spotTimers[index]) : null;
     final status =
-        spotName != null ? squadState.statuses[spotName] ?? 'Occupied' : 'Open';
+        spotName != null ? globalStatuses[spotName] ?? 'Occupied' : 'Open';
     final statusColor = _getSpotStatusColor(status);
 
     return Row(
@@ -171,13 +170,24 @@ class SpotCard extends ConsumerWidget {
     }
   }
 
+  String? _getTimerDisplay(Map<String, dynamic>? timer) {
+    if (timer == null) return null;
+    // Simple implementation - could be enhanced
+    final endTime = timer['endTime'];
+    if (endTime is DateTime) {
+      final remaining = endTime.difference(DateTime.now());
+      if (remaining.isNegative) return 'Expired';
+      return '${remaining.inMinutes}m ${remaining.inSeconds % 60}s';
+    }
+    return 'Timer';
+  }
+
   Widget _buildSpotActions(BuildContext context, int index, bool hasOccupant,
-      SquadState squadState) {
-    final spotName = squadState.squadSpots[index];
-    final yourName = squadState.displayName;
-    final hasTimer = squadState.spotTimers[index] != null;
-    final isCalling = squadState.statuses[spotName] == 'Calling';
-    final isReady = squadState.statuses[spotName] == 'Ready';
+      String? spotName, String displayName, List<Map<String, dynamic>?> spotTimers, Map<String, String> globalStatuses, WidgetRef ref, String gameName) {
+    final yourName = displayName;
+    final hasTimer = spotTimers[index] != null;
+    final isCalling = globalStatuses[spotName] == 'Calling';
+    final isReady = globalStatuses[spotName] == 'Ready';
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -200,7 +210,7 @@ class SpotCard extends ConsumerWidget {
               ],
             ),
             child: ElevatedButton.icon(
-              onPressed: () => squadState.claimSpot(index),
+              onPressed: () => ref.read(squadStateNotifierProvider.notifier).claimSpot(gameName, index),
               icon: const Icon(Icons.call, size: 16),
               label: const Text('Call'),
               style: ElevatedButton.styleFrom(
@@ -232,7 +242,7 @@ class SpotCard extends ConsumerWidget {
               ],
             ),
             child: ElevatedButton.icon(
-              onPressed: () => squadState.lockSpot(index),
+              onPressed: () => ref.read(squadStateNotifierProvider.notifier).lockSpot(gameName, index),
               icon: const Icon(Icons.lock, size: 16),
               label: const Text('Lock'),
               style: ElevatedButton.styleFrom(
@@ -264,7 +274,7 @@ class SpotCard extends ConsumerWidget {
               ],
             ),
             child: ElevatedButton.icon(
-              onPressed: () => squadState.removeSpot(index),
+              onPressed: () => ref.read(squadStateNotifierProvider.notifier).removeSpot(gameName, index),
               icon: const Icon(Icons.directions_walk, size: 16),
               label: const Text('Leave'),
               style: ElevatedButton.styleFrom(

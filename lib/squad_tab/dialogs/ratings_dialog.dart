@@ -20,10 +20,8 @@ class RatingsDialog extends StatefulWidget {
 
   /// Static method to show the dialog (maintains compatibility)
   static void show(BuildContext context, ScaffoldMessengerState messenger,
-      SquadState squadState, String player) async {
-    final canRate = squadState.displayName != null
-        ? await squadState.canRateMember(player, squadState.displayName!)
-        : false;
+      SquadState squadState, String player) {
+    final canRate = squadState.canRateMember(player);
 
     if (!canRate) {
       messenger.showSnackBar(
@@ -90,7 +88,7 @@ class _RatingsDialogState extends State<RatingsDialog> {
             context: context,
             text: 'Submit',
             onPressed: _submitRatings,
-            enabled: widget.squadState.displayName != null,
+            enabled: true,
           ),
         ],
       ),
@@ -98,24 +96,19 @@ class _RatingsDialogState extends State<RatingsDialog> {
   }
 
   void _submitRatings() async {
-    if (widget.squadState.displayName != null) {
-      try {
-        await widget.squadState.submitRatings(
-          targetMember: widget.player,
-          ratings: ratings,
-          submittedBy: widget.squadState.displayName!,
-        );
-        if (mounted) {
-          Navigator.pop(context);
-        }
-        widget.messenger.showSnackBar(
-          const SnackBar(content: Text('Ratings submitted')),
-        );
-      } catch (e) {
-        widget.messenger.showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+    try {
+      final filteredRatings = ratings.map((key, value) => MapEntry(key, value ?? 0));
+      await widget.squadState.submitRatings(widget.player, filteredRatings);
+      if (mounted) {
+        Navigator.pop(context);
       }
+      widget.messenger.showSnackBar(
+        const SnackBar(content: Text('Ratings submitted')),
+      );
+    } catch (e) {
+      widget.messenger.showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     }
   }
 }

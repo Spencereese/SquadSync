@@ -6,12 +6,6 @@ class EditGameDialog {
     final game = squadState.availableGames[index];
     final TextEditingController nameController =
         TextEditingController(text: game['name']);
-    final TextEditingController descriptionController =
-        TextEditingController(text: game['description'] ?? '');
-    final TextEditingController logoController =
-        TextEditingController(text: game['logo'] ?? '');
-    final TextEditingController spotsController =
-        TextEditingController(text: game['maxSpots'].toString());
 
     showDialog(
       context: context,
@@ -28,31 +22,6 @@ class EditGameDialog {
               ),
               controller: nameController,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                hintText: 'e.g., Battle Royale, Multiplayer FPS',
-              ),
-              controller: descriptionController,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: 'Logo Path',
-                hintText: 'e.g., assets/images/placeholder.png',
-              ),
-              controller: logoController,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: 'Max Players',
-                hintText: 'e.g., 4, 3, 5',
-              ),
-              controller: spotsController,
-              keyboardType: TextInputType.number,
-            ),
           ],
         ),
         actions: [
@@ -63,22 +32,9 @@ class EditGameDialog {
           TextButton(
             onPressed: () {
               final gameName = nameController.text.trim();
-              final gameDescription = descriptionController.text.trim();
-              final gameLogo = logoController.text.trim();
-              final maxSpots =
-                  int.tryParse(spotsController.text) ?? game['maxSpots'];
 
               if (gameName.isNotEmpty) {
-                squadState.editGame(index, {
-                  'name': gameName,
-                  'maxSpots': maxSpots,
-                  'description': gameDescription.isNotEmpty
-                      ? gameDescription
-                      : 'Custom Game',
-                  'logo': gameLogo.isNotEmpty
-                      ? gameLogo
-                      : 'assets/images/placeholder.png'
-                });
+                squadState.editGame(game['name'], gameName);
                 // Defer navigation to avoid _debugLocked assertion
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (Navigator.canPop(dialogContext)) {

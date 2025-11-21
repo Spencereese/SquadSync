@@ -13,50 +13,50 @@ class GameSelectionWidget extends ConsumerWidget {
         .toList();
     final currentGame = gameManager.currentGame;
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Quick Game Select',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).primaryColor,
-                    ),
-              ),
-              const SizedBox(height: 16),
-              if (availableGames.isEmpty)
-                const Center(
-                  child: Text('No games available'),
-                )
-              else
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: availableGames.map((game) {
-                    final isSelected = currentGame?['name'] == game['name'];
-                    return _GameCard(
-                      game: game,
-                      isSelected: isSelected,
-                      onTap: () => gameManager.selectGame(game),
-                    );
-                  }).toList(),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Quick Game Select',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).primaryColor,
                 ),
-            ],
           ),
-        );
+          const SizedBox(height: 16),
+          if (availableGames.isEmpty)
+            const Center(
+              child: Text('No games available'),
+            )
+          else
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: availableGames.map((game) {
+                final isSelected = currentGame?['name'] == game['name'];
+                return _GameCard(
+                  game: game,
+                  isSelected: isSelected,
+                  onTap: () => gameManager.selectGame(game),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -93,7 +93,8 @@ class _GameCard extends StatelessWidget {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Theme.of(context).primaryColor.withValues(alpha: 0.3),
+                    color:
+                        Theme.of(context).primaryColor.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 4),
                   ),

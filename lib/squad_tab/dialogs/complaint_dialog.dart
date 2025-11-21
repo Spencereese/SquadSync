@@ -1,30 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../squad_state.dart';
-import 'base_dialog.dart';
 
 /// Dialog for filing complaints against players
-class ComplaintDialog extends StatefulWidget {
-  final SquadState squadState;
+class ComplaintDialog extends ConsumerStatefulWidget {
   final String player;
   final ScaffoldMessengerState messenger;
 
   const ComplaintDialog({
     super.key,
-    required this.squadState,
     required this.player,
     required this.messenger,
   });
 
   @override
-  State<ComplaintDialog> createState() => _ComplaintDialogState();
+  ConsumerState<ComplaintDialog> createState() => _ComplaintDialogState();
 
   /// Static method to show the dialog (maintains compatibility)
   static void show(BuildContext context, ScaffoldMessengerState messenger,
-      SquadState squadState, String player) {
+      String player) {
     showDialog(
       context: context,
       builder: (dialogContext) => ComplaintDialog(
-        squadState: squadState,
         player: player,
         messenger: messenger,
       ),
@@ -32,7 +29,7 @@ class ComplaintDialog extends StatefulWidget {
   }
 }
 
-class _ComplaintDialogState extends State<ComplaintDialog> {
+class _ComplaintDialogState extends ConsumerState<ComplaintDialog> {
   String? reason;
   String? category;
   final categories = ['Behavior', 'Inactivity', 'Toxicity'];
@@ -40,7 +37,7 @@ class _ComplaintDialogState extends State<ComplaintDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      shape: BaseSquadDialog.dialogShape,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Text('File Complaint Against ${widget.player}'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -58,34 +55,35 @@ class _ComplaintDialogState extends State<ComplaintDialog> {
           ),
         ],
       ),
-      actions: BaseSquadDialog.dialogActions(
-        context: context,
-        actions: [
-          BaseSquadDialog.cancelButton(context),
-          BaseSquadDialog.submitButton(
-            context: context,
-            text: 'Submit',
-            onPressed: _submitComplaint,
-            enabled: reason != null &&
-                category != null &&
-                widget.squadState.displayName != null,
-          ),
-        ],
-      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _submitComplaint,
+          child: const Text('Submit'),
+        ),
+      ],
     );
   }
 
   void _submitComplaint() async {
-    if (reason != null &&
-        category != null &&
-        widget.squadState.displayName != null) {
+    if (reason != null && category != null) {
       try {
-        await widget.squadState.submitComplaint(
+        final currentUser = ref.read(squadStateNotifierProvider.notifier).authService.currentUser;
+        if (currentUser == null) return;
+        
+        final squadMembers = ref.read(squadStateNotifierProvider).squadMemberUids;
+        
+        await ref.read(squadStateNotifierProvider.notifier).achievementManager.submitComplaint(
+          submittedBy: currentUser.uid,
           targetMember: widget.player,
           reason: reason!,
           category: category!,
-          submittedBy: widget.squadState.displayName!,
+          squadMembers: squadMembers,
         );
+        
         if (mounted) {
           Navigator.pop(context);
         }

@@ -15,8 +15,7 @@ class JoinLobbyDialog extends BaseSquadDialog {
 
   @override
   Widget build(BuildContext context) {
-    final visibleLobbies =
-        squadState.getVisibleLobbies(squadState.currentGame?['name'] ?? '');
+    final visibleLobbies = squadState.getVisibleLobbies();
 
     return AlertDialog(
       shape: BaseSquadDialog.dialogShape,
@@ -40,8 +39,7 @@ class JoinLobbyDialog extends BaseSquadDialog {
                     Text('${players.length} players: ${players.join(', ')}'),
                 trailing: ElevatedButton(
                   onPressed: () {
-                    squadState.joinLobby(
-                        lobby['id'], squadState.displayName ?? '');
+                    squadState.joinLobby(lobby['id']);
                     // Defer navigation to avoid _debugLocked assertion
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (Navigator.canPop(context)) {

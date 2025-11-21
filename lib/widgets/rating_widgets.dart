@@ -210,8 +210,10 @@ class _ReviewSubmitDialogState extends State<ReviewSubmitDialog> {
     setState(() => _isSubmitting = true);
 
     try {
-      final reviewManager = provider.Provider.of<ReviewManager>(context, listen: false);
-      final userManager = provider.Provider.of<UserManager>(context, listen: false);
+      final reviewManager =
+          provider.Provider.of<ReviewManager>(context, listen: false);
+      final userManager =
+          provider.Provider.of<UserManager>(context, listen: false);
       final chatService = ChatService();
       final user = FirebaseAuth.instance.currentUser;
 

@@ -10,7 +10,8 @@ class CreateNewGroupDialog extends ConsumerStatefulWidget {
   const CreateNewGroupDialog({super.key});
 
   @override
-  ConsumerState<CreateNewGroupDialog> createState() => _CreateNewGroupDialogState();
+  ConsumerState<CreateNewGroupDialog> createState() =>
+      _CreateNewGroupDialogState();
 }
 
 class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {

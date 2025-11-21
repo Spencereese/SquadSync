@@ -89,7 +89,7 @@ class DialogPool {
     Duration autoDismissDelay = const Duration(seconds: 2),
     String? key,
   }) {
-    final cacheKey = 'feedback_${key ?? message.hashCode}_${isSuccess}';
+    final cacheKey = 'feedback_${key ?? message.hashCode}_$isSuccess';
 
     if (_dialogCache.containsKey(cacheKey)) {
       final cached = _dialogCache[cacheKey];

@@ -215,7 +215,8 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
 
     setState(() => _isJoining = true);
     try {
-      final squadStateNotifier = ref.read(squadStateNotifierProvider.notifier) as dynamic;
+      final squadStateNotifier =
+          ref.read(squadStateNotifierProvider.notifier) as dynamic;
 
       // Try to join as a chat group first (most common case for invite codes)
       try {

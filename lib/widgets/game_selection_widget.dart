@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../managers/game_manager.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers.dart';
 
-class GameSelectionWidget extends StatelessWidget {
+class GameSelectionWidget extends ConsumerWidget {
   const GameSelectionWidget({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer<GameManager>(
-      builder: (context, gameManager, child) {
-        final availableGames = gameManager.availableGames
-            .where((game) => !gameManager.isGameHidden(game['name']))
-            .toList();
-        final currentGame = gameManager.currentGame;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gameManager = ref.watch(gameManagerProvider);
+    final availableGames = gameManager.availableGames
+        .where((game) => !gameManager.isGameHidden(game['name']))
+        .toList();
+    final currentGame = gameManager.currentGame;
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -58,8 +57,6 @@ class GameSelectionWidget extends StatelessWidget {
             ],
           ),
         );
-      },
-    );
   }
 }
 

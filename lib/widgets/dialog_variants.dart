@@ -142,7 +142,7 @@ class InputDialog extends BaseDialog {
           ),
           filled: true,
           fillColor:
-              Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+              Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
@@ -201,6 +201,7 @@ class _InputDialogState extends BaseDialogState<BaseDialog> {
 
 /// Selection dialog for choosing from a list of options
 class SelectionDialog<T> extends BaseDialog {
+  @override
   final String title;
   final List<SelectionOption<T>> options;
   final T? selectedValue;
@@ -282,7 +283,7 @@ class SelectionDialog<T> extends BaseDialog {
                       ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
                       : Theme.of(context)
                           .colorScheme
-                          .surfaceVariant
+                          .surfaceContainerHighest
                           .withOpacity(0.3),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(

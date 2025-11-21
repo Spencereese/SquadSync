@@ -13,7 +13,7 @@ import 'managers/squad_ui_manager.dart';
 import 'managers/squad_persistence_manager.dart';
 import 'managers/game_manager.dart';
 import 'managers/peacock_manager.dart';
-import 'managers/achievement_manager.dart';
+import 'managers/review_manager.dart';
 import 'managers/notification_manager.dart';
 import 'chat/chat_state.dart';
 import 'chat/sqlite_helper.dart';
@@ -88,6 +88,11 @@ final squadStateProvider = ChangeNotifierProvider<SquadState>((ref) {
 // Provider for ChatState
 final chatStateProvider = ChangeNotifierProvider<ChatState>((ref) {
   return ChatState();
+});
+
+// Provider for ReviewManager
+final reviewManagerProvider = ChangeNotifierProvider<ReviewManager>((ref) {
+  return ReviewManager();
 });
 
 // Provider for Discovery

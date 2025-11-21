@@ -122,7 +122,8 @@ class _AddFriendDialogState extends ConsumerState<AddFriendDialog> {
                 itemCount: _searchResults.length,
                 itemBuilder: (context, index) {
                   final user = _searchResults[index];
-                  final displayName = safeDisplayName(user['displayName'] as String?);
+                  final displayName =
+                      safeDisplayName(user['displayName'] as String?);
                   final profileImage = user['profileImage'];
                   return ListTile(
                     leading: CircleAvatar(

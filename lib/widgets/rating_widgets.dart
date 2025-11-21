@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as provider;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../managers/user_manager.dart';
 import '../managers/review_manager.dart';
@@ -7,7 +8,7 @@ import '../services/ai_service.dart';
 import '../chat/chat_service.dart';
 
 /// Conditional rating nudge shown only for first-time users of a game
-class RatingNudge extends StatefulWidget {
+class RatingNudge extends ConsumerStatefulWidget {
   final String gameName;
   final String chatGroupId;
   final ChatType chatType;
@@ -22,15 +23,15 @@ class RatingNudge extends StatefulWidget {
   });
 
   @override
-  State<RatingNudge> createState() => _RatingNudgeState();
+  ConsumerState<RatingNudge> createState() => _RatingNudgeState();
 }
 
-class _RatingNudgeState extends State<RatingNudge> {
+class _RatingNudgeState extends ConsumerState<RatingNudge> {
   bool _wantsToRate = false;
 
   @override
   Widget build(BuildContext context) {
-    final userManager = Provider.of<UserManager>(context);
+    final userManager = provider.Provider.of<UserManager>(context);
 
     // Only show if user hasn't rated this game
     final hasRated = userManager.hasRatedGame[widget.gameName] ?? false;
@@ -209,8 +210,8 @@ class _ReviewSubmitDialogState extends State<ReviewSubmitDialog> {
     setState(() => _isSubmitting = true);
 
     try {
-      final reviewManager = Provider.of<ReviewManager>(context, listen: false);
-      final userManager = Provider.of<UserManager>(context, listen: false);
+      final reviewManager = provider.Provider.of<ReviewManager>(context, listen: false);
+      final userManager = provider.Provider.of<UserManager>(context, listen: false);
       final chatService = ChatService();
       final user = FirebaseAuth.instance.currentUser;
 

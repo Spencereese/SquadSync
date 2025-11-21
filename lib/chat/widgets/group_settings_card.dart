@@ -262,7 +262,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
-            value: widget.selectedCircle,
+            initialValue: widget.selectedCircle,
             decoration: InputDecoration(
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -372,7 +372,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
               widget.onAlertBackupsChanged(value);
               HapticFeedback.lightImpact();
             },
-            activeColor: theme.colorScheme.primary,
+            activeThumbColor: theme.colorScheme.primary,
             activeTrackColor: theme.colorScheme.primary.withValues(alpha: 0.2),
           ),
         ],

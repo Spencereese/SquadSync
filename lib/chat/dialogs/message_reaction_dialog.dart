@@ -36,7 +36,8 @@ class MessageReactionDialog extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<MessageReactionDialog> createState() => _MessageReactionDialogState();
+  ConsumerState<MessageReactionDialog> createState() =>
+      _MessageReactionDialogState();
 }
 
 class _MessageReactionDialogState extends ConsumerState<MessageReactionDialog> {

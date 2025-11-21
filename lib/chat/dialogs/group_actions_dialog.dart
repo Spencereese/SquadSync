@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
-import '../../squad_state.dart';
-import '../../managers/game_manager.dart';
 import '../../utils.dart';
 import '../../services/ai_service.dart';
+import '../../providers.dart';
 import '../chat_screen.dart';
 
 /// Unified dialog for all group-related actions: join, create, and browse public groups
-class GroupActionsDialog extends StatefulWidget {
+class GroupActionsDialog extends ConsumerStatefulWidget {
   final int initialTabIndex;
   final String? initialCode;
 
@@ -21,10 +20,10 @@ class GroupActionsDialog extends StatefulWidget {
   });
 
   @override
-  State<GroupActionsDialog> createState() => _GroupActionsDialogState();
+  ConsumerState<GroupActionsDialog> createState() => _GroupActionsDialogState();
 }
 
-class _GroupActionsDialogState extends State<GroupActionsDialog>
+class _GroupActionsDialogState extends ConsumerState<GroupActionsDialog>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
@@ -120,16 +119,16 @@ class _GroupActionsDialogState extends State<GroupActionsDialog>
 }
 
 /// Tab for joining a group with invite code, browsing, and suggested groups
-class _JoinGroupTab extends StatefulWidget {
+class _JoinGroupTab extends ConsumerStatefulWidget {
   final String? initialCode;
 
   const _JoinGroupTab({this.initialCode});
 
   @override
-  State<_JoinGroupTab> createState() => _JoinGroupTabState();
+  ConsumerState<_JoinGroupTab> createState() => _JoinGroupTabState();
 }
 
-class _JoinGroupTabState extends State<_JoinGroupTab> {
+class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
   final _codeController = TextEditingController();
   final _searchController = TextEditingController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -216,11 +215,11 @@ class _JoinGroupTabState extends State<_JoinGroupTab> {
 
     setState(() => _isJoining = true);
     try {
-      final squadState = Provider.of<SquadState>(context, listen: false);
+      final squadStateNotifier = ref.read(squadStateNotifierProvider.notifier) as dynamic;
 
       // Try to join as a chat group first (most common case for invite codes)
       try {
-        await squadState.joinChatGroup(code);
+        await squadStateNotifier.joinChatGroup(code);
         if (mounted) {
           Navigator.pop(context);
           showSnackBar(context, 'Successfully joined group!');
@@ -231,7 +230,7 @@ class _JoinGroupTabState extends State<_JoinGroupTab> {
 
         // If chat group join fails, try squad join as fallback
         try {
-          await squadState.joinSquad(code);
+          await squadStateNotifier.joinSquad(code);
           if (mounted) {
             Navigator.pop(context);
             showSnackBar(context, 'Successfully joined squad!');
@@ -702,12 +701,12 @@ class _JoinGroupTabState extends State<_JoinGroupTab> {
 }
 
 /// Tab for creating a new group
-class _CreateGroupTab extends StatefulWidget {
+class _CreateGroupTab extends ConsumerStatefulWidget {
   @override
-  State<_CreateGroupTab> createState() => _CreateGroupTabState();
+  ConsumerState<_CreateGroupTab> createState() => _CreateGroupTabState();
 }
 
-class _CreateGroupTabState extends State<_CreateGroupTab> {
+class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
   final _nameController = TextEditingController();
   bool _isPublic = true;
   bool _isLoading = false;
@@ -874,11 +873,11 @@ class _CreateGroupTabState extends State<_CreateGroupTab> {
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context);
-    final gameManager = Provider.of<GameManager>(context);
+    final squadStateData = ref.watch(squadStateNotifierProvider);
+    final gameManager = ref.watch(gameManagerProvider);
     // Use squad availableGames if available, otherwise fallback to gameManager
-    final availableGames = squadState.availableGames.isNotEmpty
-        ? squadState.availableGames
+    final availableGames = squadStateData.availableGames.isNotEmpty
+        ? squadStateData.availableGames
         : gameManager.availableGames;
 
     return SingleChildScrollView(

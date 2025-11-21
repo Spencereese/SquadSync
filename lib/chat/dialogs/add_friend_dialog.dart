@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../managers/user_manager.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/ai_service.dart';
+import '../../utils.dart';
+import '../../providers.dart';
 import '../chat_screen.dart';
 
 /// Dialog for adding friends and starting direct messages
-class AddFriendDialog extends StatefulWidget {
+class AddFriendDialog extends ConsumerStatefulWidget {
   const AddFriendDialog({super.key});
 
   @override
-  State<AddFriendDialog> createState() => _AddFriendDialogState();
+  ConsumerState<AddFriendDialog> createState() => _AddFriendDialogState();
 }
 
-class _AddFriendDialogState extends State<AddFriendDialog> {
+class _AddFriendDialogState extends ConsumerState<AddFriendDialog> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _searchResults = [];
 
@@ -24,17 +25,17 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
 
   Future<void> _searchUsers(String query) async {
     if (query.length >= 2) {
-      final userManager = Provider.of<UserManager>(context, listen: false);
+      final userManager = ref.read(userManagerProvider);
       final results = await userManager.searchUsers(query);
-      setState(() => _searchResults = results);
+      if (mounted) setState(() => _searchResults = results);
     } else {
-      setState(() => _searchResults = []);
+      if (mounted) setState(() => _searchResults = []);
     }
   }
 
   Future<void> _startDM(Map<String, dynamic> user) async {
     Navigator.pop(context); // Close search
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userManager = ref.read(userManagerProvider);
     final chatId = await userManager.startDMThread(user['uid']);
     if (chatId != null && mounted) {
       Navigator.push(
@@ -42,7 +43,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
         MaterialPageRoute(
           builder: (context) => ChatScreen(
             chatGroupId: chatId,
-            chatGroupName: user['displayName'] ?? 'Unknown',
+            chatGroupName: safeDisplayName(user['displayName'] as String?),
             chatType: ChatType.dm,
           ),
         ),
@@ -121,7 +122,7 @@ class _AddFriendDialogState extends State<AddFriendDialog> {
                 itemCount: _searchResults.length,
                 itemBuilder: (context, index) {
                   final user = _searchResults[index];
-                  final displayName = user['displayName'] ?? 'Unknown';
+                  final displayName = safeDisplayName(user['displayName'] as String?);
                   final profileImage = user['profileImage'];
                   return ListTile(
                     leading: CircleAvatar(

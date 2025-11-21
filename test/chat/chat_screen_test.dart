@@ -69,10 +69,16 @@ void main() {
   });
 
   group('Chat Screen Widget Tests - Nullable DisplayNames', () {
-    testWidgets('renders messages safely with null sender displayName', (WidgetTester tester) async {
+    testWidgets('renders messages safely with null sender displayName',
+        (WidgetTester tester) async {
       // Mock messages with null sender
       final mockMessages = [
-        {'id': '1', 'content': 'Hello', 'senderId': 'user1', 'timestamp': DateTime.now()},
+        {
+          'id': '1',
+          'content': 'Hello',
+          'senderId': 'user1',
+          'timestamp': DateTime.now()
+        },
       ];
 
       // TODO: Add widget test for ChatScreen with mock data
@@ -80,17 +86,20 @@ void main() {
       expect(true, true); // Placeholder
     });
 
-    testWidgets('handles empty squads without null exceptions', (WidgetTester tester) async {
+    testWidgets('handles empty squads without null exceptions',
+        (WidgetTester tester) async {
       // TODO: Test squad UI with empty members
       expect(true, true); // Placeholder
     });
 
-    testWidgets('displays fallback for null displayNames in member list', (WidgetTester tester) async {
+    testWidgets('displays fallback for null displayNames in member list',
+        (WidgetTester tester) async {
       // TODO: Test member list rendering with null displayNames
       expect(true, true); // Placeholder
     });
   });
 }
+
 class TestChatStateNotifier extends StateNotifier<ChatStateData> {
   TestChatStateNotifier(ChatStateData initialState) : super(initialState);
 

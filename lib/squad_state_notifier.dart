@@ -107,7 +107,7 @@ class LegacySquadState extends ChangeNotifier {
   }
 
   Future<void> joinChatGroup(String groupId) async {
-    // Stub implementation
+    throw UnimplementedError('joinChatGroup not implemented');
   }
 
   Future<void> joinSquad(String squadId) async {

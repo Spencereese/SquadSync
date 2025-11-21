@@ -1022,7 +1022,8 @@ class _QuickJoinButtonState extends State<QuickJoinButton> {
             final container = ProviderScope.containerOf(context);
             final userManager = container.read(userManagerProvider);
             final grokService = container.read(grokServiceProvider);
-            final availabilityManager = container.read(availabilityManagerProvider);
+            final availabilityManager =
+                container.read(availabilityManagerProvider);
 
             // Get pinned games
             final pinnedGames = userManager.pinnedGames;

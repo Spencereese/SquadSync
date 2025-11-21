@@ -2,12 +2,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app_theme.dart';
-import '../chat_state.dart';
+import '../../providers.dart';
 
 /// Dialog for message reactions and actions (reply, copy, delete)
-class MessageReactionDialog extends StatefulWidget {
+class MessageReactionDialog extends ConsumerStatefulWidget {
   final dynamic message;
   final bool isMe;
   final Map<String, dynamic> data;
@@ -36,10 +36,10 @@ class MessageReactionDialog extends StatefulWidget {
   });
 
   @override
-  State<MessageReactionDialog> createState() => _MessageReactionDialogState();
+  ConsumerState<MessageReactionDialog> createState() => _MessageReactionDialogState();
 }
 
-class _MessageReactionDialogState extends State<MessageReactionDialog> {
+class _MessageReactionDialogState extends ConsumerState<MessageReactionDialog> {
   final TextEditingController _reactionController = TextEditingController();
   bool _showReactionInput = false;
 
@@ -51,7 +51,7 @@ class _MessageReactionDialogState extends State<MessageReactionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final chatState = Provider.of<ChatState>(context, listen: false);
+    final chatState = ref.watch(chatStateProvider);
     final quickReactions = chatState.quickReactionEmojis;
     return GestureDetector(
       onTap: () => Navigator.pop(context),

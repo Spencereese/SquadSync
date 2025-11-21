@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
-import '../../squad_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../utils.dart';
+import '../../providers.dart';
 
 /// Dialog for creating a new chat group
-class CreateNewGroupDialog extends StatefulWidget {
+class CreateNewGroupDialog extends ConsumerStatefulWidget {
   const CreateNewGroupDialog({super.key});
 
   @override
-  State<CreateNewGroupDialog> createState() => _CreateNewGroupDialogState();
+  ConsumerState<CreateNewGroupDialog> createState() => _CreateNewGroupDialogState();
 }
 
-class _CreateNewGroupDialogState extends State<CreateNewGroupDialog> {
+class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
   final TextEditingController _nameController = TextEditingController();
   bool _isPublic = true;
   bool _isLoading = false;
@@ -34,18 +34,18 @@ class _CreateNewGroupDialogState extends State<CreateNewGroupDialog> {
     setState(() => _isLoading = true);
 
     try {
-      final squadState = Provider.of<SquadState>(context, listen: false);
+      final squadStateData = ref.watch(squadStateNotifierProvider);
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
       // Create group document - use user-specific or squad-specific based on context
       DocumentReference groupRef;
 
-      if (squadState.selectedSquadId != null) {
+      if (squadStateData.selectedSquadId != null) {
         // Squad context - create squad group
         groupRef = FirebaseFirestore.instance
             .collection('squads')
-            .doc(squadState.selectedSquadId)
+            .doc(squadStateData.selectedSquadId)
             .collection('chat_groups')
             .doc();
       } else {

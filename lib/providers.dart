@@ -15,6 +15,7 @@ import 'managers/game_manager.dart';
 import 'managers/peacock_manager.dart';
 import 'managers/achievement_manager.dart';
 import 'managers/notification_manager.dart';
+import 'chat/chat_state.dart';
 import 'chat/sqlite_helper.dart';
 import 'services/firestore_service.dart';
 import 'managers/state_initializer.dart';
@@ -72,6 +73,21 @@ final availabilityManagerProvider =
 final squadManagerProvider = ChangeNotifierProvider<SquadManager>((ref) {
   final analytics = ref.read(appFlowManagerProvider);
   return SquadManager(analytics: analytics);
+});
+
+// Provider for GameManager
+final gameManagerProvider = Provider<GameManager>((ref) {
+  return GameManager();
+});
+
+// Provider for Legacy SquadState
+final squadStateProvider = ChangeNotifierProvider<SquadState>((ref) {
+  return SquadState();
+});
+
+// Provider for ChatState
+final chatStateProvider = ChangeNotifierProvider<ChatState>((ref) {
+  return ChatState();
 });
 
 // Provider for Discovery

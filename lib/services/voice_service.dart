@@ -206,7 +206,8 @@ class VoiceRoomNotifier extends StateNotifier<VoiceRoomState> {
         await _engine!.joinChannelWithUserAccount(
           token: token,
           channelId: state.roomId,
-          userAccount: 'user_${DateTime.now().millisecondsSinceEpoch}', // Unique user account
+          userAccount:
+              'user_${DateTime.now().millisecondsSinceEpoch}', // Unique user account
           options: const ChannelMediaOptions(
             autoSubscribeAudio: true,
             publishMicrophoneTrack: true,

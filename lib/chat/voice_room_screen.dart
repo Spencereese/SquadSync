@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/voice_service.dart';
+import '../services/agora_config.dart';
 import '../providers.dart';
 
 class VoiceRoomScreen extends ConsumerStatefulWidget {
@@ -22,8 +23,32 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
   void initState() {
     super.initState();
     // Initialize the voice room
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(voiceRoomProvider(widget.roomId).notifier).initialize();
+    // For prod, generate dynamic tokens server-side via backend route /agora/token
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        // Check if Agora config is available
+        if (AgoraConfig.appId.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Voice chat config missing—contact support'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        await ref.read(voiceRoomProvider(widget.roomId).notifier).initialize();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to initialize voice room: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     });
   }
 
@@ -32,17 +57,17 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
     final voiceState = ref.watch(voiceRoomProvider(widget.roomId));
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor ?? Colors.black,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: Icon(Icons.close, color: Theme.of(context).iconTheme.color ?? Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
           voiceState.roomName,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: Theme.of(context).textTheme.titleLarge?.color ?? Colors.white),
         ),
         centerTitle: true,
       ),
@@ -60,7 +85,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
                 padding: const EdgeInsets.all(16.0),
                 child: Text(
                   'Error: ${voiceState.error}',
-                  style: const TextStyle(color: Colors.red),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               )
             else if (!voiceState.isJoined)
@@ -87,10 +112,10 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
 
   Widget _buildParticipantsGrid(List<VoiceParticipant> participants) {
     if (participants.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'Waiting for participants...',
-          style: TextStyle(color: Colors.white70, fontSize: 16),
+          style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7) ?? Colors.white70, fontSize: 16),
         ),
       );
     }
@@ -114,12 +139,12 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
     return Container(
       decoration: BoxDecoration(
         color: participant.isSpeaking
-            ? Colors.cyanAccent.withOpacity(0.2)
-            : Colors.white.withOpacity(0.1),
+            ? Theme.of(context).colorScheme.primary.withOpacity(0.2)
+            : Theme.of(context).cardColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color:
-              participant.isSpeaking ? Colors.cyanAccent : Colors.transparent,
+              participant.isSpeaking ? Theme.of(context).colorScheme.primary : Colors.transparent,
           width: 2,
         ),
       ),
@@ -130,13 +155,13 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
           CircleAvatar(
             radius: 40,
             backgroundColor:
-                participant.isHost ? Colors.cyanAccent : Colors.grey[700],
+                participant.isHost ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surface,
             child: Text(
               participant.displayName.isNotEmpty
                   ? participant.displayName[0].toUpperCase()
                   : '?',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -148,8 +173,8 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
           // Name
           Text(
             participant.displayName,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white,
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
@@ -169,13 +194,13 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.cyanAccent.withOpacity(0.2),
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Host',
                     style: TextStyle(
-                      color: Colors.cyanAccent,
+                      color: Theme.of(context).colorScheme.primary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -183,9 +208,9 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
                 ),
               if (participant.isMuted) ...[
                 if (participant.isHost) const SizedBox(width: 8),
-                const Icon(
+                Icon(
                   Icons.mic_off,
-                  color: Colors.red,
+                  color: Theme.of(context).colorScheme.error,
                   size: 16,
                 ),
               ],
@@ -198,13 +223,13 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
             Container(
               width: 20,
               height: 20,
-              decoration: const BoxDecoration(
-                color: Colors.cyanAccent,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.volume_up,
-                color: Colors.black,
+                color: Theme.of(context).colorScheme.onPrimary,
                 size: 12,
               ),
             ),
@@ -217,9 +242,9 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
   Widget _buildControlButtons(VoiceRoomState voiceState) {
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -235,18 +260,18 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
                     .joinRoom(),
             icon: Icon(
               voiceState.isJoined ? Icons.call_end : Icons.call,
-              color: voiceState.isJoined ? Colors.white : Colors.black,
+              color: voiceState.isJoined ? Theme.of(context).colorScheme.onError : Theme.of(context).colorScheme.onPrimary,
             ),
             label: Text(
               voiceState.isJoined ? 'Leave' : 'Join',
               style: TextStyle(
-                color: voiceState.isJoined ? Colors.white : Colors.black,
+                color: voiceState.isJoined ? Theme.of(context).colorScheme.onError : Theme.of(context).colorScheme.onPrimary,
                 fontWeight: FontWeight.w600,
               ),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor:
-                  voiceState.isJoined ? Colors.red : Colors.cyanAccent,
+                  voiceState.isJoined ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(25),
@@ -262,18 +287,18 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
                   .toggleMute(),
               icon: Icon(
                 voiceState.isMuted ? Icons.mic_off : Icons.mic,
-                color: Colors.black,
+                color: Theme.of(context).colorScheme.onPrimary,
               ),
               label: Text(
                 voiceState.isMuted ? 'Unmute' : 'Mute',
-                style: const TextStyle(
-                  color: Colors.black,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor:
-                    voiceState.isMuted ? Colors.red : Colors.cyanAccent,
+                    voiceState.isMuted ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(

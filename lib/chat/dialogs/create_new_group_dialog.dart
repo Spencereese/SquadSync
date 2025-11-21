@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../utils.dart';
-import '../../providers.dart';
+import '../../providers.dart' as p;
+import '../../managers/game_manager.dart';
+import '../../widgets/async_value_widget.dart';
 
 /// Dialog for creating a new chat group
 class CreateNewGroupDialog extends ConsumerStatefulWidget {
@@ -16,12 +19,15 @@ class CreateNewGroupDialog extends ConsumerStatefulWidget {
 
 class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _gameSearchController = TextEditingController();
   bool _isPublic = true;
   bool _isLoading = false;
+  Map<String, dynamic>? _selectedGame;
 
   @override
   void dispose() {
     _nameController.dispose();
+    _gameSearchController.dispose();
     super.dispose();
   }
 
@@ -35,7 +41,7 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
     setState(() => _isLoading = true);
 
     try {
-      final squadStateData = ref.watch(squadStateNotifierProvider);
+      final squadStateData = ref.watch(p.squadStateNotifierProvider);
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
@@ -68,6 +74,7 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
         'memberCount': 1,
         'members': [currentUser.uid],
         'imageUrl': null,
+        'gameId': _selectedGame?['id'],
       });
 
       if (mounted) {
@@ -98,6 +105,30 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
         'chatGroupId': groupId,
         'chatGroupName': groupName,
         'chatType': 'group',
+      },
+    );
+  }
+
+  Widget _buildGameList(List<Map<String, dynamic>> games) {
+    return ListView.builder(
+      itemCount: games.length,
+      itemBuilder: (context, index) {
+        final game = games[index];
+        return ListTile(
+          title:
+              Text(game['name'], style: const TextStyle(color: Colors.white)),
+          trailing: Radio<Map<String, dynamic>>(
+            value: game,
+            groupValue: _selectedGame,
+            onChanged: (value) {
+              setState(() => _selectedGame = value);
+            },
+            activeColor: Colors.cyanAccent,
+          ),
+          onTap: () {
+            setState(() => _selectedGame = game);
+          },
+        );
       },
     );
   }
@@ -169,6 +200,74 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
           ],
+          const SizedBox(height: 16),
+          const Text('Select Game (optional)',
+              style: TextStyle(color: Colors.white)),
+          TextField(
+            controller: _gameSearchController,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              labelText: 'Search games',
+              labelStyle: TextStyle(color: Colors.cyanAccent),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.cyanAccent),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.cyanAccent),
+              ),
+            ),
+            onChanged: (value) {
+              if (value.isNotEmpty) {
+                ref
+                    .read(gameManagerProvider.notifier)
+                    .fetchGamesFromIGDB(value);
+              }
+            },
+          ),
+          AsyncValueWidget<GameState>(
+            value: ref.watch(gameManagerProvider),
+            data: (gameState) => SizedBox(
+              height: 200,
+              child: gameState.isOffline
+                  ? Banner(
+                      message: 'Using offline cache',
+                      location: BannerLocation.topEnd,
+                      child: _buildGameList(gameState.games),
+                    )
+                  : _buildGameList(gameState.games),
+            ),
+            loading: () => const SizedBox(
+              height: 200,
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (error, stack) => SizedBox(
+              height: 200,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline,
+                        size: 48, color: Theme.of(context).colorScheme.error),
+                    const SizedBox(height: 16),
+                    Text('API error: ${error.toString()}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error)),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        ref
+                            .read(gameManagerProvider.notifier)
+                            .fetchGamesFromIGDB(_gameSearchController.text);
+                      },
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
       actions: [

@@ -5,6 +5,11 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'dart:convert';
 import 'package:squad_sync/managers/game_manager.dart';
 import 'game_manager_test.mocks.dart';
+import 'package:mockito/annotations.dart';
+import 'package:squad_sync/services/igdb_auth_service.dart';
+import 'package:squad_sync/services/cache_service.dart';
+
+@GenerateMocks([http.Client, IgdbAuthService, CacheService, FakeFirebaseFirestore])
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -262,5 +267,124 @@ void main() {
       expect(gameManager.hiddenGames.contains(gameName), false);
       expect(gameManager.mutedGames.contains(gameName), false);
     });
+  });
+}
+
+group('GameManager AsyncNotifier', () {
+  late ProviderContainer container;
+  late MockClient mockClient;
+  late MockIgdbAuthService mockIgdbAuth;
+  late MockCacheService mockCache;
+  late FakeFirebaseFirestore fakeFirestore;
+
+  setUp(() {
+    mockClient = MockClient();
+    mockIgdbAuth = MockIgdbAuthService();
+    mockCache = MockCacheService();
+    fakeFirestore = FakeFirebaseFirestore();
+
+    container = ProviderContainer(overrides: [
+      cacheServiceProvider.overrideWithValue(mockCache),
+      gameManagerProvider.overrideWith(() {
+        final manager = GameManager();
+        manager.httpClient = mockClient;
+        manager.igdbAuth = mockIgdbAuth;
+        manager.firestore = fakeFirestore;
+        return manager;
+      }),
+    ]);
+  });
+
+  tearDown(() {
+    container.dispose();
+  });
+
+  test('fetchGamesFromIGDB retries on failure and falls back to cache', () async {
+    // Arrange
+    when(mockIgdbAuth.getAccessToken()).thenAnswer((_) async => 'token');
+    when(mockIgdbAuth.getClientId()).thenReturn('clientId');
+    when(mockClient.post(any, headers: anyNamed('headers'), body: anyNamed('body')))
+        .thenAnswer((_) async => http.Response('Server Error', 500));
+
+    // Mock cache
+    final cachedGames = [{'id': 1, 'name': 'Cached Game'}];
+    when(fakeFirestore.collection('games').where('name_lowercase', isGreaterThanOrEqualTo: 'test'.toLowerCase())
+        .where('name_lowercase', isLessThanOrEqualTo: 'test'.toLowerCase() + '\uf8ff')
+        .limit(10)
+        .get())
+        .thenAnswer((_) async => FakeQuerySnapshot([
+          FakeQueryDocumentSnapshot(data: cachedGames.first)
+        ]));
+
+    // Act
+    final notifier = container.read(gameManagerProvider.notifier);
+    final result = await notifier.fetchGamesFromIGDB('test');
+
+    // Assert
+    expect(result, cachedGames);
+    verify(mockClient.post(any, headers: anyNamed('headers'), body: anyNamed('body'))).called(3); // 3 retries
+  });
+
+  test('fetchGamesFromIGDB refreshes token on 401', () async {
+    // Arrange
+    when(mockIgdbAuth.getAccessToken()).thenAnswer((_) async => 'old_token');
+    when(mockIgdbAuth.getClientId()).thenReturn('clientId');
+    when(mockIgdbAuth.refreshTokenIfNeeded()).thenAnswer((_) async {});
+
+    // First call 401, second success
+    when(mockClient.post(any, headers: anyNamed('headers'), body: anyNamed('body')))
+        .thenAnswer((invocation) {
+          final headers = invocation.namedArguments[const Symbol('headers')] as Map<String, String>;
+          if (headers['Authorization'] == 'Bearer old_token') {
+            return Future.value(http.Response('Unauthorized', 401));
+          } else {
+            return Future.value(http.Response('[{"id":1,"name":"Game"}]', 200));
+          }
+        });
+
+    // Act
+    final notifier = container.read(gameManagerProvider.notifier);
+    await notifier.fetchGamesFromIGDB('test');
+
+    // Assert
+    verify(mockIgdbAuth.refreshTokenIfNeeded()).called(1);
+  });
+
+  test('fetchGamesFromIGDB handles rate limit 429', () async {
+    // Arrange
+    when(mockIgdbAuth.getAccessToken()).thenAnswer((_) async => 'token');
+    when(mockIgdbAuth.getClientId()).thenReturn('clientId');
+    when(mockClient.post(any, headers: anyNamed('headers'), body: anyNamed('body')))
+        .thenAnswer((_) async => http.Response('Rate Limited', 429));
+
+    // Act & Assert
+    final notifier = container.read(gameManagerProvider.notifier);
+    expect(() => notifier.fetchGamesFromIGDB('test'), throwsA(isA<IgdbException>()));
+    verify(mockClient.post(any, headers: anyNamed('headers'), body: anyNamed('body'))).called(3);
+  });
+
+  test('fetchGamesFromIGDB handles offline SocketException', () async {
+    // Arrange
+    when(mockIgdbAuth.getAccessToken()).thenAnswer((_) async => 'token');
+    when(mockIgdbAuth.getClientId()).thenReturn('clientId');
+    when(mockClient.post(any, headers: anyNamed('headers'), body: anyNamed('body')))
+        .thenThrow(const SocketException('No internet'));
+
+    // Mock cache
+    final cachedGames = [{'id': 1, 'name': 'Cached Game'}];
+    when(fakeFirestore.collection('games').where('name_lowercase', isGreaterThanOrEqualTo: 'test'.toLowerCase())
+        .where('name_lowercase', isLessThanOrEqualTo: 'test'.toLowerCase() + '\uf8ff')
+        .limit(10)
+        .get())
+        .thenAnswer((_) async => FakeQuerySnapshot([
+          FakeQueryDocumentSnapshot(data: cachedGames.first)
+        ]));
+
+    // Act
+    final notifier = container.read(gameManagerProvider.notifier);
+    final result = await notifier.fetchGamesFromIGDB('test');
+
+    // Assert
+    expect(result, cachedGames);
   });
 }

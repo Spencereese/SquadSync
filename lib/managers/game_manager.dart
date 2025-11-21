@@ -8,6 +8,7 @@ import 'package:retry/retry.dart';
 import 'package:riverpod/riverpod.dart';
 import '../services/interfaces.dart';
 import '../services/cache_service.dart';
+import '../services/igdb_auth_service.dart';
 
 /// Provider for CacheService
 final cacheServiceProvider = Provider<CacheService>((ref) => CacheService());
@@ -20,7 +21,8 @@ class IgdbException implements Exception {
   IgdbException(this.message, {this.statusCode});
 
   @override
-  String toString() => 'IgdbException: $message${statusCode != null ? ' (Status: $statusCode)' : ''}';
+  String toString() =>
+      'IgdbException: $message${statusCode != null ? ' (Status: $statusCode)' : ''}';
 }
 
 /// State for game management
@@ -28,28 +30,35 @@ class GameState {
   final bool isLoading;
   final List<Map<String, dynamic>> games;
   final String? error;
+  final bool isOffline;
 
   const GameState({
     this.isLoading = false,
     this.games = const [],
     this.error,
+    this.isOffline = false,
   });
 
   GameState copyWith({
     bool? isLoading,
     List<Map<String, dynamic>>? games,
     String? error,
+    bool? isOffline,
   }) {
     return GameState(
       isLoading: isLoading ?? this.isLoading,
       games: games ?? this.games,
       error: error ?? this.error,
+      isOffline: isOffline ?? this.isOffline,
     );
   }
 }
 
 /// Manages game selection, lobbies, and game data
 class GameManager extends AsyncNotifier<GameState> {
+  late http.Client httpClient = http.Client();
+  late IgdbAuthService igdbAuth = IgdbAuthService();
+  late FirebaseFirestore firestore = FirebaseFirestore.instance;
   static const String _backendUrl =
       'https://squadsync-backend-756172684661.us-central1.run.app'; // Replace with your deployed backend URL
 
@@ -61,20 +70,16 @@ class GameManager extends AsyncNotifier<GameState> {
     return const GameState();
   }
 
-  IgdbAuthService get _igdbAuth => IgdbAuthService();
-
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
-  http.Client get _httpClient => http.Client();
-
   /// Refresh IGDB token if needed
   Future<void> refreshTokenIfNeeded() async {
     try {
-      await _igdbAuth.getAccessToken();
+      await igdbAuth.getAccessToken();
     } catch (e) {
       print(kDebugMode ? 'Failed to refresh IGDB token: $e' : '');
       throw IgdbException('Failed to refresh IGDB token: $e');
     }
   }
+
   Map<String, dynamic>? _currentGame;
   List<Map<String, dynamic>> _availableGames = [
     {
@@ -172,8 +177,6 @@ class GameManager extends AsyncNotifier<GameState> {
   Set<String> _preferredPeacockGames = {};
   Set<String> _mutedGames = {};
   Set<String> _hiddenGames = {};
-
-
 
   List<Map<String, dynamic>> get availableGames => _availableGames;
   Map<String, List<Map<String, dynamic>>> get gameLobbies => _gameLobbies;
@@ -290,13 +293,13 @@ class GameManager extends AsyncNotifier<GameState> {
     state = const AsyncValue.loading();
     try {
       await refreshTokenIfNeeded();
-      final token = await _igdbAuth.getAccessToken();
-      final clientId = _igdbAuth.getClientId();
+      final token = await igdbAuth.getAccessToken();
+      final clientId = igdbAuth.getClientId();
       if (clientId == null) throw IgdbException('IGDB client ID not found.');
 
       final result = await retry(
         () async {
-          final response = await http.post(
+          final response = await httpClient.post(
             Uri.parse('https://api.igdb.com/v4/games'),
             headers: {
               'Client-ID': clientId,
@@ -305,7 +308,8 @@ class GameManager extends AsyncNotifier<GameState> {
             body: 'fields *; search "$query"; limit 50;',
           );
           if (response.statusCode != 200) {
-            throw Exception('IGDB API error: ${response.statusCode} - ${response.body}');
+            throw Exception(
+                'IGDB API error: ${response.statusCode} - ${response.body}');
           }
           return response;
         },
@@ -322,10 +326,11 @@ class GameManager extends AsyncNotifier<GameState> {
       // Fallback to cached games
       try {
         final cachedGames = await getCachedGames(query);
-        state = AsyncValue.data(GameState(games: cachedGames));
+        state = AsyncValue.data(GameState(games: cachedGames, isOffline: true));
         return cachedGames;
       } catch (cacheError) {
-        state = AsyncValue.error(IgdbException('Failed to fetch games: $e'), StackTrace.current);
+        state = AsyncValue.error(
+            IgdbException('Failed to fetch games: $e'), StackTrace.current);
         throw IgdbException('Failed to fetch games: $e');
       }
     }
@@ -333,10 +338,11 @@ class GameManager extends AsyncNotifier<GameState> {
 
   Future<List<Map<String, dynamic>>> getCachedGames(String query) async {
     try {
-      final snapshot = await _firestore
+      final snapshot = await firestore
           .collection('games')
           .where('name_lowercase', isGreaterThanOrEqualTo: query.toLowerCase())
-          .where('name_lowercase', isLessThanOrEqualTo: '${query.toLowerCase()}\uf8ff')
+          .where('name_lowercase',
+              isLessThanOrEqualTo: '${query.toLowerCase()}\uf8ff')
           .limit(10)
           .get();
       return snapshot.docs.map((doc) => doc.data()).toList();
@@ -377,13 +383,13 @@ class GameManager extends AsyncNotifier<GameState> {
         'escape from tarkov'
       ];
 
-      final batch = _firestore.batch();
+      final batch = firestore.batch();
       int totalFetched = 0;
 
       for (final query in popularQueries) {
         if (totalFetched >= pageSize) break;
 
-        final response = await _httpClient.get(
+        final response = await httpClient.get(
           Uri.parse(
               '$_backendUrl/igdb/search?q=${Uri.encodeComponent(query)}&limit=3'),
         );
@@ -393,7 +399,7 @@ class GameManager extends AsyncNotifier<GameState> {
           for (final game in results) {
             if (totalFetched >= pageSize) break;
 
-            final docRef = _firestore.collection('games').doc(game['slug']);
+            final docRef = firestore.collection('games').doc(game['slug']);
             batch.set(docRef, game, SetOptions(merge: true));
             totalFetched++;
           }
@@ -420,7 +426,7 @@ class GameManager extends AsyncNotifier<GameState> {
       if (gameName == null || gameName.isEmpty) return game;
 
       // Search IGDB for this game via backend
-      final response = await _httpClient.get(
+      final response = await httpClient.get(
         Uri.parse(
             '$_backendUrl/igdb/search?q=${Uri.encodeComponent(gameName)}&limit=5'),
       );
@@ -479,4 +485,5 @@ class GameManager extends AsyncNotifier<GameState> {
 }
 
 /// Provider for GameManager
-final gameManagerProvider = AsyncNotifierProvider<GameManager, GameState>(() => GameManager());
+final gameManagerProvider =
+    AsyncNotifierProvider<GameManager, GameState>(() => GameManager());

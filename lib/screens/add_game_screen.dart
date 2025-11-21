@@ -1,67 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../managers/user_manager.dart';
-import '../services/igdb_auth_service.dart';
+import '../managers/game_manager.dart';
 import 'game_platform_dialog.dart';
 
 /// Screen for first-time users to select games they play
-class AddGameScreen extends StatefulWidget {
+class AddGameScreen extends ConsumerStatefulWidget {
   const AddGameScreen({super.key});
 
   @override
-  State<AddGameScreen> createState() => _AddGameScreenState();
+  ConsumerState<AddGameScreen> createState() => _AddGameScreenState();
 }
 
-class _AddGameScreenState extends State<AddGameScreen> {
+class _AddGameScreenState extends ConsumerState<AddGameScreen> {
   final Set<String> _selectedGames = {};
-  List<Map<String, dynamic>> _availableGames = [];
-  bool _isLoading = true;
-  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _loadGames();
-  }
-
-  Future<void> _loadGames() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
+    // Fetch popular games on init
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(gameManagerProvider.notifier).fetchGamesFromIGDB('');
     });
-
-    try {
-      final igdbService = IgdbAuthService();
-      // Load popular games that have cover images
-      final games = await igdbService.searchGames('', limit: 50);
-
-      // Filter games that have cover images and are recent/popular
-      final filteredGames = games.where((game) {
-        return game['coverUrl'] != null &&
-            game['coverUrl'].toString().isNotEmpty &&
-            game['name'] != null &&
-            game['name'].toString().isNotEmpty;
-      }).toList();
-
-      if (mounted) {
-        setState(() {
-          _availableGames = filteredGames;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Failed to load games: $e';
-          _isLoading = false;
-        });
-      }
-    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final gameStateAsync = ref.watch(gameManagerProvider);
+    final isLoading = gameStateAsync.isLoading;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Select Your Games'),
@@ -69,11 +38,11 @@ class _AddGameScreenState extends State<AddGameScreen> {
         actions: [
           TextButton(
             onPressed:
-                _selectedGames.isNotEmpty && !_isLoading ? _onContinue : null,
+                _selectedGames.isNotEmpty && !isLoading ? _onContinue : null,
             child: Text(
               'Continue (${_selectedGames.length})',
               style: TextStyle(
-                color: _selectedGames.isNotEmpty && !_isLoading
+                color: _selectedGames.isNotEmpty && !isLoading
                     ? Theme.of(context).colorScheme.primary
                     : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -81,125 +50,114 @@ class _AddGameScreenState extends State<AddGameScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Loading games...'),
-                ],
+      body: AsyncValueWidget<GameState>(
+        value: gameStateAsync,
+        data: (gameState) => _buildGameList(gameState.games),
+        loading: () => const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading games...'),
+            ],
+          ),
+        ),
+        error: (error, stack) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Theme.of(context).colorScheme.error,
               ),
-            )
-          : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 64,
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadGames,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : Column(
-                  children: [
-                    // Header
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.games,
-                            size: 64,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Welcome to SquadSync!',
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Select the games you play to personalize your experience and find the best squads.',
-                            style:
-                                Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Game selection grid
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: GridView.builder(
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            childAspectRatio: 1.2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                          ),
-                          itemCount: _availableGames.length,
-                          itemBuilder: (context, index) {
-                            final game = _availableGames[index];
-                            final isSelected =
-                                _selectedGames.contains(game['slug']);
-
-                            return _GameCard(
-                              game: game,
-                              isSelected: isSelected,
-                              onTap: () => _onGameTap(game),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-
-                    // Skip option
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: TextButton(
-                        onPressed: _onSkip,
-                        child: Text(
-                          'Skip for now',
-                          style: TextStyle(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 16),
+              Text(
+                'API error: ${error.toString()}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
                 ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  ref.read(gameManagerProvider.notifier).fetchGamesFromIGDB('');
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGameList(List<Map<String, dynamic>> games) {
+    // Filter games that have cover images
+    final filteredGames = games.where((game) {
+      return game['coverUrl'] != null &&
+          game['coverUrl'].toString().isNotEmpty &&
+          game['name'] != null &&
+          game['name'].toString().isNotEmpty;
+    }).toList();
+
+    return Column(
+      children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Icon(
+                Icons.games,
+                size: 64,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Welcome to SquadSync!',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Select the games you play to personalize your experience and find the best squads.',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+        // Game list
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 0.75,
+            ),
+            itemCount: filteredGames.length,
+            itemBuilder: (context, index) {
+              final game = filteredGames[index];
+              final isSelected = _selectedGames.contains(game['slug']);
+              return _GameCard(
+                game: game,
+                isSelected: isSelected,
+                onTap: () => _onGameTap(game),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -231,12 +189,15 @@ class _AddGameScreenState extends State<AddGameScreen> {
   void _onContinue() async {
     if (_selectedGames.isEmpty) return;
 
+    final gameState = ref.read(gameManagerProvider).value;
+    if (gameState == null) return;
+
     final userManager = Provider.of<UserManager>(context, listen: false);
 
     try {
       // Save selected games to pinned games
       for (final gameSlug in _selectedGames) {
-        final game = _availableGames.firstWhere((g) => g['slug'] == gameSlug);
+        final game = gameState.games.firstWhere((g) => g['slug'] == gameSlug);
         await userManager.addPinnedGame(game);
       }
 
@@ -251,11 +212,6 @@ class _AddGameScreenState extends State<AddGameScreen> {
         );
       }
     }
-  }
-
-  void _onSkip() {
-    // Navigate to main app without saving games
-    Navigator.of(context).pushReplacementNamed('/main');
   }
 }
 

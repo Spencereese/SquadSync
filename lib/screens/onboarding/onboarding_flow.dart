@@ -1,24 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:provider/Provider.dart' as provider;
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../managers/game_manager.dart';
 import '../../chat/chat_groups_screen.dart';
 import '../../services/app_flow_manager.dart';
+import '../../widgets/async_value_widget.dart';
 
-class OnboardingFlow extends StatefulWidget {
+class OnboardingFlow extends ConsumerStatefulWidget {
   const OnboardingFlow({super.key});
 
   @override
-  State<OnboardingFlow> createState() => _OnboardingFlowState();
+  ConsumerState<OnboardingFlow> createState() => _OnboardingFlowState();
 }
 
-class _OnboardingFlowState extends State<OnboardingFlow> {
+class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   final PageController _pageController = PageController();
   int _currentStep = 0;
   final DateTime _onboardingStartTime = DateTime.now();
@@ -30,9 +31,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   // Step 2: Games
   final TextEditingController _gameSearchController = TextEditingController();
-  List<Map<String, dynamic>> _searchResults = [];
   final List<Map<String, dynamic>> _pinnedGames = [];
-  bool _isSearching = false;
 
   @override
   void initState() {
@@ -157,23 +156,56 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           ),
           const SizedBox(height: 16),
           Expanded(
-            child: _isSearching
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    itemCount: _searchResults.length,
-                    itemBuilder: (context, index) {
-                      final game = _searchResults[index];
-                      final isPinned =
-                          _pinnedGames.any((g) => g['id'] == game['id']);
-                      return ListTile(
-                        title: Text(game['name']),
-                        trailing: IconButton(
-                          icon: Icon(isPinned ? Icons.star : Icons.star_border),
-                          onPressed: () => _togglePinGame(game),
-                        ),
-                      );
-                    },
-                  ),
+            child: AsyncValueWidget<GameState>(
+              value: ref.watch(gameManagerProvider),
+              data: (gameState) => gameState.isOffline
+                  ? Banner(
+                      message: 'Using offline cache',
+                      location: BannerLocation.topEnd,
+                      child: _buildGameList(gameState.games),
+                    )
+                  : _buildGameList(gameState.games),
+              loading: () => const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Searching games...'),
+                  ],
+                ),
+              ),
+              error: (error, stack) => Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'API error: ${error.toString()}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        ref
+                            .read(gameManagerProvider.notifier)
+                            .fetchGamesFromIGDB(_gameSearchController.text);
+                      },
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           ElevatedButton(
@@ -284,18 +316,34 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void _searchGames() async {
     if (_gameSearchController.text.isEmpty) return;
 
-    setState(() {
-      _isSearching = true;
-    });
+    try {
+      await ref
+          .read(gameManagerProvider.notifier)
+          .fetchGamesFromIGDB(_gameSearchController.text);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Search failed: $e')),
+        );
+      }
+    }
+  }
 
-    final gameManager =
-        provider.Provider.of<GameManager>(context, listen: false);
-    final results = await gameManager.searchGames(_gameSearchController.text);
-
-    setState(() {
-      _searchResults = results;
-      _isSearching = false;
-    });
+  Widget _buildGameList(List<Map<String, dynamic>> games) {
+    return ListView.builder(
+      itemCount: games.length,
+      itemBuilder: (context, index) {
+        final game = games[index];
+        final isPinned = _pinnedGames.any((g) => g['id'] == game['id']);
+        return ListTile(
+          title: Text(game['name']),
+          trailing: IconButton(
+            icon: Icon(isPinned ? Icons.star : Icons.star_border),
+            onPressed: () => _togglePinGame(game),
+          ),
+        );
+      },
+    );
   }
 
   void _togglePinGame(Map<String, dynamic> game) {

@@ -1,4 +1,4 @@
-# SquadSync — Complete App Intelligence Report (November 19, 2025 - Updated)
+# SquadSync — Complete App Intelligence Report (November 21, 2025 - Updated)
 
 ## Security Requirements
 **CRITICAL**: Never commit credentials to version control. Use environment variables for all secrets:
@@ -7,9 +7,12 @@
 - Reference `backend/.env.example` for required environment variables
 
 ## Project Overview
-- App purpose: Gaming squad coordination with lobbies, chat, timers, media
-- Stack: Flutter + Firebase Auth + Firestore + Storage + Riverpod
-- Target: iOS & Android
+- App purpose: Gaming squad coordination with lobbies, chat, timers, media, voice chat, and discovery
+- Stack: Flutter + Firebase Auth + Firestore + Storage + Riverpod + Agora RTC
+- Target: iOS & Android (Web support available)
+- Version: 1.0.11+11
+- Flutter SDK: 3.35.7
+- Dart SDK: 3.9.2
 
 ## Architecture Overview
 SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
@@ -100,21 +103,32 @@ SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
 
 ## Folder Structure & Purpose
 lib/
-├── providers/       → Riverpod state management providers (SquadStateNotifier)
-├── managers/        → State management classes (SquadState, UserManager, GameManager, etc.)
+├── providers/       → Riverpod state management providers and notifiers (squad_providers.dart, chat_state_notifier.dart)
+├── managers/        → State management classes (22 manager classes for focused functionality)
 ├── screens/         → Screen-level widgets (SquadTabScreen, OnboardingFlow, DiscoveryScreen, VoiceRoomScreen, etc.)
-├── services/        → Business logic services (AIService, MediaService, IGDB auth, VoiceService, ReactionService, AppFlowManager, etc.)
-├── models/          → Data models (Poll model, VoiceParticipant)
-├── chat/            → Chat system with screens, services, widgets, and dialogs (VoiceRoomScreen added)
+├── services/        → Business logic services (16 service classes including AIService, VoiceService, ReactionService, etc.)
+├── models/          → Data models (Poll model)
+├── chat/            → Chat system with screens, services, widgets, and dialogs (VoiceRoomScreen, message reactions, polls)
 ├── squad_tab/       → Squad management UI components and lobby logic
 ├── widgets/         → Reusable UI components (BaseDialog, GameSelectionWidget, GeneratedProviders, RiverpodExamples, etc.)
 ├── Availability/    → Availability scheduling feature
 ├── diagnostic/      → Diagnostic and documentation files (SQUADSYNC.md)
-├── utils.dart       → Utility functions
-├── main.dart        → App entry point with Firebase init and navigation
+├── utils.dart       → Utility functions with null safety helpers (safeString, safeList)
+├── main.dart        → App entry point with Firebase init, deep linking, and navigation
 ├── app_theme.dart   → Material Design 3 theme with dark/light variants
-├── squad_state.dart → Legacy state coordinator (being phased out)
+├── squad_state.dart → Legacy state coordinator (deprecated - being phased out)
 ├── squad_state_notifier.dart → New Riverpod StateNotifier for state management
+├── firebase_options.dart → Firebase configuration
+├── setup_screen.dart → Authentication screen (email/password, Apple Sign-In)
+├── join_squad_screen.dart → Squad joining via invite codes
+├── main_navigation_screen.dart → Navigation wrapper and routing logic
+├── notification_service.dart → Local notifications
+├── profile_tab.dart → User profile management
+├── settings_tab.dart → App settings and preferences management
+├── performance_hub_tab.dart → Performance tracking and analytics display
+├── rating_dialog.dart → User rating system for squad members
+├── providers.dart → Riverpod providers and theme management
+├── app_widgets.dart → Main app widgets with Riverpod integration
 ├── firebase_options.dart → Firebase configuration
 ├── setup_screen.dart → Authentication screen (email/password, Apple Sign-In)
 ├── join_squad_screen.dart → Squad joining via invite codes
@@ -164,9 +178,9 @@ lib/
 - lib/services/app_flow_manager.dart → Analytics tracking and app flow management
 
 ### Manager Classes (State Management)
-- lib/managers/user_manager.dart → User profiles, blocking, friends, pinned games, preferences
+- lib/managers/user_manager.dart → User profiles, friends, blocking, pinned games, preferences
 - lib/managers/game_manager.dart → Game selection from IGDB API, lobby management, game data
-- lib/managers/squad_manager.dart → Squad spots, assignments, timers, game-specific data (consolidated from spot_management_service and squad_membership_service)
+- lib/managers/squad_manager.dart → Squad spots, assignments, timers, game-specific data (consolidated)
 - lib/managers/app_flow_manager.dart → Onboarding state, last active lobby/game tracking
 - lib/managers/timer_state.dart → Timer management for squad spots and peacock queue
 - lib/managers/firestore_manager.dart → Firestore operations and data persistence
@@ -209,7 +223,7 @@ lib/
 - lib/services/media_service.dart → Media upload, download, and Firebase Storage
 - lib/services/message_service.dart → Message processing and formatting
 - lib/services/poll_service.dart → Poll creation, voting, and management
-- lib/services/services.dart → Service registry and dependency injection
+- lib/services/timer_service.dart → Timer management and scheduling
 - lib/services/voice_service.dart → Voice chat management with Agora RTC integration
 - lib/services/reaction_service.dart → Message reactions and emoji handling
 - lib/services/app_flow_manager.dart → Analytics tracking and user flow management
@@ -383,6 +397,7 @@ collections:
 - **Inline video playback**: Videos play directly in chat with custom controls using `VideoLinkPreview`
 - **Mounted checks**: Always check `mounted` before setState in async operations
 - **Stream cleanup**: Dispose StreamSubscriptions in `dispose()` methods
+- **Null safety helpers**: Use `safeString(String? input)` and `safeList(List<String?>? list)` from utils.dart
 
 ## Design & Theme Summary
 - Base colors: Professional blue seed (#007AFF) with ColorScheme.fromSeed, indigo accents
@@ -395,7 +410,7 @@ collections:
 - Gradients: Subtle blue accents, no heavy gradients
 
 ## Critical Features Status
-- Onboarding: Working - 3-step flow (profile → games → completion) with analytics tracking
+- Onboarding: Working - 3-step flow (profile → games → completion) with analytics tracking and reactive button states
 - Return to last lobby: Working - AppFlowManager tracks last active lobby/game
 - Private lobbies: Working - Password protection and invite codes
 - Chat reliability: Solid - Hybrid Firestore/SQLite with offline support
@@ -408,12 +423,13 @@ collections:
 - Message reactions: Working - iMessage-style reactions with emoji support
 - Riverpod migration: Complete - Full migration to Riverpod StateNotifier with code generation
 - Analytics tracking: Working - AppFlowManager tracks user engagement and flows
+- Null safety: Complete - Comprehensive null safety implementation with safe helpers and debug assertions
 
 ## Top 5 UX Pain Points (from code clues)
-1. Timer notifications every second causing performance issues (TimerState.notifyListeners spam)
-2. Game selection hardcoded fallback when IGDB API fails
-3. Suggested groups query requires specific Firestore indexes
-4. Riverpod migration completed successfully with improved performance and type safety
+1. Timer notifications every second causing performance issues (TimerState.notifyListeners spam) - mitigated with Riverpod .select()
+2. Game selection hardcoded fallback when IGDB API fails - needs better error handling
+3. Suggested groups query requires specific Firestore indexes - performance optimization needed
+4. Onboarding button reactivity fixed with TextEditingController listeners
 5. Voice chat integration requires Agora App ID configuration for production deployment
 
 ## Anything Else Important
@@ -435,6 +451,9 @@ collections:
 - Analytics tracking: Comprehensive user flow and engagement analytics
 - Riverpod state management: Modern, performant state management with code generation
 - Professional theming: Seed-based colors with Google Fonts Roboto
+- Null safety helpers: safeString() and safeList() functions in utils.dart
+- Debug assertions: Firebase initialization checks in debug mode
+- Dependency updates: All packages upgraded to latest compatible versions
 
 ## Development Workflows
 
@@ -533,14 +552,40 @@ List<String?> get squadSpots {
 - **Haptic feedback**: Use `HapticFeedback.lightImpact()` for user interactions
 - **SnackBar messaging**: Use `ScaffoldMessenger.of(context).showSnackBar()` for user notifications
 - **StreamBuilder patterns**: Extensive use for real-time Firebase data updates
+- **Null safety helpers**: `safeString()`, `safeList()`, `safeDisplayName()` functions prevent null errors
+- **TextEditingController listeners**: Used for reactive UI updates (e.g., onboarding button activation)
+- **Riverpod optimization**: `.select()` for granular widget rebuilds, code generation for type safety
 
-## Key Files to Reference
-- `lib/main.dart`: App initialization with Firebase and deep linking
-- `lib/squad_state.dart`: Core state management coordinator (uses manager classes)
-- `lib/managers/`: Focused manager classes for specific functionality
-- `lib/chat/chat_screen.dart`: Main chat UI with complex StreamBuilder logic
-- `lib/chat/chat_service.dart`: Hybrid Firestore/SQLite message handling
-- `backend/server.js`: Express routes for media URLs and data sync
-- `functions/index.js`: Firebase Cloud Functions for server-side timers
-- `pubspec.yaml`: Extensive asset declarations and dependencies
-- `test/chat_service_test.dart`: Basic test suite (expand for better coverage)
+## Key Files & What They Do
+### Core App Files
+- lib/main.dart → App initialization with Firebase init, deep linking, auth state management, and navigation routing
+- lib/app_theme.dart → Material Design 3 theme with professional blue seed colors, Google Fonts Roboto, dark/light variants
+- lib/squad_state.dart → Legacy state coordinator (deprecated - being phased out)
+- lib/squad_state_notifier.dart → New Riverpod StateNotifier for centralized state management (replaces squad_state.dart)
+- lib/providers/squad_providers.dart → Riverpod SquadStateNotifier with delegated state logic and ref.mounted checks
+- lib/providers.dart → Riverpod providers, theme management, and user properties streams
+- lib/app_widgets.dart → Main app widgets with Riverpod integration and auth wrapper
+- lib/utils.dart → Utility functions with null safety helpers (safeString, safeList, safeDisplayName), timer formatting, snackbars, badge building, and rating calculations
+- lib/firebase_options.dart → Firebase configuration and project settings
+- lib/firebase_storage_test.dart → Test utilities for Firebase Storage operations
+- lib/setup_screen.dart → Authentication screen (email/password, Apple Sign-In)
+- lib/join_squad_screen.dart → Squad joining via invite codes
+- lib/main_navigation_screen.dart → Navigation wrapper and routing logic
+- lib/notification_service.dart → Local notifications and scheduling system
+- lib/profile_tab.dart → User profile management, friends, and settings
+- lib/settings_tab.dart → App settings and preferences management
+- lib/performance_hub_tab.dart → Performance tracking and analytics display
+- lib/rating_dialog.dart → User rating system for squad members
+- lib/providers.dart → Riverpod providers and theme management
+- lib/app_widgets.dart → Main app widgets with Riverpod integration
+
+## Quick Reference
+- **Version**: 1.0.11+11
+- **Flutter SDK**: 3.35.7
+- **Dart SDK**: 3.9.2
+- **State Management**: Riverpod StateNotifier (22 managers, 16 services)
+- **Database**: Firebase Firestore + SQLite hybrid
+- **Voice**: Agora RTC integration
+- **AI**: Grok API for chat assistance and discovery
+- **Null Safety**: Complete with safe helpers and debug assertions
+- **Testing**: Widget tests with null safety coverage

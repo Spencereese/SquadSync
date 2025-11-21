@@ -69,10 +69,16 @@ class MockSquadState extends Mock implements SquadState {
   List<Map<String, dynamic>?> get spotTimers => [null, null, null, null];
 
   @override
-  List<String?> get squadSpots => [null, null, null, null];
+  List<String?> get squadSpots => ['player1', 'nullUid', null, null];
 
   @override
   int getBanCount(String player) => complaints[player] ?? 0;
+
+  @override
+  String getDisplayNameForUid(String uid) {
+    if (uid == 'nullUid') return 'Unknown'; // Simulate null display name
+    return 'Player$uid';
+  }
 }
 
 class MockEmptySquadState extends Mock implements SquadState {

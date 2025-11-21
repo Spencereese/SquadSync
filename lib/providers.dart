@@ -8,6 +8,7 @@ import 'managers/availability_manager.dart';
 import 'managers/squad_manager.dart';
 import 'managers/timer_state.dart';
 import 'managers/squad_data_manager.dart';
+import 'managers/achievement_manager.dart';
 import 'services/timer_service.dart';
 import 'managers/squad_ui_manager.dart';
 import 'managers/squad_persistence_manager.dart';

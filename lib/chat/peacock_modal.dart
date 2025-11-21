@@ -103,7 +103,7 @@ class _PeacockModalState extends State<PeacockModal> {
       squadState.persistenceManager.markFieldChanged('spotTimers');
       squadState.persistenceManager.markFieldChanged('globalStatuses');
       squadState.uiManager.setNewSquadSpot(true, gameName);
-      squadState.updateFirestoreAsync(force: true);
+      squadState.updateFirestoreAsync();
 
       // Create peacock document in Firestore for lobby visibility
       final peacockData = {

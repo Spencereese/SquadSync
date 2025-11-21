@@ -47,7 +47,7 @@ class SetupScreenState extends State<SetupScreen> {
         // Just ensure SquadState is initialized if needed
         final squadState = Provider.of<SquadState>(context, listen: false);
         if (!squadState.isInitialized) {
-          await squadState.initialize(context);
+          await squadState.initialize();
         }
       }
     } catch (e) {
@@ -145,7 +145,7 @@ class SetupScreenState extends State<SetupScreen> {
       final squadState = Provider.of<SquadState>(context, listen: false);
       // Only initialize if not already initialized
       if (!squadState.isInitialized) {
-        await squadState.initialize(context);
+        await squadState.initialize();
       }
       if (mounted) {
         _navigateToSquadQueue();
@@ -187,7 +187,7 @@ class SetupScreenState extends State<SetupScreen> {
       }, SetOptions(merge: true));
       if (mounted) {
         final squadState = Provider.of<SquadState>(context, listen: false);
-        await squadState.initialize(context);
+        await squadState.initialize();
         if (mounted) {
           Navigator.pop(context);
           _navigateToSquadQueue();

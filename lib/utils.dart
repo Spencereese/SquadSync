@@ -106,4 +106,5 @@ String safeDisplayName(String? name) => name ?? 'Unknown User';
 String safeString(String? input) => input ?? '';
 
 // Safe list helper
-List<String> safeList(List<String?>? list) => list?.where((e) => e != null).map((e) => e!).toList() ?? [];
+List<String> safeList(List<String?>? list) =>
+    list?.where((e) => e != null).map((e) => e!).toList() ?? [];

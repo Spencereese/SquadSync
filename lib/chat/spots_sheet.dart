@@ -266,8 +266,7 @@ class _SpotsSheetState extends State<SpotsSheet> {
       }
 
       // Call the spot (set calling status)
-      squadState.callSpotForGame(availableIndex, widget.gameName,
-          maxSpots: widget.maxSpots);
+      squadState.callSpotForGame(widget.gameName, availableIndex);
 
       // Send message to chat thread
       final chatService = ChatService();

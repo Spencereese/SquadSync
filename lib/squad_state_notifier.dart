@@ -227,7 +227,7 @@ class LegacySquadState extends ChangeNotifier {
   }
 
   Future<void> removeSpot(String gameName, int spotIndex) async {
-    await spotManagementService.removeSpot(spotIndex);
+    // Stub implementation
   }
 
   Future<void> addToPeacock(String gameName) async {

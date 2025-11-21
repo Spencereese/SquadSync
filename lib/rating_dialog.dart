@@ -66,48 +66,26 @@ class RatingDialog {
                                     _buildSlider(
                                         'Vibes',
                                         squadState
-                                                .dailyRatings[player]!['Vibes']!
-                                                .isNotEmpty
-                                            ? squadState
-                                                .dailyRatings[player]!['Vibes']!
-                                                .last
-                                                .toDouble()
-                                            : 1.0,
+                                            .dailyRatings[player]!['Vibes']!
+                                            .toDouble(),
                                         (value) => setDialogState(() {})),
                                     _buildSlider(
                                         'Comms',
                                         squadState
-                                                .dailyRatings[player]!['Comms']!
-                                                .isNotEmpty
-                                            ? squadState
-                                                .dailyRatings[player]!['Comms']!
-                                                .last
-                                                .toDouble()
-                                            : 1.0,
+                                            .dailyRatings[player]!['Comms']!
+                                            .toDouble(),
                                         (value) => setDialogState(() {})),
                                     _buildSlider(
                                         'Gunny',
                                         squadState
-                                                .dailyRatings[player]!['Gunny']!
-                                                .isNotEmpty
-                                            ? squadState
-                                                .dailyRatings[player]!['Gunny']!
-                                                .last
-                                                .toDouble()
-                                            : 1.0,
+                                            .dailyRatings[player]!['Gunny']!
+                                            .toDouble(),
                                         (value) => setDialogState(() {})),
                                     _buildSlider(
                                         'Wingman',
                                         squadState
-                                                .dailyRatings[player]![
-                                                    'Wingman']!
-                                                .isNotEmpty
-                                            ? squadState
-                                                .dailyRatings[player]![
-                                                    'Wingman']!
-                                                .last
-                                                .toDouble()
-                                            : 1.0,
+                                            .dailyRatings[player]!['Wingman']!
+                                            .toDouble(),
                                         (value) => setDialogState(() {})),
                                   ],
                                 ),
@@ -130,46 +108,25 @@ class RatingDialog {
                         for (var player in walkingPlayers) {
                           newRatings[player] = {
                             'Vibes': squadState
-                                    .dailyRatings[player]!['Vibes']!.isNotEmpty
-                                ? squadState
-                                    .dailyRatings[player]!['Vibes']!.last
-                                : 1,
+                                .dailyRatings[player]!['Vibes']!,
                             'Comms': squadState
-                                    .dailyRatings[player]!['Comms']!.isNotEmpty
-                                ? squadState
-                                    .dailyRatings[player]!['Comms']!.last
-                                : 1,
+                                .dailyRatings[player]!['Comms']!,
                             'Gunny': squadState
-                                    .dailyRatings[player]!['Gunny']!.isNotEmpty
-                                ? squadState
-                                    .dailyRatings[player]!['Gunny']!.last
-                                : 1,
+                                .dailyRatings[player]!['Gunny']!,
                             'Wingman': squadState
-                                    .dailyRatings[player]!['Wingman']!
-                                    .isNotEmpty
-                                ? squadState
-                                    .dailyRatings[player]!['Wingman']!.last
-                                : 1,
+                                .dailyRatings[player]!['Wingman']!,
                           };
                           // Update daily and all-time ratings
-                          squadState.dailyRatings[player]!['Vibes']!
-                              .add(newRatings[player]!['Vibes']!);
-                          squadState.dailyRatings[player]!['Comms']!
-                              .add(newRatings[player]!['Comms']!);
-                          squadState.dailyRatings[player]!['Gunny']!
-                              .add(newRatings[player]!['Gunny']!);
-                          squadState.dailyRatings[player]!['Wingman']!
-                              .add(newRatings[player]!['Wingman']!);
-                          squadState.allTimeRatings[player]!['Vibes']!
-                              .add(newRatings[player]!['Vibes']!);
-                          squadState.allTimeRatings[player]!['Comms']!
-                              .add(newRatings[player]!['Comms']!);
-                          squadState.allTimeRatings[player]!['Gunny']!
-                              .add(newRatings[player]!['Gunny']!);
-                          squadState.allTimeRatings[player]!['Wingman']!
-                              .add(newRatings[player]!['Wingman']!);
+                          squadState.dailyRatings[player]!['Vibes'] = newRatings[player]!['Vibes']!;
+                          squadState.dailyRatings[player]!['Comms'] = newRatings[player]!['Comms']!;
+                          squadState.dailyRatings[player]!['Gunny'] = newRatings[player]!['Gunny']!;
+                          squadState.dailyRatings[player]!['Wingman'] = newRatings[player]!['Wingman']!;
+                          squadState.allTimeRatings[player]!['Vibes'] = newRatings[player]!['Vibes']!;
+                          squadState.allTimeRatings[player]!['Comms'] = newRatings[player]!['Comms']!;
+                          squadState.allTimeRatings[player]!['Gunny'] = newRatings[player]!['Gunny']!;
+                          squadState.allTimeRatings[player]!['Wingman'] = newRatings[player]!['Wingman']!;
                         }
-                        squadState.updateFirestore(force: true);
+                        squadState.updateFirestore();
                         Navigator.pop(context);
                       },
                       style: ElevatedButton.styleFrom(

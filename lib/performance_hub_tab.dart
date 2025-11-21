@@ -137,7 +137,7 @@ class PersonalStatsView extends StatelessWidget {
       totalDeaths: totalDeaths,
       kdSpots: kdSpots,
       winRateSpots: winRateSpots,
-      ratings: ratings,
+      ratings: ratings.cast<String, double>(),
       complaints: complaints,
     );
   }
@@ -408,13 +408,11 @@ class LeaderboardsView extends StatelessWidget {
               game['result'] == 'Win')
           .length;
       final ratings = squadState.getMemberRatings(member);
-      final dailyRatings = squadState.getMemberRatings(member, daily: true);
       final complaints = squadState.complaints[member] ?? 0;
       return {
         'name': member,
         'wins': wins,
         'ratings': ratings,
-        'dailyRatings': dailyRatings,
         'complaints': complaints,
       };
     }).toList()

@@ -31,6 +31,7 @@ import 'chat/chat_service.dart';
 import 'services/grok_service.dart';
 import 'services/reaction_service.dart';
 import 'services/voice_service.dart';
+import 'services/agora_config.dart';
 import 'services/app_flow_manager.dart';
 import 'services/services.dart';
 import 'app_theme.dart';
@@ -293,10 +294,15 @@ final notificationManagerProvider =
     ChangeNotifierProvider<NotificationManager>((ref) => NotificationManager());
 final sqliteHelperProvider = Provider<SQLiteHelper>((ref) => SQLiteHelper());
 
+// Agora config provider
+final agoraConfigProvider = Provider((ref) => AgoraConfig());
+
 // Provider for VoiceRoom
 final voiceRoomProvider =
     StateNotifierProvider.family<VoiceRoomNotifier, VoiceRoomState, String>(
         (ref, roomId) {
+  final notificationManager = ref.watch(notificationManagerProvider);
   return VoiceRoomNotifier(
-      roomId, 'Voice Room $roomId'); // Default name, can be updated
+      roomId, 'Voice Room $roomId',
+      notificationManager: notificationManager); // Default name, can be updated
 });

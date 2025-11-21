@@ -829,7 +829,7 @@ class _SquadTabScreenContentState
 
       // Check if player is solo to determine timer duration
       final isSoloPlayer =
-          notifier.dataManager.isPlayingSolo(squadState.displayName ?? '');
+          notifier.dataManager.isPlayingSolo(squadState.displayName);
       final timerDuration = isSoloPlayer
           ? 3600
           : 300; // 60 minutes for solo, 5 minutes for groups
@@ -842,9 +842,7 @@ class _SquadTabScreenContentState
         'peacockCreated':
             true, // Flag to distinguish from regular calling spots
       };
-      notifier.dataManager
-              .globalStatuses[squadState.displayName ?? 'Unknown Player'] =
-          'Calling';
+      notifier.dataManager.globalStatuses[squadState.displayName] = 'Calling';
 
       // Mark fields as changed for persistence
       notifier.persistenceManager.markFieldChanged('squadSpots');
@@ -857,7 +855,7 @@ class _SquadTabScreenContentState
       // Create peacock document in Firestore for lobby visibility
       final peacockData = {
         'hostUid': user.uid,
-        'hostName': squadState.displayName ?? 'Unknown Player',
+        'hostName': squadState.displayName,
         'game': {'name': gameName},
         'spots': maxSpots,
         'filled': [user.uid], // Creator auto-assigned to spot 1

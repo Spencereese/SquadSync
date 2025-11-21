@@ -31,7 +31,7 @@ typedef SquadState = LegacySquadState;
 /// Legacy SquadState class for backward compatibility
 class LegacySquadState extends ChangeNotifier {
   // Basic properties for compatibility
-  String? displayName;
+  String displayName = 'Unknown User';
   String? selectedSquadId;
   Map<String, List<String?>> gameSquadSpots = {};
   Map<String, String> statuses = {};
@@ -74,7 +74,8 @@ class LegacySquadState extends ChangeNotifier {
   dynamic recordLoss;
 
   // State data
-  SquadStateData get squadStateData => const SquadStateData(displayName: 'Unknown User');
+  SquadStateData get squadStateData =>
+      const SquadStateData(displayName: 'Unknown User');
 
   // Methods for compatibility
   Stream<List<Map<String, dynamic>>> getActivePeacockAlerts(String gameName) {
@@ -85,8 +86,8 @@ class LegacySquadState extends ChangeNotifier {
     return false;
   }
 
-  String? getDisplayNameForUid(String uid) {
-    return null;
+  String getDisplayNameForUid(String uid) {
+    return 'Unknown User';
   }
 
   int getBanCount(String userName) {
@@ -695,10 +696,7 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     currentSpots[spot] = FirebaseAuth.instance.currentUser!.uid;
     state = state.copyWith(
       gameSquadSpots: {...state.gameSquadSpots, gameName: currentSpots},
-      globalStatuses: {
-        ...state.globalStatuses,
-        state.displayName: 'Ready'
-      },
+      globalStatuses: {...state.globalStatuses, state.displayName: 'Ready'},
     );
   }
 

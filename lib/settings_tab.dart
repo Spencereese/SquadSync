@@ -288,7 +288,7 @@ class _SettingsTabState extends State<SettingsTab>
     });
     _saveSettings('preferredMode', mode, squadState);
     _saveSettings('preferGameMode', true, squadState);
-    squadState.updatePreferredMode(squadState.displayName ?? 'User', mode);
+    squadState.updatePreferredMode(squadState.displayName, mode);
     Navigator.pop(context);
   }
 
@@ -452,10 +452,10 @@ class _SettingsTabState extends State<SettingsTab>
             ListTile(
               leading: const Icon(Icons.person, color: Colors.cyan),
               title: const Text('Display Name'),
-              subtitle: Text(squadState.displayName ?? 'User'),
+              subtitle: Text(squadState.displayName),
               trailing: const Icon(Icons.edit),
               onTap: () {
-                _nameController.text = squadState.displayName ?? '';
+                _nameController.text = squadState.displayName;
                 showDialog(
                   context: context,
                   builder: (context) => AlertDialog(
@@ -564,8 +564,7 @@ class _SettingsTabState extends State<SettingsTab>
                   _showPreferredModeDialog();
                 } else {
                   _saveSettings('preferredMode', null, squadState);
-                  squadState.updatePreferredMode(
-                      squadState.displayName ?? 'User', null);
+                  squadState.updatePreferredMode(squadState.displayName, null);
                 }
               },
               secondary: const Icon(Icons.group),

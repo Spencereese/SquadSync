@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../chat_screen.dart';
 import '../../services/ai_service.dart';
+import '../../utils.dart';
 
 class DirectMessagesTab extends StatelessWidget {
   const DirectMessagesTab({super.key});
@@ -145,7 +146,7 @@ class DirectMessagesTab extends StatelessWidget {
                           itemBuilder: (context, index) {
                             final user = searchResults[index];
                             final displayName =
-                                user['displayName'] ?? 'Unknown';
+                                safeDisplayName(user['displayName']);
 
                             return ListTile(
                               leading: const CircleAvatar(
@@ -320,7 +321,7 @@ class DirectMessagesTab extends StatelessWidget {
                 builder: (context, userSnapshot) {
                   final userData = userSnapshot.data;
                   final displayName =
-                      userData?['displayName'] ?? 'Unknown User';
+                      safeDisplayName(userData?['displayName']);
                   final profileImage = userData?['profileImage'];
 
                   return ListTile(

@@ -100,7 +100,7 @@ class PersonalStatsView extends StatelessWidget {
 
   GameStats _calculateStats() {
     final gameHistory = squadState.gameHistory;
-    final displayName = squadState.displayName ?? 'Unknown';
+    final displayName = squadState.displayName;
     final totalGames = gameHistory.length;
     final wins = gameHistory.where((game) => game['result'] == 'Win').length;
     final winRate = totalGames > 0 ? wins / totalGames : 0.0;

@@ -340,11 +340,11 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               leading: const Icon(Icons.person, color: Colors.cyan),
               title: const Text('Display Name',
                   style: TextStyle(color: Colors.white)),
-              subtitle: Text(squadState.displayName ?? 'User',
+              subtitle: Text(squadState.displayName,
                   style: TextStyle(color: Colors.grey)),
               trailing: const Icon(Icons.edit, color: Colors.cyan),
               onTap: () {
-                _nameController.text = squadState.displayName ?? '';
+                _nameController.text = squadState.displayName;
                 showDialog(
                   context: context,
                   builder: (context) => AlertDialog(

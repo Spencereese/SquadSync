@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../link_preview.dart';
 import '../widgets/video_message.dart';
 import '../widgets/audio_message.dart';
@@ -12,7 +11,6 @@ import '../models/message_data.dart';
 import '../../services/ai_service.dart';
 import '../chat_service.dart';
 import '../message_bubble.dart';
-import '../../services/reaction_service.dart' as reaction_service;
 
 /// Message content renderer - handles text, media, and special formatting
 class MessageContent extends StatelessWidget {

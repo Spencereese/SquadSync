@@ -660,8 +660,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               label: 'Ban',
               onTap: () {
                 Navigator.pop(context);
-                squadState.addBan(
-                    userName, squadState.displayName ?? 'Unknown');
+                squadState.addBan(userName, squadState.displayName);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('$userName has been voted for ban')),
                 );

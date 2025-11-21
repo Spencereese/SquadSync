@@ -43,11 +43,10 @@ class RiverpodMigrationExample extends ConsumerWidget {
           ),
 
           // Display name
-          if (displayName != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Welcome, $displayName!'),
-            ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Welcome, $displayName!'),
+          ),
 
           // Squad spots (computed property)
           Expanded(

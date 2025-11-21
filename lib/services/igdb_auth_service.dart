@@ -161,7 +161,8 @@ class IgdbAuthService {
           };
         }).toList();
       } else {
-        throw Exception('IGDB search failed: ${response.statusCode} - ${response.body}');
+        throw Exception(
+            'IGDB search failed: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       throw Exception('Error searching IGDB: $e');

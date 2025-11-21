@@ -1,15 +1,80 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
+import 'package:retry/retry.dart';
+import 'package:riverpod/riverpod.dart';
 import '../services/interfaces.dart';
+import '../services/cache_service.dart';
+
+/// Provider for CacheService
+final cacheServiceProvider = Provider<CacheService>((ref) => CacheService());
+
+/// Custom exception for IGDB API errors
+class IgdbException implements Exception {
+  final String message;
+  final int? statusCode;
+
+  IgdbException(this.message, {this.statusCode});
+
+  @override
+  String toString() => 'IgdbException: $message${statusCode != null ? ' (Status: $statusCode)' : ''}';
+}
+
+/// State for game management
+class GameState {
+  final bool isLoading;
+  final List<Map<String, dynamic>> games;
+  final String? error;
+
+  const GameState({
+    this.isLoading = false,
+    this.games = const [],
+    this.error,
+  });
+
+  GameState copyWith({
+    bool? isLoading,
+    List<Map<String, dynamic>>? games,
+    String? error,
+  }) {
+    return GameState(
+      isLoading: isLoading ?? this.isLoading,
+      games: games ?? this.games,
+      error: error ?? this.error,
+    );
+  }
+}
 
 /// Manages game selection, lobbies, and game data
-class GameManager with ChangeNotifier implements IGameManager {
+class GameManager extends AsyncNotifier<GameState> {
   static const String _backendUrl =
       'https://squadsync-backend-756172684661.us-central1.run.app'; // Replace with your deployed backend URL
-  final FirebaseFirestore _firestore;
-  final http.Client _httpClient;
+
+  @override
+  FutureOr<GameState> build() {
+    // Watch cache service
+    ref.watch(cacheServiceProvider);
+    // Initialize with empty state
+    return const GameState();
+  }
+
+  IgdbAuthService get _igdbAuth => IgdbAuthService();
+
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  http.Client get _httpClient => http.Client();
+
+  /// Refresh IGDB token if needed
+  Future<void> refreshTokenIfNeeded() async {
+    try {
+      await _igdbAuth.getAccessToken();
+    } catch (e) {
+      print(kDebugMode ? 'Failed to refresh IGDB token: $e' : '');
+      throw IgdbException('Failed to refresh IGDB token: $e');
+    }
+  }
   Map<String, dynamic>? _currentGame;
   List<Map<String, dynamic>> _availableGames = [
     {
@@ -108,78 +173,41 @@ class GameManager with ChangeNotifier implements IGameManager {
   Set<String> _mutedGames = {};
   Set<String> _hiddenGames = {};
 
-  GameManager(
-      {FirebaseFirestore? firestore,
-      http.Client? httpClient,
-      bool skipInitialization = false})
-      : _firestore = firestore ?? FirebaseFirestore.instance,
-        _httpClient = httpClient ?? http.Client() {
-    // Try to fetch games from API in the background
-    if (!skipInitialization) {
-      _initializeGames();
-    }
-  }
 
-  Future<void> _initializeGames() async {
-    try {
-      await fetchGames(pageSize: 50); // Fetch some games to populate Firestore
-    } catch (e) {
-      // Ignore errors during initialization - fallback games are already available
-    }
-  }
 
-  @override
   List<Map<String, dynamic>> get availableGames => _availableGames;
-  @override
   Map<String, List<Map<String, dynamic>>> get gameLobbies => _gameLobbies;
-  @override
   Set<String> get preferredPeacockGames => _preferredPeacockGames;
-  @override
   Set<String> get mutedGames => _mutedGames;
-  @override
   Set<String> get hiddenGames => _hiddenGames;
 
-  @override
   set availableGames(List<Map<String, dynamic>> value) {
     _availableGames = value;
-    notifyListeners();
   }
 
-  @override
   set gameLobbies(Map<String, List<Map<String, dynamic>>> value) {
     _gameLobbies = value;
-    notifyListeners();
   }
 
-  @override
   set preferredPeacockGames(Set<String> value) {
     _preferredPeacockGames = value;
-    notifyListeners();
   }
 
-  @override
   set mutedGames(Set<String> value) {
     _mutedGames = value;
-    notifyListeners();
   }
 
-  @override
   set hiddenGames(Set<String> value) {
     _hiddenGames = value;
-    notifyListeners();
   }
 
-  @override
   Map<String, dynamic>? get currentGame => _currentGame;
-  @override
   set currentGame(Map<String, dynamic>? value) {
     _currentGame = value;
-    notifyListeners();
   }
 
   void selectGame(Map<String, dynamic> game) {
     _currentGame = game;
-    notifyListeners();
   }
 
   void joinLobby(String lobbyId, String playerName) {
@@ -188,80 +216,66 @@ class GameManager with ChangeNotifier implements IGameManager {
 
   void addGame(Map<String, dynamic> game) {
     _availableGames.add(game);
-    notifyListeners();
   }
 
   void editGame(int index, Map<String, dynamic> updatedGame) {
     if (index >= 0 && index < _availableGames.length) {
       _availableGames[index] = updatedGame;
-      notifyListeners();
     }
   }
 
   void deleteGame(int index) {
     if (index >= 0 && index < _availableGames.length) {
       _availableGames.removeAt(index);
-      notifyListeners();
     }
   }
 
   void addPreferredPeacockGame(String gameName) {
     _preferredPeacockGames.add(gameName);
-    notifyListeners();
   }
 
   void removePreferredPeacockGame(String gameName) {
     _preferredPeacockGames.remove(gameName);
-    notifyListeners();
   }
 
   void muteGame(String gameName) {
     _mutedGames.add(gameName);
-    notifyListeners();
   }
 
   void unmuteGame(String gameName) {
     _mutedGames.remove(gameName);
-    notifyListeners();
   }
 
   void hideGame(String gameName) {
     _hiddenGames.add(gameName);
     muteGame(gameName); // Hidden games are automatically muted
-    notifyListeners();
   }
 
   void unhideGame(String gameName) {
     _hiddenGames.remove(gameName);
     unmuteGame(gameName); // Unhide also unmutes
-    notifyListeners();
   }
 
   bool isGameHidden(String gameName) {
     return _hiddenGames.contains(gameName);
   }
 
-  @override
   void togglePreferredPeacockGame(String gameName) {
     if (_preferredPeacockGames.contains(gameName)) {
       _preferredPeacockGames.remove(gameName);
     } else {
       _preferredPeacockGames.add(gameName);
     }
-    notifyListeners();
   }
 
-  @override
   void toggleMutedGame(String gameName) {
     if (_mutedGames.contains(gameName)) {
       _mutedGames.remove(gameName);
     } else {
       _mutedGames.add(gameName);
     }
-    notifyListeners();
   }
 
-  @override
   void toggleHiddenGame(String gameName) {
     if (_hiddenGames.contains(gameName)) {
       _hiddenGames.remove(gameName);
@@ -270,72 +284,66 @@ class GameManager with ChangeNotifier implements IGameManager {
       _hiddenGames.add(gameName);
       muteGame(gameName); // Hidden games are automatically muted
     }
-    notifyListeners();
   }
 
-  Future<List<Map<String, dynamic>>> searchGames(String query) async {
-    if (query.isEmpty) return [];
-
-    print('GameManager: Searching for games with query: "$query"');
-
+  Future<List<Map<String, dynamic>>> fetchGamesFromIGDB(String query) async {
+    state = const AsyncValue.loading();
     try {
-      // Call backend IGDB search
-      print('GameManager: Attempting backend IGDB search...');
-      final response = await _httpClient.get(
-        Uri.parse(
-            '$_backendUrl/igdb/search?q=${Uri.encodeComponent(query)}&limit=10'),
+      await refreshTokenIfNeeded();
+      final token = await _igdbAuth.getAccessToken();
+      final clientId = _igdbAuth.getClientId();
+      if (clientId == null) throw IgdbException('IGDB client ID not found.');
+
+      final result = await retry(
+        () async {
+          final response = await http.post(
+            Uri.parse('https://api.igdb.com/v4/games'),
+            headers: {
+              'Client-ID': clientId,
+              'Authorization': 'Bearer $token',
+            },
+            body: 'fields *; search "$query"; limit 50;',
+          );
+          if (response.statusCode != 200) {
+            throw Exception('IGDB API error: ${response.statusCode} - ${response.body}');
+          }
+          return response;
+        },
+        maxAttempts: 3,
+        delayFactor: const Duration(seconds: 1),
       );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final igdbResults =
-            List<Map<String, dynamic>>.from(data['games'] ?? []);
-        print(
-            'GameManager: Backend IGDB search returned ${igdbResults.length} results');
-        if (igdbResults.isNotEmpty) {
-          // Cache results in Firestore for future offline access
-          final batch = _firestore.batch();
-          for (final game in igdbResults) {
-            final gameData = Map<String, dynamic>.from(game);
-            gameData['name_lowercase'] = game['name']?.toString().toLowerCase();
-            final docRef = _firestore.collection('games').doc(game['slug']);
-            batch.set(docRef, gameData, SetOptions(merge: true));
-          }
-          await batch.commit();
-          return igdbResults;
-        }
-      } else {
-        print(
-            'Backend IGDB search failed: ${response.statusCode} - ${response.body}');
-      }
+      final data = json.decode(result.body) as List<dynamic>;
+      final games = data.map((game) => game as Map<String, dynamic>).toList();
+      state = AsyncValue.data(GameState(games: games));
+      return games;
     } catch (e) {
-      print('Backend IGDB search failed: $e');
+      print(kDebugMode ? 'IGDB fetch failed: $e' : '');
+      // Fallback to cached games
+      try {
+        final cachedGames = await getCachedGames(query);
+        state = AsyncValue.data(GameState(games: cachedGames));
+        return cachedGames;
+      } catch (cacheError) {
+        state = AsyncValue.error(IgdbException('Failed to fetch games: $e'), StackTrace.current);
+        throw IgdbException('Failed to fetch games: $e');
+      }
     }
+  }
 
-    // Fallback to Firestore search
+  Future<List<Map<String, dynamic>>> getCachedGames(String query) async {
     try {
       final snapshot = await _firestore
           .collection('games')
-          .where('name', isGreaterThanOrEqualTo: query)
-          .where('name', isLessThanOrEqualTo: '$query\uf8ff')
+          .where('name_lowercase', isGreaterThanOrEqualTo: query.toLowerCase())
+          .where('name_lowercase', isLessThanOrEqualTo: '${query.toLowerCase()}\uf8ff')
           .limit(10)
           .get();
-
-      final firestoreResults = snapshot.docs.map((doc) => doc.data()).toList();
-
-      if (firestoreResults.isNotEmpty) {
-        return firestoreResults;
-      }
+      return snapshot.docs.map((doc) => doc.data()).toList();
     } catch (e) {
-      print('Firestore search failed: $e');
+      print(kDebugMode ? 'Cache fetch failed: $e' : '');
+      throw IgdbException('Failed to fetch cached games: $e');
     }
-
-    // Final fallback to local search
-    print('No games found in IGDB or Firestore, using local fallback');
-    return _availableGames
-        .where((game) =>
-            game['name']?.toLowerCase().contains(query.toLowerCase()) ?? false)
-        .toList();
   }
 
   Future<void> fetchGames({int page = 1, int pageSize = 20}) async {
@@ -469,3 +477,6 @@ class GameManager with ChangeNotifier implements IGameManager {
     return enrichedGames;
   }
 }
+
+/// Provider for GameManager
+final gameManagerProvider = AsyncNotifierProvider<GameManager, GameState>(() => GameManager());

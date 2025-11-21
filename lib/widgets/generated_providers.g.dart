@@ -716,6 +716,14 @@ String _$counterHash() => r'4243b34530f53accfd9014a9f0e316fe304ada3e';
 
 /// Example of Riverpod code generation for better performance
 /// This file demonstrates how to use @riverpod annotations for automatic code generation
+///
+/// TREE-SHAKING BENEFITS:
+/// - Generated providers use .select() internally for optimal rebuilds
+/// - Only rebuilds when specific state slices change, not entire state objects
+/// - Reduces bundle size by eliminating unused provider code at compile-time
+/// - Compile-time safety prevents runtime provider resolution errors
+/// - Better IDE support with autocomplete and error detection
+/// - Improved performance through static provider resolution
 /// Generated provider - more efficient with code generation
 ///
 /// Copied from [Counter].

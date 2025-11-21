@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'managers/game_manager.dart';
@@ -25,6 +24,241 @@ import 'managers/squad_membership_service.dart';
 import 'managers/spot_management_service.dart';
 import 'chat/chat_service.dart';
 import 'services/services.dart';
+
+/// Typedef for backward compatibility during Riverpod migration
+typedef SquadState = LegacySquadState;
+
+/// Legacy SquadState class for backward compatibility
+class LegacySquadState extends ChangeNotifier {
+  // Basic properties for compatibility
+  String? displayName;
+  String? selectedSquadId;
+  Map<String, List<String?>> gameSquadSpots = {};
+  Map<String, String> statuses = {};
+  List<Map<String, dynamic>> scheduledTimes = [];
+  List<Map<String, dynamic>> availableGames = [];
+
+  // Managers for compatibility
+  dynamic dataManager;
+  dynamic persistenceManager;
+  dynamic uiManager;
+  dynamic persistenceService;
+  Map<String, dynamic>? currentGame;
+  String? profileImage;
+  List<String> squadMembers = [];
+  Map<String, String?> memberProfileImages = {};
+  List<String> userSquadIds = [];
+
+  List<String> get getFilteredMembers => [];
+
+  Map<String, Map<String, dynamic>> userSquads = {};
+  List<Map<String, dynamic>> gameHistory = [];
+  Map<String, int> complaints = {};
+  Map<String, Map<String, bool>> userBlocks = {};
+  Map<String, Map<String, int>> dailyRatings = {};
+
+  Map<String, Map<String, int>> allTimeRatings = {};
+  dynamic userManager;
+  List<String> get getBlockedUsers => [];
+  bool isInitialized = false;
+  List<String?> get squadSpots => [];
+
+  Map<String, int> currentStreaks = {};
+  Map<String, Map<String, dynamic>?> peacockTimers = {};
+  List<String> peacockQueue = [];
+  Set<String> preferredPeacockGames = {};
+  List<Map<String, dynamic>?> spotTimers = [];
+  dynamic context;
+  dynamic recordWin;
+  Map<String, dynamic>? currentSquad;
+  dynamic recordLoss;
+
+  // State data
+  SquadStateData get squadStateData => const SquadStateData();
+
+  // Methods for compatibility
+  Stream<List<Map<String, dynamic>>> getActivePeacockAlerts(String gameName) {
+    return Stream.value([]);
+  }
+
+  bool isBanned(String userName) {
+    return false;
+  }
+
+  String? getDisplayNameForUid(String uid) {
+    return null;
+  }
+
+  int getBanCount(String userName) {
+    return 0;
+  }
+
+  Future<void> addBan(String userName, String reason) async {
+    // Stub implementation
+  }
+
+  Future<void> blockUser(String userName) async {
+    // Stub implementation
+  }
+
+  Future<void> leaveChatGroup(String groupId) async {
+    // Stub implementation
+  }
+
+  Future<void> joinChatGroup(String groupId) async {
+    // Stub implementation
+  }
+
+  Future<void> joinSquad(String squadId) async {
+    // Stub implementation
+  }
+
+  bool isPlayingSolo(String gameName) {
+    return false;
+  }
+
+  Future<void> updateFirestoreAsync() async {
+    // Stub implementation
+  }
+
+  Future<void> callSpotForGame(String gameName, int spotIndex) async {
+    // Stub implementation
+  }
+
+  Future<void> lockCalledSpot(String gameName, int spotIndex) async {
+    // Stub implementation
+  }
+
+  String? getPlayerGame(String uid) {
+    return null;
+  }
+
+  Map<String, dynamic> getMemberRatings(String uid) {
+    return {};
+  }
+
+  Future<void> unblockUser(String userName) async {
+    // Stub implementation
+  }
+
+  Future<void> updateFirestore() async {
+    // Stub implementation
+  }
+
+  Future<void> updateTypingStatus(String chatGroupId, bool isTyping) async {
+    // Stub implementation
+  }
+
+  Future<void> updateTiltEnabled(bool enabled) async {
+    // Stub implementation
+  }
+
+  Future<void> updateProfileImage(String imageUrl) async {
+    // Stub implementation
+  }
+
+  Future<void> updateDisplayName(String name) async {
+    // Stub implementation
+  }
+
+  Future<void> updatePreferredMode(String gameName, String mode) async {
+    // Stub implementation
+  }
+
+  Future<void> initialize() async {
+    // Stub implementation
+  }
+
+  Future<void> addGame(String gameName) async {
+    // Stub implementation
+  }
+
+  Future<void> submitComplaint(String userName, String reason) async {
+    // Stub implementation
+  }
+
+  Future<void> deleteGame(String gameName) async {
+    // Stub implementation
+  }
+
+  Future<void> editGame(String oldGameName, String newGameName) async {
+    // Stub implementation
+  }
+
+  List<Map<String, dynamic>> getVisibleLobbies() {
+    return [];
+  }
+
+  Future<void> joinLobby(String lobbyId) async {
+    // Stub implementation
+  }
+
+  bool canRateMember(String uid) {
+    return false;
+  }
+
+  Future<void> submitRatings(String uid, Map<String, int> ratings) async {
+    // Stub implementation
+  }
+
+  Future<void> clearAllSpots(String gameName) async {
+    // Stub implementation
+  }
+
+  Future<void> resetTimers(String gameName) async {
+    // Stub implementation
+  }
+
+  Future<void> assignSpot(String gameName, int spotIndex, String uid) async {
+    // Stub implementation
+  }
+
+  String getSpotTimerDisplay(String gameName, int spotIndex) {
+    return '';
+  }
+
+  Future<void> stopSoloGame(String gameName) async {
+    // Stub implementation
+  }
+
+  String? getUidForDisplayName(String displayName) {
+    return null;
+  }
+
+  Future<void> removeSpot(String gameName, int spotIndex) async {
+    // Stub implementation
+  }
+
+  Future<void> addToPeacock(String gameName) async {
+    // Stub implementation
+  }
+
+  String? getPlayerPreferredGame(String uid) {
+    return null;
+  }
+
+  Future<void> addPreferredPeacockGame(String gameName) async {
+    // Stub implementation
+  }
+
+  Future<void> removePreferredPeacockGame(String gameName) async {
+    // Stub implementation
+  }
+
+  Future<void> claimSpot(String gameName, int spotIndex) async {
+    // Stub implementation
+  }
+
+  Future<void> lockSpot(String gameName, int spotIndex) async {
+    // Stub implementation
+  }
+
+  Future<void> removeFromPeacock(String gameName) async {
+    // Stub implementation
+  }
+
+  // This provides minimal backward compatibility
+}
 
 /// State class for SquadStateNotifier
 class SquadStateData {

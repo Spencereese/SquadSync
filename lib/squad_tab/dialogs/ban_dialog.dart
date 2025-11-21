@@ -32,8 +32,8 @@ class BanDialog {
               child: const Text('Cancel')),
           TextButton(
             onPressed: () {
-              if (selectedPlayer != null && squadState.displayName != null) {
-                squadState.addBan(selectedPlayer!, squadState.displayName!);
+              if (selectedPlayer != null) {
+                squadState.addBan(selectedPlayer!, squadState.displayName);
                 Navigator.pop(context);
               }
             },

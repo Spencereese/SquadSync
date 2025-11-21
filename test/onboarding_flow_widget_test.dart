@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/foundation.dart';
 import 'package:squad_sync/screens/onboarding/onboarding_flow.dart';
 import 'package:squad_sync/join_squad_screen.dart';
 import 'package:squad_sync/screens/squad_tab_screen.dart';

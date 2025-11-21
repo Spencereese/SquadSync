@@ -10,7 +10,7 @@ class ChatMessageProcessor {
 
   // Cache for processed messages to avoid expensive operations in build
   List<dynamic> _processedMessages = [];
-  Map<String, List<String>> _lastReadByCache = {};
+  final Map<String, List<String>> _lastReadByCache = {};
   bool _needsMessageProcessing = true;
 
   // Getters for external access

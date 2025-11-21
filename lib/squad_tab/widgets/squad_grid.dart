@@ -110,7 +110,7 @@ class SpotCard extends ConsumerWidget {
               backgroundColor:
                   hasOccupant ? Colors.cyanAccent : Colors.grey[600],
               child: Text(
-                hasOccupant ? spotName![0].toUpperCase() : '${index + 1}',
+                hasOccupant ? spotName[0].toUpperCase() : '${index + 1}',
                 style: TextStyle(
                     color: hasOccupant ? Colors.black : Colors.white,
                     fontWeight: FontWeight.bold),
@@ -121,17 +121,22 @@ class SpotCard extends ConsumerWidget {
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.bold),
             ),
-            subtitle: _buildSpotSubtitle(context, index, spotName, spotTimers, globalStatuses),
-            trailing:
-                _buildSpotActions(context, index, hasOccupant, spotName, displayName, spotTimers, globalStatuses, ref, gameName),
+            subtitle: _buildSpotSubtitle(
+                context, index, spotName, spotTimers, globalStatuses),
+            trailing: _buildSpotActions(context, index, hasOccupant, spotName,
+                displayName, spotTimers, globalStatuses, ref, gameName),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSpotSubtitle(BuildContext context, int index, String? spotName,
-      List<Map<String, dynamic>?> spotTimers, Map<String, String> globalStatuses) {
+  Widget _buildSpotSubtitle(
+      BuildContext context,
+      int index,
+      String? spotName,
+      List<Map<String, dynamic>?> spotTimers,
+      Map<String, String> globalStatuses) {
     final hasTimer = spotTimers[index] != null;
     final timerDisplay = hasTimer ? _getTimerDisplay(spotTimers[index]) : null;
     final status =
@@ -182,8 +187,16 @@ class SpotCard extends ConsumerWidget {
     return 'Timer';
   }
 
-  Widget _buildSpotActions(BuildContext context, int index, bool hasOccupant,
-      String? spotName, String displayName, List<Map<String, dynamic>?> spotTimers, Map<String, String> globalStatuses, WidgetRef ref, String gameName) {
+  Widget _buildSpotActions(
+      BuildContext context,
+      int index,
+      bool hasOccupant,
+      String? spotName,
+      String displayName,
+      List<Map<String, dynamic>?> spotTimers,
+      Map<String, String> globalStatuses,
+      WidgetRef ref,
+      String gameName) {
     final yourName = displayName;
     final hasTimer = spotTimers[index] != null;
     final isCalling = globalStatuses[spotName] == 'Calling';
@@ -210,7 +223,9 @@ class SpotCard extends ConsumerWidget {
               ],
             ),
             child: ElevatedButton.icon(
-              onPressed: () => ref.read(squadStateNotifierProvider.notifier).claimSpot(gameName, index),
+              onPressed: () => ref
+                  .read(squadStateNotifierProvider.notifier)
+                  .claimSpot(gameName, index),
               icon: const Icon(Icons.call, size: 16),
               label: const Text('Call'),
               style: ElevatedButton.styleFrom(
@@ -242,7 +257,9 @@ class SpotCard extends ConsumerWidget {
               ],
             ),
             child: ElevatedButton.icon(
-              onPressed: () => ref.read(squadStateNotifierProvider.notifier).lockSpot(gameName, index),
+              onPressed: () => ref
+                  .read(squadStateNotifierProvider.notifier)
+                  .lockSpot(gameName, index),
               icon: const Icon(Icons.lock, size: 16),
               label: const Text('Lock'),
               style: ElevatedButton.styleFrom(
@@ -274,7 +291,9 @@ class SpotCard extends ConsumerWidget {
               ],
             ),
             child: ElevatedButton.icon(
-              onPressed: () => ref.read(squadStateNotifierProvider.notifier).removeSpot(gameName, index),
+              onPressed: () => ref
+                  .read(squadStateNotifierProvider.notifier)
+                  .removeSpot(gameName, index),
               icon: const Icon(Icons.directions_walk, size: 16),
               label: const Text('Leave'),
               style: ElevatedButton.styleFrom(

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:agora_rtc_engine/agora_rtc_engine.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../services/voice_service.dart';
 import '../providers.dart';
 

@@ -546,14 +546,14 @@ final selectedSquadIdProvider = AutoDisposeProvider<String?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef SelectedSquadIdRef = AutoDisposeProviderRef<String?>;
-String _$displayNameHash() => r'19aee848d92332684bb3e51fd5b79f6a5468828f';
+String _$displayNameHash() => r'7f9e787933153b161443fb487a2e85d97cf43417';
 
 /// Provider for display name
 /// Tree-shakes: Only rebuilds when displayName changes
 ///
 /// Copied from [displayName].
 @ProviderFor(displayName)
-final displayNameProvider = AutoDisposeProvider<String?>.internal(
+final displayNameProvider = AutoDisposeProvider<String>.internal(
   displayName,
   name: r'displayNameProvider',
   debugGetCreateSourceHash:
@@ -564,7 +564,7 @@ final displayNameProvider = AutoDisposeProvider<String?>.internal(
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef DisplayNameRef = AutoDisposeProviderRef<String?>;
+typedef DisplayNameRef = AutoDisposeProviderRef<String>;
 String _$profileImageHash() => r'9b24b4776564438678a5b00b8cbb69f95bde712d';
 
 /// Provider for profile image

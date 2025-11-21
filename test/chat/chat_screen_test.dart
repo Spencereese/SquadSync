@@ -101,7 +101,7 @@ void main() {
 }
 
 class TestChatStateNotifier extends StateNotifier<ChatStateData> {
-  TestChatStateNotifier(ChatStateData initialState) : super(initialState);
+  TestChatStateNotifier(super.initialState);
 
   void testUpdateTyping(String userId, bool isTyping) {
     if (isTyping) {

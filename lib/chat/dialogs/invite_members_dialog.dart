@@ -202,7 +202,7 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 16),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceVariant,
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: Colors.cyanAccent.withValues(alpha: 0.3),
@@ -260,7 +260,7 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
                       decoration: BoxDecoration(
                         color: Theme.of(context)
                             .colorScheme
-                            .surfaceVariant
+                            .surfaceContainerHighest
                             .withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(12),
                       ),

@@ -134,7 +134,7 @@ class _PollHistoryScreenState extends State<PollHistoryScreen> {
               // Status filter
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _filterStatus,
+                  initialValue: _filterStatus,
                   decoration: const InputDecoration(
                     labelText: 'Status',
                     border: OutlineInputBorder(),
@@ -155,7 +155,7 @@ class _PollHistoryScreenState extends State<PollHistoryScreen> {
               // Sort options
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _sortBy,
+                  initialValue: _sortBy,
                   decoration: const InputDecoration(
                     labelText: 'Sort by',
                     border: OutlineInputBorder(),

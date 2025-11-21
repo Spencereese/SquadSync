@@ -3,7 +3,7 @@ import 'package:mockito/mockito.dart';
 import 'package:http/http.dart' as http;
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'dart:convert';
-import '../../lib/managers/game_manager.dart';
+import 'package:squad_sync/managers/game_manager.dart';
 import 'game_manager_test.mocks.dart';
 
 void main() {

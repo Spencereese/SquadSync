@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'models/message_data.dart';
 import '../services/ai_service.dart';
-import '../services/reaction_service.dart' as reaction_service;
 
 class MediaHistoryScreen extends ConsumerStatefulWidget {
   final String? chatGroupId;

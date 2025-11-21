@@ -24,14 +24,16 @@ class SquadDialogs {
   /// Show player rating dialog
   static void showRatingsDialog(BuildContext context,
       ScaffoldMessengerState messenger, WidgetRef ref, String player) {
-    final squadState = ref.read(squadStateNotifierProvider.notifier) as SquadState;
+    final squadState =
+        ref.read(squadStateNotifierProvider.notifier) as SquadState;
     RatingsDialog.show(context, messenger, squadState, player);
   }
 
   /// Show join lobby dialog
   static void showJoinLobbyDialog(
       BuildContext context, String player, WidgetRef ref) {
-    final squadState = ref.read(squadStateNotifierProvider.notifier) as SquadState;
+    final squadState =
+        ref.read(squadStateNotifierProvider.notifier) as SquadState;
     JoinLobbyDialog.show(context, player, squadState);
   }
 }

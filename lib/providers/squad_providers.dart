@@ -66,7 +66,7 @@ String? selectedSquadId(SelectedSquadIdRef ref) {
 /// Provider for display name
 /// Tree-shakes: Only rebuilds when displayName changes
 @riverpod
-String? displayName(DisplayNameRef ref) {
+String displayName(DisplayNameRef ref) {
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.displayName,
   ));

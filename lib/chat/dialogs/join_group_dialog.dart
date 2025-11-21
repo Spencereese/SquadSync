@@ -380,7 +380,7 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
                   color:
                       Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
               filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceVariant,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
@@ -436,7 +436,7 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color:
-                  Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                  Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(

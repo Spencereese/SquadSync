@@ -97,7 +97,8 @@ class _RatingsDialogState extends State<RatingsDialog> {
 
   void _submitRatings() async {
     try {
-      final filteredRatings = ratings.map((key, value) => MapEntry(key, value ?? 0));
+      final filteredRatings =
+          ratings.map((key, value) => MapEntry(key, value ?? 0));
       await widget.squadState.submitRatings(widget.player, filteredRatings);
       if (mounted) {
         Navigator.pop(context);

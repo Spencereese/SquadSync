@@ -756,7 +756,8 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
 
   Future<void> removeSpot(String gameName, int spotIndex) async {
     final updatedSpots = Map<String, List<String?>>.from(state.gameSquadSpots);
-    if (updatedSpots.containsKey(gameName) && spotIndex < updatedSpots[gameName]!.length) {
+    if (updatedSpots.containsKey(gameName) &&
+        spotIndex < updatedSpots[gameName]!.length) {
       updatedSpots[gameName]![spotIndex] = null;
       state = state.copyWith(gameSquadSpots: updatedSpots);
     }

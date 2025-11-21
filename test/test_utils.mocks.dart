@@ -1007,6 +1007,57 @@ class MockSquadStateNotifier extends _i1.Mock
       ) as _i29.Future<void>);
 
   @override
+  _i29.Future<void> removeSpot(
+    String? gameName,
+    int? spotIndex,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #removeSpot,
+          [
+            gameName,
+            spotIndex,
+          ],
+        ),
+        returnValue: _i29.Future<void>.value(),
+        returnValueForMissingStub: _i29.Future<void>.value(),
+      ) as _i29.Future<void>);
+
+  @override
+  _i29.Future<void> claimSpot(
+    String? gameName,
+    int? spotIndex,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #claimSpot,
+          [
+            gameName,
+            spotIndex,
+          ],
+        ),
+        returnValue: _i29.Future<void>.value(),
+        returnValueForMissingStub: _i29.Future<void>.value(),
+      ) as _i29.Future<void>);
+
+  @override
+  _i29.Future<void> lockSpot(
+    String? gameName,
+    int? spotIndex,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #lockSpot,
+          [
+            gameName,
+            spotIndex,
+          ],
+        ),
+        returnValue: _i29.Future<void>.value(),
+        returnValueForMissingStub: _i29.Future<void>.value(),
+      ) as _i29.Future<void>);
+
+  @override
   void dispose() => super.noSuchMethod(
         Invocation.method(
           #dispose,
@@ -1742,6 +1793,28 @@ class MockUserManager extends _i1.Mock implements _i5.UserManager {
         returnValue: _i29.Future<Map<String, dynamic>?>.value(),
         returnValueForMissingStub: _i29.Future<Map<String, dynamic>?>.value(),
       ) as _i29.Future<Map<String, dynamic>?>);
+
+  @override
+  String getDisplayNameForUid(String? uid) => (super.noSuchMethod(
+        Invocation.method(
+          #getDisplayNameForUid,
+          [uid],
+        ),
+        returnValue: _i30.dummyValue<String>(
+          this,
+          Invocation.method(
+            #getDisplayNameForUid,
+            [uid],
+          ),
+        ),
+        returnValueForMissingStub: _i30.dummyValue<String>(
+          this,
+          Invocation.method(
+            #getDisplayNameForUid,
+            [uid],
+          ),
+        ),
+      ) as String);
 
   @override
   _i29.Future<Map<String, dynamic>?> getCachedSenderDetails(String? senderId) =>

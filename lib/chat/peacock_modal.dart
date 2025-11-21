@@ -7,8 +7,6 @@ import '../squad_state.dart';
 import '../managers/user_manager.dart';
 import '../managers/notification_manager.dart';
 import '../managers/lobby_service.dart';
-import '../managers/squad_data_manager.dart';
-import '../managers/squad_persistence_service.dart';
 import 'widgets/peacock_modal_header.dart';
 import 'widgets/game_selection_card.dart';
 import 'widgets/group_settings_card.dart';

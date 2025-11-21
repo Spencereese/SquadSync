@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../lib/managers/user_manager.dart';
+import 'package:squad_sync/managers/user_manager.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

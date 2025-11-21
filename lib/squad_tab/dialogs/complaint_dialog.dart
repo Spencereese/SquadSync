@@ -17,8 +17,8 @@ class ComplaintDialog extends ConsumerStatefulWidget {
   ConsumerState<ComplaintDialog> createState() => _ComplaintDialogState();
 
   /// Static method to show the dialog (maintains compatibility)
-  static void show(BuildContext context, ScaffoldMessengerState messenger,
-      String player) {
+  static void show(
+      BuildContext context, ScaffoldMessengerState messenger, String player) {
     showDialog(
       context: context,
       builder: (dialogContext) => ComplaintDialog(
@@ -71,19 +71,26 @@ class _ComplaintDialogState extends ConsumerState<ComplaintDialog> {
   void _submitComplaint() async {
     if (reason != null && category != null) {
       try {
-        final currentUser = ref.read(squadStateNotifierProvider.notifier).authService.currentUser;
+        final currentUser = ref
+            .read(squadStateNotifierProvider.notifier)
+            .authService
+            .currentUser;
         if (currentUser == null) return;
-        
-        final squadMembers = ref.read(squadStateNotifierProvider).squadMemberUids;
-        
-        await ref.read(squadStateNotifierProvider.notifier).achievementManager.submitComplaint(
-          submittedBy: currentUser.uid,
-          targetMember: widget.player,
-          reason: reason!,
-          category: category!,
-          squadMembers: squadMembers,
-        );
-        
+
+        final squadMembers =
+            ref.read(squadStateNotifierProvider).squadMemberUids;
+
+        await ref
+            .read(squadStateNotifierProvider.notifier)
+            .achievementManager
+            .submitComplaint(
+              submittedBy: currentUser.uid,
+              targetMember: widget.player,
+              reason: reason!,
+              category: category!,
+              squadMembers: squadMembers,
+            );
+
         if (mounted) {
           Navigator.pop(context);
         }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'game_selector.dart';
 
@@ -113,58 +112,6 @@ class SquadHeader extends ConsumerWidget {
                     }
                   },
                 ),
-                if (selectedGame != null) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        if (selectedGame['coverUrl'] != null)
-                          Image.network(
-                            selectedGame['coverUrl'],
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.gamepad,
-                                    color: Colors.cyanAccent),
-                          )
-                        else
-                          const Icon(Icons.gamepad, color: Colors.cyanAccent),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                selectedGame['name'] ?? 'Unknown Game',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (selectedGame['summary'] != null &&
-                                  selectedGame['summary'].toString().isNotEmpty)
-                                Text(
-                                  selectedGame['summary'].toString(),
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 12,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -175,22 +122,11 @@ class SquadHeader extends ConsumerWidget {
                   const Text('Cancel', style: TextStyle(color: Colors.white)),
             ),
             TextButton(
-              onPressed: selectedGame != null
-                  ? () {
-                      // ref.read(squadStateNotifierProvider.notifier).state = ref.read(squadStateNotifierProvider).copyWith(currentGame: selectedGame); // Placeholder, need to implement
-                      Navigator.pop(context);
-                      HapticFeedback.lightImpact();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content:
-                                Text('Switched to ${selectedGame['name']}')),
-                      );
-                    }
-                  : null,
+              onPressed: null,
               child: Text(
                 'Switch',
                 style: TextStyle(
-                  color: selectedGame != null ? Colors.cyanAccent : Colors.grey,
+                  color: Colors.grey,
                 ),
               ),
             ),

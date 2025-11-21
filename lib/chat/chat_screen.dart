@@ -279,7 +279,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Check if user is banned
     final squadState = p.Provider.of<SquadState>(context, listen: false);
     final currentUserName = squadState.displayName;
-    if (currentUserName != null && squadState.isBanned(currentUserName)) {
+    if (squadState.isBanned(currentUserName)) {
       if (mounted) {
         ScaffoldMessenger.of(capturedContext).showSnackBar(
           const SnackBar(
@@ -1037,8 +1037,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                                   }, SetOptions(merge: true));
 
                                   // Update local state
-                                  if (mounted)
+                                  if (mounted) {
                                     setState(() => _chatName = newName);
+                                  }
                                   // Update UI manager
                                   _uiManager.chatName = newName;
 

@@ -9,7 +9,6 @@ import '../managers/game_manager.dart';
 import '../managers/squad_manager.dart';
 import '../managers/user_manager.dart';
 import '../managers/availability_manager.dart';
-import '../services/grok_service.dart';
 import '../providers.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
@@ -29,14 +28,14 @@ class MembersSection extends ConsumerWidget {
       showComplaintDialog;
 
   const MembersSection({
-    Key? key,
+    super.key,
     this.chatGroupId,
     required this.chatGroupMembers,
     this.circle,
     this.friends,
     required this.showBlockDialog,
     required this.showComplaintDialog,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -67,8 +66,8 @@ class MembersSection extends ConsumerWidget {
             itemCount: membersToShow.length,
             itemBuilder: (context, index) {
               final player = membersToShow[index];
-              return MemberWidgets.buildMemberCard(context, ref, player,
-                  showBlockDialog, showComplaintDialog,
+              return MemberWidgets.buildMemberCard(
+                  context, ref, player, showBlockDialog, showComplaintDialog,
                   circle: circle, friends: friends);
             },
           ),
@@ -84,11 +83,11 @@ class ClaimSpotFAB extends StatelessWidget {
   final Function(BuildContext, SquadState) lockSpot;
 
   const ClaimSpotFAB({
-    Key? key,
+    super.key,
     required this.lobbyId,
     required this.callSpot,
     required this.lockSpot,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

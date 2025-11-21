@@ -101,3 +101,9 @@ double calculateAverage(List<int> ratings) {
 
 // Safe display name helper
 String safeDisplayName(String? name) => name ?? 'Unknown User';
+
+// Safe string helper
+String safeString(String? input) => input ?? '';
+
+// Safe list helper
+List<String> safeList(List<String?>? list) => list?.where((e) => e != null).map((e) => e!).toList() ?? [];

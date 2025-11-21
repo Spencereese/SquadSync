@@ -30,7 +30,9 @@ class _SpotTimerDisplayState extends ConsumerState<SpotTimerDisplay> {
     final squadState = ref.watch(squadStateNotifierProvider);
     final gameName = squadState.currentGame?['name'] ?? '';
     final gameSpotTimers = squadState.gameSpotTimers[gameName] ?? [];
-    final timer = gameSpotTimers.length > widget.index ? gameSpotTimers[widget.index] : null;
+    final timer = gameSpotTimers.length > widget.index
+        ? gameSpotTimers[widget.index]
+        : null;
     if (timer != null) {
       _totalDuration = Duration(seconds: timer['duration'] as int? ?? 0);
     } else {

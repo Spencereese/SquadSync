@@ -61,7 +61,7 @@ class _PollBubbleContentState extends State<_PollBubbleContent>
   final _pollService = PollService();
   bool _isVoting = false;
   Timer? _countdownTimer;
-  Duration _remainingTime = Duration.zero;
+  final Duration _remainingTime = Duration.zero;
   late AnimationController _pulseController;
 
   @override

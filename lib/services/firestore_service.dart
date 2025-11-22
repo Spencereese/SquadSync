@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'interfaces.dart';
 import 'grok_service.dart';
 import '../managers/notification_manager.dart';
@@ -265,6 +266,19 @@ class FirestoreService implements IFirestoreService {
     }
   }
 
+  /// Save game search results to Firestore for cross-device sync
+  Future<void> saveGameSearch(String query, Map<String, dynamic> gameData) async {
+    try {
+      await _firestore
+          .collection('game_searches')
+          .doc(query)
+          .set(gameData, SetOptions(merge: true));
+    } catch (e) {
+      // Silently handle Firestore save failures for game searches
+      debugPrint('Failed to save game search to Firestore: $e');
+    }
+  }
+
   /// Load data from Firestore
   Future<Map<String, dynamic>> loadFirestoreData({
     required Map<String, String> displayNameCache,
@@ -329,5 +343,33 @@ class FirestoreService implements IFirestoreService {
     } catch (e) {
       return null;
     }
+  }
+
+  // Voice room methods
+  @override
+  Stream<Map<String, dynamic>?> getVoiceRoomStream(String roomId) {
+    return _firestore
+        .collection('voice_rooms')
+        .doc(roomId)
+        .snapshots()
+        .map((doc) => doc.data());
+  }
+
+  @override
+  Future<void> updateVoiceRoom(String roomId, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('voice_rooms')
+        .doc(roomId)
+        .set(data, SetOptions(merge: true));
+  }
+
+  @override
+  Future<void> updateVoiceParticipant(String roomId, String uid, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('voice_rooms')
+        .doc(roomId)
+        .collection('participants')
+        .doc(uid)
+        .set(data, SetOptions(merge: true));
   }
 }

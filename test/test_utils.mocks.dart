@@ -3,46 +3,35 @@
 // Do not manually edit this file.
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
-import 'dart:async' as _i29;
-import 'dart:io' as _i38;
-import 'dart:ui' as _i36;
+import 'dart:async' as _i6;
+import 'dart:io' as _i11;
+import 'dart:ui' as _i24;
 
-import 'package:cloud_firestore/cloud_firestore.dart' as _i37;
-import 'package:flutter/material.dart' as _i28;
-import 'package:flutter_riverpod/flutter_riverpod.dart' as _i24;
+import 'package:cloud_firestore/cloud_firestore.dart' as _i18;
+import 'package:firebase_auth/firebase_auth.dart' as _i7;
+import 'package:flutter/material.dart' as _i15;
+import 'package:flutter/services.dart' as _i28;
+import 'package:flutter_riverpod/flutter_riverpod.dart' as _i3;
 import 'package:mockito/mockito.dart' as _i1;
-import 'package:mockito/src/dummies.dart' as _i30;
-import 'package:sqflite/sqflite.dart' as _i26;
-import 'package:squad_sync/chat/chat_service.dart' as _i21;
-import 'package:squad_sync/chat/message.dart' as _i32;
-import 'package:squad_sync/chat/models/message_data.dart' as _i39;
-import 'package:squad_sync/chat/sqlite_helper.dart' as _i35;
-import 'package:squad_sync/managers/achievement_manager.dart' as _i6;
-import 'package:squad_sync/managers/achievement_service.dart' as _i18;
-import 'package:squad_sync/managers/availability_manager.dart' as _i8;
-import 'package:squad_sync/managers/game_manager.dart' as _i2;
-import 'package:squad_sync/managers/lobby_service.dart' as _i16;
-import 'package:squad_sync/managers/notification_coordinator.dart' as _i15;
-import 'package:squad_sync/managers/notification_manager.dart' as _i7;
-import 'package:squad_sync/managers/peacock_manager.dart' as _i4;
-import 'package:squad_sync/managers/peacock_service.dart' as _i17;
-import 'package:squad_sync/managers/spot_management_service.dart' as _i20;
-import 'package:squad_sync/managers/squad_data_manager.dart' as _i9;
-import 'package:squad_sync/managers/squad_manager.dart' as _i3;
-import 'package:squad_sync/managers/squad_membership_service.dart' as _i19;
-import 'package:squad_sync/managers/squad_persistence_manager.dart' as _i11;
-import 'package:squad_sync/managers/squad_persistence_service.dart' as _i14;
-import 'package:squad_sync/managers/squad_ui_manager.dart' as _i10;
-import 'package:squad_sync/managers/state_initializer.dart' as _i12;
-import 'package:squad_sync/managers/timer_state.dart' as _i13;
-import 'package:squad_sync/managers/user_manager.dart' as _i5;
-import 'package:squad_sync/providers/chat_state_notifier.dart' as _i25;
-import 'package:squad_sync/services/ai_service.dart' as _i34;
-import 'package:squad_sync/services/message_service.dart' as _i27;
-import 'package:squad_sync/services/reaction_service.dart' as _i33;
-import 'package:squad_sync/services/services.dart' as _i22;
-import 'package:squad_sync/squad_state.dart' as _i23;
-import 'package:state_notifier/state_notifier.dart' as _i31;
+import 'package:mockito/src/dummies.dart' as _i12;
+import 'package:squad_sync/chat/chat_service.dart' as _i26;
+import 'package:squad_sync/chat/models/message_data.dart' as _i27;
+import 'package:squad_sync/managers/achievement_manager.dart' as _i23;
+import 'package:squad_sync/managers/squad_data_manager.dart' as _i25;
+import 'package:squad_sync/models/poll.dart' as _i20;
+import 'package:squad_sync/services/ai_service.dart' as _i14;
+import 'package:squad_sync/services/audio_service.dart' as _i21;
+import 'package:squad_sync/services/auth_service.dart' as _i5;
+import 'package:squad_sync/services/cache_service.dart' as _i22;
+import 'package:squad_sync/services/firestore_service.dart' as _i2;
+import 'package:squad_sync/services/grok_service.dart' as _i17;
+import 'package:squad_sync/services/igdb_auth_service.dart' as _i13;
+import 'package:squad_sync/services/media_service.dart' as _i10;
+import 'package:squad_sync/services/message_service.dart' as _i4;
+import 'package:squad_sync/services/poll_service.dart' as _i19;
+import 'package:squad_sync/services/reaction_service.dart' as _i16;
+import 'package:squad_sync/services/timer_service.dart' as _i8;
+import 'package:state_notifier/state_notifier.dart' as _i9;
 
 // ignore_for_file: type=lint
 // ignore_for_file: avoid_redundant_argument_values
@@ -58,8 +47,8 @@ import 'package:state_notifier/state_notifier.dart' as _i31;
 // ignore_for_file: camel_case_types
 // ignore_for_file: subtype_of_sealed_class
 
-class _FakeGameManager_0 extends _i1.SmartFake implements _i2.GameManager {
-  _FakeGameManager_0(
+class _FakeQueryBuilder_0 extends _i1.SmartFake implements _i2.QueryBuilder {
+  _FakeQueryBuilder_0(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -68,8 +57,8 @@ class _FakeGameManager_0 extends _i1.SmartFake implements _i2.GameManager {
         );
 }
 
-class _FakeSquadManager_1 extends _i1.SmartFake implements _i3.SquadManager {
-  _FakeSquadManager_1(
+class _FakeAsyncValue_1<T> extends _i1.SmartFake implements _i3.AsyncValue<T> {
+  _FakeAsyncValue_1(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -78,9 +67,8 @@ class _FakeSquadManager_1 extends _i1.SmartFake implements _i3.SquadManager {
         );
 }
 
-class _FakePeacockManager_2 extends _i1.SmartFake
-    implements _i4.PeacockManager {
-  _FakePeacockManager_2(
+class _FakeDuration_2 extends _i1.SmartFake implements Duration {
+  _FakeDuration_2(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -89,8 +77,9 @@ class _FakePeacockManager_2 extends _i1.SmartFake
         );
 }
 
-class _FakeUserManager_3 extends _i1.SmartFake implements _i5.UserManager {
-  _FakeUserManager_3(
+class _FakeMessageSendResult_3 extends _i1.SmartFake
+    implements _i4.MessageSendResult {
+  _FakeMessageSendResult_3(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -99,9 +88,9 @@ class _FakeUserManager_3 extends _i1.SmartFake implements _i5.UserManager {
         );
 }
 
-class _FakeAchievementManager_4 extends _i1.SmartFake
-    implements _i6.AchievementManager {
-  _FakeAchievementManager_4(
+class _FakeProviderContainer_4 extends _i1.SmartFake
+    implements _i3.ProviderContainer {
+  _FakeProviderContainer_4(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -110,9 +99,8 @@ class _FakeAchievementManager_4 extends _i1.SmartFake
         );
 }
 
-class _FakeNotificationManager_5 extends _i1.SmartFake
-    implements _i7.NotificationManager {
-  _FakeNotificationManager_5(
+class _FakeKeepAliveLink_5 extends _i1.SmartFake implements _i3.KeepAliveLink {
+  _FakeKeepAliveLink_5(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -121,9 +109,9 @@ class _FakeNotificationManager_5 extends _i1.SmartFake
         );
 }
 
-class _FakeAvailabilityManager_6 extends _i1.SmartFake
-    implements _i8.AvailabilityManager {
-  _FakeAvailabilityManager_6(
+class _FakeProviderSubscription_6<State1> extends _i1.SmartFake
+    implements _i3.ProviderSubscription<State1> {
+  _FakeProviderSubscription_6(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -132,567 +120,2044 @@ class _FakeAvailabilityManager_6 extends _i1.SmartFake
         );
 }
 
-class _FakeSquadDataManager_7 extends _i1.SmartFake
-    implements _i9.SquadDataManager {
-  _FakeSquadDataManager_7(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeSquadUIManager_8 extends _i1.SmartFake
-    implements _i10.SquadUIManager {
-  _FakeSquadUIManager_8(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeSquadPersistenceManager_9 extends _i1.SmartFake
-    implements _i11.SquadPersistenceManager {
-  _FakeSquadPersistenceManager_9(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeStateInitializer_10 extends _i1.SmartFake
-    implements _i12.StateInitializer {
-  _FakeStateInitializer_10(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeTimerState_11 extends _i1.SmartFake implements _i13.TimerState {
-  _FakeTimerState_11(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeSquadPersistenceService_12 extends _i1.SmartFake
-    implements _i14.SquadPersistenceService {
-  _FakeSquadPersistenceService_12(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeNotificationCoordinator_13 extends _i1.SmartFake
-    implements _i15.NotificationCoordinator {
-  _FakeNotificationCoordinator_13(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeLobbyService_14 extends _i1.SmartFake implements _i16.LobbyService {
-  _FakeLobbyService_14(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakePeacockService_15 extends _i1.SmartFake
-    implements _i17.PeacockService {
-  _FakePeacockService_15(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeAchievementService_16 extends _i1.SmartFake
-    implements _i18.AchievementService {
-  _FakeAchievementService_16(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeSquadMembershipService_17 extends _i1.SmartFake
-    implements _i19.SquadMembershipService {
-  _FakeSquadMembershipService_17(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeSpotManagementService_18 extends _i1.SmartFake
-    implements _i20.SpotManagementService {
-  _FakeSpotManagementService_18(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeChatService_19 extends _i1.SmartFake implements _i21.ChatService {
-  _FakeChatService_19(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeAuthService_20 extends _i1.SmartFake implements _i22.AuthService {
-  _FakeAuthService_20(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeAudioService_21 extends _i1.SmartFake implements _i22.AudioService {
-  _FakeAudioService_21(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeCacheService_22 extends _i1.SmartFake implements _i22.CacheService {
-  _FakeCacheService_22(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeSquadStateData_23 extends _i1.SmartFake
-    implements _i23.SquadStateData {
-  _FakeSquadStateData_23(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeRef_24<State extends Object?> extends _i1.SmartFake
-    implements _i24.Ref<State> {
-  _FakeRef_24(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeChatStateData_25 extends _i1.SmartFake
-    implements _i25.ChatStateData {
-  _FakeChatStateData_25(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeDatabase_26 extends _i1.SmartFake implements _i26.Database {
-  _FakeDatabase_26(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeProviderContainer_27 extends _i1.SmartFake
-    implements _i24.ProviderContainer {
-  _FakeProviderContainer_27(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeKeepAliveLink_28 extends _i1.SmartFake
-    implements _i24.KeepAliveLink {
-  _FakeKeepAliveLink_28(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeProviderSubscription_29<State1> extends _i1.SmartFake
-    implements _i24.ProviderSubscription<State1> {
-  _FakeProviderSubscription_29(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-class _FakeMessageSendResult_30 extends _i1.SmartFake
-    implements _i27.MessageSendResult {
-  _FakeMessageSendResult_30(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
-}
-
-/// A class which mocks [SquadStateNotifier].
+/// A class which mocks [AuthService].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockSquadStateNotifier extends _i1.Mock
-    implements _i23.SquadStateNotifier {
+class MockAuthService extends _i1.Mock implements _i5.AuthService {
   @override
-  _i2.GameManager get gameManager => (super.noSuchMethod(
-        Invocation.getter(#gameManager),
-        returnValue: _FakeGameManager_0(
-          this,
-          Invocation.getter(#gameManager),
-        ),
-        returnValueForMissingStub: _FakeGameManager_0(
-          this,
-          Invocation.getter(#gameManager),
-        ),
-      ) as _i2.GameManager);
+  _i6.Stream<_i7.User?> get authStateChanges => (super.noSuchMethod(
+        Invocation.getter(#authStateChanges),
+        returnValue: _i6.Stream<_i7.User?>.empty(),
+        returnValueForMissingStub: _i6.Stream<_i7.User?>.empty(),
+      ) as _i6.Stream<_i7.User?>);
 
   @override
-  _i3.SquadManager get squadManager => (super.noSuchMethod(
-        Invocation.getter(#squadManager),
-        returnValue: _FakeSquadManager_1(
-          this,
-          Invocation.getter(#squadManager),
+  void initialize({required dynamic Function(_i7.User?)? onAuthStateChanged}) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #initialize,
+          [],
+          {#onAuthStateChanged: onAuthStateChanged},
         ),
-        returnValueForMissingStub: _FakeSquadManager_1(
-          this,
-          Invocation.getter(#squadManager),
-        ),
-      ) as _i3.SquadManager);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i4.PeacockManager get peacockManager => (super.noSuchMethod(
-        Invocation.getter(#peacockManager),
-        returnValue: _FakePeacockManager_2(
-          this,
-          Invocation.getter(#peacockManager),
+  _i6.Future<String?> loadDisplayName() => (super.noSuchMethod(
+        Invocation.method(
+          #loadDisplayName,
+          [],
         ),
-        returnValueForMissingStub: _FakePeacockManager_2(
-          this,
-          Invocation.getter(#peacockManager),
-        ),
-      ) as _i4.PeacockManager);
+        returnValue: _i6.Future<String?>.value(),
+        returnValueForMissingStub: _i6.Future<String?>.value(),
+      ) as _i6.Future<String?>);
 
   @override
-  _i5.UserManager get userManager => (super.noSuchMethod(
-        Invocation.getter(#userManager),
-        returnValue: _FakeUserManager_3(
-          this,
-          Invocation.getter(#userManager),
+  _i6.Future<void> saveDisplayName(String? displayName) => (super.noSuchMethod(
+        Invocation.method(
+          #saveDisplayName,
+          [displayName],
         ),
-        returnValueForMissingStub: _FakeUserManager_3(
-          this,
-          Invocation.getter(#userManager),
-        ),
-      ) as _i5.UserManager);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i6.AchievementManager get achievementManager => (super.noSuchMethod(
-        Invocation.getter(#achievementManager),
-        returnValue: _FakeAchievementManager_4(
-          this,
-          Invocation.getter(#achievementManager),
+  _i6.Future<String?> loadProfileImage() => (super.noSuchMethod(
+        Invocation.method(
+          #loadProfileImage,
+          [],
         ),
-        returnValueForMissingStub: _FakeAchievementManager_4(
-          this,
-          Invocation.getter(#achievementManager),
-        ),
-      ) as _i6.AchievementManager);
+        returnValue: _i6.Future<String?>.value(),
+        returnValueForMissingStub: _i6.Future<String?>.value(),
+      ) as _i6.Future<String?>);
 
   @override
-  _i7.NotificationManager get notificationManager => (super.noSuchMethod(
-        Invocation.getter(#notificationManager),
-        returnValue: _FakeNotificationManager_5(
-          this,
-          Invocation.getter(#notificationManager),
+  _i6.Future<void> saveProfileImage(String? imageUrl) => (super.noSuchMethod(
+        Invocation.method(
+          #saveProfileImage,
+          [imageUrl],
         ),
-        returnValueForMissingStub: _FakeNotificationManager_5(
-          this,
-          Invocation.getter(#notificationManager),
-        ),
-      ) as _i7.NotificationManager);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i8.AvailabilityManager get availabilityManager => (super.noSuchMethod(
-        Invocation.getter(#availabilityManager),
-        returnValue: _FakeAvailabilityManager_6(
-          this,
-          Invocation.getter(#availabilityManager),
+  _i6.Future<void> signOut() => (super.noSuchMethod(
+        Invocation.method(
+          #signOut,
+          [],
         ),
-        returnValueForMissingStub: _FakeAvailabilityManager_6(
-          this,
-          Invocation.getter(#availabilityManager),
-        ),
-      ) as _i8.AvailabilityManager);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i9.SquadDataManager get dataManager => (super.noSuchMethod(
-        Invocation.getter(#dataManager),
-        returnValue: _FakeSquadDataManager_7(
-          this,
-          Invocation.getter(#dataManager),
+  void dispose() => super.noSuchMethod(
+        Invocation.method(
+          #dispose,
+          [],
         ),
-        returnValueForMissingStub: _FakeSquadDataManager_7(
+        returnValueForMissingStub: null,
+      );
+}
+
+/// A class which mocks [FirestoreService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockFirestoreService extends _i1.Mock implements _i2.FirestoreService {
+  @override
+  _i2.QueryBuilder get queryBuilder => (super.noSuchMethod(
+        Invocation.getter(#queryBuilder),
+        returnValue: _FakeQueryBuilder_0(
           this,
-          Invocation.getter(#dataManager),
+          Invocation.getter(#queryBuilder),
         ),
-      ) as _i9.SquadDataManager);
+        returnValueForMissingStub: _FakeQueryBuilder_0(
+          this,
+          Invocation.getter(#queryBuilder),
+        ),
+      ) as _i2.QueryBuilder);
 
   @override
-  _i10.SquadUIManager get uiManager => (super.noSuchMethod(
-        Invocation.getter(#uiManager),
-        returnValue: _FakeSquadUIManager_8(
-          this,
-          Invocation.getter(#uiManager),
+  void registerField<T>(_i2.FirestoreFieldSerializer<T>? serializer) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #registerField,
+          [serializer],
         ),
-        returnValueForMissingStub: _FakeSquadUIManager_8(
-          this,
-          Invocation.getter(#uiManager),
-        ),
-      ) as _i10.SquadUIManager);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i11.SquadPersistenceManager get persistenceManager => (super.noSuchMethod(
-        Invocation.getter(#persistenceManager),
-        returnValue: _FakeSquadPersistenceManager_9(
-          this,
-          Invocation.getter(#persistenceManager),
+  void markFieldChanged(String? fieldName) => super.noSuchMethod(
+        Invocation.method(
+          #markFieldChanged,
+          [fieldName],
         ),
-        returnValueForMissingStub: _FakeSquadPersistenceManager_9(
-          this,
-          Invocation.getter(#persistenceManager),
-        ),
-      ) as _i11.SquadPersistenceManager);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i12.StateInitializer get stateInitializer => (super.noSuchMethod(
-        Invocation.getter(#stateInitializer),
-        returnValue: _FakeStateInitializer_10(
-          this,
-          Invocation.getter(#stateInitializer),
-        ),
-        returnValueForMissingStub: _FakeStateInitializer_10(
-          this,
-          Invocation.getter(#stateInitializer),
-        ),
-      ) as _i12.StateInitializer);
-
-  @override
-  _i13.TimerState get timerState => (super.noSuchMethod(
-        Invocation.getter(#timerState),
-        returnValue: _FakeTimerState_11(
-          this,
-          Invocation.getter(#timerState),
-        ),
-        returnValueForMissingStub: _FakeTimerState_11(
-          this,
-          Invocation.getter(#timerState),
-        ),
-      ) as _i13.TimerState);
-
-  @override
-  _i14.SquadPersistenceService get persistenceService => (super.noSuchMethod(
-        Invocation.getter(#persistenceService),
-        returnValue: _FakeSquadPersistenceService_12(
-          this,
-          Invocation.getter(#persistenceService),
-        ),
-        returnValueForMissingStub: _FakeSquadPersistenceService_12(
-          this,
-          Invocation.getter(#persistenceService),
-        ),
-      ) as _i14.SquadPersistenceService);
-
-  @override
-  _i15.NotificationCoordinator get notificationCoordinator =>
+  _i6.Future<void> updateFirestore({
+    required Map<String, String>? displayNameCache,
+    bool? force = false,
+  }) =>
       (super.noSuchMethod(
-        Invocation.getter(#notificationCoordinator),
-        returnValue: _FakeNotificationCoordinator_13(
-          this,
-          Invocation.getter(#notificationCoordinator),
+        Invocation.method(
+          #updateFirestore,
+          [],
+          {
+            #displayNameCache: displayNameCache,
+            #force: force,
+          },
         ),
-        returnValueForMissingStub: _FakeNotificationCoordinator_13(
-          this,
-          Invocation.getter(#notificationCoordinator),
-        ),
-      ) as _i15.NotificationCoordinator);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i16.LobbyService get lobbyService => (super.noSuchMethod(
-        Invocation.getter(#lobbyService),
-        returnValue: _FakeLobbyService_14(
-          this,
-          Invocation.getter(#lobbyService),
+  _i6.Future<void> saveGameSearch(
+    String? query,
+    Map<String, dynamic>? gameData,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #saveGameSearch,
+          [
+            query,
+            gameData,
+          ],
         ),
-        returnValueForMissingStub: _FakeLobbyService_14(
-          this,
-          Invocation.getter(#lobbyService),
-        ),
-      ) as _i16.LobbyService);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i17.PeacockService get peacockService => (super.noSuchMethod(
-        Invocation.getter(#peacockService),
-        returnValue: _FakePeacockService_15(
-          this,
-          Invocation.getter(#peacockService),
+  _i6.Future<Map<String, dynamic>> loadFirestoreData(
+          {required Map<String, String>? displayNameCache}) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #loadFirestoreData,
+          [],
+          {#displayNameCache: displayNameCache},
         ),
-        returnValueForMissingStub: _FakePeacockService_15(
-          this,
-          Invocation.getter(#peacockService),
-        ),
-      ) as _i17.PeacockService);
+        returnValue:
+            _i6.Future<Map<String, dynamic>>.value(<String, dynamic>{}),
+        returnValueForMissingStub:
+            _i6.Future<Map<String, dynamic>>.value(<String, dynamic>{}),
+      ) as _i6.Future<Map<String, dynamic>>);
 
   @override
-  _i18.AchievementService get achievementService => (super.noSuchMethod(
-        Invocation.getter(#achievementService),
-        returnValue: _FakeAchievementService_16(
-          this,
-          Invocation.getter(#achievementService),
+  _i6.Future<Map<String, dynamic>?> loadFirestore(
+    String? collection,
+    String? document,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #loadFirestore,
+          [
+            collection,
+            document,
+          ],
         ),
-        returnValueForMissingStub: _FakeAchievementService_16(
-          this,
-          Invocation.getter(#achievementService),
-        ),
-      ) as _i18.AchievementService);
+        returnValue: _i6.Future<Map<String, dynamic>?>.value(),
+        returnValueForMissingStub: _i6.Future<Map<String, dynamic>?>.value(),
+      ) as _i6.Future<Map<String, dynamic>?>);
 
   @override
-  _i19.SquadMembershipService get squadMembershipService => (super.noSuchMethod(
-        Invocation.getter(#squadMembershipService),
-        returnValue: _FakeSquadMembershipService_17(
-          this,
-          Invocation.getter(#squadMembershipService),
+  _i6.Stream<Map<String, dynamic>?> getVoiceRoomStream(String? roomId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getVoiceRoomStream,
+          [roomId],
         ),
-        returnValueForMissingStub: _FakeSquadMembershipService_17(
-          this,
-          Invocation.getter(#squadMembershipService),
-        ),
-      ) as _i19.SquadMembershipService);
+        returnValue: _i6.Stream<Map<String, dynamic>?>.empty(),
+        returnValueForMissingStub: _i6.Stream<Map<String, dynamic>?>.empty(),
+      ) as _i6.Stream<Map<String, dynamic>?>);
 
   @override
-  _i20.SpotManagementService get spotManagementService => (super.noSuchMethod(
-        Invocation.getter(#spotManagementService),
-        returnValue: _FakeSpotManagementService_18(
-          this,
-          Invocation.getter(#spotManagementService),
+  _i6.Future<void> updateVoiceRoom(
+    String? roomId,
+    Map<String, dynamic>? data,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateVoiceRoom,
+          [
+            roomId,
+            data,
+          ],
         ),
-        returnValueForMissingStub: _FakeSpotManagementService_18(
-          this,
-          Invocation.getter(#spotManagementService),
-        ),
-      ) as _i20.SpotManagementService);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i21.ChatService get chatService => (super.noSuchMethod(
-        Invocation.getter(#chatService),
-        returnValue: _FakeChatService_19(
-          this,
-          Invocation.getter(#chatService),
+  _i6.Future<void> updateVoiceParticipant(
+    String? roomId,
+    String? uid,
+    Map<String, dynamic>? data,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateVoiceParticipant,
+          [
+            roomId,
+            uid,
+            data,
+          ],
         ),
-        returnValueForMissingStub: _FakeChatService_19(
-          this,
-          Invocation.getter(#chatService),
-        ),
-      ) as _i21.ChatService);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+}
+
+/// A class which mocks [TimerServiceNotifier].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockTimerServiceNotifier extends _i1.Mock
+    implements _i8.TimerServiceNotifier {
+  @override
+  bool get mounted => (super.noSuchMethod(
+        Invocation.getter(#mounted),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
 
   @override
-  _i22.AuthService get authService => (super.noSuchMethod(
-        Invocation.getter(#authService),
-        returnValue: _FakeAuthService_20(
-          this,
-          Invocation.getter(#authService),
-        ),
-        returnValueForMissingStub: _FakeAuthService_20(
-          this,
-          Invocation.getter(#authService),
-        ),
-      ) as _i22.AuthService);
+  _i6.Stream<_i3.AsyncValue<void>> get stream => (super.noSuchMethod(
+        Invocation.getter(#stream),
+        returnValue: _i6.Stream<_i3.AsyncValue<void>>.empty(),
+        returnValueForMissingStub: _i6.Stream<_i3.AsyncValue<void>>.empty(),
+      ) as _i6.Stream<_i3.AsyncValue<void>>);
 
   @override
-  _i22.AudioService get audioService => (super.noSuchMethod(
-        Invocation.getter(#audioService),
-        returnValue: _FakeAudioService_21(
+  _i3.AsyncValue<void> get state => (super.noSuchMethod(
+        Invocation.getter(#state),
+        returnValue: _FakeAsyncValue_1<void>(
           this,
-          Invocation.getter(#audioService),
+          Invocation.getter(#state),
         ),
-        returnValueForMissingStub: _FakeAudioService_21(
+        returnValueForMissingStub: _FakeAsyncValue_1<void>(
           this,
-          Invocation.getter(#audioService),
+          Invocation.getter(#state),
         ),
-      ) as _i22.AudioService);
+      ) as _i3.AsyncValue<void>);
 
   @override
-  _i22.CacheService get cacheService => (super.noSuchMethod(
-        Invocation.getter(#cacheService),
-        returnValue: _FakeCacheService_22(
+  _i3.AsyncValue<void> get debugState => (super.noSuchMethod(
+        Invocation.getter(#debugState),
+        returnValue: _FakeAsyncValue_1<void>(
           this,
-          Invocation.getter(#cacheService),
+          Invocation.getter(#debugState),
         ),
-        returnValueForMissingStub: _FakeCacheService_22(
+        returnValueForMissingStub: _FakeAsyncValue_1<void>(
           this,
-          Invocation.getter(#cacheService),
+          Invocation.getter(#debugState),
         ),
-      ) as _i22.CacheService);
+      ) as _i3.AsyncValue<void>);
+
+  @override
+  bool get hasListeners => (super.noSuchMethod(
+        Invocation.getter(#hasListeners),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  set onError(_i3.ErrorListener? _onError) => super.noSuchMethod(
+        Invocation.setter(
+          #onError,
+          _onError,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set state(_i3.AsyncValue<void>? value) => super.noSuchMethod(
+        Invocation.setter(
+          #state,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  _i6.Future<void> startSpotTimer(
+    String? gameName,
+    String? userId,
+    Duration? duration,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #startSpotTimer,
+          [
+            gameName,
+            userId,
+            duration,
+          ],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> startPeacockTimer(
+    String? userId,
+    Duration? duration,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #startPeacockTimer,
+          [
+            userId,
+            duration,
+          ],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> stopTimer(String? key) => (super.noSuchMethod(
+        Invocation.method(
+          #stopTimer,
+          [key],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  Duration getRemainingTime(
+    String? key, {
+    bool? interpolate = false,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getRemainingTime,
+          [key],
+          {#interpolate: interpolate},
+        ),
+        returnValue: _FakeDuration_2(
+          this,
+          Invocation.method(
+            #getRemainingTime,
+            [key],
+            {#interpolate: interpolate},
+          ),
+        ),
+        returnValueForMissingStub: _FakeDuration_2(
+          this,
+          Invocation.method(
+            #getRemainingTime,
+            [key],
+            {#interpolate: interpolate},
+          ),
+        ),
+      ) as Duration);
+
+  @override
+  _i6.Stream<Duration> observeTimer(String? key) => (super.noSuchMethod(
+        Invocation.method(
+          #observeTimer,
+          [key],
+        ),
+        returnValue: _i6.Stream<Duration>.empty(),
+        returnValueForMissingStub: _i6.Stream<Duration>.empty(),
+      ) as _i6.Stream<Duration>);
+
+  @override
+  void dispose() => super.noSuchMethod(
+        Invocation.method(
+          #dispose,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  bool updateShouldNotify(
+    _i3.AsyncValue<void>? old,
+    _i3.AsyncValue<void>? current,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateShouldNotify,
+          [
+            old,
+            current,
+          ],
+        ),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  _i3.RemoveListener addListener(
+    _i9.Listener<_i3.AsyncValue<void>>? listener, {
+    bool? fireImmediately = true,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #addListener,
+          [listener],
+          {#fireImmediately: fireImmediately},
+        ),
+        returnValue: () {},
+        returnValueForMissingStub: () {},
+      ) as _i3.RemoveListener);
+}
+
+/// A class which mocks [MediaService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockMediaService extends _i1.Mock implements _i10.MediaService {
+  @override
+  _i6.Future<String> uploadMediaWithSignedUrl(
+    _i11.File? file,
+    String? fileName, {
+    dynamic Function(double)? onProgress,
+    dynamic Function(String)? onError,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #uploadMediaWithSignedUrl,
+          [
+            file,
+            fileName,
+          ],
+          {
+            #onProgress: onProgress,
+            #onError: onError,
+          },
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadMediaWithSignedUrl,
+            [
+              file,
+              fileName,
+            ],
+            {
+              #onProgress: onProgress,
+              #onError: onError,
+            },
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadMediaWithSignedUrl,
+            [
+              file,
+              fileName,
+            ],
+            {
+              #onProgress: onProgress,
+              #onError: onError,
+            },
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<String> uploadMedia(
+    _i11.File? file,
+    String? fileName,
+    bool? isVideo,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #uploadMedia,
+          [
+            file,
+            fileName,
+            isVideo,
+          ],
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadMedia,
+            [
+              file,
+              fileName,
+              isVideo,
+            ],
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadMedia,
+            [
+              file,
+              fileName,
+              isVideo,
+            ],
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<String> uploadAudioWithSignedUrl(
+    _i11.File? file,
+    String? fileName, {
+    dynamic Function(double)? onProgress,
+    dynamic Function(String)? onError,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #uploadAudioWithSignedUrl,
+          [
+            file,
+            fileName,
+          ],
+          {
+            #onProgress: onProgress,
+            #onError: onError,
+          },
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadAudioWithSignedUrl,
+            [
+              file,
+              fileName,
+            ],
+            {
+              #onProgress: onProgress,
+              #onError: onError,
+            },
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadAudioWithSignedUrl,
+            [
+              file,
+              fileName,
+            ],
+            {
+              #onProgress: onProgress,
+              #onError: onError,
+            },
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<String> uploadAudio(
+    _i11.File? file,
+    String? fileName,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #uploadAudio,
+          [
+            file,
+            fileName,
+          ],
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadAudio,
+            [
+              file,
+              fileName,
+            ],
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadAudio,
+            [
+              file,
+              fileName,
+            ],
+          ),
+        )),
+      ) as _i6.Future<String>);
+}
+
+/// A class which mocks [IgdbAuthService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockIgdbAuthService extends _i1.Mock implements _i13.IgdbAuthService {
+  @override
+  _i6.Future<String?> getClientId() => (super.noSuchMethod(
+        Invocation.method(
+          #getClientId,
+          [],
+        ),
+        returnValue: _i6.Future<String?>.value(),
+        returnValueForMissingStub: _i6.Future<String?>.value(),
+      ) as _i6.Future<String?>);
+
+  @override
+  _i6.Future<String?> getClientSecret() => (super.noSuchMethod(
+        Invocation.method(
+          #getClientSecret,
+          [],
+        ),
+        returnValue: _i6.Future<String?>.value(),
+        returnValueForMissingStub: _i6.Future<String?>.value(),
+      ) as _i6.Future<String?>);
+
+  @override
+  _i6.Future<String> getAccessToken() => (super.noSuchMethod(
+        Invocation.method(
+          #getAccessToken,
+          [],
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #getAccessToken,
+            [],
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #getAccessToken,
+            [],
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<List<Map<String, dynamic>>> searchGames(
+    String? query, {
+    int? limit = 10,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #searchGames,
+          [query],
+          {#limit: limit},
+        ),
+        returnValue: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i6.Future<List<Map<String, dynamic>>>);
+
+  @override
+  _i6.Future<void> clearStoredData() => (super.noSuchMethod(
+        Invocation.method(
+          #clearStoredData,
+          [],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> storeCredentials() => (super.noSuchMethod(
+        Invocation.method(
+          #storeCredentials,
+          [],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+}
+
+/// A class which mocks [AiService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockAiService extends _i1.Mock implements _i14.AiService {
+  @override
+  _i6.Future<void> generateGrokResponse(
+    _i15.BuildContext? context,
+    String? userMessage,
+    String? senderUid,
+    String? squadId,
+    String? chatGroupId, {
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #generateGrokResponse,
+          [
+            context,
+            userMessage,
+            senderUid,
+            squadId,
+            chatGroupId,
+          ],
+          {#chatType: chatType},
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  bool shouldGenerateAiResponse(String? message) => (super.noSuchMethod(
+        Invocation.method(
+          #shouldGenerateAiResponse,
+          [message],
+        ),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  _i6.Future<List<String>> generatePollOptions(
+    String? pollQuestion, {
+    String? context,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #generatePollOptions,
+          [pollQuestion],
+          {#context: context},
+        ),
+        returnValue: _i6.Future<List<String>>.value(<String>[]),
+        returnValueForMissingStub: _i6.Future<List<String>>.value(<String>[]),
+      ) as _i6.Future<List<String>>);
+}
+
+/// A class which mocks [ReactionService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockReactionService extends _i1.Mock implements _i16.ReactionService {
+  @override
+  _i6.Future<void> addReaction({
+    required String? chatGroupId,
+    required String? messageId,
+    required String? emoji,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #addReaction,
+          [],
+          {
+            #chatGroupId: chatGroupId,
+            #messageId: messageId,
+            #emoji: emoji,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> removeReaction({
+    required String? chatGroupId,
+    required String? messageId,
+    required String? emoji,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #removeReaction,
+          [],
+          {
+            #chatGroupId: chatGroupId,
+            #messageId: messageId,
+            #emoji: emoji,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Stream<Map<String, List<String>>> getMessageReactions({
+    required String? chatGroupId,
+    required String? messageId,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getMessageReactions,
+          [],
+          {
+            #chatGroupId: chatGroupId,
+            #messageId: messageId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Stream<Map<String, List<String>>>.empty(),
+        returnValueForMissingStub:
+            _i6.Stream<Map<String, List<String>>>.empty(),
+      ) as _i6.Stream<Map<String, List<String>>>);
+
+  @override
+  _i6.Future<bool> hasUserReacted({
+    required String? chatGroupId,
+    required String? messageId,
+    required String? emoji,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #hasUserReacted,
+          [],
+          {
+            #chatGroupId: chatGroupId,
+            #messageId: messageId,
+            #emoji: emoji,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<bool>.value(false),
+        returnValueForMissingStub: _i6.Future<bool>.value(false),
+      ) as _i6.Future<bool>);
+}
+
+/// A class which mocks [GrokService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockGrokService extends _i1.Mock implements _i17.GrokService {
+  @override
+  bool isMessageForGrok(String? message) => (super.noSuchMethod(
+        Invocation.method(
+          #isMessageForGrok,
+          [message],
+        ),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  String cleanGrokMessage(String? message) => (super.noSuchMethod(
+        Invocation.method(
+          #cleanGrokMessage,
+          [message],
+        ),
+        returnValue: _i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #cleanGrokMessage,
+            [message],
+          ),
+        ),
+        returnValueForMissingStub: _i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #cleanGrokMessage,
+            [message],
+          ),
+        ),
+      ) as String);
+
+  @override
+  _i6.Future<String> getGrokResponse(
+    String? userMessage, {
+    String? context,
+    List<String>? recentMessages,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getGrokResponse,
+          [userMessage],
+          {
+            #context: context,
+            #recentMessages: recentMessages,
+          },
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #getGrokResponse,
+            [userMessage],
+            {
+              #context: context,
+              #recentMessages: recentMessages,
+            },
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #getGrokResponse,
+            [userMessage],
+            {
+              #context: context,
+              #recentMessages: recentMessages,
+            },
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<String> suggestSquadsForPinnedGames(
+          List<Map<String, dynamic>>? pinnedGames) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #suggestSquadsForPinnedGames,
+          [pinnedGames],
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #suggestSquadsForPinnedGames,
+            [pinnedGames],
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #suggestSquadsForPinnedGames,
+            [pinnedGames],
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<List<double>> getGroupEmbeddings(
+          Map<String, dynamic>? groupData) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getGroupEmbeddings,
+          [groupData],
+        ),
+        returnValue: _i6.Future<List<double>>.value(<double>[]),
+        returnValueForMissingStub: _i6.Future<List<double>>.value(<double>[]),
+      ) as _i6.Future<List<double>>);
+
+  @override
+  _i6.Future<Map<String, double>> scoreRelevance(
+    String? searchTerm,
+    List<String>? candidates,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #scoreRelevance,
+          [
+            searchTerm,
+            candidates,
+          ],
+        ),
+        returnValue: _i6.Future<Map<String, double>>.value(<String, double>{}),
+        returnValueForMissingStub:
+            _i6.Future<Map<String, double>>.value(<String, double>{}),
+      ) as _i6.Future<Map<String, double>>);
+}
+
+/// A class which mocks [MessageService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockMessageService extends _i1.Mock implements _i4.MessageService {
+  @override
+  int get offlineMessageCount => (super.noSuchMethod(
+        Invocation.getter(#offlineMessageCount),
+        returnValue: 0,
+        returnValueForMissingStub: 0,
+      ) as int);
+
+  @override
+  bool get isOnline => (super.noSuchMethod(
+        Invocation.getter(#isOnline),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  _i6.Future<_i4.MessageSendResult> sendMessage(
+    _i15.BuildContext? context, {
+    required String? senderUid,
+    String? text,
+    String? imageUrl,
+    String? videoUrl,
+    String? audioUrl,
+    List<Map<String, dynamic>>? photos = const [],
+    List<Map<String, dynamic>>? videos = const [],
+    List<Map<String, dynamic>>? audio = const [],
+    List<Map<String, dynamic>>? reactions = const [],
+    String? pollId,
+    String? replyTo,
+    String? chatGroupId,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #sendMessage,
+          [context],
+          {
+            #senderUid: senderUid,
+            #text: text,
+            #imageUrl: imageUrl,
+            #videoUrl: videoUrl,
+            #audioUrl: audioUrl,
+            #photos: photos,
+            #videos: videos,
+            #audio: audio,
+            #reactions: reactions,
+            #pollId: pollId,
+            #replyTo: replyTo,
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue:
+            _i6.Future<_i4.MessageSendResult>.value(_FakeMessageSendResult_3(
+          this,
+          Invocation.method(
+            #sendMessage,
+            [context],
+            {
+              #senderUid: senderUid,
+              #text: text,
+              #imageUrl: imageUrl,
+              #videoUrl: videoUrl,
+              #audioUrl: audioUrl,
+              #photos: photos,
+              #videos: videos,
+              #audio: audio,
+              #reactions: reactions,
+              #pollId: pollId,
+              #replyTo: replyTo,
+              #chatGroupId: chatGroupId,
+              #chatType: chatType,
+            },
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<_i4.MessageSendResult>.value(_FakeMessageSendResult_3(
+          this,
+          Invocation.method(
+            #sendMessage,
+            [context],
+            {
+              #senderUid: senderUid,
+              #text: text,
+              #imageUrl: imageUrl,
+              #videoUrl: videoUrl,
+              #audioUrl: audioUrl,
+              #photos: photos,
+              #videos: videos,
+              #audio: audio,
+              #reactions: reactions,
+              #pollId: pollId,
+              #replyTo: replyTo,
+              #chatGroupId: chatGroupId,
+              #chatType: chatType,
+            },
+          ),
+        )),
+      ) as _i6.Future<_i4.MessageSendResult>);
+
+  @override
+  _i6.Future<void> sendReply(
+    String? messageId,
+    String? text,
+    String? squadId, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #sendReply,
+          [
+            messageId,
+            text,
+            squadId,
+          ],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> deleteMessage(
+    String? messageId,
+    String? squadId, {
+    String? chatGroupId,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #deleteMessage,
+          [
+            messageId,
+            squadId,
+          ],
+          {
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> editMessage(
+    String? messageId,
+    String? newText,
+    String? squadId, {
+    String? chatGroupId,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #editMessage,
+          [
+            messageId,
+            newText,
+            squadId,
+          ],
+          {
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> markAsDelivered(String? docId) => (super.noSuchMethod(
+        Invocation.method(
+          #markAsDelivered,
+          [docId],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> addReaction(
+    _i15.BuildContext? context,
+    String? msgId,
+    String? reaction, {
+    String? chatGroupId,
+    _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #addReaction,
+          [
+            context,
+            msgId,
+            reaction,
+          ],
+          {
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> updateTypingStatus(
+    _i15.BuildContext? context,
+    String? user,
+    bool? isTyping, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateTypingStatus,
+          [
+            context,
+            user,
+            isTyping,
+          ],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<List<Map<String, dynamic>>> loadMoreMessages({
+    required int? offset,
+    required int? limit,
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #loadMoreMessages,
+          [],
+          {
+            #offset: offset,
+            #limit: limit,
+            #chatGroupId: chatGroupId,
+          },
+        ),
+        returnValue: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i6.Future<List<Map<String, dynamic>>>);
+
+  @override
+  _i6.Future<List<Map<String, dynamic>>> getCachedMessages(
+    int? offset,
+    int? limit, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCachedMessages,
+          [
+            offset,
+            limit,
+          ],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i6.Future<List<Map<String, dynamic>>>);
+
+  @override
+  _i6.Future<void> cacheMessagesFromSnapshot(
+    _i18.QuerySnapshot<Object?>? snapshot,
+    String? chatGroupId,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #cacheMessagesFromSnapshot,
+          [
+            snapshot,
+            chatGroupId,
+          ],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> retryOfflineMessages() => (super.noSuchMethod(
+        Invocation.method(
+          #retryOfflineMessages,
+          [],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+}
+
+/// A class which mocks [PollService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockPollService extends _i1.Mock implements _i19.PollService {
+  @override
+  _i6.Future<String?> createPoll({
+    required String? title,
+    required List<String>? options,
+    required _i20.PollSettings? settings,
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #createPoll,
+          [],
+          {
+            #title: title,
+            #options: options,
+            #settings: settings,
+            #chatGroupId: chatGroupId,
+          },
+        ),
+        returnValue: _i6.Future<String?>.value(),
+        returnValueForMissingStub: _i6.Future<String?>.value(),
+      ) as _i6.Future<String?>);
+
+  @override
+  _i6.Future<bool> voteOnPoll({
+    required String? pollId,
+    required List<String>? optionIds,
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #voteOnPoll,
+          [],
+          {
+            #pollId: pollId,
+            #optionIds: optionIds,
+            #chatGroupId: chatGroupId,
+          },
+        ),
+        returnValue: _i6.Future<bool>.value(false),
+        returnValueForMissingStub: _i6.Future<bool>.value(false),
+      ) as _i6.Future<bool>);
+
+  @override
+  _i6.Future<bool> closePoll({
+    required String? pollId,
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #closePoll,
+          [],
+          {
+            #pollId: pollId,
+            #chatGroupId: chatGroupId,
+          },
+        ),
+        returnValue: _i6.Future<bool>.value(false),
+        returnValueForMissingStub: _i6.Future<bool>.value(false),
+      ) as _i6.Future<bool>);
+
+  @override
+  _i6.Stream<List<_i20.Poll>> getPollsStream({String? chatGroupId}) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getPollsStream,
+          [],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Stream<List<_i20.Poll>>.empty(),
+        returnValueForMissingStub: _i6.Stream<List<_i20.Poll>>.empty(),
+      ) as _i6.Stream<List<_i20.Poll>>);
+
+  @override
+  _i6.Future<_i20.Poll?> getPoll(
+    String? pollId, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getPoll,
+          [pollId],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Future<_i20.Poll?>.value(),
+        returnValueForMissingStub: _i6.Future<_i20.Poll?>.value(),
+      ) as _i6.Future<_i20.Poll?>);
+
+  @override
+  _i6.Stream<_i20.Poll?> getPollStream(
+    String? pollId, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getPollStream,
+          [pollId],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Stream<_i20.Poll?>.empty(),
+        returnValueForMissingStub: _i6.Stream<_i20.Poll?>.empty(),
+      ) as _i6.Stream<_i20.Poll?>);
+}
+
+/// A class which mocks [AudioService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockAudioService extends _i1.Mock implements _i21.AudioService {
+  @override
+  _i6.Future<void> initialize() => (super.noSuchMethod(
+        Invocation.method(
+          #initialize,
+          [],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> playVictorySound() => (super.noSuchMethod(
+        Invocation.method(
+          #playVictorySound,
+          [],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> playAchievementSound(int? streak) => (super.noSuchMethod(
+        Invocation.method(
+          #playAchievementSound,
+          [streak],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  void dispose() => super.noSuchMethod(
+        Invocation.method(
+          #dispose,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+}
+
+/// A class which mocks [CacheService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockCacheService extends _i1.Mock implements _i22.CacheService {
+  @override
+  void setDefaultMaxAge(
+    String? key,
+    Duration? maxAge,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #setDefaultMaxAge,
+          [
+            key,
+            maxAge,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  T? get<T>(String? key) => (super.noSuchMethod(
+        Invocation.method(
+          #get,
+          [key],
+        ),
+        returnValueForMissingStub: null,
+      ) as T?);
+
+  @override
+  void set<T>(
+    String? key,
+    T? value,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #set,
+          [
+            key,
+            value,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  bool contains(String? key) => (super.noSuchMethod(
+        Invocation.method(
+          #contains,
+          [key],
+        ),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  void invalidate(String? key) => super.noSuchMethod(
+        Invocation.method(
+          #invalidate,
+          [key],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void invalidateAll() => super.noSuchMethod(
+        Invocation.method(
+          #invalidateAll,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void invalidatePattern(bool Function(String)? pattern) => super.noSuchMethod(
+        Invocation.method(
+          #invalidatePattern,
+          [pattern],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  T getOrCompute<T>(
+    String? key,
+    T Function()? compute,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getOrCompute,
+          [
+            key,
+            compute,
+          ],
+        ),
+        returnValue: _i12.dummyValue<T>(
+          this,
+          Invocation.method(
+            #getOrCompute,
+            [
+              key,
+              compute,
+            ],
+          ),
+        ),
+        returnValueForMissingStub: _i12.dummyValue<T>(
+          this,
+          Invocation.method(
+            #getOrCompute,
+            [
+              key,
+              compute,
+            ],
+          ),
+        ),
+      ) as T);
+
+  @override
+  void clearExpired() => super.noSuchMethod(
+        Invocation.method(
+          #clearExpired,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  Map<String, dynamic> getStats() => (super.noSuchMethod(
+        Invocation.method(
+          #getStats,
+          [],
+        ),
+        returnValue: <String, dynamic>{},
+        returnValueForMissingStub: <String, dynamic>{},
+      ) as Map<String, dynamic>);
+}
+
+/// A class which mocks [AchievementManager].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockAchievementManager extends _i1.Mock
+    implements _i23.AchievementManager {
+  @override
+  Map<String, int> get currentStreaks => (super.noSuchMethod(
+        Invocation.getter(#currentStreaks),
+        returnValue: <String, int>{},
+        returnValueForMissingStub: <String, int>{},
+      ) as Map<String, int>);
+
+  @override
+  Map<String, int> get highestStreaks => (super.noSuchMethod(
+        Invocation.getter(#highestStreaks),
+        returnValue: <String, int>{},
+        returnValueForMissingStub: <String, int>{},
+      ) as Map<String, int>);
+
+  @override
+  Map<String, Set<String>> get achievements => (super.noSuchMethod(
+        Invocation.getter(#achievements),
+        returnValue: <String, Set<String>>{},
+        returnValueForMissingStub: <String, Set<String>>{},
+      ) as Map<String, Set<String>>);
+
+  @override
+  Map<String, Map<String, List<int>>> get dailyRatings => (super.noSuchMethod(
+        Invocation.getter(#dailyRatings),
+        returnValue: <String, Map<String, List<int>>>{},
+        returnValueForMissingStub: <String, Map<String, List<int>>>{},
+      ) as Map<String, Map<String, List<int>>>);
+
+  @override
+  Map<String, Map<String, List<int>>> get allTimeRatings => (super.noSuchMethod(
+        Invocation.getter(#allTimeRatings),
+        returnValue: <String, Map<String, List<int>>>{},
+        returnValueForMissingStub: <String, Map<String, List<int>>>{},
+      ) as Map<String, Map<String, List<int>>>);
+
+  @override
+  Map<String, int> get complaints => (super.noSuchMethod(
+        Invocation.getter(#complaints),
+        returnValue: <String, int>{},
+        returnValueForMissingStub: <String, int>{},
+      ) as Map<String, int>);
+
+  @override
+  set currentStreaks(Map<String, int>? value) => super.noSuchMethod(
+        Invocation.setter(
+          #currentStreaks,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set highestStreaks(Map<String, int>? value) => super.noSuchMethod(
+        Invocation.setter(
+          #highestStreaks,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set achievements(Map<String, Set<String>>? value) => super.noSuchMethod(
+        Invocation.setter(
+          #achievements,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set dailyRatings(Map<String, Map<String, List<int>>>? value) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #dailyRatings,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set allTimeRatings(Map<String, Map<String, List<int>>>? value) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #allTimeRatings,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set complaints(Map<String, int>? value) => super.noSuchMethod(
+        Invocation.setter(
+          #complaints,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  bool get hasListeners => (super.noSuchMethod(
+        Invocation.getter(#hasListeners),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  _i6.Future<void> submitComplaint({
+    required String? submittedBy,
+    required String? targetMember,
+    required String? reason,
+    required String? category,
+    required List<String>? squadMembers,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #submitComplaint,
+          [],
+          {
+            #submittedBy: submittedBy,
+            #targetMember: targetMember,
+            #reason: reason,
+            #category: category,
+            #squadMembers: squadMembers,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> submitRatings({
+    required String? submittedBy,
+    required String? targetMember,
+    required Map<String, int?>? ratings,
+    required List<String>? squadMembers,
+    required List<Map<String, dynamic>>? gameHistory,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #submitRatings,
+          [],
+          {
+            #submittedBy: submittedBy,
+            #targetMember: targetMember,
+            #ratings: ratings,
+            #squadMembers: squadMembers,
+            #gameHistory: gameHistory,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  void addBan(
+    String? player,
+    String? voter,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #addBan,
+          [
+            player,
+            voter,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  int getBanCount(String? player) => (super.noSuchMethod(
+        Invocation.method(
+          #getBanCount,
+          [player],
+        ),
+        returnValue: 0,
+        returnValueForMissingStub: 0,
+      ) as int);
+
+  @override
+  bool isBanned(String? player) => (super.noSuchMethod(
+        Invocation.method(
+          #isBanned,
+          [player],
+        ),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  int getBanDuration(String? player) => (super.noSuchMethod(
+        Invocation.method(
+          #getBanDuration,
+          [player],
+        ),
+        returnValue: 0,
+        returnValueForMissingStub: 0,
+      ) as int);
+
+  @override
+  _i6.Future<void> recordWin({
+    required List<String?>? squadSpots,
+    required Map<String, String>? statuses,
+    required List<Map<String, dynamic>>? gameHistory,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #recordWin,
+          [],
+          {
+            #squadSpots: squadSpots,
+            #statuses: statuses,
+            #gameHistory: gameHistory,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  void recordLoss({
+    required List<String?>? squadSpots,
+    required List<Map<String, dynamic>?>? spotTimers,
+    required Map<String, int>? currentStreaks,
+    required List<Map<String, dynamic>>? gameHistory,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #recordLoss,
+          [],
+          {
+            #squadSpots: squadSpots,
+            #spotTimers: spotTimers,
+            #currentStreaks: currentStreaks,
+            #gameHistory: gameHistory,
+          },
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void addListener(_i24.VoidCallback? listener) => super.noSuchMethod(
+        Invocation.method(
+          #addListener,
+          [listener],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void removeListener(_i24.VoidCallback? listener) => super.noSuchMethod(
+        Invocation.method(
+          #removeListener,
+          [listener],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void dispose() => super.noSuchMethod(
+        Invocation.method(
+          #dispose,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void notifyListeners() => super.noSuchMethod(
+        Invocation.method(
+          #notifyListeners,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+}
+
+/// A class which mocks [SquadDataManager].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockSquadDataManager extends _i1.Mock implements _i25.SquadDataManager {
+  @override
+  Map<String, List<String?>> get gameSquadSpots => (super.noSuchMethod(
+        Invocation.getter(#gameSquadSpots),
+        returnValue: <String, List<String?>>{},
+        returnValueForMissingStub: <String, List<String?>>{},
+      ) as Map<String, List<String?>>);
+
+  @override
+  Map<String, List<Map<String, dynamic>?>> get gameSpotTimers =>
+      (super.noSuchMethod(
+        Invocation.getter(#gameSpotTimers),
+        returnValue: <String, List<Map<String, dynamic>?>>{},
+        returnValueForMissingStub: <String, List<Map<String, dynamic>?>>{},
+      ) as Map<String, List<Map<String, dynamic>?>>);
+
+  @override
+  Map<String, Map<String, String>> get gameStatuses => (super.noSuchMethod(
+        Invocation.getter(#gameStatuses),
+        returnValue: <String, Map<String, String>>{},
+        returnValueForMissingStub: <String, Map<String, String>>{},
+      ) as Map<String, Map<String, String>>);
+
+  @override
+  Map<String, String> get globalStatuses => (super.noSuchMethod(
+        Invocation.getter(#globalStatuses),
+        returnValue: <String, String>{},
+        returnValueForMissingStub: <String, String>{},
+      ) as Map<String, String>);
+
+  @override
+  List<String> get squadMemberUids => (super.noSuchMethod(
+        Invocation.getter(#squadMemberUids),
+        returnValue: <String>[],
+        returnValueForMissingStub: <String>[],
+      ) as List<String>);
+
+  @override
+  Map<String, String> get memberDisplayNames => (super.noSuchMethod(
+        Invocation.getter(#memberDisplayNames),
+        returnValue: <String, String>{},
+        returnValueForMissingStub: <String, String>{},
+      ) as Map<String, String>);
+
+  @override
+  List<Map<String, dynamic>> get gameHistory => (super.noSuchMethod(
+        Invocation.getter(#gameHistory),
+        returnValue: <Map<String, dynamic>>[],
+        returnValueForMissingStub: <Map<String, dynamic>>[],
+      ) as List<Map<String, dynamic>>);
+
+  @override
+  Map<String, String?> get preferredModes => (super.noSuchMethod(
+        Invocation.getter(#preferredModes),
+        returnValue: <String, String?>{},
+        returnValueForMissingStub: <String, String?>{},
+      ) as Map<String, String?>);
+
+  @override
+  Map<String, Map<String, bool>> get userBlocks => (super.noSuchMethod(
+        Invocation.getter(#userBlocks),
+        returnValue: <String, Map<String, bool>>{},
+        returnValueForMissingStub: <String, Map<String, bool>>{},
+      ) as Map<String, Map<String, bool>>);
+
+  @override
+  Map<String, Map<String, int>> get dailyBanVotes => (super.noSuchMethod(
+        Invocation.getter(#dailyBanVotes),
+        returnValue: <String, Map<String, int>>{},
+        returnValueForMissingStub: <String, Map<String, int>>{},
+      ) as Map<String, Map<String, int>>);
+
+  @override
+  List<String> get userSquadIds => (super.noSuchMethod(
+        Invocation.getter(#userSquadIds),
+        returnValue: <String>[],
+        returnValueForMissingStub: <String>[],
+      ) as List<String>);
+
+  @override
+  Map<String, Map<String, dynamic>> get userSquads => (super.noSuchMethod(
+        Invocation.getter(#userSquads),
+        returnValue: <String, Map<String, dynamic>>{},
+        returnValueForMissingStub: <String, Map<String, dynamic>>{},
+      ) as Map<String, Map<String, dynamic>>);
+
+  @override
+  List<Map<String, dynamic>> get availableGames => (super.noSuchMethod(
+        Invocation.getter(#availableGames),
+        returnValue: <Map<String, dynamic>>[],
+        returnValueForMissingStub: <Map<String, dynamic>>[],
+      ) as List<Map<String, dynamic>>);
+
+  @override
+  Map<String, List<Map<String, dynamic>>> get gameLobbies =>
+      (super.noSuchMethod(
+        Invocation.getter(#gameLobbies),
+        returnValue: <String, List<Map<String, dynamic>>>{},
+        returnValueForMissingStub: <String, List<Map<String, dynamic>>>{},
+      ) as Map<String, List<Map<String, dynamic>>>);
+
+  @override
+  Set<String> get preferredPeacockGames => (super.noSuchMethod(
+        Invocation.getter(#preferredPeacockGames),
+        returnValue: <String>{},
+        returnValueForMissingStub: <String>{},
+      ) as Set<String>);
+
+  @override
+  Set<String> get mutedGames => (super.noSuchMethod(
+        Invocation.getter(#mutedGames),
+        returnValue: <String>{},
+        returnValueForMissingStub: <String>{},
+      ) as Set<String>);
+
+  @override
+  Set<String> get hiddenGames => (super.noSuchMethod(
+        Invocation.getter(#hiddenGames),
+        returnValue: <String>{},
+        returnValueForMissingStub: <String>{},
+      ) as Set<String>);
+
+  @override
+  Map<String, int> get currentStreaks => (super.noSuchMethod(
+        Invocation.getter(#currentStreaks),
+        returnValue: <String, int>{},
+        returnValueForMissingStub: <String, int>{},
+      ) as Map<String, int>);
+
+  @override
+  Map<String, int> get highestStreaks => (super.noSuchMethod(
+        Invocation.getter(#highestStreaks),
+        returnValue: <String, int>{},
+        returnValueForMissingStub: <String, int>{},
+      ) as Map<String, int>);
+
+  @override
+  Map<String, Set<String>> get achievements => (super.noSuchMethod(
+        Invocation.getter(#achievements),
+        returnValue: <String, Set<String>>{},
+        returnValueForMissingStub: <String, Set<String>>{},
+      ) as Map<String, Set<String>>);
+
+  @override
+  Map<String, Map<String, List<int>>> get dailyRatings => (super.noSuchMethod(
+        Invocation.getter(#dailyRatings),
+        returnValue: <String, Map<String, List<int>>>{},
+        returnValueForMissingStub: <String, Map<String, List<int>>>{},
+      ) as Map<String, Map<String, List<int>>>);
+
+  @override
+  Map<String, Map<String, List<int>>> get allTimeRatings => (super.noSuchMethod(
+        Invocation.getter(#allTimeRatings),
+        returnValue: <String, Map<String, List<int>>>{},
+        returnValueForMissingStub: <String, Map<String, List<int>>>{},
+      ) as Map<String, Map<String, List<int>>>);
+
+  @override
+  Map<String, int> get complaints => (super.noSuchMethod(
+        Invocation.getter(#complaints),
+        returnValue: <String, int>{},
+        returnValueForMissingStub: <String, int>{},
+      ) as Map<String, int>);
+
+  @override
+  Map<String, List<Map<String, dynamic>>> get bans => (super.noSuchMethod(
+        Invocation.getter(#bans),
+        returnValue: <String, List<Map<String, dynamic>>>{},
+        returnValueForMissingStub: <String, List<Map<String, dynamic>>>{},
+      ) as Map<String, List<Map<String, dynamic>>>);
+
+  @override
+  List<Map<String, dynamic>> get scheduledTimes => (super.noSuchMethod(
+        Invocation.getter(#scheduledTimes),
+        returnValue: <Map<String, dynamic>>[],
+        returnValueForMissingStub: <Map<String, dynamic>>[],
+      ) as List<Map<String, dynamic>>);
+
+  @override
+  Map<String, Map<String, dynamic>?> get peacockTimers => (super.noSuchMethod(
+        Invocation.getter(#peacockTimers),
+        returnValue: <String, Map<String, dynamic>?>{},
+        returnValueForMissingStub: <String, Map<String, dynamic>?>{},
+      ) as Map<String, Map<String, dynamic>?>);
+
+  @override
+  List<String> get peacockQueue => (super.noSuchMethod(
+        Invocation.getter(#peacockQueue),
+        returnValue: <String>[],
+        returnValueForMissingStub: <String>[],
+      ) as List<String>);
 
   @override
   List<String?> get squadSpots => (super.noSuchMethod(
@@ -730,930 +2195,71 @@ class MockSquadStateNotifier extends _i1.Mock
       ) as bool);
 
   @override
-  set context(_i28.BuildContext? _context) => super.noSuchMethod(
-        Invocation.setter(
-          #context,
-          _context,
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  bool get mounted => (super.noSuchMethod(
-        Invocation.getter(#mounted),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
-
-  @override
-  _i29.Stream<_i23.SquadStateData> get stream => (super.noSuchMethod(
-        Invocation.getter(#stream),
-        returnValue: _i29.Stream<_i23.SquadStateData>.empty(),
-        returnValueForMissingStub: _i29.Stream<_i23.SquadStateData>.empty(),
-      ) as _i29.Stream<_i23.SquadStateData>);
-
-  @override
-  _i23.SquadStateData get state => (super.noSuchMethod(
-        Invocation.getter(#state),
-        returnValue: _FakeSquadStateData_23(
-          this,
-          Invocation.getter(#state),
-        ),
-        returnValueForMissingStub: _FakeSquadStateData_23(
-          this,
-          Invocation.getter(#state),
-        ),
-      ) as _i23.SquadStateData);
-
-  @override
-  _i23.SquadStateData get debugState => (super.noSuchMethod(
-        Invocation.getter(#debugState),
-        returnValue: _FakeSquadStateData_23(
-          this,
-          Invocation.getter(#debugState),
-        ),
-        returnValueForMissingStub: _FakeSquadStateData_23(
-          this,
-          Invocation.getter(#debugState),
-        ),
-      ) as _i23.SquadStateData);
-
-  @override
-  bool get hasListeners => (super.noSuchMethod(
-        Invocation.getter(#hasListeners),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
-
-  @override
-  set onError(_i24.ErrorListener? _onError) => super.noSuchMethod(
-        Invocation.setter(
-          #onError,
-          _onError,
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  set state(_i23.SquadStateData? value) => super.noSuchMethod(
-        Invocation.setter(
-          #state,
-          value,
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  String getDisplayNameForUid(String? uid) => (super.noSuchMethod(
-        Invocation.method(
-          #getDisplayNameForUid,
-          [uid],
-        ),
-        returnValue: _i30.dummyValue<String>(
-          this,
-          Invocation.method(
-            #getDisplayNameForUid,
-            [uid],
-          ),
-        ),
-        returnValueForMissingStub: _i30.dummyValue<String>(
-          this,
-          Invocation.method(
-            #getDisplayNameForUid,
-            [uid],
-          ),
-        ),
-      ) as String);
-
-  @override
-  String? getUidForDisplayName(String? displayName) => (super.noSuchMethod(
-        Invocation.method(
-          #getUidForDisplayName,
-          [displayName],
-        ),
-        returnValueForMissingStub: null,
-      ) as String?);
-
-  @override
-  _i29.Future<void> initialize(_i28.BuildContext? ctx) => (super.noSuchMethod(
-        Invocation.method(
-          #initialize,
-          [ctx],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<String> createSquad(String? name) => (super.noSuchMethod(
-        Invocation.method(
-          #createSquad,
-          [name],
-        ),
-        returnValue: _i29.Future<String>.value(_i30.dummyValue<String>(
-          this,
-          Invocation.method(
-            #createSquad,
-            [name],
-          ),
-        )),
-        returnValueForMissingStub:
-            _i29.Future<String>.value(_i30.dummyValue<String>(
-          this,
-          Invocation.method(
-            #createSquad,
-            [name],
-          ),
-        )),
-      ) as _i29.Future<String>);
-
-  @override
-  _i29.Future<bool> joinSquad(String? code) => (super.noSuchMethod(
-        Invocation.method(
-          #joinSquad,
-          [code],
-        ),
-        returnValue: _i29.Future<bool>.value(false),
-        returnValueForMissingStub: _i29.Future<bool>.value(false),
-      ) as _i29.Future<bool>);
-
-  @override
-  _i29.Future<void> leaveSquad() => (super.noSuchMethod(
-        Invocation.method(
-          #leaveSquad,
-          [],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Stream<List<Map<String, dynamic>>> getActivePeacockAlerts(
-          String? gameName) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getActivePeacockAlerts,
-          [gameName],
-        ),
-        returnValue: _i29.Stream<List<Map<String, dynamic>>>.empty(),
-        returnValueForMissingStub:
-            _i29.Stream<List<Map<String, dynamic>>>.empty(),
-      ) as _i29.Stream<List<Map<String, dynamic>>>);
-
-  @override
-  void clearNotifications(int? tabIndex) => super.noSuchMethod(
-        Invocation.method(
-          #clearNotifications,
-          [tabIndex],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void updateTiltEnabled(bool? value) => super.noSuchMethod(
-        Invocation.method(
-          #updateTiltEnabled,
-          [value],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void updateProfileImage(String? url) => super.noSuchMethod(
-        Invocation.method(
-          #updateProfileImage,
-          [url],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void updateDisplayName(String? name) => super.noSuchMethod(
-        Invocation.method(
-          #updateDisplayName,
-          [name],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void reset() => super.noSuchMethod(
-        Invocation.method(
-          #reset,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void callSpotForGame(
-    int? spot,
-    String? gameName,
-  ) =>
-      super.noSuchMethod(
-        Invocation.method(
-          #callSpotForGame,
-          [
-            spot,
-            gameName,
-          ],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  _i29.Future<void> loadSquadData(String? squadId) => (super.noSuchMethod(
-        Invocation.method(
-          #loadSquadData,
-          [squadId],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  void updateSpotTimers(
-    String? gameName,
-    List<Map<String, dynamic>?>? timers,
-  ) =>
-      super.noSuchMethod(
-        Invocation.method(
-          #updateSpotTimers,
-          [
-            gameName,
-            timers,
-          ],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  _i29.Future<void> assignSpot(
-    String? gameName,
-    int? spotIndex,
-    String? uid,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #assignSpot,
-          [
-            gameName,
-            spotIndex,
-            uid,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> removeSpot(
-    String? gameName,
-    int? spotIndex,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #removeSpot,
-          [
-            gameName,
-            spotIndex,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> claimSpot(
-    String? gameName,
-    int? spotIndex,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #claimSpot,
-          [
-            gameName,
-            spotIndex,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> lockSpot(
-    String? gameName,
-    int? spotIndex,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #lockSpot,
-          [
-            gameName,
-            spotIndex,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  void dispose() => super.noSuchMethod(
-        Invocation.method(
-          #dispose,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  bool updateShouldNotify(
-    _i23.SquadStateData? old,
-    _i23.SquadStateData? current,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #updateShouldNotify,
-          [
-            old,
-            current,
-          ],
-        ),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
-
-  @override
-  _i24.RemoveListener addListener(
-    _i31.Listener<_i23.SquadStateData>? listener, {
-    bool? fireImmediately = true,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #addListener,
-          [listener],
-          {#fireImmediately: fireImmediately},
-        ),
-        returnValue: () {},
-        returnValueForMissingStub: () {},
-      ) as _i24.RemoveListener);
-}
-
-/// A class which mocks [ChatStateNotifier].
-///
-/// See the documentation for Mockito's code generation for more information.
-class MockChatStateNotifier extends _i1.Mock implements _i25.ChatStateNotifier {
-  @override
-  _i24.Ref<Object?> get ref => (super.noSuchMethod(
-        Invocation.getter(#ref),
-        returnValue: _FakeRef_24<Object?>(
-          this,
-          Invocation.getter(#ref),
-        ),
-        returnValueForMissingStub: _FakeRef_24<Object?>(
-          this,
-          Invocation.getter(#ref),
-        ),
-      ) as _i24.Ref<Object?>);
-
-  @override
-  bool get mounted => (super.noSuchMethod(
-        Invocation.getter(#mounted),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
-
-  @override
-  _i29.Stream<_i25.ChatStateData> get stream => (super.noSuchMethod(
-        Invocation.getter(#stream),
-        returnValue: _i29.Stream<_i25.ChatStateData>.empty(),
-        returnValueForMissingStub: _i29.Stream<_i25.ChatStateData>.empty(),
-      ) as _i29.Stream<_i25.ChatStateData>);
-
-  @override
-  _i25.ChatStateData get state => (super.noSuchMethod(
-        Invocation.getter(#state),
-        returnValue: _FakeChatStateData_25(
-          this,
-          Invocation.getter(#state),
-        ),
-        returnValueForMissingStub: _FakeChatStateData_25(
-          this,
-          Invocation.getter(#state),
-        ),
-      ) as _i25.ChatStateData);
-
-  @override
-  _i25.ChatStateData get debugState => (super.noSuchMethod(
-        Invocation.getter(#debugState),
-        returnValue: _FakeChatStateData_25(
-          this,
-          Invocation.getter(#debugState),
-        ),
-        returnValueForMissingStub: _FakeChatStateData_25(
-          this,
-          Invocation.getter(#debugState),
-        ),
-      ) as _i25.ChatStateData);
-
-  @override
-  bool get hasListeners => (super.noSuchMethod(
-        Invocation.getter(#hasListeners),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
-
-  @override
-  set onError(_i24.ErrorListener? _onError) => super.noSuchMethod(
-        Invocation.setter(
-          #onError,
-          _onError,
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  set state(_i25.ChatStateData? value) => super.noSuchMethod(
-        Invocation.setter(
-          #state,
-          value,
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void init() => super.noSuchMethod(
-        Invocation.method(
-          #init,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void startRecording() => super.noSuchMethod(
-        Invocation.method(
-          #startRecording,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void stopRecording() => super.noSuchMethod(
-        Invocation.method(
-          #stopRecording,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void updateTyping(
-    String? userId,
-    bool? isTyping,
-  ) =>
-      super.noSuchMethod(
-        Invocation.method(
-          #updateTyping,
-          [
-            userId,
-            isTyping,
-          ],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void loadMessages(String? chatGroupId) => super.noSuchMethod(
-        Invocation.method(
-          #loadMessages,
-          [chatGroupId],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void paginateMore() => super.noSuchMethod(
-        Invocation.method(
-          #paginateMore,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void updateSendingStatus(
-    String? id,
-    bool? status,
-  ) =>
-      super.noSuchMethod(
-        Invocation.method(
-          #updateSendingStatus,
-          [
-            id,
-            status,
-          ],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void removeSendingStatus(String? id) => super.noSuchMethod(
-        Invocation.method(
-          #removeSendingStatus,
-          [id],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void clearReplyToMessage() => super.noSuchMethod(
-        Invocation.method(
-          #clearReplyToMessage,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void setReplyToMessage(Map<String, dynamic>? message) => super.noSuchMethod(
-        Invocation.method(
-          #setReplyToMessage,
-          [message],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void clearError() => super.noSuchMethod(
-        Invocation.method(
-          #clearError,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  _i29.Future<void> sendMessage(_i32.Message? message) => (super.noSuchMethod(
-        Invocation.method(
-          #sendMessage,
-          [message],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  void handleOfflineSync() => super.noSuchMethod(
-        Invocation.method(
-          #handleOfflineSync,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void handleMessageReactions(
-    String? messageId,
-    String? reaction,
-  ) =>
-      super.noSuchMethod(
-        Invocation.method(
-          #handleMessageReactions,
-          [
-            messageId,
-            reaction,
-          ],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void startTyping() => super.noSuchMethod(
-        Invocation.method(
-          #startTyping,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  bool updateShouldNotify(
-    _i25.ChatStateData? old,
-    _i25.ChatStateData? current,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #updateShouldNotify,
-          [
-            old,
-            current,
-          ],
-        ),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
-
-  @override
-  _i24.RemoveListener addListener(
-    _i31.Listener<_i25.ChatStateData>? listener, {
-    bool? fireImmediately = true,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #addListener,
-          [listener],
-          {#fireImmediately: fireImmediately},
-        ),
-        returnValue: () {},
-        returnValueForMissingStub: () {},
-      ) as _i24.RemoveListener);
-
-  @override
-  void dispose() => super.noSuchMethod(
-        Invocation.method(
-          #dispose,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-}
-
-/// A class which mocks [ReactionService].
-///
-/// See the documentation for Mockito's code generation for more information.
-class MockReactionService extends _i1.Mock implements _i33.ReactionService {
-  @override
-  _i29.Future<void> addReaction({
-    required String? chatGroupId,
-    required String? messageId,
-    required String? emoji,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #addReaction,
-          [],
-          {
-            #chatGroupId: chatGroupId,
-            #messageId: messageId,
-            #emoji: emoji,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> removeReaction({
-    required String? chatGroupId,
-    required String? messageId,
-    required String? emoji,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #removeReaction,
-          [],
-          {
-            #chatGroupId: chatGroupId,
-            #messageId: messageId,
-            #emoji: emoji,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Stream<Map<String, List<String>>> getMessageReactions({
-    required String? chatGroupId,
-    required String? messageId,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getMessageReactions,
-          [],
-          {
-            #chatGroupId: chatGroupId,
-            #messageId: messageId,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Stream<Map<String, List<String>>>.empty(),
-        returnValueForMissingStub:
-            _i29.Stream<Map<String, List<String>>>.empty(),
-      ) as _i29.Stream<Map<String, List<String>>>);
-
-  @override
-  _i29.Future<bool> hasUserReacted({
-    required String? chatGroupId,
-    required String? messageId,
-    required String? emoji,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #hasUserReacted,
-          [],
-          {
-            #chatGroupId: chatGroupId,
-            #messageId: messageId,
-            #emoji: emoji,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Future<bool>.value(false),
-        returnValueForMissingStub: _i29.Future<bool>.value(false),
-      ) as _i29.Future<bool>);
-}
-
-/// A class which mocks [SQLiteHelper].
-///
-/// See the documentation for Mockito's code generation for more information.
-class MockSQLiteHelper extends _i1.Mock implements _i35.SQLiteHelper {
-  @override
-  _i29.Future<_i26.Database> get database => (super.noSuchMethod(
-        Invocation.getter(#database),
-        returnValue: _i29.Future<_i26.Database>.value(_FakeDatabase_26(
-          this,
-          Invocation.getter(#database),
-        )),
-        returnValueForMissingStub:
-            _i29.Future<_i26.Database>.value(_FakeDatabase_26(
-          this,
-          Invocation.getter(#database),
-        )),
-      ) as _i29.Future<_i26.Database>);
-
-  @override
-  _i29.Future<void> insertMessage(
-    Map<String, dynamic>? message, {
-    String? chatGroupId,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #insertMessage,
-          [message],
-          {#chatGroupId: chatGroupId},
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> updateMessage(
-    String? msgId,
-    Map<String, dynamic>? updates,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #updateMessage,
-          [
-            msgId,
-            updates,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> clearMessages({String? chatGroupId}) => (super.noSuchMethod(
-        Invocation.method(
-          #clearMessages,
-          [],
-          {#chatGroupId: chatGroupId},
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<List<Map<String, dynamic>>> getMessages(
-    int? offset,
-    int? limit, {
-    String? chatGroupId,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getMessages,
-          [
-            offset,
-            limit,
-          ],
-          {#chatGroupId: chatGroupId},
-        ),
-        returnValue: _i29.Future<List<Map<String, dynamic>>>.value(
-            <Map<String, dynamic>>[]),
-        returnValueForMissingStub:
-            _i29.Future<List<Map<String, dynamic>>>.value(
-                <Map<String, dynamic>>[]),
-      ) as _i29.Future<List<Map<String, dynamic>>>);
-
-  @override
-  _i29.Future<List<Map<String, dynamic>>> getCachedGroups(
-    String? gameName,
-    String? searchTerm,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getCachedGroups,
-          [
-            gameName,
-            searchTerm,
-          ],
-        ),
-        returnValue: _i29.Future<List<Map<String, dynamic>>>.value(
-            <Map<String, dynamic>>[]),
-        returnValueForMissingStub:
-            _i29.Future<List<Map<String, dynamic>>>.value(
-                <Map<String, dynamic>>[]),
-      ) as _i29.Future<List<Map<String, dynamic>>>);
-
-  @override
-  _i29.Future<void> cacheGroups(
-    List<Map<String, dynamic>>? groups,
-    String? gameName,
-    String? searchTerm,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #cacheGroups,
-          [
-            groups,
-            gameName,
-            searchTerm,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-}
-
-/// A class which mocks [UserManager].
-///
-/// See the documentation for Mockito's code generation for more information.
-class MockUserManager extends _i1.Mock implements _i5.UserManager {
-  @override
-  Map<String, String?> get memberProfileImages => (super.noSuchMethod(
-        Invocation.getter(#memberProfileImages),
-        returnValue: <String, String?>{},
-        returnValueForMissingStub: <String, String?>{},
-      ) as Map<String, String?>);
-
-  @override
-  Map<String, String?> get preferredModes => (super.noSuchMethod(
-        Invocation.getter(#preferredModes),
-        returnValue: <String, String?>{},
-        returnValueForMissingStub: <String, String?>{},
-      ) as Map<String, String?>);
-
-  @override
-  Map<String, Map<String, bool>> get userBlocks => (super.noSuchMethod(
-        Invocation.getter(#userBlocks),
-        returnValue: <String, Map<String, bool>>{},
-        returnValueForMissingStub: <String, Map<String, bool>>{},
-      ) as Map<String, Map<String, bool>>);
-
-  @override
-  List<String> get alertCircles => (super.noSuchMethod(
-        Invocation.getter(#alertCircles),
-        returnValue: <String>[],
-        returnValueForMissingStub: <String>[],
-      ) as List<String>);
-
-  @override
-  List<Map<String, dynamic>> get pinnedGames => (super.noSuchMethod(
-        Invocation.getter(#pinnedGames),
-        returnValue: <Map<String, dynamic>>[],
-        returnValueForMissingStub: <Map<String, dynamic>>[],
-      ) as List<Map<String, dynamic>>);
-
-  @override
-  Set<String> get mutedGames => (super.noSuchMethod(
-        Invocation.getter(#mutedGames),
-        returnValue: <String>{},
-        returnValueForMissingStub: <String>{},
-      ) as Set<String>);
-
-  @override
-  Map<String, bool> get hasRatedGame => (super.noSuchMethod(
-        Invocation.getter(#hasRatedGame),
-        returnValue: <String, bool>{},
-        returnValueForMissingStub: <String, bool>{},
-      ) as Map<String, bool>);
-
-  @override
-  set memberProfileImages(Map<String, String?>? _memberProfileImages) =>
+  set gameSquadSpots(Map<String, List<String?>>? _gameSquadSpots) =>
       super.noSuchMethod(
         Invocation.setter(
-          #memberProfileImages,
-          _memberProfileImages,
+          #gameSquadSpots,
+          _gameSquadSpots,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set gameSpotTimers(
+          Map<String, List<Map<String, dynamic>?>>? _gameSpotTimers) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #gameSpotTimers,
+          _gameSpotTimers,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set gameStatuses(Map<String, Map<String, String>>? _gameStatuses) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #gameStatuses,
+          _gameStatuses,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set globalStatuses(Map<String, String>? _globalStatuses) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #globalStatuses,
+          _globalStatuses,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set squadMemberUids(List<String>? _squadMemberUids) => super.noSuchMethod(
+        Invocation.setter(
+          #squadMemberUids,
+          _squadMemberUids,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set memberDisplayNames(Map<String, String>? _memberDisplayNames) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #memberDisplayNames,
+          _memberDisplayNames,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set gameHistory(List<Map<String, dynamic>>? _gameHistory) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #gameHistory,
+          _gameHistory,
         ),
         returnValueForMissingStub: null,
       );
@@ -1679,20 +2285,69 @@ class MockUserManager extends _i1.Mock implements _i5.UserManager {
       );
 
   @override
-  set alertCircles(List<String>? _alertCircles) => super.noSuchMethod(
+  set dailyBanVotes(Map<String, Map<String, int>>? _dailyBanVotes) =>
+      super.noSuchMethod(
         Invocation.setter(
-          #alertCircles,
-          _alertCircles,
+          #dailyBanVotes,
+          _dailyBanVotes,
         ),
         returnValueForMissingStub: null,
       );
 
   @override
-  set pinnedGames(List<Map<String, dynamic>>? _pinnedGames) =>
+  set userSquadIds(List<String>? _userSquadIds) => super.noSuchMethod(
+        Invocation.setter(
+          #userSquadIds,
+          _userSquadIds,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set selectedSquadId(String? _selectedSquadId) => super.noSuchMethod(
+        Invocation.setter(
+          #selectedSquadId,
+          _selectedSquadId,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set userSquads(Map<String, Map<String, dynamic>>? _userSquads) =>
       super.noSuchMethod(
         Invocation.setter(
-          #pinnedGames,
-          _pinnedGames,
+          #userSquads,
+          _userSquads,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set availableGames(List<Map<String, dynamic>>? _availableGames) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #availableGames,
+          _availableGames,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set gameLobbies(Map<String, List<Map<String, dynamic>>>? _gameLobbies) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #gameLobbies,
+          _gameLobbies,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set preferredPeacockGames(Set<String>? _preferredPeacockGames) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #preferredPeacockGames,
+          _preferredPeacockGames,
         ),
         returnValueForMissingStub: null,
       );
@@ -1707,92 +2362,127 @@ class MockUserManager extends _i1.Mock implements _i5.UserManager {
       );
 
   @override
-  set hasRatedGame(Map<String, bool>? _hasRatedGame) => super.noSuchMethod(
+  set hiddenGames(Set<String>? _hiddenGames) => super.noSuchMethod(
         Invocation.setter(
-          #hasRatedGame,
-          _hasRatedGame,
+          #hiddenGames,
+          _hiddenGames,
         ),
         returnValueForMissingStub: null,
       );
 
   @override
-  bool get hasListeners => (super.noSuchMethod(
-        Invocation.getter(#hasListeners),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
-
-  @override
-  void updateProfileImage(String? url) => super.noSuchMethod(
-        Invocation.method(
-          #updateProfileImage,
-          [url],
+  set currentStreaks(Map<String, int>? _currentStreaks) => super.noSuchMethod(
+        Invocation.setter(
+          #currentStreaks,
+          _currentStreaks,
         ),
         returnValueForMissingStub: null,
       );
 
   @override
-  void updateDisplayName(String? name) => super.noSuchMethod(
-        Invocation.method(
-          #updateDisplayName,
-          [name],
+  set highestStreaks(Map<String, int>? _highestStreaks) => super.noSuchMethod(
+        Invocation.setter(
+          #highestStreaks,
+          _highestStreaks,
         ),
         returnValueForMissingStub: null,
       );
 
   @override
-  void updatePreferredMode(
-    String? user,
-    String? mode,
-  ) =>
+  set achievements(Map<String, Set<String>>? _achievements) =>
       super.noSuchMethod(
-        Invocation.method(
-          #updatePreferredMode,
-          [
-            user,
-            mode,
-          ],
+        Invocation.setter(
+          #achievements,
+          _achievements,
         ),
         returnValueForMissingStub: null,
       );
 
   @override
-  bool isUserBlocked(String? user) => (super.noSuchMethod(
-        Invocation.method(
-          #isUserBlocked,
-          [user],
+  set dailyRatings(Map<String, Map<String, List<int>>>? _dailyRatings) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #dailyRatings,
+          _dailyRatings,
         ),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i29.Future<void> updateUserProfile(
-    String? uid,
-    Map<String, dynamic>? data,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #updateUserProfile,
-          [
-            uid,
-            data,
-          ],
+  set allTimeRatings(Map<String, Map<String, List<int>>>? _allTimeRatings) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #allTimeRatings,
+          _allTimeRatings,
         ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i29.Future<Map<String, dynamic>?> getUserProfile(String? uid) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getUserProfile,
-          [uid],
+  set complaints(Map<String, int>? _complaints) => super.noSuchMethod(
+        Invocation.setter(
+          #complaints,
+          _complaints,
         ),
-        returnValue: _i29.Future<Map<String, dynamic>?>.value(),
-        returnValueForMissingStub: _i29.Future<Map<String, dynamic>?>.value(),
-      ) as _i29.Future<Map<String, dynamic>?>);
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set bans(Map<String, List<Map<String, dynamic>>>? _bans) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #bans,
+          _bans,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set scheduledTimes(List<Map<String, dynamic>>? _scheduledTimes) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #scheduledTimes,
+          _scheduledTimes,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set peacockTimers(Map<String, Map<String, dynamic>?>? _peacockTimers) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #peacockTimers,
+          _peacockTimers,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set peacockQueue(List<String>? _peacockQueue) => super.noSuchMethod(
+        Invocation.setter(
+          #peacockQueue,
+          _peacockQueue,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set currentSquadData(Map<String, dynamic>? value) => super.noSuchMethod(
+        Invocation.setter(
+          #currentSquadData,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set currentGame(Map<String, dynamic>? game) => super.noSuchMethod(
+        Invocation.setter(
+          #currentGame,
+          game,
+        ),
+        returnValueForMissingStub: null,
+      );
 
   @override
   String getDisplayNameForUid(String? uid) => (super.noSuchMethod(
@@ -1800,14 +2490,14 @@ class MockUserManager extends _i1.Mock implements _i5.UserManager {
           #getDisplayNameForUid,
           [uid],
         ),
-        returnValue: _i30.dummyValue<String>(
+        returnValue: _i12.dummyValue<String>(
           this,
           Invocation.method(
             #getDisplayNameForUid,
             [uid],
           ),
         ),
-        returnValueForMissingStub: _i30.dummyValue<String>(
+        returnValueForMissingStub: _i12.dummyValue<String>(
           this,
           Invocation.method(
             #getDisplayNameForUid,
@@ -1817,336 +2507,1071 @@ class MockUserManager extends _i1.Mock implements _i5.UserManager {
       ) as String);
 
   @override
-  _i29.Future<Map<String, dynamic>?> getCachedSenderDetails(String? senderId) =>
-      (super.noSuchMethod(
+  String? getUidForDisplayName(String? displayName) => (super.noSuchMethod(
         Invocation.method(
-          #getCachedSenderDetails,
-          [senderId],
+          #getUidForDisplayName,
+          [displayName],
         ),
-        returnValue: _i29.Future<Map<String, dynamic>?>.value(),
-        returnValueForMissingStub: _i29.Future<Map<String, dynamic>?>.value(),
-      ) as _i29.Future<Map<String, dynamic>?>);
+        returnValueForMissingStub: null,
+      ) as String?);
 
   @override
-  _i29.Future<void> blockUser(
-    String? blockerUid,
-    String? blockedUid,
+  void claimSpot(
+    int? index,
+    String? userName,
+    String? userUid,
   ) =>
-      (super.noSuchMethod(
+      super.noSuchMethod(
         Invocation.method(
-          #blockUser,
+          #claimSpot,
           [
-            blockerUid,
-            blockedUid,
+            index,
+            userName,
+            userUid,
           ],
         ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i29.Future<void> unblockUser(
-    String? blockerUid,
-    String? blockedUid,
-  ) =>
-      (super.noSuchMethod(
+  void callSpotForGame(
+    int? index,
+    String? userName,
+    String? userUid,
+    String? gameName, {
+    int? maxSpots,
+  }) =>
+      super.noSuchMethod(
         Invocation.method(
-          #unblockUser,
+          #callSpotForGame,
           [
-            blockerUid,
-            blockedUid,
+            index,
+            userName,
+            userUid,
+            gameName,
+          ],
+          {#maxSpots: maxSpots},
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void lockCalledSpot(
+    String? gameName,
+    int? index,
+    String? userName,
+    String? userUid,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #lockCalledSpot,
+          [
+            gameName,
+            index,
+            userName,
+            userUid,
           ],
         ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i29.Future<Map<String, bool>> getBlockedUsers(String? uid) =>
-      (super.noSuchMethod(
+  void assignSpot(
+    int? index,
+    String? player,
+  ) =>
+      super.noSuchMethod(
         Invocation.method(
-          #getBlockedUsers,
-          [uid],
+          #assignSpot,
+          [
+            index,
+            player,
+          ],
         ),
-        returnValue: _i29.Future<Map<String, bool>>.value(<String, bool>{}),
-        returnValueForMissingStub:
-            _i29.Future<Map<String, bool>>.value(<String, bool>{}),
-      ) as _i29.Future<Map<String, bool>>);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  void markGameAsRated(String? gameName) => super.noSuchMethod(
+  void leaveSpot(int? index) => super.noSuchMethod(
         Invocation.method(
-          #markGameAsRated,
+          #leaveSpot,
+          [index],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void setStatus(
+    String? player,
+    String? status,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #setStatus,
+          [
+            player,
+            status,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void addPreferredPeacockGame(String? gameName) => super.noSuchMethod(
+        Invocation.method(
+          #addPreferredPeacockGame,
           [gameName],
         ),
         returnValueForMissingStub: null,
       );
 
   @override
-  _i29.Future<void> fetchPinnedGames() => (super.noSuchMethod(
+  void removePreferredPeacockGame(String? gameName) => super.noSuchMethod(
         Invocation.method(
-          #fetchPinnedGames,
-          [],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> addPinnedGame(Map<String, dynamic>? game) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #addPinnedGame,
-          [game],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> removePinnedGame(String? gameName) => (super.noSuchMethod(
-        Invocation.method(
-          #removePinnedGame,
+          #removePreferredPeacockGame,
           [gameName],
         ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i29.Future<void> updateGameLastPlayed(String? gameName) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #updateGameLastPlayed,
-          [gameName],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> fetchMutedGames() => (super.noSuchMethod(
-        Invocation.method(
-          #fetchMutedGames,
-          [],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> muteGame(String? gameSlug) => (super.noSuchMethod(
+  void muteGame(String? gameName) => super.noSuchMethod(
         Invocation.method(
           #muteGame,
-          [gameSlug],
+          [gameName],
         ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  _i29.Future<void> unmuteGame(String? gameSlug) => (super.noSuchMethod(
+  void unmuteGame(String? gameName) => super.noSuchMethod(
         Invocation.method(
           #unmuteGame,
-          [gameSlug],
+          [gameName],
         ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
+        returnValueForMissingStub: null,
+      );
 
   @override
-  bool isGameMuted(String? gameSlug) => (super.noSuchMethod(
+  void hideGame(String? gameName) => super.noSuchMethod(
         Invocation.method(
-          #isGameMuted,
-          [gameSlug],
+          #hideGame,
+          [gameName],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void unhideGame(String? gameName) => super.noSuchMethod(
+        Invocation.method(
+          #unhideGame,
+          [gameName],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  bool isGameHidden(String? gameName) => (super.noSuchMethod(
+        Invocation.method(
+          #isGameHidden,
+          [gameName],
         ),
         returnValue: false,
         returnValueForMissingStub: false,
       ) as bool);
 
   @override
-  _i29.Future<void> clearMutedGames() => (super.noSuchMethod(
+  bool isGameMuted(String? gameName) => (super.noSuchMethod(
         Invocation.method(
-          #clearMutedGames,
-          [],
+          #isGameMuted,
+          [gameName],
         ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
 
   @override
-  _i29.Future<List<Map<String, dynamic>>> searchUsers(String? query) =>
+  void startSoloGame(
+    String? userName, [
+    String? gameName,
+  ]) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #startSoloGame,
+          [
+            userName,
+            gameName,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void stopSoloGame(String? userName) => super.noSuchMethod(
+        Invocation.method(
+          #stopSoloGame,
+          [userName],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  bool isPlayingSolo(String? playerName) => (super.noSuchMethod(
+        Invocation.method(
+          #isPlayingSolo,
+          [playerName],
+        ),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  void joinLobby(
+    String? lobbyId,
+    String? playerName,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #joinLobby,
+          [
+            lobbyId,
+            playerName,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void addGame(Map<String, dynamic>? game) => super.noSuchMethod(
+        Invocation.method(
+          #addGame,
+          [game],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void editGame(
+    int? index,
+    Map<String, dynamic>? updatedGame,
+  ) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #editGame,
+          [
+            index,
+            updatedGame,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void deleteGame(int? index) => super.noSuchMethod(
+        Invocation.method(
+          #deleteGame,
+          [index],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  Map<String, dynamic>? getPlayerLobby(String? playerName) =>
       (super.noSuchMethod(
         Invocation.method(
-          #searchUsers,
-          [query],
+          #getPlayerLobby,
+          [playerName],
         ),
-        returnValue: _i29.Future<List<Map<String, dynamic>>>.value(
-            <Map<String, dynamic>>[]),
-        returnValueForMissingStub:
-            _i29.Future<List<Map<String, dynamic>>>.value(
-                <Map<String, dynamic>>[]),
-      ) as _i29.Future<List<Map<String, dynamic>>>);
+        returnValueForMissingStub: null,
+      ) as Map<String, dynamic>?);
 
   @override
-  _i29.Future<String?> startDMThread(String? otherUserId) =>
+  bool hasBlockedPlayersInLobby(
+    Map<String, dynamic>? lobby,
+    String? currentUserId,
+  ) =>
       (super.noSuchMethod(
         Invocation.method(
-          #startDMThread,
-          [otherUserId],
+          #hasBlockedPlayersInLobby,
+          [
+            lobby,
+            currentUserId,
+          ],
         ),
-        returnValue: _i29.Future<String?>.value(),
-        returnValueForMissingStub: _i29.Future<String?>.value(),
-      ) as _i29.Future<String?>);
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
 
   @override
-  _i29.Stream<List<Map<String, dynamic>>> streamFriends() =>
+  String? getPlayerPreferredGame(String? playerName) => (super.noSuchMethod(
+        Invocation.method(
+          #getPlayerPreferredGame,
+          [playerName],
+        ),
+        returnValueForMissingStub: null,
+      ) as String?);
+
+  @override
+  List<Map<String, dynamic>> getVisibleLobbies(String? gameName) =>
       (super.noSuchMethod(
         Invocation.method(
-          #streamFriends,
-          [],
+          #getVisibleLobbies,
+          [gameName],
         ),
-        returnValue: _i29.Stream<List<Map<String, dynamic>>>.empty(),
-        returnValueForMissingStub:
-            _i29.Stream<List<Map<String, dynamic>>>.empty(),
-      ) as _i29.Stream<List<Map<String, dynamic>>>);
+        returnValue: <Map<String, dynamic>>[],
+        returnValueForMissingStub: <Map<String, dynamic>>[],
+      ) as List<Map<String, dynamic>>);
 
   @override
-  _i29.Stream<List<Map<String, dynamic>>> streamPendingRequests() =>
-      (super.noSuchMethod(
+  _i6.Future<void> removeFromPeacock(String? player) => (super.noSuchMethod(
         Invocation.method(
-          #streamPendingRequests,
-          [],
+          #removeFromPeacock,
+          [player],
         ),
-        returnValue: _i29.Stream<List<Map<String, dynamic>>>.empty(),
-        returnValueForMissingStub:
-            _i29.Stream<List<Map<String, dynamic>>>.empty(),
-      ) as _i29.Stream<List<Map<String, dynamic>>>);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i29.Future<void> acceptFriendRequest(String? requesterId) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #acceptFriendRequest,
-          [requesterId],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> declineFriendRequest(String? requesterId) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #declineFriendRequest,
-          [requesterId],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> sendFriendRequest(String? receiverId) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #sendFriendRequest,
-          [receiverId],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> removeFriend(String? friendId) => (super.noSuchMethod(
-        Invocation.method(
-          #removeFriend,
-          [friendId],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> submitFeedback({
-    required String? type,
-    required String? page,
-    required String? content,
-    required String? severity,
+  _i6.Future<void> submitComplaint({
+    required String? targetMember,
+    required String? reason,
+    required String? category,
+    required String? submittedBy,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
-          #submitFeedback,
+          #submitComplaint,
           [],
           {
-            #type: type,
-            #page: page,
-            #content: content,
-            #severity: severity,
+            #targetMember: targetMember,
+            #reason: reason,
+            #category: category,
+            #submittedBy: submittedBy,
           },
         ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i29.Future<List<Map<String, dynamic>>> fetchPublicGroups() =>
+  _i6.Future<void> submitRatings({
+    required String? targetMember,
+    required Map<String, int?>? ratings,
+    required String? submittedBy,
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
-          #fetchPublicGroups,
+          #submitRatings,
           [],
+          {
+            #targetMember: targetMember,
+            #ratings: ratings,
+            #submittedBy: submittedBy,
+          },
         ),
-        returnValue: _i29.Future<List<Map<String, dynamic>>>.value(
-            <Map<String, dynamic>>[]),
-        returnValueForMissingStub:
-            _i29.Future<List<Map<String, dynamic>>>.value(
-                <Map<String, dynamic>>[]),
-      ) as _i29.Future<List<Map<String, dynamic>>>);
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
 
   @override
-  _i29.Future<List<Map<String, dynamic>>> searchRelevantSquads(String? query) =>
+  _i6.Future<String> createSquad(String? name) => (super.noSuchMethod(
+        Invocation.method(
+          #createSquad,
+          [name],
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #createSquad,
+            [name],
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #createSquad,
+            [name],
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<bool> joinSquad(String? code) => (super.noSuchMethod(
+        Invocation.method(
+          #joinSquad,
+          [code],
+        ),
+        returnValue: _i6.Future<bool>.value(false),
+        returnValueForMissingStub: _i6.Future<bool>.value(false),
+      ) as _i6.Future<bool>);
+
+  @override
+  _i6.Future<void> leaveSquad(String? squadId) => (super.noSuchMethod(
+        Invocation.method(
+          #leaveSquad,
+          [squadId],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  void selectSquad(String? squadId) => super.noSuchMethod(
+        Invocation.method(
+          #selectSquad,
+          [squadId],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  Map<String, dynamic>? getSquadById(String? squadId) => (super.noSuchMethod(
+        Invocation.method(
+          #getSquadById,
+          [squadId],
+        ),
+        returnValueForMissingStub: null,
+      ) as Map<String, dynamic>?);
+}
+
+/// A class which mocks [ChatService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockChatService extends _i1.Mock implements _i26.ChatService {
+  @override
+  int get offlineMessageCount => (super.noSuchMethod(
+        Invocation.getter(#offlineMessageCount),
+        returnValue: 0,
+        returnValueForMissingStub: 0,
+      ) as int);
+
+  @override
+  bool get isOnline => (super.noSuchMethod(
+        Invocation.getter(#isOnline),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  void didChangeAppLifecycleState(_i24.AppLifecycleState? state) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #didChangeAppLifecycleState,
+          [state],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  _i6.Stream<_i18.QuerySnapshot<Object?>> getChatMessages(
+    _i15.BuildContext? context, {
+    String? chatGroupId,
+    required _i14.ChatType? chatType,
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
-          #searchRelevantSquads,
-          [query],
+          #getChatMessages,
+          [context],
+          {
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
         ),
-        returnValue: _i29.Future<List<Map<String, dynamic>>>.value(
-            <Map<String, dynamic>>[]),
+        returnValue: _i6.Stream<_i18.QuerySnapshot<Object?>>.empty(),
         returnValueForMissingStub:
-            _i29.Future<List<Map<String, dynamic>>>.value(
-                <Map<String, dynamic>>[]),
-      ) as _i29.Future<List<Map<String, dynamic>>>);
+            _i6.Stream<_i18.QuerySnapshot<Object?>>.empty(),
+      ) as _i6.Stream<_i18.QuerySnapshot<Object?>>);
 
   @override
-  void addListener(_i36.VoidCallback? listener) => super.noSuchMethod(
+  _i6.Stream<String?> getTypingUser(
+    _i15.BuildContext? context, {
+    String? chatGroupId,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
         Invocation.method(
-          #addListener,
-          [listener],
+          #getTypingUser,
+          [context],
+          {
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Stream<String?>.empty(),
+        returnValueForMissingStub: _i6.Stream<String?>.empty(),
+      ) as _i6.Stream<String?>);
+
+  @override
+  _i6.Future<_i4.MessageSendResult> sendMessage(
+    _i15.BuildContext? context, {
+    required String? senderUid,
+    String? text,
+    String? imageUrl,
+    String? videoUrl,
+    String? audioUrl,
+    List<Map<String, dynamic>>? photos = const [],
+    List<Map<String, dynamic>>? videos = const [],
+    List<Map<String, dynamic>>? audio = const [],
+    List<Map<String, dynamic>>? reactions = const [],
+    String? pollId,
+    String? replyTo,
+    String? chatGroupId,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #sendMessage,
+          [context],
+          {
+            #senderUid: senderUid,
+            #text: text,
+            #imageUrl: imageUrl,
+            #videoUrl: videoUrl,
+            #audioUrl: audioUrl,
+            #photos: photos,
+            #videos: videos,
+            #audio: audio,
+            #reactions: reactions,
+            #pollId: pollId,
+            #replyTo: replyTo,
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue:
+            _i6.Future<_i4.MessageSendResult>.value(_FakeMessageSendResult_3(
+          this,
+          Invocation.method(
+            #sendMessage,
+            [context],
+            {
+              #senderUid: senderUid,
+              #text: text,
+              #imageUrl: imageUrl,
+              #videoUrl: videoUrl,
+              #audioUrl: audioUrl,
+              #photos: photos,
+              #videos: videos,
+              #audio: audio,
+              #reactions: reactions,
+              #pollId: pollId,
+              #replyTo: replyTo,
+              #chatGroupId: chatGroupId,
+              #chatType: chatType,
+            },
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<_i4.MessageSendResult>.value(_FakeMessageSendResult_3(
+          this,
+          Invocation.method(
+            #sendMessage,
+            [context],
+            {
+              #senderUid: senderUid,
+              #text: text,
+              #imageUrl: imageUrl,
+              #videoUrl: videoUrl,
+              #audioUrl: audioUrl,
+              #photos: photos,
+              #videos: videos,
+              #audio: audio,
+              #reactions: reactions,
+              #pollId: pollId,
+              #replyTo: replyTo,
+              #chatGroupId: chatGroupId,
+              #chatType: chatType,
+            },
+          ),
+        )),
+      ) as _i6.Future<_i4.MessageSendResult>);
+
+  @override
+  _i6.Future<String> uploadMedia(
+    _i11.File? file,
+    String? fileName,
+    bool? isVideo,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #uploadMedia,
+          [
+            file,
+            fileName,
+            isVideo,
+          ],
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadMedia,
+            [
+              file,
+              fileName,
+              isVideo,
+            ],
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadMedia,
+            [
+              file,
+              fileName,
+              isVideo,
+            ],
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<String> uploadAudio(
+    _i11.File? file,
+    String? fileName,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #uploadAudio,
+          [
+            file,
+            fileName,
+          ],
+        ),
+        returnValue: _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadAudio,
+            [
+              file,
+              fileName,
+            ],
+          ),
+        )),
+        returnValueForMissingStub:
+            _i6.Future<String>.value(_i12.dummyValue<String>(
+          this,
+          Invocation.method(
+            #uploadAudio,
+            [
+              file,
+              fileName,
+            ],
+          ),
+        )),
+      ) as _i6.Future<String>);
+
+  @override
+  _i6.Future<void> markAsDelivered(String? docId) => (super.noSuchMethod(
+        Invocation.method(
+          #markAsDelivered,
+          [docId],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> updateTypingStatus(
+    _i15.BuildContext? context,
+    String? user,
+    bool? isTyping, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateTypingStatus,
+          [
+            context,
+            user,
+            isTyping,
+          ],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> addReaction(
+    _i15.BuildContext? context,
+    String? msgId,
+    String? reaction, {
+    String? chatGroupId,
+    _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #addReaction,
+          [
+            context,
+            msgId,
+            reaction,
+          ],
+          {
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<List<Map<String, dynamic>>> loadMoreMessages({
+    required int? offset,
+    required int? limit,
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #loadMoreMessages,
+          [],
+          {
+            #offset: offset,
+            #limit: limit,
+            #chatGroupId: chatGroupId,
+          },
+        ),
+        returnValue: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i6.Future<List<Map<String, dynamic>>>);
+
+  @override
+  _i6.Future<List<Map<String, dynamic>>> getCachedMessages(
+    int? offset,
+    int? limit, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCachedMessages,
+          [
+            offset,
+            limit,
+          ],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub: _i6.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i6.Future<List<Map<String, dynamic>>>);
+
+  @override
+  _i6.Future<void> retryOfflineMessages() => (super.noSuchMethod(
+        Invocation.method(
+          #retryOfflineMessages,
+          [],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> cacheMessagesFromSnapshot(
+    _i18.QuerySnapshot<Object?>? snapshot,
+    String? chatGroupId,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #cacheMessagesFromSnapshot,
+          [
+            snapshot,
+            chatGroupId,
+          ],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> sendReply(
+    String? messageId,
+    String? text,
+    String? squadId, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #sendReply,
+          [
+            messageId,
+            text,
+            squadId,
+          ],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> deleteMessage(
+    String? messageId,
+    String? squadId, {
+    String? chatGroupId,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #deleteMessage,
+          [
+            messageId,
+            squadId,
+          ],
+          {
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> editMessage(
+    String? messageId,
+    String? newText,
+    String? squadId, {
+    String? chatGroupId,
+    required _i14.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #editMessage,
+          [
+            messageId,
+            newText,
+            squadId,
+          ],
+          {
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> pinMessage(
+    String? messageId,
+    String? chatGroupId,
+    _i14.ChatType? chatType,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #pinMessage,
+          [
+            messageId,
+            chatGroupId,
+            chatType,
+          ],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> unpinMessage(
+    String? messageId,
+    String? chatGroupId,
+    _i14.ChatType? chatType,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #unpinMessage,
+          [
+            messageId,
+            chatGroupId,
+            chatType,
+          ],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> bumpMessage(
+    String? messageId,
+    String? chatGroupId,
+    _i14.ChatType? chatType,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #bumpMessage,
+          [
+            messageId,
+            chatGroupId,
+            chatType,
+          ],
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<_i27.MessageData?> getMessageById(
+    String? messageId, {
+    String? chatGroupId,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getMessageById,
+          [messageId],
+          {#chatGroupId: chatGroupId},
+        ),
+        returnValue: _i6.Future<_i27.MessageData?>.value(),
+        returnValueForMissingStub: _i6.Future<_i27.MessageData?>.value(),
+      ) as _i6.Future<_i27.MessageData?>);
+
+  @override
+  _i6.Future<bool> didPopRoute() => (super.noSuchMethod(
+        Invocation.method(
+          #didPopRoute,
+          [],
+        ),
+        returnValue: _i6.Future<bool>.value(false),
+        returnValueForMissingStub: _i6.Future<bool>.value(false),
+      ) as _i6.Future<bool>);
+
+  @override
+  bool handleStartBackGesture(_i28.PredictiveBackEvent? backEvent) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #handleStartBackGesture,
+          [backEvent],
+        ),
+        returnValue: false,
+        returnValueForMissingStub: false,
+      ) as bool);
+
+  @override
+  void handleUpdateBackGestureProgress(_i28.PredictiveBackEvent? backEvent) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #handleUpdateBackGestureProgress,
+          [backEvent],
         ),
         returnValueForMissingStub: null,
       );
 
   @override
-  void removeListener(_i36.VoidCallback? listener) => super.noSuchMethod(
+  void handleCommitBackGesture() => super.noSuchMethod(
         Invocation.method(
-          #removeListener,
-          [listener],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void dispose() => super.noSuchMethod(
-        Invocation.method(
-          #dispose,
+          #handleCommitBackGesture,
           [],
         ),
         returnValueForMissingStub: null,
       );
 
   @override
-  void notifyListeners() => super.noSuchMethod(
+  void handleCancelBackGesture() => super.noSuchMethod(
         Invocation.method(
-          #notifyListeners,
+          #handleCancelBackGesture,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  _i6.Future<bool> didPushRoute(String? route) => (super.noSuchMethod(
+        Invocation.method(
+          #didPushRoute,
+          [route],
+        ),
+        returnValue: _i6.Future<bool>.value(false),
+        returnValueForMissingStub: _i6.Future<bool>.value(false),
+      ) as _i6.Future<bool>);
+
+  @override
+  _i6.Future<bool> didPushRouteInformation(
+          _i15.RouteInformation? routeInformation) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #didPushRouteInformation,
+          [routeInformation],
+        ),
+        returnValue: _i6.Future<bool>.value(false),
+        returnValueForMissingStub: _i6.Future<bool>.value(false),
+      ) as _i6.Future<bool>);
+
+  @override
+  void didChangeMetrics() => super.noSuchMethod(
+        Invocation.method(
+          #didChangeMetrics,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void didChangeTextScaleFactor() => super.noSuchMethod(
+        Invocation.method(
+          #didChangeTextScaleFactor,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void didChangePlatformBrightness() => super.noSuchMethod(
+        Invocation.method(
+          #didChangePlatformBrightness,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void didChangeLocales(List<_i24.Locale>? locales) => super.noSuchMethod(
+        Invocation.method(
+          #didChangeLocales,
+          [locales],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void didChangeViewFocus(_i24.ViewFocusEvent? event) => super.noSuchMethod(
+        Invocation.method(
+          #didChangeViewFocus,
+          [event],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  _i6.Future<_i24.AppExitResponse> didRequestAppExit() => (super.noSuchMethod(
+        Invocation.method(
+          #didRequestAppExit,
+          [],
+        ),
+        returnValue:
+            _i6.Future<_i24.AppExitResponse>.value(_i24.AppExitResponse.exit),
+        returnValueForMissingStub:
+            _i6.Future<_i24.AppExitResponse>.value(_i24.AppExitResponse.exit),
+      ) as _i6.Future<_i24.AppExitResponse>);
+
+  @override
+  void didHaveMemoryPressure() => super.noSuchMethod(
+        Invocation.method(
+          #didHaveMemoryPressure,
+          [],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void didChangeAccessibilityFeatures() => super.noSuchMethod(
+        Invocation.method(
+          #didChangeAccessibilityFeatures,
           [],
         ),
         returnValueForMissingStub: null,
@@ -2157,34 +3582,34 @@ class MockUserManager extends _i1.Mock implements _i5.UserManager {
 ///
 /// See the documentation for Mockito's code generation for more information.
 class MockRef<State extends Object?> extends _i1.Mock
-    implements _i24.Ref<State> {
+    implements _i3.Ref<State> {
   @override
-  _i24.ProviderContainer get container => (super.noSuchMethod(
+  _i3.ProviderContainer get container => (super.noSuchMethod(
         Invocation.getter(#container),
-        returnValue: _FakeProviderContainer_27(
+        returnValue: _FakeProviderContainer_4(
           this,
           Invocation.getter(#container),
         ),
-        returnValueForMissingStub: _FakeProviderContainer_27(
+        returnValueForMissingStub: _FakeProviderContainer_4(
           this,
           Invocation.getter(#container),
         ),
-      ) as _i24.ProviderContainer);
+      ) as _i3.ProviderContainer);
 
   @override
-  T refresh<T>(_i24.Refreshable<T>? provider) => (super.noSuchMethod(
+  T refresh<T>(_i3.Refreshable<T>? provider) => (super.noSuchMethod(
         Invocation.method(
           #refresh,
           [provider],
         ),
-        returnValue: _i30.dummyValue<T>(
+        returnValue: _i12.dummyValue<T>(
           this,
           Invocation.method(
             #refresh,
             [provider],
           ),
         ),
-        returnValueForMissingStub: _i30.dummyValue<T>(
+        returnValueForMissingStub: _i12.dummyValue<T>(
           this,
           Invocation.method(
             #refresh,
@@ -2194,7 +3619,7 @@ class MockRef<State extends Object?> extends _i1.Mock
       ) as T);
 
   @override
-  void invalidate(_i24.ProviderOrFamily? provider) => super.noSuchMethod(
+  void invalidate(_i3.ProviderOrFamily? provider) => super.noSuchMethod(
         Invocation.method(
           #invalidate,
           [provider],
@@ -2286,19 +3711,19 @@ class MockRef<State extends Object?> extends _i1.Mock
       );
 
   @override
-  T read<T>(_i24.ProviderListenable<T>? provider) => (super.noSuchMethod(
+  T read<T>(_i3.ProviderListenable<T>? provider) => (super.noSuchMethod(
         Invocation.method(
           #read,
           [provider],
         ),
-        returnValue: _i30.dummyValue<T>(
+        returnValue: _i12.dummyValue<T>(
           this,
           Invocation.method(
             #read,
             [provider],
           ),
         ),
-        returnValueForMissingStub: _i30.dummyValue<T>(
+        returnValueForMissingStub: _i12.dummyValue<T>(
           this,
           Invocation.method(
             #read,
@@ -2308,7 +3733,7 @@ class MockRef<State extends Object?> extends _i1.Mock
       ) as T);
 
   @override
-  bool exists(_i24.ProviderBase<Object?>? provider) => (super.noSuchMethod(
+  bool exists(_i3.ProviderBase<Object?>? provider) => (super.noSuchMethod(
         Invocation.method(
           #exists,
           [provider],
@@ -2318,19 +3743,19 @@ class MockRef<State extends Object?> extends _i1.Mock
       ) as bool);
 
   @override
-  T watch<T>(_i24.ProviderListenable<T>? provider) => (super.noSuchMethod(
+  T watch<T>(_i3.ProviderListenable<T>? provider) => (super.noSuchMethod(
         Invocation.method(
           #watch,
           [provider],
         ),
-        returnValue: _i30.dummyValue<T>(
+        returnValue: _i12.dummyValue<T>(
           this,
           Invocation.method(
             #watch,
             [provider],
           ),
         ),
-        returnValueForMissingStub: _i30.dummyValue<T>(
+        returnValueForMissingStub: _i12.dummyValue<T>(
           this,
           Invocation.method(
             #watch,
@@ -2340,30 +3765,30 @@ class MockRef<State extends Object?> extends _i1.Mock
       ) as T);
 
   @override
-  _i24.KeepAliveLink keepAlive() => (super.noSuchMethod(
+  _i3.KeepAliveLink keepAlive() => (super.noSuchMethod(
         Invocation.method(
           #keepAlive,
           [],
         ),
-        returnValue: _FakeKeepAliveLink_28(
+        returnValue: _FakeKeepAliveLink_5(
           this,
           Invocation.method(
             #keepAlive,
             [],
           ),
         ),
-        returnValueForMissingStub: _FakeKeepAliveLink_28(
+        returnValueForMissingStub: _FakeKeepAliveLink_5(
           this,
           Invocation.method(
             #keepAlive,
             [],
           ),
         ),
-      ) as _i24.KeepAliveLink);
+      ) as _i3.KeepAliveLink);
 
   @override
-  _i24.ProviderSubscription<T> listen<T>(
-    _i24.ProviderListenable<T>? provider,
+  _i3.ProviderSubscription<T> listen<T>(
+    _i3.ProviderListenable<T>? provider,
     void Function(
       T?,
       T,
@@ -2386,7 +3811,7 @@ class MockRef<State extends Object?> extends _i1.Mock
             #fireImmediately: fireImmediately,
           },
         ),
-        returnValue: _FakeProviderSubscription_29<T>(
+        returnValue: _FakeProviderSubscription_6<T>(
           this,
           Invocation.method(
             #listen,
@@ -2400,7 +3825,7 @@ class MockRef<State extends Object?> extends _i1.Mock
             },
           ),
         ),
-        returnValueForMissingStub: _FakeProviderSubscription_29<T>(
+        returnValueForMissingStub: _FakeProviderSubscription_6<T>(
           this,
           Invocation.method(
             #listen,
@@ -2414,493 +3839,5 @@ class MockRef<State extends Object?> extends _i1.Mock
             },
           ),
         ),
-      ) as _i24.ProviderSubscription<T>);
-}
-
-/// A class which mocks [ChatService].
-///
-/// See the documentation for Mockito's code generation for more information.
-class MockChatService extends _i1.Mock implements _i21.ChatService {
-  @override
-  int get offlineMessageCount => (super.noSuchMethod(
-        Invocation.getter(#offlineMessageCount),
-        returnValue: 0,
-        returnValueForMissingStub: 0,
-      ) as int);
-
-  @override
-  bool get isOnline => (super.noSuchMethod(
-        Invocation.getter(#isOnline),
-        returnValue: false,
-        returnValueForMissingStub: false,
-      ) as bool);
-
-  @override
-  _i29.Stream<_i37.QuerySnapshot<Object?>> getChatMessages(
-    _i28.BuildContext? context, {
-    String? chatGroupId,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getChatMessages,
-          [context],
-          {
-            #chatGroupId: chatGroupId,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Stream<_i37.QuerySnapshot<Object?>>.empty(),
-        returnValueForMissingStub:
-            _i29.Stream<_i37.QuerySnapshot<Object?>>.empty(),
-      ) as _i29.Stream<_i37.QuerySnapshot<Object?>>);
-
-  @override
-  _i29.Stream<String?> getTypingUser(
-    _i28.BuildContext? context, {
-    String? chatGroupId,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getTypingUser,
-          [context],
-          {
-            #chatGroupId: chatGroupId,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Stream<String?>.empty(),
-        returnValueForMissingStub: _i29.Stream<String?>.empty(),
-      ) as _i29.Stream<String?>);
-
-  @override
-  _i29.Future<_i27.MessageSendResult> sendMessage(
-    _i28.BuildContext? context, {
-    required String? senderUid,
-    String? text,
-    String? imageUrl,
-    String? videoUrl,
-    String? audioUrl,
-    List<Map<String, dynamic>>? photos = const [],
-    List<Map<String, dynamic>>? videos = const [],
-    List<Map<String, dynamic>>? audio = const [],
-    List<Map<String, dynamic>>? reactions = const [],
-    String? pollId,
-    String? replyTo,
-    String? chatGroupId,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #sendMessage,
-          [context],
-          {
-            #senderUid: senderUid,
-            #text: text,
-            #imageUrl: imageUrl,
-            #videoUrl: videoUrl,
-            #audioUrl: audioUrl,
-            #photos: photos,
-            #videos: videos,
-            #audio: audio,
-            #reactions: reactions,
-            #pollId: pollId,
-            #replyTo: replyTo,
-            #chatGroupId: chatGroupId,
-            #chatType: chatType,
-          },
-        ),
-        returnValue:
-            _i29.Future<_i27.MessageSendResult>.value(_FakeMessageSendResult_30(
-          this,
-          Invocation.method(
-            #sendMessage,
-            [context],
-            {
-              #senderUid: senderUid,
-              #text: text,
-              #imageUrl: imageUrl,
-              #videoUrl: videoUrl,
-              #audioUrl: audioUrl,
-              #photos: photos,
-              #videos: videos,
-              #audio: audio,
-              #reactions: reactions,
-              #pollId: pollId,
-              #replyTo: replyTo,
-              #chatGroupId: chatGroupId,
-              #chatType: chatType,
-            },
-          ),
-        )),
-        returnValueForMissingStub:
-            _i29.Future<_i27.MessageSendResult>.value(_FakeMessageSendResult_30(
-          this,
-          Invocation.method(
-            #sendMessage,
-            [context],
-            {
-              #senderUid: senderUid,
-              #text: text,
-              #imageUrl: imageUrl,
-              #videoUrl: videoUrl,
-              #audioUrl: audioUrl,
-              #photos: photos,
-              #videos: videos,
-              #audio: audio,
-              #reactions: reactions,
-              #pollId: pollId,
-              #replyTo: replyTo,
-              #chatGroupId: chatGroupId,
-              #chatType: chatType,
-            },
-          ),
-        )),
-      ) as _i29.Future<_i27.MessageSendResult>);
-
-  @override
-  _i29.Future<String> uploadMedia(
-    _i38.File? file,
-    String? fileName,
-    bool? isVideo,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #uploadMedia,
-          [
-            file,
-            fileName,
-            isVideo,
-          ],
-        ),
-        returnValue: _i29.Future<String>.value(_i30.dummyValue<String>(
-          this,
-          Invocation.method(
-            #uploadMedia,
-            [
-              file,
-              fileName,
-              isVideo,
-            ],
-          ),
-        )),
-        returnValueForMissingStub:
-            _i29.Future<String>.value(_i30.dummyValue<String>(
-          this,
-          Invocation.method(
-            #uploadMedia,
-            [
-              file,
-              fileName,
-              isVideo,
-            ],
-          ),
-        )),
-      ) as _i29.Future<String>);
-
-  @override
-  _i29.Future<String> uploadAudio(
-    _i38.File? file,
-    String? fileName,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #uploadAudio,
-          [
-            file,
-            fileName,
-          ],
-        ),
-        returnValue: _i29.Future<String>.value(_i30.dummyValue<String>(
-          this,
-          Invocation.method(
-            #uploadAudio,
-            [
-              file,
-              fileName,
-            ],
-          ),
-        )),
-        returnValueForMissingStub:
-            _i29.Future<String>.value(_i30.dummyValue<String>(
-          this,
-          Invocation.method(
-            #uploadAudio,
-            [
-              file,
-              fileName,
-            ],
-          ),
-        )),
-      ) as _i29.Future<String>);
-
-  @override
-  _i29.Future<void> markAsDelivered(String? docId) => (super.noSuchMethod(
-        Invocation.method(
-          #markAsDelivered,
-          [docId],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> updateTypingStatus(
-    _i28.BuildContext? context,
-    String? user,
-    bool? isTyping, {
-    String? chatGroupId,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #updateTypingStatus,
-          [
-            context,
-            user,
-            isTyping,
-          ],
-          {#chatGroupId: chatGroupId},
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> addReaction(
-    _i28.BuildContext? context,
-    String? msgId,
-    String? reaction, {
-    String? chatGroupId,
-    _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #addReaction,
-          [
-            context,
-            msgId,
-            reaction,
-          ],
-          {
-            #chatGroupId: chatGroupId,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<List<Map<String, dynamic>>> loadMoreMessages({
-    required int? offset,
-    required int? limit,
-    String? chatGroupId,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #loadMoreMessages,
-          [],
-          {
-            #offset: offset,
-            #limit: limit,
-            #chatGroupId: chatGroupId,
-          },
-        ),
-        returnValue: _i29.Future<List<Map<String, dynamic>>>.value(
-            <Map<String, dynamic>>[]),
-        returnValueForMissingStub:
-            _i29.Future<List<Map<String, dynamic>>>.value(
-                <Map<String, dynamic>>[]),
-      ) as _i29.Future<List<Map<String, dynamic>>>);
-
-  @override
-  _i29.Future<List<Map<String, dynamic>>> getCachedMessages(
-    int? offset,
-    int? limit, {
-    String? chatGroupId,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getCachedMessages,
-          [
-            offset,
-            limit,
-          ],
-          {#chatGroupId: chatGroupId},
-        ),
-        returnValue: _i29.Future<List<Map<String, dynamic>>>.value(
-            <Map<String, dynamic>>[]),
-        returnValueForMissingStub:
-            _i29.Future<List<Map<String, dynamic>>>.value(
-                <Map<String, dynamic>>[]),
-      ) as _i29.Future<List<Map<String, dynamic>>>);
-
-  @override
-  _i29.Future<void> retryOfflineMessages() => (super.noSuchMethod(
-        Invocation.method(
-          #retryOfflineMessages,
-          [],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> cacheMessagesFromSnapshot(
-    _i37.QuerySnapshot<Object?>? snapshot,
-    String? chatGroupId,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #cacheMessagesFromSnapshot,
-          [
-            snapshot,
-            chatGroupId,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> sendReply(
-    String? messageId,
-    String? text,
-    String? squadId, {
-    String? chatGroupId,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #sendReply,
-          [
-            messageId,
-            text,
-            squadId,
-          ],
-          {#chatGroupId: chatGroupId},
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> deleteMessage(
-    String? messageId,
-    String? squadId, {
-    String? chatGroupId,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #deleteMessage,
-          [
-            messageId,
-            squadId,
-          ],
-          {
-            #chatGroupId: chatGroupId,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> editMessage(
-    String? messageId,
-    String? newText,
-    String? squadId, {
-    String? chatGroupId,
-    required _i34.ChatType? chatType,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #editMessage,
-          [
-            messageId,
-            newText,
-            squadId,
-          ],
-          {
-            #chatGroupId: chatGroupId,
-            #chatType: chatType,
-          },
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> pinMessage(
-    String? messageId,
-    String? chatGroupId,
-    _i34.ChatType? chatType,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #pinMessage,
-          [
-            messageId,
-            chatGroupId,
-            chatType,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> unpinMessage(
-    String? messageId,
-    String? chatGroupId,
-    _i34.ChatType? chatType,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #unpinMessage,
-          [
-            messageId,
-            chatGroupId,
-            chatType,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<void> bumpMessage(
-    String? messageId,
-    String? chatGroupId,
-    _i34.ChatType? chatType,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #bumpMessage,
-          [
-            messageId,
-            chatGroupId,
-            chatType,
-          ],
-        ),
-        returnValue: _i29.Future<void>.value(),
-        returnValueForMissingStub: _i29.Future<void>.value(),
-      ) as _i29.Future<void>);
-
-  @override
-  _i29.Future<_i39.MessageData?> getMessageById(
-    String? messageId, {
-    String? chatGroupId,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getMessageById,
-          [messageId],
-          {#chatGroupId: chatGroupId},
-        ),
-        returnValue: _i29.Future<_i39.MessageData?>.value(),
-        returnValueForMissingStub: _i29.Future<_i39.MessageData?>.value(),
-      ) as _i29.Future<_i39.MessageData?>);
+      ) as _i3.ProviderSubscription<T>);
 }

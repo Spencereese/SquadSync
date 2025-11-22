@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers.dart';
+import '../../providers/squad_notifier.dart';
 import '../dialogs/spot_assignment_dialog.dart';
 
 /// SquadGrid component - handles the display of spot cards and assignment logic
@@ -10,17 +10,28 @@ class SquadGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentGame = ref
-        .watch(squadStateNotifierProvider.select((state) => state.currentGame));
-    final maxSpots = currentGame?['maxSpots'] ?? 4;
+    final squadAsync = ref.watch(squadNotifierProvider);
 
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) => SpotCard(
-          key: ValueKey('spot_$index'),
-          index: index,
-        ),
-        childCount: maxSpots,
+    return squadAsync.when(
+      data: (squadState) {
+        final currentGame = squadState.currentGame;
+        final maxSpots = currentGame?['maxSpots'] ?? 4;
+
+        return SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => SpotCard(
+              key: ValueKey('spot_$index'),
+              index: index,
+            ),
+            childCount: maxSpots,
+          ),
+        );
+      },
+      loading: () => const SliverToBoxAdapter(
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) => SliverToBoxAdapter(
+        child: Center(child: Text('Error: $error')),
       ),
     );
   }
@@ -37,16 +48,37 @@ class SpotCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final gameName = ref.watch(squadStateNotifierProvider
-        .select((state) => state.currentGame?['name'] ?? ''));
-    final squadSpots = ref.watch(squadStateNotifierProvider
-        .select((state) => state.gameSquadSpots[gameName] ?? []));
-    final spotTimers = ref.watch(squadStateNotifierProvider
-        .select((state) => state.gameSpotTimers[gameName] ?? []));
-    final globalStatuses = ref.watch(
-        squadStateNotifierProvider.select((state) => state.globalStatuses));
-    final displayName = ref
-        .watch(squadStateNotifierProvider.select((state) => state.displayName));
+    final squadAsync = ref.watch(squadNotifierProvider);
+
+    return squadAsync.when(
+      data: (squadState) => _buildSpotCard(context, ref, squadState),
+      loading: () => const Card(
+        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: ListTile(
+          leading: CircularProgressIndicator(),
+          title: Text('Loading spot...'),
+        ),
+      ),
+      error: (error, stack) => Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: ListTile(
+          leading: const Icon(Icons.error, color: Colors.red),
+          title: Text('Error: $error'),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpotCard(
+      BuildContext context, WidgetRef ref, SquadState squadState) {
+    final gameName = squadState.currentGame?['name'] ?? '';
+    final squadSpots = squadState.gameSquadSpots[gameName] ?? [];
+    final spotTimers = squadState.gameSpotTimers[gameName] ?? [];
+    final globalStatuses = squadState.globalStatuses;
+    final displayName = squadState.memberDisplayNames.values.firstWhere(
+      (name) => name.isNotEmpty,
+      orElse: () => 'Unknown',
+    );
 
     final spotName = index < squadSpots.length ? squadSpots[index] : null;
     final hasOccupant = spotName != null;
@@ -66,9 +98,7 @@ class SpotCard extends ConsumerWidget {
     return GestureDetector(
       onLongPress: () {
         if (hasOccupant) {
-          ref
-              .read(squadStateNotifierProvider.notifier)
-              .removeSpot(gameName, index);
+          ref.read(squadNotifierProvider.notifier).removeSpot(gameName, index);
         } else {
           SpotAssignmentDialog.show(context, ref, index);
         }
@@ -79,18 +109,18 @@ class SpotCard extends ConsumerWidget {
               if (!hasOccupant) {
                 // Claim the empty spot
                 ref
-                    .read(squadStateNotifierProvider.notifier)
+                    .read(squadNotifierProvider.notifier)
                     .claimSpot(gameName, index);
               } else if (hasOccupant && spotName == yourName) {
                 final status = globalStatuses[spotName];
                 if (status == 'Ready') {
                   ref
-                      .read(squadStateNotifierProvider.notifier)
+                      .read(squadNotifierProvider.notifier)
                       .lockSpot(gameName, index);
                 } else if (status != 'Calling') {
                   // Allow leaving spot by tapping when not ready and not calling
                   ref
-                      .read(squadStateNotifierProvider.notifier)
+                      .read(squadNotifierProvider.notifier)
                       .removeSpot(gameName, index);
                 }
                 // Don't remove spot when calling - let the Lock button handle it
@@ -224,7 +254,7 @@ class SpotCard extends ConsumerWidget {
             ),
             child: ElevatedButton.icon(
               onPressed: () => ref
-                  .read(squadStateNotifierProvider.notifier)
+                  .read(squadNotifierProvider.notifier)
                   .claimSpot(gameName, index),
               icon: const Icon(Icons.call, size: 16),
               label: const Text('Call'),
@@ -258,7 +288,7 @@ class SpotCard extends ConsumerWidget {
             ),
             child: ElevatedButton.icon(
               onPressed: () => ref
-                  .read(squadStateNotifierProvider.notifier)
+                  .read(squadNotifierProvider.notifier)
                   .lockSpot(gameName, index),
               icon: const Icon(Icons.lock, size: 16),
               label: const Text('Lock'),
@@ -292,7 +322,7 @@ class SpotCard extends ConsumerWidget {
             ),
             child: ElevatedButton.icon(
               onPressed: () => ref
-                  .read(squadStateNotifierProvider.notifier)
+                  .read(squadNotifierProvider.notifier)
                   .removeSpot(gameName, index),
               icon: const Icon(Icons.directions_walk, size: 16),
               label: const Text('Leave'),

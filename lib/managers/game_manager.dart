@@ -294,7 +294,7 @@ class GameManager extends AsyncNotifier<GameState> {
     try {
       await refreshTokenIfNeeded();
       final token = await igdbAuth.getAccessToken();
-      final clientId = igdbAuth.getClientId();
+      final clientId = await igdbAuth.getClientId();
       if (clientId == null) throw IgdbException('IGDB client ID not found.');
 
       final result = await retry(

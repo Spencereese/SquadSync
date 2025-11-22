@@ -142,8 +142,12 @@ class MessageService {
         };
         _offlineMessageQueue.add(offlineMessageData);
 
-        // Still cache locally for immediate display
-        await _sqliteHelper.insertMessage(messageData,
+        // Still cache locally for immediate display (mark as pending)
+        final pendingMessageData = {
+          ...messageData,
+          'delivered': false, // Mark as pending sync
+        };
+        await _sqliteHelper.insertMessage(pendingMessageData,
             chatGroupId: chatGroupId);
 
         return MessageSendResult.offline(msgId);
@@ -165,8 +169,12 @@ class MessageService {
             userId: isUserGroup ? senderUid : null);
       }
 
-      // Cache locally for offline viewing
-      await _sqliteHelper.insertMessage(messageData, chatGroupId: chatGroupId);
+      // Cache locally for offline viewing (mark as delivered)
+      final deliveredMessageData = {
+        ...messageData,
+        'delivered': true, // Mark as successfully synced
+      };
+      await _sqliteHelper.insertMessage(deliveredMessageData, chatGroupId: chatGroupId);
 
       // Check if this is a message for Grok and generate AI response
       if (text != null && _aiService.shouldGenerateAiResponse(text)) {

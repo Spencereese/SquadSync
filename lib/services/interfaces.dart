@@ -43,6 +43,11 @@ abstract class IFirestoreService {
   });
   Future<Map<String, dynamic>?> loadFirestore(
       String collection, String document);
+
+  // Voice room methods
+  Stream<Map<String, dynamic>?> getVoiceRoomStream(String roomId);
+  Future<void> updateVoiceRoom(String roomId, Map<String, dynamic> data);
+  Future<void> updateVoiceParticipant(String roomId, String uid, Map<String, dynamic> data);
 }
 
 /// Interface for game manager

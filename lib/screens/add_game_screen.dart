@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../managers/user_manager.dart';
+import '../widgets/async_value_widget.dart';
+import '../providers/user_notifier.dart';
 import '../managers/game_manager.dart';
 import 'game_platform_dialog.dart';
 
@@ -192,13 +193,13 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
     final gameState = ref.read(gameManagerProvider).value;
     if (gameState == null) return;
 
-    final userManager = Provider.of<UserManager>(context, listen: false);
+    final userNotifier = ref.read(userNotifierProvider.notifier);
 
     try {
       // Save selected games to pinned games
       for (final gameSlug in _selectedGames) {
         final game = gameState.games.firstWhere((g) => g['slug'] == gameSlug);
-        await userManager.addPinnedGame(game);
+        await userNotifier.addPinnedGame(game);
       }
 
       if (mounted) {

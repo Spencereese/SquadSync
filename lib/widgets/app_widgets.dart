@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart' as p;
 import '../screens/squad_tab_screen.dart';
 import '../chat/chat_groups_screen.dart';
 import '../setup_screen.dart';
 import '../screens/onboarding/onboarding_flow.dart';
 import '../squad_state.dart';
-import '../managers/user_manager.dart';
 import '../providers.dart';
+import '../providers/service_providers.dart';
 
 /// ConsumerWidget for the main MaterialApp with theme support
 class SquadSyncMaterialApp extends ConsumerWidget {
@@ -52,57 +50,64 @@ class AuthWrapper extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Only watch the pinnedGames property for granular updates
-    final pinnedGames = ref.watch(
-        userManagerProvider.select((userManager) => userManager.pinnedGames));
+    // Watch auth state using Riverpod provider
+    final authState = ref.watch(authStateProvider);
 
-    // Use StreamBuilder to listen to auth state changes
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        debugPrint(
-            'Auth state: ${snapshot.connectionState}, hasData: ${snapshot.hasData}, user: ${snapshot.data}, error: ${snapshot.error}');
-
-        // Check if Firebase is properly initialized
-        try {
-          FirebaseAuth.instance.app
-              .name; // This will throw if Firebase isn't initialized
-        } catch (e) {
-          debugPrint('Firebase not properly initialized: $e');
-          return const SetupScreen();
-        }
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          // Still checking auth status
-          return Scaffold(
-            backgroundColor: Colors.black,
-            body: const Center(
-              child: CircularProgressIndicator(color: Colors.cyanAccent),
-            ),
-          );
-        }
-
-        final user = snapshot.data;
+    return authState.when(
+      data: (user) {
         if (user != null) {
           debugPrint('User authenticated: ${user.uid}');
-          // User is authenticated, initialize SquadState and show main app
+          // User is authenticated, initialize SquadStateNotifier and show main app
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            p.Provider.of<SquadState>(context, listen: false).initialize();
-            p.Provider.of<UserManager>(context, listen: false)
-                .fetchPinnedGames();
+            ref.read(squadStateNotifierProvider.notifier).initialize(context);
+            ref.read(userManagerProvider).fetchPinnedGames();
           });
-          // Check if user has completed onboarding (has pinned games)
-          if (pinnedGames.isEmpty) {
-            return const OnboardingFlow();
-          } else {
-            return const ChatGroupsScreen();
-          }
+          // Show onboarding wrapper that will check if onboarding is needed
+          return const OnboardingWrapper();
         } else {
           debugPrint('User not authenticated, showing setup screen');
           // User not authenticated, show login/setup screen
           return const SetupScreen();
         }
       },
+      loading: () => Scaffold(
+        backgroundColor: Colors.black,
+        body: const Center(
+          child: CircularProgressIndicator(color: Colors.cyanAccent),
+        ),
+      ),
+      error: (error, stack) => Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Text('Auth error: $error',
+              style: const TextStyle(color: Colors.white)),
+        ),
+      ),
     );
+  }
+}
+
+/// Wrapper to check if user needs onboarding
+class OnboardingWrapper extends ConsumerWidget {
+  const OnboardingWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch pinned games and fetch status to determine if onboarding is needed
+    final userManager = ref.watch(userManagerProvider);
+    final pinnedGames = userManager.pinnedGames;
+    final pinnedGamesFetched = userManager.pinnedGamesFetched;
+
+    // If pinned games haven't been fetched yet, show loading or main screen
+    if (!pinnedGamesFetched) {
+      return const ChatGroupsScreen(); // Default to main screen while loading
+    }
+
+    // If no pinned games after fetching, show onboarding
+    if (pinnedGames.isEmpty) {
+      return const OnboardingFlow();
+    } else {
+      return const ChatGroupsScreen();
+    }
   }
 }

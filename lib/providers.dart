@@ -18,7 +18,7 @@ import 'managers/review_manager.dart';
 import 'managers/notification_manager.dart';
 import 'chat/chat_state.dart';
 import 'chat/sqlite_helper.dart';
-import 'services/firestore_service.dart';
+import 'services/firestore_service_refactored.dart' as refactored;
 import 'managers/state_initializer.dart';
 import 'managers/squad_persistence_service.dart';
 import 'managers/notification_coordinator.dart';
@@ -111,17 +111,19 @@ final timerStateProvider =
   final dataManager = SquadDataManager();
   final uiManager = SquadUIManager();
   final persistenceManager = SquadPersistenceManager();
-  final timerService = ref.watch(timerServiceProvider);
   return TimerState(
     dataManager: dataManager,
     uiManager: uiManager,
     persistenceManager: persistenceManager,
-    timerService: timerService,
+    ref: ref,
   );
 });
 
 // Provider for ChatService
-final chatServiceProvider = Provider((ref) => ChatService());
+final chatServiceProvider = Provider((ref) {
+  final syncManager = ref.watch(syncManagerProvider);
+  return ChatService(syncManager);
+});
 
 // Provider for ReactionService
 final reactionServiceProvider = Provider((ref) => ReactionService());
@@ -172,8 +174,8 @@ final squadStateNotifierProvider =
     persistenceManager: persistenceManager,
   );
   final timerState = ref.read(timerStateProvider.notifier);
-  final firestoreService = FirestoreService();
-  final cacheService = CacheService();
+  final firestoreService = ref.read(firestoreServiceProvider);
+  final cacheService = ref.read(cacheServiceProvider);
   final persistenceService = SquadPersistenceService(
     dataManager: dataManager,
     uiManager: uiManager,
@@ -211,8 +213,15 @@ final squadStateNotifierProvider =
     getUidForDisplayName: (name) => null,
   );
   final chatService = ref.read(chatServiceProvider);
-  final authService = AuthService();
-  final audioService = AudioService();
+  final authService = ref.read(authServiceProvider);
+  final audioService = ref.read(audioServiceProvider);
+  final mediaService = ref.read(mediaServiceProvider);
+  final reactionService = ref.read(reactionServiceProvider);
+  final pollService = ref.read(pollServiceProvider);
+  final timerService = ref.read(timerServiceProvider.notifier);
+  final aiService = ref.read(aiServiceProvider);
+  final igdbAuthService = ref.read(igdbAuthServiceProvider);
+  final messageService = ref.read(messageServiceProvider);
 
   return SquadStateNotifier(
     gameManager: gameManager,
@@ -238,6 +247,14 @@ final squadStateNotifierProvider =
     authService: authService,
     audioService: audioService,
     cacheService: cacheService,
+    firestoreService: firestoreService,
+    mediaService: mediaService,
+    reactionService: reactionService,
+    pollService: pollService,
+    timerService: timerService,
+    aiService: aiService,
+    igdbAuthService: igdbAuthService,
+    messageService: messageService,
   );
 });
 
@@ -293,17 +310,78 @@ final firestoreServiceProvider =
 final notificationManagerProvider =
     ChangeNotifierProvider<NotificationManager>((ref) => NotificationManager());
 final sqliteHelperProvider = Provider<SQLiteHelper>((ref) => SQLiteHelper());
+final sharedPreferencesProvider = FutureProvider<SharedPreferences>((ref) async {
+  return await SharedPreferences.getInstance();
+});
 
 // Agora config provider
 final agoraConfigProvider = Provider((ref) => AgoraConfig());
 
-// Provider for VoiceRoom
-final voiceRoomProvider =
-    StateNotifierProvider.family<VoiceRoomNotifier, VoiceRoomState, String>(
-        (ref, roomId) {
+// Voice service provider
+final voiceServiceProvider = Provider<VoiceService>((ref) {
   final notificationManager = ref.watch(notificationManagerProvider);
   final appFlowManager = ref.watch(appFlowManagerProvider);
-  return VoiceRoomNotifier(roomId, 'Voice Room $roomId',
-      notificationManager: notificationManager,
-      appFlowManager: appFlowManager); // Default name, can be updated
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  final sqliteHelper = ref.watch(sqliteHelperProvider);
+  return VoiceService(
+    notificationManager: notificationManager,
+    appFlowManager: appFlowManager,
+    firestoreService: firestoreService,
+    sqliteHelper: sqliteHelper,
+  );
+});
+
+// Provider for VoiceRoom
+final voiceRoomProvider =
+    StateNotifierProvider.family<VoiceRoomNotifier, AsyncValue<VoiceRoomState>, String>(
+        (ref, roomId) {
+  final voiceService = ref.watch(voiceServiceProvider);
+  final notificationManager = ref.watch(notificationManagerProvider);
+  final appFlowManager = ref.watch(appFlowManagerProvider);
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  final sqliteHelper = ref.watch(sqliteHelperProvider);
+  return VoiceRoomNotifier(
+    roomId: roomId,
+    roomName: 'Voice Room $roomId',
+    voiceService: voiceService,
+    notificationManager: notificationManager,
+    appFlowManager: appFlowManager,
+    firestoreService: firestoreService,
+    sqliteHelper: sqliteHelper,
+  );
+});
+
+// Service Providers for consolidated notifiers
+final authServiceProvider = Provider<AuthService>((ref) => AuthService());
+final mediaServiceProvider = Provider<MediaService>((ref) => MediaService());
+final pollServiceProvider = Provider<PollService>((ref) => PollService());
+// timerServiceProvider is defined in timer_service.dart
+final aiServiceProvider = Provider<AiService>((ref) => AiService());
+final igdbAuthServiceProvider =
+    Provider<IgdbAuthService>((ref) => IgdbAuthService());
+final audioServiceProvider = Provider<AudioService>((ref) => AudioService());
+final cacheServiceProvider = Provider<CacheService>((ref) => CacheService());
+final messageServiceProvider =
+    Provider<MessageService>((ref) => MessageService());
+
+// Refactored Firestore Service Providers
+final firestoreServiceRefactoredProvider = Provider<refactored.FirestoreService>((ref) {
+  final firestore = FirebaseFirestore.instance;
+  final sqliteHelper = ref.watch(sqliteHelperProvider);
+  final grokService = ref.watch(grokServiceProvider);
+  final notificationManager = ref.watch(notificationManagerProvider);
+
+  return refactored.FirestoreService(
+    firestore: firestore,
+    sqliteHelper: sqliteHelper,
+    grokService: grokService,
+    notificationManager: notificationManager,
+  );
+});
+
+// Suggested Groups Notifier Provider
+final suggestedGroupsNotifierProvider =
+    StateNotifierProvider<refactored.SuggestedGroupsNotifier, refactored.FirestoreState>((ref) {
+  final firestoreService = ref.watch(firestoreServiceRefactoredProvider);
+  return refactored.SuggestedGroupsNotifier(firestoreService);
 });

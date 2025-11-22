@@ -24,9 +24,11 @@ void main() {
     mockUserManager = MockUserManager();
   });
 
-  testWidgets('AddGameScreen shows retry button on error and calls retry', (WidgetTester tester) async {
+  testWidgets('AddGameScreen shows retry button on error and calls retry',
+      (WidgetTester tester) async {
     // Arrange
-    final errorState = AsyncValue<GameState>.error(IgdbException('API Error'), StackTrace.current);
+    final errorState = AsyncValue<GameState>.error(
+        IgdbException('API Error'), StackTrace.current);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -42,7 +44,8 @@ void main() {
     await tester.pump();
 
     // Override the provider to error state
-    final container = ProviderScope.containerOf(tester.element(find.byType(AddGameScreen)));
+    final container =
+        ProviderScope.containerOf(tester.element(find.byType(AddGameScreen)));
     container.invalidate(gameManagerProvider);
     container.read(gameManagerProvider.notifier).state = errorState;
 
@@ -56,12 +59,16 @@ void main() {
     await tester.pump();
 
     // Assert retry was called
-    verify(mockGameManager.fetchGamesFromIGDB(argThat(isA<String>()))).called(1);
+    verify(mockGameManager.fetchGamesFromIGDB(argThat(isA<String>())))
+        .called(1);
   });
 
-  testWidgets('AddGameScreen shows offline banner when using cache', (WidgetTester tester) async {
+  testWidgets('AddGameScreen shows offline banner when using cache',
+      (WidgetTester tester) async {
     // Arrange
-    final offlineState = AsyncValue<GameState>.data(GameState(games: [{'id': 1, 'name': 'Cached Game'}], isOffline: true));
+    final offlineState = AsyncValue<GameState>.data(GameState(games: [
+      {'id': 1, 'name': 'Cached Game'}
+    ], isOffline: true));
 
     await tester.pumpWidget(
       ProviderScope(
@@ -74,7 +81,8 @@ void main() {
     );
 
     // Override to offline state
-    final container = ProviderScope.containerOf(tester.element(find.byType(AddGameScreen)));
+    final container =
+        ProviderScope.containerOf(tester.element(find.byType(AddGameScreen)));
     container.invalidate(gameManagerProvider);
     container.read(gameManagerProvider.notifier).state = offlineState;
 
@@ -84,9 +92,11 @@ void main() {
     expect(find.text('Using offline cache'), findsOneWidget);
   });
 
-  testWidgets('AddGameScreen handles SocketException and shows offline banner', (WidgetTester tester) async {
+  testWidgets('AddGameScreen handles SocketException and shows offline banner',
+      (WidgetTester tester) async {
     // Arrange
-    when(mockGameManager.fetchGamesFromIGDB(argThat(isA<String>()))).thenThrow(const SocketException('No internet'));
+    when(mockGameManager.fetchGamesFromIGDB(argThat(isA<String>())))
+        .thenThrow(const SocketException('No internet'));
 
     await tester.pumpWidget(
       ProviderScope(

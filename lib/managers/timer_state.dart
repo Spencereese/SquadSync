@@ -19,7 +19,7 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
   final SquadDataManager dataManager;
   final SquadUIManager uiManager;
   final SquadPersistenceManager persistenceManager;
-  final TimerService _timerService;
+  final Ref ref;
 
   Timer? _debounceTimer;
   SharedPreferences? _prefs;
@@ -32,9 +32,8 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
     required this.dataManager,
     required this.uiManager,
     required this.persistenceManager,
-    TimerService? timerService,
-  })  : _timerService = timerService ?? TimerService(),
-        super({}) {
+    required this.ref,
+  }) : super({}) {
     _initializeCache();
   }
 
@@ -124,26 +123,26 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
 
   /// Update spot timer using TimerService
   void updateSpotTimer(String gameName, int spotIndex, Duration duration) {
-    final key = 'spot_${gameName}_$spotIndex';
-    _timerService.startTimer(key, duration, () {
-      removeSpot(spotIndex, gameName);
-    });
-    // Listen to the stream and update state
-    _timerService.observeTimer(key).listen((remaining) {
-      state = {...state, key: remaining};
-    });
+    final userId = dataManager.gameSquadSpots[gameName]?[spotIndex];
+    if (userId != null) {
+      ref.read(timerServiceProvider.notifier).startSpotTimer(gameName, userId, duration);
+      // Listen to the stream and update state
+      ref.read(timerServiceProvider.notifier).observeTimer('spot_${gameName}_$userId').listen((remaining) {
+        state = {...state, 'spot_${gameName}_$spotIndex': remaining};
+      });
+    }
   }
 
   /// Update peacock timer using TimerService
   void updatePeacockTimer(String player, Duration duration) {
-    final key = 'peacock_$player';
-    _timerService.startTimer(key, duration, () {
-      removeFromPeacock(player, () {});
-    });
-    // Listen to the stream and update state
-    _timerService.observeTimer(key).listen((remaining) {
-      state = {...state, key: remaining};
-    });
+    final userId = dataManager.getUidForDisplayName(player);
+    if (userId != null) {
+      ref.read(timerServiceProvider.notifier).startPeacockTimer(userId, duration);
+      // Listen to the stream and update state
+      ref.read(timerServiceProvider.notifier).observeTimer('peacock_$userId').listen((remaining) {
+        state = {...state, 'peacock_$player': remaining};
+      });
+    }
   }
 
   /// Remove a spot (free it up)
@@ -207,9 +206,11 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
     updateFirestore();
 
     // Stop timer
-    final key = 'spot_${gameName}_$index';
-    _timerService.stopTimer(key);
-    state = {...state}..remove(key);
+    final userId = dataManager.gameSquadSpots[gameName]?[index];
+    if (userId != null) {
+      ref.read(timerServiceProvider.notifier).stopTimer('spot_${gameName}_$userId');
+      state = {...state}..remove('spot_${gameName}_$index');
+    }
   }
 
   /// Add player to peacock queue
@@ -258,9 +259,11 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
       updateFirestore();
 
       // Stop peacock timer
-      final key = 'peacock_$player';
-      _timerService.stopTimer(key);
-      state = {...state}..remove(key);
+      final userId = dataManager.getUidForDisplayName(player);
+      if (userId != null) {
+        ref.read(timerServiceProvider.notifier).stopTimer('peacock_$userId');
+        state = {...state}..remove('peacock_$player');
+      }
     } else if (peacockQueue.contains(player)) {
       peacockQueue.remove(player);
       persistenceManager.markFieldChanged('peacockQueue');

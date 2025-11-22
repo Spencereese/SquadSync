@@ -1141,4 +1141,96 @@ class MockSQLiteHelper extends _i1.Mock implements _i13.SQLiteHelper {
         returnValue: _i5.Future<void>.value(),
         returnValueForMissingStub: _i5.Future<void>.value(),
       ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<List<Map<String, dynamic>>> getCachedGames(String? query) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCachedGames,
+          [query],
+        ),
+        returnValue: _i5.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i5.Future<List<Map<String, dynamic>>>);
+
+  @override
+  _i5.Future<void> cacheGames(
+    List<Map<String, dynamic>>? games,
+    String? query,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #cacheGames,
+          [
+            games,
+            query,
+          ],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<Map<String, dynamic>?> getCacheMetadata(String? cacheKey) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCacheMetadata,
+          [cacheKey],
+        ),
+        returnValue: _i5.Future<Map<String, dynamic>?>.value(),
+      ) as _i5.Future<Map<String, dynamic>?>);
+
+  @override
+  _i5.Future<void> insertCacheMetadata(
+    String? cacheKey,
+    int? timestamp,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #insertCacheMetadata,
+          [
+            cacheKey,
+            timestamp,
+          ],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<void> cleanupExpiredCache(Duration? ttl) => (super.noSuchMethod(
+        Invocation.method(
+          #cleanupExpiredCache,
+          [ttl],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<void> cacheVoiceRoom(
+    String? roomId,
+    Map<String, dynamic>? data,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #cacheVoiceRoom,
+          [
+            roomId,
+            data,
+          ],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<Map<String, dynamic>?> getCachedVoiceRoom(String? roomId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCachedVoiceRoom,
+          [roomId],
+        ),
+        returnValue: _i5.Future<Map<String, dynamic>?>.value(),
+      ) as _i5.Future<Map<String, dynamic>?>);
 }

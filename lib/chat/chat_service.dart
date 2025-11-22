@@ -2,19 +2,48 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 // import 'package:http/http.dart' as http; // TEMPORARILY DISABLED
 import 'package:provider/provider.dart';
+import 'package:flutter/material.dart';
 import 'dart:io';
 import 'dart:async';
 import '../squad_state.dart';
 import '../services/ai_service.dart';
 import '../services/media_service.dart';
 import '../services/message_service.dart';
-import 'package:flutter/material.dart';
+import '../managers/sync_manager.dart';
 import 'models/message_data.dart';
 
-class ChatService {
+class ChatService with WidgetsBindingObserver {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final MediaService _mediaService = MediaService();
   final MessageService _messageService = MessageService();
+  final SyncManager _syncManager;
+
+  ChatService(this._syncManager) {
+    // Register as app lifecycle observer
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  // App lifecycle management for sync
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Trigger sync when app resumes
+      _performBackgroundSync();
+    }
+  }
+
+  Future<void> _performBackgroundSync() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Sync all active chat groups (simplified - in practice you'd track active chats)
+      // For now, sync squad chat
+      await _syncManager.deltaSync('');
+    } catch (e) {
+      debugPrint('Background sync failed: $e');
+    }
+  }
 
   // Improved caching with invalidation
   String? _cachedSquadId;

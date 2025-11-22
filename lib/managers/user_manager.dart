@@ -23,6 +23,9 @@ class UserManager with ChangeNotifier implements IUserManager {
   // Pinned games for quick access
   List<Map<String, dynamic>> pinnedGames = [];
 
+  // Flag to track if pinned games have been fetched
+  bool _pinnedGamesFetched = false;
+
   // Muted games for quiet mode
   Set<String> mutedGames = {};
 
@@ -40,6 +43,7 @@ class UserManager with ChangeNotifier implements IUserManager {
 
   String? get profileImage => _profileImage;
   String? get displayName => _displayName;
+  bool get pinnedGamesFetched => _pinnedGamesFetched;
 
   void updateProfileImage(String url) {
     _profileImage = url;
@@ -135,6 +139,8 @@ class UserManager with ChangeNotifier implements IUserManager {
   }
 
   Future<void> fetchPinnedGames() async {
+    if (_pinnedGamesFetched) return; // Already fetched
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -206,6 +212,7 @@ class UserManager with ChangeNotifier implements IUserManager {
           if (bTime == null) return -1;
           return bTime.compareTo(aTime);
         });
+        _pinnedGamesFetched = true;
         notifyListeners();
       }
     } catch (e) {
@@ -245,6 +252,19 @@ class UserManager with ChangeNotifier implements IUserManager {
 
     pinnedGames.removeAt(index);
     notifyListeners();
+
+    try {
+      await _firestore.collection('users').doc(user.uid).set({
+        'pinnedGames': pinnedGames,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      // Handle error
+    }
+  }
+
+  Future<void> savePinnedGamesToFirestore() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
     try {
       await _firestore.collection('users').doc(user.uid).set({

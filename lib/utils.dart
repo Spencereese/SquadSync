@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 // Format timer with null safety and input validation
 String formatTimer(int? seconds) {
@@ -108,3 +109,8 @@ String safeString(String? input) => input ?? '';
 // Safe list helper
 List<String> safeList(List<String?>? list) =>
     list?.where((e) => e != null).map((e) => e!).toList() ?? [];
+
+// Haptic feedback helper
+void triggerHapticFeedback() {
+  HapticFeedback.lightImpact();
+}

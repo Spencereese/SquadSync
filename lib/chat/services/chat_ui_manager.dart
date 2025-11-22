@@ -91,6 +91,11 @@ class ChatUIManager {
     _isMuted = initialIsMuted;
   }
 
+  /// Format timestamp for display (always show time only for swipe reveal)
+  String _formatTimestamp(DateTime timestamp) {
+    return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+  }
+
   /// Build the chat header with settings menu and online count
   Widget buildChatHeader({
     required BuildContext context,
@@ -682,11 +687,5 @@ class ChatUIManager {
       onLeaveGroup: onLeaveGroup,
       onViewMediaGallery: onViewMediaGallery,
     );
-  }
-
-  /// Build timestamp overlay for swipe-to-reveal functionality
-  /// Format timestamp for display - always military time (24-hour format)
-  String _formatTimestamp(DateTime timestamp) {
-    return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
   }
 }

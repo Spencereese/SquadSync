@@ -6,9 +6,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers.dart';
-import '../squad_state_notifier.dart';
+import '../providers/squad_notifier.dart';
 import '../squad_tab/squad_tab.dart';
 import '../app_theme.dart';
+import '../squad_tab/dialogs/pin_game_dialog.dart';
+import '../utils.dart';
 
 class SquadTabScreen extends StatelessWidget {
   final String? lobbyId;
@@ -93,7 +95,8 @@ class _SquadTabScreenContentState
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         final squadManager = ref.read(squadManagerProvider);
-        final squadState = ref.read(squadStateNotifierProvider);
+        final squadState = ref.read(squadNotifierProvider).value;
+        if (squadState == null) return;
 
         // Check if user has a spot assigned
         final gameName = widget.gameName ?? '';
@@ -113,24 +116,50 @@ class _SquadTabScreenContentState
 
   @override
   Widget build(BuildContext context) {
-    final squadState = ref.watch(squadStateNotifierProvider);
-    // If gameName is provided, show full squad management interface
-    // (lobbyId is optional - SquadTab can handle showing spots for a game)
-    if (widget.gameName != null) {
-      return _buildFullSquadInterface(context, squadState);
-    }
+    final squadAsync = ref.watch(squadNotifierProvider);
+    return squadAsync.when(
+      data: (squadState) {
+        // If gameName is provided, show full squad management interface
+        // (lobbyId is optional - SquadTab can handle showing spots for a game)
+        if (widget.gameName != null) {
+          return _buildFullSquadInterface(context, squadState);
+        }
 
-    // If no squad selected, show squad selection/dashboard instead of welcome screen
-    if (squadState.selectedSquadId == null) {
-      return _buildDashboardInterface(context, squadState, ref);
-    }
+        // If no squad selected, show squad selection/dashboard instead of welcome screen
+        if (squadState.selectedSquadId == null) {
+          return _buildDashboardInterface(context, squadState, ref);
+        }
 
-    // Otherwise, show the dashboard with active lobbies
-    return _buildDashboardInterface(context, squadState, ref);
+        // Otherwise, show the dashboard with active lobbies
+        return _buildDashboardInterface(context, squadState, ref);
+      },
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          showErrorSnackBar(context, 'Failed to load squad data: $error');
+        });
+        return Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Error: $error'),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(squadNotifierProvider),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildDashboardInterface(
-      BuildContext context, SquadStateData squadState, WidgetRef ref) {
+      BuildContext context, SquadState squadState, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Squad Lobbies'),
@@ -161,8 +190,7 @@ class _SquadTabScreenContentState
     );
   }
 
-  Widget _buildFullSquadInterface(
-      BuildContext context, SquadStateData squadState) {
+  Widget _buildFullSquadInterface(BuildContext context, SquadState squadState) {
     // Import and use the original SquadTab widget for full squad management
     return SquadTab(
         lobbyId: widget.lobbyId,
@@ -546,7 +574,7 @@ class _SquadTabScreenContentState
             child: Opacity(
               opacity: opacity,
               child: GestureDetector(
-                onTap: () => _startNewLobby(context, ref),
+                onTap: () => _showPinGameDialog(context, ref),
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
@@ -682,6 +710,13 @@ class _SquadTabScreenContentState
           ),
         );
       },
+    );
+  }
+
+  void _showPinGameDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (context) => const PinGameDialog(),
     );
   }
 

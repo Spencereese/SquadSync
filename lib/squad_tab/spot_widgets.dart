@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../squad_state.dart';
-import '../services/timer_service.dart';
+import '../providers/squad_notifier.dart';
 
 class SpotTimerDisplay extends ConsumerStatefulWidget {
   final int index;
@@ -17,63 +16,78 @@ class SpotTimerDisplay extends ConsumerStatefulWidget {
 }
 
 class _SpotTimerDisplayState extends ConsumerState<SpotTimerDisplay> {
-  Duration? _totalDuration;
+  Duration _lastDuration = Duration.zero;
+  DateTime _lastUpdateTime = DateTime.now();
   bool _hasExpired = false;
 
   @override
-  void didUpdateWidget(SpotTimerDisplay oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _updateTotalDuration();
+  void initState() {
+    super.initState();
+    // Listen to stream updates for interpolation
+    ref.listen(spotTimerStreamProvider('', 0), (previous, next) {
+      // We can't use the parameters here because the provider is family
+      // Instead, we'll update in build
+    });
   }
 
-  void _updateTotalDuration() {
-    final squadState = ref.watch(squadStateNotifierProvider);
-    final gameName = squadState.currentGame?['name'] ?? '';
-    final gameSpotTimers = squadState.gameSpotTimers[gameName] ?? [];
-    final timer = gameSpotTimers.length > widget.index
-        ? gameSpotTimers[widget.index]
-        : null;
-    if (timer != null) {
-      _totalDuration = Duration(seconds: timer['duration'] as int? ?? 0);
-    } else {
-      _totalDuration = null;
-    }
+  Duration _getInterpolatedDuration() {
+    final elapsed = DateTime.now().difference(_lastUpdateTime);
+    final interpolated = _lastDuration - elapsed;
+    return interpolated.isNegative ? Duration.zero : interpolated;
   }
 
   @override
   Widget build(BuildContext context) {
-    final squadState = ref.watch(squadStateNotifierProvider);
+    final squadAsync = ref.watch(squadNotifierProvider);
+
+    if (!squadAsync.hasValue) {
+      return const SizedBox(
+        width: 60,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+
+    final squadState = squadAsync.value!;
     final gameName = squadState.currentGame?['name'] ?? '';
-    final key = 'spot_${gameName}_${widget.index}';
-    final timerService = ref.watch(timerServiceProvider);
 
-    return StreamBuilder<Duration>(
-      stream: timerService.observeTimer(key),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            width: 60,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          );
-        }
+    // Get total duration from gameSpotTimers
+    final gameSpotTimers = squadState.gameSpotTimers[gameName] ?? [];
+    final timerData = gameSpotTimers.length > widget.index ? gameSpotTimers[widget.index] : null;
+    final totalDuration = timerData != null ? Duration(seconds: timerData['duration'] as int? ?? 0) : Duration.zero;
 
-        final remaining = snapshot.data ?? Duration.zero;
-        final progress = _totalDuration != null && _totalDuration!.inSeconds > 0
-            ? remaining.inSeconds / _totalDuration!.inSeconds
+    final timerStateAsync = ref.watch(spotTimerStateProvider(gameName, widget.index));
+
+    // Watch the stream for interpolation updates
+    final streamAsync = ref.watch(spotTimerStreamProvider(gameName, widget.index));
+    if (streamAsync.hasValue) {
+      _lastDuration = streamAsync.value!;
+      _lastUpdateTime = DateTime.now();
+    }
+
+    return timerStateAsync.when(
+      data: (timerData) {
+        final interpolated = _getInterpolatedDuration();
+        final progress = totalDuration.inSeconds > 0
+            ? interpolated.inSeconds / totalDuration.inSeconds
             : 0.0;
 
         // Update formatted time
-        final minutes = remaining.inMinutes;
-        final seconds = remaining.inSeconds % 60;
+        final minutes = interpolated.inMinutes;
+        final seconds = interpolated.inSeconds % 60;
         final formatted =
             '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 
         // Haptic feedback on expiration
-        if (remaining == Duration.zero && !_hasExpired) {
+        if (interpolated == Duration.zero && !_hasExpired) {
           _hasExpired = true;
           HapticFeedback.vibrate();
-        } else if (remaining > Duration.zero) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Spot timer expired!')),
+            );
+          }
+        } else if (interpolated > Duration.zero) {
           _hasExpired = false;
         }
 
@@ -101,6 +115,23 @@ class _SpotTimerDisplayState extends ConsumerState<SpotTimerDisplay> {
               ),
             ),
           ],
+        );
+      },
+      loading: () => const SizedBox(
+        width: 60,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+      error: (error, stack) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Timer desync error: $error')),
+          );
+        }
+        return const SizedBox(
+          width: 60,
+          height: 20,
+          child: Icon(Icons.error, size: 16),
         );
       },
     );

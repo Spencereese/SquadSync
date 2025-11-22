@@ -90,7 +90,7 @@ class AuthService implements IAuthService {
           .collection('users')
           .doc(user.uid)
           .get();
-      return userDoc.data()?['profileImage'];
+      return userDoc.data()?['avatarUrl'];
     } catch (e) {
       return null;
     }
@@ -106,7 +106,7 @@ class AuthService implements IAuthService {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .set({'profileImage': imageUrl}, SetOptions(merge: true));
+          .set({'avatarUrl': imageUrl}, SetOptions(merge: true));
     } catch (e) {
       // Failed to save profile image - silently handled
     }

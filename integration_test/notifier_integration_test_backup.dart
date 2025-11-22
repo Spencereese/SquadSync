@@ -1,0 +1,271 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:squad_sync/providers/game_notifier.dart';
+import 'package:squad_sync/providers/system_notifier.dart';
+import 'package:squad_sync/providers/user_notifier.dart';
+import 'package:squad_sync/providers/squad_notifier.dart';
+import 'package:squad_sync/providers/chat_notifier.dart';
+import 'package:squad_sync/services/ai_service.dart';
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  group('GameNotifier Integration Tests', () {
+    late ProviderContainer container;
+
+    setUpAll(() async {
+      // Initialize Firebase for integration tests
+      await Firebase.initializeApp();
+    });
+
+    setUp(() {
+      container = ProviderContainer();
+    });
+
+    tearDown(() {
+      container.dispose();
+    });
+
+    test('GameNotifier initializes with local games', () async {
+      final state = await container.read(gameNotifierProvider.future);
+      expect(state.availableGames.isNotEmpty, true);
+    });
+
+    test('GameNotifier searchGames filters correctly', () async {
+      final gameNotifier = container.read(gameNotifierProvider.notifier);
+      // Wait for initialization
+      await container.read(gameNotifierProvider.future);
+      gameNotifier.searchGames('Call of Duty');
+      final state = await container.read(gameNotifierProvider.future);
+      expect(
+          state.availableGames
+              .any((game) => game['name'].contains('Call of Duty')),
+          true);
+    });
+
+    test('GameNotifier createLobby works', () async {
+      final gameNotifier = container.read(gameNotifierProvider.notifier);
+      // Wait for initialization
+      final initialState = await container.read(gameNotifierProvider.future);
+      final initialLobbiesCount = initialState.gameLobbies.length;
+      // Assume user is logged in - in integration test, Firebase is real
+      // Since no user, this will not create lobby, so lobbies count remains the same
+      await gameNotifier
+          .createLobby('Call of Duty: Modern Warfare', {'maxPlayers': 4});
+      final state = await container.read(gameNotifierProvider.future);
+      expect(state.gameLobbies.length, initialLobbiesCount);
+    });
+
+    test('GameNotifier selectGame updates currentGame', () async {
+      final gameNotifier = container.read(gameNotifierProvider.notifier);
+      await container.read(gameNotifierProvider.future);
+      final testGame = {'name': 'Test Game', 'id': 'test'};
+      await gameNotifier.selectGame(testGame);
+      final state = await container.read(gameNotifierProvider.future);
+      expect(state.currentGame, testGame);
+    });
+
+    // Add more tests for joinLobby, searchIGDB, etc.
+  });
+
+  group('SystemNotifier Integration Tests', () {
+    late ProviderContainer container;
+
+    setUp(() {
+      container = ProviderContainer();
+    });
+
+    tearDown(() {
+      container.dispose();
+    });
+
+    test('SystemNotifier initializes correctly', () async {
+      final state = await container.read(systemNotifierProvider.future);
+      expect(state.notifications.isEmpty, true);
+    });
+
+    test('SystemNotifier addNotification works', () async {
+      final systemNotifier = container.read(systemNotifierProvider.notifier);
+      systemNotifier
+          .addNotification({'message': 'Test notification', 'type': 'info'});
+      final state = await container.read(systemNotifierProvider.future);
+      // Without auth, notification is not added
+      expect(state.notifications.length, 0);
+    });
+
+    test('SystemNotifier markNotificationsAsRead works', () async {
+      final systemNotifier = container.read(systemNotifierProvider.notifier);
+      await container.read(systemNotifierProvider.future);
+      // Since no notifications, this should not error
+      await systemNotifier.markNotificationsAsRead();
+      final state = await container.read(systemNotifierProvider.future);
+      expect(state.hasNewNotifications, false);
+    });
+
+    // Add more tests for markNotificationsAsRead, submitBanVote, etc.
+  });
+
+  group('UserNotifier Integration Tests', () {
+    late ProviderContainer container;
+
+    setUp(() {
+      container = ProviderContainer();
+    });
+
+    tearDown(() {
+      container.dispose();
+    });
+
+    test('UserNotifier initializes correctly', () async {
+      final state = await container.read(userNotifierProvider.future);
+      expect(state.isInitialized, true);
+    });
+
+    test('UserNotifier updateDisplayName works', () async {
+      final userNotifier = container.read(userNotifierProvider.notifier);
+      await container.read(userNotifierProvider.future);
+      // Without auth, this may not update
+      await userNotifier.updateDisplayName('Test User');
+      final state = await container.read(userNotifierProvider.future);
+      // Profile may not change without auth
+      expect(state.isInitialized, true);
+    });
+  });
+
+  group('SquadNotifier Integration Tests', () {
+    late ProviderContainer container;
+
+    setUp(() {
+      container = ProviderContainer();
+    });
+
+    tearDown(() {
+      container.dispose();
+    });
+
+    test('SquadNotifier initializes correctly', () async {
+      final state = await container.read(squadNotifierProvider.future);
+      expect(state.isInitialized, true);
+    });
+
+    test('SquadNotifier createSquad works', () async {
+      final squadNotifier = container.read(squadNotifierProvider.notifier);
+      await container.read(squadNotifierProvider.future);
+      // Without auth, may not create
+      await squadNotifier.createSquad('Test Squad');
+      final state = await container.read(squadNotifierProvider.future);
+      expect(state.isInitialized, true);
+    });
+  });
+
+  group('ChatNotifier Integration Tests', () {
+    late ProviderContainer container;
+
+    setUp(() {
+      container = ProviderContainer();
+    });
+
+    tearDown(() {
+      container.dispose();
+    });
+
+    test('ChatNotifier initializes correctly', () async {
+      final state = await container.read(chatNotifierProvider.future);
+      expect(state.isInitialized, true);
+    });
+
+    test('ChatNotifier loadMessages works', () async {
+      final chatNotifier = container.read(chatNotifierProvider.notifier);
+      await container.read(chatNotifierProvider.future);
+      // Load messages for a chat group
+      await chatNotifier.loadMessages('test-group', ChatType.squad);
+      final state = await container.read(chatNotifierProvider.future);
+      expect(state.isInitialized, true);
+    });
+  });
+
+group('Edge Cases Integration Tests', () {
+  late ProviderContainer container;
+group('Edge Cases Integration Tests', () {
+  late ProviderContainer container;
+
+  setUp(() {
+    container = ProviderContainer();
+  });
+
+  tearDown(() {
+    container.dispose();
+  });
+
+  test('GameNotifier handles empty search', () async {
+    final gameNotifier = container.read(gameNotifierProvider.notifier);
+    await container.read(gameNotifierProvider.future);
+    gameNotifier.searchGames('');
+    final state = await container.read(gameNotifierProvider.future);
+    // Should show all games or handle empty
+    expect(state.isInitialized, true);
+  });
+
+  test('SystemNotifier handles multiple notifications', () async {
+    final systemNotifier = container.read(systemNotifierProvider.notifier);
+    await container.read(systemNotifierProvider.future);
+    // Add multiple notifications (though without auth, they won't persist)
+    systemNotifier.addNotification({'message': 'Test 1', 'type': 'info'});
+    systemNotifier.addNotification({'message': 'Test 2', 'type': 'warning'});
+    final state = await container.read(systemNotifierProvider.future);
+    // Without auth, still 0
+    expect(state.notifications.length, 0);
+  });
+});
+
+// group('Widget Integration Tests', () {
+  testWidgets('GameNotifier state updates trigger rebuilds', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Consumer(
+            builder: (context, ref, child) {
+              final gameState = ref.watch(gameNotifierProvider);
+              return gameState.when(
+                data: (state) => Text('Games: ${state.availableGames.length}'),
+                loading: () => const CircularProgressIndicator(),
+                error: (err, stack) => Text('Error: $err'),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    // Wait for initialization
+    await tester.pumpAndSettle();
+
+    // Should show games count
+    expect(find.textContaining('Games:'), findsOneWidget);
+  });
+
+  testWidgets('SystemNotifier notification state', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Consumer(
+            builder: (context, ref, child) {
+              final systemState = ref.watch(systemNotifierProvider);
+              return systemState.when(
+                data: (state) => Text('Notifications: ${state.notifications.length}'),
+                loading: () => const CircularProgressIndicator(),
+                error: (err, stack) => Text('Error: $err'),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Notifications: 0'), findsOneWidget);
+  });

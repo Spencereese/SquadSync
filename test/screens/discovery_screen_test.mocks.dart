@@ -106,6 +106,23 @@ class MockFirestoreService extends _i1.Mock implements _i2.FirestoreService {
       ) as _i4.Future<void>);
 
   @override
+  _i4.Future<void> saveGameSearch(
+    String? query,
+    Map<String, dynamic>? gameData,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #saveGameSearch,
+          [
+            query,
+            gameData,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
   _i4.Future<Map<String, dynamic>> loadFirestoreData(
           {required Map<String, String>? displayNameCache}) =>
       (super.noSuchMethod(
@@ -133,6 +150,52 @@ class MockFirestoreService extends _i1.Mock implements _i2.FirestoreService {
         ),
         returnValue: _i4.Future<Map<String, dynamic>?>.value(),
       ) as _i4.Future<Map<String, dynamic>?>);
+
+  @override
+  _i4.Stream<Map<String, dynamic>?> getVoiceRoomStream(String? roomId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getVoiceRoomStream,
+          [roomId],
+        ),
+        returnValue: _i4.Stream<Map<String, dynamic>?>.empty(),
+      ) as _i4.Stream<Map<String, dynamic>?>);
+
+  @override
+  _i4.Future<void> updateVoiceRoom(
+    String? roomId,
+    Map<String, dynamic>? data,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateVoiceRoom,
+          [
+            roomId,
+            data,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> updateVoiceParticipant(
+    String? roomId,
+    String? uid,
+    Map<String, dynamic>? data,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #updateVoiceParticipant,
+          [
+            roomId,
+            uid,
+            data,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
 }
 
 /// A class which mocks [GrokService].
@@ -801,4 +864,96 @@ class MockSQLiteHelper extends _i1.Mock implements _i11.SQLiteHelper {
         returnValue: _i4.Future<void>.value(),
         returnValueForMissingStub: _i4.Future<void>.value(),
       ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<List<Map<String, dynamic>>> getCachedGames(String? query) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCachedGames,
+          [query],
+        ),
+        returnValue: _i4.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i4.Future<List<Map<String, dynamic>>>);
+
+  @override
+  _i4.Future<void> cacheGames(
+    List<Map<String, dynamic>>? games,
+    String? query,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #cacheGames,
+          [
+            games,
+            query,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<Map<String, dynamic>?> getCacheMetadata(String? cacheKey) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCacheMetadata,
+          [cacheKey],
+        ),
+        returnValue: _i4.Future<Map<String, dynamic>?>.value(),
+      ) as _i4.Future<Map<String, dynamic>?>);
+
+  @override
+  _i4.Future<void> insertCacheMetadata(
+    String? cacheKey,
+    int? timestamp,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #insertCacheMetadata,
+          [
+            cacheKey,
+            timestamp,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> cleanupExpiredCache(Duration? ttl) => (super.noSuchMethod(
+        Invocation.method(
+          #cleanupExpiredCache,
+          [ttl],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> cacheVoiceRoom(
+    String? roomId,
+    Map<String, dynamic>? data,
+  ) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #cacheVoiceRoom,
+          [
+            roomId,
+            data,
+          ],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<Map<String, dynamic>?> getCachedVoiceRoom(String? roomId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCachedVoiceRoom,
+          [roomId],
+        ),
+        returnValue: _i4.Future<Map<String, dynamic>?>.value(),
+      ) as _i4.Future<Map<String, dynamic>?>);
 }

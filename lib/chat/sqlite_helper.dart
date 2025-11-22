@@ -17,7 +17,7 @@ class SQLiteHelper {
     String path = join(await getDatabasesPath(), 'squadsync.db');
     return await openDatabase(
       path,
-      version: 3, // Increment version for schema changes
+      version: 7, // Increment version for voice_rooms_cache table
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE messages (
@@ -45,6 +45,35 @@ class SQLiteHelper {
             cached_at INTEGER
           )
         ''');
+        await db.execute('''
+          CREATE TABLE timers (
+            key TEXT PRIMARY KEY,
+            data TEXT,
+            created_at TEXT
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE games_cache (
+            id TEXT PRIMARY KEY,
+            query TEXT,
+            data TEXT,
+            cached_at INTEGER
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE cache_metadata (
+            cache_key TEXT PRIMARY KEY,
+            cached_at INTEGER
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE voice_rooms_cache (
+            room_id TEXT PRIMARY KEY,
+            room_name TEXT,
+            data TEXT,
+            cached_at TEXT
+          )
+        ''');
         // Create indexes for better query performance
         await db.execute(
             'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
@@ -69,6 +98,47 @@ class SQLiteHelper {
               'CREATE INDEX IF NOT EXISTS idx_chat_group_id ON messages(chat_group_id)');
           await db.execute(
               'CREATE INDEX IF NOT EXISTS idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
+        }
+        if (oldVersion < 4) {
+          // Add timers table
+          await db.execute('''
+            CREATE TABLE timers (
+              key TEXT PRIMARY KEY,
+              data TEXT,
+              created_at TEXT
+            )
+          ''');
+        }
+        if (oldVersion < 5) {
+          // Add games cache table
+          await db.execute('''
+            CREATE TABLE games_cache (
+              id TEXT PRIMARY KEY,
+              query TEXT,
+              data TEXT,
+              cached_at INTEGER
+            )
+          ''');
+        }
+        if (oldVersion < 6) {
+          // Add cache metadata table
+          await db.execute('''
+            CREATE TABLE cache_metadata (
+              cache_key TEXT PRIMARY KEY,
+              cached_at INTEGER
+            )
+          ''');
+        }
+        if (oldVersion < 7) {
+          // Add voice rooms cache table
+          await db.execute('''
+            CREATE TABLE voice_rooms_cache (
+              room_id TEXT PRIMARY KEY,
+              room_name TEXT,
+              data TEXT,
+              cached_at TEXT
+            )
+          ''');
         }
       },
     );
@@ -226,5 +296,150 @@ class SQLiteHelper {
     } catch (e) {
       debugPrint('Failed to cache groups: $e');
     }
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedGames(String query) async {
+    try {
+      final db = await database;
+      final results = await db.query(
+        'games_cache',
+        where: 'query = ?',
+        whereArgs: [query],
+        orderBy: 'cached_at DESC',
+        limit: 1,
+      );
+      if (results.isNotEmpty) {
+        final data = results.first['data'] as String;
+        return List<Map<String, dynamic>>.from(json.decode(data));
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Failed to get cached games: $e');
+      return [];
+    }
+  }
+
+  Future<void> cacheGames(List<Map<String, dynamic>> games, String query) async {
+    try {
+      final db = await database;
+      final id = 'games_$query';
+      final data = json.encode(games);
+      await db.insert(
+        'games_cache',
+        {
+          'id': id,
+          'query': query,
+          'data': data,
+          'cached_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      debugPrint('Failed to cache games: $e');
+    }
+  }
+
+  /// Get cache metadata for TTL checking
+  Future<Map<String, dynamic>?> getCacheMetadata(String cacheKey) async {
+    try {
+      final db = await database;
+      final results = await db.query(
+        'groups_cache',
+        where: 'id = ?',
+        whereArgs: [cacheKey],
+        limit: 1,
+      );
+      if (results.isNotEmpty) {
+        return results.first;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Failed to get cache metadata: $e');
+      return null;
+    }
+  }
+
+  /// Insert cache metadata
+  Future<void> insertCacheMetadata(String cacheKey, int timestamp) async {
+    try {
+      final db = await database;
+      await db.insert(
+        'cache_metadata',
+        {
+          'cache_key': cacheKey,
+          'cached_at': timestamp,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      debugPrint('Failed to insert cache metadata: $e');
+    }
+  }
+
+  /// Clean up expired cache entries
+  Future<void> cleanupExpiredCache(Duration ttl) async {
+    try {
+      final db = await database;
+      final cutoffTime = DateTime.now().subtract(ttl).millisecondsSinceEpoch;
+
+      await db.delete(
+        'groups_cache',
+        where: 'cached_at < ?',
+        whereArgs: [cutoffTime],
+      );
+
+      await db.delete(
+        'games_cache',
+        where: 'cached_at < ?',
+        whereArgs: [cutoffTime],
+      );
+
+      await db.delete(
+        'cache_metadata',
+        where: 'cached_at < ?',
+        whereArgs: [cutoffTime],
+      );
+    } catch (e) {
+      debugPrint('Failed to cleanup expired cache: $e');
+    }
+  }
+
+  /// Cache voice room data for offline fallback
+  Future<void> cacheVoiceRoom(String roomId, Map<String, dynamic> data) async {
+    try {
+      final db = await database;
+      await db.insert(
+        'voice_rooms_cache',
+        {
+          'room_id': roomId,
+          'room_name': data['roomName'] ?? 'Voice Room',
+          'data': jsonEncode(data),
+          'cached_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      debugPrint('Failed to cache voice room: $e');
+    }
+  }
+
+  /// Get cached voice room data
+  Future<Map<String, dynamic>?> getCachedVoiceRoom(String roomId) async {
+    try {
+      final db = await database;
+      final result = await db.query(
+        'voice_rooms_cache',
+        where: 'room_id = ?',
+        whereArgs: [roomId],
+      );
+
+      if (result.isNotEmpty) {
+        final data = jsonDecode(result.first['data'] as String);
+        return data;
+      }
+    } catch (e) {
+      debugPrint('Failed to get cached voice room: $e');
+    }
+    return null;
   }
 }

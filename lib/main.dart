@@ -9,7 +9,9 @@ import 'package:app_links/app_links.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'squad_state.dart';
+import 'providers/user_notifier.dart';
+import 'providers/squad_notifier.dart';
+import 'squad_state_notifier.dart';
 import 'chat/chat_groups_screen.dart';
 import 'notification_service.dart';
 import 'chat/chat_state.dart';
@@ -18,7 +20,6 @@ import 'chat/dialogs/group_actions_dialog.dart';
 import 'managers/notification_manager.dart';
 import 'managers/firestore_manager.dart';
 import 'managers/availability_manager.dart';
-import 'managers/game_manager.dart';
 import 'managers/user_manager.dart';
 import 'managers/review_manager.dart';
 import 'managers/squad_manager.dart';
@@ -28,7 +29,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load();
+  try {
+    await dotenv.load();
+  } catch (e) {
+    debugPrint('dotenv load failed: $e');
+  }
   await _initializeFirebase();
   runApp(const SquadSyncApp());
 }
@@ -90,14 +95,14 @@ Future<void> _initializeFirebase() async {
   }
 }
 
-class SquadSyncApp extends StatefulWidget {
+class SquadSyncApp extends ConsumerStatefulWidget {
   const SquadSyncApp({super.key});
 
   @override
-  State<SquadSyncApp> createState() => _SquadSyncAppState();
+  ConsumerState<SquadSyncApp> createState() => _SquadSyncAppState();
 }
 
-class _SquadSyncAppState extends State<SquadSyncApp> {
+class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   static const platform = MethodChannel('com.example.codSquadApp/siri');
   late AppLinks _appLinks;
   StreamSubscription<Uri?>? _sub;
@@ -138,13 +143,24 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
 
   void _handleDeepLink(String link) {
     // Check if user is authenticated and has a squad before navigating
-    final user = FirebaseAuth.instance.currentUser;
-    final squadState = p.Provider.of<SquadState>(context, listen: false);
+    final userAsync = ref.watch(userNotifierProvider);
+    final squadAsync = ref.watch(squadNotifierProvider);
+
+    final user = userAsync.maybeWhen(
+      data: (userState) => userState.displayName != null
+          ? FirebaseAuth.instance.currentUser
+          : null,
+      orElse: () => null,
+    );
+    final squadId = squadAsync.maybeWhen(
+      data: (squadState) => squadState.selectedSquadId,
+      orElse: () => null,
+    );
 
     if (link == 'codsquadapp://chat' &&
         mounted &&
         user != null &&
-        squadState.selectedSquadId != null) {
+        squadId != null) {
       // Defer navigation to avoid _debugLocked assertion
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -186,9 +202,7 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
     } else if (link == 'codsquadapp://chat' && mounted && user == null) {
       // User not authenticated, show login screen
       _showSnackBar('Please sign in first');
-    } else if (link == 'codsquadapp://chat' &&
-        mounted &&
-        squadState.selectedSquadId == null) {
+    } else if (link == 'codsquadapp://chat' && mounted && squadId == null) {
       // User authenticated but no squad, show squad selection
       _showSnackBar('Please join a squad first');
     }
@@ -207,9 +221,14 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
       platform.setMethodCallHandler((call) async {
         if (call.method == 'sendMessage' && mounted) {
           final user = FirebaseAuth.instance.currentUser;
-          final squadState = p.Provider.of<SquadState>(context, listen: false);
+          final squadAsync = ref.watch(squadNotifierProvider);
 
-          if (user != null && squadState.selectedSquadId != null) {
+          final squadId = squadAsync.maybeWhen(
+            data: (squadState) => squadState.selectedSquadId,
+            orElse: () => null,
+          );
+
+          if (user != null && squadId != null) {
             // Defer navigation to avoid _debugLocked assertion
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
@@ -243,12 +262,12 @@ class _SquadSyncAppState extends State<SquadSyncApp> {
       child: p.MultiProvider(
         // Legacy Provider support - TODO: Remove after full migration
         providers: [
-          p.ChangeNotifierProvider(create: (_) => SquadState()),
+          p.ChangeNotifierProvider<LegacySquadState>(
+              create: (_) => LegacySquadState()),
           p.ChangeNotifierProvider(create: (_) => ChatState()),
           p.ChangeNotifierProvider(create: (_) => FirestoreManager()),
           p.ChangeNotifierProvider(create: (_) => NotificationManager()),
           p.ChangeNotifierProvider(create: (_) => AvailabilityManager()),
-          p.ChangeNotifierProvider(create: (_) => GameManager()),
           p.ChangeNotifierProvider(create: (_) => UserManager()),
           p.ChangeNotifierProvider(create: (_) => ReviewManager()),
           p.ChangeNotifierProvider(create: (_) => SquadManager()),

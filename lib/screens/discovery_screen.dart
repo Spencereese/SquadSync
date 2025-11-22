@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'package:flutter/services.dart';
-import '../providers.dart';
-import '../services/firestore_service.dart';
-import '../services/grok_service.dart';
-import '../managers/notification_manager.dart';
-import '../chat/sqlite_helper.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/firestore_service_refactored.dart';
 import '../app_theme.dart';
+import '../widgets/async_value_widget.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
   const DiscoveryScreen({super.key});
@@ -22,27 +17,71 @@ class DiscoveryScreen extends ConsumerStatefulWidget {
 
 class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   Timer? _debounceTimer;
   String _currentSearchTerm = '';
-  final String _selectedGame = 'All Games'; // Default to all games
-  bool _hasIndexError = false;
-  String? _indexErrorUrl;
+  bool _isLoadingMore = false;
+  bool _isJoining = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    // Load initial groups
+    _loadInitialGroups();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     _debounceTimer?.cancel();
     super.dispose();
+  }
+
+  void _loadInitialGroups() {
+    final filters = GroupQueryFilters(isPublic: true);
+    ref.read(suggestedGroupsNotifierProvider.notifier).loadSuggestedGroups(filters);
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoadingMore) {
+      _loadNextPage();
+    }
+  }
+
+  void _loadNextPage() {
+    if (!_isLoadingMore) {
+      setState(() => _isLoadingMore = true);
+      ref.read(suggestedGroupsNotifierProvider.notifier).loadNextPage().then((_) {
+        if (mounted) {
+          setState(() => _isLoadingMore = false);
+        }
+      }).catchError((error) {
+        if (mounted) {
+          setState(() => _isLoadingMore = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to load more groups: $error'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final groupsState = ref.watch(suggestedGroupsNotifierProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Discover Groups'),
         backgroundColor: theme.primaryColor,
+        elevation: 0,
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -52,7 +91,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
         ),
         child: Column(
           children: [
-            // Search Bar with Game Filter
+            // Search Bar
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -69,6 +108,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                             )
                           : null,
                       filled: true,
+                      fillColor: theme.cardColor.withOpacity(0.8),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                         borderSide: BorderSide.none,
@@ -97,35 +137,36 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                 ],
               ),
             ),
-            // Error Banner for Index Issues
-            if (_hasIndexError && _indexErrorUrl != null)
-              Container(
-                color: Colors.orange,
-                padding: const EdgeInsets.all(8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning, color: Colors.white),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Search optimized—create index for better performance',
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _openIndexUrl,
-                      child: const Text(
-                        'CREATE INDEX',
-                        style: TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            // Groups Stream
+
+            // Groups List
             Expanded(
-              child: _buildGroupsStream(),
+              child: AsyncValueWidget<List<Map<String, dynamic>>>(
+                value: groupsState.suggestedGroups,
+                data: (groups) => groups.isEmpty && _currentSearchTerm.isEmpty
+                    ? const Center(child: Text('No public groups available'))
+                    : groups.isEmpty
+                        ? const Center(child: Text('No groups found for your search'))
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: groups.length + (_isLoadingMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index == groups.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(child: CircularProgressIndicator()),
+                                );
+                              }
+
+                              final group = groups[index];
+                              return GroupCard(
+                                group: group,
+                                isJoining: _isJoining,
+                                onJoin: () => _joinGroup(group),
+                              );
+                            },
+                          ),
+              ),
             ),
           ],
         ),
@@ -137,8 +178,8 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     _searchController.clear();
     setState(() {
       _currentSearchTerm = '';
-      _hasIndexError = false;
     });
+    _loadInitialGroups();
   }
 
   void _onSearchChanged(String query) {
@@ -146,311 +187,35 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
       setState(() {
         _currentSearchTerm = query.trim();
-        _hasIndexError = false;
       });
+
+      if (_currentSearchTerm.isNotEmpty) {
+        final filters = GroupQueryFilters(
+          isPublic: true,
+          searchTerm: _currentSearchTerm,
+        );
+        ref.read(suggestedGroupsNotifierProvider.notifier).loadSuggestedGroups(filters);
+      } else {
+        _loadInitialGroups();
+      }
     });
   }
 
-  Future<void> _openIndexUrl() async {
-    if (_indexErrorUrl != null) {
-      final uri = Uri.parse(_indexErrorUrl!);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      }
-    }
-  }
-
-  Widget _buildGroupsStream() {
-    return Consumer(
-      builder: (context, ref, child) {
-        final firestoreService = ref.watch(firestoreServiceProvider);
-        final grokService = ref.watch(grokServiceProvider);
-        final notificationManager = ref.watch(notificationManagerProvider);
-        final sqliteHelper = ref.watch(sqliteHelperProvider);
-
-        return FutureBuilder<Stream<List<Map<String, dynamic>>>>(
-          future: _currentSearchTerm.isEmpty
-              ? _getDefaultGroupsStream(firestoreService, grokService,
-                  notificationManager, sqliteHelper)
-              : firestoreService.queryBuilder.buildSuggestedGroupsQuery(
-                  _currentSearchTerm,
-                  _selectedGame == 'All Games' ? '' : _selectedGame,
-                  grokService,
-                  notificationManager,
-                  sqliteHelper,
-                ),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return _buildSkeletonLoading();
-            }
-
-            if (snapshot.hasError) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error, size: 48, color: Colors.red),
-                    const SizedBox(height: 16),
-                    Text('Error: ${snapshot.error}'),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => setState(() {}),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            final stream = snapshot.data;
-            if (stream == null) {
-              return const Center(child: Text('No data'));
-            }
-
-            return StreamBuilder<List<Map<String, dynamic>>>(
-              stream: stream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return _buildSkeletonLoading();
-                }
-
-                if (snapshot.hasError) {
-                  // Check if it's an index error
-                  if (snapshot.error
-                      .toString()
-                      .contains('failed-precondition')) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      setState(() {
-                        _hasIndexError = true;
-                        _indexErrorUrl = _generateIndexUrl();
-                      });
-                    });
-                  }
-
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error, size: 48, color: Colors.red),
-                        const SizedBox(height: 16),
-                        Text('Error: ${snapshot.error}'),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () => setState(() {}),
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                final groups = snapshot.data ?? [];
-                return _buildGroupsList(context, groups);
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<Stream<List<Map<String, dynamic>>>> _getDefaultGroupsStream(
-    FirestoreService firestoreService,
-    GrokService grokService,
-    NotificationManager notificationManager,
-    SQLiteHelper sqliteHelper,
-  ) async {
-    // For default view, show recent public groups
-    return firestoreService.queryBuilder.buildSuggestedGroupsQuery(
-      '',
-      '',
-      grokService,
-      notificationManager,
-      sqliteHelper,
-    );
-  }
-
-  String _generateIndexUrl() {
-    final projectId = 'your-project-id'; // TODO: Get from Firebase options
-    return 'https://console.firebase.google.com/project/$projectId/firestore/indexes?create_composite=isPublic%20ASCENDING%2CmemberCount%20DESCENDING%2ClastMessageTime%20DESCENDING';
-  }
-
-  Widget _buildSkeletonLoading() {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: 5,
-      itemBuilder: (context, index) {
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 20,
-                  width: 200,
-                  color: Colors.grey[300],
-                )
-                    .animate(onPlay: (controller) => controller.repeat())
-                    .shimmer(duration: 1000.ms),
-                const SizedBox(height: 8),
-                Container(
-                  height: 14,
-                  width: 300,
-                  color: Colors.grey[300],
-                )
-                    .animate(onPlay: (controller) => controller.repeat())
-                    .shimmer(duration: 1000.ms),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      height: 12,
-                      width: 80,
-                      color: Colors.grey[300],
-                    )
-                        .animate(onPlay: (controller) => controller.repeat())
-                        .shimmer(duration: 1000.ms),
-                    Container(
-                      height: 32,
-                      width: 60,
-                      color: Colors.grey[300],
-                    )
-                        .animate(onPlay: (controller) => controller.repeat())
-                        .shimmer(duration: 1000.ms),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildGroupsList(
-      BuildContext context, List<Map<String, dynamic>> groups) {
-    if (groups.isEmpty) {
-      return const Center(
-        child: Text('No groups found'),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: groups.length,
-      itemBuilder: (context, index) {
-        final group = groups[index];
-        return _GroupCard(group: group);
-      },
-    );
-  }
-}
-
-class _GroupCard extends StatefulWidget {
-  final Map<String, dynamic> group;
-
-  const _GroupCard({required this.group});
-
-  @override
-  State<_GroupCard> createState() => _GroupCardState();
-}
-
-class _GroupCardState extends State<_GroupCard> {
-  bool _isJoining = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final group = widget.group;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      color: Colors.grey[900],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              group['name'] ?? 'Unnamed Group',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            if (group['description'] != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                group['description'],
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${group['memberCount'] ?? 0} members',
-                  style: TextStyle(
-                    color: Colors.white60,
-                    fontSize: 12,
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: _isJoining ? null : () => _joinGroup(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  ),
-                  child: _isJoining
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Text('Join'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _joinGroup(BuildContext context) async {
+  Future<void> _joinGroup(Map<String, dynamic> group) async {
     setState(() => _isJoining = true);
 
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please sign in first')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please sign in first')),
+          );
+        }
         return;
       }
 
-      final groupId = widget.group['id'];
+      final groupId = group['id'];
 
       // Check if user is already a member
       final groupDoc = await FirebaseFirestore.instance
@@ -462,10 +227,11 @@ class _GroupCardState extends State<_GroupCard> {
         final groupData = groupDoc.data()!;
         final members = List<String>.from(groupData['members'] ?? []);
         if (members.contains(currentUser.uid)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('You are already a member')),
-          );
-          setState(() => _isJoining = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('You are already a member')),
+            );
+          }
           return;
         }
       }
@@ -491,13 +257,20 @@ class _GroupCardState extends State<_GroupCard> {
       if (mounted) {
         HapticFeedback.lightImpact();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Joined ${widget.group['name']}!')),
+          SnackBar(content: Text('Joined ${group['name']}!')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to join group: $e')),
+          SnackBar(
+            content: Text('Failed to join group: $e'),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _joinGroup(group),
+            ),
+          ),
         );
       }
     } finally {
@@ -505,5 +278,145 @@ class _GroupCardState extends State<_GroupCard> {
         setState(() => _isJoining = false);
       }
     }
+  }
+}
+
+class GroupCard extends StatelessWidget {
+  final Map<String, dynamic> group;
+  final bool isJoining;
+  final VoidCallback onJoin;
+
+  const GroupCard({
+    super.key,
+    required this.group,
+    required this.isJoining,
+    required this.onJoin,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final group = this.group;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: theme.cardColor,
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: theme.primaryColor.withOpacity(0.1),
+                  backgroundImage: group['imageUrl'] != null
+                      ? NetworkImage(group['imageUrl'])
+                      : null,
+                  child: group['imageUrl'] == null
+                      ? Icon(
+                          Icons.group,
+                          color: theme.primaryColor,
+                          size: 24,
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        group['name'] ?? 'Unnamed Group',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: theme.textTheme.titleLarge?.color,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.people,
+                            size: 16,
+                            color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${group['memberCount'] ?? 0} members',
+                            style: TextStyle(
+                              color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (group['gameName'] != null) ...[
+                            const SizedBox(width: 12),
+                            Icon(
+                              Icons.videogame_asset,
+                              size: 16,
+                              color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              group['gameName'],
+                              style: TextStyle(
+                                color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                                fontSize: 12,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: isJoining ? null : onJoin,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  child: isJoining
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text('Join'),
+                ),
+              ],
+            ),
+            if (group['description'] != null && group['description'].toString().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                group['description'],
+                style: TextStyle(
+                  color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+                  fontSize: 14,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers.dart';
-import '../services/timer_service.dart';
+import '../providers/squad_notifier.dart';
 
 class PeacockTimerDisplay extends ConsumerStatefulWidget {
   final String player;
@@ -19,38 +18,53 @@ class PeacockTimerDisplay extends ConsumerStatefulWidget {
 
 class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
   static const Duration _totalDuration = Duration(seconds: 3600); // 1 hour
+  Duration _lastDuration = Duration.zero;
+  DateTime _lastUpdateTime = DateTime.now();
   bool _hasExpired = false;
 
   @override
+  void initState() {
+    super.initState();
+  }
+
+  Duration _getInterpolatedDuration() {
+    final elapsed = DateTime.now().difference(_lastUpdateTime);
+    final interpolated = _lastDuration - elapsed;
+    return interpolated.isNegative ? Duration.zero : interpolated;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final key = 'peacock_${widget.player}';
-    final timerService = ref.watch(timerServiceProvider);
+    final timerStateAsync = ref.watch(peacockTimerStateProvider(widget.player));
 
-    return StreamBuilder<Duration>(
-      stream: timerService.observeTimer(key),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-            width: 60,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          );
-        }
+    // Watch the stream for interpolation updates
+    final streamAsync = ref.watch(peacockTimerStreamProvider(widget.player));
+    if (streamAsync.hasValue) {
+      _lastDuration = streamAsync.value!;
+      _lastUpdateTime = DateTime.now();
+    }
 
-        final remaining = snapshot.data ?? Duration.zero;
-        final progress = remaining.inSeconds / _totalDuration.inSeconds;
+    return timerStateAsync.when(
+      data: (timerData) {
+        final interpolated = _getInterpolatedDuration();
+        final progress = interpolated.inSeconds / _totalDuration.inSeconds;
 
         // Update formatted time
-        final minutes = remaining.inMinutes;
-        final seconds = remaining.inSeconds % 60;
+        final minutes = interpolated.inMinutes;
+        final seconds = interpolated.inSeconds % 60;
         final formatted =
             '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 
         // Haptic feedback on expiration
-        if (remaining == Duration.zero && !_hasExpired) {
+        if (interpolated == Duration.zero && !_hasExpired) {
           _hasExpired = true;
           HapticFeedback.vibrate();
-        } else if (remaining > Duration.zero) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Peacock timer expired!')),
+            );
+          }
+        } else if (interpolated > Duration.zero) {
           _hasExpired = false;
         }
 
@@ -87,6 +101,23 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
           ],
         );
       },
+      loading: () => const SizedBox(
+        width: 60,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+      error: (error, stack) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Timer desync error: $error')),
+          );
+        }
+        return const SizedBox(
+          width: 60,
+          height: 20,
+          child: Icon(Icons.error, size: 16),
+        );
+      },
     );
   }
 
@@ -100,15 +131,13 @@ class PeacockWidgets {
   static Widget buildPeacockSpot(
       BuildContext context, WidgetRef ref, Function() togglePeacockMembers) {
     final yourName = ref
-        .read(squadStateNotifierProvider.select((state) => state.displayName));
-    final gameName = ref.read(squadStateNotifierProvider
-        .select((state) => state.currentGame?['name'] ?? ''));
-    final squadSpots = ref.read(squadStateNotifierProvider
-        .select((state) => state.gameSquadSpots[gameName] ?? []));
+        .read(squadNotifierProvider.select((asyncValue) => asyncValue.value?.memberDisplayNames.values.firstWhere((name) => name.isNotEmpty, orElse: () => 'You') ?? 'You'));
+    final gameName = ref.read(squadNotifierProvider
+        .select((asyncValue) => asyncValue.value?.currentGame?['name'] ?? ''));
+    final squadSpots = ref.read(squadNotifierProvider
+        .select((asyncValue) => asyncValue.value?.gameSquadSpots[gameName] ?? []));
     final youAreAssigned = squadSpots.contains(yourName);
     // Placeholder for peacockTimers and peacockQueue - need to implement
-    final youArePeacock =
-        false; // squadState.peacockTimers.containsKey(yourName) || squadState.peacockQueue.contains(yourName);
 
     return GestureDetector(
       onLongPress: togglePeacockMembers,
@@ -130,9 +159,7 @@ class PeacockWidgets {
                   child: ElevatedButton(
                     onPressed: () {
                       if (yourName.isEmpty) return;
-                      if (youArePeacock) {
-                        togglePeacockMembers();
-                      } else if (youAreAssigned) {
+                      if (youAreAssigned) {
                         final currentSpotIndex = squadSpots.indexOf(yourName);
                         if (currentSpotIndex != -1) {
                           // squadState.removeSpot(currentSpotIndex); // Placeholder, need to implement
@@ -187,63 +214,6 @@ class PeacockWidgets {
     return const Text('Open', style: TextStyle(color: Colors.white));
   }
 
-  static Widget _buildPeacockTimerRow(BuildContext context,
-      MapEntry<String, Map<String, dynamic>?> entry, WidgetRef ref) {
-    final timer = entry.value;
-    if (timer == null) return const SizedBox.shrink();
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(entry.key, style: Theme.of(context).textTheme.bodyMedium),
-        const SizedBox(width: 8),
-        _buildStatusChip('Strutting'),
-        const SizedBox(width: 8),
-        PeacockTimerDisplay(player: entry.key),
-      ],
-    );
-  }
-
-  static Widget _buildPeacockQueueRow(BuildContext context, String player) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(player, style: Theme.of(context).textTheme.bodyMedium),
-        const SizedBox(width: 8),
-        _buildStatusChip('Waiting'),
-      ],
-    );
-  }
-
-  static Widget _buildStatusChip(String status) {
-    return Chip(
-      label: Text(status, style: const TextStyle(fontSize: 12)),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      backgroundColor: _getStatusColor(status).withValues(alpha: 0.2),
-      labelStyle: TextStyle(color: _getStatusColor(status)),
-    );
-  }
-
-  static Color _getStatusColor(String status) {
-    switch (status) {
-      case 'Strutting':
-        return Colors.blueAccent;
-      case 'Walking':
-        return Colors.greenAccent;
-      case 'in game':
-        return Colors.greenAccent;
-      case 'Ready':
-        return Colors.yellowAccent;
-      case 'Claimed Spot':
-        return Colors.orangeAccent;
-      case 'Waiting':
-        return Colors.grey[400]!;
-      default:
-        return Colors.grey[600]!;
-    }
-  }
-
   static Widget buildPeacockMembersList(BuildContext context, WidgetRef ref,
       Function(String, bool) togglePeacockMember) {
     return Card(
@@ -274,7 +244,7 @@ class PeacockWidgets {
                   children: [].map((game) {
                     // squadState.availableGames
                     final gameName = game['name'] as String;
-                    final isPreferred =
+                    const isPreferred =
                         false; // squadState.preferredPeacockGames.contains(gameName)
                     return FilterChip(
                       label: Text(gameName),
@@ -300,21 +270,7 @@ class PeacockWidgets {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: 0, // squadState.getFilteredMembers.length
-            itemBuilder: (context, index) {
-              final member = 'Unknown'; // squadState.getFilteredMembers[index]
-              final isInPeacock =
-                  false; // squadState.peacockTimers.containsKey(member) || squadState.peacockQueue.contains(member)
-              return ListTile(
-                title: Text(member),
-                trailing: Icon(
-                  isInPeacock ? Icons.remove_circle : Icons.add_circle,
-                  color: isInPeacock ? Colors.red : Colors.green,
-                  semanticLabel:
-                      isInPeacock ? 'Remove from Peacock' : 'Add to Peacock',
-                ),
-                onTap: () => togglePeacockMember(member, isInPeacock),
-              );
-            },
+            itemBuilder: (context, index) => Container(),
           ),
         ],
       ),

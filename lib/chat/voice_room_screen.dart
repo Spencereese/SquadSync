@@ -124,7 +124,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
                       .textTheme
                       .bodyMedium
                       ?.color
-                      ?.withOpacity(0.7) ??
+                      ?.withValues(alpha: 0.7) ??
                   Colors.white70,
               fontSize: 16),
         ),
@@ -150,8 +150,8 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
     return Container(
       decoration: BoxDecoration(
         color: participant.isSpeaking
-            ? Theme.of(context).colorScheme.primary.withOpacity(0.2)
-            : Theme.of(context).cardColor.withOpacity(0.1),
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
+            : Theme.of(context).cardColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: participant.isSpeaking
@@ -208,8 +208,10 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color:
-                        Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(

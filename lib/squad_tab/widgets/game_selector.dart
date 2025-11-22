@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../../squad_state.dart';
-import '../../managers/game_manager.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers.dart';
+import '../../squad_state_notifier.dart';
+import '../../managers/game_manager.dart' as gm;
 
 /// GameSelector component - handles game selection, display, and switching
 /// Extracted from the monolithic SquadTab to improve maintainability
-class GameSelector extends StatelessWidget {
+class GameSelector extends ConsumerWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final VoidCallback? onGameTap;
@@ -19,24 +21,22 @@ class GameSelector extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer<SquadState>(
-      builder: (context, squadState, child) {
-        final currentGame = squadState.currentGame ?? game;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final squadState = ref.watch(squadStateNotifierProvider);
+    final notifier = ref.read(squadStateNotifierProvider.notifier);
+    final currentGame = squadState.currentGame ?? game;
 
-        return GestureDetector(
-          onTap:
-              onGameTap ?? () => _showGameSelectionDialog(context, squadState),
-          child: SizedBox(
-            width: 220,
-            height: 160,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [_buildGameLogo(currentGame)],
-            ),
-          ),
-        );
-      },
+    return GestureDetector(
+      onTap:
+          onGameTap ?? () => _showGameSelectionDialog(context, notifier, ref),
+      child: SizedBox(
+        width: 220,
+        height: 160,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [_buildGameLogo(currentGame)],
+        ),
+      ),
     );
   }
 
@@ -56,7 +56,7 @@ class GameSelector extends StatelessWidget {
       );
     } else {
       final assetName =
-          getAssetName(currentGame?['name']) ?? getAssetName(gameName);
+          getAssetName(currentGame?['name']) ?? getAssetName(this.gameName);
       if (assetName != null) {
         logo = Image.asset(
           'assets/images/$assetName',
@@ -88,7 +88,8 @@ class GameSelector extends StatelessWidget {
     return logo;
   }
 
-  void _showGameSelectionDialog(BuildContext context, SquadState squadState) {
+  void _showGameSelectionDialog(
+      BuildContext context, SquadStateNotifier squadState, WidgetRef ref) {
     final TextEditingController gameController = TextEditingController();
     Map<String, dynamic>? selectedGame;
 
@@ -121,9 +122,9 @@ class GameSelector extends StatelessWidget {
                   ),
                   onChanged: (value) async {
                     if (value.isNotEmpty) {
-                      final gameManager =
-                          Provider.of<GameManager>(context, listen: false);
-                      final results = await gameManager.searchGames(value);
+                      final results = await ref
+                          .read(gm.gameManagerProvider.notifier)
+                          .fetchGamesFromIGDB(value);
                       if (results.isNotEmpty) {
                         setState(() {
                           selectedGame = results.first;
@@ -198,11 +199,15 @@ class GameSelector extends StatelessWidget {
             TextButton(
               onPressed: selectedGame != null
                   ? () {
-                      squadState.currentGame = selectedGame;
+                      ref
+                          .read(squadStateNotifierProvider.notifier)
+                          .setCurrentGame(selectedGame);
                       // Mark fields as changed for persistence
-                      squadState.persistenceManager
+                      ref
+                          .read(squadStateNotifierProvider.notifier)
+                          .persistenceManager
                           .markFieldChanged('currentGame');
-                      squadState.updateFirestoreAsync();
+                      // ref.read(squadStateNotifierProvider.notifier).updateFirestoreAsync();
                       Navigator.pop(context);
                       HapticFeedback.lightImpact();
                       ScaffoldMessenger.of(context).showSnackBar(

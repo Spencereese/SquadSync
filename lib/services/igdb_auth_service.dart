@@ -21,12 +21,22 @@ class IgdbAuthService {
   }
 
   /// Get stored client ID
-  String? getClientId() {
+  Future<String?> getClientId() async {
+    await _ensureStorage();
+    // First try SharedPreferences
+    final storedId = _storage!.getString(_clientIdKey);
+    if (storedId != null) return storedId;
+    // Fall back to environment variables
     return dotenv.env['IGDB_CLIENT_ID'];
   }
 
   /// Get stored client secret
-  String? getClientSecret() {
+  Future<String?> getClientSecret() async {
+    await _ensureStorage();
+    // First try SharedPreferences
+    final storedSecret = _storage!.getString(_clientSecretKey);
+    if (storedSecret != null) return storedSecret;
+    // Fall back to environment variables
     return dotenv.env['IGDB_CLIENT_SECRET'];
   }
 
@@ -61,11 +71,12 @@ class IgdbAuthService {
 
   /// Fetch new access token from Twitch OAuth2
   Future<String> _fetchNewToken() async {
-    final clientId = getClientId();
-    final clientSecret = getClientSecret();
+    final clientId = await getClientId();
+    final clientSecret = await getClientSecret();
 
     if (clientId == null || clientSecret == null) {
-      throw Exception('IGDB credentials not found in environment variables.');
+      throw Exception(
+          'IGDB credentials not found. Please run storeCredentials() first or set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables.');
     }
 
     final response = await http.post(
@@ -102,7 +113,7 @@ class IgdbAuthService {
       {int limit = 10}) async {
     final token = await getAccessToken();
 
-    final clientId = getClientId();
+    final clientId = await getClientId();
     if (clientId == null) throw Exception('IGDB client ID not found.');
 
     try {
@@ -179,5 +190,15 @@ class IgdbAuthService {
     _accessToken = null;
     _tokenExpiry = null;
     print('IGDB stored data cleared');
+  }
+
+  /// Store IGDB credentials in SharedPreferences (for development/testing)
+  Future<void> storeCredentials() async {
+    await _ensureStorage();
+    // Store test credentials (replace with real ones for production)
+    await _storage!.setString(_clientIdKey, 'yq7hidzec8wv7khe9niom9m6znzrxf');
+    await _storage!
+        .setString(_clientSecretKey, '4ycghqkzf2ylgxbilypdxu4ga937u5');
+    print('IGDB credentials stored');
   }
 }

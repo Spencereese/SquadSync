@@ -1,0 +1,132 @@
+[
+  {
+    "name": "The Witcher 3: Wild Hunt",
+    "slug": "the-witcher-3-wild-hunt",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co1uqy.jpg"
+    },
+    "summary": "The Witcher 3: Wild Hunt is a story-driven, next-generation open world role-playing game set in a visually stunning fantasy universe full of meaningful choices and impactful consequences.",
+    "first_release_date": 1420070400,
+    "genres": [
+      {"name": "Role-playing (RPG)"},
+      {"name": "Adventure"}
+    ]
+  },
+  {
+    "name": "The Legend of Zelda: Breath of the Wild",
+    "slug": "the-legend-of-zelda-breath-of-the-wild",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co1tmu.jpg"
+    },
+    "summary": "Forget everything you know about The Legend of Zelda games. Step into a world of discovery, exploration, and adventure in The Legend of Zelda: Breath of the Wild, a boundary-breaking new game in the acclaimed series.",
+    "first_release_date": 1483228800,
+    "genres": [
+      {"name": "Adventure"},
+      {"name": "Puzzle"}
+    ]
+  },
+  {
+    "name": "Red Dead Redemption 2",
+    "slug": "red-dead-redemption-2",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co1q1f.jpg"
+    },
+    "summary": "Arthur Morgan and the Van der Linde gang are outlaws on the run. With federal agents and the best bounty hunters in the nation massing on their heels, the gang must rob, steal and fight their way across the rugged heartland of America in order to survive.",
+    "first_release_date": 1535760000,
+    "genres": [
+      {"name": "Adventure"},
+      {"name": "Shooter"}
+    ]
+  },
+  {
+    "name": "God of War (2018)",
+    "slug": "god-of-war-2018",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co1wyy.jpg"
+    },
+    "summary": "His vengeance against the Gods of Olympus years behind him, Kratos now lives as a man in the realm of Norse Gods and monsters. It is in this harsh, unforgiving world that he must fight to survive... and teach his son to do the same.",
+    "first_release_date": 1533081600,
+    "genres": [
+      {"name": "Adventure"},
+      {"name": "Hack and slash"}
+    ]
+  },
+  {
+    "name": "The Last of Us Part II",
+    "slug": "the-last-of-us-part-ii",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co1rba.jpg"
+    },
+    "summary": "Set five years after the events of The Last of Us, we see the return of Joel and Ellie. The story revolves around their journey through dangerous post-pandemic America.",
+    "first_release_date": 1588291200,
+    "genres": [
+      {"name": "Adventure"},
+      {"name": "Shooter"}
+    ]
+  },
+  {
+    "name": "Cyberpunk 2077",
+    "slug": "cyberpunk-2077",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co2lbd.jpg"
+    },
+    "summary": "Cyberpunk 2077 is an open-world, action-adventure story set in Night City, a megalopolis obsessed with power, glamour and body modification.",
+    "first_release_date": 1609459200,
+    "genres": [
+      {"name": "Role-playing (RPG)"},
+      {"name": "Adventure"}
+    ]
+  },
+  {
+    "name": "Elden Ring",
+    "slug": "elden-ring",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co4jni.jpg"
+    },
+    "summary": "THE NEW FANTASY ACTION RPG. Rise, Tarnished, and be guided by grace to brandish the power of the Elden Ring and become an Elden Lord in the Lands Between.",
+    "first_release_date": 1640995200,
+    "genres": [
+      {"name": "Role-playing (RPG)"},
+      {"name": "Adventure"}
+    ]
+  },
+  {
+    "name": "Hades",
+    "slug": "hades",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co39vc.jpg"
+    },
+    "summary": "Defy the god of the dead as you hack and slash out of the Underworld in this rogue-like dungeon crawler from the creators of Bastion, Transistor, and Pyre.",
+    "first_release_date": 1601510400,
+    "genres": [
+      {"name": "Role-playing (RPG)"},
+      {"name": "Hack and slash"}
+    ]
+  },
+  {
+    "name": "Resident Evil Village",
+    "slug": "resident-evil-village",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co2lbd.jpg"
+    },
+    "summary": "Experience survival horror like never before in the 8th major installment in the Resident Evil franchise - Resident Evil Village.",
+    "first_release_date": 1633046400,
+    "genres": [
+      {"name": "Adventure"},
+      {"name": "Shooter"}
+    ]
+  },
+  {
+    "name": "Hogwarts Legacy",
+    "slug": "hogwarts-legacy",
+    "cover": {
+      "url": "//images.igdb.com/igdb/image/upload/t_thumb/co5xjv.jpg"
+    },
+    "summary": "Hogwarts Legacy is an immersive, open-world action RPG set in the world first introduced in the Harry Potter books.",
+    "first_release_date": 1672531200,
+    "genres": [
+      {"name": "Role-playing (RPG)"},
+      {"name": "Adventure"}
+    ]
+  }
+]

@@ -59,6 +59,7 @@ dependencies:
   connectivity_plus: ^6.1.0
   flutter_dotenv: ^5.1.0
   retry: ^3.1.0
+  rxdart: ^0.28.0
 
 dev_dependencies:
   flutter_test:
@@ -74,6 +75,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   firebase_auth_mocks: ^0.15.1
+  firebase_storage_mocks: ^0.8.0+1
 
 flutter:
   uses-material-design: true 
@@ -118,6 +120,7 @@ flutter:
     - assets/images/close.png
     - assets/images/timer_off.png
     - assets/images/info_icon.png
+    - assets/popular_games.json
     - assets/images/notifications_off_icon.png
     - assets/images/delete_sweep_icon.png
     - assets/images/exit_icon.png

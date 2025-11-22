@@ -12,7 +12,6 @@ import 'package:squad_sync/screens/squad_tab_screen.dart';
 import 'package:squad_sync/squad_state.dart';
 import 'package:squad_sync/chat/chat_state.dart';
 import 'package:squad_sync/managers/user_manager.dart';
-import 'package:squad_sync/managers/game_manager.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -42,7 +41,6 @@ void main() {
               p.ChangeNotifierProvider<SquadState>.value(value: SquadState()),
               p.ChangeNotifierProvider<ChatState>.value(value: ChatState()),
               p.ChangeNotifierProvider<UserManager>.value(value: UserManager()),
-              p.ChangeNotifierProvider<GameManager>.value(value: GameManager()),
             ],
             child: const MaterialApp(
               home: OnboardingFlow(),

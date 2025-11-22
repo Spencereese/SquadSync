@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../squad_state.dart';
-import '../managers/game_manager.dart';
+import '../managers/game_manager.dart' as gm;
 import '../managers/squad_manager.dart';
 import '../managers/user_manager.dart';
 import '../managers/availability_manager.dart';
@@ -162,7 +162,7 @@ class SquadTab extends StatelessWidget {
   }
 }
 
-class _SquadTabContent extends StatefulWidget {
+class _SquadTabContent extends ConsumerStatefulWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
@@ -175,7 +175,7 @@ class _SquadTabContent extends StatefulWidget {
   _SquadTabContentState createState() => _SquadTabContentState();
 }
 
-class _SquadTabContentState extends State<_SquadTabContent> {
+class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
   final bool _showPeacockMembers = false;
   late BuildContext _currentContext;
   List<String> _chatGroupMembers = [];
@@ -205,8 +205,6 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         squadState.currentGame = widget.game;
       });
     } else if (widget.gameName != null) {
-      final gameManager =
-          p.Provider.of<GameManager>(_currentContext, listen: false);
       final userManager =
           p.Provider.of<UserManager>(_currentContext, listen: false);
       if (squadState.currentGame == null ||
@@ -241,7 +239,10 @@ class _SquadTabContentState extends State<_SquadTabContent> {
         // If still not found, search for the game asynchronously
         if (game == null) {
           // Trigger async search without awaiting
-          gameManager.searchGames(widget.gameName!).then((searchResults) {
+          ref
+              .read(gm.gameManagerProvider.notifier)
+              .fetchGamesFromIGDB(widget.gameName!)
+              .then((searchResults) {
             if (searchResults.isNotEmpty && mounted) {
               final squadState =
                   p.Provider.of<SquadState>(_currentContext, listen: false);

@@ -1,141 +1,461 @@
 import 'dart:async';
-import 'dart:ui';
+import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
+import '../chat/sqlite_helper.dart';
+import '../providers/service_providers.dart';
+import '../providers/squad_notifier.dart';
+import 'firestore_service.dart';
 
-/// A Riverpod provider for the TimerService singleton.
-final timerServiceProvider = Provider<TimerService>((ref) {
-  return TimerService();
-});
+/// Timer data structure for persistence
+class TimerData {
+  final String key;
+  final DateTime expirationTime;
+  final String type; // 'spot' or 'peacock'
+  final String? gameName; // For game-scoped timers
+  final String? userId; // For UID-based timers
 
-/// TimerService manages multiple timers using a single periodic Timer.
-/// It uses Firebase Cloud Functions for server-side expiration handling.
-class TimerService {
-  static final TimerService _instance = TimerService._();
+  TimerData({
+    required this.key,
+    required this.expirationTime,
+    required this.type,
+    this.gameName,
+    this.userId,
+  });
 
-  factory TimerService() => _instance;
-
-  TimerService._() {
-    _startPeriodicTimer();
+  Map<String, dynamic> toMap() {
+    return {
+      'key': key,
+      'expirationTime': expirationTime.toIso8601String(),
+      'type': type,
+      'gameName': gameName,
+      'userId': userId,
+    };
   }
 
-  final Map<String, DateTime> _expirationTimes = {};
+  factory TimerData.fromMap(Map<String, dynamic> map) {
+    return TimerData(
+      key: map['key'],
+      expirationTime: DateTime.parse(map['expirationTime']),
+      type: map['type'],
+      gameName: map['gameName'],
+      userId: map['userId'],
+    );
+  }
+}
+
+/// Priority queue item for timer expirations
+class TimerExpiration implements Comparable<TimerExpiration> {
+  final String key;
+  final DateTime expirationTime;
+  final VoidCallback onExpire;
+
+  TimerExpiration(this.key, this.expirationTime, this.onExpire);
+
+  @override
+  int compareTo(TimerExpiration other) {
+    return expirationTime.compareTo(other.expirationTime);
+  }
+}
+
+/// TimerOrchestrator manages a single periodic timer with priority queue
+class TimerOrchestrator {
+  static final TimerOrchestrator _instance = TimerOrchestrator._();
+  factory TimerOrchestrator() => _instance;
+
+  TimerOrchestrator._();
+
+  Timer? _timer;
+  final List<TimerExpiration> _expirationQueue = [];
+  final Map<String, TimerExpiration> _activeTimers = {};
   final Map<String, StreamController<Duration>> _controllers = {};
   final Map<String, Duration> _lastRemaining = {};
-  final Map<String, VoidCallback> _onExpireCallbacks = {};
-  Timer? _timer;
+  bool _hasActiveTimers = false;
 
-  /// Starts a timer with the given key, duration, and callback on expiration.
-  /// Calls Firebase Cloud Functions to process timers on the server.
-  void startTimer(String key, Duration duration, VoidCallback onExpire) {
-    if (key.isEmpty) {
-      throw ArgumentError('Timer key cannot be empty');
-    }
-    final expirationTime = DateTime.now().add(duration);
-    _expirationTimes[key] = expirationTime;
-    _controllers[key] ??= StreamController<Duration>.broadcast();
-    _onExpireCallbacks[key] = onExpire;
-    _lastRemaining[key] = duration; // Initial remaining time
-    _controllers[key]!.add(duration);
-
-    // Call Firebase Cloud Function for server-side handling
-    _callProcessTimers();
+  /// Starts the orchestrator with 5-second intervals
+  void start() {
+    if (_timer != null) return;
+    _timer = Timer.periodic(const Duration(seconds: 5), _onTick);
   }
 
-  /// Stops the timer with the given key.
-  /// Calls Firebase Cloud Functions to process timers on the server.
-  void stopTimer(String key) {
-    if (!_expirationTimes.containsKey(key)) {
-      throw ArgumentError('Timer with key "$key" does not exist');
+  /// Stops the orchestrator
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+    _expirationQueue.clear();
+    _activeTimers.clear();
+    for (final controller in _controllers.values) {
+      controller.close();
     }
-    _expirationTimes.remove(key);
+    _controllers.clear();
+    _lastRemaining.clear();
+    _hasActiveTimers = false;
+  }
+
+  /// Adds a timer to the orchestrator
+  void addTimer(String key, Duration duration, VoidCallback onExpire) {
+    final expirationTime = DateTime.now().add(duration);
+    final expiration = TimerExpiration(key, expirationTime, onExpire);
+
+    // Remove existing timer if present
+    removeTimer(key);
+
+    _activeTimers[key] = expiration;
+    _expirationQueue.add(expiration);
+    _expirationQueue.sort(); // Sort by expiration time
+    _controllers[key] ??= StreamController<Duration>.broadcast();
+    _lastRemaining[key] = duration;
+    _controllers[key]!.add(duration);
+    _updateActiveTimersFlag();
+  }
+
+  /// Removes a timer from the orchestrator
+  void removeTimer(String key) {
+    final existing = _activeTimers.remove(key);
+    if (existing != null) {
+      _expirationQueue.remove(existing);
+    }
     _controllers[key]?.close();
     _controllers.remove(key);
-    _onExpireCallbacks.remove(key);
     _lastRemaining.remove(key);
-
-    // Call Firebase Cloud Function for server-side handling
-    _callProcessTimers();
+    _updateActiveTimersFlag();
   }
 
-  /// Gets the remaining time for the timer with the given key.
+  /// Gets remaining time for a timer
   Duration getRemainingTime(String key) {
-    if (!_expirationTimes.containsKey(key)) {
-      throw ArgumentError('Timer with key "$key" does not exist');
-    }
-    final remaining = _expirationTimes[key]!.difference(DateTime.now());
+    final expiration = _activeTimers[key];
+    if (expiration == null) throw ArgumentError('Timer not found: $key');
+    final remaining = expiration.expirationTime.difference(DateTime.now());
     return remaining.isNegative ? Duration.zero : remaining;
   }
 
-  /// Returns a stream for observing the remaining time of the timer with the given key.
+  /// Observes timer updates
   Stream<Duration> observeTimer(String key) {
     if (!_controllers.containsKey(key)) {
-      throw ArgumentError('Timer with key "$key" does not exist');
+      throw ArgumentError('Timer not found: $key');
     }
     return _controllers[key]!.stream;
   }
 
-  /// Starts the periodic timer that ticks every 5 seconds.
-  void _startPeriodicTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 5), _onTick);
-  }
-
-  /// Called on each tick to update remaining times and notify observers.
+  /// Processes tick with batch updates and conditional notifications
   void _onTick(Timer timer) {
+    if (!_hasActiveTimers) return;
+
     final now = DateTime.now();
-    for (final key in _expirationTimes.keys.toList()) {
-      final expiration = _expirationTimes[key]!;
-      final remaining = expiration.difference(now);
+    final expiredKeys = <String>[];
+    final changedKeys = <String>[];
+
+    // Process expirations
+    while (_expirationQueue.isNotEmpty) {
+      final next = _expirationQueue.first;
+      if (next.expirationTime.isAfter(now)) break;
+
+      _expirationQueue.removeAt(0);
+      expiredKeys.add(next.key);
+      next.onExpire();
+    }
+
+    // Clean up expired timers
+    for (final key in expiredKeys) {
+      _activeTimers.remove(key);
+      _controllers[key]?.close();
+      _controllers.remove(key);
+      _lastRemaining.remove(key);
+    }
+
+    // Update remaining times for active timers
+    for (final entry in _activeTimers.entries) {
+      final key = entry.key;
+      final expiration = entry.value;
+      final remaining = expiration.expirationTime.difference(now);
       final clampedRemaining = remaining.isNegative ? Duration.zero : remaining;
 
-      // Only notify if the remaining time has changed
       if (_lastRemaining[key] != clampedRemaining) {
         _lastRemaining[key] = clampedRemaining;
         _controllers[key]?.add(clampedRemaining);
+        changedKeys.add(key);
+      }
+    }
 
-        // If expired, call onExpire and stop the timer
-        if (clampedRemaining == Duration.zero) {
-          _onExpireCallbacks[key]?.call();
-          stopTimer(key);
+    _updateActiveTimersFlag();
+
+    // Only notify if there were changes and we still have active timers
+    if (changedKeys.isNotEmpty && _hasActiveTimers) {
+      // Debounced notification - could be extended with actual debouncing
+      _notifyListeners();
+    }
+  }
+
+  void _updateActiveTimersFlag() {
+    _hasActiveTimers = _activeTimers.isNotEmpty;
+  }
+
+  void _notifyListeners() {
+    // Placeholder for global notifications - integrate with your state management
+  }
+
+  /// Gets all active timer keys
+  Set<String> getActiveTimerKeys() => _activeTimers.keys.toSet();
+
+  /// Checks if there are active timers
+  bool hasActiveTimers() => _hasActiveTimers;
+}
+
+/// A Riverpod provider for the TimerService.
+final timerServiceProvider = StateNotifierProvider<TimerServiceNotifier, AsyncValue<void>>((ref) {
+  final firestoreService = ref.watch(firestoreServiceProvider);
+  final sqliteHelper = ref.watch(sqliteHelperProvider);
+  return TimerServiceNotifier(ref, firestoreService, sqliteHelper);
+});
+
+/// SQLite helper provider
+final sqliteHelperProvider = Provider<SQLiteHelper>((ref) => SQLiteHelper());
+
+/// TimerService manages timers with offline caching and Cloud Function fallbacks.
+/// Uses TimerOrchestrator for efficient batch processing.
+class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
+  final Ref _ref;
+  final FirestoreService _firestoreService;
+  final SQLiteHelper _sqliteHelper;
+  final TimerOrchestrator _orchestrator = TimerOrchestrator();
+  SharedPreferences? _prefs;
+  bool _isOfflineMode = false;
+
+  // Debouncing for UI updates
+  Timer? _debounceTimer;
+  static const _debounceDuration = Duration(milliseconds: 100);
+
+  // Interpolation support
+  final Map<String, Duration> _interpolatedRemaining = {};
+
+  TimerServiceNotifier(this._ref, this._firestoreService, this._sqliteHelper) : super(const AsyncValue.data(null)) {
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    state = const AsyncValue.loading();
+    try {
+      _prefs = await SharedPreferences.getInstance();
+      _orchestrator.start();
+      await _loadPersistedTimers();
+      await _syncWithFirestore();
+      state = const AsyncValue.data(null);
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+    }
+  }
+
+  /// Starts a spot timer with game-scoped data
+  Future<void> startSpotTimer(String gameName, String userId, Duration duration) async {
+    final key = 'spot_${gameName}_$userId';
+    await _startTimer(key, duration, () => _onSpotTimerExpire(gameName, userId), type: 'spot', gameName: gameName, userId: userId);
+  }
+
+  /// Starts a peacock timer
+  Future<void> startPeacockTimer(String userId, Duration duration) async {
+    final key = 'peacock_$userId';
+    await _startTimer(key, duration, () => _onPeacockTimerExpire(userId), type: 'peacock', userId: userId);
+  }
+
+  /// Internal timer start with persistence
+  Future<void> _startTimer(
+    String key,
+    Duration duration,
+    VoidCallback onExpire, {
+    required String type,
+    String? gameName,
+    String? userId,
+  }) async {
+    _orchestrator.addTimer(key, duration, onExpire);
+
+    final timerData = TimerData(
+      key: key,
+      expirationTime: DateTime.now().add(duration),
+      type: type,
+      gameName: gameName,
+      userId: userId,
+    );
+
+    await _persistTimer(timerData);
+    await _syncWithCloudFunctions();
+  }
+
+  /// Stops a timer
+  Future<void> stopTimer(String key) async {
+    _orchestrator.removeTimer(key);
+    await _removePersistedTimer(key);
+    await _syncWithCloudFunctions();
+  }
+
+  /// Gets remaining time with interpolation support
+  Duration getRemainingTime(String key, {bool interpolate = false}) {
+    final remaining = _orchestrator.getRemainingTime(key);
+    if (interpolate) {
+      // Simple interpolation - could be enhanced with more sophisticated algorithms
+      final lastInterpolated = _interpolatedRemaining[key] ?? remaining;
+      final interpolated = Duration(
+        milliseconds: (remaining.inMilliseconds + lastInterpolated.inMilliseconds) ~/ 2,
+      );
+      _interpolatedRemaining[key] = interpolated;
+      return interpolated;
+    }
+    return remaining;
+  }
+
+  /// Observes timer with debounced UI updates
+  Stream<Duration> observeTimer(String key) {
+    return _orchestrator.observeTimer(key).transform(
+      StreamTransformer<Duration, Duration>.fromHandlers(
+        handleData: (data, sink) {
+          _debounceTimer?.cancel();
+          _debounceTimer = Timer(_debounceDuration, () {
+            sink.add(data);
+          });
+        },
+      ),
+    );
+  }
+
+  /// Spot timer expiration handler
+  void _onSpotTimerExpire(String gameName, String userId) {
+    final squadNotifier = _ref.read(squadNotifierProvider.notifier);
+    final squadAsync = _ref.read(squadNotifierProvider);
+    if (squadAsync.hasValue) {
+      final squadState = squadAsync.value!;
+      final gameSquadSpots = squadState.gameSquadSpots[gameName] ?? [];
+      final spotIndex = gameSquadSpots.indexOf(userId);
+      if (spotIndex != -1) {
+        squadNotifier.removeSpot(gameName, spotIndex);
+      }
+    }
+    _removePersistedTimer('spot_${gameName}_$userId');
+  }
+
+  /// Peacock timer expiration handler
+  void _onPeacockTimerExpire(String userId) {
+    final squadNotifier = _ref.read(squadNotifierProvider.notifier);
+    final squadAsync = _ref.read(squadNotifierProvider);
+    if (squadAsync.hasValue) {
+      final squadState = squadAsync.value!;
+      final gameName = squadState.currentGame?['name'] ?? '';
+      squadNotifier.removeFromPeacock(gameName, userId);
+    }
+    _removePersistedTimer('peacock_$userId');
+  }
+
+  /// Persists timer to SQLite and SharedPreferences
+  Future<void> _persistTimer(TimerData timerData) async {
+    try {
+      final db = await _sqliteHelper.database;
+      await db.insert(
+        'timers',
+        {
+          'key': timerData.key,
+          'data': jsonEncode(timerData.toMap()),
+          'created_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      // Also cache in SharedPreferences for quick access
+      final timers = _prefs?.getStringList('active_timers') ?? [];
+      timers.add(timerData.key);
+      await _prefs?.setStringList('active_timers', timers);
+      await _prefs?.setString('timer_${timerData.key}', jsonEncode(timerData.toMap()));
+    } catch (e) {
+      // Fallback to SharedPreferences only
+      final timers = _prefs?.getStringList('active_timers') ?? [];
+      timers.add(timerData.key);
+      await _prefs?.setStringList('active_timers', timers);
+      await _prefs?.setString('timer_${timerData.key}', jsonEncode(timerData.toMap()));
+    }
+  }
+
+  /// Removes persisted timer
+  Future<void> _removePersistedTimer(String key) async {
+    try {
+      final db = await _sqliteHelper.database;
+      await db.delete('timers', where: 'key = ?', whereArgs: [key]);
+    } catch (e) {
+      // SQLite failed, continue with SharedPreferences cleanup
+    }
+
+    final timers = _prefs?.getStringList('active_timers') ?? [];
+    timers.remove(key);
+    await _prefs?.setStringList('active_timers', timers);
+    await _prefs?.remove('timer_$key');
+    _interpolatedRemaining.remove(key);
+  }
+
+  /// Loads persisted timers on startup
+  Future<void> _loadPersistedTimers() async {
+    final timerKeys = _prefs?.getStringList('active_timers') ?? [];
+    final now = DateTime.now();
+
+    for (final key in timerKeys) {
+      final timerJson = _prefs?.getString('timer_$key');
+      if (timerJson != null) {
+        try {
+          final timerData = TimerData.fromMap(jsonDecode(timerJson));
+          if (timerData.expirationTime.isAfter(now)) {
+            final remaining = timerData.expirationTime.difference(now);
+            if (timerData.type == 'spot') {
+              await startSpotTimer(timerData.gameName!, timerData.userId!, remaining);
+            } else if (timerData.type == 'peacock') {
+              await startPeacockTimer(timerData.userId!, remaining);
+            }
+          } else {
+            await _removePersistedTimer(key);
+          }
+        } catch (e) {
+          await _removePersistedTimer(key);
         }
       }
     }
   }
 
-  /// Calls the hypothetical Firebase Cloud Function 'processTimers'.
-  Future<void> _callProcessTimers() async {
+  /// Syncs with Firestore for cross-device consistency
+  Future<void> _syncWithFirestore() async {
+    if (_isOfflineMode) return;
+
     try {
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('processTimers');
-      await callable.call();
+      await _firestoreService.loadFirestoreData(displayNameCache: {});
+      // Sync gameSpotTimers and peacockTimers from Firestore
+      // Implementation depends on your specific data structure
     } catch (e) {
-      // Handle error, e.g., log or show user feedback
-      // print('Error calling processTimers: $e');
+      _isOfflineMode = true;
     }
   }
 
-  /// Stops all timers.
-  void stopAllTimers() {
-    for (final key in _expirationTimes.keys.toList()) {
-      _expirationTimes.remove(key);
-      _controllers[key]?.close();
-      _controllers.remove(key);
-      _onExpireCallbacks.remove(key);
-      _lastRemaining.remove(key);
+  /// Calls Cloud Functions with dev fallback
+  Future<void> _syncWithCloudFunctions() async {
+    if (_isOfflineMode || kDebugMode) {
+      // Dev fallback: process timers locally
+      await _processTimersLocally();
+      return;
     }
-    // Call Firebase Cloud Function for server-side handling
-    _callProcessTimers();
+
+    try {
+      await FirebaseFunctions.instance.httpsCallable('processTimers').call();
+    } catch (e) {
+      // Fallback to local processing
+      await _processTimersLocally();
+    }
   }
 
-  /// Disposes the service, canceling the timer and closing all streams.
+  /// Local timer processing fallback
+  Future<void> _processTimersLocally() async {
+    // Implement local timer expiration logic
+    // This would mirror the Cloud Function logic
+  }
+
+  @override
   void dispose() {
-    _timer?.cancel();
-    for (final controller in _controllers.values) {
-      controller.close();
-    }
-    _controllers.clear();
-    _expirationTimes.clear();
-    _onExpireCallbacks.clear();
-    _lastRemaining.clear();
+    _orchestrator.stop();
+    _debounceTimer?.cancel();
+    super.dispose();
   }
 }

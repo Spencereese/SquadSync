@@ -3,13 +3,14 @@ import 'package:mockito/mockito.dart';
 import 'package:http/http.dart' as http;
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/managers/game_manager.dart';
 import 'game_manager_test.mocks.dart';
 import 'package:mockito/annotations.dart';
 import 'package:squad_sync/services/igdb_auth_service.dart';
 import 'package:squad_sync/services/cache_service.dart';
 
-@GenerateMocks([http.Client, IgdbAuthService, CacheService, FakeFirebaseFirestore])
+@GenerateMocks([http.Client, IgdbAuthService, CacheService])
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

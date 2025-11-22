@@ -364,19 +364,7 @@ class MessageContent extends StatelessWidget {
                   ? Colors.blue.withValues(alpha: 0.7)
                   : Colors.grey.withValues(alpha: 0.5),
             ),
-          // Subtle timestamp for sent messages
-          if (message.status != MessageStatus.sending)
-            Padding(
-              padding: const EdgeInsets.only(left: 4.0),
-              child: Text(
-                _formatTime(message.timestamp),
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
+          // Timestamp removed from inside bubbles as requested
         ],
       ),
     );

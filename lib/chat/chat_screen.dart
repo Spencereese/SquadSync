@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,17 +9,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:provider/provider.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert'; // Added for utf8
+
 import 'dart:async'; // Added for StreamSubscription
 
 import '../utils.dart';
-import '../squad_state.dart';
+import '../squad_state.dart' as ss;
 import '../services/ai_service.dart';
 import 'chat_input_bar.dart';
 import 'chat_service.dart';
-
-import 'chat_state.dart';
-import 'dialogs/invite_members_dialog.dart';
+import 'chat_state.dart' as cs;
+import 'message.dart';
+import 'models/message_data.dart';
 
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
@@ -29,11 +30,13 @@ import 'services/chat_online_status_manager.dart';
 import 'services/chat_media_handler.dart';
 import 'services/chat_typing_manager.dart';
 import 'services/chat_ui_manager.dart';
-import '../providers/chat_state_notifier.dart';
+import '../providers/chat_notifier.dart' as cn;
+import '../providers/squad_notifier.dart' as sn;
+import '../providers/service_providers.dart';
 import 'chat_settings_menu.dart'; // Importing ChatSettingsMenu
 import 'media_history_screen.dart'; // Importing MediaHistoryScreen
-
-// import 'available_squads_widget.dart'; // Removed - no longer used
+import 'message_bubble.dart';
+import 'dialogs/invite_members_dialog.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
@@ -69,16 +72,60 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   late ScrollController _scrollController;
   String _chatName = 'Squad Chat';
   String? _chatImageUrl;
-  final ChatService _chatService = ChatService();
-  late SquadState _squadState;
-  late ChatState _chatState;
+
+  late ss.SquadState _squadState;
+  late cs.ChatState _chatState;
   bool _isMuted = false;
 
-  // Cache for user display names to avoid FutureBuilder in ListView
-
-  // Cache for processed messages to avoid expensive operations in build
   bool get isUserGroup => widget.chatType == ChatType.userGroup;
   bool get isDM => widget.chatType == ChatType.dm;
+
+  int? _getTimestampMs(dynamic message) {
+    if (message is DocumentSnapshot) {
+      final data = message.data() as Map<String, dynamic>?;
+      if (data?['timestamp'] is Timestamp) {
+        return (data?['timestamp'] as Timestamp).millisecondsSinceEpoch;
+      }
+      return data?['timestamp_ms'] as int?;
+    } else if (message is Map<String, dynamic>) {
+      return message['timestamp_ms'] as int?;
+    }
+    return null;
+  }
+
+  String? _getSender(dynamic message) {
+    if (message is DocumentSnapshot) {
+      final data = message.data() as Map<String, dynamic>?;
+      return data?['senderUid'] as String?;
+    } else if (message is Map<String, dynamic>) {
+      return message['senderUid'] as String?;
+    }
+    return null;
+  }
+
+  String _cleanText(String text) {
+    // Force UTF-8 decoding if needed, but since from Firestore, replace common garbled patterns
+    try {
+      // If text is garbled, attempt to re-encode/decode
+      final bytes = latin1.encode(text); // Assume wrong encoding
+      text = utf8.decode(bytes, allowMalformed: true);
+    } catch (_) {}
+    // Manual replacements for common Messenger corruptions
+    return text
+        .replaceAll('â€™', "'") // Curly apostrophe
+        .replaceAll('â€œ', '"') // Left double quote
+        .replaceAll('â€', '"') // Right double quote
+        .replaceAll('â€™', "'") // Right single quote
+        .replaceAll('â€', '-') // Em dash
+        .replaceAll('â€¦', '...') // Ellipsis
+        .replaceAll('ðŸ' + 'â' + '¹', '👍') // Thumbs up
+        .replaceAll('ðŸ˜' + '‚', '😂') // Laughing
+        .replaceAll('ðŸ˜' + '¢', '😢') // Sad
+        .replaceAll('ðŸ˜' + '¡', '😡') // Angry
+        .replaceAll('â€¤ï¸' + '�', '❤️') // Heart
+        .replaceAll('ð', '👍') // Generic corrupted emoji fallback
+        .replaceAll('ð®', '❤️'); // Another common corruption
+  }
 
   @override
   void initState() {
@@ -108,10 +155,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Add scroll listener for pagination
     _scrollController.addListener(_onScroll);
 
-    _squadState = p.Provider.of<SquadState>(context, listen: false);
+    _squadState = p.Provider.of<ss.SquadState>(context, listen: false);
 
     // Store ChatState reference for safe access in dispose
-    _chatState = p.Provider.of<ChatState>(context, listen: false);
+    _chatState = p.Provider.of<cs.ChatState>(context, listen: false);
     _chatState.addListener(_onChatStateChanged);
 
     // Safety check: prevent opening chat with null chatGroupId for user groups
@@ -171,6 +218,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         messageController: _messageController,
         initialMessage: widget.initialMessage,
       );
+
+      // Load messages using the new ChatNotifier
+      ref.read(cn.chatNotifierProvider.notifier).loadMessages(
+            widget.chatGroupId,
+            widget.chatType,
+          );
     });
 
     // Initialize scroll controller with callbacks
@@ -192,7 +245,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     if (_scrollController.position.pixels <= 100 &&
         !_scrollController.position.atEdge) {
       // User scrolled near the top, trigger pagination
-      ref.read(chatStateNotifierProvider.notifier).paginateMore();
+      // ref.read(cn.chatNotifierProvider.notifier).paginateMore();
     }
   }
 
@@ -208,6 +261,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     _mediaHandler.dispose();
     _typingManager.dispose();
     _saveDraftForHandoff();
+    ref.read(cn.chatNotifierProvider.notifier).dispose();
     super.dispose();
   }
 
@@ -221,6 +275,47 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       });
     }
   }
+
+  void _handleSyncStateChanges(cn.ChatState chatState) {
+    // Handle sync error notifications
+    if (chatState.syncError != null && chatState.syncError!.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sync error: ${chatState.syncError}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: () {
+              ref.read(cn.chatNotifierProvider.notifier).performSync();
+            },
+          ),
+        ),
+      );
+      // Clear the error after showing
+      ref.read(cn.chatNotifierProvider.notifier).clearSyncError();
+    }
+
+    // Handle sync completion with haptic feedback
+    if (!chatState.isSyncing && _previousSyncState == true) {
+      HapticFeedback.lightImpact();
+      if (chatState.syncConflicts.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sync completed with conflicts resolved'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+
+    // Update previous sync state
+    _previousSyncState = chatState.isSyncing;
+  }
+
+  bool? _previousSyncState;
 
   Future<void> _loadMoreMessages() async {
     await _scrollControllerService.loadMoreMessages(
@@ -277,7 +372,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     // Check if user is banned
-    final squadState = p.Provider.of<SquadState>(context, listen: false);
+    final squadState = p.Provider.of<ss.SquadState>(context, listen: false);
     final currentUserName = squadState.displayName;
     if (squadState.isBanned(currentUserName)) {
       if (mounted) {
@@ -290,54 +385,33 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
 
-    final chatState = p.Provider.of<ChatState>(context, listen: false);
-    String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-    chatState.updateSendingStatus(tempId, true);
-
     try {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      final result = await _chatService.sendMessage(capturedContext,
-          senderUid: user.uid,
-          text: _messageController.text,
-          chatGroupId: widget.chatGroupId,
-          chatType: widget.chatType);
+      await ref.read(cn.chatNotifierProvider.notifier).sendMessage(
+            capturedContext,
+            _messageController.text,
+            chatGroupId: widget.chatGroupId,
+          );
 
-      if (result.success) {
-        if (result.isOffline && mounted) {
-          ScaffoldMessenger.of(capturedContext).showSnackBar(
-            const SnackBar(
-                content: Text('Message queued for sending when online')),
-          );
-        }
-        chatState.removeSendingStatus(tempId);
-        _messageController.clear();
-        // Clear reply after sending
-        chatState.clearReplyToMessage();
-        // Add haptic feedback for successful send
-        HapticFeedback.lightImpact();
-        await _typingManager.onMessageSent(
-          capturedContext,
-          chatGroupId: widget.chatGroupId,
-          squadState: _squadState,
-        );
-        _scrollToBottom();
-        await _checkFirstMessage();
-      } else {
-        // Handle failure
-        if (mounted) {
-          ScaffoldMessenger.of(capturedContext).showSnackBar(
-            SnackBar(content: Text(result.errorMessage ?? 'Send failed')),
-          );
-          chatState.updateSendingStatus(tempId, false);
-        }
-      }
+      // Message sent successfully
+      _messageController.clear();
+      // Clear reply after sending
+      ref.read(cn.chatNotifierProvider.notifier).clearReplyToMessage();
+      // Add haptic feedback for successful send
+      HapticFeedback.lightImpact();
+      await _typingManager.onMessageSent(
+        capturedContext,
+        chatGroupId: widget.chatGroupId,
+        squadState: _squadState,
+      );
+      _scrollToBottom();
+      await _checkFirstMessage();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Send failed: $e')));
-        chatState.updateSendingStatus(tempId, false);
       }
     }
   }
@@ -460,7 +534,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
-                        p.Consumer<SquadState>(
+                        p.Consumer<ss.SquadState>(
                           builder: (context, squadState, _) {
                             final memberCount = squadState.statuses.length;
                             return Text(
@@ -506,7 +580,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  p.Consumer<SquadState>(
+                  p.Consumer<ss.SquadState>(
                     builder: (context, squadState, _) {
                       final members = squadState.statuses.entries.map((entry) {
                         final uid = entry.key;
@@ -605,7 +679,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   void _showMemberMenu(
-      BuildContext context, String userName, SquadState squadState) {
+      BuildContext context, String userName, ss.SquadState squadState) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.black.withValues(alpha: 0.9),
@@ -913,73 +987,57 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  int? _getTimestampMs(dynamic message) {
-    if (message is DocumentSnapshot) {
-      final data = message.data() as Map<String, dynamic>?;
-      if (data?['timestamp'] is Timestamp) {
-        return (data?['timestamp'] as Timestamp).millisecondsSinceEpoch;
-      }
-      return data?['timestamp_ms'] as int?;
-    } else if (message is Map<String, dynamic>) {
-      return message['timestamp_ms'] as int?;
-    }
-    return null;
-  }
-
-  String? _getSender(dynamic message) {
-    if (message is DocumentSnapshot) {
-      final data = message.data() as Map<String, dynamic>?;
-      return data?['senderUid'] as String?;
-    } else if (message is Map<String, dynamic>) {
-      return message['senderUid'] as String?;
-    }
-    return null;
-  }
-
-  String _cleanText(String text) {
-    // Force UTF-8 decoding if needed, but since from Firestore, replace common garbled patterns
-    try {
-      // If text is garbled, attempt to re-encode/decode
-      final bytes = latin1.encode(text); // Assume wrong encoding
-      text = utf8.decode(bytes, allowMalformed: true);
-    } catch (_) {}
-    // Manual replacements for common Messenger corruptions
-    return text
-        .replaceAll('â’', "'") // Curly apostrophe
-        .replaceAll('â“', '"') // Left double quote
-        .replaceAll('â”', '"') // Right double quote
-        .replaceAll('â’', "'") // Right single quote
-        .replaceAll('â€', '-') // Em dash
-        .replaceAll('â…', '...') // Ellipsis
-        .replaceAll('ðŸ‘�', '👍') // Thumbs up
-        .replaceAll('ðŸ˜‚', '😂') // Laughing
-        .replaceAll('ðŸ˜¢', '😢') // Sad
-        .replaceAll('ðŸ˜¡', '😡') // Angry
-        .replaceAll('â�¤ï¸�', '❤️') // Heart
-        .replaceAll('ð', '👍') // Generic corrupted emoji fallback
-        .replaceAll('ð®', '❤️'); // Another common corruption
-  }
-
   @override
   Widget build(BuildContext context) {
     // Watch Riverpod providers
-    final chatStateData = ref.watch(chatStateNotifierProvider);
-    final squadStateData = ref.watch(squadStateNotifierProvider);
+    final squadStateData = ref.watch(sn.squadNotifierProvider);
+    final chatStateData = ref.watch(cn.chatNotifierProvider);
 
-    // Chat should work regardless of squad selection status
-    return SafeArea(
-      top: true,
-      bottom: false,
-      child: Scaffold(
-        body: _buildChatContent(context, chatStateData, squadStateData),
+    return squadStateData.when(
+      data: (squadState) => chatStateData.when(
+        data: (chatState) {
+          // Monitor sync state changes for UI feedback
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _handleSyncStateChanges(chatState);
+          });
+
+          return SafeArea(
+            top: true,
+            bottom: false,
+            child: Scaffold(
+              body: _buildChatContent(context, squadState, chatState),
+            ),
+          );
+        },
+        loading: () => const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
+        error: (error, stack) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            showErrorSnackBar(context, 'Failed to load chat data: $error');
+          });
+          return Scaffold(
+            body: Center(child: Text('Error: $error')),
+          );
+        },
       ),
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          showErrorSnackBar(context, 'Failed to load squad data: $error');
+        });
+        return Scaffold(
+          body: Center(child: Text('Error: $error')),
+        );
+      },
     );
   }
 
-  Widget _buildChatContent(BuildContext context, ChatStateData chatStateData,
-      dynamic squadStateData) {
+  Widget _buildChatContent(BuildContext context, sn.SquadState squadStateData, cn.ChatState chatStateData) {
     // For now, keep the old chatState for compatibility - we'll migrate this gradually
-    final chatState = p.Provider.of<ChatState>(context, listen: false);
+    final chatState = p.Provider.of<cs.ChatState>(context, listen: false);
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final bottomPadding = keyboardHeight > 0 ? keyboardHeight : 16.0;
     return MediaQuery.removePadding(
@@ -1116,7 +1174,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                       getSender: _getSender,
                       getTimestampMs: _getTimestampMs,
                       cleanText: _cleanText,
-                      markAsDelivered: _chatService.markAsDelivered,
+                      markAsDelivered: ref.read(chatServiceProvider).markAsDelivered,
                     ),
                   ),
                   Semantics(
@@ -1177,12 +1235,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   bottom: 80, // Position above input bar
                   left: 0,
                   right: 0,
-                  child: _uiManager.buildReplyPreview(
-                      context, chatState, _squadState, widget.chatType),
+                  child: _uiManager.buildReplyPreview(context,
+                      chatState as dynamic, _squadState, widget.chatType),
                 ),
               ],
               // Typing indicator overlay
-              if (chatStateData.typingUsers.isNotEmpty)
+              if (chatState.typingUser != null && chatState.typingUser!.isNotEmpty)
                 Positioned(
                   bottom: chatState.replyToMessage != null
                       ? 160
@@ -1190,7 +1248,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   left: 0,
                   right: 0,
                   child:
-                      _buildTypingIndicator(context, chatStateData.typingUsers),
+                      _buildTypingIndicator(context, [chatState.typingUser!]),
                 ),
               // Jump to bottom button
             ],

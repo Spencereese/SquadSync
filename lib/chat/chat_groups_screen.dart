@@ -424,6 +424,10 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     if (lastGroupId != null && mounted) {
       // Check if the group still exists and user has access
       final squadState = ref.read(squadStateNotifierProvider);
+      if (squadState.selectedSquadId == null) {
+        // User doesn't have a selected squad, can't check squad chat groups
+        return;
+      }
       final groupDoc = await _firestore
           .collection('squads')
           .doc(squadState.selectedSquadId)

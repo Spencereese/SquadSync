@@ -148,6 +148,25 @@ class _BubbleContentState extends State<_BubbleContent> {
               ),
             ),
           ),
+          // Pending sync indicator
+          if (!widget.messageData.delivered)
+            Positioned(
+              bottom: -2,
+              right: widget.isMe ? 8 : null,
+              left: widget.isMe ? null : 8,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.8),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.access_time,
+                  size: 12,
+                  color: Colors.white,
+                ),
+              ),
+            ),
         ],
       ).animate().fadeIn(duration: const Duration(milliseconds: 300)).slideY(
           begin: 0.2,
@@ -391,6 +410,10 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    // DEBUG: Log message details for troubleshooting
+    debugPrint(
+        'DEBUG MessageBubble.build: senderId=${_messageData.senderUid}, isOwnMessage=${widget.isMe}, messageType=${_messageData.type}, showTimestamp=${widget.showTimestamp}');
+
     // Check if this is a Grok AI message for unique styling
     if (_messageData.isGrokMessage) {
       return _buildGrokMessage(context);

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'managers/game_manager.dart';
 import 'managers/squad_manager.dart';
 import 'managers/peacock_manager.dart';
@@ -24,6 +26,7 @@ import 'managers/squad_membership_service.dart';
 import 'managers/spot_management_service.dart';
 import 'chat/chat_service.dart';
 import 'services/services.dart';
+import 'utils.dart'; // For triggerHapticFeedback
 
 /// Typedef for backward compatibility during Riverpod migration
 typedef SquadState = LegacySquadState;
@@ -308,6 +311,10 @@ class SquadStateData {
   // Current game
   final Map<String, dynamic>? currentGame;
 
+  // Timer states with AsyncValue for optimized updates
+  final AsyncValue<Map<String, Duration>> spotTimerStates;
+  final AsyncValue<Map<String, Duration>> peacockTimerStates;
+
   const SquadStateData({
     this.isInitialized = false,
     this.isInitialDataLoaded = false,
@@ -343,6 +350,8 @@ class SquadStateData {
     this.scheduledTimes = const [],
     this.hasNewAvailability = false,
     this.currentGame,
+    this.spotTimerStates = const AsyncValue.loading(),
+    this.peacockTimerStates = const AsyncValue.loading(),
   });
 
   SquadStateData copyWith({
@@ -380,6 +389,8 @@ class SquadStateData {
     List<Map<String, dynamic>>? scheduledTimes,
     bool? hasNewAvailability,
     Map<String, dynamic>? currentGame,
+    AsyncValue<Map<String, Duration>>? spotTimerStates,
+    AsyncValue<Map<String, Duration>>? peacockTimerStates,
   }) {
     return SquadStateData(
       isInitialized: isInitialized ?? this.isInitialized,
@@ -417,6 +428,8 @@ class SquadStateData {
       scheduledTimes: scheduledTimes ?? this.scheduledTimes,
       hasNewAvailability: hasNewAvailability ?? this.hasNewAvailability,
       currentGame: currentGame ?? this.currentGame,
+      spotTimerStates: spotTimerStates ?? this.spotTimerStates,
+      peacockTimerStates: peacockTimerStates ?? this.peacockTimerStates,
     );
   }
 }
@@ -447,11 +460,24 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
   final AuthService authService;
   final AudioService audioService;
   final CacheService cacheService;
+  final FirestoreService firestoreService;
+  final MediaService mediaService;
+  final ReactionService reactionService;
+  final PollService pollService;
+  final TimerServiceNotifier timerService;
+  final AiService aiService;
+  final IgdbAuthService igdbAuthService;
+  final MessageService messageService;
 
   // Subscriptions and timers
   StreamSubscription<DocumentSnapshot>? _squadSubscription;
   Timer? _timer;
   BuildContext? context;
+
+  // Timer throttling and optimization
+  Timer? _throttledTimerUpdate;
+  final Duration _throttleDuration =
+      const Duration(seconds: 5); // Update every 5 seconds for non-critical UI
 
   SquadStateNotifier({
     required this.gameManager,
@@ -477,6 +503,14 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     required this.authService,
     required this.audioService,
     required this.cacheService,
+    required this.firestoreService,
+    required this.mediaService,
+    required this.reactionService,
+    required this.pollService,
+    required this.timerService,
+    required this.aiService,
+    required this.igdbAuthService,
+    required this.messageService,
   }) : super(const SquadStateData(displayName: 'Unknown User'));
 
   // Computed properties for backward compatibility
@@ -564,7 +598,6 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
   // Initialization method
   Future<void> initialize(BuildContext ctx) async {
     if (state.isInitialized) {
-      debugPrint('SquadStateNotifier already initialized, skipping');
       return;
     }
 
@@ -579,50 +612,40 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     cacheService.setDefaultMaxAge(
         'squadMembers', const Duration(milliseconds: 100));
 
-    // Initialize auth service
-    authService.initialize(onAuthStateChanged: (user) async {
-      if (user != null) {
-        // Start Firestore sync only after authentication
-        persistenceService.syncWithFirestore();
+    // Check if user is already authenticated
+    final currentUser = authService.currentUser;
+    if (currentUser != null) {
+      // Load display name using AuthService
+      final displayName = await authService.loadDisplayName() ?? 'User';
+      final profileImage = await authService.loadProfileImage();
 
-        // Load display name using AuthService
-        final displayName = await authService.loadDisplayName() ?? 'User';
-        final profileImage = await authService.loadProfileImage();
+      // Cache the current user's display name
+      final updatedDisplayNames =
+          Map<String, String>.from(state.memberDisplayNames);
+      updatedDisplayNames[currentUser.uid] = displayName;
 
-        // Cache the current user's display name
-        final updatedDisplayNames =
-            Map<String, String>.from(state.memberDisplayNames);
-        updatedDisplayNames[user.uid] = displayName;
+      await stateInitializer.loadUserSquads(currentUser.uid);
+      stateInitializer.listenToSquadChanges();
 
-        await stateInitializer.loadUserSquads(user.uid);
-        stateInitializer.listenToSquadChanges();
+      state = state.copyWith(
+        displayName: displayName,
+        profileImage: profileImage,
+        memberDisplayNames: updatedDisplayNames,
+        isInitialDataLoaded: true,
+      );
+    }
 
-        state = state.copyWith(
-          displayName: displayName,
-          profileImage: profileImage,
-          memberDisplayNames: updatedDisplayNames,
-          isInitialDataLoaded: true,
-        );
-      } else {
-        // User signed out - stop Firestore sync
-        _squadSubscription?.cancel();
-        _squadSubscription = null;
-
-        state = state.copyWith(
-          displayName: null,
-          profileImage: null,
-          userSquadIds: [],
-          selectedSquadId: null,
-          currentSquadData: null,
-          squadMemberUids: [],
-          isInitialDataLoaded: true,
-        );
-        _invalidateCache();
-      }
+    // Initialize auth service without callback - auth state is handled by AuthWrapper
+    authService.initialize(onAuthStateChanged: (_) {
+      // Auth state changes are handled by the AuthWrapper StreamBuilder
+      // This callback is kept for compatibility but doesn't trigger state changes
     });
 
-    // Initialize timer service
-    timerState.initialize();
+    // Start Firestore sync for squad data
+    persistenceService.syncWithFirestore();
+
+    // Initialize optimized timer system instead of old timerState
+    _initializeTimerSystem();
 
     // Schedule daily ban vote reset
     _scheduleDailyReset();
@@ -631,8 +654,360 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     state = state.copyWith(isInitialized: true);
   }
 
-  void _invalidateCache() {
-    cacheService.invalidateAll();
+  /// Initialize optimized timer system with throttling and AsyncValue
+  void _initializeTimerSystem() {
+    // Initialize timer states as loading
+    state = state.copyWith(
+      spotTimerStates: const AsyncValue.loading(),
+      peacockTimerStates: const AsyncValue.loading(),
+    );
+
+    // Start throttled timer updates (every 5 seconds for non-critical UI)
+    _startThrottledTimerUpdates();
+
+    // Listen to Firebase Cloud Functions for server-side timer updates
+    _listenToCloudFunctionUpdates();
+
+    // Load initial timer data from cache/offline storage
+    _loadCachedTimerData();
+  }
+
+  /// Start throttled timer updates to prevent spam rebuilds
+  void _startThrottledTimerUpdates() {
+    // Cancel any existing throttled updates
+    _throttledTimerUpdate?.cancel();
+
+    // Start periodic updates every 5 seconds
+    _throttledTimerUpdate = Timer.periodic(_throttleDuration, (_) {
+      _updateTimerStatesThrottled();
+    });
+  }
+
+  /// Update timer states with throttling (non-critical UI updates)
+  void _updateTimerStatesThrottled() {
+    if (!mounted) return;
+
+    final currentGameName = state.currentGame?['name'] ?? '';
+    final spotTimers = _calculateSpotTimerStates(currentGameName);
+    final peacockTimers = _calculatePeacockTimerStates();
+
+    // Only update if there are actual changes to prevent unnecessary rebuilds
+    final hasSpotChanges = !_areTimerStatesEqual(
+        state.spotTimerStates.valueOrNull ?? {}, spotTimers);
+    final hasPeacockChanges = !_areTimerStatesEqual(
+        state.peacockTimerStates.valueOrNull ?? {}, peacockTimers);
+
+    if (hasSpotChanges || hasPeacockChanges) {
+      state = state.copyWith(
+        spotTimerStates: AsyncValue.data(spotTimers),
+        peacockTimerStates: AsyncValue.data(peacockTimers),
+      );
+    }
+  }
+
+  /// Calculate current spot timer states for a game
+  Map<String, Duration> _calculateSpotTimerStates(String gameName) {
+    final timers = <String, Duration>{};
+    final gameTimers = state.gameSpotTimers[gameName] ?? [];
+
+    for (int i = 0; i < gameTimers.length; i++) {
+      final timer = gameTimers[i];
+      if (timer != null &&
+          timer['startTime'] != null &&
+          timer['duration'] != null) {
+        final durationMs = (timer['duration'] as num) * 1000;
+        final elapsedMs =
+            DateTime.now().millisecondsSinceEpoch - (timer['startTime'] as num);
+        final remainingMs = durationMs - elapsedMs;
+        final remaining = Duration(milliseconds: remainingMs.toInt());
+        if (remaining > Duration.zero) {
+          timers['spot_${gameName}_$i'] = remaining;
+        }
+      }
+    }
+    return timers;
+  }
+
+  /// Calculate current peacock timer states
+  Map<String, Duration> _calculatePeacockTimerStates() {
+    final timers = <String, Duration>{};
+
+    state.peacockTimers.forEach((player, timer) {
+      if (timer != null &&
+          timer['startTime'] != null &&
+          timer['duration'] != null) {
+        final durationMs = (timer['duration'] as num) * 1000;
+        final elapsedMs =
+            DateTime.now().millisecondsSinceEpoch - (timer['startTime'] as num);
+        final remainingMs = durationMs - elapsedMs;
+        final remaining = Duration(milliseconds: remainingMs.toInt());
+        if (remaining > Duration.zero) {
+          timers['peacock_$player'] = remaining;
+        }
+      }
+    });
+    return timers;
+  }
+
+  /// Check if timer states are equal to prevent unnecessary updates
+  bool _areTimerStatesEqual(Map<String, Duration> a, Map<String, Duration> b) {
+    if (a.length != b.length) return false;
+    for (final key in a.keys) {
+      if (!b.containsKey(key) ||
+          (a[key]! - b[key]!).abs() > const Duration(seconds: 1)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Listen to Firebase Cloud Functions for server-side timer updates
+  void _listenToCloudFunctionUpdates() {
+    // Listen to Firestore for timer updates from Cloud Functions
+    final squadId = state.selectedSquadId;
+    if (squadId != null) {
+      FirebaseFirestore.instance
+          .collection('squads')
+          .doc(squadId)
+          .snapshots()
+          .listen((doc) {
+        if (doc.exists) {
+          final data = doc.data()!;
+          _handleCloudFunctionTimerUpdate(data);
+        }
+      });
+    }
+  }
+
+  /// Handle timer updates from Cloud Functions (immediate notifications)
+  void _handleCloudFunctionTimerUpdate(Map<String, dynamic> data) {
+    final gameName = state.currentGame?['name'] ?? '';
+    bool hasExpiredTimers = false;
+
+    // Check for expired spot timers
+    final updatedSpotTimers =
+        Map<String, List<Map<String, dynamic>?>>.from(state.gameSpotTimers);
+    if (data['gameSpotTimers'] != null) {
+      final cloudSpotTimers =
+          Map<String, List<Map<String, dynamic>?>>.from(data['gameSpotTimers']);
+      if (cloudSpotTimers[gameName] != null) {
+        final currentTimers =
+            List<Map<String, dynamic>?>.from(updatedSpotTimers[gameName] ?? []);
+        final cloudTimers = cloudSpotTimers[gameName]!;
+
+        for (int i = 0;
+            i < cloudTimers.length && i < currentTimers.length;
+            i++) {
+          if (currentTimers[i] != null && cloudTimers[i] == null) {
+            // Timer expired - spot freed
+            hasExpiredTimers = true;
+            _handleSpotExpiration(gameName, i);
+          }
+        }
+        updatedSpotTimers[gameName] = cloudTimers;
+      }
+    }
+
+    // Check for expired peacock timers
+    final updatedPeacockTimers =
+        Map<String, Map<String, dynamic>?>.from(state.peacockTimers);
+    if (data['peacockTimers'] != null) {
+      final cloudPeacockTimers =
+          Map<String, Map<String, dynamic>?>.from(data['peacockTimers']);
+      state.peacockTimers.forEach((player, timer) {
+        if (timer != null && cloudPeacockTimers[player] == null) {
+          // Peacock timer expired
+          hasExpiredTimers = true;
+          _handlePeacockExpiration(player);
+        }
+      });
+      updatedPeacockTimers.clear();
+      updatedPeacockTimers.addAll(cloudPeacockTimers);
+    }
+
+    // Update state with cloud data
+    state = state.copyWith(
+      gameSpotTimers: updatedSpotTimers,
+      peacockTimers: updatedPeacockTimers,
+    );
+
+    // Trigger immediate UI update for expirations
+    if (hasExpiredTimers) {
+      _updateTimerStatesImmediate();
+    }
+  }
+
+  /// Handle spot timer expiration
+  void _handleSpotExpiration(String gameName, int spotIndex) {
+    // Trigger haptic feedback
+    triggerHapticFeedback();
+
+    // Notify user via NotificationManager
+    notificationManager.showSmartNotification(
+      title: 'Spot Freed',
+      body: 'A spot in $gameName has become available!',
+      channelId: 'timer_channel',
+    );
+
+    // Update UI state
+    uiManager.setNewSquadSpot(true, gameName);
+  }
+
+  /// Handle peacock timer expiration
+  void _handlePeacockExpiration(String player) {
+    // Trigger haptic feedback
+    triggerHapticFeedback();
+
+    // Clean up peacock queue
+    final updatedQueue = List<String>.from(state.peacockQueue);
+    updatedQueue.remove(player);
+
+    state = state.copyWith(peacockQueue: updatedQueue);
+
+    // Notify user
+    notificationManager.showSmartNotification(
+      title: 'Peacock Available',
+      body: '$player is no longer strutting!',
+      channelId: 'timer_channel',
+    );
+  }
+
+  /// Immediate timer state update (for expirations)
+  void _updateTimerStatesImmediate() {
+    final currentGameName = state.currentGame?['name'] ?? '';
+    final spotTimers = _calculateSpotTimerStates(currentGameName);
+    final peacockTimers = _calculatePeacockTimerStates();
+
+    state = state.copyWith(
+      spotTimerStates: AsyncValue.data(spotTimers),
+      peacockTimerStates: AsyncValue.data(peacockTimers),
+    );
+  }
+
+  /// Load cached timer data for offline support
+  Future<void> _loadCachedTimerData() async {
+    try {
+      // Load from SharedPreferences or SQLite
+      // This would integrate with existing caching logic
+      final prefs = await SharedPreferences.getInstance();
+
+      // Load cached timer states if available
+      final cachedSpotTimers = prefs.getString('cached_spot_timers');
+      final cachedPeacockTimers = prefs.getString('cached_peacock_timers');
+
+      if (cachedSpotTimers != null || cachedPeacockTimers != null) {
+        // Parse and set cached data
+        state = state.copyWith(
+          spotTimerStates: cachedSpotTimers != null
+              ? AsyncValue.data(_parseTimerMap(cachedSpotTimers))
+              : const AsyncValue.loading(),
+          peacockTimerStates: cachedPeacockTimers != null
+              ? AsyncValue.data(_parseTimerMap(cachedPeacockTimers))
+              : const AsyncValue.loading(),
+        );
+      }
+    } catch (e) {
+      // Error loading cached data - continue with loading state
+    }
+  }
+
+  /// Parse timer map from JSON string
+  Map<String, Duration> _parseTimerMap(String json) {
+    // Implementation for parsing cached timer data
+    return {};
+  }
+
+  /// Start a spot timer with optimized state management
+  Future<void> startSpotTimer(
+      String gameName, int spotIndex, Duration duration) async {
+    final startTime = DateTime.now().millisecondsSinceEpoch;
+
+    // Update gameSpotTimers
+    final updatedTimers =
+        Map<String, List<Map<String, dynamic>?>>.from(state.gameSpotTimers);
+    if (!updatedTimers.containsKey(gameName)) {
+      updatedTimers[gameName] = [];
+    }
+    while (updatedTimers[gameName]!.length <= spotIndex) {
+      updatedTimers[gameName]!.add(null);
+    }
+    updatedTimers[gameName]![spotIndex] = {
+      'startTime': startTime,
+      'duration': duration.inSeconds,
+    };
+
+    state = state.copyWith(gameSpotTimers: updatedTimers);
+
+    // Trigger haptic feedback for timer start
+    triggerHapticFeedback();
+
+    // Update Firestore
+    try {
+      await firestoreService.updateFirestore(
+          displayNameCache: dataManager.memberDisplayNames);
+    } catch (e) {
+      if (context != null) {
+        showSnackBar(context!, 'Failed to update spot timer: $e');
+      }
+    }
+
+    // Immediate UI update
+    _updateTimerStatesImmediate();
+  }
+
+  /// Start a peacock timer with optimized state management
+  Future<void> startPeacockTimer(String player, Duration duration) async {
+    final startTime = DateTime.now().millisecondsSinceEpoch;
+
+    // Update peacockTimers
+    final updatedTimers =
+        Map<String, Map<String, dynamic>?>.from(state.peacockTimers);
+    updatedTimers[player] = {
+      'startTime': startTime,
+      'duration': duration.inSeconds,
+      'mode': 'Quads',
+    };
+
+    // Update status
+    final updatedStatuses = Map<String, String>.from(state.globalStatuses);
+    updatedStatuses[player] = 'Strutting';
+
+    state = state.copyWith(
+      peacockTimers: updatedTimers,
+      globalStatuses: updatedStatuses,
+    );
+
+    // Trigger haptic feedback
+    triggerHapticFeedback();
+
+    // Update Firestore
+    try {
+      await firestoreService.updateFirestore(
+          displayNameCache: dataManager.memberDisplayNames);
+    } catch (e) {
+      if (context != null) {
+        showSnackBar(context!, 'Failed to update peacock timer: $e');
+      }
+    }
+
+    // Immediate UI update
+    _updateTimerStatesImmediate();
+  }
+
+  /// Upload media for squad chat
+  Future<String?> uploadSquadMedia(String filePath, String fileName) async {
+    try {
+      final downloadUrl = await mediaService.uploadMediaWithSignedUrl(
+          File(filePath), fileName, onProgress: (progress) {
+        // Handle progress if needed
+      });
+      return downloadUrl;
+    } catch (e) {
+      if (context != null) {
+        showSnackBar(context!, 'Failed to upload media: $e');
+      }
+      return null;
+    }
   }
 
   void _scheduleDailyReset() {
@@ -679,6 +1054,10 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
 
   void updateDisplayName(String? name) {
     state = state.copyWith(displayName: name);
+  }
+
+  void setCurrentGame(Map<String, dynamic>? game) {
+    state = state.copyWith(currentGame: game);
   }
 
   // Reset method for sign out
@@ -778,6 +1157,7 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
   @override
   void dispose() {
     _timer?.cancel();
+    _throttledTimerUpdate?.cancel();
     _squadSubscription?.cancel();
     timerState.dispose();
     persistenceService.dispose();

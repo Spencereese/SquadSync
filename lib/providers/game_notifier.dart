@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/igdb_service.dart' as igdb_service;
 import '../services/igdb_auth_service.dart';
 import 'service_providers.dart';
-import 'system_notifier.dart';
 import '../chat/sqlite_helper.dart';
 
 part 'game_notifier.freezed.dart';
@@ -47,7 +46,8 @@ class GameNotifier extends _$GameNotifier {
   Future<GameState> build({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
-    IgdbAuthService? igdbAuthService, // Keep for compatibility with generated code
+    IgdbAuthService?
+        igdbAuthService, // Keep for compatibility with generated code
   }) async {
     _firestore = firestore ?? FirebaseFirestore.instance;
     _auth = auth ?? FirebaseAuth.instance;
@@ -226,7 +226,8 @@ class GameNotifier extends _$GameNotifier {
   }
 
   /// Log search errors to analytics
-  Future<void> _logSearchError(String query, dynamic error, {bool isRetry = false}) async {
+  Future<void> _logSearchError(String query, dynamic error,
+      {bool isRetry = false}) async {
     try {
       final user = _auth.currentUser;
       final errorData = {
@@ -386,7 +387,8 @@ class GameNotifier extends _$GameNotifier {
   }
 
   /// Handle AsyncValue error states with automatic recovery
-  Future<void> handleSearchError(BuildContext context, String query, dynamic error) async {
+  Future<void> handleSearchError(
+      BuildContext context, String query, dynamic error) async {
     // Log the error
     await _logSearchError(query, error);
 
@@ -437,7 +439,8 @@ class GameNotifier extends _$GameNotifier {
     } catch (e) {
       // Fallback to basic games from Firestore
       try {
-        final gamesSnapshot = await _firestore.collection('games').limit(5).get();
+        final gamesSnapshot =
+            await _firestore.collection('games').limit(5).get();
         return gamesSnapshot.docs.map((doc) => doc.data()).toList();
       } catch (firestoreError) {
         // Final fallback - return empty list
@@ -490,7 +493,7 @@ Future<List<Map<String, dynamic>>> gameSearchResults(
   Ref ref,
   String query,
 ) async {
-  final igdbService = ref.watch(igdb_service.igdbServiceProvider);
+  final igdbService = ref.watch(igdbServiceProvider);
   return igdbService.fetchGames(query);
 }
 
@@ -500,7 +503,7 @@ Future<Map<String, dynamic>?> gameDetails(
   Ref ref,
   String gameSlug,
 ) async {
-  final igdbService = ref.watch(igdb_service.igdbServiceProvider);
+  final igdbService = ref.watch(igdbServiceProvider);
 
   // For now, return basic game data - could be extended for detailed API calls
   final games = await igdbService.fetchGames(gameSlug);
@@ -512,7 +515,7 @@ Future<Map<String, dynamic>?> gameDetails(
 Future<List<Map<String, dynamic>>> popularGames(
   Ref ref,
 ) async {
-  final igdbService = ref.watch(igdb_service.igdbServiceProvider);
+  final igdbService = ref.watch(igdbServiceProvider);
   return igdbService.fetchGames(''); // Empty query returns popular games
 }
 
@@ -523,7 +526,7 @@ Future<Map<String, dynamic>> gameScopedData(
   String gameName,
 ) async {
   // Get game data from IGDB service
-  final igdbService = ref.watch(igdb_service.igdbServiceProvider);
+  final igdbService = ref.watch(igdbServiceProvider);
 
   try {
     final games = await igdbService.fetchGames(gameName);
@@ -557,12 +560,13 @@ Future<Map<String, dynamic>> userGamePreferences(
 
   try {
     final doc = await firestore.loadFirestore('user_preferences', userId);
-    return doc ?? {
-      'pinnedGames': [],
-      'mutedGames': [],
-      'gameHistory': [],
-      'lastUpdated': DateTime.now().toIso8601String(),
-    };
+    return doc ??
+        {
+          'pinnedGames': [],
+          'mutedGames': [],
+          'gameHistory': [],
+          'lastUpdated': DateTime.now().toIso8601String(),
+        };
   } catch (e) {
     return {
       'pinnedGames': [],
@@ -585,13 +589,14 @@ Future<Map<String, dynamic>> gameStatistics(
   try {
     // Get game stats from Firestore
     final statsDoc = await firestore.loadFirestore('game_stats', gameName);
-    return statsDoc ?? {
-      'gameName': gameName,
-      'totalPlayers': 0,
-      'activeLobbies': 0,
-      'averageRating': 0.0,
-      'lastUpdated': DateTime.now().toIso8601String(),
-    };
+    return statsDoc ??
+        {
+          'gameName': gameName,
+          'totalPlayers': 0,
+          'activeLobbies': 0,
+          'averageRating': 0.0,
+          'lastUpdated': DateTime.now().toIso8601String(),
+        };
   } catch (e) {
     return {
       'gameName': gameName,

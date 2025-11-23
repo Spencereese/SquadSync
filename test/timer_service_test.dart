@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:squad_sync/services/timer_service.dart';
 import 'package:squad_sync/services/firestore_service.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';

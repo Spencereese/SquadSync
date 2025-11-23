@@ -49,7 +49,7 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
     final gameName = dataManager.currentGame?['name'] ?? '';
     if (!gameSpotTimers.containsKey(gameName)) {
       final maxSpots = dataManager.currentGame?['maxSpots'] ?? 4;
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+      gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
     }
     return gameSpotTimers[gameName] ?? [];
   }
@@ -125,9 +125,14 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
   void updateSpotTimer(String gameName, int spotIndex, Duration duration) {
     final userId = dataManager.gameSquadSpots[gameName]?[spotIndex];
     if (userId != null) {
-      ref.read(timerServiceProvider.notifier).startSpotTimer(gameName, userId, duration);
+      ref
+          .read(timerServiceProvider.notifier)
+          .startSpotTimer(gameName, userId, duration);
       // Listen to the stream and update state
-      ref.read(timerServiceProvider.notifier).observeTimer('spot_${gameName}_$userId').listen((remaining) {
+      ref
+          .read(timerServiceProvider.notifier)
+          .observeTimer('spot_${gameName}_$userId')
+          .listen((remaining) {
         state = {...state, 'spot_${gameName}_$spotIndex': remaining};
       });
     }
@@ -137,9 +142,14 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
   void updatePeacockTimer(String player, Duration duration) {
     final userId = dataManager.getUidForDisplayName(player);
     if (userId != null) {
-      ref.read(timerServiceProvider.notifier).startPeacockTimer(userId, duration);
+      ref
+          .read(timerServiceProvider.notifier)
+          .startPeacockTimer(userId, duration);
       // Listen to the stream and update state
-      ref.read(timerServiceProvider.notifier).observeTimer('peacock_$userId').listen((remaining) {
+      ref
+          .read(timerServiceProvider.notifier)
+          .observeTimer('peacock_$userId')
+          .listen((remaining) {
         state = {...state, 'peacock_$player': remaining};
       });
     }
@@ -208,7 +218,9 @@ class TimerState extends StateNotifier<Map<String, Duration>> {
     // Stop timer
     final userId = dataManager.gameSquadSpots[gameName]?[index];
     if (userId != null) {
-      ref.read(timerServiceProvider.notifier).stopTimer('spot_${gameName}_$userId');
+      ref
+          .read(timerServiceProvider.notifier)
+          .stopTimer('spot_${gameName}_$userId');
       state = {...state}..remove('spot_${gameName}_$index');
     }
   }

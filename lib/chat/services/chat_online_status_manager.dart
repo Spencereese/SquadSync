@@ -12,9 +12,7 @@ class ChatOnlineStatusManager {
   void updateOnlineStatus(bool isOnline, SquadState squadState) {
     String? uid = _auth.currentUser?.uid;
     if (uid != null) {
-      String displayName = squadState.displayName ??
-          _auth.currentUser?.displayName ??
-          'Anonymous';
+      String displayName = squadState.displayName;
       if (displayName == 'User' || displayName.isEmpty) {
         displayName = _auth.currentUser?.displayName ?? 'Anonymous';
       }

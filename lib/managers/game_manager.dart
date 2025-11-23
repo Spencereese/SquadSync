@@ -1,12 +1,10 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'package:retry/retry.dart';
 import 'package:riverpod/riverpod.dart';
-import '../services/interfaces.dart';
+import 'package:logger/logger.dart';
 import '../services/cache_service.dart';
 import '../services/igdb_auth_service.dart';
 
@@ -56,6 +54,7 @@ class GameState {
 
 /// Manages game selection, lobbies, and game data
 class GameManager extends AsyncNotifier<GameState> {
+  final Logger _logger = Logger();
   late http.Client httpClient = http.Client();
   late IgdbAuthService igdbAuth = IgdbAuthService();
   late FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -75,7 +74,7 @@ class GameManager extends AsyncNotifier<GameState> {
     try {
       await igdbAuth.getAccessToken();
     } catch (e) {
-      print(kDebugMode ? 'Failed to refresh IGDB token: $e' : '');
+      _logger.d('Failed to refresh IGDB token: $e');
       throw IgdbException('Failed to refresh IGDB token: $e');
     }
   }
@@ -322,7 +321,7 @@ class GameManager extends AsyncNotifier<GameState> {
       state = AsyncValue.data(GameState(games: games));
       return games;
     } catch (e) {
-      print(kDebugMode ? 'IGDB fetch failed: $e' : '');
+      _logger.d('IGDB fetch failed: $e');
       // Fallback to cached games
       try {
         final cachedGames = await getCachedGames(query);
@@ -347,7 +346,7 @@ class GameManager extends AsyncNotifier<GameState> {
           .get();
       return snapshot.docs.map((doc) => doc.data()).toList();
     } catch (e) {
-      print(kDebugMode ? 'Cache fetch failed: $e' : '');
+      _logger.d('Cache fetch failed: $e');
       throw IgdbException('Failed to fetch cached games: $e');
     }
   }
@@ -356,7 +355,7 @@ class GameManager extends AsyncNotifier<GameState> {
     // For prod, proxy token/search via backend to hide secret
     // This is a dev implementation using IGDB directly
 
-    print('GameManager: Starting fetchGames with pageSize: $pageSize');
+    _logger.d('GameManager: Starting fetchGames with pageSize: $pageSize');
 
     try {
       // Seed with some popular games using hardcoded queries
@@ -410,11 +409,11 @@ class GameManager extends AsyncNotifier<GameState> {
       }
 
       await batch.commit();
-      print(
+      _logger.i(
           'Successfully fetched and cached $totalFetched games from IGDB API');
     } catch (e) {
-      print('Error fetching games from IGDB API: $e');
-      print('Falling back to local games list');
+      _logger.e('Error fetching games from IGDB API: $e');
+      _logger.i('Falling back to local games list');
     }
   }
 
@@ -461,26 +460,21 @@ class GameManager extends AsyncNotifier<GameState> {
         };
       }
     } catch (e) {
-      print('Error enriching game ${game['name']} with IGDB data: $e');
+      _logger.e('Error enriching game ${game['name']} with IGDB data: $e');
     }
 
     return game; // Return original game if enrichment fails
   }
 
-  /// Enrich a list of games with IGDB data
-  Future<List<Map<String, dynamic>>> enrichGamesWithIgdbData(
-      List<Map<String, dynamic>> games) async {
-    final enrichedGames = <Map<String, dynamic>>[];
-
-    for (final game in games) {
-      final enrichedGame = await enrichGameWithIgdbData(game);
-      enrichedGames.add(enrichedGame);
-
-      // Small delay to avoid rate limiting
-      await Future.delayed(const Duration(milliseconds: 100));
+  Future<List<Map<String, dynamic>>> searchGames(String query) async {
+    if (query.isEmpty) {
+      return [];
     }
-
-    return enrichedGames;
+    final lowerQuery = query.toLowerCase();
+    return _availableGames.where((game) {
+      final name = game['name']?.toString().toLowerCase() ?? '';
+      return name.contains(lowerQuery);
+    }).toList();
   }
 }
 

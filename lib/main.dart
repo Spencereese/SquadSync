@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'firebase_options.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/services.dart';
@@ -24,8 +26,7 @@ import 'managers/user_manager.dart';
 import 'managers/review_manager.dart';
 import 'managers/squad_manager.dart';
 import 'widgets/app_widgets.dart';
-import 'firebase_options.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'core/injection.dart' as di;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,17 +35,34 @@ void main() async {
   } catch (e) {
     debugPrint('dotenv load failed: $e');
   }
+
+  // Ensure Firebase is initialized FIRST
   await _initializeFirebase();
+
+  // Setup dependency injection AFTER Firebase is ready
+  try {
+    await di.setupInjection();
+  } catch (e) {
+    debugPrint('Dependency injection failed: $e');
+    // Continue anyway - some features might work without injection
+  }
+
   runApp(const SquadSyncApp());
 }
 
 Future<void> _initializeFirebase() async {
   try {
     debugPrint('Initializing Firebase...');
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    debugPrint('Firebase initialized successfully');
+
+    // Check if Firebase is already initialized to avoid duplicate app error
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('Firebase initialized successfully');
+    } else {
+      debugPrint('Firebase already initialized, skipping...');
+    }
 
     // Debug assertions for null safety
     if (kDebugMode) {
@@ -69,6 +87,10 @@ Future<void> _initializeFirebase() async {
       debugPrint('Notification initialization failed: $e');
       // Notification initialization failed - silently handled
     }
+
+    // Setup dependency injection
+    await di.setupInjection();
+    debugPrint('Dependency injection initialized');
 
     // IGDB credentials setup (uncomment for first run, then comment out)
     // try {

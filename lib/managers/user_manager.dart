@@ -3,11 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:logger/logger.dart';
 import 'dart:convert';
 import '../services/interfaces.dart';
 
 /// Manages user profiles, blocking, and preferences
 class UserManager with ChangeNotifier implements IUserManager {
+  final Logger _logger = Logger();
   final FirebaseFirestore _firestore;
   String? _profileImage;
   String? _displayName;
@@ -198,7 +200,7 @@ class UserManager with ChangeNotifier implements IUserManager {
               }
             } catch (e) {
               // Ignore enrichment errors
-              print('Error enriching pinned game ${game['name']}: $e');
+              _logger.e('Error enriching pinned game ${game['name']}: $e');
             }
           }
         }

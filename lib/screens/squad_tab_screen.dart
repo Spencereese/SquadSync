@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:logger/logger.dart';
 import '../providers.dart';
 import '../providers/squad_notifier.dart';
 import '../squad_tab/squad_tab.dart';
@@ -47,6 +48,7 @@ class _SquadTabScreenContent extends ConsumerStatefulWidget {
 
 class _SquadTabScreenContentState
     extends ConsumerState<_SquadTabScreenContent> {
+  final Logger _logger = Logger();
   late PageController _pageController;
   double _currentPage = 0.0;
   bool _hasActiveLobbies = false;
@@ -323,62 +325,78 @@ class _SquadTabScreenContentState
                                             CrossAxisAlignment.start,
                                         children: [
                                           // Game title
-                                          Text(
-                                            gameName,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
+                                          Flexible(
+                                            child: Text(
+                                              gameName,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
+                                          const SizedBox(height: 4),
                                           // Player names
                                           if (filledNames.isNotEmpty) ...[
-                                            Text(
-                                              filledNames.join(', '),
-                                              style: const TextStyle(
-                                                color: Colors.white70,
-                                                fontSize: 14,
+                                            Flexible(
+                                              child: Text(
+                                                filledNames.join(', '),
+                                                style: const TextStyle(
+                                                  color: Colors.white70,
+                                                  fontSize: 12,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ],
                                           const Spacer(),
                                           // Action button
-                                          isOwn
-                                              ? ElevatedButton.icon(
-                                                  onPressed: () => _closeLobby(
-                                                      context, doc.id),
-                                                  icon: const Icon(Icons.close,
-                                                      size: 12),
-                                                  label: const Text('Close'),
-                                                  style:
-                                                      ElevatedButton.styleFrom(
-                                                    backgroundColor: Colors.red
-                                                        .withValues(alpha: 0.8),
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 6),
-                                                    textStyle: const TextStyle(
-                                                        fontSize: 10),
+                                          SizedBox(
+                                            height: 32,
+                                            child: isOwn
+                                                ? ElevatedButton.icon(
+                                                    onPressed: () =>
+                                                        _closeLobby(
+                                                            context, doc.id),
+                                                    icon: const Icon(
+                                                        Icons.close,
+                                                        size: 12),
+                                                    label: const Text('Close'),
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          Colors.red.withValues(
+                                                              alpha: 0.8),
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 4),
+                                                      textStyle:
+                                                          const TextStyle(
+                                                              fontSize: 10),
+                                                    ),
+                                                  )
+                                                : ElevatedButton(
+                                                    onPressed: () => _joinLobby(
+                                                        context,
+                                                        doc.id,
+                                                        peacock),
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 4),
+                                                      textStyle:
+                                                          const TextStyle(
+                                                              fontSize: 11),
+                                                    ),
+                                                    child: const Text('Join'),
                                                   ),
-                                                )
-                                              : ElevatedButton(
-                                                  onPressed: () => _joinLobby(
-                                                      context, doc.id, peacock),
-                                                  style:
-                                                      ElevatedButton.styleFrom(
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
-                                                        horizontal: 16,
-                                                        vertical: 8),
-                                                    textStyle: const TextStyle(
-                                                        fontSize: 12),
-                                                  ),
-                                                  child: const Text('Join'),
-                                                ),
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -841,6 +859,15 @@ class _SquadTabScreenContentState
 
     final gameName = game['name'];
     final maxSpots = game['maxSpots'] ?? 4;
+
+    if (maxSpots <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Cannot create lobby for game with no spots')),
+      );
+      return;
+    }
+
     final userManager = ref.read(userManagerProvider);
     final selectedCircle = userManager.alertCircles.first;
 
@@ -848,9 +875,9 @@ class _SquadTabScreenContentState
       // Set creator in spot 0 with 5-minute calling timer
       final notifier = ref.read(squadStateNotifierProvider.notifier);
       notifier.dataManager.gameSquadSpots[gameName] ??=
-          List.filled(maxSpots, null);
+          List.of(List.filled(maxSpots, null));
       notifier.dataManager.gameSpotTimers[gameName] ??=
-          List.filled(maxSpots, null);
+          List.of(List.filled(maxSpots, null));
 
       // Check if player is solo to determine timer duration
       final isSoloPlayer =
@@ -965,7 +992,7 @@ class _SquadTabScreenContentState
       }
     } catch (e) {
       // If spot calling fails, continue anyway
-      print('Failed to call spot when joining lobby: $e');
+      _logger.e('Failed to call spot when joining lobby: $e');
     }
 
     // ignore: use_build_context_synchronously

@@ -213,8 +213,8 @@ class MemberWidgets {
           showComplaintDialog,
       {String? circle,
       List<String>? friends}) {
-    final displayName = ref
-        .read(squadStateNotifierProvider.select((state) => state.displayName));
+    // final displayName = ref
+    //     .read(squadStateNotifierProvider.select((state) => state.displayName));
     // Placeholder for isPlayingSolo - need to implement
     // final isPlayingSolo = false;
     return Semantics(
@@ -307,7 +307,7 @@ class MemberWidgets {
                       Text(
                         'Request sent to $player',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                           fontSize: 14,
                         ),
                       ),

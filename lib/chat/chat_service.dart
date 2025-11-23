@@ -10,6 +10,7 @@ import '../services/ai_service.dart';
 import '../services/media_service.dart';
 import '../services/message_service.dart';
 import '../managers/sync_manager.dart';
+import '../chat/sqlite_helper.dart';
 import 'models/message_data.dart';
 
 class ChatService with WidgetsBindingObserver {
@@ -18,7 +19,9 @@ class ChatService with WidgetsBindingObserver {
   final MessageService _messageService = MessageService();
   final SyncManager _syncManager;
 
-  ChatService(this._syncManager) {
+  ChatService([SyncManager? syncManager])
+      : _syncManager =
+            syncManager ?? SyncManager(sqliteHelper: SQLiteHelper()) {
     // Register as app lifecycle observer
     WidgetsBinding.instance.addObserver(this);
   }

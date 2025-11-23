@@ -71,14 +71,14 @@ class _PeacockModalState extends State<PeacockModal> {
 
       // Init gameSpotTimers in SquadManager
       squadState.dataManager.gameSpotTimers[gameName] ??=
-          List.filled(_spots.toInt(), null);
+          List.of(List.filled(_spots.toInt(), null));
 
       // Assign creator to spot 1 as caller with 5-minute countdown
       // Use direct assignment instead of callSpotForGame since creator gets longer timer
       squadState.dataManager.gameSquadSpots[gameName] ??=
-          List.filled(_spots.toInt(), null);
+          List.of(List.filled(_spots.toInt(), null));
       squadState.dataManager.gameSpotTimers[gameName] ??=
-          List.filled(_spots.toInt(), null);
+          List.of(List.filled(_spots.toInt(), null));
 
       // Check if player is solo to determine timer duration
       final isSoloPlayer = squadState.isPlayingSolo(squadState.displayName);

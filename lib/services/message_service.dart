@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:logger/logger.dart';
 import 'dart:io';
 import 'dart:async';
 import '../squad_state.dart';
@@ -39,6 +40,7 @@ class MessageSendResult {
 }
 
 class MessageService {
+  final Logger _logger = Logger();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final SQLiteHelper _sqliteHelper = SQLiteHelper();
   final AiService _aiService = AiService();
@@ -82,7 +84,7 @@ class MessageService {
         videoUrl == null &&
         audioUrl == null &&
         pollId == null) {
-      debugPrint('DEBUG: Message validation failed - empty message');
+      _logger.d('Message validation failed - empty message');
       return MessageSendResult.failure('Cannot send empty message');
     }
 
@@ -174,7 +176,8 @@ class MessageService {
         ...messageData,
         'delivered': true, // Mark as successfully synced
       };
-      await _sqliteHelper.insertMessage(deliveredMessageData, chatGroupId: chatGroupId);
+      await _sqliteHelper.insertMessage(deliveredMessageData,
+          chatGroupId: chatGroupId);
 
       // Check if this is a message for Grok and generate AI response
       if (text != null && _aiService.shouldGenerateAiResponse(text)) {
@@ -221,9 +224,9 @@ class MessageService {
         'read': false,
       });
 
-      debugPrint('Reply sent to message $messageId: $text');
+      _logger.d('Reply sent to message $messageId: $text');
     } catch (e) {
-      debugPrint('Failed to send reply: $e');
+      _logger.e('Failed to send reply: $e');
       rethrow;
     }
   }
@@ -255,7 +258,7 @@ class MessageService {
 
       await _firestore.collection(collectionPath).doc(messageId).delete();
     } catch (e) {
-      debugPrint('Error deleting message: $e');
+      _logger.e('Error deleting message: $e');
     }
   }
 
@@ -290,7 +293,7 @@ class MessageService {
         'editedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      debugPrint('Error editing message: $e');
+      _logger.e('Error editing message: $e');
       rethrow;
     }
   }
@@ -305,7 +308,7 @@ class MessageService {
             .update({'delivered': true});
       });
     } catch (e) {
-      debugPrint('Failed to mark as delivered: $e');
+      _logger.e('Failed to mark as delivered: $e');
     }
   }
 
@@ -366,7 +369,7 @@ class MessageService {
         HapticFeedback.lightImpact();
       }
     } catch (e) {
-      debugPrint('Failed to update reaction: $e');
+      _logger.e('Failed to update reaction: $e');
     }
   }
 
@@ -392,7 +395,7 @@ class MessageService {
         'timestamp': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      debugPrint('Failed to update typing status: $e');
+      _logger.e('Failed to update typing status: $e');
     }
   }
 
@@ -406,11 +409,11 @@ class MessageService {
     try {
       final cachedMessages = await _sqliteHelper.getMessages(offset, limit,
           chatGroupId: chatGroupId);
-      debugPrint(
+      _logger.d(
           'Loaded ${cachedMessages.length} messages from SQLite cache (backend disabled): ${cachedMessages.map((m) => m['id']).toList()}');
       return cachedMessages;
     } catch (e) {
-      debugPrint('Failed to load cached messages: $e');
+      _logger.e('Failed to load cached messages: $e');
       return [];
     }
   }
@@ -446,7 +449,7 @@ class MessageService {
             chatGroupId: chatGroupId);
       }
     } catch (e) {
-      debugPrint('Failed to cache messages from snapshot: $e');
+      _logger.e('Failed to cache messages from snapshot: $e');
     }
   }
 
@@ -465,7 +468,7 @@ class MessageService {
     try {
       return Provider.of<SquadState>(context, listen: false).selectedSquadId;
     } catch (e) {
-      debugPrint('Failed to get cached squad ID: $e');
+      _logger.e('Failed to get cached squad ID: $e');
       return null;
     }
   }
@@ -520,9 +523,9 @@ class MessageService {
                   : null);
         }
 
-        debugPrint('Successfully sent offline message: ${messageData['id']}');
+        _logger.d('Successfully sent offline message: ${messageData['id']}');
       } catch (e) {
-        debugPrint('Failed to send offline message ${messageData['id']}: $e');
+        _logger.e('Failed to send offline message ${messageData['id']}: $e');
         // Re-queue the message
         _offlineMessageQueue.add(messageData);
       }
@@ -594,7 +597,7 @@ class MessageService {
         if (chatType != ChatType.dm) 'messageCount': FieldValue.increment(1),
       });
     } catch (e) {
-      debugPrint('Failed to update group metadata: $e');
+      _logger.e('Failed to update group metadata: $e');
     }
   }
 }

@@ -49,19 +49,19 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'demo-key',
-    appId: '1:demo:android:demo',
-    messagingSenderId: 'demo',
-    projectId: 'demo-project',
-    storageBucket: 'demo-project.appspot.com',
+    apiKey: 'AIzaSyC_K87UWA2dhOwThO6LLW_vO2akuYA_2W0',
+    appId: '1:756172684661:android:3466d7ce686fff4a70e73c',
+    messagingSenderId: '756172684661',
+    projectId: 'cod-squad-a4c62',
+    storageBucket: 'cod-squad-a4c62.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'demo-key',
-    appId: '1:demo:ios:demo',
-    messagingSenderId: 'demo',
-    projectId: 'demo-project',
-    storageBucket: 'demo-project.appspot.com',
+    apiKey: 'AIzaSyDOvS34iafoDWCG2chmQVu7IsFclkqgG9E',
+    appId: '1:756172684661:ios:99ecq9sd74qvt9ufs28os52j9g33h1v9',
+    messagingSenderId: '756172684661',
+    projectId: 'cod-squad-a4c62',
+    storageBucket: 'cod-squad-a4c62.firebasestorage.app',
     iosBundleId: 'com.example.codSquadApp',
   );
 

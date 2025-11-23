@@ -38,7 +38,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
           }
           return;
         }
-        await ref.read(voiceRoomProvider(widget.roomId).notifier).initialize();
+        // VoiceRoomNotifier initializes itself in constructor
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -68,7 +68,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          voiceState.roomName,
+          voiceState.value?.roomName ?? 'Voice Room',
           style: TextStyle(
               color: Theme.of(context).textTheme.titleLarge?.color ??
                   Colors.white),
@@ -76,39 +76,41 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
         centerTitle: true,
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Room status
-            if (voiceState.isLoading)
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: CircularProgressIndicator(color: Colors.cyanAccent),
-              )
-            else if (voiceState.error != null)
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Error: ${voiceState.error}',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+        child: voiceState.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: Colors.cyanAccent),
+          ),
+          error: (error, stack) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Error: $error',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+          data: (state) => Column(
+            children: [
+              // Room status
+              if (!state.isJoined)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text(
+                    'Connecting to voice room...',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
-              )
-            else if (!voiceState.isJoined)
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text(
-                  'Connecting to voice room...',
-                  style: TextStyle(color: Colors.white),
-                ),
+
+              // Participants grid
+              Expanded(
+                child: _buildParticipantsGrid(state.participants),
               ),
 
-            // Participants grid
-            Expanded(
-              child: _buildParticipantsGrid(voiceState.participants),
-            ),
-
-            // Control buttons
-            _buildControlButtons(voiceState),
-          ],
+              // Control buttons
+              _buildControlButtons(state),
+            ],
+          ),
         ),
       ),
     );

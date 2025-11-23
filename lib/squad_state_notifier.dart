@@ -530,7 +530,7 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
       final maxSpots = state.currentGame?['maxSpots'] ?? 4;
       final updatedTimers =
           Map<String, List<Map<String, dynamic>?>>.from(state.gameSpotTimers);
-      updatedTimers[gameName] = List.filled(maxSpots, null);
+      updatedTimers[gameName] = List.of(List.filled(maxSpots, null));
       state = state.copyWith(gameSpotTimers: updatedTimers);
     }
     return state.gameSpotTimers[gameName] ?? [];
@@ -1127,7 +1127,7 @@ class SquadStateNotifier extends StateNotifier<SquadStateData> {
     final updatedSpots = Map<String, List<String?>>.from(state.gameSquadSpots);
     if (!updatedSpots.containsKey(gameName)) {
       final maxSpots = state.currentGame?['maxSpots'] ?? 4;
-      updatedSpots[gameName] = List.filled(maxSpots, null);
+      updatedSpots[gameName] = List.of(List.filled(maxSpots, null));
     }
     updatedSpots[gameName]![spotIndex] = uid;
     state = state.copyWith(gameSquadSpots: updatedSpots);

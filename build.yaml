@@ -3,9 +3,11 @@ targets:
     builders:
       riverpod_generator:
         generate_for:
-          # Generate for files that contain @riverpod annotations
           - lib/**/*.dart
         options:
-          # Enable all features for maximum performance benefits
           provider_name_suffix: 'Provider'
           provider_implementation_suffix: 'Impl'
+      mockito|dart:mockBuilder:
+        generate_for:
+          exclude:
+            - lib/**

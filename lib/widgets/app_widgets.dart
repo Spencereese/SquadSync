@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import '../screens/squad_tab_screen.dart';
 import '../chat/chat_groups_screen.dart';
 import '../setup_screen.dart';
 import '../screens/onboarding/onboarding_flow.dart';
-import '../squad_state.dart';
 import '../providers.dart';
 import '../providers/service_providers.dart';
 
@@ -46,6 +46,7 @@ class SquadSyncMaterialApp extends ConsumerWidget {
 
 /// ConsumerWidget for handling authentication and onboarding logic
 class AuthWrapper extends ConsumerWidget {
+  static final Logger _logger = Logger();
   const AuthWrapper({super.key});
 
   @override
@@ -56,7 +57,7 @@ class AuthWrapper extends ConsumerWidget {
     return authState.when(
       data: (user) {
         if (user != null) {
-          debugPrint('User authenticated: ${user.uid}');
+          _logger.i('User authenticated: ${user.uid}');
           // User is authenticated, initialize SquadStateNotifier and show main app
           WidgetsBinding.instance.addPostFrameCallback((_) {
             ref.read(squadStateNotifierProvider.notifier).initialize(context);
@@ -65,7 +66,7 @@ class AuthWrapper extends ConsumerWidget {
           // Show onboarding wrapper that will check if onboarding is needed
           return const OnboardingWrapper();
         } else {
-          debugPrint('User not authenticated, showing setup screen');
+          _logger.i('User not authenticated, showing setup screen');
           // User not authenticated, show login/setup screen
           return const SetupScreen();
         }

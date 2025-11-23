@@ -57,9 +57,15 @@ void _setupDummies() {
   provideDummy<ChatService>(MockChatService());
 }
 
-// Test utilities for Riverpod overrides
-class TestOverrides {
-  static List<Override> getServiceOverrides({
+// Test environment setup/teardown utilities
+void setupTestEnvironment() {
+  _setupDummies();
+}
+
+void teardownTestEnvironment() {
+  // Clean up any test state if needed
+}
+  List<Override> getServiceOverrides({
     MockAuthService? authService,
     MockFirestoreService? firestoreService,
     MockTimerService? timerService,

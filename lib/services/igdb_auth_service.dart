@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:logger/logger.dart';
 
 /// IGDB (Internet Game Database) authentication and search service
 /// Uses Twitch OAuth2 for authentication and Apicalypse query language
 class IgdbAuthService {
+  static final Logger _logger = Logger();
   static const String _clientIdKey = 'igdb_client_id';
   static const String _clientSecretKey = 'igdb_client_secret';
   static const String _tokenKey = 'igdb_access_token';
@@ -189,7 +191,7 @@ class IgdbAuthService {
     await _storage!.remove(_tokenExpiryKey);
     _accessToken = null;
     _tokenExpiry = null;
-    print('IGDB stored data cleared');
+    _logger.i('IGDB stored data cleared');
   }
 
   /// Store IGDB credentials in SharedPreferences (for development/testing)
@@ -199,6 +201,6 @@ class IgdbAuthService {
     await _storage!.setString(_clientIdKey, 'yq7hidzec8wv7khe9niom9m6znzrxf');
     await _storage!
         .setString(_clientSecretKey, '4ycghqkzf2ylgxbilypdxu4ga937u5');
-    print('IGDB credentials stored');
+    _logger.i('IGDB credentials stored');
   }
 }

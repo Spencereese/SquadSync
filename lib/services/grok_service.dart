@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:logger/logger.dart';
 import 'dart:math';
 
 /// Custom exception for rate limiting
@@ -7,6 +8,7 @@ class RateLimitException implements Exception {}
 
 /// Service for integrating xAI's Grok AI into the chat via backend
 class GrokService {
+  static final Logger _logger = Logger();
   static const String _backendUrl = String.fromEnvironment('BACKEND_URL',
       defaultValue:
           'https://squadsync-backend-756172684661.us-central1.run.app');
@@ -64,11 +66,11 @@ class GrokService {
         final data = json.decode(response.body);
         return data['response'] ?? _getFallbackResponse(userMessage);
       } else {
-        print('Backend error: ${response.statusCode} - ${response.body}');
+        _logger.e('Backend error: ${response.statusCode} - ${response.body}');
         return _getFallbackResponse(userMessage);
       }
     } catch (e) {
-      print('Error calling backend Grok API: $e');
+      _logger.e('Error calling backend Grok API: $e');
       return _getFallbackResponse(userMessage);
     }
   }

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
+import 'package:logger/logger.dart';
 import '../squad_state.dart';
 import '../services/grok_service.dart';
 import '../chat/sqlite_helper.dart';
@@ -11,6 +12,7 @@ import '../chat/sqlite_helper.dart';
 /// Service responsible for AI/Grok integration in chat functionality.
 /// Handles AI response generation, context gathering, and message processing.
 class AiService {
+  final Logger _logger = Logger();
   final GrokService _grokService = GrokService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final SQLiteHelper _sqliteHelper = SQLiteHelper();
@@ -88,7 +90,7 @@ class AiService {
       await _sqliteHelper.insertMessage(grokMessageData,
           chatGroupId: chatGroupId);
     } catch (e) {
-      debugPrint('Failed to generate Grok response: $e');
+      _logger.e('Failed to generate Grok response: $e');
       // Don't show error to user, just log it
     }
   }
@@ -122,7 +124,7 @@ class AiService {
 
       return messages.reversed.toList(); // Return in chronological order
     } catch (e) {
-      debugPrint('Failed to get recent messages: $e');
+      _logger.e('Failed to get recent messages: $e');
       return [];
     }
   }
@@ -169,7 +171,7 @@ Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
           return options.map((e) => e.toString()).toList();
         }
       } catch (e) {
-        print('Failed to parse poll options JSON: $e');
+        _logger.e('Failed to parse poll options JSON: $e');
       }
 
       // Fallback: extract options from text response
@@ -189,7 +191,7 @@ Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
           .where((line) => line.isNotEmpty && line.length < 50)
           .toList();
     } catch (e) {
-      print('Error generating poll options: $e');
+      _logger.e('Error generating poll options: $e');
       return [];
     }
   }

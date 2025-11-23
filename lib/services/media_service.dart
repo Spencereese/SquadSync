@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:logger/logger.dart';
 
 /// Service responsible for media upload operations including images, videos, and audio.
 /// Handles Firebase Storage uploads with progress tracking and signed URL generation.
 class MediaService {
+  final Logger _logger = Logger();
   final FirebaseStorage _storage = FirebaseStorage.instance;
   static const String _backendUrl =
       'http://localhost:8080'; // Update with your backend URL
@@ -64,7 +66,7 @@ class MediaService {
       }
       return null;
     } catch (e) {
-      print('Failed to get signed URL: $e');
+      _logger.e('Failed to get signed URL: $e');
       return null;
     }
   }

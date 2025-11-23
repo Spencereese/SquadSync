@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'managers/user_manager.dart';
@@ -9,15 +10,14 @@ import 'managers/squad_manager.dart';
 import 'managers/timer_state.dart';
 import 'managers/squad_data_manager.dart';
 import 'managers/achievement_manager.dart';
-import 'services/timer_service.dart';
 import 'managers/squad_ui_manager.dart';
 import 'managers/squad_persistence_manager.dart';
 import 'managers/game_manager.dart';
 import 'managers/peacock_manager.dart';
 import 'managers/review_manager.dart';
 import 'managers/notification_manager.dart';
-import 'chat/chat_state.dart';
-import 'chat/sqlite_helper.dart';
+import 'managers/sync_manager.dart';
+import 'chat/chat_service.dart';
 import 'services/firestore_service_refactored.dart' as refactored;
 import 'managers/state_initializer.dart';
 import 'managers/squad_persistence_service.dart';
@@ -27,10 +27,8 @@ import 'managers/peacock_service.dart';
 import 'managers/achievement_service.dart';
 import 'managers/squad_membership_service.dart';
 import 'managers/spot_management_service.dart';
-import 'chat/chat_service.dart';
-import 'services/grok_service.dart';
-import 'services/reaction_service.dart';
-import 'services/voice_service.dart';
+import 'chat/chat_state.dart';
+import 'chat/sqlite_helper.dart';
 import 'services/agora_config.dart';
 import 'services/app_flow_manager.dart';
 import 'services/services.dart';
@@ -117,6 +115,12 @@ final timerStateProvider =
     persistenceManager: persistenceManager,
     ref: ref,
   );
+});
+
+// Provider for SyncManager
+final syncManagerProvider = Provider<SyncManager>((ref) {
+  final sqliteHelper = ref.watch(sqliteHelperProvider);
+  return SyncManager(sqliteHelper: sqliteHelper);
 });
 
 // Provider for ChatService
@@ -310,7 +314,8 @@ final firestoreServiceProvider =
 final notificationManagerProvider =
     ChangeNotifierProvider<NotificationManager>((ref) => NotificationManager());
 final sqliteHelperProvider = Provider<SQLiteHelper>((ref) => SQLiteHelper());
-final sharedPreferencesProvider = FutureProvider<SharedPreferences>((ref) async {
+final sharedPreferencesProvider =
+    FutureProvider<SharedPreferences>((ref) async {
   return await SharedPreferences.getInstance();
 });
 
@@ -332,9 +337,8 @@ final voiceServiceProvider = Provider<VoiceService>((ref) {
 });
 
 // Provider for VoiceRoom
-final voiceRoomProvider =
-    StateNotifierProvider.family<VoiceRoomNotifier, AsyncValue<VoiceRoomState>, String>(
-        (ref, roomId) {
+final voiceRoomProvider = StateNotifierProvider.family<VoiceRoomNotifier,
+    AsyncValue<VoiceRoomState>, String>((ref, roomId) {
   final voiceService = ref.watch(voiceServiceProvider);
   final notificationManager = ref.watch(notificationManagerProvider);
   final appFlowManager = ref.watch(appFlowManagerProvider);
@@ -365,7 +369,8 @@ final messageServiceProvider =
     Provider<MessageService>((ref) => MessageService());
 
 // Refactored Firestore Service Providers
-final firestoreServiceRefactoredProvider = Provider<refactored.FirestoreService>((ref) {
+final firestoreServiceRefactoredProvider =
+    Provider<refactored.FirestoreService>((ref) {
   final firestore = FirebaseFirestore.instance;
   final sqliteHelper = ref.watch(sqliteHelperProvider);
   final grokService = ref.watch(grokServiceProvider);
@@ -380,8 +385,8 @@ final firestoreServiceRefactoredProvider = Provider<refactored.FirestoreService>
 });
 
 // Suggested Groups Notifier Provider
-final suggestedGroupsNotifierProvider =
-    StateNotifierProvider<refactored.SuggestedGroupsNotifier, refactored.FirestoreState>((ref) {
+final suggestedGroupsNotifierProvider = StateNotifierProvider<
+    refactored.SuggestedGroupsNotifier, refactored.FirestoreState>((ref) {
   final firestoreService = ref.watch(firestoreServiceRefactoredProvider);
   return refactored.SuggestedGroupsNotifier(firestoreService);
 });

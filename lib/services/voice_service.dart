@@ -116,9 +116,8 @@ class VoiceParticipant {
       isSpeaking: map['isSpeaking'] ?? false,
       isHost: map['isHost'] ?? false,
       isOnline: map['isOnline'] ?? true,
-      lastSeen: map['lastSeen'] != null
-          ? DateTime.tryParse(map['lastSeen'])
-          : null,
+      lastSeen:
+          map['lastSeen'] != null ? DateTime.tryParse(map['lastSeen']) : null,
     );
   }
 }
@@ -217,7 +216,8 @@ class AgoraConfigEnhanced {
       }
 
       if (kDebugMode) {
-        debugPrint('AGORA_APP_CERTIFICATE not found, using mock for development');
+        debugPrint(
+            'AGORA_APP_CERTIFICATE not found, using mock for development');
         return VoiceServiceResult.success(_mockCertificate);
       }
 
@@ -237,9 +237,9 @@ class VoiceService {
   RtcEngine? _engine;
   final RtcEngine Function() _engineFactory;
   final NotificationManager? _notificationManager;
-  final AppFlowManager? _appFlowManager;
-  final FirestoreService? _firestoreService;
-  final SQLiteHelper? _sqliteHelper;
+  final AppFlowManager? _appFlowManager; // ignore: unused_field
+  final FirestoreService? _firestoreService; // ignore: unused_field
+  final SQLiteHelper? _sqliteHelper; // ignore: unused_field
 
   // Network monitoring
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
@@ -329,7 +329,8 @@ class VoiceService {
     if (status.isPermanentlyDenied) {
       _notificationManager?.showNotification(
         title: 'Microphone Permission Required',
-        body: 'Please enable microphone access in app settings to use voice chat.',
+        body:
+            'Please enable microphone access in app settings to use voice chat.',
       );
       await openAppSettings();
       return VoiceServiceResult.failure(
@@ -428,7 +429,8 @@ class VoiceService {
   }
 
   /// Join voice channel
-  Future<VoiceServiceResult<void>> joinChannel(String channelName, {int uid = 0}) async {
+  Future<VoiceServiceResult<void>> joinChannel(String channelName,
+      {int uid = 0}) async {
     if (_engine == null) {
       return VoiceServiceResult.failure(
         VoiceServiceError.engineInitializationFailed,
@@ -519,7 +521,8 @@ class VoiceService {
         return VoiceServiceResult.success(VoiceServiceError.joinFailed);
       }
       if (error.contains('token')) {
-        return VoiceServiceResult.success(VoiceServiceError.tokenGenerationFailed);
+        return VoiceServiceResult.success(
+            VoiceServiceError.tokenGenerationFailed);
       }
     }
 
@@ -538,10 +541,10 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
   final String roomId;
   final String roomName;
   final VoiceService _voiceService;
-  final NotificationManager? _notificationManager;
-  final AppFlowManager? _appFlowManager;
-  final FirestoreService? _firestoreService;
-  final SQLiteHelper? _sqliteHelper;
+  final NotificationManager? _notificationManager; // ignore: unused_field
+  final AppFlowManager? _appFlowManager; // ignore: unused_field
+  final FirestoreService? _firestoreService; // ignore: unused_field
+  final SQLiteHelper? _sqliteHelper; // ignore: unused_field
 
   // Room sync
   StreamSubscription? _roomSyncSubscription;
@@ -588,7 +591,8 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
         return participant;
       }).toList();
 
-      state = AsyncValue.data(currentState.copyWith(participants: updatedParticipants));
+      state = AsyncValue.data(
+          currentState.copyWith(participants: updatedParticipants));
     });
   }
 
@@ -601,7 +605,8 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
         return participant;
       }).toList();
 
-      state = AsyncValue.data(currentState.copyWith(participants: updatedParticipants));
+      state = AsyncValue.data(
+          currentState.copyWith(participants: updatedParticipants));
     });
   }
 
@@ -615,7 +620,8 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
       );
 
       final updatedParticipants = [...currentState.participants, participant];
-      state = AsyncValue.data(currentState.copyWith(participants: updatedParticipants));
+      state = AsyncValue.data(
+          currentState.copyWith(participants: updatedParticipants));
 
       // Sync to Firestore
       await _syncParticipantState(uid);
@@ -624,8 +630,10 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
 
   void _handleParticipantLeft(String uid) {
     state.whenData((currentState) {
-      final updatedParticipants = currentState.participants.where((p) => p.uid != uid).toList();
-      state = AsyncValue.data(currentState.copyWith(participants: updatedParticipants));
+      final updatedParticipants =
+          currentState.participants.where((p) => p.uid != uid).toList();
+      state = AsyncValue.data(
+          currentState.copyWith(participants: updatedParticipants));
     });
   }
 
@@ -664,7 +672,8 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
 
   Future<void> _initializeRoomSync() async {
     // Set up Firestore room sync
-    _roomSyncSubscription = _firestoreService?.getVoiceRoomStream(roomId).listen(
+    _roomSyncSubscription =
+        _firestoreService?.getVoiceRoomStream(roomId).listen(
       (roomData) {
         if (roomData != null) {
           _handleRoomSyncUpdate(roomData);
@@ -679,10 +688,12 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
   void _handleRoomSyncUpdate(Map<String, dynamic> roomData) {
     state.whenData((currentState) {
       final participants = (roomData['participants'] as List<dynamic>?)
-          ?.map((p) => VoiceParticipant.fromMap(p as Map<String, dynamic>))
-          .toList() ?? [];
+              ?.map((p) => VoiceParticipant.fromMap(p as Map<String, dynamic>))
+              .toList() ??
+          [];
 
-      final isHost = roomData['hostUid'] == FirebaseAuth.instance.currentUser?.uid;
+      final isHost =
+          roomData['hostUid'] == FirebaseAuth.instance.currentUser?.uid;
 
       state = AsyncValue.data(currentState.copyWith(
         participants: participants,
@@ -759,20 +770,23 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
       final cacheData = {
         'roomId': currentState.roomId,
         'roomName': currentState.roomName,
-        'participants': currentState.participants.map((p) => p.toMap()).toList(),
+        'participants':
+            currentState.participants.map((p) => p.toMap()).toList(),
         'cachedAt': DateTime.now().toIso8601String(),
       };
 
-      await _sqliteHelper!.cacheVoiceRoom(currentState.roomId, cacheData);
+      await _sqliteHelper.cacheVoiceRoom(currentState.roomId, cacheData);
     });
   }
 
   Future<void> toggleMute() async {
     try {
-      final result = await _voiceService.toggleMute(state.value?.isMuted ?? false);
+      final result =
+          await _voiceService.toggleMute(state.value?.isMuted ?? false);
       if (result.isSuccess) {
         state.whenData((currentState) {
-          state = AsyncValue.data(currentState.copyWith(isMuted: !currentState.isMuted));
+          state = AsyncValue.data(
+              currentState.copyWith(isMuted: !currentState.isMuted));
         });
       } else {
         state = AsyncValue.error(result.errorMessage!, StackTrace.current);
@@ -785,14 +799,17 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
   Future<void> kickParticipant(String uid) async {
     state.whenData((currentState) async {
       if (!currentState.isHost) {
-        state = AsyncValue.error('Only host can kick participants', StackTrace.current);
+        state = AsyncValue.error(
+            'Only host can kick participants', StackTrace.current);
         return;
       }
 
       try {
         // Remove from local state
-        final updatedParticipants = currentState.participants.where((p) => p.uid != uid).toList();
-        state = AsyncValue.data(currentState.copyWith(participants: updatedParticipants));
+        final updatedParticipants =
+            currentState.participants.where((p) => p.uid != uid).toList();
+        state = AsyncValue.data(
+            currentState.copyWith(participants: updatedParticipants));
 
         // Sync to Firestore
         await _syncRoomState();
@@ -805,20 +822,23 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
   Future<void> muteParticipant(String uid, bool muted) async {
     state.whenData((currentState) async {
       if (!currentState.isHost) {
-        state = AsyncValue.error('Only host can mute participants', StackTrace.current);
+        state = AsyncValue.error(
+            'Only host can mute participants', StackTrace.current);
         return;
       }
 
       try {
         // Update local state
-        final updatedParticipants = currentState.participants.map((participant) {
+        final updatedParticipants =
+            currentState.participants.map((participant) {
           if (participant.uid == uid) {
             return participant.copyWith(isMuted: muted);
           }
           return participant;
         }).toList();
 
-        state = AsyncValue.data(currentState.copyWith(participants: updatedParticipants));
+        state = AsyncValue.data(
+            currentState.copyWith(participants: updatedParticipants));
 
         // Sync participant state
         await _syncParticipantState(uid);
@@ -835,12 +855,13 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
       final roomData = {
         'roomId': currentState.roomId,
         'roomName': currentState.roomName,
-        'participants': currentState.participants.map((p) => p.toMap()).toList(),
+        'participants':
+            currentState.participants.map((p) => p.toMap()).toList(),
         'hostUid': FirebaseAuth.instance.currentUser?.uid,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      await _firestoreService!.updateVoiceRoom(currentState.roomId, roomData);
+      await _firestoreService.updateVoiceRoom(currentState.roomId, roomData);
     });
   }
 
@@ -853,7 +874,8 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
         orElse: () => VoiceParticipant(uid: uid, displayName: 'Unknown'),
       );
 
-      await _firestoreService!.updateVoiceParticipant(currentState.roomId, uid, participant.toMap());
+      await _firestoreService.updateVoiceParticipant(
+          currentState.roomId, uid, participant.toMap());
     });
   }
 

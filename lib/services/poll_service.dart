@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:logger/logger.dart';
 import '../models/poll.dart';
 
 class PollService {
+  final Logger _logger = Logger();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -170,7 +172,7 @@ class PollService {
         return true;
       });
     } catch (e) {
-      print('Error closing poll: $e');
+      _logger.e('Error closing poll: $e');
       return false;
     }
   }

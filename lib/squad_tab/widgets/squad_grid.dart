@@ -167,7 +167,7 @@ class SpotCard extends ConsumerWidget {
       String? spotName,
       List<Map<String, dynamic>?> spotTimers,
       Map<String, String> globalStatuses) {
-    final hasTimer = spotTimers[index] != null;
+    final hasTimer = index < spotTimers.length && spotTimers[index] != null;
     final timerDisplay = hasTimer ? _getTimerDisplay(spotTimers[index]) : null;
     final status =
         spotName != null ? globalStatuses[spotName] ?? 'Occupied' : 'Open';
@@ -228,7 +228,7 @@ class SpotCard extends ConsumerWidget {
       WidgetRef ref,
       String gameName) {
     final yourName = displayName;
-    final hasTimer = spotTimers[index] != null;
+    final hasTimer = index < spotTimers.length && spotTimers[index] != null;
     final isCalling = globalStatuses[spotName] == 'Calling';
     final isReady = globalStatuses[spotName] == 'Ready';
 

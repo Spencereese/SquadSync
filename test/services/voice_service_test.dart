@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:riverpod/riverpod.dart';
 import 'package:squad_sync/services/voice_service.dart';
 
 void main() {
@@ -8,14 +9,14 @@ void main() {
 
   setUp(() {
     // Create VoiceRoomNotifier with test dependencies
-    voiceRoomNotifier = VoiceRoomNotifier(
-      'test-room',
-      'Test Room',
-      appId: 'test-app-id',
+    final voiceService = VoiceService(
       engineFactory: () =>
           throw UnimplementedError('Mock engine not implemented'),
-      requestPermission: () async =>
-          throw UnimplementedError('Mock permission not implemented'),
+    );
+    voiceRoomNotifier = VoiceRoomNotifier(
+      roomId: 'test-room',
+      roomName: 'Test Room',
+      voiceService: voiceService,
     );
   });
 
@@ -25,27 +26,29 @@ void main() {
 
   group('VoiceRoomNotifier', () {
     test('initial state is correct', () {
-      expect(voiceRoomNotifier.state.roomId, 'test-room');
-      expect(voiceRoomNotifier.state.roomName, 'Test Room');
-      expect(voiceRoomNotifier.state.participants, isEmpty);
-      expect(voiceRoomNotifier.state.isJoined, false);
-      expect(voiceRoomNotifier.state.isMuted, false);
-      expect(voiceRoomNotifier.state.isLoading, false);
-      expect(voiceRoomNotifier.state.error, null);
+      expect(voiceRoomNotifier.state, isA<AsyncData<VoiceRoomState>>());
+      final data = voiceRoomNotifier.state.value!;
+      expect(data.roomId, 'test-room');
+      expect(data.roomName, 'Test Room');
+      expect(data.participants, isEmpty);
+      expect(data.isJoined, false);
+      expect(data.isMuted, false);
     });
 
     test('copyWith creates new state correctly', () {
-      final newState = voiceRoomNotifier.state.copyWith(
+      final currentData = voiceRoomNotifier.state.value!;
+      voiceRoomNotifier.state = AsyncValue.data(currentData.copyWith(
         isJoined: true,
         isMuted: true,
         error: 'Test error',
-      );
+      ));
 
-      expect(newState.roomId, 'test-room');
-      expect(newState.roomName, 'Test Room');
-      expect(newState.isJoined, true);
-      expect(newState.isMuted, true);
-      expect(newState.error, 'Test error');
+      final newData = voiceRoomNotifier.state.value!;
+      expect(newData.roomId, 'test-room');
+      expect(newData.roomName, 'Test Room');
+      expect(newData.isJoined, true);
+      expect(newData.isMuted, true);
+      expect(newData.error, 'Test error');
     });
 
     test('VoiceParticipant copyWith works correctly', () {

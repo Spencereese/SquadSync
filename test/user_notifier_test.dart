@@ -1,8 +1,22 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
 import 'package:squad_sync/providers/user_notifier.dart';
+import '../test/helpers/mocks.mocks.dart';
 
 void main() {
+  late MockSharedPreferences mockPrefs;
+  late MockFirebaseFirestore mockFirestore;
+  late MockFirebaseAuth mockAuth;
+  late MockUser mockUser;
+
+  setUp(() {
+    mockPrefs = MockSharedPreferences();
+    mockFirestore = MockFirebaseFirestore();
+    mockAuth = MockFirebaseAuth();
+    mockUser = MockUser();
+  });
+
   group('UserNotifier', () {
     test('initial state is correct', () {
       final initialState = UserState.initial();

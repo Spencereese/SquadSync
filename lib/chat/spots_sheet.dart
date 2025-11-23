@@ -164,8 +164,8 @@ class _SpotsSheetState extends State<SpotsSheet> {
                                   horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: isCalling
-                                    ? Colors.orange.withOpacity(0.2)
-                                    : Colors.cyanAccent.withOpacity(0.2),
+                                    ? Colors.orange.withValues(alpha: 0.2)
+                                    : Colors.cyanAccent.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(

@@ -1,4 +1,3 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -60,7 +59,7 @@ class UserState with _$UserState {
 @riverpod
 class UserNotifier extends _$UserNotifier {
   late final FirebaseFirestore _firestore;
-  late final FirestoreService _firestoreService;
+  late final FirestoreService _firestoreService; // ignore: unused_field
   late final SharedPreferences _prefs;
 
   @override

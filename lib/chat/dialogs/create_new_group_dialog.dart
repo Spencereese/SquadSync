@@ -114,20 +114,16 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
       itemCount: games.length,
       itemBuilder: (context, index) {
         final game = games[index];
-        return ListTile(
+        return RadioListTile<Map<String, dynamic>>(
           title:
               Text(game['name'], style: const TextStyle(color: Colors.white)),
-          trailing: Radio<Map<String, dynamic>>(
-            value: game,
-            groupValue: _selectedGame,
-            onChanged: (value) {
-              setState(() => _selectedGame = value);
-            },
-            activeColor: Colors.cyanAccent,
-          ),
-          onTap: () {
-            setState(() => _selectedGame = game);
+          value: game,
+          groupValue: _selectedGame,
+          onChanged: (value) {
+            // ignore: deprecated_member_use
+            setState(() => _selectedGame = value);
           },
+          activeColor: Colors.cyanAccent,
         );
       },
     );

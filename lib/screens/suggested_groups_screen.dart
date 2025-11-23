@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/firestore_service_refactored.dart';
 import '../widgets/async_value_widget.dart';
+import '../providers.dart';
 
 /// Example widget demonstrating the refactored FirestoreService usage
 class SuggestedGroupsScreen extends ConsumerStatefulWidget {
   const SuggestedGroupsScreen({super.key});
 
   @override
-  ConsumerState<SuggestedGroupsScreen> createState() => _SuggestedGroupsScreenState();
+  ConsumerState<SuggestedGroupsScreen> createState() =>
+      _SuggestedGroupsScreenState();
 }
 
 class _SuggestedGroupsScreenState extends ConsumerState<SuggestedGroupsScreen> {
@@ -25,14 +27,18 @@ class _SuggestedGroupsScreenState extends ConsumerState<SuggestedGroupsScreen> {
     setState(() {
       _currentFilters = GroupQueryFilters(
         isPublic: true,
-        searchTerm: _searchController.text.trim().isEmpty ? null : _searchController.text.trim(),
+        searchTerm: _searchController.text.trim().isEmpty
+            ? null
+            : _searchController.text.trim(),
       );
     });
     _loadGroups();
   }
 
   void _loadGroups() {
-    ref.read(suggestedGroupsNotifierProvider.notifier).loadSuggestedGroups(_currentFilters);
+    ref
+        .read(suggestedGroupsNotifierProvider.notifier)
+        .loadSuggestedGroups(_currentFilters);
   }
 
   @override

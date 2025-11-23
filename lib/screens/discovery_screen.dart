@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firestore_service_refactored.dart';
 import '../app_theme.dart';
 import '../widgets/async_value_widget.dart';
+import '../providers.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
   const DiscoveryScreen({super.key});
@@ -41,11 +42,14 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
   void _loadInitialGroups() {
     final filters = GroupQueryFilters(isPublic: true);
-    ref.read(suggestedGroupsNotifierProvider.notifier).loadSuggestedGroups(filters);
+    ref
+        .read(suggestedGroupsNotifierProvider.notifier)
+        .loadSuggestedGroups(filters);
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
         !_isLoadingMore) {
       _loadNextPage();
     }
@@ -54,7 +58,10 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   void _loadNextPage() {
     if (!_isLoadingMore) {
       setState(() => _isLoadingMore = true);
-      ref.read(suggestedGroupsNotifierProvider.notifier).loadNextPage().then((_) {
+      ref
+          .read(suggestedGroupsNotifierProvider.notifier)
+          .loadNextPage()
+          .then((_) {
         if (mounted) {
           setState(() => _isLoadingMore = false);
         }
@@ -108,7 +115,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                             )
                           : null,
                       filled: true,
-                      fillColor: theme.cardColor.withOpacity(0.8),
+                      fillColor: theme.cardColor.withValues(alpha: 0.8),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                         borderSide: BorderSide.none,
@@ -145,7 +152,8 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                 data: (groups) => groups.isEmpty && _currentSearchTerm.isEmpty
                     ? const Center(child: Text('No public groups available'))
                     : groups.isEmpty
-                        ? const Center(child: Text('No groups found for your search'))
+                        ? const Center(
+                            child: Text('No groups found for your search'))
                         : ListView.builder(
                             controller: _scrollController,
                             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -154,7 +162,8 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                               if (index == groups.length) {
                                 return const Padding(
                                   padding: EdgeInsets.all(16),
-                                  child: Center(child: CircularProgressIndicator()),
+                                  child: Center(
+                                      child: CircularProgressIndicator()),
                                 );
                               }
 
@@ -194,7 +203,9 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
           isPublic: true,
           searchTerm: _currentSearchTerm,
         );
-        ref.read(suggestedGroupsNotifierProvider.notifier).loadSuggestedGroups(filters);
+        ref
+            .read(suggestedGroupsNotifierProvider.notifier)
+            .loadSuggestedGroups(filters);
       } else {
         _loadInitialGroups();
       }
@@ -314,7 +325,7 @@ class GroupCard extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 24,
-                  backgroundColor: theme.primaryColor.withOpacity(0.1),
+                  backgroundColor: theme.primaryColor.withValues(alpha: 0.1),
                   backgroundImage: group['imageUrl'] != null
                       ? NetworkImage(group['imageUrl'])
                       : null,
@@ -347,13 +358,15 @@ class GroupCard extends StatelessWidget {
                           Icon(
                             Icons.people,
                             size: 16,
-                            color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                            color: theme.textTheme.bodySmall?.color
+                                ?.withValues(alpha: 0.7),
                           ),
                           const SizedBox(width: 4),
                           Text(
                             '${group['memberCount'] ?? 0} members',
                             style: TextStyle(
-                              color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                              color: theme.textTheme.bodySmall?.color
+                                  ?.withValues(alpha: 0.7),
                               fontSize: 12,
                             ),
                           ),
@@ -362,13 +375,15 @@ class GroupCard extends StatelessWidget {
                             Icon(
                               Icons.videogame_asset,
                               size: 16,
-                              color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                              color: theme.textTheme.bodySmall?.color
+                                  ?.withValues(alpha: 0.7),
                             ),
                             const SizedBox(width: 4),
                             Text(
                               group['gameName'],
                               style: TextStyle(
-                                color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                                color: theme.textTheme.bodySmall?.color
+                                    ?.withValues(alpha: 0.7),
                                 fontSize: 12,
                               ),
                               maxLines: 1,
@@ -384,7 +399,8 @@ class GroupCard extends StatelessWidget {
                 FilledButton(
                   onPressed: isJoining ? null : onJoin,
                   style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
                     ),
@@ -395,19 +411,22 @@ class GroupCard extends StatelessWidget {
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : const Text('Join'),
                 ),
               ],
             ),
-            if (group['description'] != null && group['description'].toString().isNotEmpty) ...[
+            if (group['description'] != null &&
+                group['description'].toString().isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
                 group['description'],
                 style: TextStyle(
-                  color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+                  color:
+                      theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.8),
                   fontSize: 14,
                 ),
                 maxLines: 2,

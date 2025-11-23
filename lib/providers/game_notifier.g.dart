@@ -6,7 +6,7 @@ part of 'game_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$gameSearchResultsHash() => r'946bc1de841f08d4251f3c06e099bbdaf9c43ba7';
+String _$gameSearchResultsHash() => r'ead7820b5a4fa77d88203c48aac19f32a0c1cbeb';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -174,7 +174,7 @@ class _GameSearchResultsProviderElement
   String get query => (origin as GameSearchResultsProvider).query;
 }
 
-String _$gameDetailsHash() => r'e58b998b37d8e0329380e5dea1e4be6485987d54';
+String _$gameDetailsHash() => r'1ace3ef19e340401d0d8f361ba58d8bfa1646096';
 
 /// Family provider for game details with caching
 ///
@@ -318,7 +318,7 @@ class _GameDetailsProviderElement
   String get gameSlug => (origin as GameDetailsProvider).gameSlug;
 }
 
-String _$popularGamesHash() => r'2e517a1deefc3c9b06700cb5e4b9ed82c33e8ac2';
+String _$popularGamesHash() => r'3b482905c26647bf1eb334271af8b3e409ccc03f';
 
 /// Family provider for popular games (empty query)
 ///
@@ -338,7 +338,7 @@ final popularGamesProvider =
 // ignore: unused_element
 typedef PopularGamesRef
     = AutoDisposeFutureProviderRef<List<Map<String, dynamic>>>;
-String _$gameScopedDataHash() => r'2065f42e1f55c46c5640c9f126d5e331b2fb2f17';
+String _$gameScopedDataHash() => r'0546796d2a5bc14efff7c90cfb04f5b622d74ea9';
 
 /// Provider for game-scoped data with current game context
 ///

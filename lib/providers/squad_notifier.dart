@@ -76,7 +76,8 @@ class SquadNotifier extends _$SquadNotifier {
   late final AuthService _authService;
 
   // Timer management - now delegated to TimerServiceNotifier
-  TimerServiceNotifier get _timerService => ref.read(timerServiceProvider.notifier);
+  TimerServiceNotifier get _timerService =>
+      ref.read(timerServiceProvider.notifier);
 
   @override
   Future<SquadState> build() async {
@@ -372,7 +373,7 @@ class SquadNotifier extends _$SquadNotifier {
           Map<String, List<String?>>.from(state.value!.gameSquadSpots);
       if (!currentSpots.containsKey(gameName)) {
         final maxSpots = state.value!.currentGame?['maxSpots'] ?? 4;
-        currentSpots[gameName] = List.filled(maxSpots, null);
+        currentSpots[gameName] = List.of(List.filled(maxSpots, null));
       }
       currentSpots[gameName]![spotIndex] = user.uid;
 
@@ -380,7 +381,8 @@ class SquadNotifier extends _$SquadNotifier {
       state = AsyncValue.data(newState);
 
       // Start timer using TimerServiceNotifier
-      await _timerService.startSpotTimer(gameName, user.uid, const Duration(minutes: 5));
+      await _timerService.startSpotTimer(
+          gameName, user.uid, const Duration(minutes: 5));
 
       // Update gameSpotTimers state for UI
       await _updateSpotTimerState(gameName, spotIndex, user.uid);
@@ -396,7 +398,7 @@ class SquadNotifier extends _$SquadNotifier {
           Map<String, List<String?>>.from(state.value!.gameSquadSpots);
       if (!currentSpots.containsKey(gameName)) {
         final maxSpots = state.value!.currentGame?['maxSpots'] ?? 4;
-        currentSpots[gameName] = List.filled(maxSpots, null);
+        currentSpots[gameName] = List.of(List.filled(maxSpots, null));
       }
       currentSpots[gameName]![spotIndex] = uid;
 
@@ -404,7 +406,8 @@ class SquadNotifier extends _$SquadNotifier {
       state = AsyncValue.data(newState);
 
       // Start timer using TimerServiceNotifier
-      await _timerService.startSpotTimer(gameName, uid, const Duration(minutes: 5));
+      await _timerService.startSpotTimer(
+          gameName, uid, const Duration(minutes: 5));
 
       // Update gameSpotTimers state for UI
       await _updateSpotTimerState(gameName, spotIndex, uid);
@@ -448,13 +451,15 @@ class SquadNotifier extends _$SquadNotifier {
   }
 
   // Timer state management helpers
-  Future<void> _updateSpotTimerState(String gameName, int spotIndex, String uid) async {
+  Future<void> _updateSpotTimerState(
+      String gameName, int spotIndex, String uid) async {
     final remaining = _timerService.getRemainingTime('spot_${gameName}_$uid');
     final currentTimers = Map<String, List<Map<String, dynamic>?>>.from(
         state.value!.gameSpotTimers);
-    currentTimers[gameName] ??= List.filled(4, null);
+    currentTimers[gameName] ??= List.of(List.filled(4, null));
     currentTimers[gameName]![spotIndex] = {
-      'startTime': DateTime.now().subtract(const Duration(minutes: 5) - remaining),
+      'startTime':
+          DateTime.now().subtract(const Duration(minutes: 5) - remaining),
       'duration': const Duration(minutes: 5),
       'remaining': remaining.inSeconds,
       'isExpired': false,
@@ -482,7 +487,8 @@ class SquadNotifier extends _$SquadNotifier {
     final currentPeacockTimers =
         Map<String, Map<String, dynamic>?>.from(state.value!.peacockTimers);
     currentPeacockTimers[uid] = {
-      'startTime': DateTime.now().subtract(const Duration(minutes: 10) - remaining),
+      'startTime':
+          DateTime.now().subtract(const Duration(minutes: 10) - remaining),
       'duration': const Duration(minutes: 10),
       'remaining': remaining.inSeconds,
       'gameName': gameName,
@@ -516,11 +522,11 @@ class SquadNotifier extends _$SquadNotifier {
       final currentSpots =
           Map<String, List<String?>>.from(state.value!.gameSquadSpots);
       final maxSpots = state.value!.currentGame?['maxSpots'] ?? 4;
-      currentSpots[gameName] = List.filled(maxSpots, null);
+      currentSpots[gameName] = List.of(List.filled(maxSpots, null));
 
       final currentTimers = Map<String, List<Map<String, dynamic>?>>.from(
           state.value!.gameSpotTimers);
-      currentTimers[gameName] = List.filled(maxSpots, null);
+      currentTimers[gameName] = List.of(List.filled(maxSpots, null));
 
       final newState = state.value!.copyWith(
         gameSquadSpots: currentSpots,
@@ -549,7 +555,7 @@ class SquadNotifier extends _$SquadNotifier {
       // Update local state
       final currentTimers = Map<String, List<Map<String, dynamic>?>>.from(
           state.value!.gameSpotTimers);
-      currentTimers[gameName] = List.filled(4, null);
+      currentTimers[gameName] = List.of(List.filled(4, null));
 
       final newState = state.value!.copyWith(gameSpotTimers: currentTimers);
       state = AsyncValue.data(newState);
@@ -577,7 +583,8 @@ class SquadNotifier extends _$SquadNotifier {
       state = AsyncValue.data(newState);
 
       // Start peacock timer using TimerServiceNotifier
-      await _timerService.startPeacockTimer(user.uid, const Duration(minutes: 10));
+      await _timerService.startPeacockTimer(
+          user.uid, const Duration(minutes: 10));
 
       // Update peacock timers state for UI
       await _updatePeacockTimerState(user.uid, gameName);
@@ -775,7 +782,8 @@ Map<String, String> gameStatuses(Ref ref, String gameName) {
 
 // Family providers for timer states with AsyncValue
 @riverpod
-AsyncValue<Map<String, dynamic>> spotTimerState(Ref ref, String gameName, int spotIndex) {
+AsyncValue<Map<String, dynamic>> spotTimerState(
+    Ref ref, String gameName, int spotIndex) {
   final timerService = ref.watch(timerServiceProvider.notifier);
   final spots = ref.watch(squadNotifierProvider.select(
     (state) => state.value?.gameSquadSpots[gameName] ?? [],

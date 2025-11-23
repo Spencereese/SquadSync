@@ -16,10 +16,7 @@ import '../utils.dart';
 import '../squad_state.dart' as ss;
 import '../services/ai_service.dart';
 import 'chat_input_bar.dart';
-import 'chat_service.dart';
-import 'chat_state.dart' as cs;
-import 'message.dart';
-import 'models/message_data.dart';
+import 'chat_state.dart';
 
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
@@ -30,12 +27,15 @@ import 'services/chat_online_status_manager.dart';
 import 'services/chat_media_handler.dart';
 import 'services/chat_typing_manager.dart';
 import 'services/chat_ui_manager.dart';
-import '../providers/chat_notifier.dart' as cn;
+import '../presentation/notifiers/chat_notifier.dart' as cn;
+import '../domain/entities/chat_state.dart' as cn_state;
+import '../domain/entities/chat_state.dart' as cs;
+import '../domain/entities/message.dart' as msg;
+import '../chat/chat_state.dart' as old_cs;
 import '../providers/squad_notifier.dart' as sn;
 import '../providers/service_providers.dart';
 import 'chat_settings_menu.dart'; // Importing ChatSettingsMenu
 import 'media_history_screen.dart'; // Importing MediaHistoryScreen
-import 'message_bubble.dart';
 import 'dialogs/invite_members_dialog.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -74,7 +74,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   String? _chatImageUrl;
 
   late ss.SquadState _squadState;
-  late cs.ChatState _chatState;
+  late old_cs.ChatState _chatState;
   bool _isMuted = false;
 
   bool get isUserGroup => widget.chatType == ChatType.userGroup;
@@ -158,7 +158,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     _squadState = p.Provider.of<ss.SquadState>(context, listen: false);
 
     // Store ChatState reference for safe access in dispose
-    _chatState = p.Provider.of<cs.ChatState>(context, listen: false);
+    _chatState = p.Provider.of<ChatState>(context, listen: false);
     _chatState.addListener(_onChatStateChanged);
 
     // Safety check: prevent opening chat with null chatGroupId for user groups
@@ -221,8 +221,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
       // Load messages using the new ChatNotifier
       ref.read(cn.chatNotifierProvider.notifier).loadMessages(
-            widget.chatGroupId,
-            widget.chatType,
+            widget.chatGroupId!,
           );
     });
 
@@ -276,7 +275,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  void _handleSyncStateChanges(cn.ChatState chatState) {
+  void _handleSyncStateChanges(cs.ChatState chatState) {
     // Handle sync error notifications
     if (chatState.syncError != null && chatState.syncError!.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -390,9 +389,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       if (user == null) return;
 
       await ref.read(cn.chatNotifierProvider.notifier).sendMessage(
-            capturedContext,
+            widget.chatGroupId!,
             _messageController.text,
-            chatGroupId: widget.chatGroupId,
+            msg.MessageType.text,
           );
 
       // Message sent successfully
@@ -1035,9 +1034,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  Widget _buildChatContent(BuildContext context, sn.SquadState squadStateData, cn.ChatState chatStateData) {
-    // For now, keep the old chatState for compatibility - we'll migrate this gradually
-    final chatState = p.Provider.of<cs.ChatState>(context, listen: false);
+  Widget _buildChatContent(BuildContext context, sn.SquadState squadStateData,
+      cn_state.ChatState chatStateData) {
+    // Use the passed chatStateData instead of Provider.of for Riverpod migration
+    final chatState = chatStateData;
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final bottomPadding = keyboardHeight > 0 ? keyboardHeight : 16.0;
     return MediaQuery.removePadding(
@@ -1168,13 +1168,14 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                       chatType: widget.chatType,
                       scrollController: _scrollControllerService,
                       squadState: _squadState,
-                      chatState: chatState,
+                      chatState: _chatState,
                       onMessageLongPress: () {}, // Will be implemented
                       onMessageTap: () {}, // Will be implemented
                       getSender: _getSender,
                       getTimestampMs: _getTimestampMs,
                       cleanText: _cleanText,
-                      markAsDelivered: ref.read(chatServiceProvider).markAsDelivered,
+                      markAsDelivered:
+                          ref.read(chatServiceProvider).markAsDelivered,
                     ),
                   ),
                   Semantics(
@@ -1221,7 +1222,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   right: 0,
                   bottom: 120, // Stop above input bar area
                   child: GestureDetector(
-                    onTap: () => chatState.clearReplyToMessage(),
+                    onTap: () => ref
+                        .read(cn.chatNotifierProvider.notifier)
+                        .clearReplyToMessage(),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
                       child: Container(
@@ -1231,25 +1234,24 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   ),
                 ),
                 // Reply preview positioned above input bar
-                Positioned(
-                  bottom: 80, // Position above input bar
-                  left: 0,
-                  right: 0,
-                  child: _uiManager.buildReplyPreview(context,
-                      chatState as dynamic, _squadState, widget.chatType),
-                ),
+                // Positioned(
+                //   bottom: 80, // Position above input bar
+                //   left: 0,
+                //   right: 0,
+                //   child: _uiManager.buildReplyPreview(context,
+                //       chatState as dynamic, _squadState, widget.chatType),
+                // ),
               ],
               // Typing indicator overlay
-              if (chatState.typingUser != null && chatState.typingUser!.isNotEmpty)
-                Positioned(
-                  bottom: chatState.replyToMessage != null
-                      ? 160
-                      : 80, // Position above input bar, higher if reply preview is shown
-                  left: 0,
-                  right: 0,
-                  child:
-                      _buildTypingIndicator(context, [chatState.typingUser!]),
-                ),
+              // if (chatState.typingUser != null &&
+              //     chatState.typingUser!.isNotEmpty)
+              //   Positioned(
+              //     bottom: 80, // Position above input bar
+              //     left: 0,
+              //     right: 0,
+              //     child:
+              //         _buildTypingIndicator(context, [chatState.typingUser!]),
+              //   ),
               // Jump to bottom button
             ],
           ),

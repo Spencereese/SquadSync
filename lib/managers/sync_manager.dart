@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../chat/sqlite_helper.dart';
-import '../services/firestore_service_refactored.dart';
 
 /// Represents a sync conflict between local and remote messages
 class SyncConflict {
@@ -89,7 +87,8 @@ class SyncManager {
       final localPendingMessages = await _getLocalPendingMessages(chatGroupId);
 
       // Detect conflicts
-      final conflicts = await _detectConflicts(localPendingMessages, remoteMessages);
+      final conflicts =
+          await _detectConflicts(localPendingMessages, remoteMessages);
 
       // Resolve conflicts automatically where possible
       final resolvedConflicts = _resolveConflicts(conflicts);
@@ -99,7 +98,8 @@ class SyncManager {
 
       // Upload remaining local messages in batches
       final uploadedCount = await _batchUploadPendingMessages(
-        localPendingMessages.where((msg) => !resolvedConflicts.any((c) => c.localMessage['id'] == msg['id'])),
+        localPendingMessages.where((msg) =>
+            !resolvedConflicts.any((c) => c.localMessage['id'] == msg['id'])),
         chatGroupId,
       );
 
@@ -112,7 +112,9 @@ class SyncManager {
       return SyncResult(
         success: true,
         messagesSynced: remoteMessages.length + uploadedCount,
-        conflicts: resolvedConflicts.where((c) => c.resolution == ConflictResolution.unresolved).toList(),
+        conflicts: resolvedConflicts
+            .where((c) => c.resolution == ConflictResolution.unresolved)
+            .toList(),
       );
     } catch (e) {
       return SyncResult(
@@ -128,7 +130,8 @@ class SyncManager {
     int sinceTimestamp,
   ) async {
     final user = FirebaseAuth.instance.currentUser!;
-    final collectionPath = 'users/${user.uid}/chat_groups/$chatGroupId/messages';
+    final collectionPath =
+        'users/${user.uid}/chat_groups/$chatGroupId/messages';
 
     final query = FirebaseFirestore.instance
         .collection(collectionPath)
@@ -141,12 +144,16 @@ class SyncManager {
   }
 
   /// Gets local messages that haven't been synced yet
-  Future<List<Map<String, dynamic>>> _getLocalPendingMessages(String chatGroupId) async {
+  Future<List<Map<String, dynamic>>> _getLocalPendingMessages(
+      String chatGroupId) async {
     // Get messages from SQLite that are not marked as delivered
-    final allMessages = await _sqliteHelper.getMessages(0, 1000, chatGroupId: chatGroupId);
+    final allMessages =
+        await _sqliteHelper.getMessages(0, 1000, chatGroupId: chatGroupId);
     return allMessages.where((msg) {
       // Consider messages pending if delivered is false or null
-      return (msg['delivered'] == false || msg['delivered'] == null || msg['delivered'] == 0);
+      return (msg['delivered'] == false ||
+          msg['delivered'] == null ||
+          msg['delivered'] == 0);
     }).toList();
   }
 
@@ -180,7 +187,8 @@ class SyncManager {
   }
 
   /// Checks if two messages have conflicting content
-  bool _messagesDiffer(Map<String, dynamic> local, Map<String, dynamic> remote) {
+  bool _messagesDiffer(
+      Map<String, dynamic> local, Map<String, dynamic> remote) {
     // Compare content, reactions, etc.
     final localContent = local['content'] ?? local['text'] ?? '';
     final remoteContent = remote['content'] ?? remote['text'] ?? '';
@@ -228,7 +236,8 @@ class SyncManager {
   }
 
   /// Applies resolved conflict changes
-  Future<void> _applyResolvedChanges(List<SyncConflict> conflicts, String chatGroupId) async {
+  Future<void> _applyResolvedChanges(
+      List<SyncConflict> conflicts, String chatGroupId) async {
     for (final conflict in conflicts) {
       final messageToUse = conflict.resolution == ConflictResolution.useLocal
           ? conflict.localMessage
@@ -245,9 +254,11 @@ class SyncManager {
   }
 
   /// Updates a message in Firestore
-  Future<void> _updateRemoteMessage(String chatGroupId, Map<String, dynamic> message) async {
+  Future<void> _updateRemoteMessage(
+      String chatGroupId, Map<String, dynamic> message) async {
     final user = FirebaseAuth.instance.currentUser!;
-    final collectionPath = 'users/${user.uid}/chat_groups/$chatGroupId/messages';
+    final collectionPath =
+        'users/${user.uid}/chat_groups/$chatGroupId/messages';
     final docId = message['id'];
 
     await FirebaseFirestore.instance
@@ -289,9 +300,11 @@ class SyncManager {
   }
 
   /// Uploads a single message to Firestore
-  Future<void> _uploadSingleMessage(String chatGroupId, Map<String, dynamic> message) async {
+  Future<void> _uploadSingleMessage(
+      String chatGroupId, Map<String, dynamic> message) async {
     final user = FirebaseAuth.instance.currentUser!;
-    final collectionPath = 'users/${user.uid}/chat_groups/$chatGroupId/messages';
+    final collectionPath =
+        'users/${user.uid}/chat_groups/$chatGroupId/messages';
     final docId = message['id'];
 
     await FirebaseFirestore.instance
@@ -312,7 +325,8 @@ class SyncManager {
     final localTimestamp = local['timestamp_ms'] ?? 0;
     final remoteTimestamp = remote['timestamp_ms'] ?? 0;
 
-    final merged = Map<String, dynamic>.from(localTimestamp > remoteTimestamp ? local : remote);
+    final merged = Map<String, dynamic>.from(
+        localTimestamp > remoteTimestamp ? local : remote);
 
     // Merge reactions (combine unique ones)
     final localReactions = (local['reactions'] as List?) ?? [];
@@ -321,7 +335,8 @@ class SyncManager {
     final uniqueReactions = <Map<String, dynamic>>[];
 
     for (final reaction in allReactions) {
-      if (!uniqueReactions.any((r) => r['emoji'] == reaction['emoji'] && r['user'] == reaction['user'])) {
+      if (!uniqueReactions.any((r) =>
+          r['emoji'] == reaction['emoji'] && r['user'] == reaction['user'])) {
         uniqueReactions.add(reaction);
       }
     }
@@ -333,7 +348,8 @@ class SyncManager {
 
   /// Purges SQLite data older than 30 days
   Future<void> _purgeOldData() async {
-    final cutoffTimestamp = DateTime.now().subtract(_purgeThreshold).millisecondsSinceEpoch;
+    final cutoffTimestamp =
+        DateTime.now().subtract(_purgeThreshold).millisecondsSinceEpoch;
 
     // Delete old messages from SQLite
     final db = await _sqliteHelper.database;
@@ -372,8 +388,8 @@ extension SyncConflictExtension on SyncConflict {
   }
 }
 
-// Riverpod provider for SyncManager
-final syncManagerProvider = Provider<SyncManager>((ref) {
-  final sqliteHelper = ref.watch(sqliteHelperProvider);
-  return SyncManager(sqliteHelper: sqliteHelper);
-});
+// Riverpod provider for SyncManager - moved to providers.dart to avoid circular imports
+// final syncManagerProvider = Provider<SyncManager>((ref) {
+//   final sqliteHelper = ref.watch(sqliteHelperProvider);
+//   return SyncManager(sqliteHelper: sqliteHelper);
+// });

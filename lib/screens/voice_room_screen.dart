@@ -54,7 +54,8 @@ class _VoiceRoomScreenContentState
       vsync: this,
     );
     _joinAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _joinAnimationController, curve: Curves.elasticOut),
+      CurvedAnimation(
+          parent: _joinAnimationController, curve: Curves.elasticOut),
     );
 
     _participantAnimationController = AnimationController(
@@ -62,7 +63,8 @@ class _VoiceRoomScreenContentState
       vsync: this,
     );
     _participantAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _participantAnimationController, curve: Curves.easeOut),
+      CurvedAnimation(
+          parent: _participantAnimationController, curve: Curves.easeOut),
     );
 
     // Initialize voice service when screen opens
@@ -80,7 +82,9 @@ class _VoiceRoomScreenContentState
 
   Future<void> _initializeVoiceService() async {
     try {
-      await ref.read(voiceRoomProvider(widget.roomId).notifier).initializeVoiceService();
+      await ref
+          .read(voiceRoomProvider(widget.roomId).notifier)
+          .initializeVoiceService();
     } catch (e) {
       if (mounted) {
         _showErrorSnackBar('Failed to initialize voice service: $e');
@@ -243,7 +247,7 @@ class _VoiceRoomScreenContentState
             Icon(
               Icons.voice_over_off_outlined,
               size: 80,
-              color: AppTheme.errorColor.withOpacity(0.7),
+              color: AppTheme.errorColor.withValues(alpha: 0.7),
             ),
             const SizedBox(height: 24),
             const Text(
@@ -268,7 +272,8 @@ class _VoiceRoomScreenContentState
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primaryColor,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
               ),
             ),
             const SizedBox(height: 16),
@@ -308,7 +313,7 @@ class _VoiceRoomScreenContentState
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.orange.withOpacity(0.9),
+              color: Colors.orange.withValues(alpha: 0.9),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -345,17 +350,19 @@ class _VoiceRoomScreenContentState
           Icon(
             Icons.group_outlined,
             size: 80,
-            color: Colors.white.withOpacity(0.3),
+            color: Colors.white.withValues(alpha: 0.3),
           ),
           const SizedBox(height: 16),
           Text(
             'Waiting for participants...',
-            style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 18),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7), fontSize: 18),
           ),
           const SizedBox(height: 8),
           Text(
             'Share the room link to invite others',
-            style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
           ),
         ],
       ),
@@ -407,14 +414,16 @@ class _VoiceRoomScreenContentState
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isSpeaking ? AppTheme.primaryColor : Colors.white.withOpacity(0.1),
+          color: isSpeaking
+              ? AppTheme.primaryColor
+              : Colors.white.withValues(alpha: 0.1),
           width: isSpeaking ? 3 : 1,
         ),
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         boxShadow: isSpeaking
             ? [
                 BoxShadow(
-                  color: AppTheme.primaryColor.withOpacity(0.3),
+                  color: AppTheme.primaryColor.withValues(alpha: 0.3),
                   blurRadius: 20,
                   spreadRadius: 2,
                 )
@@ -434,12 +443,16 @@ class _VoiceRoomScreenContentState
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isSpeaking ? AppTheme.primaryColor : Colors.white.withOpacity(0.3),
+                  color: isSpeaking
+                      ? AppTheme.primaryColor
+                      : Colors.white.withValues(alpha: 0.3),
                   width: isSpeaking ? 3 : 2,
                 ),
               ),
               child: CircleAvatar(
-                backgroundColor: isOnline ? AppTheme.primaryColor.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
+                backgroundColor: isOnline
+                    ? AppTheme.primaryColor.withValues(alpha: 0.2)
+                    : Colors.grey.withValues(alpha: 0.2),
                 child: Text(
                   displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
                   style: TextStyle(
@@ -472,9 +485,10 @@ class _VoiceRoomScreenContentState
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.2),
+                  color: Colors.amber.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                  border:
+                      Border.all(color: Colors.amber.withValues(alpha: 0.5)),
                 ),
                 child: const Text(
                   'Host',
@@ -518,7 +532,8 @@ class _VoiceRoomScreenContentState
             ),
 
             // Host controls for individual participants
-            if (isCurrentUserHost && uid != FirebaseAuth.instance.currentUser?.uid) ...[
+            if (isCurrentUserHost &&
+                uid != FirebaseAuth.instance.currentUser?.uid) ...[
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -527,11 +542,12 @@ class _VoiceRoomScreenContentState
                     icon: Icon(
                       Icons.mic_off,
                       size: 18,
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                     ),
                     onPressed: () async {
                       HapticFeedback.lightImpact();
-                      await ref.read(voiceRoomProvider(widget.roomId).notifier)
+                      await ref
+                          .read(voiceRoomProvider(widget.roomId).notifier)
                           .muteParticipant(uid, !isMuted);
                     },
                     tooltip: isMuted ? 'Unmute' : 'Mute',
@@ -540,11 +556,12 @@ class _VoiceRoomScreenContentState
                     icon: Icon(
                       Icons.person_remove,
                       size: 18,
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                     ),
                     onPressed: () async {
                       HapticFeedback.lightImpact();
-                      await ref.read(voiceRoomProvider(widget.roomId).notifier)
+                      await ref
+                          .read(voiceRoomProvider(widget.roomId).notifier)
                           .kickParticipant(uid);
                     },
                     tooltip: 'Kick',
@@ -558,13 +575,14 @@ class _VoiceRoomScreenContentState
     );
   }
 
-  Widget _buildControlPanel(bool isJoined, bool isMuted, bool isHost, bool isLoading) {
+  Widget _buildControlPanel(
+      bool isJoined, bool isMuted, bool isHost, bool isLoading) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
+        color: Colors.black.withValues(alpha: 0.3),
         border: Border(
-          top: BorderSide(color: Colors.white.withOpacity(0.1)),
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
         ),
       ),
       child: Column(
@@ -586,19 +604,28 @@ class _VoiceRoomScreenContentState
                           : () async {
                               HapticFeedback.mediumImpact();
                               if (isJoined) {
-                                await ref.read(voiceRoomProvider(widget.roomId).notifier).leaveRoom();
+                                await ref
+                                    .read(voiceRoomProvider(widget.roomId)
+                                        .notifier)
+                                    .leaveRoom();
                               } else {
                                 await _requestMicrophonePermission();
-                                await ref.read(voiceRoomProvider(widget.roomId).notifier).joinRoom();
+                                await ref
+                                    .read(voiceRoomProvider(widget.roomId)
+                                        .notifier)
+                                    .joinRoom();
                                 _joinAnimationController.forward(from: 0.0);
                               }
                             },
                       icon: Icon(isJoined ? Icons.call_end : Icons.call),
                       label: Text(isJoined ? 'Leave' : 'Join Voice'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isJoined ? AppTheme.errorColor : AppTheme.primaryColor,
+                        backgroundColor: isJoined
+                            ? AppTheme.errorColor
+                            : AppTheme.primaryColor,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -613,14 +640,17 @@ class _VoiceRoomScreenContentState
                 ElevatedButton.icon(
                   onPressed: () async {
                     HapticFeedback.lightImpact();
-                    await ref.read(voiceRoomProvider(widget.roomId).notifier).toggleMute();
+                    await ref
+                        .read(voiceRoomProvider(widget.roomId).notifier)
+                        .toggleMute();
                   },
                   icon: Icon(isMuted ? Icons.mic_off : Icons.mic),
                   label: Text(isMuted ? 'Unmute' : 'Mute'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isMuted ? Colors.grey : Colors.green,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -665,7 +695,8 @@ class _VoiceRoomScreenContentState
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.amber,
                       foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -681,7 +712,7 @@ class _VoiceRoomScreenContentState
             Text(
               isMuted ? 'You are muted' : 'You are unmuted',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withValues(alpha: 0.7),
                 fontSize: 14,
               ),
             ),
@@ -715,8 +746,10 @@ class _VoiceRoomScreenContentState
             const SizedBox(height: 24),
             ListTile(
               leading: Icon(Icons.lock_outline, color: Colors.white70),
-              title: const Text('Room Password', style: TextStyle(color: Colors.white)),
-              subtitle: const Text('Not set', style: TextStyle(color: Colors.white70)),
+              title: const Text('Room Password',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: const Text('Not set',
+                  style: TextStyle(color: Colors.white70)),
               onTap: () {
                 // TODO: Implement room password setting
                 Navigator.of(context).pop();
@@ -724,8 +757,10 @@ class _VoiceRoomScreenContentState
             ),
             ListTile(
               leading: Icon(Icons.people_outline, color: Colors.white70),
-              title: const Text('Max Participants', style: TextStyle(color: Colors.white)),
-              subtitle: const Text('Unlimited', style: TextStyle(color: Colors.white70)),
+              title: const Text('Max Participants',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: const Text('Unlimited',
+                  style: TextStyle(color: Colors.white70)),
               onTap: () {
                 // TODO: Implement max participants setting
                 Navigator.of(context).pop();
@@ -733,14 +768,16 @@ class _VoiceRoomScreenContentState
             ),
             ListTile(
               leading: Icon(Icons.mic_none, color: Colors.white70),
-              title: const Text('Mute on Join', style: TextStyle(color: Colors.white)),
-              subtitle: const Text('Disabled', style: TextStyle(color: Colors.white70)),
+              title: const Text('Mute on Join',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: const Text('Disabled',
+                  style: TextStyle(color: Colors.white70)),
               trailing: Switch(
                 value: false,
                 onChanged: (value) {
                   // TODO: Implement mute on join setting
                 },
-                activeColor: AppTheme.primaryColor,
+                activeThumbColor: AppTheme.primaryColor,
               ),
             ),
           ],

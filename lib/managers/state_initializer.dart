@@ -253,9 +253,9 @@ class StateInitializer {
       final gameName = _dataManager.currentGame!['name'];
       if (!_dataManager.gameSquadSpots.containsKey(gameName)) {
         _dataManager.gameSquadSpots[gameName] =
-            List.filled(_dataManager.currentGame!['maxSpots'], null);
+            List.of(List.filled(_dataManager.currentGame!['maxSpots'], null));
         _dataManager.gameSpotTimers[gameName] =
-            List.filled(_dataManager.currentGame!['maxSpots'], null);
+            List.of(List.filled(_dataManager.currentGame!['maxSpots'], null));
       }
     }
   }

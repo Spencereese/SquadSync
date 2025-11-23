@@ -45,7 +45,7 @@ class ChatTypingManager {
     required SquadState squadState,
   }) async {
     final chatService = ChatService();
-    final displayName = squadState.displayName ?? 'Anonymous';
+    final displayName = squadState.displayName;
 
     // Cancel existing timer
     _typingTimer?.cancel();
@@ -68,7 +68,7 @@ class ChatTypingManager {
     required SquadState squadState,
   }) async {
     final chatService = ChatService();
-    final displayName = squadState.displayName ?? 'Anonymous';
+    final displayName = squadState.displayName;
 
     // Cancel timer
     _typingTimer?.cancel();

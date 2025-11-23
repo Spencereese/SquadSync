@@ -79,7 +79,7 @@ class SquadDataManager {
     final gameName = currentGame?['name'] ?? '';
     if (!gameSpotTimers.containsKey(gameName)) {
       final maxSpots = currentGame?['maxSpots'] ?? 4;
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+      gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
     }
     return gameSpotTimers[gameName] ?? [];
   }
@@ -133,8 +133,8 @@ class SquadDataManager {
 
     if (!gameSquadSpots.containsKey(gameName)) {
       final maxSpots = currentGame?['maxSpots'] ?? 4;
-      gameSquadSpots[gameName] = List.filled(maxSpots, null);
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+      gameSquadSpots[gameName] = List.of(List.filled(maxSpots, null));
+      gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
     }
 
     // If user is already assigned to a different spot, remove them from it first
@@ -158,8 +158,8 @@ class SquadDataManager {
       {int? maxSpots}) {
     if (!gameSquadSpots.containsKey(gameName)) {
       final spotsCount = maxSpots ?? 4;
-      gameSquadSpots[gameName] = List.filled(spotsCount, null);
-      gameSpotTimers[gameName] = List.filled(spotsCount, null);
+      gameSquadSpots[gameName] = List.of(List.filled(spotsCount, null));
+      gameSpotTimers[gameName] = List.of(List.filled(spotsCount, null));
     }
 
     // If user is already assigned to a different spot in this game, remove them from it first
@@ -228,8 +228,8 @@ class SquadDataManager {
     if (playerUid != null) {
       if (!gameSquadSpots.containsKey(gameName)) {
         final maxSpots = currentGame?['maxSpots'] ?? 4;
-        gameSquadSpots[gameName] = List.filled(maxSpots, null);
-        gameSpotTimers[gameName] = List.filled(maxSpots, null);
+        gameSquadSpots[gameName] = List.of(List.filled(maxSpots, null));
+        gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
       }
 
       gameSquadSpots[gameName]![index] = playerUid;

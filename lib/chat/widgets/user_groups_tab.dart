@@ -286,21 +286,19 @@ class UserGroupsTab extends StatelessWidget {
                   debugPrint(
                       'DEBUG UserGroupsTab: Tapping on user group ${group.id}');
                   if (group.id.isNotEmpty) {
+                    final chatState =
+                        Provider.of<ChatState>(context, listen: false);
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) => ChatScreen(
-                          chatType: ChatType.userGroup,
-                          chatGroupId: group.id,
-                          chatGroupName: groupName,
+                        builder: (context) => ChangeNotifierProvider.value(
+                          value: chatState,
+                          child: ChatScreen(
+                            chatType: ChatType.userGroup,
+                            chatGroupId: group.id,
+                            chatGroupName: groupName,
+                          ),
                         ),
                       ),
-                    );
-                  } else {
-                    debugPrint(
-                        'DEBUG UserGroupsTab: group id is invalid, not navigating');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Unable to open group chat')),
                     );
                   }
                 },

@@ -1,14 +1,10 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../chat/sqlite_helper.dart';
 import 'grok_service.dart';
 import '../managers/notification_manager.dart';
-
-part 'firestore_service_refactored.g.dart';
 
 /// Data class for group query filters
 class GroupQueryFilters {
@@ -25,7 +21,10 @@ class GroupQueryFilters {
   });
 
   bool get hasFilters =>
-      isPublic != null || gameName != null || minMemberCount != null || (searchTerm?.isNotEmpty ?? false);
+      isPublic != null ||
+      gameName != null ||
+      minMemberCount != null ||
+      (searchTerm?.isNotEmpty ?? false);
 }
 
 /// State for Firestore operations
@@ -87,7 +86,8 @@ class OptimizedGroupQueryBuilder {
     }
 
     if (filters.minMemberCount != null) {
-      query = query.where('memberCount', isGreaterThanOrEqualTo: filters.minMemberCount);
+      query = query.where('memberCount',
+          isGreaterThanOrEqualTo: filters.minMemberCount);
     }
 
     // Order by composite index: isPublic asc, memberCount desc, gameName asc
@@ -101,14 +101,16 @@ class OptimizedGroupQueryBuilder {
   }
 
   /// Gets cached groups if valid, null otherwise
-  Future<List<Map<String, dynamic>>?> _getValidCachedGroups(String cacheKey) async {
+  Future<List<Map<String, dynamic>>?> _getValidCachedGroups(
+      String cacheKey) async {
     try {
       final cached = await _sqliteHelper.getCachedGroups('', cacheKey);
       if (cached.isNotEmpty) {
         // Check TTL
         final cacheEntry = await _sqliteHelper.getCacheMetadata(cacheKey);
         if (cacheEntry != null) {
-          final cachedAt = DateTime.fromMillisecondsSinceEpoch(cacheEntry['cached_at']);
+          final cachedAt =
+              DateTime.fromMillisecondsSinceEpoch(cacheEntry['cached_at']);
           if (DateTime.now().difference(cachedAt) < _cacheTTL) {
             return cached;
           }
@@ -121,11 +123,13 @@ class OptimizedGroupQueryBuilder {
   }
 
   /// Caches groups with metadata
-  Future<void> _cacheGroups(List<Map<String, dynamic>> groups, String cacheKey) async {
+  Future<void> _cacheGroups(
+      List<Map<String, dynamic>> groups, String cacheKey) async {
     try {
       await _sqliteHelper.cacheGroups(groups, '', cacheKey);
       // Store cache metadata
-      await _sqliteHelper.insertCacheMetadata(cacheKey, DateTime.now().millisecondsSinceEpoch);
+      await _sqliteHelper.insertCacheMetadata(
+          cacheKey, DateTime.now().millisecondsSinceEpoch);
     } catch (e) {
       debugPrint('Error caching groups: $e');
     }
@@ -154,7 +158,8 @@ class OptimizedGroupQueryBuilder {
 
     try {
       final snapshot = await query.get();
-      var groups = snapshot.docs.map((doc) => doc.data()..['id'] = doc.id).toList();
+      var groups =
+          snapshot.docs.map((doc) => doc.data()..['id'] = doc.id).toList();
 
       // Apply semantic filtering if search term provided
       if (filters.searchTerm?.isNotEmpty ?? false) {
@@ -173,7 +178,8 @@ class OptimizedGroupQueryBuilder {
             .toList();
 
         if (filters.searchTerm?.isNotEmpty ?? false) {
-          updatedGroups = await _applySemanticFiltering(updatedGroups, filters.searchTerm!);
+          updatedGroups =
+              await _applySemanticFiltering(updatedGroups, filters.searchTerm!);
         }
 
         // Update cache
@@ -181,7 +187,6 @@ class OptimizedGroupQueryBuilder {
 
         return updatedGroups;
       });
-
     } on FirebaseException catch (e) {
       if (e.code == 'failed-precondition') {
         _notificationManager.showNotification(
@@ -196,7 +201,8 @@ class OptimizedGroupQueryBuilder {
             .limit(_pageSize);
 
         final snapshot = await fallbackQuery.get();
-        final groups = snapshot.docs.map((doc) => doc.data()..['id'] = doc.id).toList();
+        final groups =
+            snapshot.docs.map((doc) => doc.data()..['id'] = doc.id).toList();
 
         await _cacheGroups(groups, cacheKey);
         yield groups;
@@ -223,7 +229,8 @@ class OptimizedGroupQueryBuilder {
         return {'group': group, 'score': score};
       }).toList();
 
-      scoredGroups.sort((a, b) => (b['score'] as double).compareTo(a['score'] as double));
+      scoredGroups.sort(
+          (a, b) => (b['score'] as double).compareTo(a['score'] as double));
 
       return scoredGroups
           .take(10)
@@ -236,7 +243,8 @@ class OptimizedGroupQueryBuilder {
   }
 
   /// Generates cache key for filters
-  String _generateCacheKey(GroupQueryFilters filters, DocumentSnapshot? startAfter) {
+  String _generateCacheKey(
+      GroupQueryFilters filters, DocumentSnapshot? startAfter) {
     final keyParts = [
       filters.isPublic?.toString() ?? 'null',
       filters.gameName ?? 'null',
@@ -256,7 +264,8 @@ class SuggestedGroupsNotifier extends StateNotifier<FirestoreState> {
   DocumentSnapshot? _lastDocument;
   bool _hasMorePages = true;
 
-  SuggestedGroupsNotifier(this._firestoreService) : super(const FirestoreState());
+  SuggestedGroupsNotifier(this._firestoreService)
+      : super(const FirestoreState());
 
   /// Loads suggested groups with filters
   Future<void> loadSuggestedGroups(GroupQueryFilters filters) async {
@@ -266,7 +275,8 @@ class SuggestedGroupsNotifier extends StateNotifier<FirestoreState> {
     _hasMorePages = true;
 
     try {
-      final stream = _firestoreService.queryBuilder.buildSuggestedGroupsStream(filters);
+      final stream =
+          _firestoreService.queryBuilder.buildSuggestedGroupsStream(filters);
 
       _subscription?.cancel();
       _subscription = stream.listen(
@@ -306,7 +316,8 @@ class SuggestedGroupsNotifier extends StateNotifier<FirestoreState> {
       if (currentGroups.isNotEmpty) {
         // Create a mock DocumentSnapshot for pagination
         // In a real implementation, you'd store the actual DocumentSnapshot
-        final stream = _firestoreService.queryBuilder.buildSuggestedGroupsStream(
+        final stream =
+            _firestoreService.queryBuilder.buildSuggestedGroupsStream(
           _currentFilters!,
           startAfter: _lastDocument,
         );
@@ -376,7 +387,8 @@ class FirestoreService {
   }
 
   /// Generic method to load data from Firestore with error handling
-  Future<Map<String, dynamic>?> loadDocument(String collection, String document) async {
+  Future<Map<String, dynamic>?> loadDocument(
+      String collection, String document) async {
     try {
       final doc = await _firestore.collection(collection).doc(document).get();
       return doc.data();
@@ -386,9 +398,13 @@ class FirestoreService {
   }
 
   /// Generic method to save data to Firestore with error handling
-  Future<bool> saveDocument(String collection, String document, Map<String, dynamic> data) async {
+  Future<bool> saveDocument(
+      String collection, String document, Map<String, dynamic> data) async {
     try {
-      await _firestore.collection(collection).doc(document).set(data, SetOptions(merge: true));
+      await _firestore
+          .collection(collection)
+          .doc(document)
+          .set(data, SetOptions(merge: true));
       return true;
     } catch (e) {
       return false;
@@ -410,7 +426,8 @@ class FirestoreService {
   /// Clean up expired cache entries
   Future<void> cleanupExpiredCache() async {
     try {
-      await _sqliteHelper.cleanupExpiredCache(OptimizedGroupQueryBuilder._cacheTTL);
+      await _sqliteHelper
+          .cleanupExpiredCache(OptimizedGroupQueryBuilder._cacheTTL);
     } catch (e) {
       debugPrint('Cache cleanup failed: $e');
     }
@@ -432,7 +449,8 @@ class FirestoreService {
         .set(data, SetOptions(merge: true));
   }
 
-  Future<void> updateVoiceParticipant(String roomId, String uid, Map<String, dynamic> data) async {
+  Future<void> updateVoiceParticipant(
+      String roomId, String uid, Map<String, dynamic> data) async {
     await _firestore
         .collection('voice_rooms')
         .doc(roomId)

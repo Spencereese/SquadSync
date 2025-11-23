@@ -60,9 +60,9 @@ class _PollBubbleContentState extends State<_PollBubbleContent>
     with TickerProviderStateMixin {
   final _pollService = PollService();
   bool _isVoting = false;
-  Timer? _countdownTimer;
-  final Duration _remainingTime = Duration.zero;
-  late AnimationController _pulseController;
+  Timer? _countdownTimer; // ignore: unused_field
+  final Duration _remainingTime = Duration.zero; // ignore: unused_field
+  late AnimationController _pulseController; // ignore: unused_field
 
   @override
   void initState() {

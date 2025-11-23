@@ -10,6 +10,7 @@ part 'squad_providers.g.dart';
 /// Tree-shakes: Only rebuilds when gameSquadSpots[gameName] changes
 @riverpod
 List<String?> squadSpots(SquadSpotsRef ref, String? gameName) {
+  // ignore: deprecated_member_use_from_same_package
   if (gameName == null) return [];
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameSquadSpots[gameName] ?? [],
@@ -20,6 +21,7 @@ List<String?> squadSpots(SquadSpotsRef ref, String? gameName) {
 /// Tree-shakes: Only rebuilds when gameSpotTimers[gameName] changes
 @riverpod
 List<Map<String, dynamic>?> spotTimers(SpotTimersRef ref, String? gameName) {
+  // ignore: deprecated_member_use_from_same_package
   if (gameName == null) return [];
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameSpotTimers[gameName] ?? [],
@@ -30,6 +32,7 @@ List<Map<String, dynamic>?> spotTimers(SpotTimersRef ref, String? gameName) {
 /// Tree-shakes: Only rebuilds when gameStatuses[gameName] changes
 @riverpod
 Map<String, String> gameStatuses(GameStatusesRef ref, String? gameName) {
+  // ignore: deprecated_member_use_from_same_package
   if (gameName == null) return {};
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameStatuses[gameName] ?? {},
@@ -40,6 +43,7 @@ Map<String, String> gameStatuses(GameStatusesRef ref, String? gameName) {
 /// Tree-shakes: Only rebuilds when globalStatuses changes
 @riverpod
 Map<String, String> globalStatuses(GlobalStatusesRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.globalStatuses,
   ));
@@ -49,6 +53,7 @@ Map<String, String> globalStatuses(GlobalStatusesRef ref) {
 /// Tree-shakes: Only rebuilds when currentGame changes
 @riverpod
 Map<String, dynamic>? currentGame(CurrentGameRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.currentGame,
   ));
@@ -58,6 +63,7 @@ Map<String, dynamic>? currentGame(CurrentGameRef ref) {
 /// Tree-shakes: Only rebuilds when selectedSquadId changes
 @riverpod
 String? selectedSquadId(SelectedSquadIdRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.selectedSquadId,
   ));
@@ -67,6 +73,7 @@ String? selectedSquadId(SelectedSquadIdRef ref) {
 /// Tree-shakes: Only rebuilds when displayName changes
 @riverpod
 String displayName(DisplayNameRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.displayName,
   ));
@@ -76,6 +83,7 @@ String displayName(DisplayNameRef ref) {
 /// Tree-shakes: Only rebuilds when profileImage changes
 @riverpod
 String? profileImage(ProfileImageRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.profileImage,
   ));
@@ -85,6 +93,7 @@ String? profileImage(ProfileImageRef ref) {
 /// Tree-shakes: Only rebuilds when tiltEnabled changes
 @riverpod
 bool tiltEnabled(TiltEnabledRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.tiltEnabled,
   ));
@@ -94,6 +103,7 @@ bool tiltEnabled(TiltEnabledRef ref) {
 /// Tree-shakes: Only rebuilds when isInitialized changes
 @riverpod
 bool isInitialized(IsInitializedRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.isInitialized,
   ));
@@ -103,6 +113,7 @@ bool isInitialized(IsInitializedRef ref) {
 /// Tree-shakes: Only rebuilds when hasUnreadMessages changes
 @riverpod
 bool hasUnreadMessages(HasUnreadMessagesRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.hasUnreadMessages,
   ));
@@ -112,6 +123,7 @@ bool hasUnreadMessages(HasUnreadMessagesRef ref) {
 /// Tree-shakes: Only rebuilds when hasNewSquadSpot changes
 @riverpod
 bool hasNewSquadSpot(HasNewSquadSpotRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.hasNewSquadSpot,
   ));

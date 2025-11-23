@@ -53,7 +53,7 @@ abstract class BaseDialog extends StatefulWidget {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withOpacity(0.3),
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
             width: 0.5,
           ),
         ),
@@ -74,7 +74,10 @@ abstract class BaseDialog extends StatefulWidget {
             IconButton(
               icon: Icon(
                 Icons.close,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.7),
               ),
               onPressed: () => Navigator.pop(context),
               tooltip: 'Close',
@@ -140,7 +143,7 @@ class BaseDialogState<T extends BaseDialog> extends State<T>
 
     return PopScope(
       canPop: widget.dismissible,
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           _animateOut(() {});
         }
@@ -154,12 +157,12 @@ class BaseDialogState<T extends BaseDialog> extends State<T>
               BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                 child: Container(
-                  color: Colors.black.withOpacity(0.4),
+                  color: Colors.black.withValues(alpha: 0.4),
                 ),
               )
             else
               Container(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
               ),
 
             // Dialog content
@@ -192,13 +195,13 @@ class BaseDialogState<T extends BaseDialog> extends State<T>
                           widget.borderRadius ?? BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
+                          color: Colors.black.withValues(alpha: 0.3),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),
                       ],
                       border: Border.all(
-                        color: theme.colorScheme.outline.withOpacity(0.1),
+                        color: theme.colorScheme.outline.withValues(alpha: 0.1),
                         width: 0.5,
                       ),
                     ),
@@ -228,7 +231,8 @@ class BaseDialogState<T extends BaseDialog> extends State<T>
                               decoration: BoxDecoration(
                                 border: Border(
                                   top: BorderSide(
-                                    color: theme.dividerColor.withOpacity(0.3),
+                                    color: theme.dividerColor
+                                        .withValues(alpha: 0.3),
                                     width: 0.5,
                                   ),
                                 ),
@@ -344,7 +348,7 @@ class DialogActions {
       child: Text(
         label,
         style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
         ),
       ),
     );

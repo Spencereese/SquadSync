@@ -71,7 +71,7 @@ class SquadHeader extends ConsumerWidget {
 
   void _showGameSelectionDialog(BuildContext context, WidgetRef ref) {
     final TextEditingController gameController = TextEditingController();
-    Map<String, dynamic>? selectedGame;
+    Map<String, dynamic>? selectedGame; // ignore: unused_local_variable
 
     showDialog(
       context: context,

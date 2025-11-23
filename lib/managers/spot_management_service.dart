@@ -130,8 +130,8 @@ class SpotManagementService {
       final gameSpotTimers = getGameSpotTimers();
       if (!gameSquadSpots.containsKey(gameName)) {
         final maxSpots = getCurrentGame()?['maxSpots'] ?? 4;
-        gameSquadSpots[gameName] = List.filled(maxSpots, null);
-        gameSpotTimers[gameName] = List.filled(maxSpots, null);
+        gameSquadSpots[gameName] = List.of(List.filled(maxSpots, null));
+        gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
       }
 
       gameSquadSpots[gameName]![index] = playerUid;
@@ -218,8 +218,10 @@ class SpotManagementService {
   void clearAllSpots() {
     final currentGameName = dataManager.currentGame?['name'] ?? 'Warzone';
     final maxSpots = dataManager.currentGame?['maxSpots'] ?? 4;
-    dataManager.gameSquadSpots[currentGameName] = List.filled(maxSpots, null);
-    dataManager.gameSpotTimers[currentGameName] = List.filled(maxSpots, null);
+    dataManager.gameSquadSpots[currentGameName] =
+        List.of(List.filled(maxSpots, null));
+    dataManager.gameSpotTimers[currentGameName] =
+        List.of(List.filled(maxSpots, null));
     dataManager.peacockTimers.clear();
     dataManager.peacockQueue.clear();
     final squadMembers = dataManager.squadMembers;

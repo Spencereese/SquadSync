@@ -85,7 +85,7 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
         'Open SquadSync and go to Join Group to enter the code.';
 
     try {
-      await Share.share(inviteMessage, subject: 'Join ${widget.chatGroupName}');
+      await Share.share(inviteMessage);
     } catch (e) {
       // Fallback to clipboard
       await Clipboard.setData(ClipboardData(text: inviteMessage));
@@ -180,7 +180,9 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
                           version: QrVersions.auto,
                           size: 180.0,
                           backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
+                          dataModuleStyle: const QrDataModuleStyle(
+                            color: Colors.black,
+                          ),
                         ),
                       ),
 
@@ -202,7 +204,9 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 16),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: Colors.cyanAccent.withValues(alpha: 0.3),

@@ -247,7 +247,7 @@ class _MediaHistoryScreenState extends ConsumerState<MediaHistoryScreen> {
                         .textTheme
                         .bodySmall
                         ?.color
-                        ?.withOpacity(0.7),
+                        ?.withValues(alpha: 0.7),
                   ),
               textAlign: TextAlign.center,
             ),
@@ -328,7 +328,7 @@ class _MediaHistoryScreenState extends ConsumerState<MediaHistoryScreen> {
                       .textTheme
                       .bodyMedium
                       ?.color
-                      ?.withOpacity(0.7),
+                      ?.withValues(alpha: 0.7),
                 ),
             textAlign: TextAlign.center,
           ),

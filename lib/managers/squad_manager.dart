@@ -20,8 +20,8 @@ class SquadManager with ChangeNotifier implements ISquadManager {
     final gameName = currentGame?['name'] ?? '';
     if (!gameSquadSpots.containsKey(gameName)) {
       final maxSpots = currentGame?['maxSpots'] ?? 4;
-      gameSquadSpots[gameName] = List.filled(maxSpots, null);
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+      gameSquadSpots[gameName] = List.of(List.filled(maxSpots, null));
+      gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
     }
     return gameSquadSpots[gameName] ?? [];
   }
@@ -30,7 +30,7 @@ class SquadManager with ChangeNotifier implements ISquadManager {
     final gameName = currentGame?['name'] ?? '';
     if (!gameSpotTimers.containsKey(gameName)) {
       final maxSpots = currentGame?['maxSpots'] ?? 4;
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+      gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
     }
     return gameSpotTimers[gameName] ?? [];
   }
@@ -40,8 +40,8 @@ class SquadManager with ChangeNotifier implements ISquadManager {
   List<String?> getSquadSpots(String gameName) {
     if (!gameSquadSpots.containsKey(gameName)) {
       final maxSpots = currentGame?['maxSpots'] ?? 4;
-      gameSquadSpots[gameName] = List.filled(maxSpots, null);
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+      gameSquadSpots[gameName] = List.of(List.filled(maxSpots, null));
+      gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
     }
     return gameSquadSpots[gameName] ?? [];
   }
@@ -49,7 +49,7 @@ class SquadManager with ChangeNotifier implements ISquadManager {
   List<Map<String, dynamic>?> getSpotTimers(String gameName) {
     if (!gameSpotTimers.containsKey(gameName)) {
       final maxSpots = currentGame?['maxSpots'] ?? 4;
-      gameSpotTimers[gameName] = List.filled(maxSpots, null);
+      gameSpotTimers[gameName] = List.of(List.filled(maxSpots, null));
     }
     return gameSpotTimers[gameName] ?? [];
   }
@@ -103,7 +103,7 @@ class SquadManager with ChangeNotifier implements ISquadManager {
     final gameName = currentGame?['name'] ?? '';
     if (gameSquadSpots.containsKey(gameName)) {
       gameSquadSpots[gameName] =
-          List.filled(gameSquadSpots[gameName]!.length, null);
+          List.of(List.filled(gameSquadSpots[gameName]!.length, null));
       notifyListeners();
     }
   }
@@ -112,7 +112,7 @@ class SquadManager with ChangeNotifier implements ISquadManager {
     final gameName = currentGame?['name'] ?? '';
     if (gameSpotTimers.containsKey(gameName)) {
       gameSpotTimers[gameName] =
-          List.filled(gameSpotTimers[gameName]!.length, null);
+          List.of(List.filled(gameSpotTimers[gameName]!.length, null));
       notifyListeners();
     }
   }

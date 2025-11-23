@@ -320,8 +320,10 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
                   Tab(text: 'Browse', icon: Icon(Icons.explore)),
                 ],
                 labelColor: Theme.of(context).colorScheme.primary,
-                unselectedLabelColor:
-                    Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                unselectedLabelColor: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.6),
               ),
 
               // Tab Content
@@ -364,8 +366,10 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
           Text(
             'Paste an invite code or link to join a group',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.7),
                 ),
           ),
           const SizedBox(height: 20),
@@ -377,8 +381,10 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
             decoration: InputDecoration(
               hintText: 'Enter code or paste link...',
               hintStyle: TextStyle(
-                  color:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.6)),
               filled: true,
               fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
               border: OutlineInputBorder(
@@ -435,8 +441,10 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color:
-                  Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              color: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -493,7 +501,7 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
                           color: Theme.of(context)
                               .colorScheme
                               .onSurface
-                              .withOpacity(0.5),
+                              .withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -502,7 +510,7 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
                             color: Theme.of(context)
                                 .colorScheme
                                 .onSurface
-                                .withOpacity(0.7),
+                                .withValues(alpha: 0.7),
                           ),
                         ),
                       ],
@@ -528,8 +536,10 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color:
-                        Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -603,8 +613,10 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
             child: Text(
               'No public groups available',
               style: TextStyle(
-                  color:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.6)),
             ),
           );
         }

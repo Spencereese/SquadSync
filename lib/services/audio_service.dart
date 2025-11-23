@@ -1,8 +1,10 @@
 import 'package:just_audio/just_audio.dart';
+import 'package:logger/logger.dart';
 import 'interfaces.dart';
 
 /// Service for handling audio playback operations
 class AudioService implements IAudioService {
+  final Logger _logger = Logger();
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isInitialized = false;
 
@@ -21,7 +23,7 @@ class AudioService implements IAudioService {
       await _audioPlayer.setAsset('sounds/victory.mp3');
       await _audioPlayer.play();
     } catch (e) {
-      print('Failed to play victory sound: $e');
+      _logger.e('Failed to play victory sound: $e');
     }
   }
 
@@ -43,7 +45,7 @@ class AudioService implements IAudioService {
       await _audioPlayer.setAsset(soundAsset);
       await _audioPlayer.play();
     } catch (e) {
-      print('Failed to play achievement sound: $e');
+      _logger.e('Failed to play achievement sound: $e');
     }
   }
 

@@ -28,6 +28,7 @@ class Counter extends _$Counter {
 /// Generated provider with dependencies
 @riverpod
 String userGreeting(UserGreetingRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   final userManager = ref.watch(userManagerProvider);
   final displayName = userManager.displayName ?? 'User';
   return 'Hello, $displayName!';
@@ -36,6 +37,7 @@ String userGreeting(UserGreetingRef ref) {
 /// Generated provider for async operations
 @riverpod
 Future<List<String>> userPinnedGames(UserPinnedGamesRef ref) async {
+  // ignore: deprecated_member_use_from_same_package
   final userManager = ref.watch(userManagerProvider);
   await Future.delayed(
       const Duration(milliseconds: 100)); // Simulate async work
@@ -46,6 +48,7 @@ Future<List<String>> userPinnedGames(UserPinnedGamesRef ref) async {
 /// Generated provider with family (parameterized)
 @riverpod
 String gameStatus(GameStatusRef ref, String gameName) {
+  // ignore: deprecated_member_use_from_same_package
   // This would normally watch some game state
   return 'Playing $gameName';
 }
@@ -127,6 +130,7 @@ class GeneratedProvidersExample extends ConsumerWidget {
 // After (generated provider):
 @riverpod
 String userDisplayName(UserDisplayNameRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   final userManager = ref.watch(userManagerProvider);
   return userManager.displayName ?? 'Anonymous';
 }
@@ -134,6 +138,7 @@ String userDisplayName(UserDisplayNameRef ref) {
 /// Example of a generated provider with complex logic
 @riverpod
 Map<String, dynamic> userStats(UserStatsRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   final userManager = ref.watch(userManagerProvider);
   final squadState = ref.watch(squadStateNotifierProvider);
 
@@ -150,6 +155,7 @@ Map<String, dynamic> userStats(UserStatsRef ref) {
 
 @riverpod
 List<String?> squadSpotsForGame(SquadSpotsForGameRef ref, String gameName) {
+  // ignore: deprecated_member_use_from_same_package
   // Tree-shakes: Only watches gameSquadSpots[gameName], not entire state
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameSquadSpots[gameName] ?? [],
@@ -157,7 +163,9 @@ List<String?> squadSpotsForGame(SquadSpotsForGameRef ref, String gameName) {
 }
 
 @riverpod
-List<Map<String, dynamic>?> spotTimersForGame(SpotTimersForGameRef ref, String gameName) {
+List<Map<String, dynamic>?> spotTimersForGame(
+    SpotTimersForGameRef ref, String gameName) {
+  // ignore: deprecated_member_use_from_same_package
   // Tree-shakes: Only watches gameSpotTimers[gameName]
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameSpotTimers[gameName] ?? [],
@@ -166,6 +174,7 @@ List<Map<String, dynamic>?> spotTimersForGame(SpotTimersForGameRef ref, String g
 
 @riverpod
 Map<String, String> statusesForGame(StatusesForGameRef ref, String gameName) {
+  // ignore: deprecated_member_use_from_same_package
   // Tree-shakes: Only watches gameStatuses[gameName]
   return ref.watch(squadStateNotifierProvider.select(
     (state) => state.gameStatuses[gameName] ?? {},
@@ -174,6 +183,7 @@ Map<String, String> statusesForGame(StatusesForGameRef ref, String gameName) {
 
 @riverpod
 bool isUserInSquad(IsUserInSquadRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   // Tree-shakes: Only watches selectedSquadId
   final selectedSquadId = ref.watch(squadStateNotifierProvider.select(
     (state) => state.selectedSquadId,
@@ -183,6 +193,7 @@ bool isUserInSquad(IsUserInSquadRef ref) {
 
 @riverpod
 int activeSquadMembersCount(ActiveSquadMembersCountRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   // Tree-shakes: Only watches squadMemberUids
   final memberUids = ref.watch(squadStateNotifierProvider.select(
     (state) => state.squadMemberUids,
@@ -193,6 +204,7 @@ int activeSquadMembersCount(ActiveSquadMembersCountRef ref) {
 /// Provider for computed squad health status
 @riverpod
 String squadHealthStatus(SquadHealthStatusRef ref) {
+  // ignore: deprecated_member_use_from_same_package
   final isInitialized = ref.watch(squadStateNotifierProvider.select(
     (state) => state.isInitialized,
   ));

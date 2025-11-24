@@ -4,10 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as p;
-import 'chat_state.dart';
 import 'chat_service.dart';
 import '../services/ai_service.dart';
 import '../providers.dart';
+import '../presentation/notifiers/chat_notifier.dart' as cn;
 import 'models/message_data.dart';
 import 'widgets/message_content.dart';
 import 'widgets/message_reactions.dart';
@@ -665,9 +665,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                       icon: Icons.reply,
                       label: 'Reply',
                       onTap: () {
-                        final chatState =
-                            p.Provider.of<ChatState>(context, listen: false);
-                        chatState.setReplyToMessage(_messageData.toMap());
+                        // Use Riverpod chat notifier instead of legacy ChatState
+                        final chatNotifier = ref.read(cn.chatNotifierProvider.notifier);
+                        chatNotifier.setReplyingToMessage(_messageData.id);
                         _dismissOverlays();
                       },
                     ),

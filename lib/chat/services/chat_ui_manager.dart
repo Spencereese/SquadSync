@@ -519,13 +519,17 @@ class ChatUIManager {
   }
 
   /// Build the reply preview widget
-  Widget buildReplyPreview(BuildContext context, ChatState chatState,
-      SquadState squadState, ChatType chatType) {
-    final replyMessage = chatState.replyToMessage!;
+  Widget buildReplyPreview(BuildContext context, dynamic chatState,
+      dynamic squadState, ChatType chatType, VoidCallback onClearReply) {
+    final replyMessage = chatState.replyToMessage;
+    if (replyMessage == null) return const SizedBox.shrink();
+
+    // Convert Message entity to Map format expected by MessageBubble
+    final messageMap = replyMessage.toJson();
 
     // Determine if the reply message is from the current user
     final currentUser = FirebaseAuth.instance.currentUser;
-    final isMe = replyMessage['senderUid'] == currentUser?.uid;
+    final isMe = replyMessage.senderUid == currentUser?.uid;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
@@ -534,15 +538,13 @@ class ChatUIManager {
           // Full-size tap detector for dismissing by tapping outside
           Positioned.fill(
             child: GestureDetector(
-              onTap: () {
-                chatState.clearReplyToMessage();
-              },
+              onTap: onClearReply,
               behavior: HitTestBehavior.translucent,
             ),
           ),
           // The actual message bubble
           MessageBubble(
-            message: replyMessage,
+            message: messageMap,
             isMe: isMe,
             showSender: !isMe, // Show sender name if not from current user
             showAvatar: !isMe, // Show avatar if not from current user
@@ -550,7 +552,7 @@ class ChatUIManager {
             showReadIndicator: false,
             onTap: () {}, // No action needed for reply preview
             onLongPress: () {}, // No action needed for reply preview
-            sendingStatus: chatState.sendingStatus,
+            sendingStatus: const {}, // Empty map for preview
             chatGroupId: null, // Not needed for preview
             chatType: chatType,
             chatService: _chatService,

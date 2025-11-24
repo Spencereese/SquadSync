@@ -392,6 +392,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             widget.chatGroupId!,
             _messageController.text,
             msg.MessageType.text,
+            replyTo: _chatState.replyToMessage?['id'],
           );
 
       // Message sent successfully
@@ -1234,13 +1235,19 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   ),
                 ),
                 // Reply preview positioned above input bar
-                // Positioned(
-                //   bottom: 80, // Position above input bar
-                //   left: 0,
-                //   right: 0,
-                //   child: _uiManager.buildReplyPreview(context,
-                //       chatState as dynamic, _squadState, widget.chatType),
-                // ),
+                if (chatState.replyToMessage != null)
+                  Positioned(
+                    bottom: 80, // Position above input bar
+                    left: 0,
+                    right: 0,
+                    child: _uiManager.buildReplyPreview(
+                      context,
+                      chatState,
+                      squadStateData, // Use the correct parameter name
+                      widget.chatType,
+                      () => ref.read(cn.chatNotifierProvider.notifier).clearReplyToMessage(),
+                    ),
+                  ),
               ],
               // Typing indicator overlay
               // if (chatState.typingUser != null &&

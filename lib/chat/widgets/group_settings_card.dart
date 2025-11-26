@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import '../../managers/user_manager.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../presentation/notifiers/user_notifier.dart';
 
-class GroupSettingsCard extends StatefulWidget {
+class GroupSettingsCard extends ConsumerWidget {
   final int spots;
   final String? selectedCircle;
   final bool alertBackups;
@@ -24,14 +24,9 @@ class GroupSettingsCard extends StatefulWidget {
   });
 
   @override
-  State<GroupSettingsCard> createState() => _GroupSettingsCardState();
-}
-
-class _GroupSettingsCardState extends State<GroupSettingsCard> {
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final userManager = Provider.of<UserManager>(context);
+    final userStateAsync = ref.watch(userNotifierProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -57,12 +52,17 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
         const SizedBox(height: 16),
 
         // Max spots selector
-        _buildSpotsSelector(theme),
+        _buildSpotsSelector(context, theme),
 
         const SizedBox(height: 16),
 
         // Circle selector
-        _buildCircleSelector(theme, userManager),
+        userStateAsync.maybeWhen(
+          data: (userState) => _buildCircleSelector(
+              theme, userState?.alertCircles ?? ['Squad', 'Friends', 'Public']),
+          orElse: () =>
+              _buildCircleSelector(theme, ['Squad', 'Friends', 'Public']),
+        ),
 
         const SizedBox(height: 16),
 
@@ -72,8 +72,8 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
     );
   }
 
-  Widget _buildSpotsSelector(ThemeData theme) {
-    final maxSpots = widget.maxSpots ?? 100;
+  Widget _buildSpotsSelector(BuildContext context, ThemeData theme) {
+    final maxSpots = this.maxSpots ?? 100;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -119,7 +119,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  widget.spots.toString(),
+                  this.spots.toString(),
                   style: TextStyle(
                     color: theme.colorScheme.onPrimaryContainer,
                     fontWeight: FontWeight.w600,
@@ -135,7 +135,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [2, 4, 6, 8].map((size) {
-              final isSelected = widget.spots == size;
+              final isSelected = this.spots == size;
               final isAvailable = size <= maxSpots;
 
               return SizedBox(
@@ -144,7 +144,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
                 child: ElevatedButton(
                   onPressed: isAvailable
                       ? () {
-                          widget.onSpotsChanged(size);
+                          this.onSpotsChanged(size);
                           HapticFeedback.lightImpact();
                         }
                       : null,
@@ -186,12 +186,12 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
             ),
             child: Slider(
-              value: widget.spots.toDouble(),
+              value: this.spots.toDouble(),
               min: 2,
               max: maxSpots.toDouble(),
               divisions: maxSpots - 2,
               onChanged: (value) {
-                widget.onSpotsChanged(value.toInt());
+                this.onSpotsChanged(value.toInt());
                 HapticFeedback.lightImpact();
               },
             ),
@@ -222,7 +222,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
     );
   }
 
-  Widget _buildCircleSelector(ThemeData theme, UserManager userManager) {
+  Widget _buildCircleSelector(ThemeData theme, List<String> alertCircles) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -262,7 +262,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
-            initialValue: widget.selectedCircle,
+            initialValue: this.selectedCircle,
             decoration: InputDecoration(
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -290,7 +290,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
               filled: true,
               fillColor: theme.colorScheme.surface,
             ),
-            items: userManager.alertCircles.map((circle) {
+            items: alertCircles.map((circle) {
               return DropdownMenuItem<String>(
                 value: circle,
                 child: Text(
@@ -302,7 +302,7 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
                 ),
               );
             }).toList(),
-            onChanged: widget.onCircleChanged,
+            onChanged: this.onCircleChanged,
             style: TextStyle(
               color: theme.colorScheme.onSurface,
               fontSize: 14,
@@ -367,9 +367,9 @@ class _GroupSettingsCardState extends State<GroupSettingsCard> {
             ),
           ),
           Switch(
-            value: widget.alertBackups,
+            value: this.alertBackups,
             onChanged: (value) {
-              widget.onAlertBackupsChanged(value);
+              this.onAlertBackupsChanged(value);
               HapticFeedback.lightImpact();
             },
             activeThumbColor: theme.colorScheme.primary,

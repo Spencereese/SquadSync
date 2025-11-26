@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/poll.dart';
 import '../services/poll_service.dart';
-import '../services/ai_service.dart';
+import '../domain/entities/message.dart' hide Poll;
 import 'poll_message_bubble.dart';
 
-class PollHistoryScreen extends StatefulWidget {
+class PollHistoryScreen extends ConsumerStatefulWidget {
   final String? chatGroupId;
   final ChatType chatType;
 
@@ -16,10 +17,10 @@ class PollHistoryScreen extends StatefulWidget {
   });
 
   @override
-  State<PollHistoryScreen> createState() => _PollHistoryScreenState();
+  ConsumerState<PollHistoryScreen> createState() => _PollHistoryScreenState();
 }
 
-class _PollHistoryScreenState extends State<PollHistoryScreen> {
+class _PollHistoryScreenState extends ConsumerState<PollHistoryScreen> {
   final PollService _pollService = PollService();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';

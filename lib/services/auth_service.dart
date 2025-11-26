@@ -25,13 +25,22 @@ class AuthService implements IAuthService {
     _authSubscription = _auth.authStateChanges().listen(onAuthStateChanged);
   }
 
-  /// Load display name from SharedPreferences or Firestore
+  /// Load display name from Firebase Auth, SharedPreferences or Firestore
   @override
   Future<String?> loadDisplayName() async {
+    final user = currentUser;
+
+    // Try to load from Firebase Auth first
+    if (user != null &&
+        user.displayName != null &&
+        user.displayName!.trim().isNotEmpty) {
+      return user.displayName!.trim();
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final prefsName = prefs.getString('yourName');
 
-    // Try to load from SharedPreferences first
+    // Try to load from SharedPreferences
     if (prefsName != null &&
         prefsName.trim().isNotEmpty &&
         prefsName != 'User') {
@@ -39,7 +48,6 @@ class AuthService implements IAuthService {
     }
 
     // Fall back to Firestore
-    final user = currentUser;
     if (user != null) {
       try {
         final userDoc = await FirebaseFirestore.instance
@@ -58,11 +66,14 @@ class AuthService implements IAuthService {
     return null;
   }
 
-  /// Save display name to both SharedPreferences and Firestore
+  /// Save display name to Firebase Auth, SharedPreferences and Firestore
   @override
   Future<void> saveDisplayName(String displayName) async {
     final user = currentUser;
     if (user == null) return;
+
+    // Save to Firebase Auth
+    await user.updateProfile(displayName: displayName);
 
     // Save to SharedPreferences
     final prefs = await SharedPreferences.getInstance();
@@ -79,34 +90,44 @@ class AuthService implements IAuthService {
     }
   }
 
-  /// Load profile image from Firestore
+  /// Load profile image from Firebase Auth or Firestore
   @override
   Future<String?> loadProfileImage() async {
     final user = currentUser;
     if (user == null) return null;
 
+    // Try to load from Firebase Auth first
+    if (user.photoURL != null && user.photoURL!.trim().isNotEmpty) {
+      return user.photoURL!.trim();
+    }
+
+    // Fall back to Firestore
     try {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
-      return userDoc.data()?['avatarUrl'];
+      return userDoc.data()?['profileImage'];
     } catch (e) {
       return null;
     }
   }
 
-  /// Save profile image to Firestore
+  /// Save profile image to Firebase Auth and Firestore
   @override
   Future<void> saveProfileImage(String? imageUrl) async {
     final user = currentUser;
     if (user == null) return;
 
+    // Save to Firebase Auth
+    await user.updateProfile(photoURL: imageUrl);
+
+    // Save to Firestore
     try {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .set({'avatarUrl': imageUrl}, SetOptions(merge: true));
+          .set({'profileImage': imageUrl}, SetOptions(merge: true));
     } catch (e) {
       // Failed to save profile image - silently handled
     }

@@ -1,24 +1,29 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
-import 'base_dialog.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../presentation/notifiers/squad_notifier.dart' as sn;
 
 /// Dialog for joining lobbies with other players
-class JoinLobbyDialog extends BaseSquadDialog {
+class JoinLobbyDialog extends ConsumerWidget {
   final String player;
-  final SquadState squadState;
 
   const JoinLobbyDialog({
     super.key,
     required this.player,
-    required this.squadState,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final visibleLobbies = squadState.getVisibleLobbies();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final squadState = ref.watch(sn.squadNotifierProvider).valueOrNull;
+    if (squadState == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final visibleLobbies =
+        squadState.gameLobbies.values.expand((l) => l).toList();
 
     return AlertDialog(
-      shape: BaseSquadDialog.dialogShape,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Text('Join Lobby with $player'),
       content: SizedBox(
         width: double.maxFinite,
@@ -39,7 +44,10 @@ class JoinLobbyDialog extends BaseSquadDialog {
                     Text('${players.length} players: ${players.join(', ')}'),
                 trailing: ElevatedButton(
                   onPressed: () {
-                    squadState.joinLobby(lobby['id']);
+                    final userId = FirebaseAuth.instance.currentUser!.uid;
+                    ref
+                        .read(sn.squadNotifierProvider.notifier)
+                        .joinSquad(lobby['id'], userId);
                     // Defer navigation to avoid _debugLocked assertion
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (Navigator.canPop(context)) {
@@ -54,22 +62,21 @@ class JoinLobbyDialog extends BaseSquadDialog {
           },
         ),
       ),
-      actions: BaseSquadDialog.dialogActions(
-        context: context,
-        actions: [
-          BaseSquadDialog.cancelButton(context),
-        ],
-      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
     );
   }
 
-  /// Static method to show the dialog (maintains compatibility)
-  static void show(BuildContext context, String player, SquadState squadState) {
+  /// Static method to show the dialog
+  static void show(BuildContext context, String player) {
     showDialog(
       context: context,
       builder: (dialogContext) => JoinLobbyDialog(
         player: player,
-        squadState: squadState,
       ),
     );
   }

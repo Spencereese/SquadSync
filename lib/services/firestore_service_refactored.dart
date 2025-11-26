@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../chat/sqlite_helper.dart';
 import 'grok_service.dart';
-import '../managers/notification_manager.dart';
+import '../managers/stubs.dart';
 
 /// Data class for group query filters
 class GroupQueryFilters {

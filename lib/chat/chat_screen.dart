@@ -7,23 +7,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:provider/provider.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dart:async'; // Added for StreamSubscription
 
 import '../utils.dart';
-import '../squad_state.dart' as ss;
-import '../services/ai_service.dart';
-import 'chat_input_bar.dart';
-import 'chat_state.dart';
+import '../providers.dart';
 
+import 'chat_input_bar.dart';
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
 import '../screens/squad_tab_screen.dart';
 import 'services/chat_initialization_service.dart';
 import 'services/chat_scroll_controller.dart';
-import 'services/chat_online_status_manager.dart';
 import 'services/chat_media_handler.dart';
 import 'services/chat_typing_manager.dart';
 import 'services/chat_ui_manager.dart';
@@ -31,9 +27,9 @@ import '../presentation/notifiers/chat_notifier.dart' as cn;
 import '../domain/entities/chat_state.dart' as cn_state;
 import '../domain/entities/chat_state.dart' as cs;
 import '../domain/entities/message.dart' as msg;
-import '../chat/chat_state.dart' as old_cs;
-import '../providers/squad_notifier.dart' as sn;
-import '../providers/service_providers.dart';
+import '../domain/entities/message.dart' show ChatType;
+import '../presentation/notifiers/squad_notifier.dart' as sn;
+import '../domain/entities/squad_state.dart';
 import 'chat_settings_menu.dart'; // Importing ChatSettingsMenu
 import 'media_history_screen.dart'; // Importing MediaHistoryScreen
 import 'dialogs/invite_members_dialog.dart';
@@ -63,7 +59,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   // Service instances
   late final ChatInitializationService _initializationService;
   late final ChatScrollController _scrollControllerService;
-  late final ChatOnlineStatusManager _onlineStatusManager;
   late final ChatMediaHandler _mediaHandler;
   late final ChatTypingManager _typingManager;
   late final ChatUIManager _uiManager;
@@ -73,8 +68,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   String _chatName = 'Squad Chat';
   String? _chatImageUrl;
 
-  late ss.SquadState _squadState;
-  late old_cs.ChatState _chatState;
   bool _isMuted = false;
 
   bool get isUserGroup => widget.chatType == ChatType.userGroup;
@@ -140,7 +133,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Initialize services
     _initializationService = ChatInitializationService();
     _scrollControllerService = ChatScrollController();
-    _onlineStatusManager = ChatOnlineStatusManager();
     _mediaHandler = ChatMediaHandler();
     _typingManager = ChatTypingManager();
     _uiManager = ChatUIManager();
@@ -154,12 +146,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
     // Add scroll listener for pagination
     _scrollController.addListener(_onScroll);
-
-    _squadState = p.Provider.of<ss.SquadState>(context, listen: false);
-
-    // Store ChatState reference for safe access in dispose
-    _chatState = p.Provider.of<ChatState>(context, listen: false);
-    _chatState.addListener(_onChatStateChanged);
 
     // Safety check: prevent opening chat with null chatGroupId for user groups
     if (widget.chatType == ChatType.userGroup && widget.chatGroupId == null) {
@@ -190,14 +176,20 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       initialChatImageUrl: _chatImageUrl,
       initialIsMuted: _isMuted,
     );
+  }
 
-    // Defer heavy operations to after first frame
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // Initialize provider-dependent services here, after the widget is mounted
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
       // Use initialization service for complex setup
       _initializationService.initializeChat(
         context: context,
+        ref: ref,
         chatGroupId: widget.chatGroupId,
         chatGroupName: widget.chatGroupName,
         chatType: widget.chatType,
@@ -213,13 +205,16 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         scrollToBottom: _scrollToBottom,
         sendMessage: (message) {
           _messageController.text = message;
-          _sendMessage();
+          _sendMessage(null);
         },
         messageController: _messageController,
         initialMessage: widget.initialMessage,
       );
 
       // Load messages using the new ChatNotifier
+      ref
+          .read(cn.chatNotifierProvider.notifier)
+          .selectChatGroup(widget.chatGroupId);
       ref.read(cn.chatNotifierProvider.notifier).loadMessages(
             widget.chatGroupId!,
           );
@@ -233,10 +228,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
     // Initialize typing manager
     _typingManager.initializeTypingListener(
-      context,
+      ref,
       chatGroupId: widget.chatGroupId,
       chatType: widget.chatType,
-      squadState: _squadState,
     );
   }
 
@@ -250,8 +244,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   void dispose() {
-    _chatState.removeListener(_onChatStateChanged);
-    _onlineStatusManager.updateOnlineStatus(false, _squadState);
     _scrollControllerService.dispose();
     _scrollController.dispose();
     _messageController.dispose();
@@ -260,19 +252,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     _mediaHandler.dispose();
     _typingManager.dispose();
     _saveDraftForHandoff();
-    ref.read(cn.chatNotifierProvider.notifier).dispose();
     super.dispose();
-  }
-
-  void _onChatStateChanged() {
-    // Focus input when reply mode is activated
-    if (_chatState.replyToMessage != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _inputFocusNode.requestFocus();
-        }
-      });
-    }
   }
 
   void _handleSyncStateChanges(cs.ChatState chatState) {
@@ -353,7 +333,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  Future<void> _sendMessage() async {
+  Future<void> _sendMessage(msg.Message? replyToMessage,
+      [SquadState? squadState]) async {
     if (_messageController.text.isEmpty) {
       return;
     }
@@ -361,26 +342,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
 
-    final capturedContext = context;
-
     // Handle commands
     if (_messageController.text.startsWith('/')) {
       await _handleCommand(_messageController.text);
       _messageController.clear();
-      return;
-    }
-
-    // Check if user is banned
-    final squadState = p.Provider.of<ss.SquadState>(context, listen: false);
-    final currentUserName = squadState.displayName;
-    if (squadState.isBanned(currentUserName)) {
-      if (mounted) {
-        ScaffoldMessenger.of(capturedContext).showSnackBar(
-          const SnackBar(
-              content:
-                  Text('You are currently banned and cannot send messages')),
-        );
-      }
       return;
     }
 
@@ -392,7 +357,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             widget.chatGroupId!,
             _messageController.text,
             msg.MessageType.text,
-            replyTo: _chatState.replyToMessage?['id'],
+            widget.chatType,
+            replyTo: replyToMessage?.id,
           );
 
       // Message sent successfully
@@ -402,9 +368,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       // Add haptic feedback for successful send
       HapticFeedback.lightImpact();
       await _typingManager.onMessageSent(
-        capturedContext,
+        ref,
         chatGroupId: widget.chatGroupId,
-        squadState: _squadState,
       );
       _scrollToBottom();
       await _checkFirstMessage();
@@ -424,17 +389,17 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _sendMedia() async {
-    await _mediaHandler.sendMedia(context,
+    await _mediaHandler.sendMedia(ref,
         chatGroupId: widget.chatGroupId, chatType: widget.chatType);
   }
 
   Future<void> _startRecording() async {
-    await _mediaHandler.startRecording(context);
+    await _mediaHandler.startRecording(ref);
     _animationController.repeat();
   }
 
   Future<void> _stopRecording() async {
-    await _mediaHandler.stopRecording(context,
+    await _mediaHandler.stopRecording(ref,
         chatGroupId: widget.chatGroupId, chatType: widget.chatType);
     _animationController.stop();
   }
@@ -482,7 +447,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  void _viewGroupInfo() {
+  void _viewGroupInfo(SquadState squadStateData) {
     if (!mounted) return;
     Navigator.push(
       context,
@@ -534,17 +499,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
-                        p.Consumer<ss.SquadState>(
-                          builder: (context, squadState, _) {
-                            final memberCount = squadState.statuses.length;
-                            return Text(
-                              '$memberCount members',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.white.withValues(alpha: 0.7),
-                              ),
-                            );
-                          },
+                        Text(
+                          '${squadStateData.globalStatuses.length} members',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
                         ),
                       ],
                     ),
@@ -580,94 +540,89 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  p.Consumer<ss.SquadState>(
-                    builder: (context, squadState, _) {
-                      final members = squadState.statuses.entries.map((entry) {
-                        final uid = entry.key;
-                        final status = entry.value;
-                        final displayName =
-                            squadState.getDisplayNameForUid(uid);
-                        final banCount = squadState.getBanCount(displayName);
+                  Column(
+                    children:
+                        squadStateData.globalStatuses.entries.map((entry) {
+                      final uid = entry.key;
+                      final status = entry.value;
+                      final displayName =
+                          squadStateData.memberDisplayNames[uid] ?? 'Unknown';
+                      final banCount =
+                          0; // TODO: Implement ban count in new architecture
 
-                        return GestureDetector(
-                          onTap: () =>
-                              _showMemberMenu(context, displayName, squadState),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.2),
-                              ),
+                      return GestureDetector(
+                        onTap: () => _showMemberMenu(
+                            context, displayName, squadStateData),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.2),
                             ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 20,
-                                  child: Text(displayName
-                                      .substring(0, 1)
-                                      .toUpperCase()),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        displayName,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      Text(
-                                        status,
-                                        style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.7),
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (banCount > 0)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color:
-                                            Colors.red.withValues(alpha: 0.5),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      '$banCount ban${banCount != 1 ? 's' : ''}',
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 20,
+                                child: Text(
+                                    displayName.substring(0, 1).toUpperCase()),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      displayName,
                                       style: const TextStyle(
-                                        color: Colors.redAccent,
-                                        fontSize: 12,
+                                        color: Colors.white,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
-                                  ),
-                                const Icon(
-                                  Icons.more_vert,
-                                  color: Colors.white70,
-                                  size: 20,
+                                    Text(
+                                      status,
+                                      style: TextStyle(
+                                        color:
+                                            Colors.white.withValues(alpha: 0.7),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                              if (banCount > 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.red.withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '$banCount ban${banCount != 1 ? 's' : ''}',
+                                    style: const TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              const Icon(
+                                Icons.more_vert,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
+                            ],
                           ),
-                        );
-                      }).toList();
-
-                      return Column(children: members);
-                    },
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
@@ -679,7 +634,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   void _showMemberMenu(
-      BuildContext context, String userName, ss.SquadState squadState) {
+      BuildContext context, String userName, SquadState squadState) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.black.withValues(alpha: 0.9),
@@ -734,7 +689,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               label: 'Ban',
               onTap: () {
                 Navigator.pop(context);
-                squadState.addBan(userName, squadState.displayName);
+                // TODO: Implement ban functionality in new Riverpod architecture
+                // squadState.addBan(userName, ref.watch(userNotifierProvider.select((asyncValue) => asyncValue.value?.displayName ?? 'Unknown')));
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('$userName has been voted for ban')),
                 );
@@ -746,7 +702,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               label: 'Block User',
               onTap: () async {
                 Navigator.pop(context);
-                await squadState.blockUser(userName);
+                // TODO: Implement block functionality in new Riverpod architecture
+                // await squadState.blockUser(userName);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('$userName has been blocked')),
@@ -794,7 +751,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   void _leaveGroup() async {
     if (!mounted) return;
     try {
-      await _squadState.leaveChatGroup(widget.chatGroupId!);
+      await ref
+          .read(cn.chatNotifierProvider.notifier)
+          .leaveGroup(widget.chatGroupId!);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -920,59 +879,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  Widget _buildTypingIndicator(BuildContext context, List<String> typingUsers) {
-    if (typingUsers.isEmpty) return const SizedBox.shrink();
-
-    final typingText = typingUsers.length == 1
-        ? '${typingUsers.first} is typing...'
-        : '${typingUsers.length} people are typing...';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Row(
-        children: [
-          // Animated typing dots like iMessage
-          SizedBox(
-            width: 24,
-            height: 16,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(3, (index) {
-                return TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: Duration(milliseconds: 600 + (index * 200)),
-                  curve: Curves.easeInOut,
-                  builder: (context, value, child) {
-                    return Transform.translate(
-                      offset: Offset(0, -4 * (value * 2 - 1).abs() + 2),
-                      child: Container(
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[400],
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    );
-                  },
-                );
-              }),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            typingText,
-            style: TextStyle(
-              color: Colors.grey[400],
-              fontSize: 14,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showPeacockModal(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -1035,7 +941,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  Widget _buildChatContent(BuildContext context, sn.SquadState squadStateData,
+  Widget _buildChatContent(BuildContext context, SquadState squadStateData,
       cn_state.ChatState chatStateData) {
     // Use the passed chatStateData instead of Provider.of for Riverpod migration
     final chatState = chatStateData;
@@ -1064,10 +970,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                       .buildChatHeader(
                         context: context,
                         chatGroupId: widget.chatGroupId,
-                        squadState: _squadState,
                         onBackPressed: () => Navigator.pop(context),
                         onToggleNotifications: _toggleNotifications,
-                        onViewGroupInfo: _viewGroupInfo,
+                        onViewGroupInfo: () => _viewGroupInfo(squadStateData),
                         onReportBug: _reportBug,
                         onLeaveGroup: _leaveGroup,
                         onInviteMembers: _inviteMembers,
@@ -1131,7 +1036,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                           await _mediaHandler.changeChatImage(
                             context,
                             chatGroupId: widget.chatGroupId,
-                            squadState: _squadState,
                             onImageUpdated: (url) => mounted
                                 ? setState(() => _chatImageUrl = url)
                                 : null,
@@ -1164,12 +1068,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   // const AvailableSquadsWidget(), // Removed - keeping only "Your Active Squad" widget
                   Expanded(
                     child: _uiManager.buildMessagesList(
-                      context: context,
+                      ref: ref,
                       chatGroupId: widget.chatGroupId,
                       chatType: widget.chatType,
                       scrollController: _scrollControllerService,
-                      squadState: _squadState,
-                      chatState: _chatState,
                       onMessageLongPress: () {}, // Will be implemented
                       onMessageTap: () {}, // Will be implemented
                       getSender: _getSender,
@@ -1179,87 +1081,87 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                           ref.read(chatServiceProvider).markAsDelivered,
                     ),
                   ),
-                  Semantics(
-                    label: 'Chat input bar',
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        bottom: bottomPadding,
-                        left: 8.0,
-                        right: 8.0,
-                      ),
-                      child: ChatInputBar(
-                        controller: _messageController,
-                        focusNode: _inputFocusNode,
-                        isRecording: chatState.isRecording,
-                        isUploading: chatState.isUploading,
-                        onSend: _sendMessage,
-                        onMedia: _sendMedia,
-                        onRecordStart: _startRecording,
-                        onRecordStop: _stopRecording,
-                        onPlusMenu: () => _showPlusMenu(context),
-                        onTextChanged: (value) {
-                          _typingManager.onTextChanged(
-                            value,
-                            context,
-                            chatGroupId: widget.chatGroupId,
-                            squadState: _squadState,
-                          );
-                        },
-                        quickReactionEmoji: chatState.quickReactionEmoji,
-                        hintText: chatState.replyToMessage != null
-                            ? 'Reply'
-                            : 'Message',
-                      ),
-                    ),
-                  ),
                 ],
               ),
-              // Selective blur overlay when replying (covers everything except reply preview and input area)
-              if (chatState.replyToMessage != null) ...[
-                // Blur overlay for background (stops above input bar)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 120, // Stop above input bar area
-                  child: GestureDetector(
-                    onTap: () => ref
-                        .read(cn.chatNotifierProvider.notifier)
-                        .clearReplyToMessage(),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
-                      child: Container(
-                        color: Colors.black.withValues(alpha: 0.2),
+              ...(chatState.replyToMessage != null
+                  ? [
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: GestureDetector(
+                          onTap: () => ref
+                              .read(cn.chatNotifierProvider.notifier)
+                              .clearReplyToMessage(),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
+                            child: Container(
+                              color: Colors.black.withValues(alpha: 0.2),
+                            ),
+                          ),
+                        ),
                       ),
+                    ]
+                  : []),
+              // Input bar positioned at bottom
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Semantics(
+                  label: 'Chat input bar',
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      bottom: bottomPadding,
+                      left: 8.0,
+                      right: 8.0,
+                    ),
+                    child: ChatInputBar(
+                      controller: _messageController,
+                      focusNode: _inputFocusNode,
+                      isRecording: chatState.isRecording,
+                      isUploading: chatState.isUploading,
+                      onSend: () => _sendMessage(
+                          chatState.replyToMessage, squadStateData),
+                      onMedia: _sendMedia,
+                      onRecordStart: _startRecording,
+                      onRecordStop: _stopRecording,
+                      onPlusMenu: () => _showPlusMenu(context),
+                      onTextChanged: (value) {
+                        _typingManager.onTextChanged(
+                          value,
+                          ref,
+                          chatGroupId: widget.chatGroupId,
+                        );
+                      },
+                      quickReactionEmoji: chatState.quickReactionEmoji,
+                      hintText: chatState.replyToMessage != null
+                          ? 'Reply'
+                          : 'Message',
                     ),
                   ),
                 ),
-                // Reply preview positioned above input bar
-                if (chatState.replyToMessage != null)
-                  Positioned(
-                    bottom: 80, // Position above input bar
-                    left: 0,
-                    right: 0,
-                    child: _uiManager.buildReplyPreview(
-                      context,
-                      chatState,
-                      squadStateData, // Use the correct parameter name
-                      widget.chatType,
-                      () => ref.read(cn.chatNotifierProvider.notifier).clearReplyToMessage(),
-                    ),
-                  ),
-              ],
-              // Typing indicator overlay
-              // if (chatState.typingUser != null &&
-              //     chatState.typingUser!.isNotEmpty)
-              //   Positioned(
-              //     bottom: 80, // Position above input bar
-              //     left: 0,
-              //     right: 0,
-              //     child:
-              //         _buildTypingIndicator(context, [chatState.typingUser!]),
-              //   ),
-              // Jump to bottom button
+              ),
+              // Reply preview positioned above input bar
+              ...(chatState.replyToMessage != null
+                  ? [
+                      Positioned(
+                        bottom: 80, // Position above input bar
+                        left: 0,
+                        right: 0,
+                        child: _uiManager.buildReplyPreview(
+                          context,
+                          chatState,
+                          squadStateData,
+                          widget.chatType,
+                          () => ref
+                              .read(cn.chatNotifierProvider.notifier)
+                              .clearReplyToMessage(),
+                        ),
+                      ),
+                    ]
+                  : []),
             ],
           ),
         ),

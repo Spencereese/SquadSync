@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
+import '../../domain/entities/squad_state.dart';
 import 'add_game_dialog.dart';
 import 'edit_game_dialog.dart';
 import 'delete_game_dialog.dart';

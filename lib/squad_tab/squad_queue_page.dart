@@ -4,7 +4,7 @@ import '../chat/chat_groups_screen.dart' as chat_groups;
 import '../screens/notifications_screen.dart';
 import '../profile_tab.dart';
 import '../app_theme.dart';
-import '../providers.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
 import 'widgets/bottom_navigation_widget.dart';
 import 'widgets/loading_screen_widget.dart';
 import 'mixins/keyboard_handler.dart';
@@ -39,7 +39,7 @@ class SquadQueuePageState extends ConsumerState<SquadQueuePage>
   }
 
   void _clearNotification(int index) {
-    ref.read(squadStateNotifierProvider.notifier).clearNotifications(index);
+    ref.read(sn.squadNotifierProvider.notifier).clearNotifications(index);
   }
 
   bool _updateNavOpacity(ScrollNotification notification) {
@@ -48,73 +48,75 @@ class SquadQueuePageState extends ConsumerState<SquadQueuePage>
 
   @override
   Widget build(BuildContext context) {
-    final squadState = ref.watch(squadStateNotifierProvider);
+    final squadAsync = ref.watch(sn.squadNotifierProvider);
     final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
-    // Show loading screen while initializing or loading initial data
-    if (!squadState.isInitialized || !squadState.isInitialDataLoaded) {
-      return const LoadingScreenWidget();
-    }
-
-    return Theme(
-      data: AppTheme.darkTheme,
-      child: Scaffold(
-        body: Stack(
-          children: [
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.only(top: 50),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'DEBUG: 14 QUEUE',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+    return squadAsync.when(
+      data: (squadState) {
+        return Theme(
+          data: AppTheme.darkTheme,
+          child: Scaffold(
+            body: Stack(
+              children: [
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    margin: const EdgeInsets.only(top: 50),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'DEBUG: 14 QUEUE',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  textAlign: TextAlign.center,
                 ),
-              ),
-            ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.black,
-                    _navigationManager.selectedIndexNotifier.value == 2
-                        ? AppTheme.primaryColor.withValues(alpha: 0.8)
-                        : AppTheme.primaryColor,
-                    if (_navigationManager.selectedIndexNotifier.value == 2)
-                      AppTheme.accentColor.withValues(alpha: 0.2),
-                  ],
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 500),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.black,
+                        _navigationManager.selectedIndexNotifier.value == 2
+                            ? AppTheme.primaryColor.withValues(alpha: 0.8)
+                            : AppTheme.primaryColor,
+                        if (_navigationManager.selectedIndexNotifier.value == 2)
+                          AppTheme.accentColor.withValues(alpha: 0.2),
+                      ],
+                    ),
+                  ),
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _updateNavOpacity,
+                    child: PageView(
+                      controller: _navigationManager.pageController,
+                      physics: const ClampingScrollPhysics(),
+                      children: _buildPages(context, isKeyboardVisible),
+                    ),
+                  ),
                 ),
-              ),
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _updateNavOpacity,
-                child: PageView(
-                  controller: _navigationManager.pageController,
-                  physics: const ClampingScrollPhysics(),
-                  children: _buildPages(context, isKeyboardVisible),
+                BottomNavigationWidget(
+                  selectedIndexNotifier:
+                      _navigationManager.selectedIndexNotifier,
+                  navOpacity: navOpacity,
+                  navBottomOffset: navBottomOffset,
+                  squadState: squadState,
+                  onTabTapped: _onTabTapped,
                 ),
-              ),
+              ],
             ),
-            BottomNavigationWidget(
-              selectedIndexNotifier: _navigationManager.selectedIndexNotifier,
-              navOpacity: navOpacity,
-              navBottomOffset: navBottomOffset,
-              squadState: squadState,
-              onTabTapped: _onTabTapped,
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
+      loading: () => const LoadingScreenWidget(),
+      error: (error, stack) => Center(child: Text('Error: $error')),
     );
   }
 

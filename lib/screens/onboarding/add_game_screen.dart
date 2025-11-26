@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../services/onboarding_service.dart';
-import '../../providers/game_notifier.dart';
+import '../../providers.dart';
 
 class AddGameScreen extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
@@ -54,7 +54,8 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
           const SizedBox(height: 16),
           Expanded(
             child: popularGames.when(
-              data: (games) => _buildGameList(games, onboardingState.value?.pinnedGames ?? []),
+              data: (games) => _buildGameList(
+                  games, onboardingState.value?.pinnedGames ?? []),
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stack) => Center(
                 child: Column(
@@ -99,7 +100,8 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
     ref.invalidate(popularGamesProvider);
   }
 
-  Widget _buildGameList(List<Map<String, dynamic>> games, List<Map<String, dynamic>> pinnedGames) {
+  Widget _buildGameList(List<Map<String, dynamic>> games,
+      List<Map<String, dynamic>> pinnedGames) {
     return ListView.builder(
       itemCount: games.length,
       itemBuilder: (context, index) {
@@ -119,7 +121,8 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
   void _togglePinGame(Map<String, dynamic> game) {
     HapticFeedback.lightImpact();
     final onboardingService = ref.read(onboardingServiceProvider.notifier);
-    final currentPinned = ref.read(onboardingServiceProvider).value?.pinnedGames ?? [];
+    final currentPinned =
+        ref.read(onboardingServiceProvider).value?.pinnedGames ?? [];
     List<Map<String, dynamic>> newPinned;
     if (currentPinned.any((g) => g['id'] == game['id'])) {
       newPinned = currentPinned.where((g) => g['id'] != game['id']).toList();

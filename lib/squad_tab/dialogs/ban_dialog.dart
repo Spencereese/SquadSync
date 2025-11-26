@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../presentation/notifiers/squad_notifier.dart';
 
 class BanDialog {
-  static void show(BuildContext context, SquadState squadState) {
+  static void show(BuildContext context, WidgetRef ref) {
     String? selectedPlayer;
     showDialog(
       context: context,
@@ -17,7 +18,9 @@ class BanDialog {
             Expanded(
               child: DropdownButtonFormField<String>(
                 decoration: const InputDecoration(labelText: 'Select Member'),
-                items: squadState.getFilteredMembers
+                items: ref
+                    .read(squadNotifierProvider.notifier)
+                    .getFilteredMembers
                     .map((player) =>
                         DropdownMenuItem(value: player, child: Text(player)))
                     .toList(),
@@ -33,7 +36,15 @@ class BanDialog {
           TextButton(
             onPressed: () {
               if (selectedPlayer != null) {
-                squadState.addBan(selectedPlayer!, squadState.displayName);
+                ref.read(squadNotifierProvider.notifier).addBan(
+                    selectedPlayer!,
+                    ref
+                            .read(squadNotifierProvider)
+                            .value
+                            ?.memberDisplayNames
+                            .values
+                            .first ??
+                        'Unknown');
                 Navigator.pop(context);
               }
             },

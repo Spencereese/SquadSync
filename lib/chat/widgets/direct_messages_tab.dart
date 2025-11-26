@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../chat_screen.dart';
-import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart';
 import '../../utils.dart';
 
 class DirectMessagesTab extends StatelessWidget {

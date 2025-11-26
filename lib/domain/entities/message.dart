@@ -73,8 +73,7 @@ class Poll with _$Poll {
     DateTime? closedAt,
   }) = _Poll;
 
-  factory Poll.fromJson(Map<String, dynamic> json) =>
-      _$PollFromJson(json);
+  factory Poll.fromJson(Map<String, dynamic> json) => _$PollFromJson(json);
 }
 
 enum MessageType {
@@ -87,4 +86,10 @@ enum MessageType {
   poll,
   aiResponse,
   system,
+}
+
+enum ChatType {
+  dm,
+  userGroup,
+  squad,
 }

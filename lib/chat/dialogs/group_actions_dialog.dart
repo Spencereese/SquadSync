@@ -4,8 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../../utils.dart';
-import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart';
 import '../../providers.dart';
+import '../../presentation/notifiers/user_notifier.dart';
+import '../../presentation/notifiers/squad_notifier.dart' as sn;
 import '../chat_screen.dart';
 
 /// Unified dialog for all group-related actions: join, create, and browse public groups
@@ -215,23 +217,31 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
 
     setState(() => _isJoining = true);
     try {
-      final squadStateNotifier =
-          ref.read(squadStateNotifierProvider.notifier) as dynamic;
+      final userNotifier = ref.read(userNotifierProvider.notifier);
 
       // Try to join as a chat group first (most common case for invite codes)
       try {
-        await squadStateNotifier.joinChatGroup(code);
-        if (mounted) {
-          Navigator.pop(context);
-          showSnackBar(context, 'Successfully joined group!');
+        final success = await userNotifier.joinGroup(code);
+        if (success) {
+          if (mounted) {
+            Navigator.pop(context);
+            showSnackBar(context, 'Successfully joined group!');
+          }
+          return;
+        } else {
+          throw Exception(
+              'Failed to join group - group may not exist or you may already be a member');
         }
-        return;
       } catch (chatGroupError) {
         debugPrint('Chat group join failed: $chatGroupError');
 
         // If chat group join fails, try squad join as fallback
         try {
-          await squadStateNotifier.joinSquad(code);
+          final currentUser = FirebaseAuth.instance.currentUser;
+          if (currentUser == null) throw Exception('User not authenticated');
+
+          final squadNotifier = ref.read(sn.squadNotifierProvider.notifier);
+          await squadNotifier.joinSquad(code, currentUser.uid);
           if (mounted) {
             Navigator.pop(context);
             showSnackBar(context, 'Successfully joined squad!');
@@ -874,12 +884,15 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
 
   @override
   Widget build(BuildContext context) {
-    final squadStateData = ref.watch(squadStateNotifierProvider);
+    final squadAsync = ref.watch(sn.squadNotifierProvider);
     final gameManager = ref.watch(gameManagerProvider);
-    // Use squad availableGames if available, otherwise fallback to gameManager
-    final availableGames = squadStateData.availableGames.isNotEmpty
-        ? squadStateData.availableGames
-        : gameManager.availableGames;
+
+    final availableGames = squadAsync.maybeWhen(
+      data: (squadState) => squadState.availableGames.isNotEmpty
+          ? squadState.availableGames
+          : gameManager.availableGames,
+      orElse: () => gameManager.availableGames,
+    );
 
     return SingleChildScrollView(
       child: Column(

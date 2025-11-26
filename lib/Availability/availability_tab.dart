@@ -3,20 +3,21 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as p;
 import 'package:squad_sync/Availability/schedule_dialog.dart';
-import 'package:squad_sync/squad_state.dart';
-import 'package:squad_sync/managers/notification_manager.dart';
-import 'package:squad_sync/managers/firestore_manager.dart';
+import 'package:squad_sync/presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/managers/stubs.dart';
+import 'package:squad_sync/domain/entities/squad_state.dart';
 
-class AvailabilityTab extends StatefulWidget {
+class AvailabilityTab extends ConsumerStatefulWidget {
   const AvailabilityTab({super.key});
 
   @override
-  _AvailabilityTabState createState() => _AvailabilityTabState();
+  ConsumerState<AvailabilityTab> createState() => _AvailabilityTabState();
 }
 
-class _AvailabilityTabState extends State<AvailabilityTab> {
+class _AvailabilityTabState extends ConsumerState<AvailabilityTab> {
   late DateTime _selectedDay;
   late DateTime _focusedDay;
 
@@ -29,7 +30,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
 
   Future<void> _scheduleAvailabilityDialog(
       BuildContext context, DateTime selectedDay) async {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = ref.read(sn.squadNotifierProvider).value!;
     final messenger = ScaffoldMessenger.of(context);
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -129,9 +130,9 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       String displayName,
       TimeOfDay? startTime,
       TimeOfDay? endTime,
-      bool recurring,
+      bool isRecurring,
       List<bool> recurringDays,
-      bool allDay,
+      bool isAllDay,
       String alertOption,
       SquadState squadState) async {
     String formatTimeOfDay(TimeOfDay? time) {
@@ -144,13 +145,13 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     final event = {
       'player': playerUid,
       'displayName': displayName,
-      'startTime': allDay ? '00:00' : formatTimeOfDay(startTime),
-      'endTime': allDay ? '23:59' : formatTimeOfDay(endTime),
+      'startTime': isAllDay ? '00:00' : formatTimeOfDay(startTime),
+      'endTime': isAllDay ? '23:59' : formatTimeOfDay(endTime),
       'date': date.toIso8601String().split('T')[0],
       'votes': 0,
-      'recurring': recurring,
-      'recurringDays': recurring ? recurringDays : [],
-      'allDay': allDay,
+      'recurring': isRecurring,
+      'recurringDays': isRecurring ? recurringDays : [],
+      'allDay': isAllDay,
       'alert': alertOption,
       'createdAt': FieldValue.serverTimestamp(),
     };
@@ -158,13 +159,13 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
     debugPrint('Adding event to Firestore schedules collection: $event');
 
     final firestoreManager =
-        Provider.of<FirestoreManager>(context, listen: false);
+        p.Provider.of<FirestoreManager>(context, listen: false);
     await firestoreManager.addScheduleEvent(event);
   }
 
   Future<void> _voteForEvent(BuildContext context, String eventId) async {
     final firestoreManager =
-        Provider.of<FirestoreManager>(context, listen: false);
+        p.Provider.of<FirestoreManager>(context, listen: false);
     await firestoreManager.voteForScheduleEvent(eventId);
   }
 
@@ -172,7 +173,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       BuildContext context, SquadState squadState) async {
     final messenger = ScaffoldMessenger.of(context);
     final firestoreManager =
-        Provider.of<FirestoreManager>(context, listen: false);
+        p.Provider.of<FirestoreManager>(context, listen: false);
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
       messenger.showSnackBar(
@@ -206,7 +207,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       final playerUid = currentUser.uid;
       final docs = await firestoreManager.getUserScheduleEvents(playerUid);
       for (var doc in docs) {
-        await firestoreManager.deleteScheduleEvent(doc.id);
+        await firestoreManager.deleteScheduleEvent(doc['id']);
       }
       messenger.showSnackBar(
         const SnackBar(content: Text('All availability cleared!')),
@@ -221,7 +222,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
   Future<void> _scheduleNotification(BuildContext context, DateTime selectedDay,
       TimeOfDay startTime, TimeOfDay endTime, String alertOption) async {
     final notificationManager =
-        Provider.of<NotificationManager>(context, listen: false);
+        p.Provider.of<NotificationManager>(context, listen: false);
     if (alertOption == 'None') return;
 
     final now = DateTime.now();
@@ -283,7 +284,7 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
       TimeOfDay endTime,
       DateTime selectedDay) async {
     final firestoreManager =
-        Provider.of<FirestoreManager>(context, listen: false);
+        p.Provider.of<FirestoreManager>(context, listen: false);
     try {
       final message = allDay
           ? '$sender invited you to be available all day on ${DateFormat.yMMMd().format(selectedDay)}'
@@ -301,8 +302,9 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SquadState>(
-      builder: (context, squadState, child) {
+    final squadStateAsync = ref.watch(sn.squadNotifierProvider);
+    return squadStateAsync.when(
+      data: (squadState) {
         final events = _mapScheduledTimes(squadState.scheduledTimes);
         return Scaffold(
           body: RefreshIndicator(
@@ -360,6 +362,12 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
           ),
         );
       },
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) => Scaffold(
+        body: Center(child: Text('Error: $error')),
+      ),
     );
   }
 
@@ -580,8 +588,9 @@ class _AvailabilityTabState extends State<AvailabilityTab> {
                     final confirmed =
                         await _confirmDelete(context, displayName);
                     if (confirmed == true) {
-                      final firestoreManager =
-                          Provider.of<FirestoreManager>(context, listen: false);
+                      final firestoreManager = p.Provider.of<FirestoreManager>(
+                          context,
+                          listen: false);
                       await firestoreManager.deleteScheduleEvent(event['id']);
                       messenger.showSnackBar(
                         const SnackBar(content: Text('Availability removed!')),

@@ -4,10 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:provider/provider.dart';
-import '../../squad_state.dart';
-import '../../services/ai_service.dart';
-import '../chat_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' as r;
+import '../../squad_state_notifier.dart';
+import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../domain/entities/message.dart';
+import '../models/message_data.dart' as md;
+import '../../domain/entities/chat_state.dart' as cn_state;
 import '../chat_service.dart';
 import '../message_bubble.dart';
 import '../models/message_data.dart';
@@ -100,7 +102,7 @@ class ChatUIManager {
   Widget buildChatHeader({
     required BuildContext context,
     required String? chatGroupId,
-    required SquadState squadState,
+    SquadState? squadState,
     required VoidCallback onBackPressed,
     required VoidCallback onToggleNotifications,
     required VoidCallback onViewGroupInfo,
@@ -204,11 +206,15 @@ class ChatUIManager {
                 ),
               ),
               // Squad button/counter
-              Consumer<SquadState>(
-                builder: (context, squadState, _) {
+              r.Consumer(
+                builder: (context, ref, _) {
+                  final squadAsync = ref.watch(sn.squadNotifierProvider);
+                  final squadState = squadAsync.value;
+                  if (squadState == null) return const SizedBox.shrink();
+
                   // Count how many squad members are currently in squad spots
                   int inSquadCount = 0;
-                  final squadMembers = squadState.squadMembers;
+                  final squadMembers = squadState.squadMemberUids;
 
                   // Check all games for squad spots occupied by squad members
                   for (final gameSpots in squadState.gameSquadSpots.values) {
@@ -277,8 +283,12 @@ class ChatUIManager {
 
   /// Build the active squad header card
   Widget buildActiveSquadHeader(BuildContext context, {String? chatGroupId}) {
-    return Consumer<SquadState>(
-      builder: (context, squadState, child) {
+    return r.Consumer(
+      builder: (context, ref, child) {
+        final squadAsync = ref.watch(sn.squadNotifierProvider);
+        final squadState = squadAsync.value;
+        if (squadState == null) return const SizedBox.shrink();
+
         final currentGame = squadState.currentGame;
         if (currentGame == null) {
           return const SizedBox.shrink();
@@ -341,12 +351,12 @@ class ChatUIManager {
 
   /// Build the messages list with StreamBuilder
   Widget buildMessagesList({
-    required BuildContext context,
+    required r.WidgetRef ref,
     required String? chatGroupId,
     required ChatType chatType,
     required ChatScrollController scrollController,
-    required SquadState squadState,
-    required ChatState chatState,
+    SquadState? squadState,
+    cn_state.ChatState? chatState,
     required VoidCallback onMessageLongPress,
     required VoidCallback onMessageTap,
     required String? Function(dynamic) getSender,
@@ -355,7 +365,7 @@ class ChatUIManager {
     required Future<void> Function(String) markAsDelivered,
   }) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _chatService.getChatMessages(context,
+      stream: _chatService.getChatMessages(ref,
           chatGroupId: chatGroupId, chatType: chatType),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -524,12 +534,29 @@ class ChatUIManager {
     final replyMessage = chatState.replyToMessage;
     if (replyMessage == null) return const SizedBox.shrink();
 
-    // Convert Message entity to Map format expected by MessageBubble
-    final messageMap = replyMessage.toJson();
+    // Create MessageData directly from Message entity
+    final displayName =
+        squadState.memberDisplayNames[replyMessage.senderId] ?? 'Unknown';
+    final messageData = MessageData(
+      id: replyMessage.id,
+      sender: displayName,
+      senderUid: replyMessage.senderId,
+      text: replyMessage.text,
+      content: replyMessage.text,
+      timestamp: replyMessage.timestamp,
+      delivered: true,
+      read: true,
+      reactions: replyMessage.reactions?.entries
+              .map((e) => {'emoji': e.key, 'count': e.value, 'users': []})
+              .toList() ??
+          [],
+      type: md.MessageType.text, // Use MessageData.MessageType
+      status: md.MessageStatus.sent,
+    );
 
     // Determine if the reply message is from the current user
     final currentUser = FirebaseAuth.instance.currentUser;
-    final isMe = replyMessage.senderUid == currentUser?.uid;
+    final isMe = replyMessage.senderId == currentUser?.uid;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
@@ -544,7 +571,7 @@ class ChatUIManager {
           ),
           // The actual message bubble
           MessageBubble(
-            message: messageMap,
+            message: messageData,
             isMe: isMe,
             showSender: !isMe, // Show sender name if not from current user
             showAvatar: !isMe, // Show avatar if not from current user
@@ -661,7 +688,7 @@ class ChatUIManager {
   void _showChatOptionsMenu({
     required BuildContext context,
     required String? chatGroupId,
-    required SquadState squadState,
+    SquadState? squadState,
     required Future<void> Function() onChangeChatName,
     required Future<void> Function() onChangeChatImage,
     required Future<void> Function() onClearChat,

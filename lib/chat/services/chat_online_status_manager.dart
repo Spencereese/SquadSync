@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import '../../squad_state.dart';
+import '../../squad_state_notifier.dart';
 
 /// Service responsible for managing user online status
 class ChatOnlineStatusManager {

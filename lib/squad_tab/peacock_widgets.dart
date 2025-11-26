@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/squad_notifier.dart';
+import '../presentation/notifiers/squad_notifier.dart';
 
 class PeacockTimerDisplay extends ConsumerStatefulWidget {
   final String player;
@@ -18,8 +18,6 @@ class PeacockTimerDisplay extends ConsumerStatefulWidget {
 
 class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
   static const Duration _totalDuration = Duration(seconds: 3600); // 1 hour
-  Duration _lastDuration = Duration.zero;
-  DateTime _lastUpdateTime = DateTime.now();
   bool _hasExpired = false;
 
   @override
@@ -27,26 +25,15 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
     super.initState();
   }
 
-  Duration _getInterpolatedDuration() {
-    final elapsed = DateTime.now().difference(_lastUpdateTime);
-    final interpolated = _lastDuration - elapsed;
-    return interpolated.isNegative ? Duration.zero : interpolated;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final timerStateAsync = ref.watch(peacockTimerStateProvider(widget.player));
+    final squadStateAsync = ref.watch(squadNotifierProvider);
 
-    // Watch the stream for interpolation updates
-    final streamAsync = ref.watch(peacockTimerStreamProvider(widget.player));
-    if (streamAsync.hasValue) {
-      _lastDuration = streamAsync.value!;
-      _lastUpdateTime = DateTime.now();
-    }
-
-    return timerStateAsync.when(
-      data: (timerData) {
-        final interpolated = _getInterpolatedDuration();
+    return squadStateAsync.when(
+      data: (squadState) {
+        final timerDuration =
+            squadState.peacockTimerStates[widget.player] ?? Duration.zero;
+        final interpolated = timerDuration;
         final progress = interpolated.inSeconds / _totalDuration.inSeconds;
 
         // Update formatted time
@@ -130,12 +117,14 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
 class PeacockWidgets {
   static Widget buildPeacockSpot(
       BuildContext context, WidgetRef ref, Function() togglePeacockMembers) {
-    final yourName = ref
-        .read(squadNotifierProvider.select((asyncValue) => asyncValue.value?.memberDisplayNames.values.firstWhere((name) => name.isNotEmpty, orElse: () => 'You') ?? 'You'));
+    final yourName = ref.read(squadNotifierProvider.select((asyncValue) =>
+        asyncValue.value?.memberDisplayNames.values
+            .firstWhere((name) => name.isNotEmpty, orElse: () => 'You') ??
+        'You'));
     final gameName = ref.read(squadNotifierProvider
         .select((asyncValue) => asyncValue.value?.currentGame?['name'] ?? ''));
-    final squadSpots = ref.read(squadNotifierProvider
-        .select((asyncValue) => asyncValue.value?.gameSquadSpots[gameName] ?? []));
+    final squadSpots = ref.read(squadNotifierProvider.select(
+        (asyncValue) => asyncValue.value?.gameSquadSpots[gameName] ?? []));
     final youAreAssigned = squadSpots.contains(yourName);
     // Placeholder for peacockTimers and peacockQueue - need to implement
 

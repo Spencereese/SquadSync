@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../utils.dart';
-import '../../providers.dart' as p;
-import '../../managers/game_manager.dart';
+import '../../presentation/notifiers/user_notifier.dart';
+import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../domain/entities/game.dart';
+import '../../presentation/notifiers/game_notifier.dart';
 import '../../widgets/async_value_widget.dart';
 
 /// Dialog for creating a new chat group
@@ -22,7 +22,7 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
   final TextEditingController _gameSearchController = TextEditingController();
   bool _isPublic = true;
   bool _isLoading = false;
-  Map<String, dynamic>? _selectedGame;
+  Game? _selectedGame;
 
   @override
   void dispose() {
@@ -41,48 +41,39 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
     setState(() => _isLoading = true);
 
     try {
-      final squadStateData = ref.watch(p.squadStateNotifierProvider);
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) return;
+      final squadAsync = ref.watch(sn.squadNotifierProvider);
+      final squadStateData = squadAsync.maybeWhen(
+        data: (state) => state,
+        orElse: () => null,
+      );
 
-      // Create group document - use user-specific or squad-specific based on context
-      DocumentReference groupRef;
-
-      if (squadStateData.selectedSquadId != null) {
-        // Squad context - create squad group
-        groupRef = FirebaseFirestore.instance
-            .collection('squads')
-            .doc(squadStateData.selectedSquadId)
-            .collection('chat_groups')
-            .doc();
-      } else {
-        // No squad - create user-specific group
-        groupRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUser.uid)
-            .collection('chat_groups')
-            .doc();
+      if (squadStateData == null) {
+        // Handle case where squad state is not available
+        return;
       }
 
-      await groupRef.set({
-        'name': groupName,
-        'isPublic': _isPublic,
-        'createdBy': currentUser.uid,
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastMessage': '',
-        'lastMessageTime': FieldValue.serverTimestamp(),
-        'memberCount': 1,
-        'members': [currentUser.uid],
-        'imageUrl': null,
-        'gameId': _selectedGame?['id'],
-      });
+      // Use UserNotifier to create the group
+      final userNotifier = ref.read(userNotifierProvider.notifier);
+      final groupId = await userNotifier.createGroup(
+        name: groupName,
+        isPublic: _isPublic,
+        gameId: _selectedGame?.igdbId?.toString(),
+        squadId: squadStateData.selectedSquadId,
+      );
+
+      if (groupId == null) {
+        if (mounted) {
+          showErrorSnackBar(context, 'Failed to create group');
+        }
+        return;
+      }
 
       if (mounted) {
         Navigator.pop(context);
         showSnackBar(context, 'Group created successfully!');
 
         // Navigate to the new group
-        _openChatGroup(groupRef.id, groupName);
+        _openChatGroup(groupId, groupName);
       }
     } catch (e) {
       if (mounted) {
@@ -109,14 +100,13 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
     );
   }
 
-  Widget _buildGameList(List<Map<String, dynamic>> games) {
+  Widget _buildGameList(List<Game> games) {
     return ListView.builder(
       itemCount: games.length,
       itemBuilder: (context, index) {
         final game = games[index];
-        return RadioListTile<Map<String, dynamic>>(
-          title:
-              Text(game['name'], style: const TextStyle(color: Colors.white)),
+        return RadioListTile<Game>(
+          title: Text(game.name, style: const TextStyle(color: Colors.white)),
           value: game,
           groupValue: _selectedGame,
           onChanged: (value) {
@@ -214,23 +204,15 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
             ),
             onChanged: (value) {
               if (value.isNotEmpty) {
-                ref
-                    .read(gameManagerProvider.notifier)
-                    .fetchGamesFromIGDB(value);
+                ref.read(gameNotifierProvider.notifier).searchGames(value);
               }
             },
           ),
           AsyncValueWidget<GameState>(
-            value: ref.watch(gameManagerProvider),
+            value: ref.watch(gameNotifierProvider),
             data: (gameState) => SizedBox(
               height: 200,
-              child: gameState.isOffline
-                  ? Banner(
-                      message: 'Using offline cache',
-                      location: BannerLocation.topEnd,
-                      child: _buildGameList(gameState.games),
-                    )
-                  : _buildGameList(gameState.games),
+              child: _buildGameList(gameState.availableGames),
             ),
             loading: () => const SizedBox(
               height: 200,
@@ -254,8 +236,8 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
                       onPressed: () {
                         HapticFeedback.lightImpact();
                         ref
-                            .read(gameManagerProvider.notifier)
-                            .fetchGamesFromIGDB(_gameSearchController.text);
+                            .read(gameNotifierProvider.notifier)
+                            .searchGames(_gameSearchController.text);
                       },
                       child: const Text('Retry'),
                     ),

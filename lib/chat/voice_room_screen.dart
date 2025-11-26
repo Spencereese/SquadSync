@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/voice_service.dart';
 import '../services/agora_config.dart';
 import '../providers.dart';
+import '../presentation/notifiers/user_notifier.dart';
 
 class VoiceRoomScreen extends ConsumerStatefulWidget {
   final String roomId;
@@ -149,6 +150,12 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
   }
 
   Widget _buildParticipantCard(VoiceParticipant participant) {
+    final userStateAsync = ref.watch(userNotifierProvider);
+    final displayName = userStateAsync.maybeWhen(
+      data: (state) => 'Unknown', // TODO: Implement proper display name lookup
+      orElse: () => 'Unknown',
+    );
+
     return Container(
       decoration: BoxDecoration(
         color: participant.isSpeaking
@@ -172,9 +179,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
                 ? Theme.of(context).colorScheme.primary
                 : Theme.of(context).colorScheme.surface,
             child: Text(
-              participant.displayName.isNotEmpty
-                  ? participant.displayName[0].toUpperCase()
-                  : '?',
+              displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 24,
@@ -187,7 +192,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen> {
 
           // Name
           Text(
-            participant.displayName,
+            displayName,
             style: TextStyle(
               color:
                   Theme.of(context).textTheme.bodyLarge?.color ?? Colors.white,

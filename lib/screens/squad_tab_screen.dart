@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:logger/logger.dart';
 import '../providers.dart';
-import '../providers/squad_notifier.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
+import '../presentation/notifiers/user_notifier.dart';
+import '../domain/entities/squad_state.dart';
 import '../squad_tab/squad_tab.dart';
 import '../app_theme.dart';
 import '../squad_tab/dialogs/pin_game_dialog.dart';
@@ -97,7 +99,7 @@ class _SquadTabScreenContentState
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         final squadManager = ref.read(squadManagerProvider);
-        final squadState = ref.read(squadNotifierProvider).value;
+        final squadState = ref.read(sn.squadNotifierProvider).value;
         if (squadState == null) return;
 
         // Check if user has a spot assigned
@@ -118,7 +120,7 @@ class _SquadTabScreenContentState
 
   @override
   Widget build(BuildContext context) {
-    final squadAsync = ref.watch(squadNotifierProvider);
+    final squadAsync = ref.watch(sn.squadNotifierProvider);
     return squadAsync.when(
       data: (squadState) {
         // If gameName is provided, show full squad management interface
@@ -149,7 +151,7 @@ class _SquadTabScreenContentState
               children: [
                 Text('Error: $error'),
                 ElevatedButton(
-                  onPressed: () => ref.invalidate(squadNotifierProvider),
+                  onPressed: () => ref.invalidate(sn.squadNotifierProvider),
                   child: const Text('Retry'),
                 ),
               ],
@@ -259,9 +261,12 @@ class _SquadTabScreenContentState
                     ),
                     Consumer(
                       builder: (context, ref, child) {
-                        final userManager = ref.watch(userManagerProvider);
-                        return _buildPinnedGamesCarousel(
-                            context, userManager.pinnedGames, ref);
+                        return ref.watch(userNotifierProvider).when(
+                              data: (userState) => _buildPinnedGamesCarousel(
+                                  context, userState?.pinnedGames ?? [], ref),
+                              loading: () => const SizedBox(),
+                              error: (e, s) => const SizedBox(),
+                            );
                       },
                     ),
 
@@ -288,7 +293,7 @@ class _SquadTabScreenContentState
                             (peacock['filled'] as List<dynamic>?) ?? [];
                         final filledNames = filledList.map((uid) {
                           return ref
-                              .read(squadStateNotifierProvider.notifier)
+                              .read(sn.squadNotifierProvider.notifier)
                               .getDisplayNameForUid(uid.toString());
                         }).toList();
                         final isOwn = hostUid == user.uid;
@@ -661,8 +666,8 @@ class _SquadTabScreenContentState
               onTap: () => _startLobbyForGame(context, game),
               onLongPress: () async {
                 // Get the userManager from the Consumer context
-                final userManager = ref.read(userManagerProvider);
-                await userManager.removePinnedGame(game['name']);
+                final userNotifier = ref.read(userNotifierProvider.notifier);
+                await userNotifier.removePinnedGame(game['name']);
                 // Show feedback that game was removed
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -739,9 +744,9 @@ class _SquadTabScreenContentState
   }
 
   void _startNewLobby(BuildContext context, WidgetRef ref) {
-    final userManager = ref.read(userManagerProvider);
+    final userState = ref.read(userNotifierProvider).value;
 
-    final pinnedGames = userManager.pinnedGames;
+    final pinnedGames = userState?.pinnedGames ?? [];
 
     if (pinnedGames.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -844,8 +849,8 @@ class _SquadTabScreenContentState
   void _startLobbyForGame(
       BuildContext context, Map<String, dynamic> game) async {
     // Update lastPlayed for this game
-    final userManager = ref.read(userManagerProvider);
-    userManager.updateGameLastPlayed(game['name']);
+    final userNotifier = ref.read(userNotifierProvider.notifier);
+    userNotifier.updateGameLastPlayed(game['name']);
 
     // Directly create a lobby instead of showing the peacock modal
     await _createQuickStartLobby(context, game);
@@ -853,7 +858,6 @@ class _SquadTabScreenContentState
 
   Future<void> _createQuickStartLobby(
       BuildContext context, Map<String, dynamic> game) async {
-    final squadState = ref.read(squadStateNotifierProvider);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -868,52 +872,21 @@ class _SquadTabScreenContentState
       return;
     }
 
-    final userManager = ref.read(userManagerProvider);
-    final selectedCircle = userManager.alertCircles.first;
+    final userState = ref.read(userNotifierProvider).value;
+    final selectedCircle =
+        'Squad'; // TODO: Implement alert circles in new architecture
 
     try {
-      // Set creator in spot 0 with 5-minute calling timer
-      final notifier = ref.read(squadStateNotifierProvider.notifier);
-      notifier.dataManager.gameSquadSpots[gameName] ??=
-          List.of(List.filled(maxSpots, null));
-      notifier.dataManager.gameSpotTimers[gameName] ??=
-          List.of(List.filled(maxSpots, null));
-
-      // Check if player is solo to determine timer duration
-      final isSoloPlayer =
-          notifier.dataManager.isPlayingSolo(squadState.displayName);
-      final timerDuration = isSoloPlayer
-          ? 3600
-          : 300; // 60 minutes for solo, 5 minutes for groups
-
-      notifier.dataManager.gameSquadSpots[gameName]![0] = '${user.uid}_calling';
-      notifier.dataManager.gameSpotTimers[gameName]![0] = {
-        'startTime': DateTime.now().millisecondsSinceEpoch,
-        'duration': timerDuration, // Dynamic duration based on solo status
-        'calling': true,
-        'peacockCreated':
-            true, // Flag to distinguish from regular calling spots
-      };
-      notifier.dataManager.globalStatuses[squadState.displayName] = 'Calling';
-
-      // Mark fields as changed for persistence
-      notifier.persistenceManager.markFieldChanged('squadSpots');
-      notifier.persistenceManager.markFieldChanged('spotTimers');
-      notifier.persistenceManager.markFieldChanged('globalStatuses');
-      notifier.uiManager.setNewSquadSpot(true, gameName);
-      await notifier.persistenceManager.updateFirestoreAsync(
-          memberDisplayNames: squadState.memberDisplayNames, force: true);
-
       // Create peacock document in Firestore for lobby visibility
       final peacockData = {
         'hostUid': user.uid,
-        'hostName': squadState.displayName,
+        'hostName': userState?.displayName ?? 'Unknown User',
         'game': {'name': gameName},
         'spots': maxSpots,
         'filled': [user.uid], // Creator auto-assigned to spot 1
         'viewers': <String>[], // Start with empty viewers list
-        'timer': Timestamp.fromDate(
-            DateTime.now().add(Duration(seconds: timerDuration))),
+        'timer':
+            Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 5))),
         'createdAt': Timestamp.now(),
         'circle': selectedCircle,
       };
@@ -922,24 +895,12 @@ class _SquadTabScreenContentState
           .collection('peacocks')
           .add(peacockData);
 
-      // Update Firestore user doc
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'peacock': {
-          'game': gameName,
-          'spots': maxSpots,
-          'timer': DateTime.now()
-              .add(const Duration(minutes: 5))
-              .millisecondsSinceEpoch,
-          'circle': selectedCircle,
-        }
-      }, SetOptions(merge: true));
-
       // Update user status to indicate they're looking for squad
-      notifier.dataManager.setStatus(user.uid, 'Looking for squad');
+      // Status updates are handled by the squad state management
 
       // Trigger notification
       final notificationManager = ref.read(notificationManagerProvider);
-      await notificationManager.showNotification(
+      notificationManager.showNotification(
         title: 'Game Lobby Created',
         body: 'Looking for $maxSpots spots in $gameName',
       );
@@ -986,8 +947,7 @@ class _SquadTabScreenContentState
       if (nextSpot < maxSpots) {
         // Call the spot to trigger timer logic
         ref
-            .read(squadStateNotifierProvider.notifier)
-            .spotManagementService
+            .read(sn.squadNotifierProvider.notifier)
             .callSpotForGame(nextSpot, gameName);
       }
     } catch (e) {
@@ -1082,13 +1042,13 @@ class _QuickJoinButtonState extends State<QuickJoinButton> {
             HapticFeedback.lightImpact();
 
             final container = ProviderScope.containerOf(context);
-            final userManager = container.read(userManagerProvider);
+            final userState = container.read(userNotifierProvider).value;
             final grokService = container.read(grokServiceProvider);
             final availabilityManager =
                 container.read(availabilityManagerProvider);
 
             // Get pinned games
-            final pinnedGames = userManager.pinnedGames;
+            final pinnedGames = userState?.pinnedGames ?? [];
 
             if (pinnedGames.isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(

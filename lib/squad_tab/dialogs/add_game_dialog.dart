@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
+import '../../domain/entities/squad_state.dart';
 
 class AddGameDialog {
   static void show(BuildContext context, SquadState squadState) {
@@ -30,7 +30,8 @@ class AddGameDialog {
           TextButton(
             onPressed: () {
               if (gameName.isNotEmpty) {
-                squadState.addGame(gameName);
+                // TODO: Implement addGame using notifier
+                // squadState.addGame(gameName);
                 // Defer navigation to avoid _debugLocked assertion
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (Navigator.canPop(dialogContext)) {

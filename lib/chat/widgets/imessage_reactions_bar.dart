@@ -2,7 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/reaction_service.dart';
-import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart';
 
 /// iMessage-style reactions bar that appears above messages
 /// Features pill-shaped blur background, horizontal swipeable emojis, and visual connector

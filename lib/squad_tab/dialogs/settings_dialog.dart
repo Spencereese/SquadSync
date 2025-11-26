@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../squad_state.dart';
-import '../../managers/squad_manager.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers.dart';
+import '../../presentation/notifiers/squad_notifier.dart';
 import 'member_management_dialog.dart';
 import 'ban_dialog.dart';
 import 'manage_games_dialog.dart';
 
 class SettingsDialog {
-  static void show(BuildContext context, SquadState squadState,
-      {String? lobbyId}) {
+  static void show(BuildContext context, WidgetRef ref, {String? lobbyId}) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -25,7 +24,7 @@ class SettingsDialog {
                 subtitle: const Text('End this lobby and remove all spots'),
                 onTap: () async {
                   Navigator.pop(context);
-                  await _closeLobby(context, lobbyId);
+                  await _closeLobby(context, ref, lobbyId);
                 },
               ),
               const Divider(),
@@ -35,7 +34,13 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.redAccent),
               title: const Text('Clear All Spots'),
               onTap: () {
-                squadState.clearAllSpots(squadState.currentGame?['name'] ?? '');
+                final squadNotifier = ref.read(squadNotifierProvider.notifier);
+                final gameName = ref
+                        .read(squadNotifierProvider)
+                        .value
+                        ?.currentGame?['name'] ??
+                    '';
+                squadNotifier.clearAllSpots(gameName);
                 Navigator.pop(context);
               },
             ),
@@ -44,7 +49,13 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.blueGrey),
               title: const Text('Reset Timers'),
               onTap: () {
-                squadState.resetTimers(squadState.currentGame?['name'] ?? '');
+                final squadNotifier = ref.read(squadNotifierProvider.notifier);
+                final gameName = ref
+                        .read(squadNotifierProvider)
+                        .value
+                        ?.currentGame?['name'] ??
+                    '';
+                squadNotifier.resetTimers(gameName);
                 Navigator.pop(context);
               },
             ),
@@ -54,7 +65,7 @@ class SettingsDialog {
               title: const Text('Manage Members'),
               onTap: () {
                 Navigator.pop(context);
-                MemberManagementDialog.show(context, squadState);
+                MemberManagementDialog.show(context, ref);
               },
             ),
             ListTile(
@@ -63,7 +74,7 @@ class SettingsDialog {
               title: const Text('Ban Member'),
               onTap: () {
                 Navigator.pop(context);
-                BanDialog.show(context, squadState);
+                BanDialog.show(context, ref);
               },
             ),
             ListTile(
@@ -71,7 +82,13 @@ class SettingsDialog {
               title: const Text('Manage Games'),
               onTap: () {
                 Navigator.pop(context);
-                ManageGamesDialog.show(context, squadState);
+                ManageGamesDialog.show(
+                    context,
+                    ref.read(squadNotifierProvider).maybeWhen(
+                          data: (state) => state,
+                          orElse: () =>
+                              throw Exception('Squad state not available'),
+                        ));
               },
             ),
           ],
@@ -85,8 +102,9 @@ class SettingsDialog {
     );
   }
 
-  static Future<void> _closeLobby(BuildContext context, String lobbyId) async {
-    final squadManager = Provider.of<SquadManager>(context, listen: false);
+  static Future<void> _closeLobby(
+      BuildContext context, WidgetRef ref, String lobbyId) async {
+    final squadManager = ref.read(squadManagerProvider);
 
     try {
       // Show confirmation dialog

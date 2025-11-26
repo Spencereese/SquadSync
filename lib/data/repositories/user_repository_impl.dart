@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:squad_sync/domain/entities/app_user.dart';
 import 'package:squad_sync/domain/repositories/user_repository.dart';
 import 'package:squad_sync/data/datasources/user_local_datasource.dart';
@@ -19,24 +20,54 @@ class UserRepositoryImpl implements UserRepository {
     final ratings = await _remoteDataSource.getUserRatings(user.uid);
     final complaints = await _remoteDataSource.getUserComplaints(user.uid);
 
+    debugPrint(
+        'UserRepository: profile loaded, userGroups: ${profile?['userGroups']?.length ?? 0}');
+
     if (profile == null) return null;
 
     return AppUser(
       uid: user.uid,
       displayName: profile['displayName'],
       profileImage: profile['profileImage'],
-      preferredModes: Map<String, String?>.from(profile['preferredModes'] ?? {}),
-      userBlocks: Map<String, Map<String, bool>>.from(profile['userBlocks'] ?? {}),
-      pinnedGames: List<Map<String, dynamic>>.from(profile['pinnedGames'] ?? []),
-      mutedGames: Set<String>.from(profile['mutedGames'] ?? []),
+      preferredModes:
+          Map<String, String?>.from(profile['preferredModes'] ?? {}),
+      userBlocks:
+          Map<String, Map<String, bool>>.from(profile['userBlocks'] ?? {}),
+      pinnedGames:
+          List<Map<String, dynamic>>.from(profile['pinnedGames'] ?? []),
+      notificationSettings:
+          Map<String, bool>.from(profile['notificationSettings'] ??
+              {
+                'pushNotifications': true,
+                'soundEnabled': true,
+                'vibrationEnabled': true,
+                'showPreviews': true,
+                'quietHoursEnabled': false,
+                'urgentAlertsOnly': false,
+                'lobbyInvites': true,
+                'friendRequests': true,
+                'gameUpdates': false,
+                'achievementAlerts': true,
+              }),
       hasRatedGame: {},
-      dailyRatings: Map<String, Map<String, int>>.from(ratings?['dailyRatings'] ?? {}),
-      allTimeRatings: Map<String, Map<String, int>>.from(ratings?['allTimeRatings'] ?? {}),
+      dailyRatings:
+          Map<String, Map<String, int>>.from(ratings?['dailyRatings'] ?? {}),
+      allTimeRatings:
+          Map<String, Map<String, int>>.from(ratings?['allTimeRatings'] ?? {}),
       currentStreaks: Map<String, int>.from(ratings?['currentStreaks'] ?? {}),
-      complaints: Map<String, Map<String, int>>.from(complaints?['complaints'] ?? {}),
+      complaints:
+          Map<String, Map<String, int>>.from(complaints?['complaints'] ?? {}),
       bans: {}, // Need to load bans separately
       dailyBanVotes: {},
       blockedUsers: [], // Derived from userBlocks
+      friends: List<String>.from(profile['friends'] ?? []),
+      alerts: List<String>.from(profile['alerts'] ?? []),
+      userGroups: List<Map<String, dynamic>>.from(profile['userGroups'] ?? []),
+      alertCircles: List<String>.from(
+          profile['alertCircles'] ?? ['Squad', 'Friends', 'Public']),
+      publicGroups:
+          List<Map<String, dynamic>>.from(profile['publicGroups'] ?? []),
+      pinnedMessages: List<String>.from(profile['pinnedMessages'] ?? []),
     );
   }
 
@@ -45,7 +76,13 @@ class UserRepositoryImpl implements UserRepository {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    // Update Firebase Auth user profile
+    await user.updateProfile(photoURL: url);
+
+    // Update Firestore user document
     await _remoteDataSource.updateUserProfile(user.uid, {'profileImage': url});
+
+    // Update local storage
     await _localDataSource.setProfileImage(url);
   }
 
@@ -54,7 +91,13 @@ class UserRepositoryImpl implements UserRepository {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    // Update Firebase Auth user profile
+    await user.updateProfile(displayName: name);
+
+    // Update Firestore user document
     await _remoteDataSource.updateUserProfile(user.uid, {'displayName': name});
+
+    // Update local storage
     await _localDataSource.setDisplayName(name);
   }
 
@@ -67,7 +110,8 @@ class UserRepositoryImpl implements UserRepository {
     currentBlocks[user.uid] ??= {};
     currentBlocks[user.uid]![userName] = true;
 
-    await _remoteDataSource.updateUserProfile(user.uid, {'userBlocks': currentBlocks});
+    await _remoteDataSource
+        .updateUserProfile(user.uid, {'userBlocks': currentBlocks});
   }
 
   @override
@@ -78,7 +122,8 @@ class UserRepositoryImpl implements UserRepository {
     final currentBlocks = await _getUserBlocks();
     currentBlocks[user.uid]?.remove(userName);
 
-    await _remoteDataSource.updateUserProfile(user.uid, {'userBlocks': currentBlocks});
+    await _remoteDataSource
+        .updateUserProfile(user.uid, {'userBlocks': currentBlocks});
   }
 
   @override
@@ -146,7 +191,8 @@ class UserRepositoryImpl implements UserRepository {
   }
 
   @override
-  Future<void> updateUserProfileCache(String uid, Map<String, dynamic> profile) async {
+  Future<void> updateUserProfileCache(
+      String uid, Map<String, dynamic> profile) async {
     // Cache management
   }
 

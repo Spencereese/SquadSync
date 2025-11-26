@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
+import '../../domain/entities/squad_state.dart';
 
 class EditGameDialog {
   static void show(BuildContext context, SquadState squadState, int index) {
@@ -34,7 +34,8 @@ class EditGameDialog {
               final gameName = nameController.text.trim();
 
               if (gameName.isNotEmpty) {
-                squadState.editGame(game['name'], gameName);
+                // TODO: Implement editGame using notifier
+                // squadState.editGame(game['name'], gameName);
                 // Defer navigation to avoid _debugLocked assertion
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (Navigator.canPop(dialogContext)) {

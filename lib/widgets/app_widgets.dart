@@ -5,8 +5,9 @@ import '../screens/squad_tab_screen.dart';
 import '../chat/chat_groups_screen.dart';
 import '../setup_screen.dart';
 import '../screens/onboarding/onboarding_flow.dart';
-import '../providers.dart';
-import '../providers/service_providers.dart';
+import '../providers.dart'; // Keep for themeProvider
+import '../providers/service_providers.dart'; // Keep for authStateProvider
+import '../presentation/notifiers/user_notifier.dart';
 
 /// ConsumerWidget for the main MaterialApp with theme support
 class SquadSyncMaterialApp extends ConsumerWidget {
@@ -60,8 +61,8 @@ class AuthWrapper extends ConsumerWidget {
           _logger.i('User authenticated: ${user.uid}');
           // User is authenticated, initialize SquadStateNotifier and show main app
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            ref.read(squadStateNotifierProvider.notifier).initialize(context);
-            ref.read(userManagerProvider).fetchPinnedGames();
+            // ref.read(sn.squadNotifierProvider.notifier).initialize(context); // Initialization is automatic in build
+            // Note: UserNotifier loads data automatically in build method
           });
           // Show onboarding wrapper that will check if onboarding is needed
           return const OnboardingWrapper();
@@ -94,21 +95,23 @@ class OnboardingWrapper extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch pinned games and fetch status to determine if onboarding is needed
-    final userManager = ref.watch(userManagerProvider);
-    final pinnedGames = userManager.pinnedGames;
-    final pinnedGamesFetched = userManager.pinnedGamesFetched;
+    // Watch user state to determine if onboarding is needed
+    final userStateAsync = ref.watch(userNotifierProvider);
 
-    // If pinned games haven't been fetched yet, show loading or main screen
-    if (!pinnedGamesFetched) {
-      return const ChatGroupsScreen(); // Default to main screen while loading
-    }
-
-    // If no pinned games after fetching, show onboarding
-    if (pinnedGames.isEmpty) {
-      return const OnboardingFlow();
-    } else {
-      return const ChatGroupsScreen();
-    }
+    return userStateAsync.when(
+      loading: () => const ChatGroupsScreen(),
+      error: (error, stack) =>
+          const ChatGroupsScreen(), // Default to main screen on error
+      data: (userState) {
+        // If no pinned games, show onboarding
+        if (userState == null) {
+          return const ChatGroupsScreen();
+        } else if (userState.pinnedGames.isEmpty) {
+          return const OnboardingFlow();
+        } else {
+          return const ChatGroupsScreen();
+        }
+      },
+    );
   }
 }

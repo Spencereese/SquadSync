@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as p;
 import 'package:squad_sync/chat/chat_screen.dart';
 import 'package:squad_sync/chat/chat_state.dart';
-import 'package:squad_sync/services/ai_service.dart';
+import 'package:squad_sync/domain/entities/message.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +31,8 @@ void main() {
       expect(find.byType(Scaffold), findsOneWidget);
     });
 
-    testWidgets('displays typing indicator when user is typing', (tester) async {
+    testWidgets('displays typing indicator when user is typing',
+        (tester) async {
       final chatState = ChatState();
       chatState.setTypingUser('TestUser');
 
@@ -97,7 +98,8 @@ void main() {
       expect(find.text('John Doe is typing...'), findsOneWidget);
     });
 
-    testWidgets('typing indicator animation parameters are correct', (tester) async {
+    testWidgets('typing indicator animation parameters are correct',
+        (tester) async {
       final chatState = ChatState();
       chatState.setTypingUser('TestUser');
 
@@ -125,7 +127,8 @@ void main() {
 
       // Check that the container has proper padding
       final Container container = tester.widget(typingContainer);
-      expect(container.padding, const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0));
+      expect(container.padding,
+          const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0));
     });
 
     testWidgets('handles different chat types', (tester) async {
@@ -224,13 +227,15 @@ void main() {
       }
 
       expect(gradientContainer, isNotNull);
-      final gradient = (gradientContainer!.decoration as BoxDecoration).gradient as LinearGradient;
+      final gradient = (gradientContainer!.decoration as BoxDecoration).gradient
+          as LinearGradient;
       expect(gradient.begin, Alignment.topCenter);
       expect(gradient.end, Alignment.bottomCenter);
       expect(gradient.colors, [Colors.black, Colors.indigo]);
     });
 
-    testWidgets('gesture detector handles tap to dismiss keyboard', (tester) async {
+    testWidgets('gesture detector handles tap to dismiss keyboard',
+        (tester) async {
       final chatState = ChatState();
 
       await tester.pumpWidget(

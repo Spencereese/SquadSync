@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 import 'package:squad_sync/domain/entities/message.dart';
@@ -22,25 +23,30 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
           'id': message.id,
           'chat_group_id': chatGroupId,
           'sender_id': message.senderId,
+          'sender_name': message.senderId, // Use senderId as fallback
           'text': message.text,
-          'timestamp': message.timestamp.toIso8601String(),
+          'timestamp_ms': message.timestamp.millisecondsSinceEpoch,
+          'content': message.text, // Duplicate for compatibility
           'message_type': message.messageType.toString(),
           'media_url': message.mediaUrl,
           'media_type': message.mediaType,
           'reactions': message.reactions != null
-              ? Map<String, dynamic>.from(message.reactions!)
+              ? jsonEncode(Map<String, dynamic>.from(message.reactions!))
               : null,
           'reply_to': message.replyTo,
-          'poll': message.poll != null ? message.poll!.toJson() : null,
+          'poll':
+              message.poll != null ? jsonEncode(message.poll!.toJson()) : null,
           'voice_note_url': message.voiceNoteUrl,
           'voice_note_duration': message.voiceNoteDuration,
           'ai_response': message.aiResponse,
           'metadata': message.metadata,
-          'is_edited': message.isEdited ?? false,
+          'is_edited': (message.isEdited ?? false) ? 1 : 0,
           'edited_at': message.editedAt?.toIso8601String(),
-          'is_deleted': message.isDeleted ?? false,
+          'is_deleted': (message.isDeleted ?? false) ? 1 : 0,
           'deleted_at': message.deletedAt?.toIso8601String(),
           'synced': 1,
+          'delivered': 1, // Assume delivered for cached messages
+          'read': 0, // Will be updated separately
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -54,39 +60,54 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
       {int limit = 50, DateTime? before}) async {
     final db = await _sqliteHelper.database;
     final whereClause = before != null
-        ? 'chat_group_id = ? AND timestamp < ?'
+        ? 'chat_group_id = ? AND timestamp_ms < ?'
         : 'chat_group_id = ?';
     final whereArgs = before != null
-        ? [chatGroupId, before.toIso8601String()]
+        ? [chatGroupId, before.millisecondsSinceEpoch]
         : [chatGroupId];
 
     final maps = await db.query(
       'messages',
       where: whereClause,
       whereArgs: whereArgs,
-      orderBy: 'timestamp DESC',
+      orderBy: 'timestamp_ms DESC',
       limit: limit,
     );
 
     return maps
+        .where((map) => map['sender_id'] != null && map['text'] != null)
         .map((map) => Message.fromJson({
               'id': map['id'],
               'senderId': map['sender_id'],
               'text': map['text'],
-              'timestamp': DateTime.parse(map['timestamp'] as String),
+              'timestamp': map['timestamp_ms'] != null
+                  ? DateTime.fromMillisecondsSinceEpoch(
+                      map['timestamp_ms'] as int)
+                  : map['timestamp'] is DateTime
+                      ? map['timestamp'] as DateTime
+                      : DateTime.parse(
+                          map['timestamp'] as String), // Fallback for old data
               'messageType': MessageType.values.firstWhere(
                 (e) => e.toString() == map['message_type'],
                 orElse: () => MessageType.text,
               ),
               'mediaUrl': map['media_url'],
               'mediaType': map['media_type'],
-              'reactions': map['reactions'] as Map<String, dynamic>?,
+              'reactions': map['reactions'] != null
+                  ? jsonDecode(map['reactions'] as String)
+                      as Map<String, dynamic>
+                  : null,
               'replyTo': map['reply_to'],
-              'poll': map['poll'] as Map<String, dynamic>?,
+              'poll': map['poll'] != null
+                  ? jsonDecode(map['poll'] as String) as Map<String, dynamic>
+                  : null,
               'voiceNoteUrl': map['voice_note_url'],
               'voiceNoteDuration': map['voice_note_duration'],
               'aiResponse': map['ai_response'],
-              'metadata': map['metadata'] as Map<String, dynamic>?,
+              'metadata': map['metadata'] != null
+                  ? jsonDecode(map['metadata'] as String)
+                      as Map<String, dynamic>
+                  : null,
               'isEdited': map['is_edited'] == 1,
               'editedAt': map['edited_at'] != null
                   ? DateTime.parse(map['edited_at'] as String)
@@ -212,20 +233,32 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
               'id': map['id'],
               'senderId': map['sender_id'],
               'text': map['text'],
-              'timestamp': DateTime.parse(map['timestamp'] as String),
+              'timestamp': map['timestamp_ms'] != null
+                  ? DateTime.fromMillisecondsSinceEpoch(
+                      map['timestamp_ms'] as int)
+                  : DateTime.parse(
+                      map['timestamp'] as String), // Fallback for old data
               'messageType': MessageType.values.firstWhere(
                 (e) => e.toString() == map['message_type'],
                 orElse: () => MessageType.text,
               ),
               'mediaUrl': map['media_url'],
               'mediaType': map['media_type'],
-              'reactions': map['reactions'] as Map<String, dynamic>?,
+              'reactions': map['reactions'] != null
+                  ? jsonDecode(map['reactions'] as String)
+                      as Map<String, dynamic>
+                  : null,
               'replyTo': map['reply_to'],
-              'poll': map['poll'] as Map<String, dynamic>?,
+              'poll': map['poll'] != null
+                  ? jsonDecode(map['poll'] as String) as Map<String, dynamic>
+                  : null,
               'voiceNoteUrl': map['voice_note_url'],
               'voiceNoteDuration': map['voice_note_duration'],
               'aiResponse': map['ai_response'],
-              'metadata': map['metadata'] as Map<String, dynamic>?,
+              'metadata': map['metadata'] != null
+                  ? jsonDecode(map['metadata'] as String)
+                      as Map<String, dynamic>
+                  : null,
               'isEdited': map['is_edited'] == 1,
               'editedAt': map['edited_at'] != null
                   ? DateTime.parse(map['edited_at'] as String)

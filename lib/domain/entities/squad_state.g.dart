@@ -101,8 +101,14 @@ _$SquadStateImpl _$$SquadStateImplFromJson(Map<String, dynamic> json) =>
           (json['peacockTimerStates'] as Map<String, dynamic>).map(
         (k, e) => MapEntry(k, Duration(microseconds: (e as num).toInt())),
       ),
-      lastSyncTimestamp: DateTime.parse(json['lastSyncTimestamp'] as String),
+      dailyRatings: (json['dailyRatings'] as Map<String, dynamic>).map(
+        (k, e) => MapEntry(k, Map<String, int>.from(e as Map)),
+      ),
+      allTimeRatings: (json['allTimeRatings'] as Map<String, dynamic>).map(
+        (k, e) => MapEntry(k, Map<String, int>.from(e as Map)),
+      ),
       analyticsMetrics: json['analyticsMetrics'] as Map<String, dynamic>,
+      lastSyncTimestamp: DateTime.parse(json['lastSyncTimestamp'] as String),
     );
 
 Map<String, dynamic> _$$SquadStateImplToJson(_$SquadStateImpl instance) =>
@@ -145,6 +151,8 @@ Map<String, dynamic> _$$SquadStateImplToJson(_$SquadStateImpl instance) =>
           instance.spotTimerStates.map((k, e) => MapEntry(k, e.inMicroseconds)),
       'peacockTimerStates': instance.peacockTimerStates
           .map((k, e) => MapEntry(k, e.inMicroseconds)),
-      'lastSyncTimestamp': instance.lastSyncTimestamp.toIso8601String(),
+      'dailyRatings': instance.dailyRatings,
+      'allTimeRatings': instance.allTimeRatings,
       'analyticsMetrics': instance.analyticsMetrics,
+      'lastSyncTimestamp': instance.lastSyncTimestamp.toIso8601String(),
     };

@@ -28,7 +28,8 @@ mixin _$AppUser {
       throw _privateConstructorUsedError;
   List<Map<String, dynamic>> get pinnedGames =>
       throw _privateConstructorUsedError;
-  Set<String> get mutedGames => throw _privateConstructorUsedError;
+  Map<String, bool> get notificationSettings =>
+      throw _privateConstructorUsedError;
   Map<String, bool> get hasRatedGame => throw _privateConstructorUsedError;
   Map<String, Map<String, int>> get dailyRatings =>
       throw _privateConstructorUsedError;
@@ -42,6 +43,14 @@ mixin _$AppUser {
   Map<String, Map<String, bool>> get dailyBanVotes =>
       throw _privateConstructorUsedError;
   List<String> get blockedUsers => throw _privateConstructorUsedError;
+  List<String> get friends => throw _privateConstructorUsedError;
+  List<String> get alerts => throw _privateConstructorUsedError;
+  List<Map<String, dynamic>> get userGroups =>
+      throw _privateConstructorUsedError;
+  List<String> get alertCircles => throw _privateConstructorUsedError;
+  List<Map<String, dynamic>> get publicGroups =>
+      throw _privateConstructorUsedError;
+  List<String> get pinnedMessages => throw _privateConstructorUsedError;
 
   /// Serializes this AppUser to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -64,7 +73,7 @@ abstract class $AppUserCopyWith<$Res> {
       Map<String, String?> preferredModes,
       Map<String, Map<String, bool>> userBlocks,
       List<Map<String, dynamic>> pinnedGames,
-      Set<String> mutedGames,
+      Map<String, bool> notificationSettings,
       Map<String, bool> hasRatedGame,
       Map<String, Map<String, int>> dailyRatings,
       Map<String, Map<String, int>> allTimeRatings,
@@ -72,7 +81,13 @@ abstract class $AppUserCopyWith<$Res> {
       Map<String, Map<String, int>> complaints,
       Map<String, List<Map<String, dynamic>>> bans,
       Map<String, Map<String, bool>> dailyBanVotes,
-      List<String> blockedUsers});
+      List<String> blockedUsers,
+      List<String> friends,
+      List<String> alerts,
+      List<Map<String, dynamic>> userGroups,
+      List<String> alertCircles,
+      List<Map<String, dynamic>> publicGroups,
+      List<String> pinnedMessages});
 }
 
 /// @nodoc
@@ -96,7 +111,7 @@ class _$AppUserCopyWithImpl<$Res, $Val extends AppUser>
     Object? preferredModes = null,
     Object? userBlocks = null,
     Object? pinnedGames = null,
-    Object? mutedGames = null,
+    Object? notificationSettings = null,
     Object? hasRatedGame = null,
     Object? dailyRatings = null,
     Object? allTimeRatings = null,
@@ -105,6 +120,12 @@ class _$AppUserCopyWithImpl<$Res, $Val extends AppUser>
     Object? bans = null,
     Object? dailyBanVotes = null,
     Object? blockedUsers = null,
+    Object? friends = null,
+    Object? alerts = null,
+    Object? userGroups = null,
+    Object? alertCircles = null,
+    Object? publicGroups = null,
+    Object? pinnedMessages = null,
   }) {
     return _then(_value.copyWith(
       uid: null == uid
@@ -131,10 +152,10 @@ class _$AppUserCopyWithImpl<$Res, $Val extends AppUser>
           ? _value.pinnedGames
           : pinnedGames // ignore: cast_nullable_to_non_nullable
               as List<Map<String, dynamic>>,
-      mutedGames: null == mutedGames
-          ? _value.mutedGames
-          : mutedGames // ignore: cast_nullable_to_non_nullable
-              as Set<String>,
+      notificationSettings: null == notificationSettings
+          ? _value.notificationSettings
+          : notificationSettings // ignore: cast_nullable_to_non_nullable
+              as Map<String, bool>,
       hasRatedGame: null == hasRatedGame
           ? _value.hasRatedGame
           : hasRatedGame // ignore: cast_nullable_to_non_nullable
@@ -167,6 +188,30 @@ class _$AppUserCopyWithImpl<$Res, $Val extends AppUser>
           ? _value.blockedUsers
           : blockedUsers // ignore: cast_nullable_to_non_nullable
               as List<String>,
+      friends: null == friends
+          ? _value.friends
+          : friends // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      alerts: null == alerts
+          ? _value.alerts
+          : alerts // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      userGroups: null == userGroups
+          ? _value.userGroups
+          : userGroups // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      alertCircles: null == alertCircles
+          ? _value.alertCircles
+          : alertCircles // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      publicGroups: null == publicGroups
+          ? _value.publicGroups
+          : publicGroups // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      pinnedMessages: null == pinnedMessages
+          ? _value.pinnedMessages
+          : pinnedMessages // ignore: cast_nullable_to_non_nullable
+              as List<String>,
     ) as $Val);
   }
 }
@@ -185,7 +230,7 @@ abstract class _$$AppUserImplCopyWith<$Res> implements $AppUserCopyWith<$Res> {
       Map<String, String?> preferredModes,
       Map<String, Map<String, bool>> userBlocks,
       List<Map<String, dynamic>> pinnedGames,
-      Set<String> mutedGames,
+      Map<String, bool> notificationSettings,
       Map<String, bool> hasRatedGame,
       Map<String, Map<String, int>> dailyRatings,
       Map<String, Map<String, int>> allTimeRatings,
@@ -193,7 +238,13 @@ abstract class _$$AppUserImplCopyWith<$Res> implements $AppUserCopyWith<$Res> {
       Map<String, Map<String, int>> complaints,
       Map<String, List<Map<String, dynamic>>> bans,
       Map<String, Map<String, bool>> dailyBanVotes,
-      List<String> blockedUsers});
+      List<String> blockedUsers,
+      List<String> friends,
+      List<String> alerts,
+      List<Map<String, dynamic>> userGroups,
+      List<String> alertCircles,
+      List<Map<String, dynamic>> publicGroups,
+      List<String> pinnedMessages});
 }
 
 /// @nodoc
@@ -215,7 +266,7 @@ class __$$AppUserImplCopyWithImpl<$Res>
     Object? preferredModes = null,
     Object? userBlocks = null,
     Object? pinnedGames = null,
-    Object? mutedGames = null,
+    Object? notificationSettings = null,
     Object? hasRatedGame = null,
     Object? dailyRatings = null,
     Object? allTimeRatings = null,
@@ -224,6 +275,12 @@ class __$$AppUserImplCopyWithImpl<$Res>
     Object? bans = null,
     Object? dailyBanVotes = null,
     Object? blockedUsers = null,
+    Object? friends = null,
+    Object? alerts = null,
+    Object? userGroups = null,
+    Object? alertCircles = null,
+    Object? publicGroups = null,
+    Object? pinnedMessages = null,
   }) {
     return _then(_$AppUserImpl(
       uid: null == uid
@@ -250,10 +307,10 @@ class __$$AppUserImplCopyWithImpl<$Res>
           ? _value._pinnedGames
           : pinnedGames // ignore: cast_nullable_to_non_nullable
               as List<Map<String, dynamic>>,
-      mutedGames: null == mutedGames
-          ? _value._mutedGames
-          : mutedGames // ignore: cast_nullable_to_non_nullable
-              as Set<String>,
+      notificationSettings: null == notificationSettings
+          ? _value._notificationSettings
+          : notificationSettings // ignore: cast_nullable_to_non_nullable
+              as Map<String, bool>,
       hasRatedGame: null == hasRatedGame
           ? _value._hasRatedGame
           : hasRatedGame // ignore: cast_nullable_to_non_nullable
@@ -286,6 +343,30 @@ class __$$AppUserImplCopyWithImpl<$Res>
           ? _value._blockedUsers
           : blockedUsers // ignore: cast_nullable_to_non_nullable
               as List<String>,
+      friends: null == friends
+          ? _value._friends
+          : friends // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      alerts: null == alerts
+          ? _value._alerts
+          : alerts // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      userGroups: null == userGroups
+          ? _value._userGroups
+          : userGroups // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      alertCircles: null == alertCircles
+          ? _value._alertCircles
+          : alertCircles // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      publicGroups: null == publicGroups
+          ? _value._publicGroups
+          : publicGroups // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      pinnedMessages: null == pinnedMessages
+          ? _value._pinnedMessages
+          : pinnedMessages // ignore: cast_nullable_to_non_nullable
+              as List<String>,
     ));
   }
 }
@@ -300,7 +381,7 @@ class _$AppUserImpl implements _AppUser {
       required final Map<String, String?> preferredModes,
       required final Map<String, Map<String, bool>> userBlocks,
       required final List<Map<String, dynamic>> pinnedGames,
-      required final Set<String> mutedGames,
+      required final Map<String, bool> notificationSettings,
       required final Map<String, bool> hasRatedGame,
       required final Map<String, Map<String, int>> dailyRatings,
       required final Map<String, Map<String, int>> allTimeRatings,
@@ -308,11 +389,17 @@ class _$AppUserImpl implements _AppUser {
       required final Map<String, Map<String, int>> complaints,
       required final Map<String, List<Map<String, dynamic>>> bans,
       required final Map<String, Map<String, bool>> dailyBanVotes,
-      required final List<String> blockedUsers})
+      required final List<String> blockedUsers,
+      required final List<String> friends,
+      required final List<String> alerts,
+      required final List<Map<String, dynamic>> userGroups,
+      required final List<String> alertCircles,
+      required final List<Map<String, dynamic>> publicGroups,
+      required final List<String> pinnedMessages})
       : _preferredModes = preferredModes,
         _userBlocks = userBlocks,
         _pinnedGames = pinnedGames,
-        _mutedGames = mutedGames,
+        _notificationSettings = notificationSettings,
         _hasRatedGame = hasRatedGame,
         _dailyRatings = dailyRatings,
         _allTimeRatings = allTimeRatings,
@@ -320,7 +407,13 @@ class _$AppUserImpl implements _AppUser {
         _complaints = complaints,
         _bans = bans,
         _dailyBanVotes = dailyBanVotes,
-        _blockedUsers = blockedUsers;
+        _blockedUsers = blockedUsers,
+        _friends = friends,
+        _alerts = alerts,
+        _userGroups = userGroups,
+        _alertCircles = alertCircles,
+        _publicGroups = publicGroups,
+        _pinnedMessages = pinnedMessages;
 
   factory _$AppUserImpl.fromJson(Map<String, dynamic> json) =>
       _$$AppUserImplFromJson(json);
@@ -355,12 +448,13 @@ class _$AppUserImpl implements _AppUser {
     return EqualUnmodifiableListView(_pinnedGames);
   }
 
-  final Set<String> _mutedGames;
+  final Map<String, bool> _notificationSettings;
   @override
-  Set<String> get mutedGames {
-    if (_mutedGames is EqualUnmodifiableSetView) return _mutedGames;
+  Map<String, bool> get notificationSettings {
+    if (_notificationSettings is EqualUnmodifiableMapView)
+      return _notificationSettings;
     // ignore: implicit_dynamic_type
-    return EqualUnmodifiableSetView(_mutedGames);
+    return EqualUnmodifiableMapView(_notificationSettings);
   }
 
   final Map<String, bool> _hasRatedGame;
@@ -427,9 +521,57 @@ class _$AppUserImpl implements _AppUser {
     return EqualUnmodifiableListView(_blockedUsers);
   }
 
+  final List<String> _friends;
+  @override
+  List<String> get friends {
+    if (_friends is EqualUnmodifiableListView) return _friends;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_friends);
+  }
+
+  final List<String> _alerts;
+  @override
+  List<String> get alerts {
+    if (_alerts is EqualUnmodifiableListView) return _alerts;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_alerts);
+  }
+
+  final List<Map<String, dynamic>> _userGroups;
+  @override
+  List<Map<String, dynamic>> get userGroups {
+    if (_userGroups is EqualUnmodifiableListView) return _userGroups;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_userGroups);
+  }
+
+  final List<String> _alertCircles;
+  @override
+  List<String> get alertCircles {
+    if (_alertCircles is EqualUnmodifiableListView) return _alertCircles;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_alertCircles);
+  }
+
+  final List<Map<String, dynamic>> _publicGroups;
+  @override
+  List<Map<String, dynamic>> get publicGroups {
+    if (_publicGroups is EqualUnmodifiableListView) return _publicGroups;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_publicGroups);
+  }
+
+  final List<String> _pinnedMessages;
+  @override
+  List<String> get pinnedMessages {
+    if (_pinnedMessages is EqualUnmodifiableListView) return _pinnedMessages;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_pinnedMessages);
+  }
+
   @override
   String toString() {
-    return 'AppUser(uid: $uid, displayName: $displayName, profileImage: $profileImage, preferredModes: $preferredModes, userBlocks: $userBlocks, pinnedGames: $pinnedGames, mutedGames: $mutedGames, hasRatedGame: $hasRatedGame, dailyRatings: $dailyRatings, allTimeRatings: $allTimeRatings, currentStreaks: $currentStreaks, complaints: $complaints, bans: $bans, dailyBanVotes: $dailyBanVotes, blockedUsers: $blockedUsers)';
+    return 'AppUser(uid: $uid, displayName: $displayName, profileImage: $profileImage, preferredModes: $preferredModes, userBlocks: $userBlocks, pinnedGames: $pinnedGames, notificationSettings: $notificationSettings, hasRatedGame: $hasRatedGame, dailyRatings: $dailyRatings, allTimeRatings: $allTimeRatings, currentStreaks: $currentStreaks, complaints: $complaints, bans: $bans, dailyBanVotes: $dailyBanVotes, blockedUsers: $blockedUsers, friends: $friends, alerts: $alerts, userGroups: $userGroups, alertCircles: $alertCircles, publicGroups: $publicGroups, pinnedMessages: $pinnedMessages)';
   }
 
   @override
@@ -449,7 +591,7 @@ class _$AppUserImpl implements _AppUser {
             const DeepCollectionEquality()
                 .equals(other._pinnedGames, _pinnedGames) &&
             const DeepCollectionEquality()
-                .equals(other._mutedGames, _mutedGames) &&
+                .equals(other._notificationSettings, _notificationSettings) &&
             const DeepCollectionEquality()
                 .equals(other._hasRatedGame, _hasRatedGame) &&
             const DeepCollectionEquality()
@@ -464,28 +606,45 @@ class _$AppUserImpl implements _AppUser {
             const DeepCollectionEquality()
                 .equals(other._dailyBanVotes, _dailyBanVotes) &&
             const DeepCollectionEquality()
-                .equals(other._blockedUsers, _blockedUsers));
+                .equals(other._blockedUsers, _blockedUsers) &&
+            const DeepCollectionEquality().equals(other._friends, _friends) &&
+            const DeepCollectionEquality().equals(other._alerts, _alerts) &&
+            const DeepCollectionEquality()
+                .equals(other._userGroups, _userGroups) &&
+            const DeepCollectionEquality()
+                .equals(other._alertCircles, _alertCircles) &&
+            const DeepCollectionEquality()
+                .equals(other._publicGroups, _publicGroups) &&
+            const DeepCollectionEquality()
+                .equals(other._pinnedMessages, _pinnedMessages));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      uid,
-      displayName,
-      profileImage,
-      const DeepCollectionEquality().hash(_preferredModes),
-      const DeepCollectionEquality().hash(_userBlocks),
-      const DeepCollectionEquality().hash(_pinnedGames),
-      const DeepCollectionEquality().hash(_mutedGames),
-      const DeepCollectionEquality().hash(_hasRatedGame),
-      const DeepCollectionEquality().hash(_dailyRatings),
-      const DeepCollectionEquality().hash(_allTimeRatings),
-      const DeepCollectionEquality().hash(_currentStreaks),
-      const DeepCollectionEquality().hash(_complaints),
-      const DeepCollectionEquality().hash(_bans),
-      const DeepCollectionEquality().hash(_dailyBanVotes),
-      const DeepCollectionEquality().hash(_blockedUsers));
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        uid,
+        displayName,
+        profileImage,
+        const DeepCollectionEquality().hash(_preferredModes),
+        const DeepCollectionEquality().hash(_userBlocks),
+        const DeepCollectionEquality().hash(_pinnedGames),
+        const DeepCollectionEquality().hash(_notificationSettings),
+        const DeepCollectionEquality().hash(_hasRatedGame),
+        const DeepCollectionEquality().hash(_dailyRatings),
+        const DeepCollectionEquality().hash(_allTimeRatings),
+        const DeepCollectionEquality().hash(_currentStreaks),
+        const DeepCollectionEquality().hash(_complaints),
+        const DeepCollectionEquality().hash(_bans),
+        const DeepCollectionEquality().hash(_dailyBanVotes),
+        const DeepCollectionEquality().hash(_blockedUsers),
+        const DeepCollectionEquality().hash(_friends),
+        const DeepCollectionEquality().hash(_alerts),
+        const DeepCollectionEquality().hash(_userGroups),
+        const DeepCollectionEquality().hash(_alertCircles),
+        const DeepCollectionEquality().hash(_publicGroups),
+        const DeepCollectionEquality().hash(_pinnedMessages)
+      ]);
 
   /// Create a copy of AppUser
   /// with the given fields replaced by the non-null parameter values.
@@ -511,7 +670,7 @@ abstract class _AppUser implements AppUser {
       required final Map<String, String?> preferredModes,
       required final Map<String, Map<String, bool>> userBlocks,
       required final List<Map<String, dynamic>> pinnedGames,
-      required final Set<String> mutedGames,
+      required final Map<String, bool> notificationSettings,
       required final Map<String, bool> hasRatedGame,
       required final Map<String, Map<String, int>> dailyRatings,
       required final Map<String, Map<String, int>> allTimeRatings,
@@ -519,7 +678,13 @@ abstract class _AppUser implements AppUser {
       required final Map<String, Map<String, int>> complaints,
       required final Map<String, List<Map<String, dynamic>>> bans,
       required final Map<String, Map<String, bool>> dailyBanVotes,
-      required final List<String> blockedUsers}) = _$AppUserImpl;
+      required final List<String> blockedUsers,
+      required final List<String> friends,
+      required final List<String> alerts,
+      required final List<Map<String, dynamic>> userGroups,
+      required final List<String> alertCircles,
+      required final List<Map<String, dynamic>> publicGroups,
+      required final List<String> pinnedMessages}) = _$AppUserImpl;
 
   factory _AppUser.fromJson(Map<String, dynamic> json) = _$AppUserImpl.fromJson;
 
@@ -536,7 +701,7 @@ abstract class _AppUser implements AppUser {
   @override
   List<Map<String, dynamic>> get pinnedGames;
   @override
-  Set<String> get mutedGames;
+  Map<String, bool> get notificationSettings;
   @override
   Map<String, bool> get hasRatedGame;
   @override
@@ -553,6 +718,18 @@ abstract class _AppUser implements AppUser {
   Map<String, Map<String, bool>> get dailyBanVotes;
   @override
   List<String> get blockedUsers;
+  @override
+  List<String> get friends;
+  @override
+  List<String> get alerts;
+  @override
+  List<Map<String, dynamic>> get userGroups;
+  @override
+  List<String> get alertCircles;
+  @override
+  List<Map<String, dynamic>> get publicGroups;
+  @override
+  List<String> get pinnedMessages;
 
   /// Create a copy of AppUser
   /// with the given fields replaced by the non-null parameter values.

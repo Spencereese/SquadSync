@@ -8,7 +8,7 @@ import '../poll_message_bubble.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
 import '../models/message_data.dart';
-import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart' hide Poll;
 import '../chat_service.dart';
 import '../message_bubble.dart';
 

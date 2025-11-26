@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../managers/squad_manager.dart';
-import '../providers.dart';
+import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../presentation/notifiers/user_notifier.dart';
 
 class AvailableSquadsWidget extends ConsumerWidget {
   const AvailableSquadsWidget({super.key});
@@ -14,76 +12,57 @@ class AvailableSquadsWidget extends ConsumerWidget {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return const SizedBox.shrink();
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('peacocks')
-          .where('timer', isGreaterThan: Timestamp.now())
-          .orderBy('timer', descending: false)
-          .limit(5)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final localRef = ref;
-        if (snapshot.hasError) {
-          return const SizedBox.shrink();
-        }
-        if (!snapshot.hasData) {
-          return const SizedBox.shrink();
-        }
+    final userStateAsync = ref.watch(userNotifierProvider);
+    final publicGroups = userStateAsync.maybeWhen(
+      data: (state) => state?.publicGroups ?? [],
+      orElse: () => <Map<String, dynamic>>[],
+    );
 
-        final availableSquads = snapshot.data!.docs.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          final maxSpots = data['spots'] ?? 4;
-          final filled = (data['filled'] as List<dynamic>?)?.length ?? 0;
-          return filled < maxSpots;
-        }).toList();
-        if (availableSquads.isEmpty) {
-          return const SizedBox.shrink();
-        }
+    if (publicGroups.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.orangeAccent.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Colors.orangeAccent.withValues(alpha: 0.3),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orangeAccent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.orangeAccent.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.group_add, color: Colors.orangeAccent, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Available Squads',
-                    style: TextStyle(
-                      color: Colors.orangeAccent,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
+              Icon(Icons.group_add, color: Colors.orangeAccent, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Available Squads',
+                style: TextStyle(
+                  color: Colors.orangeAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
-              const SizedBox(height: 8),
-              ...availableSquads
-                  .map((doc) => _buildSquadItem(context, localRef, doc)),
             ],
           ),
-        );
-      },
+          const SizedBox(height: 8),
+          ...publicGroups
+              .take(5)
+              .map((group) => _buildSquadItem(context, ref, group)),
+        ],
+      ),
     );
   }
 
   Widget _buildSquadItem(
-      BuildContext context, WidgetRef ref, DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    final gameName = data['game']?['name'] ?? 'Unknown Game';
-    final maxSpots = data['spots'] ?? 4;
-    final filled = (data['filled'] as List<dynamic>?) ?? [];
-    final currentSpots = filled.length;
+      BuildContext context, WidgetRef ref, Map<String, dynamic> data) {
+    final gameName = data['name'] ?? 'Unknown Game';
+    final maxSpots = data['maxSpots'] ?? 4;
+    final currentSpots = (data['members'] as List<dynamic>?)?.length ?? 0;
     final nextSpot = currentSpots + 1;
 
     return Padding(
@@ -101,7 +80,7 @@ class AvailableSquadsWidget extends ConsumerWidget {
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: () => _callSpot(context, ref, doc.id, data),
+            onPressed: () => _joinSquad(context, ref, data),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orangeAccent,
               foregroundColor: Colors.black,
@@ -115,39 +94,23 @@ class AvailableSquadsWidget extends ConsumerWidget {
     );
   }
 
-  Future<void> _callSpot(BuildContext context, WidgetRef ref, String peacockId,
-      Map<String, dynamic> peacockData) async {
+  Future<void> _joinSquad(BuildContext context, WidgetRef ref,
+      Map<String, dynamic> squadData) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
     try {
-      // Call the spot using SquadManager
-      final squadManager = p.Provider.of<SquadManager>(context, listen: false);
-      await squadManager.joinLobby(peacockId, currentUser.uid);
+      final code = squadData['code'] as String?;
+      if (code == null) return;
 
-      // Also call a spot for the joining user to trigger timer logic
-      final gameName = peacockData['game']?['name'] ?? 'Unknown Game';
-
-      // Find next available spot
-      final filled = List<String>.from(peacockData['filled'] ?? []);
-      final maxSpots = peacockData['spots'] ?? 4;
-      int nextSpot = 0; // Start from 0 since creator is at spot 0
-      while (filled.length > nextSpot && nextSpot < maxSpots) {
-        nextSpot++;
-      }
-
-      if (nextSpot < maxSpots) {
-        // Call the spot to trigger timer logic
-        ref
-            .read(squadStateNotifierProvider.notifier)
-            .callSpotForGame(nextSpot, gameName);
-      }
+      await ref
+          .read(sn.squadNotifierProvider.notifier)
+          .joinSquad(code, currentUser.uid);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                'Called spot in ${peacockData['game']?['name'] ?? 'squad'}!'),
+            content: Text('Joined squad ${squadData['name'] ?? 'squad'}!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -156,7 +119,7 @@ class AvailableSquadsWidget extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to call spot: $e'),
+            content: Text('Failed to join squad: $e'),
             backgroundColor: Colors.red,
           ),
         );

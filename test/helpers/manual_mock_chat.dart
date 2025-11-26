@@ -14,8 +14,8 @@ class ManualMockChatRepository extends Mock implements ChatRepository {
   dynamic exceptionToThrow;
 
   @override
-  Future<Message> sendMessage(
-      String chatGroupId, String text, MessageType messageType,
+  Future<Message> sendMessage(String chatGroupId, String text,
+      MessageType messageType, ChatType chatType,
       {String? mediaUrl,
       String? mediaType,
       String? replyTo,
@@ -27,6 +27,7 @@ class ManualMockChatRepository extends Mock implements ChatRepository {
       'chatGroupId': chatGroupId,
       'text': text,
       'messageType': messageType,
+      'chatType': chatType,
       'mediaUrl': mediaUrl,
       'mediaType': mediaType,
       'replyTo': replyTo,

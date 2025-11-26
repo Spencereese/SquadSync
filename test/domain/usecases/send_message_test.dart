@@ -23,6 +23,7 @@ void main() {
   const testChatGroupId = 'group123';
   const testText = 'Hello World';
   const testMessageType = MessageType.text;
+  const testChatType = ChatType.userGroup;
   const testMediaUrl = 'https://example.com/image.jpg';
   const testMediaType = 'image/jpeg';
   const testReplyTo = 'reply123';
@@ -41,8 +42,8 @@ void main() {
     group('Happy Path', () {
       test('should send text message successfully', () async {
         // Act
-        final result =
-            await usecase(testChatGroupId, testText, testMessageType);
+        final result = await usecase(
+            testChatGroupId, testText, testMessageType, testChatType);
 
         // Assert
         expect(mockRepository.calledMethods.contains('sendMessage'), isTrue);
@@ -60,7 +61,7 @@ void main() {
       test('should send media message successfully', () async {
         // Act
         final result = await usecase(
-            testChatGroupId, testText, MessageType.image,
+            testChatGroupId, testText, MessageType.image, testChatType,
             mediaUrl: testMediaUrl, mediaType: testMediaType);
 
         // Assert
@@ -80,7 +81,8 @@ void main() {
 
       test('should send reply message successfully', () async {
         // Act
-        final result = await usecase(testChatGroupId, testText, testMessageType,
+        final result = await usecase(
+            testChatGroupId, testText, testMessageType, testChatType,
             replyTo: testReplyTo);
 
         // Assert
@@ -97,7 +99,8 @@ void main() {
 
       test('should send poll message successfully', () async {
         // Act
-        final result = await usecase(testChatGroupId, '', MessageType.poll,
+        final result = await usecase(
+            testChatGroupId, '', MessageType.poll, testChatType,
             poll: testPoll);
 
         // Assert
@@ -113,7 +116,8 @@ void main() {
 
       test('should send voice note message successfully', () async {
         // Act
-        final result = await usecase(testChatGroupId, '', MessageType.voiceNote,
+        final result = await usecase(
+            testChatGroupId, '', MessageType.voiceNote, testChatType,
             voiceNoteUrl: testVoiceNoteUrl,
             voiceNoteDuration: testVoiceNoteDuration);
 
@@ -134,7 +138,7 @@ void main() {
       test('should send complex message with all parameters', () async {
         // Act
         final result = await usecase(
-            testChatGroupId, testText, MessageType.image,
+            testChatGroupId, testText, MessageType.image, testChatType,
             mediaUrl: testMediaUrl,
             mediaType: testMediaType,
             replyTo: testReplyTo);
@@ -167,7 +171,8 @@ void main() {
 
         // Act & Assert
         expect(
-          () => usecase(testChatGroupId, testText, testMessageType),
+          () =>
+              usecase(testChatGroupId, testText, testMessageType, testChatType),
           throwsA(exception),
         );
         expect(mockRepository.calledMethods.contains('sendMessage'), isTrue);
@@ -181,7 +186,8 @@ void main() {
 
         // Act & Assert
         expect(
-          () => usecase(testChatGroupId, testText, testMessageType),
+          () =>
+              usecase(testChatGroupId, testText, testMessageType, testChatType),
           throwsA(exception),
         );
       });
@@ -194,7 +200,8 @@ void main() {
 
         // Act & Assert
         expect(
-          () => usecase('invalid_group', testText, testMessageType),
+          () =>
+              usecase('invalid_group', testText, testMessageType, testChatType),
           throwsA(exception),
         );
       });
@@ -207,7 +214,7 @@ void main() {
 
         // Act & Assert
         expect(
-          () => usecase(testChatGroupId, '', testMessageType),
+          () => usecase(testChatGroupId, '', testMessageType, testChatType),
           throwsA(exception),
         );
       });
@@ -219,8 +226,8 @@ void main() {
         final longText = 'A' * 10000;
 
         // Act
-        final result =
-            await usecase(testChatGroupId, longText, testMessageType);
+        final result = await usecase(
+            testChatGroupId, longText, testMessageType, testChatType);
 
         // Assert
         expect(mockRepository.calledMethods.contains('sendMessage'), isTrue);
@@ -233,8 +240,8 @@ void main() {
         final specialText = 'Hello 🌍 with émojis and spëcial chärs!';
 
         // Act
-        final result =
-            await usecase(testChatGroupId, specialText, testMessageType);
+        final result = await usecase(
+            testChatGroupId, specialText, testMessageType, testChatType);
 
         // Assert
         expect(mockRepository.calledMethods.contains('sendMessage'), isTrue);
@@ -244,7 +251,7 @@ void main() {
 
       test('should handle null optional parameters', () async {
         // Act
-        await usecase(testChatGroupId, testText, testMessageType);
+        await usecase(testChatGroupId, testText, testMessageType, testChatType);
 
         // Assert
         expect(mockRepository.calledMethods.contains('sendMessage'), isTrue);
@@ -265,7 +272,8 @@ void main() {
         const gameChatGroupId = 'game_cod_chat';
 
         // Act
-        await usecase(gameChatGroupId, 'Let\'s coordinate!', testMessageType);
+        await usecase(gameChatGroupId, 'Let\'s coordinate!', testMessageType,
+            testChatType);
 
         // Assert
         expect(mockRepository.calledMethods.contains('sendMessage'), isTrue);
@@ -277,7 +285,8 @@ void main() {
 
       test('should handle squad coordination messages', () async {
         // Act
-        await usecase(testChatGroupId, 'Squad up at 8 PM!', testMessageType);
+        await usecase(testChatGroupId, 'Squad up at 8 PM!', testMessageType,
+            testChatType);
 
         // Assert
         expect(mockRepository.calledMethods.contains('sendMessage'), isTrue);
@@ -287,8 +296,8 @@ void main() {
 
       test('should handle media sharing for game strategies', () async {
         // Act
-        await usecase(
-            testChatGroupId, 'Check this strategy:', MessageType.image,
+        await usecase(testChatGroupId, 'Check this strategy:',
+            MessageType.image, testChatType,
             mediaUrl: 'https://example.com/strategy.jpg',
             mediaType: 'image/jpeg');
 

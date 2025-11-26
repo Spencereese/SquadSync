@@ -7,7 +7,18 @@ class SendMessage {
   SendMessage(this._repository);
 
   Future<Message> call(String chatGroupId, String text, MessageType messageType,
-      {String? mediaUrl, String? mediaType, String? replyTo, Poll? poll, String? voiceNoteUrl, int? voiceNoteDuration}) =>
-      _repository.sendMessage(chatGroupId, text, messageType,
-          mediaUrl: mediaUrl, mediaType: mediaType, replyTo: replyTo, poll: poll, voiceNoteUrl: voiceNoteUrl, voiceNoteDuration: voiceNoteDuration);
+          ChatType chatType,
+          {String? mediaUrl,
+          String? mediaType,
+          String? replyTo,
+          Poll? poll,
+          String? voiceNoteUrl,
+          int? voiceNoteDuration}) =>
+      _repository.sendMessage(chatGroupId, text, messageType, chatType,
+          mediaUrl: mediaUrl,
+          mediaType: mediaType,
+          replyTo: replyTo,
+          poll: poll,
+          voiceNoteUrl: voiceNoteUrl,
+          voiceNoteDuration: voiceNoteDuration);
 }

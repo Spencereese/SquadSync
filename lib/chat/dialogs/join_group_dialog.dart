@@ -2,20 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_code_scanner/qr_code_scanner.dart';
 import '../../utils.dart';
-import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart';
+import '../../presentation/notifiers/user_notifier.dart';
 import '../chat_screen.dart';
 
 /// Enhanced dialog for joining groups via codes, links, or QR scanning
-class JoinGroupDialog extends StatefulWidget {
+class JoinGroupDialog extends ConsumerStatefulWidget {
   const JoinGroupDialog({super.key});
 
   @override
-  State<JoinGroupDialog> createState() => _JoinGroupDialogState();
+  ConsumerState<JoinGroupDialog> createState() => _JoinGroupDialogState();
 }
 
-class _JoinGroupDialogState extends State<JoinGroupDialog>
+class _JoinGroupDialogState extends ConsumerState<JoinGroupDialog>
     with TickerProviderStateMixin {
   final TextEditingController _codeController = TextEditingController();
   final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
@@ -135,7 +137,7 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
         }
       }
 
-      // Get group details
+      // Get group details for navigation
       final groupDoc = await FirebaseFirestore.instance
           .collection('chat_groups')
           .doc(groupId)
@@ -150,50 +152,20 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
       }
 
       final groupData = groupDoc.data()!;
-      final isPrivate = groupData['isPrivate'] ?? false;
 
-      // Check if user is already a member
-      final members = List<String>.from(groupData['members'] ?? []);
-      if (members.contains(currentUser.uid)) {
+      // Use UserNotifier to join the group
+      final userNotifier = ref.read(userNotifierProvider.notifier);
+      final success =
+          await userNotifier.joinGroup(groupId, inviteCode: inviteCode);
+
+      if (!success) {
         if (mounted) {
-          showSnackBar(context, 'You are already a member of this group');
+          showSnackBar(context,
+              'Failed to join group. You may already be a member or this is a private group requiring an invite code.');
         }
         setState(() => _isLoading = false);
         return;
       }
-
-      // For private groups, require invite code
-      if (isPrivate && inviteCode == null) {
-        if (mounted) {
-          showSnackBar(
-              context, 'This is a private group. An invite code is required.');
-        }
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      // Add user to group
-      await FirebaseFirestore.instance
-          .collection('chat_groups')
-          .doc(groupId)
-          .update({
-        'members': FieldValue.arrayUnion([currentUser.uid]),
-        'memberCount': FieldValue.increment(1),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Update invite usage if code was used
-      if (inviteCode != null) {
-        await _incrementInviteUsage(groupId, inviteCode);
-      }
-
-      // Add group to user's groups list
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.uid)
-          .update({
-        'chatGroups': FieldValue.arrayUnion([groupId]),
-      });
 
       if (mounted) {
         showSnackBar(context, 'Successfully joined ${groupData['name']}!');
@@ -239,21 +211,6 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
     } catch (e) {
       debugPrint('Error validating invite code: $e');
       return false;
-    }
-  }
-
-  Future<void> _incrementInviteUsage(String groupId, String inviteCode) async {
-    try {
-      await FirebaseFirestore.instance
-          .collection('chat_groups')
-          .doc(groupId)
-          .collection('invites')
-          .doc(inviteCode)
-          .update({
-        'uses': FieldValue.increment(1),
-      });
-    } catch (e) {
-      debugPrint('Error incrementing invite usage: $e');
     }
   }
 
@@ -585,65 +542,85 @@ class _JoinGroupDialogState extends State<JoinGroupDialog>
   }
 
   Widget _buildBrowseGroupsTab() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('chat_groups')
-          .where('isPublic', isEqualTo: true)
-          .orderBy('memberCount', descending: true)
-          .limit(20)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              'Error loading groups: ${snapshot.error}',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          );
-        }
+    final userGroupsAsync = ref.watch(userNotifierProvider);
 
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    return userGroupsAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Text(
+          'Error loading user data: $error',
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      ),
+      data: (userState) {
+        final userGroupIds = (userState?.userGroups ?? [])
+            .map((group) => group['id'] as String?)
+            .whereType<String>()
+            .toSet();
 
-        final groups = snapshot.data?.docs ?? [];
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('chat_groups')
+              .where('isPublic', isEqualTo: true)
+              .orderBy('memberCount', descending: true)
+              .limit(20)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Error loading groups: ${snapshot.error}',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              );
+            }
 
-        if (groups.isEmpty) {
-          return Center(
-            child: Text(
-              'No public groups available',
-              style: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.6)),
-            ),
-          );
-        }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-        return ListView.builder(
-          itemCount: groups.length,
-          itemBuilder: (context, index) {
-            final group = groups[index].data() as Map<String, dynamic>;
-            final groupId = groups[index].id;
+            final groups = snapshot.data?.docs ?? [];
 
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundImage: group['imageUrl'] != null
-                    ? NetworkImage(group['imageUrl'])
-                    : null,
-                child: group['imageUrl'] == null
-                    ? Text(group['name']?.isNotEmpty == true
-                        ? group['name'][0].toUpperCase()
-                        : '?')
-                    : null,
-              ),
-              title: Text(group['name'] ?? 'Unnamed Group'),
-              subtitle: Text('${group['memberCount'] ?? 0} members'),
-              trailing: ElevatedButton(
-                onPressed: () => _joinGroup(groupId, null),
-                child: const Text('Join'),
-              ),
+            if (groups.isEmpty) {
+              return Center(
+                child: Text(
+                  'No public groups available',
+                  style: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.6)),
+                ),
+              );
+            }
+
+            return ListView.builder(
+              itemCount: groups.length,
+              itemBuilder: (context, index) {
+                final group = groups[index].data() as Map<String, dynamic>;
+                final groupId = groups[index].id;
+                final isJoined = userGroupIds.contains(groupId);
+
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: group['imageUrl'] != null
+                        ? NetworkImage(group['imageUrl'])
+                        : null,
+                    child: group['imageUrl'] == null
+                        ? Text(group['name']?.isNotEmpty == true
+                            ? group['name'][0].toUpperCase()
+                            : '?')
+                        : null,
+                  ),
+                  title: Text(group['name'] ?? 'Unnamed Group'),
+                  subtitle: Text('${group['memberCount'] ?? 0} members'),
+                  trailing: ElevatedButton(
+                    onPressed:
+                        isJoined ? null : () => _joinGroup(groupId, null),
+                    child: Text(isJoined ? 'Joined' : 'Join'),
+                  ),
+                );
+              },
             );
           },
         );

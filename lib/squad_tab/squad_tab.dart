@@ -4,12 +4,10 @@ import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../squad_state.dart';
-import '../managers/game_manager.dart' as gm;
-import '../managers/squad_manager.dart';
-import '../managers/user_manager.dart';
-import '../managers/availability_manager.dart';
+import '../managers/stubs.dart';
+import '../presentation/notifiers/user_notifier.dart';
 import '../providers.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'squad_dialogs.dart';
@@ -39,48 +37,58 @@ class MembersSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Use provided members list (computed based on circle), otherwise fall back to squad members
-    final squadState = ref.watch(squadStateNotifierProvider);
-    final membersToShow = chatGroupMembers.isNotEmpty
-        ? chatGroupMembers
-        : squadState.squadMemberUids;
+    return ref.watch(sn.squadNotifierProvider).when(
+          data: (squadState) {
+            // Use provided members list (computed based on circle), otherwise fall back to squad members
+            final membersToShow = chatGroupMembers.isNotEmpty
+                ? chatGroupMembers
+                : squadState.squadMemberUids;
 
-    if (membersToShow.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text('No members yet', style: TextStyle(color: Colors.grey)),
-        ),
-      );
-    } else {
-      return SliverToBoxAdapter(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: Colors.grey[900],
+            if (membersToShow.isEmpty) {
+              return const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text('No members yet',
+                      style: TextStyle(color: Colors.grey)),
+                ),
+              );
+            } else {
+              return SliverToBoxAdapter(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.grey[900],
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: membersToShow.length,
+                    itemBuilder: (context, index) {
+                      final player = membersToShow[index];
+                      return MemberWidgets.buildMemberCard(context, ref, player,
+                          showBlockDialog, showComplaintDialog,
+                          circle: circle, friends: friends);
+                    },
+                  ),
+                ),
+              );
+            }
+          },
+          loading: () => const SliverToBoxAdapter(
+            child: Center(child: CircularProgressIndicator()),
           ),
-          child: ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: membersToShow.length,
-            itemBuilder: (context, index) {
-              final player = membersToShow[index];
-              return MemberWidgets.buildMemberCard(
-                  context, ref, player, showBlockDialog, showComplaintDialog,
-                  circle: circle, friends: friends);
-            },
+          error: (error, stack) => SliverToBoxAdapter(
+            child: Center(child: Text('Error: $error')),
           ),
-        ),
-      );
-    }
+        );
   }
 }
 
 class ClaimSpotFAB extends StatelessWidget {
   final String? lobbyId;
-  final Function(BuildContext, SquadState) callSpot;
-  final Function(BuildContext, SquadState) lockSpot;
+  final Function(BuildContext) callSpot;
+  final Function(BuildContext) lockSpot;
 
   const ClaimSpotFAB({
     super.key,
@@ -121,16 +129,14 @@ class ClaimSpotFAB extends StatelessWidget {
           final status = userSpot['status'];
           if (status == 'called') {
             return FloatingActionButton.extended(
-              onPressed: () => lockSpot(
-                  context, p.Provider.of<SquadState>(context, listen: false)),
+              onPressed: () => lockSpot(context),
               backgroundColor: Colors.yellowAccent,
               icon: const Icon(Icons.lock),
               label: const Text('Lock Spot'),
             );
           } else if (status == 'ready') {
             return FloatingActionButton.extended(
-              onPressed: () => callSpot(
-                  context, p.Provider.of<SquadState>(context, listen: false)),
+              onPressed: () => callSpot(context),
               backgroundColor: Colors.orangeAccent,
               icon: const Icon(Icons.call),
               label: const Text('Call Spot'),
@@ -192,71 +198,78 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _currentContext = context;
-    final squadState =
-        p.Provider.of<SquadState>(_currentContext, listen: false);
-    if (squadState.context == null) {
-      squadState.initialize();
-    }
 
     // Set currentGame if gameName is provided but currentGame is not set or doesn't match
     if (widget.game != null) {
       // If we have the full game object, use it directly
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        squadState.currentGame = widget.game;
+        ref.read(sn.squadNotifierProvider.notifier).setCurrentGame(widget.game);
       });
     } else if (widget.gameName != null) {
-      final userManager =
-          p.Provider.of<UserManager>(_currentContext, listen: false);
-      if (squadState.currentGame == null ||
-          squadState.currentGame!['name'] != widget.gameName) {
+      final squadStateAsync = ref.read(sn.squadNotifierProvider);
+      final currentGame = squadStateAsync.maybeWhen(
+        data: (state) => state.currentGame,
+        orElse: () => null,
+      );
+      if (currentGame == null || currentGame['name'] != widget.gameName) {
         // First, try to find the game in pinned games (most likely source for quick start)
+        final userStateAsync = ref.read(userNotifierProvider);
+        final pinnedGames = userStateAsync.maybeWhen(
+          data: (userState) => userState?.pinnedGames ?? [],
+          orElse: () => [],
+        );
         Map<String, dynamic>? game =
-            userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
+            pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
                   (g) => g?['name'] == widget.gameName,
                   orElse: () => null,
                 );
 
         // If not found, try case-insensitive match in pinned games
-        game ??= userManager.pinnedGames
-            .cast<Map<String, dynamic>?>()
-            .firstWhere(
+        game ??= pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
               (g) =>
                   g?['name']?.toLowerCase() == widget.gameName?.toLowerCase(),
               orElse: () => null,
             );
 
         // If still not found, try partial match in pinned games
-        game ??=
-            userManager.pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
-                  (g) =>
-                      g?['name']
-                          ?.toLowerCase()
-                          .contains(widget.gameName!.toLowerCase()) ==
-                      true,
-                  orElse: () => null,
-                );
+        game ??= pinnedGames.cast<Map<String, dynamic>?>().firstWhere(
+              (g) =>
+                  g?['name']
+                      ?.toLowerCase()
+                      .contains(widget.gameName!.toLowerCase()) ==
+                  true,
+              orElse: () => null,
+            );
 
         // If still not found, search for the game asynchronously
         if (game == null) {
           // Trigger async search without awaiting
           ref
-              .read(gm.gameManagerProvider.notifier)
+              .read(gameManagerProvider)
               .fetchGamesFromIGDB(widget.gameName!)
               .then((searchResults) {
             if (searchResults.isNotEmpty && mounted) {
-              final squadState =
-                  p.Provider.of<SquadState>(_currentContext, listen: false);
+              final squadStateAsync = ref.read(sn.squadNotifierProvider);
+              final currentGame = squadStateAsync.maybeWhen(
+                data: (state) => state.currentGame,
+                orElse: () => null,
+              );
               // Only update if currentGame is still the basic fallback (has empty summary)
-              if (squadState.currentGame?['summary'] == '' &&
-                  squadState.currentGame?['name'] == widget.gameName) {
+              if (currentGame?['summary'] == '' &&
+                  currentGame?['name'] == widget.gameName) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  squadState.currentGame = searchResults.first;
+                  ref
+                      .read(sn.squadNotifierProvider.notifier)
+                      .setCurrentGame(searchResults.first);
                 });
               }
             }
           }).catchError((e) {
             print('Error searching for game ${widget.gameName}: $e');
           });
+        } else {
+          // Set the found game
+          ref.read(sn.squadNotifierProvider.notifier).setCurrentGame(game);
         }
 
         // Use found game or create fallback
@@ -269,7 +282,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
         };
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          squadState.currentGame = game;
+          ref.read(sn.squadNotifierProvider.notifier).setCurrentGame(game);
         });
       }
     }
@@ -294,11 +307,16 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     if (widget.chatGroupId == null) return;
 
     try {
-      final squadState =
-          p.Provider.of<SquadState>(_currentContext, listen: false);
+      final squadStateAsync = ref.read(sn.squadNotifierProvider);
+      final selectedSquadId = squadStateAsync.maybeWhen(
+        data: (state) => state.selectedSquadId,
+        orElse: () => null,
+      );
+      if (selectedSquadId == null) return;
+
       final chatGroupDoc = await FirebaseFirestore.instance
           .collection('squads')
-          .doc(squadState.selectedSquadId)
+          .doc(selectedSquadId)
           .collection('chat_groups')
           .doc(widget.chatGroupId)
           .get();
@@ -337,24 +355,10 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
   }
 
   Future<void> _fetchFriends() async {
-    final userManager =
-        p.Provider.of<UserManager>(_currentContext, listen: false);
-    final friendsStream = userManager.streamFriends();
-
-    // Debounce the stream
-    await for (final friends in friendsStream) {
-      if (mounted) {
-        final friendNames = friends
-            .map((f) => f['displayName'] as String? ?? '')
-            .where((name) => name.isNotEmpty)
-            .toList();
-        setState(() {
-          _friends = friendNames;
-        });
-      }
-      // Wait for debounce duration before processing next
-      await Future.delayed(_debounceDuration);
-    }
+    final friends = ref.read(userNotifierProvider).value?.friends ?? [];
+    setState(() {
+      _friends = friends;
+    });
   }
 
   Future<void> _fetchQuickJoinSuggestions() async {
@@ -368,12 +372,15 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     });
 
     try {
-      final userManager =
-          p.Provider.of<UserManager>(_currentContext, listen: false);
+      final userStateAsync = ref.read(userNotifierProvider);
+      final pinnedGames = userStateAsync.maybeWhen(
+        data: (userState) =>
+            (userState?.pinnedGames ?? []).cast<Map<String, dynamic>>(),
+        orElse: () => <Map<String, dynamic>>[],
+      );
       final availabilityManager =
           p.Provider.of<AvailabilityManager>(_currentContext, listen: false);
 
-      final pinnedGames = userManager.pinnedGames;
       if (pinnedGames.isNotEmpty) {
         _suggestedLobbies =
             await availabilityManager.suggestLobbies(pinnedGames);
@@ -425,13 +432,19 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
         return _friends;
       case 'Public':
         // Show friends plus anyone who has joined spots
-        final squadState =
-            p.Provider.of<SquadState>(_currentContext, listen: false);
+        final squadStateAsync = ref.read(sn.squadNotifierProvider);
+        final squadState = squadStateAsync.maybeWhen(
+          data: (state) => state,
+          orElse: () => null,
+        );
+        if (squadState == null) return [];
         final gameName = widget.gameName ?? '';
         final gameSquadSpots = squadState.gameSquadSpots[gameName] ?? [];
         final joinedUsers = gameSquadSpots
             .where((spot) => spot != null)
-            .map((spot) => squadState.getDisplayNameForUid(spot!.split('_')[0]))
+            .map((spot) => ref
+                .read(sn.squadNotifierProvider.notifier)
+                .getDisplayNameForUid(spot!.split('_')[0]))
             .where((name) => name.isNotEmpty)
             .toList();
         return {..._friends, ...joinedUsers}.toList();
@@ -442,143 +455,155 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
 
   @override
   Widget build(BuildContext context) {
-    return p.Consumer<SquadState>(
-      builder: (context, squadState, child) {
-        // Always show the squad spots interface, regardless of selectedSquadId
-        return Scaffold(
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.black, Colors.indigo],
-              ),
-            ),
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                // Header with navigation and game selector
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: SquadHeader(lobbyId: widget.lobbyId),
-                  ),
-                ),
-
-                // Quick Join button
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 8.0),
-                    child: Consumer(
-                      builder: (context, ref, child) {
-                        final pinnedGames = ref.watch(userManagerProvider
-                            .select((userManager) => userManager.pinnedGames));
-                        return ElevatedButton.icon(
-                          onPressed:
-                              pinnedGames.isNotEmpty ? _handleQuickJoin : null,
-                          icon: _isLoadingSuggestions
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.electric_bolt,
-                                  color: Colors.white),
-                          label: Text(
-                            _isLoadingSuggestions
-                                ? 'Finding Lobbies...'
-                                : 'Quick Join',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF007AFF),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 24, vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-
-                // Squad spots grid
-                SquadGrid(),
-
-                // Peacock members section (conditionally shown)
-                SliverToBoxAdapter(
-                  child: _showPeacockMembers
-                      ? Consumer(
-                          builder: (context, ref, child) =>
-                              PeacockWidgets.buildPeacockMembersList(
-                                  context, ref, _togglePeacockMember),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-
-                // Action buttons (Win/Loss)
-                SquadControls(),
-
-                // Game alerts display
-                const GameAlertsDisplay(),
-
-                // Members section header
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Semantics(
-                      label: 'Squad Members List',
-                      child: Text(
-                        'Squad Members:',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(color: Colors.cyanAccent),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Members list
-                MembersSection(
-                  chatGroupId: widget.chatGroupId,
-                  chatGroupMembers: _getMembersForCircle(),
-                  circle: _circle,
-                  friends: _friends,
-                  showBlockDialog: _showBlockDialog,
-                  showComplaintDialog: _showComplaintDialog,
-                ),
-
-                // Bottom spacing
-                SliverToBoxAdapter(
-                  child: const SizedBox(height: 80.0),
-                ),
-              ],
-            ),
+    return Consumer(
+      builder: (context, ref, child) {
+        final squadAsync = ref.watch(sn.squadNotifierProvider);
+        return squadAsync.when(
+          data: (squadState) => _buildSquadContent(squadState),
+          loading: () => const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
           ),
-          floatingActionButton: widget.lobbyId != null
-              ? ClaimSpotFAB(
-                  lobbyId: widget.lobbyId,
-                  callSpot: _callSpot,
-                  lockSpot: _lockSpot,
-                )
-              : null,
+          error: (error, stack) => Scaffold(
+            body: Center(child: Text('Error: $error')),
+          ),
         );
       },
     );
   }
 
+  Widget _buildSquadContent(dynamic squadState) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.black, Colors.indigo],
+          ),
+        ),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // Header with navigation and game selector
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: SquadHeader(lobbyId: widget.lobbyId),
+              ),
+            ),
+
+            // Quick Join button
+            SliverToBoxAdapter(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Consumer(
+                  builder: (context, ref, child) {
+                    final pinnedGames = ref.watch(userNotifierProvider
+                        .select((asyncValue) => asyncValue.maybeWhen(
+                              data: (userState) => userState?.pinnedGames ?? [],
+                              orElse: () => [],
+                            )));
+                    return ElevatedButton.icon(
+                      onPressed:
+                          pinnedGames.isNotEmpty ? _handleQuickJoin : null,
+                      icon: _isLoadingSuggestions
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.electric_bolt,
+                              color: Colors.white),
+                      label: Text(
+                        _isLoadingSuggestions
+                            ? 'Finding Lobbies...'
+                            : 'Quick Join',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF007AFF),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // Squad spots grid
+            SquadGrid(),
+
+            // Peacock members section (conditionally shown)
+            SliverToBoxAdapter(
+              child: _showPeacockMembers
+                  ? Consumer(
+                      builder: (context, ref, child) =>
+                          PeacockWidgets.buildPeacockMembersList(
+                              context, ref, _togglePeacockMember),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+
+            // Action buttons (Win/Loss)
+            SquadControls(),
+
+            // Game alerts display
+            const GameAlertsDisplay(),
+
+            // Members section header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Semantics(
+                  label: 'Squad Members List',
+                  child: Text(
+                    'Squad Members:',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(color: Colors.cyanAccent),
+                  ),
+                ),
+              ),
+            ),
+
+            // Members list
+            MembersSection(
+              chatGroupId: widget.chatGroupId,
+              chatGroupMembers: _getMembersForCircle(),
+              circle: _circle,
+              friends: _friends,
+              showBlockDialog: _showBlockDialog,
+              showComplaintDialog: _showComplaintDialog,
+            ),
+
+            // Bottom spacing
+            SliverToBoxAdapter(
+              child: const SizedBox(height: 80.0),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: widget.lobbyId != null
+          ? ClaimSpotFAB(
+              lobbyId: widget.lobbyId,
+              callSpot: _callSpot,
+              lockSpot: _lockSpot,
+            )
+          : null,
+    );
+  }
+
   void _togglePeacockMember(String member, bool isInPeacock) {
     if (isInPeacock) {
-      p.Provider.of<SquadState>(_currentContext, listen: false)
-          .removeFromPeacock(member);
+      ref.read(sn.squadNotifierProvider.notifier).removeFromPeacock(member);
     } else {
-      p.Provider.of<SquadState>(_currentContext, listen: false)
-          .addToPeacock(member);
+      ref.read(sn.squadNotifierProvider.notifier).addToPeacock(member);
     }
     setState(() {});
   }
@@ -592,12 +617,12 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     SquadDialogs.showComplaintDialog(context, messenger, ref, player);
   }
 
-  Future<void> _callSpot(BuildContext context, SquadState squadState) async {
+  Future<void> _callSpot(BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || widget.lobbyId == null) return;
 
     try {
-      final squadManager = p.Provider.of<SquadManager>(context, listen: false);
+      final squadManager = ref.read(squadManagerProvider);
       await squadManager.claimPeacockSpot(
           widget.lobbyId!, user.uid, widget.gameName!);
 
@@ -612,12 +637,12 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     }
   }
 
-  Future<void> _lockSpot(BuildContext context, SquadState squadState) async {
+  Future<void> _lockSpot(BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || widget.lobbyId == null) return;
 
     try {
-      final squadManager = p.Provider.of<SquadManager>(context, listen: false);
+      final squadManager = ref.read(squadManagerProvider);
       await squadManager.lockPeacockSpot(
           widget.lobbyId!, user.uid, widget.gameName!);
 

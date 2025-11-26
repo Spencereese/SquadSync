@@ -133,13 +133,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: Colors.grey[300], // Light grey like iMessage
+            color: Colors.white, // White background to match input bar
             borderRadius: BorderRadius.circular(18),
           ),
           child: const Icon(
             Icons.add,
             size: 24,
-            color: Colors.black, // Black icon on light background
+            color: Colors.black, // Black icon on white background
           ),
         ),
       ),
@@ -153,7 +153,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         maxHeight: 120,
       ),
       decoration: BoxDecoration(
-        color: Colors.grey[200], // Lighter background like iMessage
+        color: Colors.white, // Solid white background to appear above blur
         borderRadius: BorderRadius.circular(20),
         border: null, // Remove blue border when focused
       ),
@@ -186,6 +186,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 enabledBorder: InputBorder.none,
                 disabledBorder: InputBorder.none,
                 isDense: true,
+                filled: true,
+                fillColor: Colors.grey[200],
               ),
               textCapitalization: TextCapitalization.sentences,
               autocorrect: true,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/entities/chat_group.dart';
 import 'package:squad_sync/data/datasources/chat_remote_datasource.dart';
@@ -13,13 +14,25 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   ChatRemoteDataSourceImpl(this._firestore, this._storage);
 
   @override
-  Future<Message> sendMessage(String chatGroupId, Message message) async {
-    final docRef = _firestore
-        .collection('chat')
-        .doc(chatGroupId)
-        .collection('messages')
-        .doc(message.id);
+  Future<Message> sendMessage(
+      String chatGroupId, Message message, ChatType chatType) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw Exception('User not authenticated');
+    }
 
+    String collectionPath;
+    if (chatType == ChatType.userGroup) {
+      collectionPath =
+          'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
+    } else if (chatType == ChatType.dm) {
+      collectionPath = 'chats/$chatGroupId/messages';
+    } else {
+      // For squad chats, use the original path
+      collectionPath = 'chat/$chatGroupId/messages';
+    }
+
+    final docRef = _firestore.collection(collectionPath).doc(message.id);
     await docRef.set(message.toJson());
     return message;
   }

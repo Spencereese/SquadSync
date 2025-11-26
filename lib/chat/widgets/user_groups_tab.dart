@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../chat_screen.dart';
-import '../chat_state.dart';
-import '../../services/ai_service.dart';
-import '../../squad_state.dart';
+import '../../squad_state_notifier.dart';
+import '../../domain/entities/message.dart';
 
-class UserGroupsTab extends StatelessWidget {
-  const UserGroupsTab({super.key});
+class UserGroupsTab extends ConsumerWidget {
+  final VoidCallback onTapDM;
+
+  const UserGroupsTab({super.key, required this.onTapDM});
 
   String _formatTime(DateTime time) {
     final now = DateTime.now();
@@ -53,7 +55,7 @@ class UserGroupsTab extends StatelessWidget {
                 Navigator.of(dialogContext).pop(); // Close dialog first
                 try {
                   final squadState =
-                      Provider.of<SquadState>(context, listen: false);
+                      p.Provider.of<SquadState>(context, listen: false);
                   await squadState.leaveChatGroup(groupId);
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -85,65 +87,60 @@ class UserGroupsTab extends StatelessWidget {
     );
   }
 
-  Widget _buildDMCard(BuildContext context) {
-    return Consumer<ChatState>(
-      builder: (context, chatState, child) {
-        return ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          leading: CircleAvatar(
-            radius: 28,
-            backgroundColor: Colors.grey[800],
-            child: const Icon(
-              Icons.message,
-              color: Colors.cyanAccent,
-              size: 24,
-            ),
+  Widget _buildDMCard(BuildContext context, int dmUnreadCount) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      leading: CircleAvatar(
+        radius: 28,
+        backgroundColor: Colors.grey[800],
+        child: const Icon(
+          Icons.message,
+          color: Colors.cyanAccent,
+          size: 24,
+        ),
+      ),
+      title: const Text(
+        'Direct Messages',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
+        ),
+      ),
+      subtitle: const Padding(
+        padding: EdgeInsets.only(top: 2),
+        child: Text(
+          'Private conversations',
+          style: TextStyle(
+            color: Colors.grey,
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
           ),
-          title: const Text(
-            'Direct Messages',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-            ),
-          ),
-          subtitle: const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: Text(
-              'Private conversations',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
+        ),
+      ),
+      trailing: dmUnreadCount > 0
+          ? Container(
+              padding: const EdgeInsets.all(6),
+              decoration: const BoxDecoration(
+                color: Colors.cyanAccent,
+                shape: BoxShape.circle,
               ),
-            ),
-          ),
-          trailing: chatState.dmUnreadCount > 0
-              ? Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: const BoxDecoration(
-                    color: Colors.cyanAccent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    chatState.dmUnreadCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                )
-              : null,
-          onTap: () => chatState.setDMView(true),
-        );
-      },
+              child: Text(
+                dmUnreadCount.toString(),
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            )
+          : null,
+      onTap: onTapDM,
     );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
     final User currentUser = FirebaseAuth.instance.currentUser!;
 
@@ -171,6 +168,8 @@ class UserGroupsTab extends StatelessWidget {
         }
 
         final groups = snapshot.data?.docs ?? [];
+        debugPrint(
+            'UserGroupsTab: loaded ${groups.length} groups from Firestore');
 
         // Sort groups by lastMessageTime in memory to avoid frequent rebuilds
         // caused by orderBy in Firestore query
@@ -199,7 +198,7 @@ class UserGroupsTab extends StatelessWidget {
             itemBuilder: (context, index) {
               if (index == 0) {
                 // DM card
-                return _buildDMCard(context);
+                return _buildDMCard(context, 0);
               }
 
               final groupIndex = index - 1;
@@ -286,17 +285,12 @@ class UserGroupsTab extends StatelessWidget {
                   debugPrint(
                       'DEBUG UserGroupsTab: Tapping on user group ${group.id}');
                   if (group.id.isNotEmpty) {
-                    final chatState =
-                        Provider.of<ChatState>(context, listen: false);
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (context) => ChangeNotifierProvider.value(
-                          value: chatState,
-                          child: ChatScreen(
-                            chatType: ChatType.userGroup,
-                            chatGroupId: group.id,
-                            chatGroupName: groupName,
-                          ),
+                        builder: (context) => ChatScreen(
+                          chatType: ChatType.userGroup,
+                          chatGroupId: group.id,
+                          chatGroupName: groupName,
                         ),
                       ),
                     );

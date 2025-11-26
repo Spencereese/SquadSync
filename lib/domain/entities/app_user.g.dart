@@ -18,8 +18,8 @@ _$AppUserImpl _$$AppUserImplFromJson(Map<String, dynamic> json) =>
       pinnedGames: (json['pinnedGames'] as List<dynamic>)
           .map((e) => e as Map<String, dynamic>)
           .toList(),
-      mutedGames:
-          (json['mutedGames'] as List<dynamic>).map((e) => e as String).toSet(),
+      notificationSettings:
+          Map<String, bool>.from(json['notificationSettings'] as Map),
       hasRatedGame: Map<String, bool>.from(json['hasRatedGame'] as Map),
       dailyRatings: (json['dailyRatings'] as Map<String, dynamic>).map(
         (k, e) => MapEntry(k, Map<String, int>.from(e as Map)),
@@ -44,6 +44,22 @@ _$AppUserImpl _$$AppUserImplFromJson(Map<String, dynamic> json) =>
       blockedUsers: (json['blockedUsers'] as List<dynamic>)
           .map((e) => e as String)
           .toList(),
+      friends:
+          (json['friends'] as List<dynamic>).map((e) => e as String).toList(),
+      alerts:
+          (json['alerts'] as List<dynamic>).map((e) => e as String).toList(),
+      userGroups: (json['userGroups'] as List<dynamic>)
+          .map((e) => e as Map<String, dynamic>)
+          .toList(),
+      alertCircles: (json['alertCircles'] as List<dynamic>)
+          .map((e) => e as String)
+          .toList(),
+      publicGroups: (json['publicGroups'] as List<dynamic>)
+          .map((e) => e as Map<String, dynamic>)
+          .toList(),
+      pinnedMessages: (json['pinnedMessages'] as List<dynamic>)
+          .map((e) => e as String)
+          .toList(),
     );
 
 Map<String, dynamic> _$$AppUserImplToJson(_$AppUserImpl instance) =>
@@ -54,7 +70,7 @@ Map<String, dynamic> _$$AppUserImplToJson(_$AppUserImpl instance) =>
       'preferredModes': instance.preferredModes,
       'userBlocks': instance.userBlocks,
       'pinnedGames': instance.pinnedGames,
-      'mutedGames': instance.mutedGames.toList(),
+      'notificationSettings': instance.notificationSettings,
       'hasRatedGame': instance.hasRatedGame,
       'dailyRatings': instance.dailyRatings,
       'allTimeRatings': instance.allTimeRatings,
@@ -63,4 +79,10 @@ Map<String, dynamic> _$$AppUserImplToJson(_$AppUserImpl instance) =>
       'bans': instance.bans,
       'dailyBanVotes': instance.dailyBanVotes,
       'blockedUsers': instance.blockedUsers,
+      'friends': instance.friends,
+      'alerts': instance.alerts,
+      'userGroups': instance.userGroups,
+      'alertCircles': instance.alertCircles,
+      'publicGroups': instance.publicGroups,
+      'pinnedMessages': instance.pinnedMessages,
     };

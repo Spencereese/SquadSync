@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class MemberManagementDialog {
-  static void show(BuildContext context, SquadState squadState) {
+  static void show(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

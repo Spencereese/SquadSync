@@ -53,6 +53,25 @@ class TestSetup {
   static void tearDown() {
     // Reset any global state if needed
   }
+
+  /// Legacy function for backward compatibility
+  static Future<void> setupTestEnvironment() async {
+    await initializeFirebase();
+  }
+
+  /// Legacy function for backward compatibility
+  static void teardownTestEnvironment() {
+    tearDown();
+  }
+}
+
+/// Global functions for backward compatibility with existing tests
+Future<void> setupTestEnvironment() async {
+  await TestSetup.initializeFirebase();
+}
+
+void teardownTestEnvironment() {
+  TestSetup.tearDown();
 }
 
 /// Test data helpers

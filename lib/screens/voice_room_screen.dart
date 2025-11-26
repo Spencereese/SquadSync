@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../providers.dart';
+import '../presentation/notifiers/user_notifier.dart';
 import '../app_theme.dart';
 
 class VoiceRoomScreen extends StatelessWidget {
@@ -402,7 +403,13 @@ class _VoiceRoomScreenContentState
 
   Widget _buildParticipantCard(participant, bool isCurrentUserHost) {
     final uid = participant.uid ?? '';
-    final displayName = participant.displayName ?? 'Unknown';
+    final userStateAsync = ref.watch(userNotifierProvider);
+    final displayName = userStateAsync.maybeWhen(
+      data: (state) =>
+          ref.read(userNotifierProvider.notifier).getDisplayNameForUid(uid) ??
+          'Unknown',
+      orElse: () => 'Unknown',
+    );
     final isMuted = participant.isMuted ?? false;
     final isSpeaking = participant.isSpeaking ?? false;
     final isHost = participant.isHost ?? false;

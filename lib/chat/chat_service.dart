@@ -1,17 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 // import 'package:http/http.dart' as http; // TEMPORARILY DISABLED
-import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:io';
 import 'dart:async';
-import '../squad_state.dart';
-import '../services/ai_service.dart';
 import '../services/media_service.dart';
 import '../services/message_service.dart';
-import '../managers/sync_manager.dart';
+import '../managers/stubs.dart';
 import '../chat/sqlite_helper.dart';
 import 'models/message_data.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
+import '../presentation/notifiers/user_notifier.dart';
+import '../domain/entities/message.dart';
 
 class ChatService with WidgetsBindingObserver {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -50,7 +51,6 @@ class ChatService with WidgetsBindingObserver {
 
   // Improved caching with invalidation
   String? _cachedSquadId;
-  BuildContext? _cachedContext;
   int _cacheTimestamp = 0;
   static const int _cacheValidityMs = 5000; // 5 second cache validity
 
@@ -63,24 +63,24 @@ class ChatService with WidgetsBindingObserver {
   bool _lastStreamIsDM = false;
 
   // Get cached squad ID with automatic invalidation
-  String? _getCachedSquadId(BuildContext context) {
+  String? _getCachedSquadId(WidgetRef ref) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (_cachedContext == context &&
-        _cachedSquadId != null &&
-        (now - _cacheTimestamp) < _cacheValidityMs) {
+    if (_cachedSquadId != null && (now - _cacheTimestamp) < _cacheValidityMs) {
       return _cachedSquadId;
     }
 
     // Update cache
-    _cachedContext = context;
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    _cachedSquadId = squadState.selectedSquadId;
+    final squadStateAsync = ref.watch(sn.squadNotifierProvider);
+    _cachedSquadId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedSquadId,
+      orElse: () => null,
+    );
     _cacheTimestamp = now;
     return _cachedSquadId;
   }
 
   // Stream for real-time messages from Firestore (updated for squad and groups)
-  Stream<QuerySnapshot> getChatMessages(BuildContext context,
+  Stream<QuerySnapshot> getChatMessages(WidgetRef ref,
       {String? chatGroupId, required ChatType chatType}) {
     // Check if user is authenticated
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -117,8 +117,7 @@ class ChatService with WidgetsBindingObserver {
         .limit(100)
         .snapshots();
 
-    _lastStreamSquadId =
-        isUserGroup || isDM ? null : _getCachedSquadId(context);
+    _lastStreamSquadId = isUserGroup || isDM ? null : _getCachedSquadId(ref);
     _lastStreamGroupId = chatGroupId;
     _lastStreamIsUserGroup = isUserGroup;
     _lastStreamIsDM = isDM;
@@ -127,7 +126,7 @@ class ChatService with WidgetsBindingObserver {
   }
 
   // Stream for typing status
-  Stream<String?> getTypingUser(BuildContext context,
+  Stream<String?> getTypingUser(WidgetRef ref,
       {String? chatGroupId, required ChatType chatType}) {
     // Check if user is authenticated
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -160,8 +159,8 @@ class ChatService with WidgetsBindingObserver {
     }
 
     // Capture displayName synchronously to avoid async gap
-    final currentUserDisplayName =
-        Provider.of<SquadState>(context, listen: false).displayName;
+    final currentUserDisplayName = ref.watch(userNotifierProvider
+        .select((asyncValue) => asyncValue.value?.displayName ?? ''));
 
     _typingStream = _firestore.doc(typingPath).snapshots().map((snapshot) {
       if (snapshot.exists) {
@@ -179,8 +178,7 @@ class ChatService with WidgetsBindingObserver {
       return null;
     });
 
-    _lastStreamSquadId =
-        isUserGroup || isDM ? null : _getCachedSquadId(context);
+    _lastStreamSquadId = isUserGroup || isDM ? null : _getCachedSquadId(ref);
     _lastStreamGroupId = chatGroupId;
     _lastStreamIsUserGroup = isUserGroup;
     _lastStreamIsDM = isDM;
@@ -190,7 +188,7 @@ class ChatService with WidgetsBindingObserver {
 
   // Send a new message
   Future<MessageSendResult> sendMessage(
-    BuildContext context, {
+    WidgetRef ref, {
     required String senderUid,
     String? text,
     String? imageUrl,
@@ -206,7 +204,7 @@ class ChatService with WidgetsBindingObserver {
     required ChatType chatType,
   }) async {
     return _messageService.sendMessage(
-      context,
+      ref,
       senderUid: senderUid,
       text: text,
       imageUrl: imageUrl,
@@ -239,17 +237,16 @@ class ChatService with WidgetsBindingObserver {
   }
 
   // Update typing status
-  Future<void> updateTypingStatus(
-      BuildContext context, String user, bool isTyping,
+  Future<void> updateTypingStatus(WidgetRef ref, String user, bool isTyping,
       {String? chatGroupId}) async {
-    return _messageService.updateTypingStatus(context, user, isTyping,
+    return _messageService.updateTypingStatus(ref, user, isTyping,
         chatGroupId: chatGroupId);
   }
 
   // Add reaction to a message
-  Future<void> addReaction(BuildContext context, String msgId, String reaction,
+  Future<void> addReaction(WidgetRef ref, String msgId, String reaction,
       {String? chatGroupId, ChatType? chatType}) async {
-    return _messageService.addReaction(context, msgId, reaction,
+    return _messageService.addReaction(ref, msgId, reaction,
         chatGroupId: chatGroupId, chatType: chatType);
   }
 

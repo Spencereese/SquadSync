@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../squad_state.dart';
+import 'package:provider/Provider.dart';
+import '../squad_state_notifier.dart';
 
 /// Bottom sheet showing squad roster, alert circles, and active spots summary
 class SquadSheet extends StatelessWidget {

@@ -2,7 +2,7 @@ import 'dart:io';
 
 void main() async {
   final libDir = Directory('lib');
-  final legacyRefs = [
+  final legacyManagers = [
     'squad_manager',
     'user_manager',
     'game_manager',
@@ -14,13 +14,15 @@ void main() async {
     'squad_data_manager',
     'squad_ui_manager',
     'squad_persistence_manager',
-    'game_manager',
     'availability_manager',
     'squad_membership_service',
     'spot_management_service',
     'peacock_service',
     'achievement_service',
     'lobby_service',
+  ];
+
+  final legacyServices = [
     'voice_service',
     'media_service',
     'poll_service',
@@ -29,21 +31,93 @@ void main() async {
     'igdb_service',
     'igdb_auth_service',
     'message_service',
+  ];
+
+  final legacyScreens = [
     'voice_room_screen',
     'voice_chat',
   ];
 
-  final filesWithRefs = <String>{};
+  final allLegacyRefs = [
+    ...legacyManagers,
+    ...legacyServices,
+    ...legacyScreens
+  ];
+
+  final filesWithRefs = <String, List<String>>{};
 
   await for (final entity in libDir.list(recursive: true)) {
     if (entity is File && entity.path.endsWith('.dart')) {
+      // Skip files in managers directory (they're the legacy files themselves)
+      if (entity.path.contains('/managers/')) continue;
+
+      // Skip test files
+      if (entity.path.contains('/test/') ||
+          entity.path.contains('/integration_test/')) continue;
+
       try {
         final content = await entity.readAsString();
-        for (final ref in legacyRefs) {
-          if (content.contains(ref)) {
-            filesWithRefs.add(entity.path);
-            break;
+        final lines = content.split('\n');
+        final foundRefs = <String>[];
+
+        for (final line in lines) {
+          final trimmedLine = line.trim();
+
+          // Skip comment lines
+          if (trimmedLine.startsWith('//') ||
+              trimmedLine.startsWith('/*') ||
+              trimmedLine.startsWith('*') ||
+              trimmedLine.contains('///')) {
+            continue;
           }
+
+          // Skip import/export lines
+          if (trimmedLine.startsWith('import') ||
+              trimmedLine.startsWith('export') ||
+              trimmedLine.contains('from ')) {
+            continue;
+          }
+
+          // Skip string literals (basic check)
+          if (trimmedLine.contains('"') || trimmedLine.contains("'")) {
+            // Only skip if the entire reference is in quotes
+            bool skipLine = false;
+            for (final ref in allLegacyRefs) {
+              if (trimmedLine.contains('"$ref"') ||
+                  trimmedLine.contains("'$ref'")) {
+                skipLine = true;
+                break;
+              }
+            }
+            if (skipLine) continue;
+          }
+
+          // Check for legacy references in actual code
+          for (final ref in allLegacyRefs) {
+            if (trimmedLine.contains(ref) &&
+                !trimmedLine.contains(
+                    'Provider.of<$ref') && // Skip Provider.of patterns
+                !trimmedLine.contains(
+                    '$ref.') && // Skip method calls on the manager itself
+                !trimmedLine.contains('$ref(')) {
+              // Skip constructor calls
+
+              // Additional check: only flag if it's likely actual usage
+              if (trimmedLine.contains('$ref.') ||
+                  trimmedLine.contains('$ref(') ||
+                  trimmedLine.contains('Provider.of<$ref') ||
+                  trimmedLine.contains('$ref!') ||
+                  trimmedLine.contains('$ref?')) {
+                if (!foundRefs.contains(ref)) {
+                  foundRefs.add(ref);
+                }
+              }
+            }
+          }
+        }
+
+        if (foundRefs.isNotEmpty) {
+          filesWithRefs[entity.path] = foundRefs;
         }
       } catch (e) {
         print('Error reading ${entity.path}: $e');
@@ -51,64 +125,26 @@ void main() async {
     }
   }
 
-  print('Files with legacy manager references:');
-  for (final file in filesWithRefs) {
-    print(file);
-  }
-
-  if (filesWithRefs.isNotEmpty) {
-    await deleteFiles(filesWithRefs.toList());
-  } else {
-    print('No files found with legacy references.');
-  }
-}
-
-Future<void> deleteFiles(List<String> files) async {
   print(
-      '\nEnter the indices of files to delete (comma separated, e.g., 1,3,5) or "all" to delete all:');
-  for (int i = 0; i < files.length; i++) {
-    print('${i + 1}: ${files[i]}');
-  }
+      'Files with actual legacy manager/service usage (excluding imports, comments, tests):');
+  print('=' * 80);
 
-  final input = stdin.readLineSync()?.trim();
-  if (input == null || input.isEmpty) return;
-
-  List<String> toDelete;
-  if (input.toLowerCase() == 'all') {
-    toDelete = files;
-  } else {
-    final indices = input
-        .split(',')
-        .map((s) => int.tryParse(s.trim()))
-        .whereType<int>()
-        .where((i) => i > 0 && i <= files.length)
-        .map((i) => i - 1)
-        .toList();
-    toDelete = indices.map((i) => files[i]).toList();
-  }
-
-  if (toDelete.isEmpty) {
-    print('No valid files selected.');
+  if (filesWithRefs.isEmpty) {
+    print('🎉 No files found with legacy references! Migration complete!');
     return;
   }
 
-  print('Confirm deletion of the following files? (y/n)');
-  for (final file in toDelete) {
-    print(file);
+  int totalFiles = 0;
+  for (final entry in filesWithRefs.entries) {
+    totalFiles++;
+    print('${totalFiles}. ${entry.key}');
+    print('   References: ${entry.value.join(', ')}');
+    print('');
   }
 
-  final confirm = stdin.readLineSync()?.trim().toLowerCase();
-  if (confirm == 'y' || confirm == 'yes') {
-    for (final path in toDelete) {
-      final file = File(path);
-      if (await file.exists()) {
-        await file.delete();
-        print('Deleted: $path');
-      } else {
-        print('File does not exist: $path');
-      }
-    }
-  } else {
-    print('Deletion cancelled.');
-  }
+  print('Total files with legacy references: $totalFiles');
+  print('');
+  print('Note: This scanner only detects likely problematic usage.');
+  print('Files in /managers/ and test files are excluded.');
+  print('Review each file manually before making changes.');
 }

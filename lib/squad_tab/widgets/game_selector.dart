@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../presentation/notifiers/user_notifier.dart';
 import '../../providers.dart';
-import '../../squad_state_notifier.dart';
-import '../../managers/game_manager.dart' as gm;
 
 /// GameSelector component - handles game selection, display, and switching
 /// Extracted from the monolithic SquadTab to improve maintainability
@@ -21,13 +21,21 @@ class GameSelector extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadState = ref.watch(squadStateNotifierProvider);
-    final notifier = ref.read(squadStateNotifierProvider.notifier);
-    final currentGame = squadState.currentGame ?? game;
+    final squadStateAsync = ref.watch(sn.squadNotifierProvider);
+    final squadState = squadStateAsync.maybeWhen(
+      data: (state) => state,
+      orElse: () => null,
+    );
+    final currentGame = squadState?.currentGame ?? game;
+    final userStateAsync = ref.watch(userNotifierProvider);
+    final pinnedGames = userStateAsync.maybeWhen(
+      data: (userState) => userState?.pinnedGames ?? <Map<String, dynamic>>[],
+      orElse: () => <Map<String, dynamic>>[],
+    );
 
     return GestureDetector(
-      onTap:
-          onGameTap ?? () => _showGameSelectionDialog(context, notifier, ref),
+      onTap: onGameTap ??
+          () => _showGameSelectionDialog(context, ref, pinnedGames),
       child: SizedBox(
         width: 220,
         height: 160,
@@ -87,8 +95,8 @@ class GameSelector extends ConsumerWidget {
     return logo;
   }
 
-  void _showGameSelectionDialog(
-      BuildContext context, SquadStateNotifier squadState, WidgetRef ref) {
+  void _showGameSelectionDialog(BuildContext context, WidgetRef ref,
+      List<Map<String, dynamic>> pinnedGames) {
     final TextEditingController gameController = TextEditingController();
     Map<String, dynamic>? selectedGame;
 
@@ -106,6 +114,75 @@ class GameSelector extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Pinned Games Section
+                if (pinnedGames.isNotEmpty) ...[
+                  const Text(
+                    'Pinned Games',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 100,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: pinnedGames.length,
+                      itemBuilder: (context, index) {
+                        final game = pinnedGames[index];
+                        return GestureDetector(
+                          onTap: () {
+                            ref
+                                .read(sn.squadNotifierProvider.notifier)
+                                .setCurrentGame(game);
+                            // Persistence is handled automatically in the notifier
+                            Navigator.pop(context);
+                            HapticFeedback.lightImpact();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text('Switched to ${game['name']}')),
+                            );
+                          },
+                          child: Container(
+                            width: 80,
+                            margin: const EdgeInsets.only(right: 8),
+                            child: Column(
+                              children: [
+                                if (game['coverUrl'] != null)
+                                  Image.network(
+                                    game['coverUrl'],
+                                    width: 60,
+                                    height: 60,
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            const Icon(Icons.gamepad,
+                                                color: Colors.cyanAccent,
+                                                size: 40),
+                                  )
+                                else
+                                  const Icon(Icons.gamepad,
+                                      color: Colors.cyanAccent, size: 40),
+                                const SizedBox(height: 4),
+                                Text(
+                                  game['name'] ?? 'Unknown',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 10),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const Divider(color: Colors.grey, height: 24),
+                ],
                 TextField(
                   controller: gameController,
                   style: const TextStyle(color: Colors.white),
@@ -122,7 +199,7 @@ class GameSelector extends ConsumerWidget {
                   onChanged: (value) async {
                     if (value.isNotEmpty) {
                       final results = await ref
-                          .read(gm.gameManagerProvider.notifier)
+                          .read(gameManagerProvider)
                           .fetchGamesFromIGDB(value);
                       if (results.isNotEmpty) {
                         setState(() {
@@ -199,14 +276,9 @@ class GameSelector extends ConsumerWidget {
               onPressed: selectedGame != null
                   ? () {
                       ref
-                          .read(squadStateNotifierProvider.notifier)
+                          .read(sn.squadNotifierProvider.notifier)
                           .setCurrentGame(selectedGame);
-                      // Mark fields as changed for persistence
-                      ref
-                          .read(squadStateNotifierProvider.notifier)
-                          .persistenceManager
-                          .markFieldChanged('currentGame');
-                      // ref.read(squadStateNotifierProvider.notifier).updateFirestoreAsync();
+                      // Persistence is handled automatically in the notifier
                       Navigator.pop(context);
                       HapticFeedback.lightImpact();
                       ScaffoldMessenger.of(context).showSnackBar(

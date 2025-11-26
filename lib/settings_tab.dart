@@ -2,24 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'squad_state.dart';
+import 'squad_state_notifier.dart' as ss;
 import 'firebase_storage_test.dart';
 import 'chat/poll_history_screen.dart';
 import 'chat/media_history_screen.dart';
 import 'chat/pinned_messages_screen.dart';
-import 'services/ai_service.dart';
+import 'domain/entities/message.dart';
+import 'presentation/notifiers/user_notifier.dart';
 
-class SettingsTab extends StatefulWidget {
+class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
 
   @override
-  State<SettingsTab> createState() => _SettingsTabState();
+  ConsumerState<SettingsTab> createState() => _SettingsTabState();
 }
 
-class _SettingsTabState extends State<SettingsTab>
+class _SettingsTabState extends ConsumerState<SettingsTab>
     with SingleTickerProviderStateMixin {
   late TextEditingController _nameController;
   late TextEditingController _feedbackController;
@@ -58,7 +60,7 @@ class _SettingsTabState extends State<SettingsTab>
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = p.Provider.of<ss.SquadState>(context, listen: false);
     setState(() {
       _isDarkTheme = prefs.getBool('isDarkTheme') ?? true;
       _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
@@ -78,7 +80,7 @@ class _SettingsTabState extends State<SettingsTab>
   }
 
   Future<void> _saveSettings(
-      String key, dynamic value, SquadState squadState) async {
+      String key, dynamic value, ss.SquadState squadState) async {
     final prefs = await SharedPreferences.getInstance();
     if (value is bool) {
       await prefs.setBool(key, value);
@@ -100,7 +102,7 @@ class _SettingsTabState extends State<SettingsTab>
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile == null || !mounted) return;
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = p.Provider.of<ss.SquadState>(context, listen: false);
     File imageFile = File(pickedFile.path);
     String uid = FirebaseAuth.instance.currentUser!.uid;
     Reference storageRef =
@@ -117,10 +119,11 @@ class _SettingsTabState extends State<SettingsTab>
     }
   }
 
-  void _updateDisplayName(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+  void _updateDisplayName() {
     if (_nameController.text.isNotEmpty && mounted) {
-      squadState.updateDisplayName(_nameController.text);
+      ref
+          .read(userNotifierProvider.notifier)
+          .updateDisplayName(_nameController.text);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Display name updated!')),
       );
@@ -137,13 +140,12 @@ class _SettingsTabState extends State<SettingsTab>
       return;
     }
 
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    await squadState.userManager.submitFeedback(
-      type: type,
-      page: page,
-      content: content,
-      severity: severity ?? 'medium',
-    );
+    await ref.read(userNotifierProvider.notifier).submitFeedback(
+          type: type,
+          page: page,
+          content: content,
+          severity: severity ?? 'medium',
+        );
 
     _feedbackController.clear();
     setState(() {
@@ -281,18 +283,20 @@ class _SettingsTabState extends State<SettingsTab>
   }
 
   void _setPreferredMode(String mode) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = p.Provider.of<ss.SquadState>(context, listen: false);
+    final displayName =
+        ref.read(userNotifierProvider).value?.displayName ?? 'Unknown';
     setState(() {
       _preferredMode = mode;
       _preferGameMode = true;
     });
     _saveSettings('preferredMode', mode, squadState);
     _saveSettings('preferGameMode', true, squadState);
-    squadState.updatePreferredMode(squadState.displayName, mode);
+    squadState.updatePreferredMode(displayName, mode);
     Navigator.pop(context);
   }
 
-  void _showBlockedUsersDialog(BuildContext context, SquadState squadState) {
+  void _showBlockedUsersDialog(BuildContext context, ss.SquadState squadState) {
     final blockedUsers = squadState.getBlockedUsers;
 
     showDialog(
@@ -345,7 +349,7 @@ class _SettingsTabState extends State<SettingsTab>
     );
   }
 
-  void _showBlockUserDialog(BuildContext context, SquadState squadState) {
+  void _showBlockUserDialog(BuildContext context, ss.SquadState squadState) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -406,7 +410,7 @@ class _SettingsTabState extends State<SettingsTab>
 
   @override
   Widget build(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context);
+    final squadState = p.Provider.of<ss.SquadState>(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings'), elevation: 0),
@@ -452,10 +456,14 @@ class _SettingsTabState extends State<SettingsTab>
             ListTile(
               leading: const Icon(Icons.person, color: Colors.cyan),
               title: const Text('Display Name'),
-              subtitle: Text(squadState.displayName),
+              subtitle: Text(
+                  ref.watch(userNotifierProvider).value?.displayName ??
+                      'Unknown'),
               trailing: const Icon(Icons.edit),
               onTap: () {
-                _nameController.text = squadState.displayName;
+                _nameController.text =
+                    ref.watch(userNotifierProvider).value?.displayName ??
+                        'Unknown';
                 showDialog(
                   context: context,
                   builder: (context) => AlertDialog(
@@ -472,7 +480,7 @@ class _SettingsTabState extends State<SettingsTab>
                       ),
                       TextButton(
                         onPressed: () {
-                          _updateDisplayName(context);
+                          _updateDisplayName();
                           Navigator.pop(context);
                         },
                         child: const Text('Save'),
@@ -564,7 +572,10 @@ class _SettingsTabState extends State<SettingsTab>
                   _showPreferredModeDialog();
                 } else {
                   _saveSettings('preferredMode', '', squadState);
-                  squadState.updatePreferredMode(squadState.displayName, '');
+                  squadState.updatePreferredMode(
+                      ref.watch(userNotifierProvider).value?.displayName ??
+                          'Unknown',
+                      '');
                 }
               },
               secondary: const Icon(Icons.group),
@@ -657,10 +668,8 @@ class _SettingsTabState extends State<SettingsTab>
               title: const Text('Pinned Messages'),
               subtitle: const Text('View and manage pinned messages'),
               trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () => _navigateToHistoryScreen(PinnedMessagesScreen(
-                chatGroupId: squadState.selectedSquadId,
-                chatType: ChatType.dm,
-              )),
+              onTap: () =>
+                  _navigateToHistoryScreen(const PinnedMessagesScreen()),
             ),
             const Divider(),
             _buildSectionHeader('Feedback & Support'),

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../app_theme.dart';
-import '../../squad_state_notifier.dart';
+import '../../domain/entities/squad_state.dart';
 
 class BottomNavigationWidget extends StatelessWidget {
   final ValueNotifier<int> selectedIndexNotifier;
   final double navOpacity;
   final double navBottomOffset;
-  final SquadStateData squadState;
+  final SquadState squadState;
   final Function(int) onTabTapped;
 
   const BottomNavigationWidget({
@@ -79,7 +79,7 @@ class BottomNavigationWidget extends StatelessWidget {
 class TabItemWidget extends StatelessWidget {
   final int index;
   final int selectedIndex;
-  final SquadStateData squadState;
+  final SquadState squadState;
   final Function(int) onTap;
 
   const TabItemWidget({

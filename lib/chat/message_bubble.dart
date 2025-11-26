@@ -5,19 +5,20 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as p;
 import 'chat_service.dart';
-import '../services/ai_service.dart';
-import '../providers.dart';
+import '../domain/entities/message.dart';
 import '../presentation/notifiers/chat_notifier.dart' as cn;
-import 'models/message_data.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
+import 'models/message_data.dart' as models show MessageData, MessageType;
 import 'widgets/message_content.dart';
 import 'widgets/message_reactions.dart';
 import 'widgets/message_avatar.dart';
 import 'widgets/message_sender.dart';
 import 'widgets/imessage_reactions_bar.dart';
+import '../presentation/notifiers/user_notifier.dart';
 
 /// Sub-widget for the bubble header (avatar and sender)
 class _BubbleHeader extends StatelessWidget {
-  final MessageData messageData;
+  final models.MessageData messageData;
   final bool isMe;
   final bool showSender;
   final bool showAvatar;
@@ -50,7 +51,7 @@ class _BubbleHeader extends StatelessWidget {
 
 /// Sub-widget for the bubble content (message container)
 class _BubbleContent extends StatefulWidget {
-  final MessageData messageData;
+  final models.MessageData messageData;
   final bool isMe;
   final String? chatGroupId;
   final ChatService? chatService;
@@ -295,7 +296,7 @@ class MessageBubble extends ConsumerStatefulWidget {
 }
 
 class _MessageBubbleState extends ConsumerState<MessageBubble> {
-  late MessageData _messageData;
+  late models.MessageData _messageData;
   bool _isGrokExpanded = false; // Track if Grok message is expanded
   final GlobalKey _messageKey = GlobalKey();
 
@@ -319,12 +320,12 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
 
   void _normalizeMessageData() {
     // Convert the dynamic message to MessageData
-    if (widget.message is MessageData) {
+    if (widget.message is models.MessageData) {
       _messageData = widget.message;
     } else {
       // Fallback for backward compatibility - convert from old format
       _messageData =
-          MessageData.fromMap(widget.message as Map<String, dynamic>);
+          models.MessageData.fromMap(widget.message as Map<String, dynamic>);
     }
   }
 
@@ -666,8 +667,37 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                       label: 'Reply',
                       onTap: () {
                         // Use Riverpod chat notifier instead of legacy ChatState
-                        final chatNotifier = ref.read(cn.chatNotifierProvider.notifier);
-                        chatNotifier.setReplyingToMessage(_messageData.id);
+                        final chatNotifier =
+                            ref.read(cn.chatNotifierProvider.notifier);
+
+                        // Create Message from MessageData
+                        MessageType domainMessageType;
+                        switch (_messageData.type) {
+                          case models.MessageType.text:
+                            domainMessageType = MessageType.text;
+                            break;
+                          case models.MessageType.image:
+                            domainMessageType = MessageType.image;
+                            break;
+                          case models.MessageType.video:
+                            domainMessageType = MessageType.video;
+                            break;
+                          case models.MessageType.audio:
+                            domainMessageType = MessageType.audio;
+                            break;
+                          default:
+                            domainMessageType = MessageType.text;
+                        }
+
+                        final message = Message(
+                          id: _messageData.id,
+                          senderId: _messageData.senderUid,
+                          text: _messageData.text,
+                          timestamp: _messageData.timestamp,
+                          messageType: domainMessageType,
+                        );
+
+                        chatNotifier.setReplyingToMessageObject(message);
                         _dismissOverlays();
                       },
                     ),
@@ -736,18 +766,23 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                   p.Provider.of<ChatService>(context,
                                       listen: false);
                               final squadState =
-                                  ref.read(squadStateNotifierProvider);
-                              final squadId = squadState.selectedSquadId;
-                              if (squadId != null) {
-                                await chatService.editMessage(
-                                    _messageData.id, result, squadId,
-                                    chatGroupId: widget.chatGroupId,
-                                    chatType: widget.chatType);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text('Message edited')),
-                                  );
+                                  ref.read(sn.squadNotifierProvider).maybeWhen(
+                                        data: (data) => data,
+                                        orElse: () => null,
+                                      );
+                              if (squadState != null) {
+                                final squadId = squadState.selectedSquadId;
+                                if (squadId != null) {
+                                  await chatService.editMessage(
+                                      _messageData.id, result, squadId,
+                                      chatGroupId: widget.chatGroupId,
+                                      chatType: widget.chatType);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Message edited')),
+                                    );
+                                  }
                                 }
                               }
                             } catch (e) {
@@ -798,18 +833,23 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                   p.Provider.of<ChatService>(context,
                                       listen: false);
                               final squadState =
-                                  ref.read(squadStateNotifierProvider);
-                              final squadId = squadState.selectedSquadId;
-                              if (squadId != null) {
-                                await chatService.deleteMessage(
-                                    _messageData.id, squadId,
-                                    chatGroupId: widget.chatGroupId,
-                                    chatType: widget.chatType);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text('Message deleted')),
-                                  );
+                                  ref.read(sn.squadNotifierProvider).maybeWhen(
+                                        data: (data) => data,
+                                        orElse: () => null,
+                                      );
+                              if (squadState != null) {
+                                final squadId = squadState.selectedSquadId;
+                                if (squadId != null) {
+                                  await chatService.deleteMessage(
+                                      _messageData.id, squadId,
+                                      chatGroupId: widget.chatGroupId,
+                                      chatType: widget.chatType);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Message deleted')),
+                                    );
+                                  }
                                 }
                               }
                             } catch (e) {
@@ -981,6 +1021,13 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                     runSpacing: 8,
                     children: emojiReactions.map((reaction) {
                       final userId = reaction['userId'];
+                      final displayName = ref.watch(userNotifierProvider.select(
+                          (asyncValue) =>
+                              ref
+                                  .read(userNotifierProvider.notifier)
+                                  .getDisplayNameForUid(userId) ??
+                              userId?.toString() ??
+                              '?'));
                       return Container(
                         width: 40,
                         height: 40,
@@ -990,8 +1037,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                         ),
                         child: Center(
                           child: Text(
-                            userId?.toString().substring(0, 1).toUpperCase() ??
-                                '?',
+                            displayName.isNotEmpty
+                                ? displayName[0].toUpperCase()
+                                : '?',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,

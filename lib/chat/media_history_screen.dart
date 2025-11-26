@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'models/message_data.dart';
-import '../services/ai_service.dart';
+import '../domain/entities/message.dart';
 
 class MediaHistoryScreen extends ConsumerStatefulWidget {
   final String? chatGroupId;
@@ -269,17 +270,56 @@ class _MediaHistoryScreenState extends ConsumerState<MediaHistoryScreen> {
             if (message.photos.isNotEmpty) ...[
               const Text('Images:',
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              ...message.photos.map((photo) => Text('• ${photo['uri']}')),
+              ...message.photos.map((photo) => Row(
+                    children: [
+                      Expanded(
+                        child: Text('• ${photo['uri']}',
+                            style: const TextStyle(color: Colors.blue),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        onPressed: () => _openMediaUrl(photo['uri']),
+                        tooltip: 'Open Image',
+                      ),
+                    ],
+                  )),
             ],
             if (message.videoUrl != null) ...[
               const Text('Video:',
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• ${message.videoUrl}'),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('• ${message.videoUrl}',
+                        style: const TextStyle(color: Colors.blue),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    onPressed: () => _openMediaUrl(message.videoUrl!),
+                    tooltip: 'Open Video',
+                  ),
+                ],
+              ),
             ],
             if (message.audioUrl != null) ...[
               const Text('Audio:',
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• ${message.audioUrl}'),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('• ${message.audioUrl}',
+                        style: const TextStyle(color: Colors.blue),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    onPressed: () => _openMediaUrl(message.audioUrl!),
+                    tooltip: 'Open Audio',
+                  ),
+                ],
+              ),
             ],
             const SizedBox(height: 8),
             Text('Message: ${message.text}'),
@@ -294,6 +334,45 @@ class _MediaHistoryScreenState extends ConsumerState<MediaHistoryScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _openMediaUrl(String url) async {
+    try {
+      // If it's a Firebase Storage URL, get a fresh download URL
+      if (url.contains('firebasestorage.googleapis.com')) {
+        // Extract the path from the Storage URL
+        final uri = Uri.parse(url);
+        final pathSegments = uri.pathSegments;
+        // Storage URLs typically have format: /v0/b/bucket/o/path
+        if (pathSegments.length >= 4 &&
+            pathSegments[0] == 'v0' &&
+            pathSegments[1] == 'b' &&
+            pathSegments[2] == 'o') {
+          final objectPath = pathSegments.sublist(3).join('/');
+          final decodedPath = Uri.decodeComponent(objectPath);
+
+          final storageRef = FirebaseStorage.instance.ref().child(decodedPath);
+          final downloadUrl = await storageRef.getDownloadURL();
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Storage URL ready: $downloadUrl')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Opening: $url')),
+          );
+        }
+      } else {
+        // Handle other URL types
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('URL: $url')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error opening media: $e')),
+      );
+    }
   }
 
   Widget _buildEmptyState() {

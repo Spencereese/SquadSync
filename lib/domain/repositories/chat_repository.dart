@@ -3,11 +3,19 @@ import 'package:squad_sync/domain/entities/chat_group.dart';
 
 abstract class ChatRepository {
   // Message operations
-  Future<Message> sendMessage(String chatGroupId, String text, MessageType messageType,
-      {String? mediaUrl, String? mediaType, String? replyTo, Poll? poll, String? voiceNoteUrl, int? voiceNoteDuration});
-  Future<List<Message>> loadMessages(String chatGroupId, {int limit = 50, DateTime? before});
+  Future<Message> sendMessage(String chatGroupId, String text,
+      MessageType messageType, ChatType chatType,
+      {String? mediaUrl,
+      String? mediaType,
+      String? replyTo,
+      Poll? poll,
+      String? voiceNoteUrl,
+      int? voiceNoteDuration});
+  Future<List<Message>> loadMessages(String chatGroupId,
+      {int limit = 50, DateTime? before});
   Future<void> deleteMessage(String chatGroupId, String messageId);
-  Future<Message> editMessage(String chatGroupId, String messageId, String newText);
+  Future<Message> editMessage(
+      String chatGroupId, String messageId, String newText);
 
   // Real-time streams
   Stream<List<Message>> watchMessages(String chatGroupId);
@@ -15,13 +23,18 @@ abstract class ChatRepository {
   Stream<Map<String, int>> watchUnreadCounts();
 
   // Reactions and interactions
-  Future<void> addReaction(String chatGroupId, String messageId, String reaction);
-  Future<void> removeReaction(String chatGroupId, String messageId, String reaction);
-  Future<Map<String, int>> getMessageReactions(String chatGroupId, String messageId);
+  Future<void> addReaction(
+      String chatGroupId, String messageId, String reaction);
+  Future<void> removeReaction(
+      String chatGroupId, String messageId, String reaction);
+  Future<Map<String, int>> getMessageReactions(
+      String chatGroupId, String messageId);
 
   // Polls
-  Future<Poll> createPoll(String chatGroupId, String question, List<String> options);
-  Future<void> votePoll(String chatGroupId, String pollId, String option, String voterId);
+  Future<Poll> createPoll(
+      String chatGroupId, String question, List<String> options);
+  Future<void> votePoll(
+      String chatGroupId, String pollId, String option, String voterId);
   Future<void> closePoll(String chatGroupId, String pollId);
   Future<Map<String, Poll>> getActivePolls(String chatGroupId);
 
@@ -31,11 +44,13 @@ abstract class ChatRepository {
   Future<void> deleteMedia(String mediaUrl);
 
   // Group management
-  Future<ChatGroup> createGroup(String name, bool isPublic, {String? description});
+  Future<ChatGroup> createGroup(String name, bool isPublic,
+      {String? description});
   Future<void> joinGroup(String groupId);
   Future<void> leaveGroup(String groupId);
   Future<List<ChatGroup>> discoverGroups({String? query, int limit = 20});
-  Future<void> updateGroupSettings(String groupId, Map<String, dynamic> settings);
+  Future<void> updateGroupSettings(
+      String groupId, Map<String, dynamic> settings);
 
   // Typing indicators
   Future<void> updateTypingIndicator(String chatGroupId, bool isTyping);
@@ -47,7 +62,8 @@ abstract class ChatRepository {
   Future<List<String>> getPinnedMessages(String chatGroupId);
 
   // AI integration
-  Future<String> getAiResponse(String chatGroupId, String userMessage, String context);
+  Future<String> getAiResponse(
+      String chatGroupId, String userMessage, String context);
   Future<List<Message>> searchMessages(String chatGroupId, String query);
 
   // Sync and offline support
@@ -56,7 +72,8 @@ abstract class ChatRepository {
   Future<void> markMessagesAsRead(String chatGroupId, DateTime timestamp);
 
   // Analytics
-  Future<void> trackMessageAnalytics(String chatGroupId, String messageId, String event);
+  Future<void> trackMessageAnalytics(
+      String chatGroupId, String messageId, String event);
   Future<Map<String, dynamic>> getChatAnalytics(String chatGroupId);
 
   // Voice chat integration

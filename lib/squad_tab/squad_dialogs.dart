@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../squad_state.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
 import 'dialogs/block_dialog.dart';
 import 'dialogs/complaint_dialog.dart';
 import 'dialogs/ratings_dialog.dart';
@@ -24,16 +24,18 @@ class SquadDialogs {
   /// Show player rating dialog
   static void showRatingsDialog(BuildContext context,
       ScaffoldMessengerState messenger, WidgetRef ref, String player) {
-    final squadState =
-        ref.read(squadStateNotifierProvider.notifier) as SquadState;
-    RatingsDialog.show(context, messenger, squadState, player);
+    final squadState = ref.read(sn.squadNotifierProvider).maybeWhen(
+          data: (data) => data,
+          orElse: () => null,
+        );
+    if (squadState != null) {
+      RatingsDialog.show(context, messenger, squadState, player);
+    }
   }
 
   /// Show join lobby dialog
   static void showJoinLobbyDialog(
       BuildContext context, String player, WidgetRef ref) {
-    final squadState =
-        ref.read(squadStateNotifierProvider.notifier) as SquadState;
-    JoinLobbyDialog.show(context, player, squadState);
+    JoinLobbyDialog.show(context, player);
   }
 }

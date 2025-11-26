@@ -74,10 +74,14 @@ mixin _$SquadState {
   Map<String, Duration> get spotTimerStates =>
       throw _privateConstructorUsedError;
   Map<String, Duration> get peacockTimerStates =>
+      throw _privateConstructorUsedError; // Ratings
+  Map<String, Map<String, int>> get dailyRatings =>
+      throw _privateConstructorUsedError;
+  Map<String, Map<String, int>> get allTimeRatings =>
+      throw _privateConstructorUsedError;
+  Map<String, dynamic> get analyticsMetrics =>
       throw _privateConstructorUsedError; // Analytics and tracking
   DateTime get lastSyncTimestamp => throw _privateConstructorUsedError;
-  Map<String, dynamic> get analyticsMetrics =>
-      throw _privateConstructorUsedError;
 
   /// Serializes this SquadState to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -132,8 +136,10 @@ abstract class $SquadStateCopyWith<$Res> {
       Map<String, dynamic>? currentGame,
       Map<String, Duration> spotTimerStates,
       Map<String, Duration> peacockTimerStates,
-      DateTime lastSyncTimestamp,
-      Map<String, dynamic> analyticsMetrics});
+      Map<String, Map<String, int>> dailyRatings,
+      Map<String, Map<String, int>> allTimeRatings,
+      Map<String, dynamic> analyticsMetrics,
+      DateTime lastSyncTimestamp});
 }
 
 /// @nodoc
@@ -187,8 +193,10 @@ class _$SquadStateCopyWithImpl<$Res, $Val extends SquadState>
     Object? currentGame = freezed,
     Object? spotTimerStates = null,
     Object? peacockTimerStates = null,
-    Object? lastSyncTimestamp = null,
+    Object? dailyRatings = null,
+    Object? allTimeRatings = null,
     Object? analyticsMetrics = null,
+    Object? lastSyncTimestamp = null,
   }) {
     return _then(_value.copyWith(
       isInitialized: null == isInitialized
@@ -335,14 +343,22 @@ class _$SquadStateCopyWithImpl<$Res, $Val extends SquadState>
           ? _value.peacockTimerStates
           : peacockTimerStates // ignore: cast_nullable_to_non_nullable
               as Map<String, Duration>,
-      lastSyncTimestamp: null == lastSyncTimestamp
-          ? _value.lastSyncTimestamp
-          : lastSyncTimestamp // ignore: cast_nullable_to_non_nullable
-              as DateTime,
+      dailyRatings: null == dailyRatings
+          ? _value.dailyRatings
+          : dailyRatings // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
+      allTimeRatings: null == allTimeRatings
+          ? _value.allTimeRatings
+          : allTimeRatings // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
       analyticsMetrics: null == analyticsMetrics
           ? _value.analyticsMetrics
           : analyticsMetrics // ignore: cast_nullable_to_non_nullable
               as Map<String, dynamic>,
+      lastSyncTimestamp: null == lastSyncTimestamp
+          ? _value.lastSyncTimestamp
+          : lastSyncTimestamp // ignore: cast_nullable_to_non_nullable
+              as DateTime,
     ) as $Val);
   }
 }
@@ -392,8 +408,10 @@ abstract class _$$SquadStateImplCopyWith<$Res>
       Map<String, dynamic>? currentGame,
       Map<String, Duration> spotTimerStates,
       Map<String, Duration> peacockTimerStates,
-      DateTime lastSyncTimestamp,
-      Map<String, dynamic> analyticsMetrics});
+      Map<String, Map<String, int>> dailyRatings,
+      Map<String, Map<String, int>> allTimeRatings,
+      Map<String, dynamic> analyticsMetrics,
+      DateTime lastSyncTimestamp});
 }
 
 /// @nodoc
@@ -445,8 +463,10 @@ class __$$SquadStateImplCopyWithImpl<$Res>
     Object? currentGame = freezed,
     Object? spotTimerStates = null,
     Object? peacockTimerStates = null,
-    Object? lastSyncTimestamp = null,
+    Object? dailyRatings = null,
+    Object? allTimeRatings = null,
     Object? analyticsMetrics = null,
+    Object? lastSyncTimestamp = null,
   }) {
     return _then(_$SquadStateImpl(
       isInitialized: null == isInitialized
@@ -593,14 +613,22 @@ class __$$SquadStateImplCopyWithImpl<$Res>
           ? _value._peacockTimerStates
           : peacockTimerStates // ignore: cast_nullable_to_non_nullable
               as Map<String, Duration>,
-      lastSyncTimestamp: null == lastSyncTimestamp
-          ? _value.lastSyncTimestamp
-          : lastSyncTimestamp // ignore: cast_nullable_to_non_nullable
-              as DateTime,
+      dailyRatings: null == dailyRatings
+          ? _value._dailyRatings
+          : dailyRatings // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
+      allTimeRatings: null == allTimeRatings
+          ? _value._allTimeRatings
+          : allTimeRatings // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
       analyticsMetrics: null == analyticsMetrics
           ? _value._analyticsMetrics
           : analyticsMetrics // ignore: cast_nullable_to_non_nullable
               as Map<String, dynamic>,
+      lastSyncTimestamp: null == lastSyncTimestamp
+          ? _value.lastSyncTimestamp
+          : lastSyncTimestamp // ignore: cast_nullable_to_non_nullable
+              as DateTime,
     ));
   }
 }
@@ -645,8 +673,10 @@ class _$SquadStateImpl implements _SquadState {
       final Map<String, dynamic>? currentGame,
       required final Map<String, Duration> spotTimerStates,
       required final Map<String, Duration> peacockTimerStates,
-      required this.lastSyncTimestamp,
-      required final Map<String, dynamic> analyticsMetrics})
+      required final Map<String, Map<String, int>> dailyRatings,
+      required final Map<String, Map<String, int>> allTimeRatings,
+      required final Map<String, dynamic> analyticsMetrics,
+      required this.lastSyncTimestamp})
       : _memberProfileImages = memberProfileImages,
         _gameSquadSpots = gameSquadSpots,
         _gameSpotTimers = gameSpotTimers,
@@ -674,6 +704,8 @@ class _$SquadStateImpl implements _SquadState {
         _currentGame = currentGame,
         _spotTimerStates = spotTimerStates,
         _peacockTimerStates = peacockTimerStates,
+        _dailyRatings = dailyRatings,
+        _allTimeRatings = allTimeRatings,
         _analyticsMetrics = analyticsMetrics;
 
   factory _$SquadStateImpl.fromJson(Map<String, dynamic> json) =>
@@ -935,9 +967,24 @@ class _$SquadStateImpl implements _SquadState {
     return EqualUnmodifiableMapView(_peacockTimerStates);
   }
 
-// Analytics and tracking
+// Ratings
+  final Map<String, Map<String, int>> _dailyRatings;
+// Ratings
   @override
-  final DateTime lastSyncTimestamp;
+  Map<String, Map<String, int>> get dailyRatings {
+    if (_dailyRatings is EqualUnmodifiableMapView) return _dailyRatings;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_dailyRatings);
+  }
+
+  final Map<String, Map<String, int>> _allTimeRatings;
+  @override
+  Map<String, Map<String, int>> get allTimeRatings {
+    if (_allTimeRatings is EqualUnmodifiableMapView) return _allTimeRatings;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_allTimeRatings);
+  }
+
   final Map<String, dynamic> _analyticsMetrics;
   @override
   Map<String, dynamic> get analyticsMetrics {
@@ -946,9 +993,13 @@ class _$SquadStateImpl implements _SquadState {
     return EqualUnmodifiableMapView(_analyticsMetrics);
   }
 
+// Analytics and tracking
+  @override
+  final DateTime lastSyncTimestamp;
+
   @override
   String toString() {
-    return 'SquadState(isInitialized: $isInitialized, isInitialDataLoaded: $isInitialDataLoaded, displayName: $displayName, profileImage: $profileImage, memberProfileImages: $memberProfileImages, gameSquadSpots: $gameSquadSpots, gameSpotTimers: $gameSpotTimers, gameStatuses: $gameStatuses, globalStatuses: $globalStatuses, squadMemberUids: $squadMemberUids, memberDisplayNames: $memberDisplayNames, userSquadIds: $userSquadIds, selectedSquadId: $selectedSquadId, userSquads: $userSquads, currentSquadData: $currentSquadData, typing: $typing, tiltEnabled: $tiltEnabled, hasNewSquadSpot: $hasNewSquadSpot, hasUnreadMessages: $hasUnreadMessages, gameHistory: $gameHistory, preferredModes: $preferredModes, userBlocks: $userBlocks, dailyBanVotes: $dailyBanVotes, bans: $bans, availableGames: $availableGames, gameLobbies: $gameLobbies, preferredPeacockGames: $preferredPeacockGames, mutedGames: $mutedGames, hiddenGames: $hiddenGames, peacockTimers: $peacockTimers, peacockQueue: $peacockQueue, scheduledTimes: $scheduledTimes, hasNewAvailability: $hasNewAvailability, currentGame: $currentGame, spotTimerStates: $spotTimerStates, peacockTimerStates: $peacockTimerStates, lastSyncTimestamp: $lastSyncTimestamp, analyticsMetrics: $analyticsMetrics)';
+    return 'SquadState(isInitialized: $isInitialized, isInitialDataLoaded: $isInitialDataLoaded, displayName: $displayName, profileImage: $profileImage, memberProfileImages: $memberProfileImages, gameSquadSpots: $gameSquadSpots, gameSpotTimers: $gameSpotTimers, gameStatuses: $gameStatuses, globalStatuses: $globalStatuses, squadMemberUids: $squadMemberUids, memberDisplayNames: $memberDisplayNames, userSquadIds: $userSquadIds, selectedSquadId: $selectedSquadId, userSquads: $userSquads, currentSquadData: $currentSquadData, typing: $typing, tiltEnabled: $tiltEnabled, hasNewSquadSpot: $hasNewSquadSpot, hasUnreadMessages: $hasUnreadMessages, gameHistory: $gameHistory, preferredModes: $preferredModes, userBlocks: $userBlocks, dailyBanVotes: $dailyBanVotes, bans: $bans, availableGames: $availableGames, gameLobbies: $gameLobbies, preferredPeacockGames: $preferredPeacockGames, mutedGames: $mutedGames, hiddenGames: $hiddenGames, peacockTimers: $peacockTimers, peacockQueue: $peacockQueue, scheduledTimes: $scheduledTimes, hasNewAvailability: $hasNewAvailability, currentGame: $currentGame, spotTimerStates: $spotTimerStates, peacockTimerStates: $peacockTimerStates, dailyRatings: $dailyRatings, allTimeRatings: $allTimeRatings, analyticsMetrics: $analyticsMetrics, lastSyncTimestamp: $lastSyncTimestamp)';
   }
 
   @override
@@ -1026,10 +1077,14 @@ class _$SquadStateImpl implements _SquadState {
                 .equals(other._spotTimerStates, _spotTimerStates) &&
             const DeepCollectionEquality()
                 .equals(other._peacockTimerStates, _peacockTimerStates) &&
-            (identical(other.lastSyncTimestamp, lastSyncTimestamp) ||
-                other.lastSyncTimestamp == lastSyncTimestamp) &&
             const DeepCollectionEquality()
-                .equals(other._analyticsMetrics, _analyticsMetrics));
+                .equals(other._dailyRatings, _dailyRatings) &&
+            const DeepCollectionEquality()
+                .equals(other._allTimeRatings, _allTimeRatings) &&
+            const DeepCollectionEquality()
+                .equals(other._analyticsMetrics, _analyticsMetrics) &&
+            (identical(other.lastSyncTimestamp, lastSyncTimestamp) ||
+                other.lastSyncTimestamp == lastSyncTimestamp));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1072,8 +1127,10 @@ class _$SquadStateImpl implements _SquadState {
         const DeepCollectionEquality().hash(_currentGame),
         const DeepCollectionEquality().hash(_spotTimerStates),
         const DeepCollectionEquality().hash(_peacockTimerStates),
-        lastSyncTimestamp,
-        const DeepCollectionEquality().hash(_analyticsMetrics)
+        const DeepCollectionEquality().hash(_dailyRatings),
+        const DeepCollectionEquality().hash(_allTimeRatings),
+        const DeepCollectionEquality().hash(_analyticsMetrics),
+        lastSyncTimestamp
       ]);
 
   /// Create a copy of SquadState
@@ -1130,8 +1187,10 @@ abstract class _SquadState implements SquadState {
       final Map<String, dynamic>? currentGame,
       required final Map<String, Duration> spotTimerStates,
       required final Map<String, Duration> peacockTimerStates,
-      required final DateTime lastSyncTimestamp,
-      required final Map<String, dynamic> analyticsMetrics}) = _$SquadStateImpl;
+      required final Map<String, Map<String, int>> dailyRatings,
+      required final Map<String, Map<String, int>> allTimeRatings,
+      required final Map<String, dynamic> analyticsMetrics,
+      required final DateTime lastSyncTimestamp}) = _$SquadStateImpl;
 
   factory _SquadState.fromJson(Map<String, dynamic> json) =
       _$SquadStateImpl.fromJson;
@@ -1207,11 +1266,15 @@ abstract class _SquadState implements SquadState {
   @override
   Map<String, Duration> get spotTimerStates;
   @override
-  Map<String, Duration> get peacockTimerStates; // Analytics and tracking
+  Map<String, Duration> get peacockTimerStates; // Ratings
+  @override
+  Map<String, Map<String, int>> get dailyRatings;
+  @override
+  Map<String, Map<String, int>> get allTimeRatings;
+  @override
+  Map<String, dynamic> get analyticsMetrics; // Analytics and tracking
   @override
   DateTime get lastSyncTimestamp;
-  @override
-  Map<String, dynamic> get analyticsMetrics;
 
   /// Create a copy of SquadState
   /// with the given fields replaced by the non-null parameter values.

@@ -3,7 +3,7 @@ import '../models/message_data.dart';
 import '../message_bubble.dart';
 import '../chat_service.dart';
 import 'connecting_line_painter.dart';
-import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart';
 
 /// Widget for displaying a message and its replies inline with connecting lines
 class MessageGroup extends StatefulWidget {

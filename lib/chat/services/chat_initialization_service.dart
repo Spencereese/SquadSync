@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../squad_state.dart';
-import '../../services/ai_service.dart';
+import 'package:provider/provider.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../domain/entities/squad_state.dart';
+import '../../domain/entities/message.dart';
 import '../chat_state.dart';
 
 /// Service responsible for complex chat initialization logic
@@ -11,6 +13,7 @@ class ChatInitializationService {
   /// Initializes chat with all necessary setup operations
   Future<void> initializeChat({
     required BuildContext context,
+    required WidgetRef ref,
     required String? chatGroupId,
     required String? chatGroupName,
     required ChatType chatType,
@@ -22,7 +25,12 @@ class ChatInitializationService {
     required TextEditingController messageController,
     required String? initialMessage,
   }) async {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = ref.read(sn.squadNotifierProvider).valueOrNull;
+
+    if (squadState == null) {
+      // Handle loading state
+      return;
+    }
 
     // Update online status
     _updateOnlineStatus(true, squadState);
@@ -41,7 +49,7 @@ class ChatInitializationService {
     await _loadNotificationSettings();
 
     // Load quick reaction emoji
-    await Provider.of<ChatState>(context, listen: false)
+    await p.Provider.of<ChatState>(context, listen: false)
         .loadQuickReactionEmojis();
 
     // Load user display names for better performance
@@ -118,8 +126,10 @@ class ChatInitializationService {
   }
 
   /// Cleanup operations when chat is disposed
-  void dispose(BuildContext context) {
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    _updateOnlineStatus(false, squadState);
+  void dispose(BuildContext context, WidgetRef ref) {
+    final squadState = ref.read(sn.squadNotifierProvider).valueOrNull;
+    if (squadState != null) {
+      _updateOnlineStatus(false, squadState);
+    }
   }
 }

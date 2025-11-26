@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../../squad_state.dart';
+import '../../squad_state_notifier.dart';
 
 /// Service responsible for message processing, caching, and display name resolution
 class ChatMessageProcessor {

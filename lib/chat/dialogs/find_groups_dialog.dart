@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../presentation/notifiers/user_notifier.dart';
 
 /// Dialog for finding and joining public groups
 class FindGroupsDialog extends StatefulWidget {
@@ -102,6 +104,36 @@ class _FindGroupsDialogState extends State<FindGroupsDialog> {
         'members': FieldValue.arrayUnion([currentUser.uid]),
         'memberCount': FieldValue.increment(1),
       });
+
+      // Also add the group to the current user's userGroups list
+      final groupInfo = {
+        'id': groupId,
+        'name': groupData['name'] ?? 'Unnamed Group',
+        'imageUrl': groupData['imageUrl'],
+        'isPublic': groupData['isPublic'] ?? false,
+        'memberCount': (groupData['memberCount'] ?? 0) + 1,
+        'createdBy': creatorUid,
+        'lastMessage': groupData['lastMessage'],
+        'lastMessageTime': groupData['lastMessageTime'],
+      };
+
+      await _firestore.collection('users').doc(currentUser.uid).update({
+        'userGroups': FieldValue.arrayUnion([groupInfo]),
+      });
+
+      // Also create a document in the user's chat_groups subcollection
+      await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_groups')
+          .doc(groupId)
+          .set(groupInfo);
+
+      // Update the local user notifier state immediately
+      if (context.mounted) {
+        final container = ProviderScope.containerOf(context);
+        container.read(userNotifierProvider.notifier).addUserGroup(groupInfo);
+      }
 
       if (mounted) {
         Navigator.pop(context); // Close the search dialog

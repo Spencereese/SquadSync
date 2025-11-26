@@ -5,7 +5,8 @@ import 'package:squad_sync/domain/entities/chat_group.dart';
 
 abstract class ChatRemoteDataSource {
   // Message operations
-  Future<Message> sendMessage(String chatGroupId, Message message);
+  Future<Message> sendMessage(
+      String chatGroupId, Message message, ChatType chatType);
   Future<List<Message>> fetchMessages(String chatGroupId,
       {int limit = 50, DateTime? before});
   Future<void> deleteMessage(String chatGroupId, String messageId);

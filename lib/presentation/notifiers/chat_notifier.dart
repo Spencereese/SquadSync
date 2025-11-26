@@ -56,15 +56,15 @@ class ChatNotifier extends _$ChatNotifier {
   }
 
   // Message operations
-  Future<void> sendMessage(
-      String chatGroupId, String text, MessageType messageType,
+  Future<void> sendMessage(String chatGroupId, String text,
+      MessageType messageType, ChatType chatType,
       {String? mediaUrl,
       String? mediaType,
       String? replyTo,
       Poll? poll,
       String? voiceNoteUrl,
       int? voiceNoteDuration}) async {
-    await _sendMessage(chatGroupId, text, messageType,
+    await _sendMessage(chatGroupId, text, messageType, chatType,
         mediaUrl: mediaUrl,
         mediaType: mediaType,
         replyTo: replyTo,
@@ -165,7 +165,34 @@ class ChatNotifier extends _$ChatNotifier {
   Future<void> setReplyingToMessage(String? messageId) async {
     state = await AsyncValue.guard(() async {
       final currentState = await future;
-      return currentState.copyWith(replyingToMessageId: messageId);
+
+      Message? replyToMessage;
+      if (messageId != null && currentState.selectedChatGroupId != null) {
+        final messages =
+            currentState.chatMessages[currentState.selectedChatGroupId] ?? [];
+        try {
+          replyToMessage = messages.firstWhere(
+            (message) => message.id == messageId,
+          );
+        } catch (e) {
+          replyToMessage = null;
+        }
+      }
+
+      return currentState.copyWith(
+        replyingToMessageId: messageId,
+        replyToMessage: replyToMessage,
+      );
+    });
+  }
+
+  Future<void> setReplyingToMessageObject(Message? message) async {
+    state = await AsyncValue.guard(() async {
+      final currentState = await future;
+      return currentState.copyWith(
+        replyingToMessageId: message?.id,
+        replyToMessage: message,
+      );
     });
   }
 

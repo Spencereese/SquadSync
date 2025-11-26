@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
-import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart';
 import '../chat_state.dart';
 import '../models/message_data.dart';
 import '../services/reaction_service.dart';

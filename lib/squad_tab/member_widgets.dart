@@ -1,70 +1,73 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
 
 class MemberWidgets {
   static Widget buildPlayerStatusRow(
       BuildContext context, WidgetRef ref, String player) {
-    final gameName = ref.read(squadStateNotifierProvider
-        .select((state) => state.currentGame?['name'] ?? ''));
-    final globalStatuses = ref.read(
-        squadStateNotifierProvider.select((state) => state.globalStatuses));
-    final gameStatuses = ref.read(squadStateNotifierProvider
-        .select((state) => state.gameStatuses[gameName] ?? {}));
-    final status = gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
-    final squadSpots = ref.read(squadStateNotifierProvider
-        .select((state) => state.gameSquadSpots[gameName] ?? []));
-    final timerIndex = squadSpots.indexOf(player);
-    final timerDisplay = timerIndex != -1
-        ? 'Timer'
-        : null; // Placeholder, need to implement getSpotTimerDisplay
-    final streak = 0; // Placeholder, need to implement currentStreaks
-    final banCount = 0; // Placeholder, need to implement getBanCount
+    return ref.read(sn.squadNotifierProvider).when(
+          data: (squadState) {
+            final gameName = squadState.currentGame?['name'] ?? '';
+            final globalStatuses = squadState.globalStatuses;
+            final gameStatuses = squadState.gameStatuses[gameName] ?? {};
+            final status =
+                gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
+            final squadSpots = squadState.gameSquadSpots[gameName] ?? [];
+            final timerIndex = squadSpots.indexOf(player);
+            final timerDisplay = timerIndex != -1
+                ? 'Timer'
+                : null; // Placeholder, need to implement getSpotTimerDisplay
+            final streak = 0; // Placeholder, need to implement currentStreaks
+            final banCount = 0; // Placeholder, need to implement getBanCount
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Wrap(
-        spacing: 8,
-        children: [
-          _buildStatusChip(status,
-              gameName: status == 'Claimed Spot' ? gameName : null),
-          if (timerDisplay != null &&
-              (status == 'Ready' ||
-                  status == 'Calling' ||
-                  status == 'Claimed Spot' ||
-                  status == 'in game'))
-            Text('($timerDisplay)',
-                style: Theme.of(context).textTheme.bodySmall),
-          if (streak > 0) ...[
-            Image.asset(
-              'assets/images/performance.png',
-              width: 16,
-              height: 16,
-              color: Colors.yellowAccent,
-            ),
-            Text('$streak',
-                style:
-                    const TextStyle(color: Colors.yellowAccent, fontSize: 12)),
-          ],
-          if (banCount > 0)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(
-                banCount,
-                (_) => Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Image.asset(
-                    'assets/images/sword.png',
-                    width: 16,
-                    height: 16,
-                    color: Colors.redAccent,
-                  ),
-                ),
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(
+                spacing: 8,
+                children: [
+                  _buildStatusChip(status,
+                      gameName: status == 'Claimed Spot' ? gameName : null),
+                  if (timerDisplay != null &&
+                      (status == 'Ready' ||
+                          status == 'Calling' ||
+                          status == 'Claimed Spot' ||
+                          status == 'in game'))
+                    Text('($timerDisplay)',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  if (streak > 0) ...[
+                    Image.asset(
+                      'assets/images/performance.png',
+                      width: 16,
+                      height: 16,
+                      color: Colors.yellowAccent,
+                    ),
+                    Text('$streak',
+                        style: const TextStyle(
+                            color: Colors.yellowAccent, fontSize: 12)),
+                  ],
+                  if (banCount > 0)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(
+                        banCount,
+                        (_) => Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: Image.asset(
+                            'assets/images/sword.png',
+                            width: 16,
+                            height: 16,
+                            color: Colors.redAccent,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
-        ],
-      ),
-    );
+            );
+          },
+          loading: () => const CircularProgressIndicator(),
+          error: (e, s) => Text('Error loading squad: $e'),
+        );
   }
 
   static Widget _buildStatusChip(String status, {String? gameName}) {
@@ -80,31 +83,35 @@ class MemberWidgets {
 
   static Widget _buildMemberSubtitle(
       BuildContext context, WidgetRef ref, String player) {
-    final gameName = ref.read(squadStateNotifierProvider
-        .select((state) => state.currentGame?['name'] ?? ''));
-    final globalStatuses = ref.read(
-        squadStateNotifierProvider.select((state) => state.globalStatuses));
-    final gameStatuses = ref.read(squadStateNotifierProvider
-        .select((state) => state.gameStatuses[gameName] ?? {}));
-    final status = gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
-    final statusColor = _getMemberStatusColor(status);
+    return ref.read(sn.squadNotifierProvider).when(
+          data: (squadState) {
+            final gameName = squadState.currentGame?['name'] ?? '';
+            final globalStatuses = squadState.globalStatuses;
+            final gameStatuses = squadState.gameStatuses[gameName] ?? {};
+            final status =
+                gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
+            final statusColor = _getMemberStatusColor(status);
 
-    return Row(
-      children: [
-        Text(
-          status,
-          style: TextStyle(color: statusColor),
-        ),
-        // Placeholder for getPlayerGame - need to implement
-        // if (getPlayerGame(player) != null) ...[
-        //   const SizedBox(width: 8),
-        //   Text(
-        //     'Playing: ${getPlayerGame(player)}',
-        //     style: TextStyle(color: Colors.blueAccent, fontSize: 12),
-        //   ),
-        // ],
-      ],
-    );
+            return Row(
+              children: [
+                Text(
+                  status,
+                  style: TextStyle(color: statusColor),
+                ),
+                // Placeholder for getPlayerGame - need to implement
+                // if (getPlayerGame(player) != null) ...[
+                //   const SizedBox(width: 8),
+                //   Text(
+                //     'Playing: ${getPlayerGame(player)}',
+                //     style: TextStyle(color: Colors.blueAccent, fontSize: 12),
+                //   ),
+                // ],
+              ],
+            );
+          },
+          loading: () => const CircularProgressIndicator(),
+          error: (e, s) => Text('Error loading squad: $e'),
+        );
   }
 
   static Widget _buildMemberActions(
@@ -115,54 +122,64 @@ class MemberWidgets {
           showComplaintDialog,
       {String? circle,
       List<String>? friends}) {
-    final streak = 0; // Placeholder, need to implement currentStreaks
-    final banCount = 0; // Placeholder, need to implement getBanCount
-    final displayName = ref
-        .read(squadStateNotifierProvider.select((state) => state.displayName));
+    return ref.read(sn.squadNotifierProvider).when(
+          data: (squadState) {
+            final streak = 0; // Placeholder, need to implement currentStreaks
+            final banCount = 0; // Placeholder, need to implement getBanCount
+            final displayName = squadState.displayName;
 
-    // Check if player is a friend
-    final isFriend = friends?.contains(player) ?? false;
+            // Check if player is a friend
+            final isFriend = friends?.contains(player) ?? false;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (streak > 0) ...[
-          Icon(Icons.star, color: Colors.yellowAccent, size: 16),
-          const SizedBox(width: 2),
-          Text('$streak',
-              style: const TextStyle(color: Colors.yellowAccent, fontSize: 12)),
-        ],
-        if (banCount > 0) ...[
-          const SizedBox(width: 8),
-          Icon(Icons.warning, color: Colors.redAccent, size: 16),
-          const SizedBox(width: 2),
-          Text('$banCount',
-              style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
-        ],
-        if (circle == 'Public' && !isFriend && player != displayName) ...[
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.person_add,
-                color: Colors.blueAccent, size: 20),
-            tooltip: 'Send Friend Request',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            onPressed: () => _sendFriendRequest(context, ref, player),
-          ),
-        ],
-        const SizedBox(width: 8),
-        IconButton(
-          icon: const Icon(Icons.report, color: Colors.redAccent, size: 20),
-          tooltip: 'File Complaint',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          onPressed: () {
-            final messenger = ScaffoldMessenger.of(context);
-            showComplaintDialog(context, messenger, ref, player);
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (streak > 0) ...[
+                  Icon(Icons.star, color: Colors.yellowAccent, size: 16),
+                  const SizedBox(width: 2),
+                  Text('$streak',
+                      style: const TextStyle(
+                          color: Colors.yellowAccent, fontSize: 12)),
+                ],
+                if (banCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Icon(Icons.warning, color: Colors.redAccent, size: 16),
+                  const SizedBox(width: 2),
+                  Text('$banCount',
+                      style: const TextStyle(
+                          color: Colors.redAccent, fontSize: 12)),
+                ],
+                if (circle == 'Public' &&
+                    !isFriend &&
+                    player != displayName) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.person_add,
+                        color: Colors.blueAccent, size: 20),
+                    tooltip: 'Send Friend Request',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _sendFriendRequest(context, ref, player),
+                  ),
+                ],
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.report,
+                      color: Colors.redAccent, size: 20),
+                  tooltip: 'File Complaint',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    final messenger = ScaffoldMessenger.of(context);
+                    showComplaintDialog(context, messenger, ref, player);
+                  },
+                ),
+              ],
+            );
           },
-        ),
-      ],
-    );
+          loading: () => const CircularProgressIndicator(),
+          error: (e, s) => Text('Error loading squad: $e'),
+        );
   }
 
   static Color _getMemberStatusColor(String status) {
@@ -263,20 +280,21 @@ class MemberWidgets {
 
   static void _sendFriendRequest(
       BuildContext context, WidgetRef ref, String player) async {
-    final memberDisplayNames = ref.read(
-        squadStateNotifierProvider.select((state) => state.memberDisplayNames));
-    final playerUid = memberDisplayNames.entries
-        .firstWhere((entry) => entry.value == player,
-            orElse: () => MapEntry('', ''))
-        .key;
-    if (playerUid.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to send friend request')),
-      );
-      return;
-    }
+    final asyncState = ref.read(sn.squadNotifierProvider);
+    if (asyncState is AsyncData) {
+      final squadState = asyncState.value!;
+      final memberDisplayNames = squadState.memberDisplayNames;
+      final playerUid = memberDisplayNames.entries
+          .firstWhere((entry) => entry.value == player,
+              orElse: () => MapEntry('', ''))
+          .key;
+      if (playerUid.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to send friend request')),
+        );
+        return;
+      }
 
-    try {
       // final userManager = ref.read(userManagerProvider); // Placeholder, need to implement userManagerProvider
       // await userManager.sendFriendRequest(playerUid);
 
@@ -318,12 +336,6 @@ class MemberWidgets {
             ),
             backgroundColor: Colors.green,
           ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send friend request: $e')),
         );
       }
     }

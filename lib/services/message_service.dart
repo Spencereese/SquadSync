@@ -1,14 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:logger/logger.dart';
 import 'dart:io';
 import 'dart:async';
-import '../squad_state.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
 import '../services/ai_service.dart';
+import '../domain/entities/message.dart';
 import '../chat/sqlite_helper.dart';
 
 /// Result of a message send operation
@@ -53,7 +53,7 @@ class MessageService {
 
   // Send a new message with improved error handling
   Future<MessageSendResult> sendMessage(
-    BuildContext context, {
+    WidgetRef ref, {
     required String senderUid,
     String? text,
     String? imageUrl,
@@ -72,8 +72,7 @@ class MessageService {
     final bool isDM = chatType == ChatType.dm;
 
     // Capture squadId synchronously to avoid async gaps
-    final cachedSquadId =
-        isDM || isUserGroup ? null : _getCachedSquadId(context);
+    final cachedSquadId = isDM || isUserGroup ? null : _getCachedSquadId(ref);
 
     // Validate input
     if ((text?.trim().isEmpty ?? true) &&
@@ -182,8 +181,12 @@ class MessageService {
       // Check if this is a message for Grok and generate AI response
       if (text != null && _aiService.shouldGenerateAiResponse(text)) {
         // ignore: use_build_context_synchronously
-        _aiService.generateGrokResponse(context, text, senderUid,
-            isDM ? null : (isUserGroup ? null : cachedSquadId), chatGroupId,
+        _aiService.generateGrokResponse(
+            ref.read(sn.squadNotifierProvider).valueOrNull!,
+            text,
+            senderUid,
+            isDM ? null : (isUserGroup ? null : cachedSquadId),
+            chatGroupId,
             chatType: chatType);
       }
 
@@ -313,7 +316,7 @@ class MessageService {
   }
 
   // Add reaction to a message
-  Future<void> addReaction(BuildContext context, String msgId, String reaction,
+  Future<void> addReaction(WidgetRef ref, String msgId, String reaction,
       {String? chatGroupId, ChatType? chatType}) async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
@@ -374,15 +377,15 @@ class MessageService {
   }
 
   // Update typing status
-  Future<void> updateTypingStatus(
-      BuildContext context, String user, bool isTyping,
+  Future<void> updateTypingStatus(WidgetRef ref, String user, bool isTyping,
       {String? chatGroupId}) async {
     try {
       if (user.isEmpty) return;
-      Provider.of<SquadState>(context, listen: false)
+      ref
+          .read(sn.squadNotifierProvider.notifier)
           .updateTypingStatus(user, isTyping);
 
-      final squadId = _getCachedSquadId(context);
+      final squadId = _getCachedSquadId(ref);
       if (squadId == null) return;
 
       // Use different typing status paths for squad vs group chats
@@ -464,9 +467,13 @@ class MessageService {
   bool get isOnline => _isOnline;
 
   // Private helper methods
-  String? _getCachedSquadId(BuildContext context) {
+  String? _getCachedSquadId(WidgetRef ref) {
     try {
-      return Provider.of<SquadState>(context, listen: false).selectedSquadId;
+      final squadStateAsync = ref.watch(sn.squadNotifierProvider);
+      return squadStateAsync.maybeWhen(
+        data: (squadState) => squadState.selectedSquadId,
+        orElse: () => null,
+      );
     } catch (e) {
       _logger.e('Failed to get cached squad ID: $e');
       return null;

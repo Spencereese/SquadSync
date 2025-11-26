@@ -17,7 +17,7 @@ class SQLiteHelper {
     String path = join(await getDatabasesPath(), 'squadsync.db');
     return await openDatabase(
       path,
-      version: 7, // Increment version for voice_rooms_cache table
+      version: 8, // Increment version for message schema update
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE messages (
@@ -139,6 +139,29 @@ class SQLiteHelper {
               cached_at TEXT
             )
           ''');
+        }
+        if (oldVersion < 8) {
+          // Update messages table schema to support full Message entity
+          await db.execute('ALTER TABLE messages ADD COLUMN sender_id TEXT');
+          await db.execute('ALTER TABLE messages ADD COLUMN text TEXT');
+          await db.execute('ALTER TABLE messages ADD COLUMN message_type TEXT');
+          await db.execute('ALTER TABLE messages ADD COLUMN media_url TEXT');
+          await db.execute('ALTER TABLE messages ADD COLUMN media_type TEXT');
+          await db.execute('ALTER TABLE messages ADD COLUMN poll TEXT');
+          await db
+              .execute('ALTER TABLE messages ADD COLUMN voice_note_url TEXT');
+          await db.execute(
+              'ALTER TABLE messages ADD COLUMN voice_note_duration INTEGER');
+          await db.execute('ALTER TABLE messages ADD COLUMN ai_response TEXT');
+          await db.execute('ALTER TABLE messages ADD COLUMN metadata TEXT');
+          await db.execute(
+              'ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0');
+          await db.execute('ALTER TABLE messages ADD COLUMN edited_at TEXT');
+          await db.execute(
+              'ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0');
+          await db.execute('ALTER TABLE messages ADD COLUMN deleted_at TEXT');
+          await db.execute(
+              'ALTER TABLE messages ADD COLUMN synced INTEGER DEFAULT 1');
         }
       },
     );
@@ -319,7 +342,8 @@ class SQLiteHelper {
     }
   }
 
-  Future<void> cacheGames(List<Map<String, dynamic>> games, String query) async {
+  Future<void> cacheGames(
+      List<Map<String, dynamic>> games, String query) async {
     try {
       final db = await database;
       final id = 'games_$query';

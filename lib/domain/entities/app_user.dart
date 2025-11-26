@@ -12,7 +12,7 @@ class AppUser with _$AppUser {
     required Map<String, String?> preferredModes,
     required Map<String, Map<String, bool>> userBlocks,
     required List<Map<String, dynamic>> pinnedGames,
-    required Set<String> mutedGames,
+    required Map<String, bool> notificationSettings,
     required Map<String, bool> hasRatedGame,
     required Map<String, Map<String, int>> dailyRatings,
     required Map<String, Map<String, int>> allTimeRatings,
@@ -21,6 +21,12 @@ class AppUser with _$AppUser {
     required Map<String, List<Map<String, dynamic>>> bans,
     required Map<String, Map<String, bool>> dailyBanVotes,
     required List<String> blockedUsers,
+    required List<String> friends,
+    required List<String> alerts,
+    required List<Map<String, dynamic>> userGroups,
+    required List<String> alertCircles,
+    required List<Map<String, dynamic>> publicGroups,
+    required List<String> pinnedMessages,
   }) = _AppUser;
 
   factory AppUser.fromJson(Map<String, dynamic> json) =>
@@ -33,7 +39,18 @@ class AppUser with _$AppUser {
         preferredModes: {},
         userBlocks: {},
         pinnedGames: [],
-        mutedGames: {},
+        notificationSettings: {
+          'pushNotifications': true,
+          'soundEnabled': true,
+          'vibrationEnabled': true,
+          'showPreviews': true,
+          'quietHoursEnabled': false,
+          'urgentAlertsOnly': false,
+          'lobbyInvites': true,
+          'friendRequests': true,
+          'gameUpdates': false,
+          'achievementAlerts': true,
+        },
         hasRatedGame: {},
         dailyRatings: {},
         allTimeRatings: {},
@@ -42,5 +59,11 @@ class AppUser with _$AppUser {
         bans: {},
         dailyBanVotes: {},
         blockedUsers: [],
+        friends: [],
+        alerts: [],
+        userGroups: [],
+        alertCircles: ['Squad', 'Friends', 'Public'],
+        publicGroups: [],
+        pinnedMessages: [],
       );
 }

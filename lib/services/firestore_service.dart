@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'interfaces.dart';
 import 'grok_service.dart';
-import '../managers/notification_manager.dart';
+import '../managers/stubs.dart';
 import '../chat/sqlite_helper.dart';
 
 /// QueryBuilder for building optimized discovery queries
@@ -267,7 +267,8 @@ class FirestoreService implements IFirestoreService {
   }
 
   /// Save game search results to Firestore for cross-device sync
-  Future<void> saveGameSearch(String query, Map<String, dynamic> gameData) async {
+  Future<void> saveGameSearch(
+      String query, Map<String, dynamic> gameData) async {
     try {
       await _firestore
           .collection('game_searches')
@@ -364,7 +365,8 @@ class FirestoreService implements IFirestoreService {
   }
 
   @override
-  Future<void> updateVoiceParticipant(String roomId, String uid, Map<String, dynamic> data) async {
+  Future<void> updateVoiceParticipant(
+      String roomId, String uid, Map<String, dynamic> data) async {
     await _firestore
         .collection('voice_rooms')
         .doc(roomId)

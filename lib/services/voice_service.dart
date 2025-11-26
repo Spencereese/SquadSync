@@ -10,7 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:retry/retry.dart';
-import '../managers/notification_manager.dart';
+import '../managers/stubs.dart';
 import 'app_flow_manager.dart';
 import 'firestore_service.dart';
 import '../chat/sqlite_helper.dart';

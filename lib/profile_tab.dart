@@ -6,12 +6,12 @@ import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import '../managers/user_manager.dart';
 import '../chat/chat_state.dart';
 import '../chat/chat_groups_screen.dart';
-import '../providers.dart';
-import '../squad_state_notifier.dart';
 import 'package:flutter/services.dart';
+import 'presentation/notifiers/user_notifier.dart';
+import 'presentation/notifiers/squad_notifier.dart' as sn;
+import 'domain/entities/squad_state.dart';
 
 class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
@@ -64,7 +64,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
       _onlineStatusVisible = prefs.getBool('onlineStatusVisible') ?? true;
     });
     ref
-        .read(squadStateNotifierProvider.notifier)
+        .read(sn.squadNotifierProvider.notifier)
         .updateTiltEnabled(_tiltEnabled); // Sync with SquadState
     _animationController.forward();
   }
@@ -75,7 +75,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
       await prefs.setBool(key, value);
       if (key == 'tiltEnabled') {
         ref
-            .read(squadStateNotifierProvider.notifier)
+            .read(sn.squadNotifierProvider.notifier)
             .updateTiltEnabled(value); // Update SquadState
       }
     }
@@ -92,8 +92,10 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         FirebaseStorage.instance.ref().child('profile_pics/$uid.jpg');
     await storageRef.putFile(imageFile);
     String downloadUrl = await storageRef.getDownloadURL();
-    ref
-        .read(squadStateNotifierProvider.notifier)
+    // Update both local state and persist to Firebase
+    ref.read(sn.squadNotifierProvider.notifier).updateProfileImage(downloadUrl);
+    await ref
+        .read(userNotifierProvider.notifier)
         .updateProfileImage(downloadUrl);
     await _saveSettings('profileImageUrl', downloadUrl);
 
@@ -104,45 +106,67 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     );
   }
 
-  void _updateDisplayName() {
+  Future<void> _updateDisplayName() async {
     if (_nameController.text.isNotEmpty && context.mounted) {
-      ref
-          .read(squadStateNotifierProvider.notifier)
-          .updateDisplayName(_nameController.text);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Display name updated!')),
-      );
+      try {
+        // Update both local state and persist to Firebase
+        ref
+            .read(sn.squadNotifierProvider.notifier)
+            .updateDisplayName(_nameController.text);
+        await ref
+            .read(userNotifierProvider.notifier)
+            .updateDisplayName(_nameController.text);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Display name updated!')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to update display name: $e')),
+          );
+        }
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final squadState = ref.watch(squadStateNotifierProvider);
+    final squadAsync = ref.watch(sn.squadNotifierProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => _showSettingsSheet(context),
-            tooltip: 'Settings',
-          ),
-        ],
-      ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: ListView(
-          padding: const EdgeInsets.all(16.0),
-          children: [
-            _buildProfileCard(squadState),
-            const SizedBox(height: 24),
-            _buildFriendsSection(),
-            const SizedBox(height: 24),
-            _buildPendingRequestsSection(),
+    return squadAsync.when(
+      data: (squadState) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Profile'),
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => _showSettingsSheet(context),
+              tooltip: 'Settings',
+            ),
           ],
         ),
+        body: FadeTransition(
+          opacity: _fadeAnimation,
+          child: ListView(
+            padding: const EdgeInsets.all(16.0),
+            children: [
+              _buildProfileCard(squadState),
+              const SizedBox(height: 24),
+              _buildFriendsSection(),
+              const SizedBox(height: 24),
+              _buildPendingRequestsSection(),
+            ],
+          ),
+        ),
+      ),
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) => Scaffold(
+        body: Center(child: Text('Error: $error')),
       ),
     );
   }
@@ -302,7 +326,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     );
   }
 
-  Widget _buildProfileCard(SquadStateData squadState) {
+  Widget _buildProfileCard(SquadState squadState) {
     return Card(
       color: Colors.grey[900],
       child: Padding(
@@ -360,9 +384,11 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                         child: const Text('Cancel'),
                       ),
                       TextButton(
-                        onPressed: () {
-                          _updateDisplayName();
-                          Navigator.pop(context);
+                        onPressed: () async {
+                          await _updateDisplayName();
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                          }
                         },
                         child: const Text('Save'),
                       ),
@@ -421,14 +447,16 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         ),
         const SizedBox(height: 16),
         // Friends list or search results
-        p.Consumer<UserManager>(
-          builder: (context, userManager, child) {
+        Consumer(
+          builder: (context, ref, child) {
             final searchQuery = _searchController.text.trim();
 
             if (searchQuery.isNotEmpty) {
               // Show search results
               return FutureBuilder<List<Map<String, dynamic>>>(
-                future: userManager.searchUsers(searchQuery),
+                future: ref
+                    .read(userNotifierProvider.notifier)
+                    .searchUsers(searchQuery),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
@@ -478,7 +506,8 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
             } else {
               // Show friends list
               return StreamBuilder<List<Map<String, dynamic>>>(
-                stream: userManager.streamFriends(),
+                stream:
+                    ref.watch(userNotifierProvider.notifier).streamFriends(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
@@ -580,8 +609,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   void _sendFriendRequest(
       BuildContext context, String userId, String displayName) async {
     try {
-      final userManager = p.Provider.of<UserManager>(context, listen: false);
-      await userManager.sendFriendRequest(userId);
+      await ref.read(userNotifierProvider.notifier).sendFriendRequest(userId);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -759,10 +787,12 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
           ),
         ),
         const SizedBox(height: 8),
-        p.Consumer<UserManager>(
-          builder: (context, userManager, child) {
+        Consumer(
+          builder: (context, ref, child) {
             return StreamBuilder<List<Map<String, dynamic>>>(
-              stream: userManager.streamPendingRequests(),
+              stream: ref
+                  .watch(userNotifierProvider.notifier)
+                  .streamPendingRequests(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
@@ -810,10 +840,10 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
   Widget _buildPendingRequestTile(
       BuildContext context, Map<String, dynamic> request) {
-    final userManager = p.Provider.of<UserManager>(context, listen: false);
-
     return FutureBuilder<Map<String, dynamic>?>(
-      future: userManager.getCachedSenderDetails(request['senderId']),
+      future: ref
+          .read(userNotifierProvider.notifier)
+          .getCachedSenderDetails(request['senderId']),
       builder: (context, snapshot) {
         final displayName = snapshot.data?['displayName'] ?? 'Unknown';
         final profileImage = snapshot.data?['profileImage'];
@@ -855,9 +885,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   void _startDMWithFriend(BuildContext context, String friendId) async {
-    final userManager = p.Provider.of<UserManager>(context, listen: false);
-    final chatId = await userManager.startDMThread(friendId);
-    if (chatId != null && context.mounted) {
+    final chatId = // ignore: unused_local_variable
+        await ref.read(userNotifierProvider.notifier).startDMThread(friendId);
+    if (context.mounted) {
       // Navigate to Chat tab with DM filter
       final chatState = p.Provider.of<ChatState>(context, listen: false);
       chatState.setDMView(true);
@@ -878,8 +908,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   void _removeFriend(BuildContext context, String friendId) async {
-    final userManager = p.Provider.of<UserManager>(context, listen: false);
-    await userManager.removeFriend(friendId);
+    await ref.read(userNotifierProvider.notifier).removeFriend(friendId);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend removed')),
@@ -887,8 +916,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   void _acceptFriendRequest(BuildContext context, String requesterId) async {
-    final userManager = p.Provider.of<UserManager>(context, listen: false);
-    await userManager.acceptFriendRequest(requesterId);
+    await ref
+        .read(userNotifierProvider.notifier)
+        .acceptFriendRequest(requesterId);
     if (!context.mounted) return;
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -897,8 +927,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   void _declineFriendRequest(BuildContext context, String requesterId) async {
-    final userManager = p.Provider.of<UserManager>(context, listen: false);
-    await userManager.declineFriendRequest(requesterId);
+    await ref
+        .read(userNotifierProvider.notifier)
+        .declineFriendRequest(requesterId);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Friend request declined')),
@@ -929,7 +960,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
     if (confirmed == true) {
       // Reset SquadState before signing out to prevent state persistence
-      ref.read(squadStateNotifierProvider.notifier).reset();
+      ref.read(sn.squadNotifierProvider.notifier).reset();
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('profileImageUrl');

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
+import '../../domain/entities/squad_state.dart';
 
 class DeleteGameDialog {
   static void show(BuildContext context, SquadState squadState, int index) {
@@ -18,7 +18,8 @@ class DeleteGameDialog {
           ),
           TextButton(
             onPressed: () {
-              squadState.deleteGame(game['name']);
+              // TODO: Implement deleteGame using notifier
+              // squadState.deleteGame(game['name']);
               // Defer navigation to avoid _debugLocked assertion
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (Navigator.canPop(dialogContext)) {

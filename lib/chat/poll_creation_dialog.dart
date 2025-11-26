@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
 import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart' hide Poll;
 import '../../chat/chat_service.dart';
-import '../squad_state.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
+import '../presentation/notifiers/user_notifier.dart';
 
-class PollCreationDialog extends StatefulWidget {
+class PollCreationDialog extends ConsumerStatefulWidget {
   final String? chatGroupId;
   final ChatType chatType;
   final Function(Poll)? onPollCreated;
@@ -33,10 +35,10 @@ class PollCreationDialog extends StatefulWidget {
   }
 
   @override
-  State<PollCreationDialog> createState() => _PollCreationDialogState();
+  ConsumerState<PollCreationDialog> createState() => _PollCreationDialogState();
 }
 
-class _PollCreationDialogState extends State<PollCreationDialog> {
+class _PollCreationDialogState extends ConsumerState<PollCreationDialog> {
   final _titleController = TextEditingController();
   final _optionControllers = <TextEditingController>[
     TextEditingController(),
@@ -198,8 +200,8 @@ class _PollCreationDialogState extends State<PollCreationDialog> {
 
     try {
       // Get current game context for better suggestions
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      final currentGame = squadState.currentGame;
+      final squadState = ref.read(sn.squadNotifierProvider).value;
+      final currentGame = squadState?.currentGame;
       final gameContext = currentGame != null
           ? 'Current game: ${currentGame['name']} (${currentGame['genres']?.join(', ') ?? 'Unknown genre'})'
           : null;
@@ -300,11 +302,15 @@ class _PollCreationDialogState extends State<PollCreationDialog> {
           .where((text) => text.isNotEmpty)
           .toList();
 
+      final creatorName =
+          ref.read(userNotifierProvider).value?.displayName ?? 'Anonymous';
+
       final pollId = await _pollService.createPoll(
         title: _titleController.text.trim(),
         options: options,
         settings: _settings,
         chatGroupId: widget.chatGroupId,
+        creatorName: creatorName,
       );
 
       if (pollId != null && mounted) {
@@ -313,7 +319,7 @@ class _PollCreationDialogState extends State<PollCreationDialog> {
         final currentUser = FirebaseAuth.instance.currentUser;
         if (currentUser != null) {
           await chatService.sendMessage(
-            context,
+            ref,
             senderUid: currentUser.uid,
             text: '📊 ${_titleController.text.trim()}', // Poll emoji + title
             pollId: pollId,

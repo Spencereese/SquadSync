@@ -4,41 +4,15 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'managers/user_manager.dart';
-import 'managers/availability_manager.dart';
-import 'managers/squad_manager.dart';
-import 'managers/timer_state.dart';
-import 'managers/squad_data_manager.dart';
-import 'managers/achievement_manager.dart';
-import 'managers/squad_ui_manager.dart';
-import 'managers/squad_persistence_manager.dart';
-import 'managers/game_manager.dart';
-import 'managers/peacock_manager.dart';
-import 'managers/review_manager.dart';
-import 'managers/notification_manager.dart';
-import 'managers/sync_manager.dart';
 import 'chat/chat_service.dart';
 import 'services/firestore_service_refactored.dart' as refactored;
-import 'managers/state_initializer.dart';
-import 'managers/squad_persistence_service.dart';
-import 'managers/notification_coordinator.dart';
-import 'managers/lobby_service.dart';
-import 'managers/peacock_service.dart';
-import 'managers/achievement_service.dart';
-import 'managers/squad_membership_service.dart';
-import 'managers/spot_management_service.dart';
 import 'chat/chat_state.dart';
 import 'chat/sqlite_helper.dart';
 import 'services/agora_config.dart';
 import 'services/app_flow_manager.dart';
 import 'services/services.dart';
 import 'app_theme.dart';
-import 'squad_state_notifier.dart';
-
-// LEGACY PROVIDERS - TODO: Remove after full Riverpod migration
-// These ChangeNotifierProvider instances are kept for backward compatibility
-// during partial migration. New code should use Riverpod StateNotifierProvider
-// and generated providers for better performance and tree-shaking.
+import 'managers/stubs.dart';
 
 // Provider for Theme
 final themeProvider = StateNotifierProvider<ThemeNotifier, ThemeData>((ref) {
@@ -55,12 +29,9 @@ class ThemeNotifier extends StateNotifier<ThemeData> {
   }
 }
 
-// LEGACY PROVIDERS - Keep for backward compatibility during migration
-// TODO: Gradually replace with Riverpod StateNotifierProvider and generated providers
-
-// Provider for UserManager
-final userManagerProvider = ChangeNotifierProvider<UserManager>((ref) {
-  return UserManager();
+// Provider for ChatState (still needed for some legacy code)
+final chatStateProvider = ChangeNotifierProvider<ChatState>((ref) {
+  return ChatState();
 });
 
 // Provider for AvailabilityManager
@@ -71,8 +42,7 @@ final availabilityManagerProvider =
 
 // Provider for SquadManager
 final squadManagerProvider = ChangeNotifierProvider<SquadManager>((ref) {
-  final analytics = ref.read(appFlowManagerProvider);
-  return SquadManager(analytics: analytics);
+  return SquadManager();
 });
 
 // Provider for GameManager
@@ -80,53 +50,16 @@ final gameManagerProvider = Provider<GameManager>((ref) {
   return GameManager();
 });
 
-// Provider for Legacy SquadState
-final squadStateProvider = ChangeNotifierProvider<SquadState>((ref) {
-  return SquadState();
-});
-
-// Provider for ChatState
-final chatStateProvider = ChangeNotifierProvider<ChatState>((ref) {
-  return ChatState();
-});
-
-// Provider for ReviewManager
-final reviewManagerProvider = ChangeNotifierProvider<ReviewManager>((ref) {
-  return ReviewManager();
-});
-
-// Provider for Discovery
-final discoveryProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final userManager = ref.read(userManagerProvider);
-  return userManager.fetchPublicGroups();
-});
-
-// Provider for TimerState
-final timerStateProvider =
-    StateNotifierProvider<TimerState, Map<String, Duration>>((ref) {
-  // Assuming we have providers for the managers, but for now, create instances
-  final dataManager = SquadDataManager();
-  final uiManager = SquadUIManager();
-  final persistenceManager = SquadPersistenceManager();
-  return TimerState(
-    dataManager: dataManager,
-    uiManager: uiManager,
-    persistenceManager: persistenceManager,
-    ref: ref,
-  );
+// Provider for ChatService
+final chatServiceProvider = Provider((ref) {
+  final syncManager = ref.watch(syncManagerProvider);
+  return ChatService(syncManager);
 });
 
 // Provider for SyncManager
 final syncManagerProvider = Provider<SyncManager>((ref) {
   final sqliteHelper = ref.watch(sqliteHelperProvider);
   return SyncManager(sqliteHelper: sqliteHelper);
-});
-
-// Provider for ChatService
-final chatServiceProvider = Provider((ref) {
-  final syncManager = ref.watch(syncManagerProvider);
-  return ChatService(syncManager);
 });
 
 // Provider for ReactionService
@@ -155,111 +88,6 @@ final userPropertiesProvider = StreamProvider<Map<String, dynamic>>((ref) {
 // Current user ID provider
 final currentUserIdProvider = StreamProvider<String?>((ref) {
   return FirebaseAuth.instance.authStateChanges().map((user) => user?.uid);
-});
-
-// Voice room provider is defined in voice_service.dart
-
-// Provider for SquadStateNotifier
-final squadStateNotifierProvider =
-    StateNotifierProvider<SquadStateNotifier, SquadStateData>((ref) {
-  // Create all the manager dependencies
-  final gameManager = GameManager();
-  final squadManager = ref.read(squadManagerProvider);
-  final peacockManager = PeacockManager();
-  final userManager = ref.read(userManagerProvider);
-  final achievementManager = AchievementManager(SquadDataManager());
-  final notificationManager = NotificationManager();
-  final availabilityManager = ref.read(availabilityManagerProvider);
-  final dataManager = SquadDataManager();
-  final uiManager = SquadUIManager();
-  final persistenceManager = SquadPersistenceManager();
-  final stateInitializer = StateInitializer(
-    dataManager: dataManager,
-    persistenceManager: persistenceManager,
-  );
-  final timerState = ref.read(timerStateProvider.notifier);
-  final firestoreService = ref.read(firestoreServiceProvider);
-  final cacheService = ref.read(cacheServiceProvider);
-  final persistenceService = SquadPersistenceService(
-    dataManager: dataManager,
-    uiManager: uiManager,
-    persistenceManager: persistenceManager,
-    firestoreService: firestoreService,
-    cacheService: cacheService,
-  );
-  final notificationCoordinator = NotificationCoordinator(
-    notificationManager: notificationManager,
-    uiManager: uiManager,
-    availabilityManager: availabilityManager,
-  );
-  final lobbyService = LobbyService(
-    dataManager: dataManager,
-    persistenceService: persistenceService,
-  );
-  final peacockService = PeacockService();
-  final achievementService = AchievementService(achievementManager);
-  final squadMembershipService =
-      SquadMembershipService(squadManager, stateInitializer);
-  final spotManagementService = SpotManagementService(
-    dataManager: dataManager,
-    persistenceManager: persistenceManager,
-    uiManager: uiManager,
-    cacheService: cacheService,
-    getSquadSpots: () => [], // Will be updated when state is available
-    getGameSquadSpots: () => {},
-    getGameSpotTimers: () => {},
-    getSpotTimers: () => [],
-    getPeacockTimers: () => {},
-    getPeacockQueue: () => [],
-    getGlobalStatuses: () => {},
-    getCurrentGame: () => null,
-    getDisplayName: () => null,
-    getUidForDisplayName: (name) => null,
-  );
-  final chatService = ref.read(chatServiceProvider);
-  final authService = ref.read(authServiceProvider);
-  final audioService = ref.read(audioServiceProvider);
-  final mediaService = ref.read(mediaServiceProvider);
-  final reactionService = ref.read(reactionServiceProvider);
-  final pollService = ref.read(pollServiceProvider);
-  final timerService = ref.read(timerServiceProvider.notifier);
-  final aiService = ref.read(aiServiceProvider);
-  final igdbAuthService = ref.read(igdbAuthServiceProvider);
-  final messageService = ref.read(messageServiceProvider);
-
-  return SquadStateNotifier(
-    gameManager: gameManager,
-    squadManager: squadManager,
-    peacockManager: peacockManager,
-    userManager: userManager,
-    achievementManager: achievementManager,
-    notificationManager: notificationManager,
-    availabilityManager: availabilityManager,
-    dataManager: dataManager,
-    uiManager: uiManager,
-    persistenceManager: persistenceManager,
-    stateInitializer: stateInitializer,
-    timerState: timerState,
-    persistenceService: persistenceService,
-    notificationCoordinator: notificationCoordinator,
-    lobbyService: lobbyService,
-    peacockService: peacockService,
-    achievementService: achievementService,
-    squadMembershipService: squadMembershipService,
-    spotManagementService: spotManagementService,
-    chatService: chatService,
-    authService: authService,
-    audioService: audioService,
-    cacheService: cacheService,
-    firestoreService: firestoreService,
-    mediaService: mediaService,
-    reactionService: reactionService,
-    pollService: pollService,
-    timerService: timerService,
-    aiService: aiService,
-    igdbAuthService: igdbAuthService,
-    messageService: messageService,
-  );
 });
 
 // Search State for Group Discovery
@@ -355,18 +183,16 @@ final voiceRoomProvider = StateNotifierProvider.family<VoiceRoomNotifier,
   );
 });
 
-// Service Providers for consolidated notifiers
-final authServiceProvider = Provider<AuthService>((ref) => AuthService());
-final mediaServiceProvider = Provider<MediaService>((ref) => MediaService());
-final pollServiceProvider = Provider<PollService>((ref) => PollService());
-// timerServiceProvider is defined in timer_service.dart
-final aiServiceProvider = Provider<AiService>((ref) => AiService());
-final igdbAuthServiceProvider =
-    Provider<IgdbAuthService>((ref) => IgdbAuthService());
-final audioServiceProvider = Provider<AudioService>((ref) => AudioService());
-final cacheServiceProvider = Provider<CacheService>((ref) => CacheService());
-final messageServiceProvider =
-    Provider<MessageService>((ref) => MessageService());
+// Additional service providers for backward compatibility
+final firestoreManagerProvider =
+    ChangeNotifierProvider<FirestoreManager>((ref) => FirestoreManager());
+
+// Provider for popular games (placeholder for now)
+final popularGamesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  // TODO: Implement actual popular games fetching
+  return [];
+});
 
 // Refactored Firestore Service Providers
 final firestoreServiceRefactoredProvider =

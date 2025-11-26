@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart' as provider;
+// import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../managers/user_manager.dart';
-import '../managers/review_manager.dart';
-import '../services/ai_service.dart';
-import '../chat/chat_service.dart';
+// import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
+import '../presentation/notifiers/user_notifier.dart';
+// import '../managers/review_manager.dart'; // TODO: Remove when implementing review functionality in new architecture
+import '../domain/entities/message.dart';
+// import '../chat/chat_service.dart';
 
 /// Conditional rating nudge shown only for first-time users of a game
 class RatingNudge extends ConsumerStatefulWidget {
@@ -31,10 +32,9 @@ class _RatingNudgeState extends ConsumerState<RatingNudge> {
 
   @override
   Widget build(BuildContext context) {
-    final userManager = provider.Provider.of<UserManager>(context);
-
     // Only show if user hasn't rated this game
-    final hasRated = userManager.hasRatedGame[widget.gameName] ?? false;
+    final userState = ref.watch(userNotifierProvider).value;
+    final hasRated = userState?.hasRatedGame[widget.gameName] ?? false;
     if (hasRated) {
       return const SizedBox.shrink();
     }
@@ -74,7 +74,7 @@ class _RatingNudgeState extends ConsumerState<RatingNudge> {
 }
 
 /// Dialog for submitting game reviews
-class ReviewSubmitDialog extends StatefulWidget {
+class ReviewSubmitDialog extends ConsumerStatefulWidget {
   final String gameName;
   final String chatGroupId;
   final ChatType chatType;
@@ -107,10 +107,10 @@ class ReviewSubmitDialog extends StatefulWidget {
   }
 
   @override
-  State<ReviewSubmitDialog> createState() => _ReviewSubmitDialogState();
+  ConsumerState<ReviewSubmitDialog> createState() => _ReviewSubmitDialogState();
 }
 
-class _ReviewSubmitDialogState extends State<ReviewSubmitDialog> {
+class _ReviewSubmitDialogState extends ConsumerState<ReviewSubmitDialog> {
   double _rating = 5.5;
   final TextEditingController _reviewController = TextEditingController();
   bool _isSubmitting = false;
@@ -210,10 +210,10 @@ class _ReviewSubmitDialogState extends State<ReviewSubmitDialog> {
     setState(() => _isSubmitting = true);
 
     try {
+      // TODO: Implement review submission in new architecture
+      /*
       final reviewManager =
           provider.Provider.of<ReviewManager>(context, listen: false);
-      final userManager =
-          provider.Provider.of<UserManager>(context, listen: false);
       final chatService = ChatService();
       final user = FirebaseAuth.instance.currentUser;
 
@@ -226,26 +226,32 @@ class _ReviewSubmitDialogState extends State<ReviewSubmitDialog> {
         reviewText: _reviewController.text.trim(),
         chatGroupId: widget.chatGroupId,
       );
+      */
 
-      // Mark as rated in UserManager
-      userManager.markGameAsRated(widget.gameName);
+      // Mark as rated in UserNotifier
+      ref.read(userNotifierProvider.notifier).markGameAsRated(widget.gameName);
 
+      // TODO: Implement chat message sending in new architecture
+      /*
       // Send to chat thread
-      final displayName = userManager.displayName ?? 'Unknown';
+      final displayName =
+          ref.watch(userNotifierProvider).value?.displayName ?? 'Unknown';
       final ratingText = '${_rating.toStringAsFixed(1)}/10';
       final reviewText = _reviewController.text.trim().isNotEmpty
           ? ' "${_reviewController.text.trim()}"'
           : '';
 
       await chatService.sendMessage(
-        context,
+        ref,
         senderUid: user.uid,
         text: '$displayName rated ${widget.gameName} $ratingText$reviewText',
         chatGroupId: widget.chatGroupId,
         chatType: widget.chatType,
       );
+      */
 
       if (mounted) {
+        HapticFeedback.lightImpact();
         Navigator.of(context).pop();
         widget.onSubmitted?.call();
       }

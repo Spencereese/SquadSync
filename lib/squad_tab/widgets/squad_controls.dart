@@ -1,55 +1,51 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart' as provider;
-import '../../squad_state.dart';
-import '../../managers/squad_manager.dart';
-import '../../managers/user_manager.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers.dart';
+import '../../presentation/notifiers/squad_notifier.dart';
+import '../../presentation/notifiers/user_notifier.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'game_alerts_display.dart';
 import '../../chat/voice_room_screen.dart';
 
 /// SquadControls component - handles action buttons and controls
 /// Extracted from the monolithic SquadTab to improve maintainability
-class SquadControls extends StatelessWidget {
+class SquadControls extends ConsumerWidget {
   const SquadControls({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return provider.Consumer<SquadState>(
-      builder: (context, squadState, child) {
-        return SliverToBoxAdapter(
-          child: Column(
-            children: [
-              // Win/Loss/Voice buttons
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _WinButton(),
-                    _VoiceRoomButton(),
-                    _LossButton(),
-                  ],
-                ),
-              ),
-              // Game alert section
-              _GameAlertSection(),
-            ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    return const SliverToBoxAdapter(
+      child: Column(
+        children: [
+          // Win/Loss/Voice buttons
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _WinButton(),
+                _VoiceRoomButton(),
+                _LossButton(),
+              ],
+            ),
           ),
-        );
-      },
+          // Game alert section
+          _GameAlertSection(),
+        ],
+      ),
     );
   }
 }
 
 /// Game alert section - allows users to alert squad about wanting to play games
-class _GameAlertSection extends StatefulWidget {
+class _GameAlertSection extends ConsumerStatefulWidget {
   const _GameAlertSection();
 
   @override
-  _GameAlertSectionState createState() => _GameAlertSectionState();
+  ConsumerState<_GameAlertSection> createState() => _GameAlertSectionState();
 }
 
-class _GameAlertSectionState extends State<_GameAlertSection> {
+class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
   bool _hasActiveAlert = false;
 
   @override
@@ -62,16 +58,21 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final squadState = provider.Provider.of<SquadState>(context, listen: false);
-    final squadManager =
-        provider.Provider.of<SquadManager>(context, listen: false);
+    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadManager = ref.read(squadManagerProvider);
 
-    if (squadState.selectedSquadId != null) {
-      final alerts =
-          await squadManager.getSquadAlerts(squadState.selectedSquadId!);
-      setState(() {
-        _hasActiveAlert = alerts.any((alert) => alert['userUid'] == user.uid);
-      });
+    final selectedSquadId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedSquadId,
+      orElse: () => null,
+    );
+
+    if (selectedSquadId != null) {
+      final alerts = await squadManager.getSquadAlerts(selectedSquadId);
+      if (mounted) {
+        setState(() {
+          _hasActiveAlert = alerts.any((alert) => alert['userUid'] == user.uid);
+        });
+      }
     }
   }
 
@@ -80,35 +81,45 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final squadState = provider.Provider.of<SquadState>(context, listen: false);
-    final squadManager =
-        provider.Provider.of<SquadManager>(context, listen: false);
+    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadManager = ref.read(squadManagerProvider);
 
-    if (squadState.selectedSquadId == null) return;
+    final selectedSquadId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedSquadId,
+      orElse: () => null,
+    );
+
+    if (selectedSquadId == null) return;
 
     try {
       await squadManager.sendGameAlert(
-        squadState.selectedSquadId!,
+        selectedSquadId,
         user.uid,
         alertType,
         specificGame: specificGame,
         pinnedGames: pinnedGames,
       );
 
-      setState(() {
-        _hasActiveAlert = true;
-      });
+      if (mounted) {
+        setState(() {
+          _hasActiveAlert = true;
+        });
+      }
 
       // Refresh the alerts display
       GameAlertsDisplay.refreshAlerts(context);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alert sent to squad!')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Alert sent to squad!')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send alert: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send alert: $e')),
+        );
+      }
     }
   }
 
@@ -116,36 +127,45 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final squadState = provider.Provider.of<SquadState>(context, listen: false);
-    final squadManager =
-        provider.Provider.of<SquadManager>(context, listen: false);
+    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadManager = ref.read(squadManagerProvider);
 
-    if (squadState.selectedSquadId == null) return;
+    final selectedSquadId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedSquadId,
+      orElse: () => null,
+    );
+
+    if (selectedSquadId == null) return;
 
     try {
-      await squadManager.clearGameAlerts(squadState.selectedSquadId!, user.uid);
+      await squadManager.clearGameAlerts(selectedSquadId, user.uid);
 
-      setState(() {
-        _hasActiveAlert = false;
-      });
+      if (mounted) {
+        setState(() {
+          _hasActiveAlert = false;
+        });
+      }
 
       // Refresh the alerts display
       GameAlertsDisplay.refreshAlerts(context);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alert cleared')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Alert cleared')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to clear alert: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to clear alert: $e')),
+        );
+      }
     }
   }
 
   void _showAlertDialog() {
-    final squadState = provider.Provider.of<SquadState>(context, listen: false);
-    final userManager =
-        provider.Provider.of<UserManager>(context, listen: false);
+    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final userStateAsync = ref.watch(userNotifierProvider);
 
     showDialog(
       context: context,
@@ -155,34 +175,50 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
           mainAxisSize: MainAxisSize.min,
           children: [
             // Alert for current game
-            if (squadState.currentGame != null)
-              ListTile(
-                leading:
-                    const Icon(Icons.videogame_asset, color: Colors.cyanAccent),
-                title: Text('Play ${squadState.currentGame!['name']}'),
-                subtitle: const Text('Alert squad about this specific game'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _sendAlert('specific',
-                      specificGame: squadState.currentGame!['name']);
-                },
-              ),
+            squadStateAsync.maybeWhen(
+              data: (squadState) {
+                if (squadState.currentGame != null) {
+                  return ListTile(
+                    leading: const Icon(Icons.videogame_asset,
+                        color: Colors.cyanAccent),
+                    title: Text('Play ${squadState.currentGame!['name']}'),
+                    subtitle:
+                        const Text('Alert squad about this specific game'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _sendAlert('specific',
+                          specificGame: squadState.currentGame!['name']);
+                    },
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+              orElse: () => const SizedBox.shrink(),
+            ),
 
             // Alert for pinned games
-            if (userManager.pinnedGames.isNotEmpty)
-              ListTile(
-                leading: const Icon(Icons.star, color: Colors.amber),
-                title: const Text('Play Pinned Games'),
-                subtitle: Text(
-                    'Alert about ${userManager.pinnedGames.length} pinned game(s)'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _sendAlert('pinned',
-                      pinnedGames: userManager.pinnedGames
-                          .map((g) => g['name'] as String)
-                          .toList());
-                },
-              ),
+            userStateAsync.maybeWhen(
+              data: (userState) {
+                final pinnedGames = userState?.pinnedGames ?? [];
+                if (pinnedGames.isNotEmpty) {
+                  return ListTile(
+                    leading: const Icon(Icons.star, color: Colors.amber),
+                    title: const Text('Play Pinned Games'),
+                    subtitle: Text(
+                        'Alert about ${pinnedGames.length} pinned game(s)'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _sendAlert('pinned',
+                          pinnedGames: pinnedGames
+                              .map((g) => g['name'] as String)
+                              .toList());
+                    },
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+              orElse: () => const SizedBox.shrink(),
+            ),
 
             // Alert for any game
             ListTile(
@@ -257,103 +293,142 @@ class _GameAlertSectionState extends State<_GameAlertSection> {
 }
 
 /// Win button widget - extracted for better performance
-class _WinButton extends StatelessWidget {
+class _WinButton extends ConsumerWidget {
   const _WinButton();
 
   @override
-  Widget build(BuildContext context) {
-    final squadState = provider.Provider.of<SquadState>(context, listen: false);
-    return ElevatedButton(
-      onPressed: squadState.recordWin,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.green,
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final squadStateAsync = ref.watch(squadNotifierProvider);
+    return squadStateAsync.maybeWhen(
+      data: (squadState) => ElevatedButton(
+        onPressed: () async {
+          try {
+            await ref.read(squadNotifierProvider.notifier).recordWin([]);
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to record win: $e')),
+              );
+            }
+          }
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontSize: 18),
+          elevation: 4,
+          shadowColor: Colors.green.withValues(alpha: 0.3),
         ),
-        textStyle: const TextStyle(fontSize: 18),
-        elevation: 4,
-        shadowColor: Colors.green.withValues(alpha: 0.3),
+        child: const Text(
+          'Win',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
       ),
-      child: const Text(
-        'Win',
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
+      orElse: () => const ElevatedButton(
+        onPressed: null,
+        child: Text('Win'),
       ),
     );
   }
 }
 
 /// Voice room button widget - extracted for better performance
-class _VoiceRoomButton extends StatelessWidget {
+class _VoiceRoomButton extends ConsumerWidget {
   const _VoiceRoomButton();
 
   @override
-  Widget build(BuildContext context) {
-    final squadState = provider.Provider.of<SquadState>(context, listen: false);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final squadStateAsync = ref.watch(squadNotifierProvider);
 
-    return ElevatedButton.icon(
-      onPressed: () {
-        if (squadState.selectedSquadId == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No squad selected')),
-          );
-          return;
-        }
+    return squadStateAsync.maybeWhen(
+      data: (squadState) => ElevatedButton.icon(
+        onPressed: () {
+          if (squadState.selectedSquadId == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No squad selected')),
+            );
+            return;
+          }
 
-        // Navigate to voice room screen
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => VoiceRoomScreen(
-              roomId: squadState.selectedSquadId!,
-              roomName: squadState.currentSquad?['name'] ?? 'Voice Room',
+          // Navigate to voice room screen
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => VoiceRoomScreen(
+                roomId: squadState.selectedSquadId!,
+                roomName: squadState.currentSquadData?['name'] ?? 'Voice Room',
+              ),
             ),
+          );
+        },
+        icon: const Icon(Icons.mic, color: Colors.white),
+        label: const Text('Voice Room'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blueAccent,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-        );
-      },
-      icon: const Icon(Icons.mic, color: Colors.white),
-      label: const Text('Voice Room'),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.blueAccent,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          textStyle: const TextStyle(fontSize: 16),
+          elevation: 4,
+          shadowColor: Colors.blueAccent.withValues(alpha: 0.3),
         ),
-        textStyle: const TextStyle(fontSize: 16),
-        elevation: 4,
-        shadowColor: Colors.blueAccent.withValues(alpha: 0.3),
+      ),
+      orElse: () => ElevatedButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.mic),
+        label: const Text('Voice Room'),
       ),
     );
   }
 }
 
 /// Loss button widget - extracted for better performance
-class _LossButton extends StatelessWidget {
+class _LossButton extends ConsumerWidget {
   const _LossButton();
 
   @override
-  Widget build(BuildContext context) {
-    final squadState = provider.Provider.of<SquadState>(context, listen: false);
-    return ElevatedButton(
-      onPressed: squadState.recordLoss,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.redAccent,
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final squadStateAsync = ref.watch(squadNotifierProvider);
+    return squadStateAsync.maybeWhen(
+      data: (squadState) => ElevatedButton(
+        onPressed: () async {
+          try {
+            await ref.read(squadNotifierProvider.notifier).recordLoss([]);
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to record loss: $e')),
+              );
+            }
+          }
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.redAccent,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontSize: 18),
+          elevation: 4,
+          shadowColor: Colors.redAccent.withValues(alpha: 0.3),
         ),
-        textStyle: const TextStyle(fontSize: 18),
-        elevation: 4,
-        shadowColor: Colors.redAccent.withValues(alpha: 0.3),
+        child: const Text(
+          'Loss',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
       ),
-      child: const Text(
-        'Loss',
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
+      orElse: () => ElevatedButton(
+        onPressed: null,
+        child: const Text('Loss'),
       ),
     );
   }

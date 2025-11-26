@@ -7,8 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import '../chat/sqlite_helper.dart';
 import '../providers/service_providers.dart';
-import '../providers/squad_notifier.dart';
-import 'firestore_service.dart';
+import '../presentation/notifiers/squad_notifier.dart';
 
 /// Timer data structure for persistence
 class TimerData {
@@ -75,10 +74,10 @@ class TimerOrchestrator {
   final Map<String, Duration> _lastRemaining = {};
   bool _hasActiveTimers = false;
 
-  /// Starts the orchestrator with 5-second intervals
+  /// Starts the orchestrator with 1-second intervals
   void start() {
     if (_timer != null) return;
-    _timer = Timer.periodic(const Duration(seconds: 5), _onTick);
+    _timer = Timer.periodic(const Duration(seconds: 1), _onTick);
   }
 
   /// Stops the orchestrator
@@ -127,7 +126,7 @@ class TimerOrchestrator {
   /// Gets remaining time for a timer
   Duration getRemainingTime(String key) {
     final expiration = _activeTimers[key];
-    if (expiration == null) throw ArgumentError('Timer not found: $key');
+    if (expiration == null) return Duration.zero;
     final remaining = expiration.expirationTime.difference(DateTime.now());
     return remaining.isNegative ? Duration.zero : remaining;
   }
@@ -135,7 +134,7 @@ class TimerOrchestrator {
   /// Observes timer updates
   Stream<Duration> observeTimer(String key) {
     if (!_controllers.containsKey(key)) {
-      throw ArgumentError('Timer not found: $key');
+      return Stream.value(Duration.zero);
     }
     return _controllers[key]!.stream;
   }
@@ -205,7 +204,8 @@ class TimerOrchestrator {
 }
 
 /// A Riverpod provider for the TimerService.
-final timerServiceProvider = StateNotifierProvider<TimerServiceNotifier, AsyncValue<void>>((ref) {
+final timerServiceProvider =
+    StateNotifierProvider<TimerServiceNotifier, AsyncValue<void>>((ref) {
   final firestoreService = ref.watch(firestoreServiceProvider);
   final sqliteHelper = ref.watch(sqliteHelperProvider);
   return TimerServiceNotifier(ref, firestoreService, sqliteHelper);
@@ -231,7 +231,8 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
   // Interpolation support
   final Map<String, Duration> _interpolatedRemaining = {};
 
-  TimerServiceNotifier(this._ref, this._firestoreService, this._sqliteHelper) : super(const AsyncValue.data(null)) {
+  TimerServiceNotifier(this._ref, this._firestoreService, this._sqliteHelper)
+      : super(const AsyncValue.data(null)) {
     _initialize();
   }
 
@@ -249,15 +250,18 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   /// Starts a spot timer with game-scoped data
-  Future<void> startSpotTimer(String gameName, String userId, Duration duration) async {
+  Future<void> startSpotTimer(
+      String gameName, String userId, Duration duration) async {
     final key = 'spot_${gameName}_$userId';
-    await _startTimer(key, duration, () => _onSpotTimerExpire(gameName, userId), type: 'spot', gameName: gameName, userId: userId);
+    await _startTimer(key, duration, () => _onSpotTimerExpire(gameName, userId),
+        type: 'spot', gameName: gameName, userId: userId);
   }
 
   /// Starts a peacock timer
   Future<void> startPeacockTimer(String userId, Duration duration) async {
     final key = 'peacock_$userId';
-    await _startTimer(key, duration, () => _onPeacockTimerExpire(userId), type: 'peacock', userId: userId);
+    await _startTimer(key, duration, () => _onPeacockTimerExpire(userId),
+        type: 'peacock', userId: userId);
   }
 
   /// Internal timer start with persistence
@@ -297,7 +301,8 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
       // Simple interpolation - could be enhanced with more sophisticated algorithms
       final lastInterpolated = _interpolatedRemaining[key] ?? remaining;
       final interpolated = Duration(
-        milliseconds: (remaining.inMilliseconds + lastInterpolated.inMilliseconds) ~/ 2,
+        milliseconds:
+            (remaining.inMilliseconds + lastInterpolated.inMilliseconds) ~/ 2,
       );
       _interpolatedRemaining[key] = interpolated;
       return interpolated;
@@ -364,13 +369,15 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
       final timers = _prefs?.getStringList('active_timers') ?? [];
       timers.add(timerData.key);
       await _prefs?.setStringList('active_timers', timers);
-      await _prefs?.setString('timer_${timerData.key}', jsonEncode(timerData.toMap()));
+      await _prefs?.setString(
+          'timer_${timerData.key}', jsonEncode(timerData.toMap()));
     } catch (e) {
       // Fallback to SharedPreferences only
       final timers = _prefs?.getStringList('active_timers') ?? [];
       timers.add(timerData.key);
       await _prefs?.setStringList('active_timers', timers);
-      await _prefs?.setString('timer_${timerData.key}', jsonEncode(timerData.toMap()));
+      await _prefs?.setString(
+          'timer_${timerData.key}', jsonEncode(timerData.toMap()));
     }
   }
 
@@ -403,7 +410,8 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
           if (timerData.expirationTime.isAfter(now)) {
             final remaining = timerData.expirationTime.difference(now);
             if (timerData.type == 'spot') {
-              await startSpotTimer(timerData.gameName!, timerData.userId!, remaining);
+              await startSpotTimer(
+                  timerData.gameName!, timerData.userId!, remaining);
             } else if (timerData.type == 'peacock') {
               await startPeacockTimer(timerData.userId!, remaining);
             }

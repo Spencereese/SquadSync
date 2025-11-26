@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../managers/game_manager.dart';
-import '../../managers/user_manager.dart';
+import '../../providers.dart';
+import '../../presentation/notifiers/user_notifier.dart';
 
-class GameSelectionCard extends StatefulWidget {
+class GameSelectionCard extends ConsumerStatefulWidget {
   final TextEditingController controller;
   final Function(Map<String, dynamic>?) onGameSelected;
   final Map<String, dynamic>? selectedGame;
@@ -18,10 +18,10 @@ class GameSelectionCard extends StatefulWidget {
   });
 
   @override
-  State<GameSelectionCard> createState() => _GameSelectionCardState();
+  ConsumerState<GameSelectionCard> createState() => _GameSelectionCardState();
 }
 
-class _GameSelectionCardState extends State<GameSelectionCard> {
+class _GameSelectionCardState extends ConsumerState<GameSelectionCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -93,11 +93,13 @@ class _GameSelectionCardState extends State<GameSelectionCard> {
               );
             },
             suggestionsCallback: (pattern) async {
-              final gameManager =
-                  Provider.of<GameManager>(context, listen: false);
-              final userManager =
-                  Provider.of<UserManager>(context, listen: false);
-              final pinnedGames = userManager.pinnedGames;
+              final gameManager = ref.read(gameManagerProvider);
+              final userStateAsync = ref.watch(userNotifierProvider);
+
+              final pinnedGames = userStateAsync.maybeWhen(
+                data: (userState) => userState?.pinnedGames ?? [],
+                orElse: () => <Map<String, dynamic>>[],
+              );
 
               final apiGames =
                   await (gameManager as dynamic).searchGames(pattern);

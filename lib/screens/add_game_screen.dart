@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/async_value_widget.dart';
-import '../providers/user_notifier.dart';
-import '../managers/game_manager.dart';
+import '../presentation/notifiers/user_notifier.dart';
+import '../presentation/notifiers/game_notifier.dart';
 import 'game_platform_dialog.dart';
 
 /// Screen for first-time users to select games they play
@@ -23,13 +23,13 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
     super.initState();
     // Fetch popular games on init
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(gameManagerProvider.notifier).fetchGamesFromIGDB('');
+      ref.read(gameNotifierProvider.notifier).loadPopularGames();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final gameStateAsync = ref.watch(gameManagerProvider);
+    final gameStateAsync = ref.watch(gameNotifierProvider);
     final isLoading = gameStateAsync.isLoading;
 
     return Scaffold(
@@ -53,7 +53,9 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
       ),
       body: AsyncValueWidget<GameState>(
         value: gameStateAsync,
-        data: (gameState) => _buildGameList(gameState.games),
+        data: (gameState) => _buildGameList(
+          gameState.availableGames.map((game) => game.toJson()).toList(),
+        ),
         loading: () => const Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -85,7 +87,7 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
               ElevatedButton(
                 onPressed: () {
                   HapticFeedback.lightImpact();
-                  ref.read(gameManagerProvider.notifier).fetchGamesFromIGDB('');
+                  ref.read(gameNotifierProvider.notifier).loadPopularGames();
                 },
                 child: const Text('Retry'),
               ),
@@ -190,7 +192,8 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
   void _onContinue() async {
     if (_selectedGames.isEmpty) return;
 
-    final gameState = ref.read(gameManagerProvider).value;
+    final gameStateAsync = ref.read(gameNotifierProvider);
+    final gameState = gameStateAsync.value;
     if (gameState == null) return;
 
     final userNotifier = ref.read(userNotifierProvider.notifier);
@@ -198,8 +201,9 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
     try {
       // Save selected games to pinned games
       for (final gameSlug in _selectedGames) {
-        final game = gameState.games.firstWhere((g) => g['slug'] == gameSlug);
-        await userNotifier.addPinnedGame(game);
+        final game =
+            gameState.availableGames.firstWhere((g) => g.slug == gameSlug);
+        await userNotifier.addPinnedGame(game.toJson());
       }
 
       if (mounted) {

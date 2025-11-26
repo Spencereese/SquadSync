@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:squad_sync/data/datasources/chat_local_datasource.dart';
 import 'package:squad_sync/data/datasources/chat_remote_datasource.dart';
 import 'package:squad_sync/domain/entities/message.dart';
@@ -12,16 +13,21 @@ class ChatRepositoryImpl implements ChatRepository {
   ChatRepositoryImpl(this._localDataSource, this._remoteDataSource);
 
   @override
-  Future<Message> sendMessage(
-      String chatGroupId, String text, MessageType messageType,
+  Future<Message> sendMessage(String chatGroupId, String text,
+      MessageType messageType, ChatType chatType,
       {String? mediaUrl,
       String? mediaType,
       String? replyTo,
       Poll? poll,
       String? voiceNoteUrl,
       int? voiceNoteDuration}) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw Exception('User not authenticated');
+    }
+
     final message = Message.create(
-      senderId: 'current_user_id', // This would come from auth service
+      senderId: currentUser.uid,
       text: text,
       messageType: messageType,
       mediaUrl: mediaUrl,
@@ -34,7 +40,7 @@ class ChatRepositoryImpl implements ChatRepository {
 
     // Send to remote first
     final sentMessage =
-        await _remoteDataSource.sendMessage(chatGroupId, message);
+        await _remoteDataSource.sendMessage(chatGroupId, message, chatType);
 
     // Cache locally
     await _localDataSource.cacheMessages(chatGroupId, [sentMessage]);

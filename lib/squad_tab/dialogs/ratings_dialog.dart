@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../squad_state.dart';
+import '../../domain/entities/squad_state.dart';
 import 'base_dialog.dart';
 
 /// Dialog for rating players with star ratings

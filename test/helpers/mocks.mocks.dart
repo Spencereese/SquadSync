@@ -1704,7 +1704,8 @@ class MockChatRepository extends _i1.Mock implements _i21.ChatRepository {
   _i9.Future<_i4.Message> sendMessage(
     String? chatGroupId,
     String? text,
-    _i4.MessageType? messageType, {
+    _i4.MessageType? messageType,
+    _i4.ChatType? chatType, {
     String? mediaUrl,
     String? mediaType,
     String? replyTo,
@@ -1719,6 +1720,7 @@ class MockChatRepository extends _i1.Mock implements _i21.ChatRepository {
             chatGroupId,
             text,
             messageType,
+            chatType,
           ],
           {
             #mediaUrl: mediaUrl,
@@ -1737,6 +1739,7 @@ class MockChatRepository extends _i1.Mock implements _i21.ChatRepository {
               chatGroupId,
               text,
               messageType,
+              chatType,
             ],
             {
               #mediaUrl: mediaUrl,

@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../providers.dart';
-import '../squad_state_notifier.dart';
-import '../services/ai_service.dart';
+import '../domain/entities/message.dart';
+import '../domain/entities/squad_state.dart';
 import 'chat_screen.dart';
-import 'chat_state.dart';
 import '../screens/notifications_screen.dart';
 import '../profile_tab.dart';
 import '../app_theme.dart';
@@ -17,6 +14,8 @@ import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
 import 'dialogs/group_actions_dialog.dart';
 import 'dialogs/add_friend_dialog.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
+import '../presentation/notifiers/chat_notifier.dart';
 
 class ChatGroupsScreen extends ConsumerStatefulWidget {
   const ChatGroupsScreen({super.key});
@@ -34,6 +33,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   bool _isScrollingDown = false;
   double _navBottomOffset = 0.0;
   double _lastKeyboardHeight = 0.0;
+  bool _isDMView = false;
 
   @override
   void initState() {
@@ -96,7 +96,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   }
 
   void _clearNotification(int index) {
-    ref.read(squadStateNotifierProvider.notifier).clearNotifications(index);
+    ref.read(sn.squadNotifierProvider.notifier).clearNotifications(index);
   }
 
   bool _updateNavOpacity(ScrollNotification notification) {
@@ -120,8 +120,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     return true;
   }
 
-  Widget _buildTabItem(
-      int index, int selectedIndex, SquadStateData squadState) {
+  Widget _buildTabItem(int index, int selectedIndex, SquadState squadState) {
     bool isSelected = selectedIndex == index;
     final tabs = [
       'assets/images/chat.png',
@@ -225,30 +224,32 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   }
 
   List<Widget> _buildPages(
-      BuildContext context, bool isKeyboardVisible, SquadStateData squadState) {
+      BuildContext context, bool isKeyboardVisible, SquadState squadState) {
     return [
-      _buildChatGroupsPage(squadState),
+      _buildChatGroupsPage(squadState, ref),
       const NotificationsScreen(),
       const ProfileTab(),
     ];
   }
 
-  Widget _buildChatGroupsPage(SquadStateData squadState) {
-    return p.Consumer<ChatState>(
-      builder: (context, chatState, child) => Scaffold(
+  Widget _buildChatGroupsPage(SquadState squadState, WidgetRef ref) {
+    final chatAsync = ref.watch(chatNotifierProvider);
+
+    return chatAsync.maybeWhen(
+      data: (chatState) => Scaffold(
         appBar: AppBar(
           title: const Text('Chats'),
           backgroundColor: Colors.black,
           elevation: 0,
-          leading: chatState.isDMView
+          leading: _isDMView
               ? IconButton(
                   icon: const Icon(Icons.arrow_back, color: Colors.cyanAccent),
-                  onPressed: () => chatState.setDMView(false),
+                  onPressed: () => setState(() => _isDMView = false),
                   tooltip: 'Back to all chats',
                 )
               : null,
           actions: [
-            if (chatState.isDMView)
+            if (_isDMView)
               IconButton(
                 icon: const Icon(Icons.person_add, color: Colors.cyanAccent),
                 onPressed: () => showModalBottomSheet(
@@ -274,113 +275,123 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
         ),
         body: _buildChatContent(squadState),
       ),
+      orElse: () => const SizedBox.shrink(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final squadState = ref.watch(squadStateNotifierProvider);
-    final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    return ref.watch(sn.squadNotifierProvider).when(
+          data: (squadState) {
+            final bool isKeyboardVisible =
+                MediaQuery.of(context).viewInsets.bottom > 0;
 
-    // Show loading screen while initializing or loading initial data
-    if (!squadState.isInitialized || !squadState.isInitialDataLoaded) {
-      return Theme(
-        data: AppTheme.darkTheme,
-        child: Scaffold(
-          backgroundColor: Colors.black,
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(color: Colors.cyanAccent),
-                const SizedBox(height: 24),
-                Text(
-                  'Loading your squad...',
-                  style: TextStyle(
-                    color: Colors.cyanAccent,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
+            // Show loading screen while initializing or loading initial data
+            if (!squadState.isInitialized || !squadState.isInitialDataLoaded) {
+              return Theme(
+                data: AppTheme.darkTheme,
+                child: Scaffold(
+                  backgroundColor: Colors.black,
+                  body: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const CircularProgressIndicator(
+                            color: Colors.cyanAccent),
+                        const SizedBox(height: 24),
+                        Text(
+                          'Loading your squad...',
+                          style: TextStyle(
+                            color: Colors.cyanAccent,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+              );
+            }
 
-    return Theme(
-      data: AppTheme.darkTheme,
-      child: Scaffold(
-        body: Stack(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.black,
-                    AppTheme.primaryColor,
-                    AppTheme.accentColor.withValues(alpha: 0.2),
+            return Theme(
+              data: AppTheme.darkTheme,
+              child: Scaffold(
+                body: Stack(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 500),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.black,
+                            AppTheme.primaryColor,
+                            AppTheme.accentColor.withValues(alpha: 0.2),
+                          ],
+                        ),
+                      ),
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: _updateNavOpacity,
+                        child: PageView(
+                          controller: _pageController,
+                          physics: const ClampingScrollPhysics(),
+                          children: _buildPages(
+                              context, isKeyboardVisible, squadState),
+                        ),
+                      ),
+                    ),
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      left: 0,
+                      right: 0,
+                      bottom: _navBottomOffset,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        opacity: _navOpacity,
+                        child: Container(
+                          height: 75,
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 8,
+                                offset: const Offset(0, -2),
+                              ),
+                            ],
+                          ),
+                          child: ValueListenableBuilder<int>(
+                            valueListenable: _selectedIndexNotifier,
+                            builder: (context, selectedIndex, child) {
+                              return Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  _buildTabItem(0, selectedIndex, squadState),
+                                  _buildTabItem(1, selectedIndex, squadState),
+                                  _buildTabItem(2, selectedIndex, squadState),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _updateNavOpacity,
-                child: PageView(
-                  controller: _pageController,
-                  physics: const ClampingScrollPhysics(),
-                  children: _buildPages(context, isKeyboardVisible, squadState),
-                ),
-              ),
-            ),
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              left: 0,
-              right: 0,
-              bottom: _navBottomOffset,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                opacity: _navOpacity,
-                child: Container(
-                  height: 75,
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, -2),
-                      ),
-                    ],
-                  ),
-                  child: ValueListenableBuilder<int>(
-                    valueListenable: _selectedIndexNotifier,
-                    builder: (context, selectedIndex, child) {
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildTabItem(0, selectedIndex, squadState),
-                          _buildTabItem(1, selectedIndex, squadState),
-                          _buildTabItem(2, selectedIndex, squadState),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+            );
+          },
+          loading: () => const CircularProgressIndicator(),
+          error: (e, s) => Text('Error loading squad: $e'),
+        );
   }
 
-  Widget _buildChatContent(SquadStateData squadState) {
+  Widget _buildChatContent(SquadState squadState) {
     // Check if user is authenticated
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
@@ -391,30 +402,22 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
 
     if (squadState.selectedSquadId == null) {
       // Show user-specific groups instead of squad groups
-      return p.Consumer<ChatState>(
-        builder: (context, chatState, child) {
-          if (chatState.isDMView) {
-            // Show DMs
-            return const DirectMessagesTab();
-          } else {
-            // Show user groups with DM card
-            return const UserGroupsTab();
-          }
-        },
-      );
+      if (_isDMView) {
+        // Show DMs
+        return const DirectMessagesTab();
+      } else {
+        // Show user groups with DM card
+        return UserGroupsTab(onTapDM: () => setState(() => _isDMView = true));
+      }
     } else {
       // Also show user groups when squad is selected (unified approach)
-      return p.Consumer<ChatState>(
-        builder: (context, chatState, child) {
-          if (chatState.isDMView) {
-            // Show DMs
-            return const DirectMessagesTab();
-          } else {
-            // Show user groups with DM card
-            return const UserGroupsTab();
-          }
-        },
-      );
+      if (_isDMView) {
+        // Show DMs
+        return const DirectMessagesTab();
+      } else {
+        // Show user groups with DM card
+        return UserGroupsTab(onTapDM: () => setState(() => _isDMView = true));
+      }
     }
   }
 
@@ -423,8 +426,11 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     final lastGroupId = prefs.getString('last_chat_group');
     if (lastGroupId != null && mounted) {
       // Check if the group still exists and user has access
-      final squadState = ref.read(squadStateNotifierProvider);
-      if (squadState.selectedSquadId == null) {
+      final squadState = ref.read(sn.squadNotifierProvider).maybeWhen(
+            data: (data) => data,
+            orElse: () => null,
+          );
+      if (squadState == null || squadState.selectedSquadId == null) {
         // User doesn't have a selected squad, can't check squad chat groups
         return;
       }

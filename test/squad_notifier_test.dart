@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:squad_sync/providers/squad_notifier.dart';
+import 'package:squad_sync/presentation/notifiers/squad_notifier.dart';
+import 'package:squad_sync/domain/entities/squad_state.dart';
 
 void main() {
   group('SquadNotifier', () {

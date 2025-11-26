@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
+import '../../presentation/notifiers/user_notifier.dart';
 
-class PollMessageBubble extends StatelessWidget {
+class PollMessageBubble extends ConsumerWidget {
   final Poll poll;
   final String? chatGroupId;
   final bool isFromCurrentUser;
@@ -17,7 +19,7 @@ class PollMessageBubble extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final pollService = PollService();
 
     return StreamBuilder<Poll?>(
@@ -41,7 +43,7 @@ class PollMessageBubble extends StatelessWidget {
   }
 }
 
-class _PollBubbleContent extends StatefulWidget {
+class _PollBubbleContent extends ConsumerStatefulWidget {
   final Poll poll;
   final String? chatGroupId;
   final bool isFromCurrentUser;
@@ -53,10 +55,10 @@ class _PollBubbleContent extends StatefulWidget {
   });
 
   @override
-  State<_PollBubbleContent> createState() => _PollBubbleContentState();
+  ConsumerState<_PollBubbleContent> createState() => _PollBubbleContentState();
 }
 
-class _PollBubbleContentState extends State<_PollBubbleContent>
+class _PollBubbleContentState extends ConsumerState<_PollBubbleContent>
     with TickerProviderStateMixin {
   final _pollService = PollService();
   bool _isVoting = false;
@@ -82,11 +84,17 @@ class _PollBubbleContentState extends State<_PollBubbleContent>
     setState(() => _isVoting = true);
 
     try {
-      await _pollService.voteOnPoll(
-        pollId: widget.poll.id,
-        optionIds: optionIds,
-        chatGroupId: widget.chatGroupId,
-      );
+      final success = await ref.read(userNotifierProvider.notifier).voteOnPoll(
+            pollId: widget.poll.id,
+            optionIds: optionIds,
+            chatGroupId: widget.chatGroupId,
+          );
+
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to vote')),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -297,7 +305,7 @@ class _PollBubbleContentState extends State<_PollBubbleContent>
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  'by ${widget.poll.creatorName}',
+                  'by ${ref.watch(userNotifierProvider.select((asyncValue) => ref.read(userNotifierProvider.notifier).getDisplayNameForUid(widget.poll.creatorUid) ?? widget.poll.creatorName))}',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.8),
                     fontSize: 12,
@@ -520,6 +528,18 @@ class _PollBubbleContentState extends State<_PollBubbleContent>
                                   borderRadius: BorderRadius.circular(3),
                                 ),
                               ),
+                            ),
+                          ),
+                        ],
+                        if (!widget.poll.isAnonymous &&
+                            option.voterUids.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Voters: ${option.voterUids.map((uid) => ref.watch(userNotifierProvider.select((asyncValue) => ref.read(userNotifierProvider.notifier).getDisplayNameForUid(uid) ?? 'Unknown'))).join(', ')}',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 10,
+                              fontStyle: FontStyle.italic,
                             ),
                           ),
                         ],

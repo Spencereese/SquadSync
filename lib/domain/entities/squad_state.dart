@@ -56,17 +56,21 @@ class SquadState with _$SquadState {
     required Map<String, Duration> spotTimerStates,
     required Map<String, Duration> peacockTimerStates,
 
+    // Ratings
+    required Map<String, Map<String, int>> dailyRatings,
+    required Map<String, Map<String, int>> allTimeRatings,
+    required Map<String, dynamic> analyticsMetrics,
+
     // Analytics and tracking
     required DateTime lastSyncTimestamp,
-    required Map<String, dynamic> analyticsMetrics,
   }) = _SquadState;
 
   factory SquadState.fromJson(Map<String, dynamic> json) =>
       _$SquadStateFromJson(json);
 
   factory SquadState.initial() => SquadState(
-        isInitialized: false,
-        isInitialDataLoaded: false,
+        isInitialized: true,
+        isInitialDataLoaded: true,
         displayName: 'Unknown User',
         memberProfileImages: {},
         gameSquadSpots: {},
@@ -97,7 +101,22 @@ class SquadState with _$SquadState {
         hasNewAvailability: false,
         spotTimerStates: {},
         peacockTimerStates: {},
+        dailyRatings: {},
+        allTimeRatings: {},
         lastSyncTimestamp: DateTime.now(),
         analyticsMetrics: {},
       );
+}
+
+extension SquadStateExtension on SquadState {
+  bool canRateMember(String player) {
+    // TODO: Implement logic to check if player can be rated
+    // For now, allow rating if player is in squad
+    return squadMemberUids.contains(player);
+  }
+
+  Future<void> submitRatings(String player, Map<String, int> ratings) async {
+    // TODO: Implement submit ratings using usecase
+    // For now, stub
+  }
 }

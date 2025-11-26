@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../squad_state.dart';
-import '../managers/user_manager.dart';
+import '../presentation/notifiers/user_notifier.dart';
+import '../presentation/notifiers/squad_notifier.dart' as sn;
 import '../widgets/rating_widgets.dart';
 import 'chat_service.dart';
-import '../../services/ai_service.dart';
+import '../domain/entities/message.dart';
 
-class SpotsSheet extends StatefulWidget {
+class SpotsSheet extends ConsumerStatefulWidget {
   final String gameName;
   final int maxSpots;
   final String chatGroupId;
@@ -42,10 +42,10 @@ class SpotsSheet extends StatefulWidget {
   }
 
   @override
-  State<SpotsSheet> createState() => _SpotsSheetState();
+  ConsumerState<SpotsSheet> createState() => _SpotsSheetState();
 }
 
-class _SpotsSheetState extends State<SpotsSheet> {
+class _SpotsSheetState extends ConsumerState<SpotsSheet> {
   bool _isClaiming = false;
   late RatingNudge _ratingNudge;
 
@@ -86,123 +86,142 @@ class _SpotsSheetState extends State<SpotsSheet> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Consumer<SquadState>(
-                  builder: (context, squadState, child) {
-                    final spots =
-                        squadState.gameSquadSpots[widget.gameName] ?? [];
-                    final filledSpots =
-                        spots.where((uid) => uid != null).length;
-                    final names = spots
-                        .where((uid) => uid != null)
-                        .map((uid) => squadState.getDisplayNameForUid(uid!))
-                        .join(', ');
+                ref.watch(sn.squadNotifierProvider).maybeWhen(
+                      data: (squadState) {
+                        final spots =
+                            squadState.gameSquadSpots[widget.gameName] ?? [];
+                        final filledSpots =
+                            spots.where((uid) => uid != null).length;
+                        final names = spots
+                            .where((uid) => uid != null)
+                            .map((uid) =>
+                                squadState.memberDisplayNames[uid!] ??
+                                'Unknown')
+                            .join(', ');
 
-                    return Text(
-                      'Current: $names ($filledSpots/${widget.maxSpots} ${widget.gameName})',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                        return Text(
+                          'Current: $names ($filledSpots/${widget.maxSpots} ${widget.gameName})',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        );
+                      },
+                      orElse: () => const Text(
+                        'Loading...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
-                    );
-                  },
-                ),
+                    ),
               ],
             ),
           ),
 
           // Spots list
           Expanded(
-            child: Consumer<SquadState>(
-              builder: (context, squadState, child) {
-                final spots = squadState.gameSquadSpots[widget.gameName] ?? [];
+            child: ref.watch(sn.squadNotifierProvider).maybeWhen(
+                  data: (squadState) {
+                    final spots =
+                        squadState.gameSquadSpots[widget.gameName] ?? [];
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: widget.maxSpots,
-                  itemBuilder: (context, index) {
-                    final isOccupied =
-                        index < spots.length && spots[index] != null;
-                    final spotValue = isOccupied ? spots[index] : null;
-                    final isCalling = spotValue?.endsWith('_calling') ?? false;
-                    final occupantUid = isCalling
-                        ? spotValue!.replaceAll('_calling', '')
-                        : spotValue;
-                    final occupantName = occupantUid != null
-                        ? squadState.getDisplayNameForUid(occupantUid)
-                        : null;
-                    final isCurrentUser =
-                        occupantUid == FirebaseAuth.instance.currentUser?.uid;
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: widget.maxSpots,
+                      itemBuilder: (context, index) {
+                        final isOccupied =
+                            index < spots.length && spots[index] != null;
+                        final spotValue = isOccupied ? spots[index] : null;
+                        final isCalling =
+                            spotValue?.endsWith('_calling') ?? false;
+                        final occupantUid = isCalling
+                            ? spotValue!.replaceAll('_calling', '')
+                            : spotValue;
+                        final occupantName = occupantUid != null
+                            ? squadState.memberDisplayNames[occupantUid] ??
+                                'Unknown'
+                            : null;
+                        final isCurrentUser = occupantUid ==
+                            FirebaseAuth.instance.currentUser?.uid;
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[900],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isOccupied
-                              ? (isCalling ? Colors.orange : Colors.cyanAccent)
-                              : Colors.grey[700]!,
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Spot ${index + 1}',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[900],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isOccupied
+                                  ? (isCalling
+                                      ? Colors.orange
+                                      : Colors.cyanAccent)
+                                  : Colors.grey[700]!,
+                              width: 1,
                             ),
                           ),
-                          const Spacer(),
-                          if (isOccupied) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: isCalling
-                                    ? Colors.orange.withValues(alpha: 0.2)
-                                    : Colors.cyanAccent.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                isCalling
-                                    ? 'Calling'
-                                    : (occupantName ?? 'Unknown'),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Spot ${index + 1}',
                                 style: TextStyle(
-                                  color: isCalling
-                                      ? Colors.orange
-                                      : Colors.cyanAccent,
+                                  color: Colors.white,
                                   fontWeight: FontWeight.w500,
-                                  fontSize: 12,
                                 ),
                               ),
-                            ),
-                            if (isCalling && isCurrentUser) ...[
-                              const SizedBox(width: 8),
-                              ElevatedButton(
-                                onPressed: () => _lockSpot(index),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
+                              const Spacer(),
+                              if (isOccupied) ...[
+                                Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 6),
-                                  textStyle: const TextStyle(fontSize: 12),
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isCalling
+                                        ? Colors.orange.withValues(alpha: 0.2)
+                                        : Colors.cyanAccent
+                                            .withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    isCalling
+                                        ? 'Calling'
+                                        : (occupantName ?? 'Unknown'),
+                                    style: TextStyle(
+                                      color: isCalling
+                                          ? Colors.orange
+                                          : Colors.cyanAccent,
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                    ),
+                                  ),
                                 ),
-                                child: const Text('Lock'),
-                              ),
+                                if (isCalling && isCurrentUser) ...[
+                                  const SizedBox(width: 8),
+                                  ElevatedButton(
+                                    onPressed: () => _lockSpot(index),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      textStyle: const TextStyle(fontSize: 12),
+                                    ),
+                                    child: const Text('Lock'),
+                                  ),
+                                ],
+                              ],
                             ],
-                          ],
-                        ],
-                      ),
+                          ),
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
+                  orElse: () =>
+                      const Center(child: CircularProgressIndicator()),
+                ),
           ),
 
           // Rating nudge (only shown for first-time users)
@@ -234,7 +253,7 @@ class _SpotsSheetState extends State<SpotsSheet> {
   }
 
   Future<void> _claimSpot() async {
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadState = ref.read(sn.squadNotifierProvider).requireValue;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -266,14 +285,18 @@ class _SpotsSheetState extends State<SpotsSheet> {
       }
 
       // Call the spot (set calling status)
-      squadState.callSpotForGame(widget.gameName, availableIndex);
+      await ref
+          .read(sn.squadNotifierProvider.notifier)
+          .claimSpot(widget.gameName, availableIndex);
 
       // Send message to chat thread
       final chatService = ChatService();
-      final displayName = squadState.getDisplayNameForUid(user.uid);
+      final displayName = ref
+          .read(sn.squadNotifierProvider.notifier)
+          .getDisplayNameForUid(user.uid);
 
       await chatService.sendMessage(
-        context,
+        ref,
         senderUid: user.uid,
         text:
             '$displayName claimed spot ${availableIndex + 1} in ${widget.gameName}!',
@@ -282,8 +305,12 @@ class _SpotsSheetState extends State<SpotsSheet> {
       );
 
       // Check if user has rated this game before
-      final userManager = Provider.of<UserManager>(context, listen: false);
-      if (!(userManager.hasRatedGame[widget.gameName] ?? false)) {
+      final hasRated = ref.read(userNotifierProvider).maybeWhen(
+            data: (state) =>
+                (state?.hasRatedGame ?? {})[widget.gameName] ?? false,
+            orElse: () => false,
+          );
+      if (!hasRated) {
         // Show rating dialog after a brief delay to let the spot claim settle
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -316,19 +343,22 @@ class _SpotsSheetState extends State<SpotsSheet> {
   }
 
   Future<void> _lockSpot(int index) async {
-    final squadState = Provider.of<SquadState>(context, listen: false);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     try {
-      squadState.lockCalledSpot(widget.gameName, index);
+      await ref
+          .read(sn.squadNotifierProvider.notifier)
+          .lockSpot(widget.gameName, index);
 
       // Send message to chat thread
       final chatService = ChatService();
-      final displayName = squadState.getDisplayNameForUid(user.uid);
+      final displayName = ref
+          .read(sn.squadNotifierProvider.notifier)
+          .getDisplayNameForUid(user.uid);
 
       await chatService.sendMessage(
-        context,
+        ref,
         senderUid: user.uid,
         text: '$displayName locked spot ${index + 1} in ${widget.gameName}!',
         chatGroupId: widget.chatGroupId,

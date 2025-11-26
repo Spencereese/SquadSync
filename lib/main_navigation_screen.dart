@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as p;
 import 'package:badges/badges.dart' as badges;
 import 'chat/chat_groups_screen.dart';
 import 'screens/squad_tab_screen.dart';
 import 'app_theme.dart';
-import 'managers/notification_manager.dart';
+import 'managers/stubs.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -60,7 +60,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   Stream<int> _getUnreadNotificationCount() {
-    return Provider.of<NotificationManager>(context, listen: false)
+    return p.Provider.of<NotificationManager>(context, listen: false)
         .getUnreadNotificationCount();
   }
 

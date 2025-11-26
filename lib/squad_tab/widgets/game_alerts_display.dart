@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../squad_state.dart';
-import '../../managers/squad_manager.dart';
+import '../../presentation/notifiers/squad_notifier.dart';
+import '../../providers.dart';
 
 /// GameAlertsDisplay component - shows active game alerts from squad members
-class GameAlertsDisplay extends StatefulWidget {
+class GameAlertsDisplay extends ConsumerStatefulWidget {
   const GameAlertsDisplay({super.key});
 
   // Static method to refresh all instances
@@ -15,10 +15,10 @@ class GameAlertsDisplay extends StatefulWidget {
   }
 
   @override
-  GameAlertsDisplayState createState() => GameAlertsDisplayState();
+  ConsumerState<GameAlertsDisplay> createState() => GameAlertsDisplayState();
 }
 
-class GameAlertsDisplayState extends State<GameAlertsDisplay> {
+class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
   List<Map<String, dynamic>> _alerts = [];
 
   @override
@@ -34,15 +34,21 @@ class GameAlertsDisplayState extends State<GameAlertsDisplay> {
   }
 
   Future<void> _loadAlerts() async {
-    final squadState = Provider.of<SquadState>(context, listen: false);
-    final squadManager = Provider.of<SquadManager>(context, listen: false);
+    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadManager = ref.read(squadManagerProvider);
 
-    if (squadState.selectedSquadId != null) {
-      final alerts =
-          await squadManager.getSquadAlerts(squadState.selectedSquadId!);
-      setState(() {
-        _alerts = alerts;
-      });
+    final selectedSquadId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedSquadId,
+      orElse: () => null,
+    );
+
+    if (selectedSquadId != null) {
+      final alerts = await squadManager.getSquadAlerts(selectedSquadId);
+      if (mounted) {
+        setState(() {
+          _alerts = alerts;
+        });
+      }
     }
   }
 
@@ -53,54 +59,62 @@ class GameAlertsDisplayState extends State<GameAlertsDisplay> {
     }
 
     final user = FirebaseAuth.instance.currentUser;
-    final squadState = Provider.of<SquadState>(context, listen: false);
+    final squadStateAsync = ref.watch(squadNotifierProvider);
 
-    // Filter out current user's alerts (they see their own in the controls)
-    final otherAlerts =
-        _alerts.where((alert) => alert['userUid'] != user?.uid).toList();
+    return squadStateAsync.maybeWhen(
+      data: (squadState) {
+        // Filter out current user's alerts (they see their own in the controls)
+        final otherAlerts =
+            _alerts.where((alert) => alert['userUid'] != user?.uid).toList();
 
-    if (otherAlerts.isEmpty) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
+        if (otherAlerts.isEmpty) {
+          return const SliverToBoxAdapter(child: SizedBox.shrink());
+        }
 
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        child: Card(
-          color: Colors.white.withValues(alpha: 0.1),
+        return SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Card(
+              color: Colors.white.withValues(alpha: 0.1),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.notifications,
-                        color: Colors.orangeAccent, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Game Alerts',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.orangeAccent,
-                            fontWeight: FontWeight.bold,
-                          ),
+                    Row(
+                      children: [
+                        const Icon(Icons.notifications,
+                            color: Colors.orangeAccent, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Game Alerts',
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    color: Colors.orangeAccent,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 12),
+                    ...otherAlerts
+                        .map((alert) => _buildAlertItem(context, alert)),
                   ],
                 ),
-                const SizedBox(height: 12),
-                ...otherAlerts.map(
-                    (alert) => _buildAlertItem(context, alert, squadState)),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
+      orElse: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
     );
   }
 
-  Widget _buildAlertItem(
-      BuildContext context, Map<String, dynamic> alert, SquadState squadState) {
-    final displayName = squadState.getDisplayNameForUid(alert['userUid']);
+  Widget _buildAlertItem(BuildContext context, Map<String, dynamic> alert) {
+    final displayName = ref
+        .read(squadNotifierProvider.notifier)
+        .getDisplayNameForUid(alert['userUid']);
 
     String alertText;
     IconData alertIcon;

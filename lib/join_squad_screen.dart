@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import '../squad_state.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'presentation/notifiers/squad_notifier.dart' as sn;
 
-class JoinSquadScreen extends StatefulWidget {
+class JoinSquadScreen extends ConsumerStatefulWidget {
   final String? initialCode;
 
   const JoinSquadScreen({super.key, this.initialCode});
 
   @override
-  _JoinSquadScreenState createState() => _JoinSquadScreenState();
+  ConsumerState<JoinSquadScreen> createState() => _JoinSquadScreenState();
 }
 
-class _JoinSquadScreenState extends State<JoinSquadScreen> {
+class _JoinSquadScreenState extends ConsumerState<JoinSquadScreen> {
   final _codeController = TextEditingController();
   bool _isLoading = false;
 
@@ -95,8 +96,12 @@ class _JoinSquadScreenState extends State<JoinSquadScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      await squadState.joinSquad(code);
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw 'User not authenticated';
+
+      await ref
+          .read(sn.squadNotifierProvider.notifier)
+          .joinSquad(code, user.uid);
       HapticFeedback.lightImpact();
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {

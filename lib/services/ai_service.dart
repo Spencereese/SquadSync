@@ -1,13 +1,12 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'package:logger/logger.dart';
-import '../squad_state.dart';
+import '../domain/entities/squad_state.dart';
 import '../services/grok_service.dart';
 import '../chat/sqlite_helper.dart';
+import '../domain/entities/message.dart';
 
 /// Service responsible for AI/Grok integration in chat functionality.
 /// Handles AI response generation, context gathering, and message processing.
@@ -18,7 +17,7 @@ class AiService {
   final SQLiteHelper _sqliteHelper = SQLiteHelper();
 
   /// Generate AI response from Grok for messages directed at it
-  Future<void> generateGrokResponse(BuildContext context, String userMessage,
+  Future<void> generateGrokResponse(SquadState squadState, String userMessage,
       String senderUid, String? squadId, String? chatGroupId,
       {required ChatType chatType}) async {
     try {
@@ -26,7 +25,6 @@ class AiService {
       final cleanMessage = _grokService.cleanGrokMessage(userMessage);
 
       // Get context about the current squad/game
-      final squadState = Provider.of<SquadState>(context, listen: false);
       final currentGame = squadState.currentGame;
       final gameContext = currentGame != null
           ? 'Currently playing: ${currentGame['name']} (${currentGame['genres']?.join(', ') ?? 'Unknown genre'})'
@@ -196,6 +194,3 @@ Example: ["Option 1", "Option 2", "Option 3", "Option 4"]
     }
   }
 }
-
-/// Enum for chat types (moved here for AiService usage)
-enum ChatType { dm, userGroup, squad }

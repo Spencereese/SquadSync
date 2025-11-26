@@ -14,6 +14,7 @@ class PollService {
     required List<String> options,
     required PollSettings settings,
     String? chatGroupId,
+    String? creatorName,
   }) async {
     try {
       final user = _auth.currentUser;
@@ -33,7 +34,7 @@ class PollService {
         id: pollId,
         title: title,
         creatorUid: user.uid,
-        creatorName: user.displayName ?? 'Anonymous',
+        creatorName: creatorName ?? user.displayName ?? 'Anonymous',
         options: pollOptions,
         isMultipleChoice: settings.isMultipleChoice,
         isAnonymous: settings.isAnonymous,

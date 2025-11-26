@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/message_data.dart';
+import '../../presentation/notifiers/squad_notifier.dart';
 
 /// Message sender name component
-class MessageSender extends StatelessWidget {
+class MessageSender extends ConsumerWidget {
   final MessageData message;
 
   const MessageSender({
@@ -11,16 +13,25 @@ class MessageSender extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Don't show sender name for Grok shadow messages
     if (message.isGrokMessage) {
       return const SizedBox.shrink();
     }
 
+    // Get the display name from the cache instead of using the cached sender name
+    final displayName = ref.watch(squadNotifierProvider.select(
+      (state) => state.maybeWhen(
+        data: (data) =>
+            data.memberDisplayNames[message.senderUid] ?? message.sender,
+        orElse: () => message.sender,
+      ),
+    ));
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: Text(
-        message.sender,
+        displayName,
         style: TextStyle(
           color: message.isAiResponse
               ? const Color(0xFF00D4FF) // Electric blue for evil AI theme

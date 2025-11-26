@@ -5,26 +5,18 @@ import 'firebase_options.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app_links/app_links.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'providers/user_notifier.dart';
-import 'providers/squad_notifier.dart';
-import 'squad_state_notifier.dart';
+import 'presentation/notifiers/user_notifier.dart';
+import 'presentation/notifiers/squad_notifier.dart';
 import 'chat/chat_groups_screen.dart';
 import 'notification_service.dart';
-import 'chat/chat_state.dart';
 import 'join_squad_screen.dart';
 import 'chat/dialogs/group_actions_dialog.dart';
-import 'managers/notification_manager.dart';
-import 'managers/firestore_manager.dart';
-import 'managers/availability_manager.dart';
-import 'managers/user_manager.dart';
-import 'managers/review_manager.dart';
-import 'managers/squad_manager.dart';
+import 'managers/stubs.dart'; // TEMP: Keep for legacy managers
 import 'widgets/app_widgets.dart';
 import 'core/injection.dart' as di;
 
@@ -169,7 +161,7 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
     final squadAsync = ref.watch(squadNotifierProvider);
 
     final user = userAsync.maybeWhen(
-      data: (userState) => userState.displayName != null
+      data: (userState) => userState != null && userState.displayName != null
           ? FirebaseAuth.instance.currentUser
           : null,
       orElse: () => null,
@@ -281,21 +273,7 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
-      child: p.MultiProvider(
-        // Legacy Provider support - TODO: Remove after full migration
-        providers: [
-          p.ChangeNotifierProvider<LegacySquadState>(
-              create: (_) => LegacySquadState()),
-          p.ChangeNotifierProvider(create: (_) => ChatState()),
-          p.ChangeNotifierProvider(create: (_) => FirestoreManager()),
-          p.ChangeNotifierProvider(create: (_) => NotificationManager()),
-          p.ChangeNotifierProvider(create: (_) => AvailabilityManager()),
-          p.ChangeNotifierProvider(create: (_) => UserManager()),
-          p.ChangeNotifierProvider(create: (_) => ReviewManager()),
-          p.ChangeNotifierProvider(create: (_) => SquadManager()),
-        ],
-        child: const SquadSyncMaterialApp(),
-      ),
+      child: const SquadSyncMaterialApp(),
     );
   }
 }

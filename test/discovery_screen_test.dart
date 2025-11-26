@@ -40,7 +40,8 @@ void main() {
   Widget createTestWidget(Widget child) {
     return ProviderScope(
       overrides: [
-        firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+        firestoreServiceRefactoredProvider
+            .overrideWithValue(mockFirestoreService),
         grokServiceProvider.overrideWithValue(mockGrokService),
         notificationManagerProvider.overrideWithValue(mockNotificationManager),
         sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
@@ -71,9 +72,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -119,9 +122,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -145,7 +150,8 @@ void main() {
     testWidgets('shows error UI when loading fails', (tester) async {
       final mockNotifier = SuggestedGroupsNotifier(mockFirestoreService);
       mockNotifier.state = FirestoreState(
-        suggestedGroups: AsyncValue.error(Exception('Network error'), StackTrace.current),
+        suggestedGroups:
+            AsyncValue.error(Exception('Network error'), StackTrace.current),
         isLoading: false,
         error: 'Network error',
       );
@@ -154,9 +160,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -177,7 +185,8 @@ void main() {
     testWidgets('retry button reloads data on error', (tester) async {
       final mockNotifier = SuggestedGroupsNotifier(mockFirestoreService);
       mockNotifier.state = FirestoreState(
-        suggestedGroups: AsyncValue.error(Exception('Network error'), StackTrace.current),
+        suggestedGroups:
+            AsyncValue.error(Exception('Network error'), StackTrace.current),
         isLoading: false,
         error: 'Network error',
       );
@@ -186,9 +195,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -208,16 +219,19 @@ void main() {
       verify(mockNotifier.loadSuggestedGroups(any)).called(1);
     });
 
-    testWidgets('search functionality triggers with debouncing', (tester) async {
+    testWidgets('search functionality triggers with debouncing',
+        (tester) async {
       final mockNotifier = SuggestedGroupsNotifier(mockFirestoreService);
 
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -263,9 +277,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -313,9 +329,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -346,9 +364,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -362,7 +382,8 @@ void main() {
 
       // Should show empty state message
       expect(find.text('No groups found'), findsOneWidget);
-      expect(find.text('Try adjusting your search or check back later'), findsOneWidget);
+      expect(find.text('Try adjusting your search or check back later'),
+          findsOneWidget);
     });
 
     testWidgets('performance test - renders within 200ms', (tester) async {
@@ -390,9 +411,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -437,9 +460,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -492,9 +517,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(
@@ -535,9 +562,11 @@ void main() {
         ProviderScope(
           overrides: [
             suggestedGroupsNotifierProvider.overrideWithValue(mockNotifier),
-            firestoreServiceRefactoredProvider.overrideWithValue(mockFirestoreService),
+            firestoreServiceRefactoredProvider
+                .overrideWithValue(mockFirestoreService),
             grokServiceProvider.overrideWithValue(mockGrokService),
-            notificationManagerProvider.overrideWithValue(mockNotificationManager),
+            notificationManagerProvider
+                .overrideWithValue(mockNotificationManager),
             sqliteHelperProvider.overrideWithValue(mockSQLiteHelper),
           ],
           child: const MaterialApp(

@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:provider/provider.dart';
-import '../../squad_state.dart';
+import 'package:provider/provider.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../presentation/notifiers/squad_notifier.dart' as sn;
 import '../chat_screen.dart';
 import '../chat_state.dart';
-import '../../services/ai_service.dart';
+import '../../domain/entities/message.dart';
 
-class SquadChatTab extends StatelessWidget {
+class SquadChatTab extends ConsumerWidget {
   const SquadChatTab({super.key});
 
   String _formatTime(DateTime time) {
@@ -24,67 +25,67 @@ class SquadChatTab extends StatelessWidget {
     }
   }
 
-  Widget _buildDMCard(BuildContext context) {
-    return Consumer<ChatState>(
-      builder: (context, chatState, child) {
-        return ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          leading: CircleAvatar(
-            radius: 28,
-            backgroundColor: Colors.grey[800],
-            child: const Icon(
-              Icons.message,
-              color: Colors.cyanAccent,
-              size: 24,
-            ),
+  Widget _buildDMCard(
+      BuildContext context, VoidCallback onTapDM, int dmUnreadCount) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      leading: CircleAvatar(
+        radius: 28,
+        backgroundColor: Colors.grey[800],
+        child: const Icon(
+          Icons.message,
+          color: Colors.cyanAccent,
+          size: 24,
+        ),
+      ),
+      title: const Text(
+        'Direct Messages',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
+        ),
+      ),
+      subtitle: const Padding(
+        padding: EdgeInsets.only(top: 2),
+        child: Text(
+          'Private conversations',
+          style: TextStyle(
+            color: Colors.grey,
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
           ),
-          title: const Text(
-            'Direct Messages',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-            ),
-          ),
-          subtitle: const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: Text(
-              'Private conversations',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
+        ),
+      ),
+      trailing: dmUnreadCount > 0
+          ? Container(
+              padding: const EdgeInsets.all(6),
+              decoration: const BoxDecoration(
+                color: Colors.cyanAccent,
+                shape: BoxShape.circle,
               ),
-            ),
-          ),
-          trailing: chatState.dmUnreadCount > 0
-              ? Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: const BoxDecoration(
-                    color: Colors.cyanAccent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    chatState.dmUnreadCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                )
-              : null,
-          onTap: () => chatState.setDMView(true),
-        );
-      },
+              child: Text(
+                dmUnreadCount.toString(),
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            )
+          : null,
+      onTap: onTapDM,
     );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
-    final SquadState squadState = Provider.of<SquadState>(context);
+    final squadState = ref.watch(sn.squadNotifierProvider).valueOrNull;
+
+    if (squadState == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     // Get user's squads and display them as chat groups
     final userSquadIds = squadState.userSquadIds;
@@ -116,7 +117,7 @@ class SquadChatTab extends StatelessWidget {
         itemBuilder: (context, index) {
           if (index == 0) {
             // DM card
-            return _buildDMCard(context);
+            return _buildDMCard(context, onTapDM, dmUnreadCount);
           }
 
           final squadIndex = index - 1;

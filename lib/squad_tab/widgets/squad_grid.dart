@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/squad_notifier.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../presentation/notifiers/squad_notifier.dart';
+import '../../domain/entities/squad_state.dart';
 import '../dialogs/spot_assignment_dialog.dart';
 
 /// SquadGrid component - handles the display of spot cards and assignment logic
@@ -71,28 +73,33 @@ class SpotCard extends ConsumerWidget {
 
   Widget _buildSpotCard(
       BuildContext context, WidgetRef ref, SquadState squadState) {
+    final user = FirebaseAuth.instance.currentUser;
+    final yourUid = user?.uid;
+
     final gameName = squadState.currentGame?['name'] ?? '';
     final squadSpots = squadState.gameSquadSpots[gameName] ?? [];
     final spotTimers = squadState.gameSpotTimers[gameName] ?? [];
     final globalStatuses = squadState.globalStatuses;
-    final displayName = squadState.memberDisplayNames.values.firstWhere(
-      (name) => name.isNotEmpty,
-      orElse: () => 'Unknown',
-    );
 
     final spotName = index < squadSpots.length ? squadSpots[index] : null;
+    final spotDisplayName = spotName != null
+        ? squadState.memberDisplayNames[spotName] ?? spotName
+        : null;
     final hasOccupant = spotName != null;
-    final yourName = displayName;
     final isReady = globalStatuses[spotName] == 'Ready';
+
+    final initial = spotDisplayName != null
+        ? spotDisplayName[0].toUpperCase()
+        : '${index + 1}';
 
     // Check if any buttons will be shown
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
     final isCalling = globalStatuses[spotName] == 'Calling';
     final hasCallButton = !hasOccupant;
     final hasLockButton =
-        hasOccupant && hasTimer && isCalling && spotName == yourName;
+        hasOccupant && hasTimer && isCalling && spotName == yourUid;
     final hasWalkingButton =
-        hasOccupant && hasTimer && isReady && spotName == yourName;
+        hasOccupant && hasTimer && isReady && spotName == yourUid;
     final hasAnyButton = hasCallButton || hasLockButton || hasWalkingButton;
 
     return GestureDetector(
@@ -111,7 +118,7 @@ class SpotCard extends ConsumerWidget {
                 ref
                     .read(squadNotifierProvider.notifier)
                     .claimSpot(gameName, index);
-              } else if (hasOccupant && spotName == yourName) {
+              } else if (hasOccupant && spotName == yourUid) {
                 final status = globalStatuses[spotName];
                 if (status == 'Ready') {
                   ref
@@ -124,14 +131,14 @@ class SpotCard extends ConsumerWidget {
                       .removeSpot(gameName, index);
                 }
                 // Don't remove spot when calling - let the Lock button handle it
-              } else if (hasOccupant && squadSpots.contains(yourName)) {
+              } else if (hasOccupant && squadSpots.contains(yourUid)) {
                 // You're already in a spot, allow assigning others
                 SpotAssignmentDialog.show(context, ref, index);
               }
             },
       child: Semantics(
         label:
-            'Spot ${index + 1}: ${spotName ?? 'Open'}${spotName == yourName && !isReady ? ' (tap to leave)' : spotName == yourName && isReady ? ' (ready to lock)' : ''}',
+            'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}${spotName == yourUid && !isReady ? ' (tap to leave)' : spotName == yourUid && isReady ? ' (ready to lock)' : ''}',
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           color: Colors.white.withValues(alpha: 0.1),
@@ -140,21 +147,21 @@ class SpotCard extends ConsumerWidget {
               backgroundColor:
                   hasOccupant ? Colors.cyanAccent : Colors.grey[600],
               child: Text(
-                hasOccupant ? spotName[0].toUpperCase() : '${index + 1}',
+                hasOccupant ? initial : '${index + 1}',
                 style: TextStyle(
                     color: hasOccupant ? Colors.black : Colors.white,
                     fontWeight: FontWeight.bold),
               ),
             ),
             title: Text(
-              'Spot ${index + 1}: ${spotName ?? 'Open'}',
+              'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}',
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.bold),
             ),
             subtitle: _buildSpotSubtitle(
                 context, index, spotName, spotTimers, globalStatuses),
             trailing: _buildSpotActions(context, index, hasOccupant, spotName,
-                displayName, spotTimers, globalStatuses, ref, gameName),
+                yourUid, spotTimers, globalStatuses, ref, gameName),
           ),
         ),
       ),
@@ -207,12 +214,13 @@ class SpotCard extends ConsumerWidget {
 
   String? _getTimerDisplay(Map<String, dynamic>? timer) {
     if (timer == null) return null;
-    // Simple implementation - could be enhanced
-    final endTime = timer['endTime'];
-    if (endTime is DateTime) {
-      final remaining = endTime.difference(DateTime.now());
-      if (remaining.isNegative) return 'Expired';
-      return '${remaining.inMinutes}m ${remaining.inSeconds % 60}s';
+    final remainingSeconds = timer['remaining'] as int?;
+    if (remainingSeconds != null) {
+      final remaining = Duration(seconds: remainingSeconds);
+      if (remaining.isNegative || remaining == Duration.zero) return 'Expired';
+      final minutes = remaining.inMinutes;
+      final seconds = remaining.inSeconds % 60;
+      return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
     }
     return 'Timer';
   }
@@ -222,12 +230,11 @@ class SpotCard extends ConsumerWidget {
       int index,
       bool hasOccupant,
       String? spotName,
-      String displayName,
+      String? yourUid,
       List<Map<String, dynamic>?> spotTimers,
       Map<String, String> globalStatuses,
       WidgetRef ref,
       String gameName) {
-    final yourName = displayName;
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
     final isCalling = globalStatuses[spotName] == 'Calling';
     final isReady = globalStatuses[spotName] == 'Ready';
@@ -269,7 +276,7 @@ class SpotCard extends ConsumerWidget {
               ),
             ),
           )
-        else if (hasOccupant && hasTimer && isCalling && spotName == yourName)
+        else if (hasOccupant && hasTimer && isCalling && spotName == yourUid)
           Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
@@ -303,7 +310,7 @@ class SpotCard extends ConsumerWidget {
               ),
             ),
           )
-        else if (hasOccupant && hasTimer && isReady && spotName == yourName)
+        else if (hasOccupant && hasTimer && isReady && spotName == yourUid)
           Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(

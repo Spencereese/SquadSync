@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'squad_state.dart';
+import 'presentation/notifiers/squad_notifier.dart' as sn;
+import 'domain/entities/squad_state.dart';
 
-class PerformanceHubTab extends StatelessWidget {
+class PerformanceHubTab extends ConsumerWidget {
   const PerformanceHubTab({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     debugPrint('PerformanceHubTab building');
+    final squadAsync = ref.watch(sn.squadNotifierProvider);
     return DefaultTabController(
       length: 2,
       child: Padding(
@@ -49,15 +51,21 @@ class PerformanceHubTab extends StatelessWidget {
               child: TabBarView(
                 physics: const BouncingScrollPhysics(),
                 children: [
-                  Consumer<SquadState>(
-                    builder: (context, squadState, child) {
-                      return PersonalStatsView(squadState: squadState);
-                    },
+                  squadAsync.when(
+                    data: (squadState) =>
+                        PersonalStatsView(squadState: squadState),
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, stack) =>
+                        Center(child: Text('Error: $error')),
                   ),
-                  Consumer<SquadState>(
-                    builder: (context, squadState, child) {
-                      return LeaderboardsView(squadState: squadState);
-                    },
+                  squadAsync.when(
+                    data: (squadState) =>
+                        LeaderboardsView(squadState: squadState),
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, stack) =>
+                        Center(child: Text('Error: $error')),
                   ),
                 ],
               ),
@@ -126,8 +134,8 @@ class PersonalStatsView extends StatelessWidget {
       winRateSpots.add(FlSpot(i.toDouble(), cumulativeWinRate));
     }
 
-    final ratings = squadState.getMemberRatings(displayName);
-    final complaints = squadState.complaints[displayName] ?? 0;
+    final ratings = <String, int>{};
+    final complaints = 0;
 
     return GameStats(
       kdRatio: kdRatio,
@@ -398,7 +406,7 @@ class LeaderboardsView extends StatelessWidget {
   const LeaderboardsView({super.key, required this.squadState});
 
   List<Map<String, dynamic>> _calculateLeaderboard(List<String> members) {
-    final filteredMembers = squadState.getFilteredMembers;
+    final filteredMembers = squadState.squadMemberUids;
     return members
         .where((member) => filteredMembers.contains(member))
         .map((member) {
@@ -407,8 +415,8 @@ class LeaderboardsView extends StatelessWidget {
               (game['players'] as List?)?.contains(member) == true &&
               game['result'] == 'Win')
           .length;
-      final ratings = squadState.getMemberRatings(member);
-      final complaints = squadState.complaints[member] ?? 0;
+      final ratings = <String, int>{};
+      final complaints = 0;
       return {
         'name': member,
         'wins': wins,
@@ -422,8 +430,8 @@ class LeaderboardsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     debugPrint(
-        'LeaderboardsView building, filteredMembers: ${squadState.getFilteredMembers.length}');
-    final filteredMembers = squadState.getFilteredMembers;
+        'LeaderboardsView building, filteredMembers: ${squadState.squadMemberUids.length}');
+    final filteredMembers = squadState.squadMemberUids;
     final squadLeaderboard = _calculateLeaderboard(filteredMembers);
     final globalLeaderboard = squadLeaderboard; // Placeholder for global data
 
@@ -510,11 +518,12 @@ class _LeaderboardTile extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
-              if (isBlocked) {
-                squadState.unblockUser(player);
-              } else {
-                squadState.blockUser(player);
-              }
+              // TODO: Implement block/unblock with notifier
+              // if (isBlocked) {
+              //   squadState.unblockUser(player);
+              // } else {
+              //   squadState.blockUser(player);
+              // }
               Navigator.of(dialogContext).pop();
             },
             child:

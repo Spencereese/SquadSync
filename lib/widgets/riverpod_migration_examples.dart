@@ -15,16 +15,18 @@ class RiverpodMigrationExample extends ConsumerWidget {
     // final displayName = squadState.displayName;
 
     // NEW WAY with Riverpod StateNotifier:
-    final squadState = ref.watch(squadStateNotifierProvider);
-    final squadNotifier = ref.read(squadStateNotifierProvider.notifier);
+    final squadState = ref.watch(squadNotifierProvider);
+    final squadNotifier = ref.read(squadNotifierProvider.notifier);
     final squadSpots = squadNotifier.squadSpots;
     final displayName = squadState.displayName;
 
     // For efficient updates, use .select() to only rebuild when specific properties change
-    final isInitialized = ref.watch(
-        squadStateNotifierProvider.select((state) => state.isInitialized));
-    final selectedSquadId = ref.watch(
-        squadStateNotifierProvider.select((state) => state.selectedSquadId));
+    final isInitialized = ref.watch(squadNotifierProvider.select((asyncState) =>
+        asyncState.maybeWhen(
+            data: (state) => state.isInitialized, orElse: () => null)));
+    final selectedSquadId = ref.watch(squadNotifierProvider.select(
+        (asyncState) => asyncState.maybeWhen(
+            data: (state) => state.selectedSquadId, orElse: () => null)));
 
     return Scaffold(
       appBar: AppBar(
@@ -69,18 +71,20 @@ class RiverpodMigrationExample extends ConsumerWidget {
               children: [
                 ElevatedButton(
                   onPressed: () {
-                    // OLD WAY: squadState.createSquad('New Squad');
+                    // OLD WAY: squadState.createSquad('New Squad', 'Call of Duty', 4);
                     // NEW WAY: Use ref.read() for actions
                     ref
-                        .read(squadStateNotifierProvider.notifier)
-                        .createSquad('New Squad');
+                        .read(squadNotifierProvider.notifier)
+                        .createSquad('New Squad', 'Call of Duty', 4);
                   },
                   child: const Text('Create Squad'),
                 ),
                 ElevatedButton(
                   onPressed: () {
                     // Actions that modify state
-                    ref.read(squadStateNotifierProvider.notifier).leaveSquad();
+                    ref
+                        .read(squadNotifierProvider.notifier)
+                        .leaveSquad('squad123', 'user123');
                   },
                   child: const Text('Leave Squad'),
                 ),
@@ -101,15 +105,15 @@ class OptimizedSquadDisplay extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // For computed properties, we need to watch the underlying state and compute
     final gameName = ref.watch(
-      squadStateNotifierProvider
-          .select((state) => state.currentGame?['name'] ?? ''),
+      squadNotifierProvider.select((state) => state.currentGame?['name'] ?? ''),
     );
     final gameSquadSpots = ref.watch(
-      squadStateNotifierProvider
+      squadNotifierProvider
           .select((state) => state.gameSquadSpots[gameName] ?? []),
     );
     final memberDisplayNames = ref.watch(
-      squadStateNotifierProvider.select((state) => state.memberDisplayNames),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.memberDisplayNames, orElse: () => {})),
     );
 
     // Compute squadSpots from the watched state
@@ -119,7 +123,8 @@ class OptimizedSquadDisplay extends ConsumerWidget {
 
     // Only rebuilds when displayName changes
     final displayName = ref.watch(
-      squadStateNotifierProvider.select((state) => state.displayName),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.displayName, orElse: () => 'Unknown')),
     );
 
     return Column(
@@ -140,38 +145,45 @@ class GranularStateSelectors extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Select specific boolean flags for conditional rendering
     final isInitialized = ref.watch(
-      squadStateNotifierProvider.select((state) => state.isInitialized),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.isInitialized, orElse: () => false)),
     );
     final hasNewSquadSpot = ref.watch(
-      squadStateNotifierProvider.select((state) => state.hasNewSquadSpot),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.hasNewSquadSpot, orElse: () => false)),
     );
     final hasUnreadMessages = ref.watch(
-      squadStateNotifierProvider.select((state) => state.hasUnreadMessages),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.hasUnreadMessages, orElse: () => false)),
     );
 
     // Select collections for list rendering
     final availableGames = ref.watch(
-      squadStateNotifierProvider.select((state) => state.availableGames),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.availableGames, orElse: () => [])),
     );
     final peacockQueue = ref.watch(
-      squadStateNotifierProvider.select((state) => state.peacockQueue),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.peacockQueue, orElse: () => [])),
     );
 
     // Select nested map properties
     final currentGameName = ref.watch(
-      squadStateNotifierProvider.select((state) => state.currentGame?['name']),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.currentGame?['name'], orElse: () => null)),
     );
     final selectedSquadId = ref.watch(
-      squadStateNotifierProvider.select((state) => state.selectedSquadId),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.selectedSquadId, orElse: () => null)),
     );
 
     // Select computed properties (lengths, counts)
     final squadMemberCount = ref.watch(
-      squadStateNotifierProvider
-          .select((state) => state.squadMemberUids.length),
+      squadNotifierProvider.select((state) => state.squadMemberUids.length),
     );
     final gameHistoryCount = ref.watch(
-      squadStateNotifierProvider.select((state) => state.gameHistory.length),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.gameHistory.length, orElse: () => 0)),
     );
 
     return Column(
@@ -205,13 +217,15 @@ class MultiPropertySelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Select multiple related properties in one watch
     final squadData = ref.watch(
-      squadStateNotifierProvider.select((state) => (
-            squadId: state.selectedSquadId,
-            memberCount: state.squadMemberUids.length,
-            isCreator: state.selectedSquadId != null &&
-                FirebaseAuth.instance.currentUser?.uid ==
-                    state.currentSquadData?['creatorUid'],
-          )),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => (
+                squadId: state.selectedSquadId,
+                memberCount: state.squadMemberUids.length,
+                isCreator: state.selectedSquadId != null &&
+                    FirebaseAuth.instance.currentUser?.uid ==
+                        state.currentSquadData?['creatorUid'],
+              ),
+          orElse: () => null)),
     );
 
     return Card(
@@ -237,7 +251,7 @@ class FilteredCollectionSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Select and filter game lobbies in one operation
     final activeLobbies = ref.watch(
-      squadStateNotifierProvider.select((state) {
+      squadNotifierProvider.select((state) {
         return state.gameLobbies.entries
             .where((entry) => entry.value.isNotEmpty)
             .map((entry) => MapEntry(entry.key, entry.value.length))
@@ -261,16 +275,20 @@ class StatusIndicatorSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Select boolean flags individually for precise rebuild control
     final isInitialized = ref.watch(
-      squadStateNotifierProvider.select((state) => state.isInitialized),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.isInitialized, orElse: () => false)),
     );
     final hasNewSquadSpot = ref.watch(
-      squadStateNotifierProvider.select((state) => state.hasNewSquadSpot),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.hasNewSquadSpot, orElse: () => false)),
     );
     final hasUnreadMessages = ref.watch(
-      squadStateNotifierProvider.select((state) => state.hasUnreadMessages),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.hasUnreadMessages, orElse: () => false)),
     );
     final hasNewAvailability = ref.watch(
-      squadStateNotifierProvider.select((state) => state.hasNewAvailability),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.hasNewAvailability, orElse: () => false)),
     );
 
     return Row(
@@ -347,14 +365,18 @@ class ComputedPropertySelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Select computed properties that derive from state
     final totalGames = ref.watch(
-      squadStateNotifierProvider.select((state) => state.availableGames.length),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.availableGames.length, orElse: () => 0)),
     );
     final activeSquads = ref.watch(
-      squadStateNotifierProvider.select((state) => state.userSquadIds.length),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.userSquadIds.length, orElse: () => 0)),
     );
     final pendingTimers = ref.watch(
-      squadStateNotifierProvider.select((state) =>
-          state.peacockTimers.values.where((timer) => timer != null).length),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) =>
+              state.peacockTimers.values.where((timer) => timer != null).length,
+          orElse: () => 0)),
     );
 
     return Card(
@@ -384,10 +406,12 @@ class SquadStatusConsumer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // For computed properties like isCreator, watch the underlying state
     final selectedSquadId = ref.watch(
-      squadStateNotifierProvider.select((state) => state.selectedSquadId),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.selectedSquadId, orElse: () => null)),
     );
     final currentSquadData = ref.watch(
-      squadStateNotifierProvider.select((state) => state.currentSquadData),
+      squadNotifierProvider.select((asyncState) => asyncState.maybeWhen(
+          data: (state) => state.currentSquadData, orElse: () => null)),
     );
 
     final isCreator = selectedSquadId != null &&

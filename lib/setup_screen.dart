@@ -1,20 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:provider/provider.dart';
-// import 'package:google_sign_in/google_sign_in.dart'; // TODO: Re-enable when v7 API is updated
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import '../squad_state.dart';
 import 'squad_tab/squad_queue_page.dart';
 
-class SetupScreen extends StatefulWidget {
+class SetupScreen extends ConsumerStatefulWidget {
   const SetupScreen({super.key});
 
   @override
-  SetupScreenState createState() => SetupScreenState();
+  ConsumerState<SetupScreen> createState() => SetupScreenState();
 }
 
-class SetupScreenState extends State<SetupScreen> {
+class SetupScreenState extends ConsumerState<SetupScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -42,13 +40,8 @@ class SetupScreenState extends State<SetupScreen> {
     try {
       final user = _auth.currentUser;
       if (user != null && mounted) {
-        // User is already authenticated, but we don't navigate here anymore
-        // Navigation is handled in main.dart based on auth status
-        // Just ensure SquadState is initialized if needed
-        final squadState = Provider.of<SquadState>(context, listen: false);
-        if (!squadState.isInitialized) {
-          await squadState.initialize();
-        }
+        // User is already authenticated, navigation handled in main.dart
+        // Squad state initialization is handled by Riverpod
       }
     } catch (e) {
       debugPrint('Error checking user: $e');
@@ -142,11 +135,7 @@ class SetupScreenState extends State<SetupScreen> {
       _showNameDialog(user);
     } else {
       if (!mounted) return;
-      final squadState = Provider.of<SquadState>(context, listen: false);
-      // Only initialize if not already initialized
-      if (!squadState.isInitialized) {
-        await squadState.initialize();
-      }
+      // Squad state initialization is handled by Riverpod
       if (mounted) {
         _navigateToSquadQueue();
       }
@@ -186,8 +175,7 @@ class SetupScreenState extends State<SetupScreen> {
         'displayName': name.trim(),
       }, SetOptions(merge: true));
       if (mounted) {
-        final squadState = Provider.of<SquadState>(context, listen: false);
-        await squadState.initialize();
+        // Squad state initialization is handled by Riverpod
         if (mounted) {
           Navigator.pop(context);
           _navigateToSquadQueue();

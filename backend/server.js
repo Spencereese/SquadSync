@@ -343,7 +343,7 @@ app.post('/grok', async (req, res) => {
     const fullPrompt = `${systemPrompt}\n\nUser message: ${message}${userContext}${recentContext}`;
 
     const response = await axios.post('https://api.x.ai/v1/chat/completions', {
-      model: 'grok-3',
+      model: 'grok-4.1-fast-latest',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: fullPrompt }
@@ -365,6 +365,63 @@ app.post('/grok', async (req, res) => {
     }
   } catch (error) {
     console.error('Error calling Grok API:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Smart replies endpoint
+app.post('/smart-replies', async (req, res) => {
+  try {
+    const { messages } = req.body;
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'Messages array is required' });
+    }
+
+    const apiKey = process.env.XAI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Grok API key not configured' });
+    }
+
+    const systemPrompt = `You are a smart reply suggestion system. Based on the last few messages in a chat, suggest 2-3 concise, relevant reply options that the user might want to send. Keep suggestions short (under 50 characters each) and contextually appropriate. Return only the reply suggestions as a JSON array of strings.`;
+
+    const context = messages.slice(-5).join(' | '); // Last 5 messages for context
+
+    const response = await axios.post('https://api.x.ai/v1/chat/completions', {
+      model: 'grok-4.1-fast-latest',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Recent messages: ${context}\n\nSuggest 2-3 smart reply options:` }
+      ],
+      max_tokens: 100,
+      temperature: 0.8,
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (response.status === 200 && response.data.choices && response.data.choices[0]) {
+      const content = response.data.choices[0].message.content;
+      // Parse the response to extract reply suggestions
+      try {
+        const replies = JSON.parse(content);
+        if (Array.isArray(replies)) {
+          res.json({ replies: replies.slice(0, 3) }); // Max 3 replies
+        } else {
+          res.json({ replies: [] });
+        }
+      } catch (parseError) {
+        // If not valid JSON, try to extract strings from the response
+        const lines = content.split('\n').filter(line => line.trim().length > 0 && line.trim().length < 50);
+        res.json({ replies: lines.slice(0, 3) });
+      }
+    } else {
+      res.status(500).json({ error: 'Failed to get smart replies from Grok API' });
+    }
+  } catch (error) {
+    console.error('Error calling Grok API for smart replies:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

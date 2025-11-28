@@ -1,4 +1,4 @@
-# SquadSync — App Intelligence Summary (November 25, 2025)
+# SquadSync — App Intelligence Summary (November 26, 2025)
 
 ## Security Requirements
 **CRITICAL**: Never commit credentials to version control. Use environment variables for all secrets:
@@ -148,14 +148,6 @@ docker run -p 8080:8080 squadsync-backend
 firebase deploy --only functions
 ```
 
-### Testing
-- Unit tests: `flutter test` (basic test suite available)
-- Integration: Manual testing across platforms (Android/iOS/Web/Desktop)
-- Firebase emulator for local development
-- **Test file naming**: Use descriptive names like `peacock_modal_test.dart`, `chat_service_test.dart`
-- **Widget testing**: Extensive use of `testWidgets()` for UI component testing
-- **Mock dependencies**: Use `mockito` for Firebase and external service mocking
-
 ### Android Build Troubleshooting
 - **AGP Version Conflicts**: Update `android/settings.gradle.kts` and `android/build.gradle` to AGP 8.9.1+
 - **Gradle Version**: Ensure `gradle/wrapper/gradle-wrapper.properties` uses Gradle 8.11.1+
@@ -170,7 +162,7 @@ firebase deploy --only functions
 
 ## Key Files to Reference
 - `lib/main.dart`: App initialization with Firebase and deep linking
-- `lib/providers/`: 5 Riverpod notifiers (user, squad, chat, game, system)
+- `lib/presentation/notifiers/`: 5 Riverpod notifiers (user, squad, chat, game, system)
 - `lib/screens/squad_tab_screen.dart`: Main squad UI with spot management
 - `lib/chat/chat_screen.dart`: Chat UI with real-time messages
 - `lib/services/`: Core services (firestore, voice, timer, media)
@@ -178,76 +170,6 @@ firebase deploy --only functions
 - `functions/index.js`: Firebase Cloud Functions for server-side timers
 - `pubspec.yaml`: Extensive asset declarations and dependencies
 - `test/`: Comprehensive test suite with integration tests
-
-## Recent Updates (November 22, 2025)
-
-### Compilation Fixes Completed
-- **Systematic Error Resolution**: Resolved 2k+ compilation errors through fixes to Riverpod providers, dependency injection, and type conflicts
-- **Build System Restored**: App now compiles successfully with 0 errors across web, Android, and iOS platforms
-- **Provider Infrastructure**: Fixed syncManagerProvider, chatServiceProvider, and service provider definitions
-- **Injection Container**: Corrected constructor arguments in SystemRemoteDataSourceImpl and SystemRepositoryImpl
-- **Type Conflicts**: Resolved ChatState naming conflicts
-
-### Game Module Test Implementation - 100% Coverage Achieved
-- **Domain Layer**: Completed entity and usecase tests (10/10 entities, 8/8 usecases passing)
-- **Data Layer**: GameLocalDataSource, GameRemoteDataSource, GameRepositoryImpl with hybrid caching
-- **Presentation Layer**: GameNotifier, AddGameScreen, DiscoveryScreen with full AsyncValue state management
-- **Integration Tests**: End-to-end game search flow with full stack validation
-- **Key Features Tested**: IGDB API with retry logic, caching, offline fallbacks, Firestore sync
-
-### Test Infrastructure Improvements
-- Direct mock implementations for independence from broken build system
-- Comprehensive mocking: HTTP client, SQLiteHelper, Firestore, AssetBundle
-- Edge case coverage: network failures, invalid responses, empty results
-- Performance considerations: debouncing, caching, pagination limits
-
-## Pain Points & Challenges
-
-### Build System Issues
-- **RESOLVED**: Previously broken main codebase with compilation errors in injection.dart and core files has been fixed. Build system now functions properly.
-
-### Mocking Complexity
-- **Flutter Asset System**: Difficult to mock rootBundle for offline asset loading tests
-- **Workaround**: Focused on SQLite and API mocking; asset tests noted for future implementation
-
-### SQLiteHelper Integration
-- **Missing Methods**: Initial datasource expected methods not implemented in SQLiteHelper
-- **Resolution**: Added game caching methods to SQLiteHelper with proper JSON serialization
-
-### Development Workflow
-- **Test-Driven Development**: Comprehensive test suite ensures feature reliability
-- **Challenge**: Balancing test coverage with rapid development iterations
-- **Solution**: Modular test structure allowing incremental implementation
-
-### Performance Considerations
-- **Test Execution Time**: Large test suites require optimization for CI/CD pipelines
-- **Memory Usage**: Mock objects and test data can consume significant resources
-- **Mitigation**: Selective test running and efficient mock implementations
-                    group: groups[index],
-                    onJoin: () => _joinGroup(groups[index]),
-                  ),
-                ),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, stack) => Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Failed to load groups: $error'),
-                      ElevatedButton(
-                        onPressed: () => ref.invalidate(suggestedGroupsNotifierProvider),
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-  ```
 
 ## Enhanced Onboarding Flow
 - **2-step process**: Profile setup → Game selection
@@ -259,129 +181,43 @@ firebase deploy --only functions
 ## Folder Structure & Purpose (Clean Architecture)
 lib/
 ├── domain/          → Business logic layer
-│   ├── entities/    → Domain entities and models (User, Message, Game, etc.)
+│   ├── entities/    → Domain entities and models
 │   ├── repositories/ → Abstract repository interfaces
 │   └── usecases/    → Application use cases and business logic
 ├── data/            → Data layer (implementation of domain interfaces)
-│   ├── datasources/ → Data source implementations (Firebase, SQLite, API clients)
+│   ├── datasources/ → Data source implementations
 │   └── repositories/ → Repository implementations
 ├── presentation/    → Presentation layer (UI and state management)
-│   └── notifiers/   → 5 Riverpod notifiers (user_notifier.dart, squad_notifier.dart, chat_notifier.dart, game_notifier.dart, system_notifier.dart)
+│   └── notifiers/   → 5 Riverpod notifiers
 ├── core/            → Core utilities and dependency injection
 │   └── injection.dart → GetIt dependency injection container setup
-├── services/        → Business services and external integrations (16 service classes: FirestoreService, MediaService, TimerService, VoiceService, AIService, etc.)
-├── screens/         → Screen-level widgets with Riverpod integration (SquadTabScreen, ChatScreen, VoiceRoomScreen, etc.)
-├── chat/            → Chat system with screens, services, widgets, and dialogs
-├── squad_tab/       → Squad management UI components and lobby logic
-├── widgets/         → Reusable UI components with Riverpod consumers
-├── managers/        → Legacy manager stubs (lib/managers/stubs.dart) for compilation compatibility
-├── models/          → Data models (Message, Poll, etc.) - transitioning to domain entities
-├── providers/       → Legacy provider definitions (being consolidated into presentation/notifiers)
-├── utils.dart       → Utility functions with null safety helpers
-├── main.dart        → App entry point with Riverpod ProviderScope
-├── app_theme.dart   → Material Design 3 theme with dark/light variants
+├── services/        → Business services and external integrations
+├── screens/         → Screen-level widgets
+├── chat/            → Chat system
+├── squad_tab/       → Squad management UI
+├── widgets/         → Reusable UI components
+├── models/          → Data models
+├── utils.dart       → Utility functions
+├── main.dart        → App entry point
+├── app_theme.dart   → Theme configuration
 ├── firebase_options.dart → Firebase configuration
 ├── setup_screen.dart → Authentication screen
-├── join_squad_screen.dart → Squad joining via invite codes
-├── main_navigation_screen.dart → Navigation wrapper and routing logic
-├── notification_service.dart → Local notifications
-├── profile_tab.dart → User profile management
-├── settings_tab.dart → App settings and preferences
-├── performance_hub_tab.dart → Performance tracking and analytics
-├── rating_dialog.dart → User rating system
-├── app_widgets.dart → Main app widgets with Riverpod integration
-├── squad_state.dart → Legacy state management (deprecated)
-├── squad_state_notifier.dart → Legacy squad state notifier (deprecated)
-├── firebase_storage_test.dart → Firebase Storage testing utilities
-└── Availability/    → User availability calendar and scheduling
-
-## Clean Architecture Components
-
-### Domain Layer
-- **Entities**: Core business objects with Freezed code generation
-  - lib/domain/entities/app_user.dart → User domain model with authentication and profile data
-  - lib/domain/entities/chat_group.dart → Chat group domain model with member management
-  - lib/domain/entities/chat_state.dart → Chat UI state domain model
-  - lib/domain/entities/game.dart → Game domain model with IGDB integration
-  - lib/domain/entities/message.dart → Message domain model with reactions and media
-  - lib/domain/entities/squad.dart → Squad domain model with member roles and settings
-  - lib/domain/entities/squad_state.dart → Squad state domain model with spots and timers
-  - lib/domain/entities/system_state.dart → System-wide state domain model
-
-- **Repositories**: Abstract interfaces for data operations
-  - lib/domain/repositories/chat_repository.dart → Chat data operations interface
-  - lib/domain/repositories/game_repository.dart → Game data operations interface
-  - lib/domain/repositories/squad_repository.dart → Squad data operations interface
-  - lib/domain/repositories/system_repository.dart → System data operations interface
-  - lib/domain/repositories/user_repository.dart → User data operations interface
-
-- **Use Cases**: Application business logic (40+ use cases)
-  - **Chat Operations**: send_message.dart, add_reaction.dart, pin_message.dart, load_messages.dart
-  - **Squad Management**: create_squad.dart, join_squad.dart, assign_spot.dart, manage_peacock_queue.dart
-  - **User Management**: update_display_name.dart, block_user.dart, ban_user.dart, update_profile_image.dart
-  - **Game Integration**: fetch_games.dart, get_game_details.dart, add_pinned_game.dart, initialize_games.dart
-  - **System Operations**: process_timers.dart, delta_sync.dart, track_analytics_event.dart, send_local_notification.dart
-
-### Data Layer
-- **Data Sources**: Concrete implementations of external data access
-  - **Local Data Sources**: SQLite implementations for offline caching
-    - lib/data/datasources/chat_local_datasource.dart → Chat message caching
-    - lib/data/datasources/game_local_datasource.dart → Game data caching
-    - lib/data/datasources/squad_local_datasource.dart → Squad data caching
-    - lib/data/datasources/user_local_datasource.dart → User data caching
-    - lib/data/datasources/system_local_datasource.dart → System settings caching
-  - **Remote Data Sources**: Firebase/Firestore implementations
-    - lib/data/datasources/chat_remote_datasource.dart → Firestore chat operations
-    - lib/data/datasources/game_remote_datasource.dart → IGDB API integration
-    - lib/data/datasources/squad_remote_datasource.dart → Firestore squad operations
-    - lib/data/datasources/user_remote_datasource.dart → Firebase Auth integration
-    - lib/data/datasources/system_remote_datasource.dart → System configuration
-
-- **Repository Implementations**: Concrete repository classes combining local and remote data sources
-  - lib/data/repositories/chat_repository_impl.dart → Hybrid chat data management
-  - lib/data/repositories/game_repository_impl.dart → Game data with caching
-  - lib/data/repositories/squad_repository_impl.dart → Squad data synchronization
-  - lib/data/repositories/system_repository_impl.dart → System state management
-  - lib/data/repositories/user_repository_impl.dart → User profile management
-
-### Core Layer
-- lib/core/injection.dart → GetIt dependency injection setup with all service registrations
-
-### Legacy Managers (Removed - Replaced with Stubs)
-- **Migration Complete**: All legacy manager classes have been removed and replaced with `lib/managers/stubs.dart`
-- **Stub Classes**: Minimal implementations of AchievementManager, SquadManager, GameManager, NotificationManager, etc. for compilation compatibility
-- **State Management**: Fully migrated to 5 Riverpod notifiers (UserNotifier, SquadNotifier, ChatNotifier, GameNotifier, SystemNotifier)
-
-### Additional Services
-- lib/services/agora_config.dart → Agora RTC configuration and validation
-- lib/services/firestore_service_refactored.dart → Refactored Firestore operations
-- lib/services/igdb_service.dart → IGDB API client implementation
-- lib/services/onboarding_service.dart → User onboarding flow management
-- lib/services/services.dart → Service collection and utilities
-
-### Additional Screens
-- lib/screens/onboarding/add_game_screen.dart → Game selection during onboarding
-- lib/screens/onboarding/profile_setup_screen.dart → User profile setup
-- lib/screens/suggested_groups_screen.dart → Public group discovery
-- lib/screens/voice_room_screen.dart → Voice chat interface (duplicate of chat/voice_room_screen.dart)
-
-### Additional Widgets
-- lib/widgets/app_widgets.dart → Main app widget containers
-- lib/widgets/async_value_widget.dart → Riverpod AsyncValue handling widgets
-- lib/widgets/generated_providers.dart → Auto-generated Riverpod providers
-- lib/widgets/riverpod_examples.dart → Riverpod usage examples
-- lib/widgets/riverpod_migration_examples.dart → Migration documentation
-
-### Generated Files (Not individually documented)
-- **Freezed Models**: *.freezed.dart, *.g.dart files for immutable data models
-- **Riverpod Providers**: *.g.dart files for code-generated providers
-- **Build Runner Outputs**: Various generated files for serialization and dependency injection
+├── join_squad_screen.dart → Squad joining
+├── main_navigation_screen.dart → Navigation
+├── notification_service.dart → Notifications
+├── profile_tab.dart → Profile management
+├── settings_tab.dart → Settings
+├── performance_hub_tab.dart → Analytics
+├── riverpod_rating_dialog.dart → Rating dialog
+├── squad_state_notifier.dart → Squad state
+├── firebase_storage_test.dart → Storage tests
+├── legacy_scanner.dart → Legacy scanner
+└── Availability/    → Availability system
 
 ## Key Files & What They Do
 ### Core App Files
 - lib/main.dart → App initialization with Firebase, deep linking, auth state management, and navigation routing
 - lib/app_theme.dart → Material Design 3 theme with professional blue seed colors, Google Fonts Roboto, dark/light variants
-- lib/app_widgets.dart → Main app widgets with Riverpod integration and auth wrapper
 - lib/utils.dart → Utility functions for timer formatting, snackbars, badge building, and rating calculations
 - lib/firebase_options.dart → Firebase configuration and project settings
 - lib/setup_screen.dart → Authentication screen (email/password, Apple Sign-In)
@@ -391,7 +227,7 @@ lib/
 - lib/profile_tab.dart → User profile management, friends, and settings
 - lib/settings_tab.dart → App settings and preferences management
 - lib/performance_hub_tab.dart → Performance tracking and analytics display
-- lib/rating_dialog.dart → User rating system for squad members
+- lib/riverpod_rating_dialog.dart → User rating system for squad members
 
 ### Riverpod Notifiers (State Management)
 - lib/presentation/notifiers/user_notifier.dart → User profiles, blocking, ratings, achievements, and preferences
@@ -399,7 +235,6 @@ lib/
 - lib/presentation/notifiers/chat_notifier.dart → Chat messages, reactions, typing indicators, media uploads, and real-time updates
 - lib/presentation/notifiers/game_notifier.dart → Game selection, IGDB integration, lobby management, and game data
 - lib/presentation/notifiers/system_notifier.dart → App-wide state, notifications, analytics, and system services
-- lib/providers/service_providers.dart → Service provider definitions for Firestore, Media, Timer, etc.
 
 ### Screen Components
 - lib/chat/voice_room_screen.dart → Full-screen voice chat interface with Agora integration
@@ -409,13 +244,6 @@ lib/
 ### Discovery & Search
 - lib/screens/discovery_screen.dart → Public groups discovery and semantic search
 - lib/services/app_flow_manager.dart → Analytics tracking and user flow management
-
-### Riverpod Providers (State Management)
-- lib/presentation/notifiers/user_notifier.dart → User profiles, blocking, ratings, achievements, and preferences
-- lib/presentation/notifiers/squad_notifier.dart → Squad spots, timers, peacock queue, member management, and game-specific data
-- lib/presentation/notifiers/chat_notifier.dart → Chat messages, reactions, typing indicators, media uploads, and real-time updates
-- lib/presentation/notifiers/game_notifier.dart → Game selection, IGDB integration, lobby management, and game data
-- lib/presentation/notifiers/system_notifier.dart → App-wide state, notifications, analytics, and system services
 
 ### Screen Components
 - lib/screens/squad_tab_screen.dart → Lobby management with spot assignment and timers
@@ -726,18 +554,9 @@ deploy_functions.bat  # Windows
 cd functions && npm install && firebase deploy --only functions
 ```
 
-### Testing
-- Unit tests: `flutter test` (basic test suite available in `test/chat_service_test.dart`)
-- Integration: Manual testing across platforms (Android/iOS/Web/Desktop)
-- Firebase emulator for local development
-- **Test file naming**: Use descriptive names like `peacock_modal_test.dart`, `chat_service_test.dart`
-- **Widget testing**: Extensive use of `testWidgets()` for UI component testing
-- **Mock dependencies**: Use `mockito` for Firebase and external service mocking
-
 ### Environment Configuration
 - **Development Setup**: Copy `.env.example` to `.env` and fill in credentials; AgoraConfigEnhanced provides mock fallbacks for missing values
 - **Production Deployment**: Set environment variables on hosting platform (Railway, Vercel, etc.); never commit `.env` files
-- **Testing Environment**: Flutter tests automatically load `.env` from project root; ensure test directory has access to environment file
 - **Agora Configuration**: App ID and Certificate validated at runtime with clear error messages for missing credentials
 - **Network Dependencies**: Voice chat requires `connectivity_plus` for network monitoring and reconnection handling
 
@@ -893,29 +712,6 @@ List<String?> get squadSpots {
 - **TextEditingController listeners**: Used for reactive UI updates (e.g., onboarding button activation)
 - **Riverpod optimization**: `.select()` for granular widget rebuilds, code generation for type safety
 
-## Key Files & What They Do
-### Core App Files
-- lib/main.dart → App initialization with Firebase init, deep linking, auth state management, and navigation routing
-- lib/app_theme.dart → Material Design 3 theme with professional blue seed colors, Google Fonts Roboto, dark/light variants
-- lib/squad_state.dart → Legacy state coordinator (deprecated - being phased out)
-- lib/squad_state_notifier.dart → New Riverpod StateNotifier for centralized state management (replaces squad_state.dart)
-- lib/providers/squad_providers.dart → Riverpod SquadStateNotifier with delegated state logic and ref.mounted checks
-- lib/providers.dart → Riverpod providers, theme management, and user properties streams
-- lib/app_widgets.dart → Main app widgets with Riverpod integration and auth wrapper
-- lib/utils.dart → Utility functions with null safety helpers (safeString, safeList, safeDisplayName), timer formatting, snackbars, badge building, and rating calculations
-- lib/firebase_options.dart → Firebase configuration and project settings
-- lib/firebase_storage_test.dart → Test utilities for Firebase Storage operations
-- lib/setup_screen.dart → Authentication screen (email/password, Apple Sign-In)
-- lib/join_squad_screen.dart → Squad joining via invite codes
-- lib/main_navigation_screen.dart → Navigation wrapper and routing logic
-- lib/notification_service.dart → Local notifications and scheduling system
-- lib/profile_tab.dart → User profile management, friends, and settings
-- lib/settings_tab.dart → App settings and preferences management
-- lib/performance_hub_tab.dart → Performance tracking and analytics display
-- lib/rating_dialog.dart → User rating system for squad members
-- lib/providers.dart → Riverpod providers and theme management
-- lib/app_widgets.dart → Main app widgets with Riverpod integration
-
 ## Quick Reference
 - **Version**: 1.0.11+11
 - **Flutter SDK**: 3.35.7
@@ -925,64 +721,3 @@ List<String?> get squadSpots {
 - **Voice**: Agora RTC integration
 - **AI**: Grok API for chat assistance and discovery
 - **Null Safety**: Complete with safe helpers and debug assertions
-- **Testing**: Widget tests with null safety coverage
-
-## Recent Updates (November 22, 2025)
-
-### Compilation Fixes Completed
-- **Systematic Error Resolution**: Resolved 2k+ compilation errors through fixes to Riverpod providers, dependency injection, and type conflicts
-- **Build System Restored**: App now compiles successfully with 0 errors across web, Android, and iOS platforms
-- **Provider Infrastructure**: Fixed syncManagerProvider, chatServiceProvider, and service provider definitions
-- **Injection Container**: Corrected constructor arguments in SystemRemoteDataSourceImpl and SystemRepositoryImpl
-- **Type Conflicts**: Resolved ChatState naming conflicts by using appropriate domain vs ChangeNotifier versions
-
-### Game Module Test Implementation - 100% Coverage Achieved
-- **Domain Layer**: Completed entity and usecase tests (10/10 entities, 8/8 usecases passing)
-- **Data Layer**: 
-  - GameLocalDataSource: SQLite cache operations, offline asset fallbacks (3/3 tests passing)
-  - GameRemoteDataSource: IGDB API integration with retry logic, authentication, error handling
-  - GameRepositoryImpl: Hybrid cache-first → API → cache insert → Firestore sync flows
-- **Presentation Layer**:
-  - GameNotifier: Riverpod AsyncValue state management for search, details, popular games
-  - AddGameScreen: Search input debouncing, list updates, error states
-  - DiscoveryScreen: Grid display, game cards, retry functionality
-- **Integration Tests**: End-to-end game search flow with full stack validation
-- **Key Features Tested**:
-  - IGDB API token refresh with 1s/2s/4s exponential backoff
-  - Rate limiting (429) and server error (5xx) handling
-  - Cache TTL and SQLite storage optimization
-  - Offline fallback to `popular_games.json` assets
-  - Firebase Firestore batch synchronization
-  - Null-safety throughout all implementations
-
-### Test Infrastructure Improvements
-- Direct mock implementations for independence from broken build system
-- Comprehensive mocking: HTTP client, SQLiteHelper, Firestore, AssetBundle
-- Edge case coverage: network failures, invalid responses, empty results
-- Performance considerations: debouncing, caching, pagination limits
-
-## Pain Points & Challenges
-
-### Build System Issues
-- **RESOLVED**: Previously broken main codebase with compilation errors in injection.dart and core files has been fixed. Build system now functions properly with successful compilation across all platforms.
-- **Mock Generation**: Direct mock implementations used for test independence, with build_runner working for Riverpod code generation.
-
-### Mocking Complexity
-- **Flutter Asset System**: Difficult to mock rootBundle for offline asset loading tests
-- **Workaround**: Focused on SQLite and API mocking; asset tests noted for future implementation
-- **Impact**: Asset fallback functionality tested manually; automated tests pending
-
-### SQLiteHelper Integration
-- **Missing Methods**: Initial datasource expected methods not implemented in SQLiteHelper
-- **Resolution**: Added game caching methods to SQLiteHelper with proper JSON serialization
-- **Impact**: Enhanced local caching capabilities for game data
-
-### Development Workflow
-- **Test-Driven Development**: Comprehensive test suite ensures feature reliability
-- **Challenge**: Balancing test coverage with rapid development iterations
-- **Solution**: Modular test structure allowing incremental implementation
-
-### Performance Considerations
-- **Test Execution Time**: Large test suites require optimization for CI/CD pipelines
-- **Memory Usage**: Mock objects and test data can consume significant resources
-- **Mitigation**: Selective test running and efficient mock implementations

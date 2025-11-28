@@ -6,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../managers/stubs.dart';
 import '../presentation/notifiers/user_notifier.dart';
-import '../providers.dart';
+import '../presentation/notifiers/game_notifier.dart';
 import '../presentation/notifiers/squad_notifier.dart' as sn;
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
@@ -149,7 +149,7 @@ class ClaimSpotFAB extends StatelessWidget {
   }
 }
 
-class SquadTab extends StatelessWidget {
+class SquadTab extends ConsumerStatefulWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
@@ -159,12 +159,30 @@ class SquadTab extends StatelessWidget {
       {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
+  ConsumerState<SquadTab> createState() => _SquadTabState();
+}
+
+class _SquadTabState extends ConsumerState<SquadTab> {
+  @override
+  void initState() {
+    super.initState();
+    // Set selectedSquadId if chatGroupId is provided
+    if (widget.chatGroupId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref
+            .read(sn.squadNotifierProvider.notifier)
+            .setSelectedSquadId(widget.chatGroupId);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return _SquadTabContent(
-        lobbyId: lobbyId,
-        gameName: gameName,
-        game: game,
-        chatGroupId: chatGroupId);
+        lobbyId: widget.lobbyId,
+        gameName: widget.gameName,
+        game: widget.game,
+        chatGroupId: widget.chatGroupId);
   }
 }
 
@@ -245,7 +263,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
         if (game == null) {
           // Trigger async search without awaiting
           ref
-              .read(gameManagerProvider)
+              .read(gameNotifierProvider.notifier)
               .fetchGamesFromIGDB(widget.gameName!)
               .then((searchResults) {
             if (searchResults.isNotEmpty && mounted) {
@@ -619,16 +637,37 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
 
   Future<void> _callSpot(BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || widget.lobbyId == null) return;
+    if (user == null || widget.gameName == null) return;
+
+    final squadState = ref.watch(sn.squadNotifierProvider).value;
+    if (squadState == null) return;
+
+    final spots = squadState.gameSquadSpots[widget.gameName!] ?? [];
+    final maxSpots = squadState.currentGame?['maxSpots'] ?? 4;
+
+    // Find the first available spot
+    int? availableSpot;
+    for (int i = 0; i < maxSpots && i < spots.length; i++) {
+      if (spots[i] == null) {
+        availableSpot = i;
+        break;
+      }
+    }
+
+    if (availableSpot == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No available spots!')),
+      );
+      return;
+    }
 
     try {
-      final squadManager = ref.read(squadManagerProvider);
-      await squadManager.claimPeacockSpot(
-          widget.lobbyId!, user.uid, widget.gameName!);
+      final squadNotifier = ref.read(sn.squadNotifierProvider.notifier);
+      await squadNotifier.callSpotForGame(availableSpot, widget.gameName!);
 
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Spot called!')),
+        SnackBar(content: Text('Called spot ${availableSpot + 1}!')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -642,8 +681,8 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     if (user == null || widget.lobbyId == null) return;
 
     try {
-      final squadManager = ref.read(squadManagerProvider);
-      await squadManager.lockPeacockSpot(
+      final squadNotifier = ref.read(sn.squadNotifierProvider.notifier);
+      await squadNotifier.lockPeacockSpot(
           widget.lobbyId!, user.uid, widget.gameName!);
 
       HapticFeedback.lightImpact();

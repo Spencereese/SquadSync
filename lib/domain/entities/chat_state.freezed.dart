@@ -14,10 +14,6 @@ T _$identity<T>(T value) => value;
 final _privateConstructorUsedError = UnsupportedError(
     'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
-ChatState _$ChatStateFromJson(Map<String, dynamic> json) {
-  return _ChatState.fromJson(json);
-}
-
 /// @nodoc
 mixin _$ChatState {
   bool get isInitialized => throw _privateConstructorUsedError;
@@ -43,7 +39,7 @@ mixin _$ChatState {
       throw _privateConstructorUsedError;
   Map<String, List<String>> get pinnedMessages =>
       throw _privateConstructorUsedError; // chatGroupId -> pinned message IDs
-  Map<String, Map<String, Poll>> get activePolls =>
+  Map<String, Map<String, dynamic>> get activePolls =>
       throw _privateConstructorUsedError; // chatGroupId -> pollId -> poll data
 // Voice and audio
   bool get isRecording => throw _privateConstructorUsedError;
@@ -92,9 +88,6 @@ mixin _$ChatState {
   Map<String, String> get chatThemes => throw _privateConstructorUsedError;
   bool get notificationsEnabled => throw _privateConstructorUsedError;
 
-  /// Serializes this ChatState to a JSON map.
-  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
   /// Create a copy of ChatState
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -122,7 +115,7 @@ abstract class $ChatStateCopyWith<$Res> {
       Map<String, bool> hasNewMessages,
       List<Map<String, dynamic>> mediaHistory,
       Map<String, List<String>> pinnedMessages,
-      Map<String, Map<String, Poll>> activePolls,
+      Map<String, Map<String, dynamic>> activePolls,
       bool isRecording,
       bool isPlayingVoiceNote,
       String? currentVoiceNoteId,
@@ -284,7 +277,7 @@ class _$ChatStateCopyWithImpl<$Res, $Val extends ChatState>
       activePolls: null == activePolls
           ? _value.activePolls
           : activePolls // ignore: cast_nullable_to_non_nullable
-              as Map<String, Map<String, Poll>>,
+              as Map<String, Map<String, dynamic>>,
       isRecording: null == isRecording
           ? _value.isRecording
           : isRecording // ignore: cast_nullable_to_non_nullable
@@ -458,7 +451,7 @@ abstract class _$$ChatStateImplCopyWith<$Res>
       Map<String, bool> hasNewMessages,
       List<Map<String, dynamic>> mediaHistory,
       Map<String, List<String>> pinnedMessages,
-      Map<String, Map<String, Poll>> activePolls,
+      Map<String, Map<String, dynamic>> activePolls,
       bool isRecording,
       bool isPlayingVoiceNote,
       String? currentVoiceNoteId,
@@ -619,7 +612,7 @@ class __$$ChatStateImplCopyWithImpl<$Res>
       activePolls: null == activePolls
           ? _value._activePolls
           : activePolls // ignore: cast_nullable_to_non_nullable
-              as Map<String, Map<String, Poll>>,
+              as Map<String, Map<String, dynamic>>,
       isRecording: null == isRecording
           ? _value.isRecording
           : isRecording // ignore: cast_nullable_to_non_nullable
@@ -757,7 +750,7 @@ class __$$ChatStateImplCopyWithImpl<$Res>
 }
 
 /// @nodoc
-@JsonSerializable()
+
 class _$ChatStateImpl implements _ChatState {
   const _$ChatStateImpl(
       {required this.isInitialized,
@@ -774,7 +767,7 @@ class _$ChatStateImpl implements _ChatState {
       required final Map<String, bool> hasNewMessages,
       required final List<Map<String, dynamic>> mediaHistory,
       required final Map<String, List<String>> pinnedMessages,
-      required final Map<String, Map<String, Poll>> activePolls,
+      required final Map<String, Map<String, dynamic>> activePolls,
       required this.isRecording,
       required this.isPlayingVoiceNote,
       this.currentVoiceNoteId,
@@ -833,9 +826,6 @@ class _$ChatStateImpl implements _ChatState {
         _mutedChats = mutedChats,
         _pinnedChats = pinnedChats,
         _chatThemes = chatThemes;
-
-  factory _$ChatStateImpl.fromJson(Map<String, dynamic> json) =>
-      _$$ChatStateImplFromJson(json);
 
   @override
   final bool isInitialized;
@@ -933,10 +923,10 @@ class _$ChatStateImpl implements _ChatState {
   }
 
 // chatGroupId -> pinned message IDs
-  final Map<String, Map<String, Poll>> _activePolls;
+  final Map<String, Map<String, dynamic>> _activePolls;
 // chatGroupId -> pinned message IDs
   @override
-  Map<String, Map<String, Poll>> get activePolls {
+  Map<String, Map<String, dynamic>> get activePolls {
     if (_activePolls is EqualUnmodifiableMapView) return _activePolls;
     // ignore: implicit_dynamic_type
     return EqualUnmodifiableMapView(_activePolls);
@@ -1223,7 +1213,6 @@ class _$ChatStateImpl implements _ChatState {
             (identical(other.notificationsEnabled, notificationsEnabled) || other.notificationsEnabled == notificationsEnabled));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode => Object.hashAll([
         runtimeType,
@@ -1284,13 +1273,6 @@ class _$ChatStateImpl implements _ChatState {
   @pragma('vm:prefer-inline')
   _$$ChatStateImplCopyWith<_$ChatStateImpl> get copyWith =>
       __$$ChatStateImplCopyWithImpl<_$ChatStateImpl>(this, _$identity);
-
-  @override
-  Map<String, dynamic> toJson() {
-    return _$$ChatStateImplToJson(
-      this,
-    );
-  }
 }
 
 abstract class _ChatState implements ChatState {
@@ -1309,7 +1291,7 @@ abstract class _ChatState implements ChatState {
       required final Map<String, bool> hasNewMessages,
       required final List<Map<String, dynamic>> mediaHistory,
       required final Map<String, List<String>> pinnedMessages,
-      required final Map<String, Map<String, Poll>> activePolls,
+      required final Map<String, Map<String, dynamic>> activePolls,
       required final bool isRecording,
       required final bool isPlayingVoiceNote,
       final String? currentVoiceNoteId,
@@ -1344,9 +1326,6 @@ abstract class _ChatState implements ChatState {
       required final Map<String, String> chatThemes,
       required final bool notificationsEnabled}) = _$ChatStateImpl;
 
-  factory _ChatState.fromJson(Map<String, dynamic> json) =
-      _$ChatStateImpl.fromJson;
-
   @override
   bool get isInitialized;
   @override
@@ -1378,7 +1357,7 @@ abstract class _ChatState implements ChatState {
   Map<String, List<String>>
       get pinnedMessages; // chatGroupId -> pinned message IDs
   @override
-  Map<String, Map<String, Poll>>
+  Map<String, Map<String, dynamic>>
       get activePolls; // chatGroupId -> pollId -> poll data
 // Voice and audio
   @override

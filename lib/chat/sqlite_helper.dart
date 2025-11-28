@@ -332,8 +332,13 @@ class SQLiteHelper {
         limit: 1,
       );
       if (results.isNotEmpty) {
-        final data = results.first['data'] as String;
-        return List<Map<String, dynamic>>.from(json.decode(data));
+        final cachedAt = results.first['cached_at'] as int;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+        if (now - cachedAt < fiveMinutes) {
+          final data = results.first['data'] as String;
+          return List<Map<String, dynamic>>.from(json.decode(data));
+        }
       }
       return [];
     } catch (e) {

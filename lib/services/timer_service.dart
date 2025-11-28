@@ -6,8 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import '../chat/sqlite_helper.dart';
-import '../providers/service_providers.dart';
 import '../presentation/notifiers/squad_notifier.dart';
+import '../core/injection.dart' as di;
+import '../services/firestore_service.dart';
 
 /// Timer data structure for persistence
 class TimerData {
@@ -206,8 +207,8 @@ class TimerOrchestrator {
 /// A Riverpod provider for the TimerService.
 final timerServiceProvider =
     StateNotifierProvider<TimerServiceNotifier, AsyncValue<void>>((ref) {
-  final firestoreService = ref.watch(firestoreServiceProvider);
-  final sqliteHelper = ref.watch(sqliteHelperProvider);
+  final firestoreService = di.getIt<FirestoreService>();
+  final sqliteHelper = di.getIt<SQLiteHelper>();
   return TimerServiceNotifier(ref, firestoreService, sqliteHelper);
 });
 

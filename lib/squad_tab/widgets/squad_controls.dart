@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers.dart';
 import '../../presentation/notifiers/squad_notifier.dart';
 import '../../presentation/notifiers/user_notifier.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'game_alerts_display.dart';
-import '../../chat/voice_room_screen.dart';
 
 /// SquadControls component - handles action buttons and controls
 /// Extracted from the monolithic SquadTab to improve maintainability
@@ -59,7 +57,7 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
     if (user == null) return;
 
     final squadStateAsync = ref.watch(squadNotifierProvider);
-    final squadManager = ref.read(squadManagerProvider);
+    final squadNotifier = ref.read(squadNotifierProvider.notifier);
 
     final selectedSquadId = squadStateAsync.maybeWhen(
       data: (squadState) => squadState.selectedSquadId,
@@ -67,7 +65,7 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
     );
 
     if (selectedSquadId != null) {
-      final alerts = await squadManager.getSquadAlerts(selectedSquadId);
+      final alerts = await squadNotifier.getSquadAlerts(selectedSquadId);
       if (mounted) {
         setState(() {
           _hasActiveAlert = alerts.any((alert) => alert['userUid'] == user.uid);
@@ -82,7 +80,7 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
     if (user == null) return;
 
     final squadStateAsync = ref.watch(squadNotifierProvider);
-    final squadManager = ref.read(squadManagerProvider);
+    final squadNotifier = ref.read(squadNotifierProvider.notifier);
 
     final selectedSquadId = squadStateAsync.maybeWhen(
       data: (squadState) => squadState.selectedSquadId,
@@ -92,7 +90,7 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
     if (selectedSquadId == null) return;
 
     try {
-      await squadManager.sendGameAlert(
+      await squadNotifier.sendGameAlert(
         selectedSquadId,
         user.uid,
         alertType,
@@ -128,7 +126,7 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
     if (user == null) return;
 
     final squadStateAsync = ref.watch(squadNotifierProvider);
-    final squadManager = ref.read(squadManagerProvider);
+    final squadNotifier = ref.read(squadNotifierProvider.notifier);
 
     final selectedSquadId = squadStateAsync.maybeWhen(
       data: (squadState) => squadState.selectedSquadId,
@@ -138,7 +136,7 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
     if (selectedSquadId == null) return;
 
     try {
-      await squadManager.clearGameAlerts(selectedSquadId, user.uid);
+      await squadNotifier.clearGameAlerts(selectedSquadId, user.uid);
 
       if (mounted) {
         setState(() {
@@ -357,13 +355,16 @@ class _VoiceRoomButton extends ConsumerWidget {
           }
 
           // Navigate to voice room screen
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => VoiceRoomScreen(
-                roomId: squadState.selectedSquadId!,
-                roomName: squadState.currentSquadData?['name'] ?? 'Voice Room',
-              ),
-            ),
+          // Navigator.of(context).push(
+          //   MaterialPageRoute(
+          //     builder: (context) => VoiceRoomScreen(
+          //       roomId: squadState.selectedSquadId!,
+          //       roomName: squadState.currentSquadData?['name'] ?? 'Voice Room',
+          //     ),
+          //   ),
+          // );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Voice room not available')),
           );
         },
         icon: const Icon(Icons.mic, color: Colors.white),

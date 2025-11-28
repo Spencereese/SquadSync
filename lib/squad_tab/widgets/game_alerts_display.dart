@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../presentation/notifiers/squad_notifier.dart';
-import '../../providers.dart';
 
 /// GameAlertsDisplay component - shows active game alerts from squad members
 class GameAlertsDisplay extends ConsumerStatefulWidget {
@@ -35,7 +34,7 @@ class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
 
   Future<void> _loadAlerts() async {
     final squadStateAsync = ref.watch(squadNotifierProvider);
-    final squadManager = ref.read(squadManagerProvider);
+    final squadNotifier = ref.read(squadNotifierProvider.notifier);
 
     final selectedSquadId = squadStateAsync.maybeWhen(
       data: (squadState) => squadState.selectedSquadId,
@@ -43,7 +42,7 @@ class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
     );
 
     if (selectedSquadId != null) {
-      final alerts = await squadManager.getSquadAlerts(selectedSquadId);
+      final alerts = await squadNotifier.getSquadAlerts(selectedSquadId);
       if (mounted) {
         setState(() {
           _alerts = alerts;

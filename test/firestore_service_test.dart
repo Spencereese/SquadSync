@@ -9,13 +9,13 @@ import 'package:squad_sync/managers/notification_manager.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 
 // Generate mocks
-@GenerateMocks([
-  FirebaseFirestore,
-  GrokService,
-  NotificationManager,
-  SQLiteHelper,
-])
-import 'firestore_service_test.mocks.dart';
+// @GenerateMocks([
+//   FirebaseFirestore,
+//   GrokService,
+//   NotificationManager,
+//   SQLiteHelper,
+// ])
+// import 'firestore_service_test.mocks.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -75,8 +75,9 @@ void main() {
           .thenAnswer((_) async => {});
 
       // Mock SQLite cache
-      when(mockSQLiteHelper.cacheGroups(any, any, any))
-          .thenAnswer((_) async {});
+      when(mockSQLiteHelper.cacheGroups(any, any, any)).thenAnswer((_) async {
+        return null;
+      });
 
       final stream = await queryBuilder.buildSuggestedGroupsQuery(
         '',
@@ -132,8 +133,9 @@ void main() {
           .thenAnswer((_) async => {});
 
       // Mock caching
-      when(mockSQLiteHelper.cacheGroups(any, any, any))
-          .thenAnswer((_) async {});
+      when(mockSQLiteHelper.cacheGroups(any, any, any)).thenAnswer((_) async {
+        return null;
+      });
 
       final stream = await queryBuilder.buildSuggestedGroupsQuery(
         '',

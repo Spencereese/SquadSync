@@ -11,14 +11,14 @@ import 'package:squad_sync/chat/sqlite_helper.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Generate mocks
-@GenerateMocks([
-  FirestoreService,
-  GrokService,
-  NotificationManager,
-  SQLiteHelper,
-  FirebaseFirestore,
-])
-import 'discovery_screen_test.mocks.dart';
+// @GenerateMocks([
+//   FirestoreService,
+//   GrokService,
+//   NotificationManager,
+//   SQLiteHelper,
+//   FirebaseFirestore,
+// ])
+// import 'discovery_screen_test.mocks.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

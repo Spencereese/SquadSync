@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../providers.dart';
+import '../../presentation/notifiers/game_notifier.dart';
 import '../../presentation/notifiers/user_notifier.dart';
 
 class GameSelectionCard extends ConsumerStatefulWidget {
@@ -93,7 +93,7 @@ class _GameSelectionCardState extends ConsumerState<GameSelectionCard> {
               );
             },
             suggestionsCallback: (pattern) async {
-              final gameManager = ref.read(gameManagerProvider);
+              final gameNotifier = ref.read(gameNotifierProvider.notifier);
               final userStateAsync = ref.watch(userNotifierProvider);
 
               final pinnedGames = userStateAsync.maybeWhen(
@@ -101,8 +101,7 @@ class _GameSelectionCardState extends ConsumerState<GameSelectionCard> {
                 orElse: () => <Map<String, dynamic>>[],
               );
 
-              final apiGames =
-                  await (gameManager as dynamic).searchGames(pattern);
+              final apiGames = await gameNotifier.fetchGamesFromIGDB(pattern);
 
               if (pattern.isEmpty) {
                 // For empty pattern, combine pinned and popular games from API

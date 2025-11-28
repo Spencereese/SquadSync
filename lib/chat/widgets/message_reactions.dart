@@ -23,7 +23,9 @@ class MessageReactions extends StatelessWidget {
     // Group reactions by emoji and count them
     final reactionCounts = <String, int>{};
     for (final reaction in reactions) {
-      final emoji = reaction['reaction']?.toString() ?? '';
+      final emoji = reaction['emoji']?.toString() ??
+          reaction['reaction']?.toString() ??
+          '';
       if (emoji.isNotEmpty) {
         reactionCounts[emoji] = (reactionCounts[emoji] ?? 0) + 1;
       }

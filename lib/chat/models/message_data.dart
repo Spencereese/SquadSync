@@ -218,6 +218,13 @@ class MessageData {
   static List<Map<String, dynamic>> _parseReactions(dynamic reactionsData) {
     if (reactionsData == null) return [];
 
+    // If it's a Map<String, int> (emoji -> count), convert to List<Map<String, dynamic>>
+    if (reactionsData is Map<String, int>) {
+      return reactionsData.entries
+          .map((entry) => {'emoji': entry.key, 'count': entry.value})
+          .toList();
+    }
+
     // If it's already a list of maps, filter and cast
     if (reactionsData is List) {
       return reactionsData.whereType<Map<String, dynamic>>().toList();

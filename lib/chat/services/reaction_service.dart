@@ -11,6 +11,7 @@ class ReactionService {
     String messageId,
     String? chatGroupId,
     ChatType chatType,
+    String? squadId,
   ) async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
@@ -33,6 +34,11 @@ class ReactionService {
         collectionPath = chatGroupId != null
             ? 'users/$userId/chat_groups/$chatGroupId/messages'
             : 'users/$userId/chat_groups/default/messages'; // fallback
+      } else if (chatType == ChatType.squad) {
+        // Squad chats: squads/{squadId}/messages
+        collectionPath = squadId != null
+            ? 'squads/$squadId/messages'
+            : 'squads/default/messages'; // fallback
       } else {
         // DMs: chats/{chatGroupId}/messages
         collectionPath = chatGroupId != null

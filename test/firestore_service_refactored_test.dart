@@ -10,17 +10,17 @@ import 'package:squad_sync/managers/notification_manager.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 
 // Generate mocks
-@GenerateMocks([
-  FirebaseFirestore,
-  GrokService,
-  NotificationManager,
-  SQLiteHelper,
-  DocumentSnapshot,
-  QuerySnapshot,
-  QueryDocumentSnapshot,
-  Query,
-])
-import 'firestore_service_refactored_test.mocks.dart';
+// @GenerateMocks([
+//   FirebaseFirestore,
+//   GrokService,
+//   NotificationManager,
+//   SQLiteHelper,
+//   DocumentSnapshot,
+//   QuerySnapshot,
+//   QueryDocumentSnapshot,
+//   Query,
+// ])
+// import 'firestore_service_refactored_test.mocks.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -81,7 +81,9 @@ void main() {
     });
 
     group('Indexed Queries', () {
-      test('buildBaseQuery creates proper where/orderBy chain for public groups', () {
+      test(
+          'buildBaseQuery creates proper where/orderBy chain for public groups',
+          () {
         final filters = GroupQueryFilters(isPublic: true);
 
         // We can't directly test the private _buildBaseQuery method,
@@ -147,10 +149,13 @@ void main() {
             .thenAnswer((_) async => <Map<String, dynamic>>[]);
         when(mockSQLiteHelper.getCacheMetadata(any))
             .thenAnswer((_) async => <Map<String, dynamic>>[]);
-        when(mockSQLiteHelper.cacheGroups(any, any, any))
-            .thenAnswer((_) async {});
+        when(mockSQLiteHelper.cacheGroups(any, any, any)).thenAnswer((_) async {
+          return null;
+        });
         when(mockSQLiteHelper.insertCacheMetadata(any, any))
-            .thenAnswer((_) async {});
+            .thenAnswer((_) async {
+          return null;
+        });
       });
 
       test('buildSuggestedGroupsStream returns limited results', () async {
@@ -163,7 +168,8 @@ void main() {
         expect(results.length, lessThanOrEqualTo(20));
       });
 
-      test('buildSuggestedGroupsStream with startAfter paginates correctly', () async {
+      test('buildSuggestedGroupsStream with startAfter paginates correctly',
+          () async {
         final filters = GroupQueryFilters(isPublic: true);
 
         // First page
@@ -340,17 +346,14 @@ void main() {
       test('handles Firebase index errors with fallback query', () async {
         // Mock Firebase exception for missing index
         final mockQuery = MockQuery<Map<String, dynamic>>();
-        when(mockQuery.where(any, isEqualTo: any))
-            .thenReturn(mockQuery);
-        when(mockQuery.orderBy(any, descending: any))
-            .thenReturn(mockQuery);
-        when(mockQuery.limit(any))
-            .thenReturn(mockQuery);
-        when(mockQuery.get())
-            .thenThrow(FirebaseException(plugin: cloud_firestore, 
-              code: 'failed-precondition',
-              message: 'Index required',
-            ));
+        when(mockQuery.where(any, isEqualTo: any)).thenReturn(mockQuery);
+        when(mockQuery.orderBy(any, descending: any)).thenReturn(mockQuery);
+        when(mockQuery.limit(any)).thenReturn(mockQuery);
+        when(mockQuery.get()).thenThrow(FirebaseException(
+          plugin: cloud_firestore,
+          code: 'failed-precondition',
+          message: 'Index required',
+        ));
 
         // This test is complex to mock properly, so we'll test the notification
         // is shown when index error occurs
@@ -371,17 +374,14 @@ void main() {
 
       test('handles general Firebase errors', () async {
         final mockQuery = MockQuery<Map<String, dynamic>>();
-        when(mockQuery.where(any, isEqualTo: any))
-            .thenReturn(mockQuery);
-        when(mockQuery.orderBy(any, descending: any))
-            .thenReturn(mockQuery);
-        when(mockQuery.limit(any))
-            .thenReturn(mockQuery);
-        when(mockQuery.get())
-            .thenThrow(FirebaseException(plugin: cloud_firestore, 
-              code: 'permission-denied',
-              message: 'Access denied',
-            ));
+        when(mockQuery.where(any, isEqualTo: any)).thenReturn(mockQuery);
+        when(mockQuery.orderBy(any, descending: any)).thenReturn(mockQuery);
+        when(mockQuery.limit(any)).thenReturn(mockQuery);
+        when(mockQuery.get()).thenThrow(FirebaseException(
+          plugin: cloud_firestore,
+          code: 'permission-denied',
+          message: 'Access denied',
+        ));
 
         final filters = GroupQueryFilters(isPublic: true);
         final stream = queryBuilder.buildSuggestedGroupsStream(filters);
@@ -420,7 +420,8 @@ void main() {
         stopwatch.stop();
 
         expect(results.length, lessThanOrEqualTo(20)); // Limited by pageSize
-        expect(stopwatch.elapsedMilliseconds, lessThan(200)); // Performance check
+        expect(
+            stopwatch.elapsedMilliseconds, lessThan(200)); // Performance check
       });
 
       test('maintains order with large datasets', () async {
@@ -450,7 +451,8 @@ void main() {
 
         // Results should be ordered by memberCount descending
         for (int i = 1; i < results.length; i++) {
-          expect(results[i - 1]['memberCount'] >= results[i]['memberCount'], true);
+          expect(
+              results[i - 1]['memberCount'] >= results[i]['memberCount'], true);
         }
       });
     });

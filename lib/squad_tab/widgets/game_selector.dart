@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/squad_notifier.dart' as sn;
 import '../../presentation/notifiers/user_notifier.dart';
-import '../../providers.dart';
+import '../../presentation/notifiers/game_notifier.dart';
 
 /// GameSelector component - handles game selection, display, and switching
 /// Extracted from the monolithic SquadTab to improve maintainability
@@ -199,7 +199,7 @@ class GameSelector extends ConsumerWidget {
                   onChanged: (value) async {
                     if (value.isNotEmpty) {
                       final results = await ref
-                          .read(gameManagerProvider)
+                          .read(gameNotifierProvider.notifier)
                           .fetchGamesFromIGDB(value);
                       if (results.isNotEmpty) {
                         setState(() {

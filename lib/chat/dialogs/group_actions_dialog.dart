@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as p;
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../../utils.dart';
 import '../../domain/entities/message.dart';
-import '../../providers.dart';
 import '../../presentation/notifiers/user_notifier.dart';
 import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../presentation/notifiers/game_notifier.dart';
 import '../chat_screen.dart';
+import '../chat_state.dart';
 
 /// Unified dialog for all group-related actions: join, create, and browse public groups
 class GroupActionsDialog extends ConsumerStatefulWidget {
@@ -402,10 +404,13 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
         Navigator.of(context).pop();
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => ChatScreen(
-              chatType: ChatType.userGroup,
-              chatGroupId: groupId,
-              chatGroupName: groupData['name'] ?? 'Unnamed Group',
+            builder: (context) => p.ChangeNotifierProvider<ChatState>(
+              create: (_) => ChatState(),
+              child: ChatScreen(
+                chatType: ChatType.userGroup,
+                chatGroupId: groupId,
+                chatGroupName: groupData['name'] ?? 'Unnamed Group',
+              ),
             ),
           ),
         );
@@ -885,13 +890,15 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
   @override
   Widget build(BuildContext context) {
     final squadAsync = ref.watch(sn.squadNotifierProvider);
-    final gameManager = ref.watch(gameManagerProvider);
+    final gameAsync = ref.watch(gameNotifierProvider);
+    final gameState = gameAsync.maybeWhen(
+        data: (state) => state, orElse: () => GameState.initial());
 
     final availableGames = squadAsync.maybeWhen(
       data: (squadState) => squadState.availableGames.isNotEmpty
           ? squadState.availableGames
-          : gameManager.availableGames,
-      orElse: () => gameManager.availableGames,
+          : gameState.availableGames.map((g) => g.toJson()).toList(),
+      orElse: () => gameState.availableGames.map((g) => g.toJson()).toList(),
     );
 
     return SingleChildScrollView(
@@ -1009,6 +1016,24 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
                             game.toLowerCase().contains(pattern.toLowerCase()))
                         .toList();
                     suggestions.addAll(filteredGames);
+
+                    // If no local matches and pattern is long enough, search IGDB
+                    if (filteredGames.isEmpty && pattern.length >= 2) {
+                      try {
+                        final gameNotifier =
+                            ref.read(gameNotifierProvider.notifier);
+                        final igdbResults =
+                            await gameNotifier.fetchGamesFromIGDB(pattern);
+                        final igdbGameNames = igdbResults
+                            .where((game) =>
+                                !_selectedGames.contains(game['name']))
+                            .map((game) => game['name'] as String)
+                            .toList();
+                        suggestions.addAll(igdbGameNames);
+                      } catch (e) {
+                        // If IGDB fails, just continue with local suggestions
+                      }
+                    }
                   }
 
                   return suggestions;

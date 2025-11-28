@@ -1,4 +1,4 @@
-import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:riverpod/riverpod.dart';
 import '../../domain/entities/system_state.dart';
 import '../../domain/usecases/load_system_state.dart';
 import '../../domain/usecases/update_theme_mode.dart';
@@ -12,10 +12,7 @@ import '../../domain/usecases/ban_user.dart';
 import '../../domain/usecases/unban_user.dart';
 import '../../core/injection.dart' as di;
 
-part 'system_notifier.g.dart';
-
-@riverpod
-class SystemNotifier extends _$SystemNotifier {
+class SystemNotifier extends AutoDisposeAsyncNotifier<SystemState> {
   late final LoadSystemState _loadSystemState;
   late final UpdateThemeMode _updateThemeMode;
   late final TrackAnalyticsEvent _trackAnalyticsEvent;
@@ -91,3 +88,8 @@ class SystemNotifier extends _$SystemNotifier {
     state = await AsyncValue.guard(() => _loadSystemState());
   }
 }
+
+final systemNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<SystemNotifier, SystemState>(
+  () => SystemNotifier(),
+);

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart' as p;
 import '../chat_screen.dart';
+import '../chat_state.dart';
 import '../../domain/entities/message.dart';
 import '../../utils.dart';
 
@@ -38,10 +40,13 @@ class DirectMessagesTab extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          chatGroupId: chatId,
-          chatGroupName: displayName,
-          chatType: ChatType.dm,
+        builder: (context) => p.ChangeNotifierProvider<ChatState>(
+          create: (_) => ChatState(),
+          child: ChatScreen(
+            chatGroupId: chatId,
+            chatGroupName: displayName,
+            chatType: ChatType.dm,
+          ),
         ),
       ),
     );
@@ -293,124 +298,120 @@ class DirectMessagesTab extends StatelessWidget {
           );
         }
 
-        return Container(
-          color: Colors.black,
-          child: ListView.separated(
-            padding: EdgeInsets.zero,
-            itemCount: dmChats.length,
-            separatorBuilder: (context, index) => const Divider(
-              color: Colors.grey,
-              height: 0.5,
-              indent: 72,
-              thickness: 0.5,
-            ),
-            itemBuilder: (context, index) {
-              final chat = dmChats[index];
-              final chatData = chat.data() as Map<String, dynamic>;
-              final participants =
-                  List<String>.from(chatData['participants'] ?? []);
-              final otherUserId =
-                  participants.firstWhere((id) => id != currentUser.uid);
-              final lastMessage = chatData['lastMessage'] ?? '';
-              final lastMessageTime = chatData['lastMessageTime'] as Timestamp?;
-              final unreadCount =
-                  chatData['unreadCount']?[currentUser.uid] ?? 0;
+        return ListView.separated(
+          padding: EdgeInsets.zero,
+          itemCount: dmChats.length,
+          separatorBuilder: (context, index) => const Divider(
+            color: Colors.grey,
+            height: 0.5,
+            indent: 72,
+            thickness: 0.5,
+          ),
+          itemBuilder: (context, index) {
+            final chat = dmChats[index];
+            final chatData = chat.data() as Map<String, dynamic>;
+            final participants =
+                List<String>.from(chatData['participants'] ?? []);
+            final otherUserId =
+                participants.firstWhere((id) => id != currentUser.uid);
+            final lastMessage = chatData['lastMessage'] ?? '';
+            final lastMessageTime = chatData['lastMessageTime'] as Timestamp?;
+            final unreadCount = chatData['unreadCount']?[currentUser.uid] ?? 0;
 
-              return FutureBuilder<Map<String, dynamic>?>(
-                future: _getUserProfile(otherUserId),
-                builder: (context, userSnapshot) {
-                  final userData = userSnapshot.data;
-                  final displayName = safeDisplayName(userData?['displayName']);
-                  final profileImage = userData?['profileImage'];
+            return FutureBuilder<Map<String, dynamic>?>(
+              future: _getUserProfile(otherUserId),
+              builder: (context, userSnapshot) {
+                final userData = userSnapshot.data;
+                final displayName = safeDisplayName(userData?['displayName']);
+                final profileImage = userData?['profileImage'];
 
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    leading: CircleAvatar(
-                      radius: 28,
-                      backgroundColor: Colors.grey[800],
-                      backgroundImage: profileImage != null
-                          ? NetworkImage(profileImage)
-                          : null,
-                      child: profileImage == null
-                          ? Text(
-                              displayName.isNotEmpty
-                                  ? displayName[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 16),
-                            )
-                          : null,
-                    ),
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            displayName,
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  leading: CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.grey[800],
+                    backgroundImage: profileImage != null
+                        ? NetworkImage(profileImage)
+                        : null,
+                    child: profileImage == null
+                        ? Text(
+                            displayName.isNotEmpty
+                                ? displayName[0].toUpperCase()
+                                : '?',
                             style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (lastMessageTime != null) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: Text(
-                              _formatTime(lastMessageTime.toDate()),
-                              style: const TextStyle(
-                                color: Colors.grey,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        lastMessage.isNotEmpty
-                            ? lastMessage
-                            : 'Start a conversation',
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    trailing: unreadCount > 0
-                        ? Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: Colors.cyanAccent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Text(
-                              unreadCount.toString(),
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                                color: Colors.white, fontSize: 16),
                           )
                         : null,
-                    onTap: () => _openDMChat(context, chat.id, displayName),
-                  );
-                },
-              );
-            },
-          ),
+                  ),
+                  title: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          displayName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (lastMessageTime != null) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            _formatTime(lastMessageTime.toDate()),
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      lastMessage.isNotEmpty
+                          ? lastMessage
+                          : 'Start a conversation',
+                      style: const TextStyle(
+                        color: Colors.grey,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  trailing: unreadCount > 0
+                      ? Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: const BoxDecoration(
+                            color: Colors.cyanAccent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            unreadCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        )
+                      : null,
+                  onTap: () => _openDMChat(context, chat.id, displayName),
+                );
+              },
+            );
+          },
         );
       },
     );

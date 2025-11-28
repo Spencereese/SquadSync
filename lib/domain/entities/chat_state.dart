@@ -3,7 +3,6 @@ import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/entities/chat_group.dart';
 
 part 'chat_state.freezed.dart';
-part 'chat_state.g.dart';
 
 @freezed
 class ChatState with _$ChatState {
@@ -21,14 +20,17 @@ class ChatState with _$ChatState {
     required Map<String, DateTime> lastReadTimestamps,
 
     // Real-time state
-    required Map<String, Set<String>> typingIndicators, // chatGroupId -> typing user UIDs
+    required Map<String, Set<String>>
+        typingIndicators, // chatGroupId -> typing user UIDs
     required Map<String, int> unreadCounts, // chatGroupId -> unread count
     required Map<String, bool> hasNewMessages,
 
     // Media and attachments
     required List<Map<String, dynamic>> mediaHistory,
-    required Map<String, List<String>> pinnedMessages, // chatGroupId -> pinned message IDs
-    required Map<String, Map<String, Poll>> activePolls, // chatGroupId -> pollId -> poll data
+    required Map<String, List<String>>
+        pinnedMessages, // chatGroupId -> pinned message IDs
+    required Map<String, Map<String, dynamic>>
+        activePolls, // chatGroupId -> pollId -> poll data
 
     // Voice and audio
     required bool isRecording,
@@ -71,7 +73,8 @@ class ChatState with _$ChatState {
 
     // Voice chat integration
     required Map<String, bool> voiceChatActive, // chatGroupId -> is active
-    required Map<String, List<String>> voiceChatParticipants, // chatGroupId -> participant UIDs
+    required Map<String, List<String>>
+        voiceChatParticipants, // chatGroupId -> participant UIDs
 
     // Settings and preferences
     required Map<String, bool> mutedChats,
@@ -79,9 +82,6 @@ class ChatState with _$ChatState {
     required Map<String, String> chatThemes,
     required bool notificationsEnabled,
   }) = _ChatState;
-
-  factory ChatState.fromJson(Map<String, dynamic> json) =>
-      _$ChatStateFromJson(json);
 
   factory ChatState.initial() => ChatState(
         isInitialized: false,

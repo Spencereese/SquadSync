@@ -1,4 +1,4 @@
-import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:riverpod/riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:squad_sync/domain/entities/squad_state.dart';
 import 'package:squad_sync/domain/usecases/create_squad.dart';
@@ -13,11 +13,9 @@ import 'package:squad_sync/domain/usecases/load_squad_state.dart';
 import 'package:squad_sync/domain/usecases/sync_squad_data.dart';
 import 'package:squad_sync/core/injection.dart' as di;
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/timer_service.dart';
 
-part 'squad_notifier.g.dart';
-
-@riverpod
-class SquadNotifier extends AsyncNotifier<SquadState> {
+class SquadNotifier extends AutoDisposeAsyncNotifier<SquadState> {
   late final CreateSquad _createSquad;
   late final JoinSquad _joinSquad;
   late final LeaveSquad _leaveSquad;
@@ -28,6 +26,7 @@ class SquadNotifier extends AsyncNotifier<SquadState> {
   late final UpdateMemberStatus _updateMemberStatus;
   late final LoadSquadState _loadSquadState;
   late final SyncSquadData _syncSquadData;
+  late final TimerServiceNotifier _timerService;
 
   @override
   Future<SquadState> build() async {
@@ -44,18 +43,10 @@ class SquadNotifier extends AsyncNotifier<SquadState> {
       _loadSquadState = di.getIt<LoadSquadState>();
       _syncSquadData = di.getIt<SyncSquadData>();
 
-      // Load state in background
-      Future.microtask(() async {
-        try {
-          final loadedState = await _loadState();
-          state = AsyncData(loadedState);
-        } catch (e) {
-          debugPrint('Error loading squad state in background: $e');
-          // Keep initial state
-        }
-      });
+      _timerService = ref.watch(timerServiceProvider.notifier);
 
-      return SquadState.initial();
+      // Load state synchronously to ensure proper loading state transition
+      return await _loadState();
     } catch (e) {
       debugPrint('Error initializing squad notifier: $e');
       return SquadState.initial();
@@ -64,9 +55,21 @@ class SquadNotifier extends AsyncNotifier<SquadState> {
 
   Future<SquadState> _loadState() async {
     try {
-      return await _loadSquadState.call();
-    } catch (e) {
-      debugPrint('Error loading squad state: $e');
+      debugPrint('SquadNotifier: Loading squad state...');
+      // Add timeout to prevent indefinite hanging
+      final state = await _loadSquadState.call().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint(
+              'SquadNotifier: Load state timed out, using initial state');
+          return SquadState.initial();
+        },
+      );
+      debugPrint('SquadNotifier: Squad state loaded successfully');
+      return state;
+    } catch (e, stackTrace) {
+      debugPrint('SquadNotifier: Error loading squad state: $e');
+      debugPrint('SquadNotifier: Stack trace: $stackTrace');
       return SquadState.initial();
     }
   }
@@ -366,9 +369,49 @@ class SquadNotifier extends AsyncNotifier<SquadState> {
       if (squadId != null) {
         final userId = FirebaseAuth.instance.currentUser!.uid;
         await _assignSpot(squadId, spotIndex, userId);
+        // Start the timer
+        await _timerService.startSpotTimer(
+            gameName, userId, const Duration(minutes: 5));
         // Reload state
         state = await AsyncValue.guard(() => _loadSquadState());
       }
     }
   }
+
+  Future<void> claimPeacockSpot(
+      String lobbyId, String userId, String gameName) async {
+    await _managePeacockQueue.addToQueue(userId, gameName);
+  }
+
+  Future<void> lockPeacockSpot(
+      String lobbyId, String userId, String gameName) async {
+    await _managePeacockQueue.removeFromQueue(userId);
+  }
+
+  Future<List<Map<String, dynamic>>> getSquadAlerts(String squadId) async {
+    return [];
+  }
+
+  Future<void> sendGameAlert(String squadId, String userId, String alertType,
+      {String? specificGame, List<String>? pinnedGames}) async {
+    // TODO
+  }
+
+  Future<void> clearGameAlerts(String squadId, String userId) async {
+    // TODO
+  }
+
+  Future<void> closeLobby(String lobbyId) async {
+    // TODO
+  }
+
+  void setSelectedSquadId(String? squadId) {
+    state = state.whenData(
+        (squadState) => squadState.copyWith(selectedSquadId: squadId));
+  }
 }
+
+final squadNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<SquadNotifier, SquadState>(
+  () => SquadNotifier(),
+);

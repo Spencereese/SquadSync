@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/squad_tab_screen.dart';
 import '../chat/chat_groups_screen.dart';
 import '../setup_screen.dart';
 import '../screens/onboarding/onboarding_flow.dart';
-import '../providers.dart'; // Keep for themeProvider
-import '../providers/service_providers.dart'; // Keep for authStateProvider
 import '../presentation/notifiers/user_notifier.dart';
+import '../app_theme.dart';
+
+final authStateProvider = StreamProvider<User?>((ref) {
+  return FirebaseAuth.instance.authStateChanges();
+});
 
 /// ConsumerWidget for the main MaterialApp with theme support
 class SquadSyncMaterialApp extends ConsumerWidget {
@@ -15,7 +19,7 @@ class SquadSyncMaterialApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeData = ref.watch(themeProvider);
+    final themeData = AppTheme.darkTheme;
 
     return MaterialApp(
       title: 'SquadSync',

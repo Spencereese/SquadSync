@@ -30,9 +30,8 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
           'message_type': message.messageType.toString(),
           'media_url': message.mediaUrl,
           'media_type': message.mediaType,
-          'reactions': message.reactions != null
-              ? jsonEncode(Map<String, dynamic>.from(message.reactions!))
-              : null,
+          'reactions':
+              message.reactions != null ? jsonEncode(message.reactions!) : null,
           'reply_to': message.replyTo,
           'poll':
               message.poll != null ? jsonEncode(message.poll!.toJson()) : null,
@@ -80,13 +79,8 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
               'id': map['id'],
               'senderId': map['sender_id'],
               'text': map['text'],
-              'timestamp': map['timestamp_ms'] != null
-                  ? DateTime.fromMillisecondsSinceEpoch(
-                      map['timestamp_ms'] as int)
-                  : map['timestamp'] is DateTime
-                      ? map['timestamp'] as DateTime
-                      : DateTime.parse(
-                          map['timestamp'] as String), // Fallback for old data
+              'timestamp': DateTime.fromMillisecondsSinceEpoch(
+                  map['timestamp_ms'] as int),
               'messageType': MessageType.values.firstWhere(
                 (e) => e.toString() == map['message_type'],
                 orElse: () => MessageType.text,

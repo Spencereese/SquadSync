@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'game_selector.dart';
+import '../dialogs/settings_dialog.dart';
 
 /// SquadHeader component - handles navigation and game info display
 /// Extracted from the monolithic SquadTab to improve maintainability
@@ -57,8 +58,8 @@ class SquadHeader extends ConsumerWidget {
                     height: 28,
                     color: Colors.grey[400],
                   ),
-                  onPressed:
-                      () {}, // SettingsDialog.show(context, ref, lobbyId: lobbyId), // Placeholder, need to update SettingsDialog
+                  onPressed: () =>
+                      SettingsDialog.show(context, ref, lobbyId: lobbyId),
                   tooltip: 'Settings',
                 ),
               ),

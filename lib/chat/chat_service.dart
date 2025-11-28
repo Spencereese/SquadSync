@@ -18,6 +18,7 @@ class ChatService with WidgetsBindingObserver {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final MediaService _mediaService = MediaService();
   final MessageService _messageService = MessageService();
+  final SQLiteHelper _sqliteHelper = SQLiteHelper();
   final SyncManager _syncManager;
 
   ChatService([SyncManager? syncManager])
@@ -113,7 +114,7 @@ class ChatService with WidgetsBindingObserver {
 
     _messagesStream = _firestore
         .collection(collectionPath)
-        .orderBy('timestamp', descending: true)
+        .orderBy('timestamp_ms', descending: true)
         .limit(100)
         .snapshots();
 
@@ -186,7 +187,7 @@ class ChatService with WidgetsBindingObserver {
     return _typingStream!;
   }
 
-  // Send a new message
+  // Send a new message with atomic local-first approach
   Future<MessageSendResult> sendMessage(
     WidgetRef ref, {
     required String senderUid,
@@ -202,23 +203,120 @@ class ChatService with WidgetsBindingObserver {
     String? replyTo,
     String? chatGroupId,
     required ChatType chatType,
+    String? mediaFilePath,
+    String? mediaType,
   }) async {
-    return _messageService.sendMessage(
-      ref,
-      senderUid: senderUid,
-      text: text,
-      imageUrl: imageUrl,
-      videoUrl: videoUrl,
-      audioUrl: audioUrl,
-      photos: photos,
-      videos: videos,
-      audio: audio,
-      reactions: reactions,
-      pollId: pollId,
-      replyTo: replyTo,
-      chatGroupId: chatGroupId,
-      chatType: chatType,
-    );
+    try {
+      // Validate input
+      if ((text?.trim().isEmpty ?? true) &&
+          photos.isEmpty &&
+          videos.isEmpty &&
+          audio.isEmpty &&
+          imageUrl == null &&
+          videoUrl == null &&
+          audioUrl == null &&
+          pollId == null &&
+          mediaFilePath == null) {
+        return MessageSendResult.failure('Cannot send empty message');
+      }
+
+      final msgId = DateTime.now().millisecondsSinceEpoch.toString();
+      final timestampMs = DateTime.now().millisecondsSinceEpoch;
+
+      // Handle media upload first if present
+      String? finalMediaUrl;
+      if (mediaFilePath != null && mediaType != null) {
+        try {
+          finalMediaUrl =
+              await _uploadMediaWithSignedUrl(mediaFilePath, mediaType);
+        } catch (e) {
+          debugPrint('Media upload failed: $e');
+          return MessageSendResult.failure('Failed to upload media: $e');
+        }
+      }
+
+      // Create message data
+      final messageData = {
+        'id': msgId,
+        'senderUid': senderUid,
+        'timestamp_ms': timestampMs,
+        'text': text?.trim() ?? '',
+        'imageUrl': imageUrl ??
+            (mediaType?.startsWith('image') == true ? finalMediaUrl : null),
+        'videoUrl': videoUrl ??
+            (mediaType?.startsWith('video') == true ? finalMediaUrl : null),
+        'audioUrl': audioUrl ??
+            (mediaType?.startsWith('audio') == true ? finalMediaUrl : null),
+        'photos': photos,
+        'videos': videos,
+        'audio': audio,
+        'reactions': reactions,
+        'pollId': pollId,
+        'replyTo': replyTo,
+        'delivered': false, // Initially pending
+        'read': false,
+        'timestamp': FieldValue.serverTimestamp(),
+      };
+
+      // Determine collection path
+      String collectionPath;
+      if (chatType == ChatType.userGroup) {
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser == null) {
+          return MessageSendResult.failure('User not authenticated');
+        }
+        collectionPath =
+            'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
+      } else if (chatType == ChatType.dm) {
+        collectionPath = 'chats/$chatGroupId/messages';
+      } else {
+        final squadId = _getCachedSquadId(ref);
+        if (squadId == null) {
+          return MessageSendResult.failure('No squad selected');
+        }
+        collectionPath = 'squads/$squadId/messages';
+      }
+
+      // 1. Add to local SQLite as pending
+      final pendingMessageData = Map<String, dynamic>.from(messageData);
+      pendingMessageData['delivered'] = false;
+      await _sqliteHelper.insertMessage(pendingMessageData,
+          chatGroupId: chatGroupId);
+
+      // 2. Attempt to send to Firestore
+      try {
+        await _firestore.collection(collectionPath).doc(msgId).set(messageData);
+
+        // 3. Update local to sent on success
+        final sentMessageData = Map<String, dynamic>.from(messageData);
+        sentMessageData['delivered'] = true;
+        await _sqliteHelper.insertMessage(sentMessageData,
+            chatGroupId: chatGroupId);
+
+        return MessageSendResult.success(msgId);
+      } on FirebaseException catch (e) {
+        // Firestore failed, but message is cached locally as pending
+        debugPrint('Firestore send failed: ${e.message}');
+        return MessageSendResult.offline(msgId);
+      } catch (e) {
+        // Firestore failed, but message is cached locally as pending
+        debugPrint('Firestore send failed: $e');
+        return MessageSendResult.offline(msgId);
+      }
+    } catch (e) {
+      debugPrint('Send message failed: $e');
+      return MessageSendResult.failure('Failed to send message: $e');
+    }
+  }
+
+  // Upload media with signed URL from backend
+  Future<String> _uploadMediaWithSignedUrl(
+      String filePath, String mediaType) async {
+    final file = File(filePath);
+    final fileName =
+        '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+
+    return await _mediaService.uploadMediaWithSignedUrl(file, fileName);
   }
 
   // Legacy method for backward compatibility
@@ -401,10 +499,22 @@ class ChatService with WidgetsBindingObserver {
 
   /// Get a single message by ID for reply previews
   Future<MessageData?> getMessageById(String messageId,
-      {String? chatGroupId}) async {
+      {String? chatGroupId, ChatType? chatType, String? squadId}) async {
     try {
-      final collectionPath =
-          chatGroupId != null ? 'chat_groups/$chatGroupId/messages' : 'chat';
+      String collectionPath;
+      if (chatType == ChatType.squad && squadId != null) {
+        collectionPath = 'squads/$squadId/messages';
+      } else if (chatType == ChatType.userGroup && chatGroupId != null) {
+        collectionPath =
+            'users/${FirebaseAuth.instance.currentUser?.uid}/chat_groups/$chatGroupId/messages';
+      } else if (chatType == ChatType.dm && chatGroupId != null) {
+        collectionPath = 'chats/$chatGroupId/messages';
+      } else {
+        // Fallback - try the old logic
+        collectionPath =
+            chatGroupId != null ? 'chat_groups/$chatGroupId/messages' : 'chat';
+      }
+
       final doc =
           await _firestore.collection(collectionPath).doc(messageId).get();
 

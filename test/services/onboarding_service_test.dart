@@ -6,7 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart' as auth_mocks;
-import 'package:firebase_storage_mocks/firebase_storage_mocks.dart' as storage_mocks;
+import 'package:firebase_storage_mocks/firebase_storage_mocks.dart'
+    as storage_mocks;
 import 'dart:io';
 import 'package:squad_sync/services/onboarding_service.dart';
 import 'package:squad_sync/providers/user_notifier.dart';
@@ -14,17 +15,19 @@ import 'package:squad_sync/providers/game_notifier.dart';
 import 'package:squad_sync/providers/system_notifier.dart';
 
 // Generate mocks
-@GenerateMocks([
-  SharedPreferences,
-  UserNotifier,
-  GameNotifier,
-  SystemNotifier,
-])
-import 'onboarding_service_test.mocks.dart';
+// @GenerateMocks([
+//   SharedPreferences,
+//   UserNotifier,
+//   GameNotifier,
+//   SystemNotifier,
+// ])
+// import 'onboarding_service_test.mocks.dart';
 
 // Define providers for testing
-final sharedPreferencesProvider = Provider<SharedPreferences>((ref) => throw UnimplementedError());
-final firebaseAuthProvider = Provider<FirebaseAuth>((ref) => throw UnimplementedError());
+final sharedPreferencesProvider =
+    Provider<SharedPreferences>((ref) => throw UnimplementedError());
+final firebaseAuthProvider =
+    Provider<FirebaseAuth>((ref) => throw UnimplementedError());
 
 void main() {
   late MockSharedPreferences mockPrefs;
@@ -36,7 +39,8 @@ void main() {
 
   setUp(() {
     mockPrefs = MockSharedPreferences();
-    mockAuth = auth_mocks.MockFirebaseAuth(signedIn: true, mockUser: auth_mocks.MockUser(uid: 'test-uid'));
+    mockAuth = auth_mocks.MockFirebaseAuth(
+        signedIn: true, mockUser: auth_mocks.MockUser(uid: 'test-uid'));
     mockUserNotifier = MockUserNotifier();
     mockGameNotifier = MockGameNotifier();
     mockSystemNotifier = MockSystemNotifier();
@@ -70,7 +74,8 @@ void main() {
 
     test('isStepValid returns true for step 0 with valid profile', () async {
       final service = container.read(onboardingServiceProvider.notifier);
-      await service.updateProfile('ValidName', 'https://example.com/avatar.jpg');
+      await service.updateProfile(
+          'ValidName', 'https://example.com/avatar.jpg');
       expect(service.isStepValid(0), true);
     });
 
@@ -82,7 +87,9 @@ void main() {
 
     test('isStepValid returns true for step 1 with games', () async {
       final service = container.read(onboardingServiceProvider.notifier);
-      await service.updatePinnedGames([{'id': '1', 'name': 'Game1'}]);
+      await service.updatePinnedGames([
+        {'id': '1', 'name': 'Game1'}
+      ]);
       await service.nextStep();
       expect(service.isStepValid(1), true);
     });
@@ -92,7 +99,9 @@ void main() {
     test('saveDraft stores state in SharedPreferences', () async {
       final service = container.read(onboardingServiceProvider.notifier);
       await service.updateProfile('TestName', 'https://example.com/avatar.jpg');
-      await service.updatePinnedGames([{'id': '1', 'name': 'Game1'}]);
+      await service.updatePinnedGames([
+        {'id': '1', 'name': 'Game1'}
+      ]);
       await service.nextStep();
 
       await service.saveDraft();
@@ -101,7 +110,8 @@ void main() {
     });
 
     test('loadDraft restores state from SharedPreferences', () {
-      when(mockPrefs.getString('onboarding_draft')).thenReturn('{"currentStep":1,"displayName":"TestName","avatarUrl":"https://example.com/avatar.jpg","pinnedGames":"[{\\"id\\":\\"1\\",\\"name\\":\\"Game1\\"}]"}');
+      when(mockPrefs.getString('onboarding_draft')).thenReturn(
+          '{"currentStep":1,"displayName":"TestName","avatarUrl":"https://example.com/avatar.jpg","pinnedGames":"[{\\"id\\":\\"1\\",\\"name\\":\\"Game1\\"}]"}');
 
       final service = container.read(onboardingServiceProvider.notifier);
       final loadedState = service.loadDraft();
@@ -139,7 +149,9 @@ void main() {
     test('completeOnboarding updates UserNotifier and clears draft', () async {
       final service = container.read(onboardingServiceProvider.notifier);
       await service.updateProfile('TestName', 'https://example.com/avatar.jpg');
-      await service.updatePinnedGames([{'id': '1', 'name': 'Game1'}]);
+      await service.updatePinnedGames([
+        {'id': '1', 'name': 'Game1'}
+      ]);
       await service.nextStep();
 
       await service.completeOnboarding();

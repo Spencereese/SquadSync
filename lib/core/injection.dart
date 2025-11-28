@@ -85,6 +85,18 @@ import 'package:squad_sync/domain/usecases/update_typing_indicator.dart';
 import 'package:squad_sync/domain/usecases/pin_message.dart';
 import 'package:squad_sync/domain/usecases/load_media_history.dart';
 
+import 'package:squad_sync/presentation/notifiers/squad_notifier.dart';
+import 'package:squad_sync/presentation/notifiers/user_notifier.dart';
+import 'package:squad_sync/presentation/notifiers/game_notifier.dart';
+import 'package:squad_sync/presentation/notifiers/system_notifier.dart';
+import 'package:squad_sync/presentation/notifiers/chat_notifier.dart';
+
+import 'package:squad_sync/domain/entities/squad_state.dart';
+import 'package:squad_sync/domain/entities/app_user.dart';
+import 'package:squad_sync/domain/entities/game.dart';
+import 'package:squad_sync/domain/entities/system_state.dart';
+import 'package:squad_sync/domain/entities/chat_state.dart';
+
 final getIt = GetIt.instance;
 
 Future<void> setupInjection() async {
@@ -454,3 +466,35 @@ final updateTypingIndicatorProvider =
 final pinMessageProvider = Provider<PinMessage>((ref) => getIt<PinMessage>());
 final loadMediaHistoryProvider =
     Provider<LoadMediaHistory>((ref) => getIt<LoadMediaHistory>());
+
+// Notifier providers
+final squadNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<SquadNotifier, SquadState>(
+  () => SquadNotifier(),
+);
+
+final userNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<UserNotifier, AppUser?>(
+  () => UserNotifier(),
+);
+
+final gameNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<GameNotifier, GameState>(
+  () => GameNotifier(),
+);
+
+final systemNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<SystemNotifier, SystemState>(
+  () => SystemNotifier(),
+);
+
+final chatNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<ChatNotifier, ChatState>(
+  () => ChatNotifier(),
+);
+
+// Other providers
+final popularGamesProvider = Provider<List<Game>>((ref) {
+  // This will need to be implemented properly
+  return [];
+});

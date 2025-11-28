@@ -73,7 +73,12 @@ class MemberWidgets {
   static Widget _buildStatusChip(String status, {String? gameName}) {
     final displayStatus = gameName != null ? '$status ($gameName)' : status;
     return Chip(
-      label: Text(displayStatus, style: const TextStyle(fontSize: 12)),
+      label: Text(
+        displayStatus,
+        style: const TextStyle(fontSize: 12),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       backgroundColor: _getStatusColor(status).withValues(alpha: 0.2),
@@ -131,8 +136,10 @@ class MemberWidgets {
             // Check if player is a friend
             final isFriend = friends?.contains(player) ?? false;
 
-            return Row(
-              mainAxisSize: MainAxisSize.min,
+            return Wrap(
+              spacing: 4,
+              runSpacing: 2,
+              alignment: WrapAlignment.end,
               children: [
                 if (streak > 0) ...[
                   Icon(Icons.star, color: Colors.yellowAccent, size: 16),
@@ -267,6 +274,8 @@ class MemberWidgets {
               player,
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             subtitle: _buildMemberSubtitle(context, ref, player),
             trailing: _buildMemberActions(

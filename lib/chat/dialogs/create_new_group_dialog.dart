@@ -23,6 +23,7 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
   bool _isPublic = true;
   bool _isLoading = false;
   Game? _selectedGame;
+  AsyncValue<List<Game>> _searchResults = const AsyncValue.data([]);
 
   @override
   void dispose() {
@@ -202,17 +203,31 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
                 borderSide: BorderSide(color: Colors.cyanAccent),
               ),
             ),
-            onChanged: (value) {
+            onChanged: (value) async {
               if (value.isNotEmpty) {
-                ref.read(gameNotifierProvider.notifier).searchGames(value);
+                setState(() {
+                  _searchResults = const AsyncValue.loading();
+                });
+                final results = await ref
+                    .read(gameNotifierProvider.notifier)
+                    .searchGames(value);
+                if (mounted) {
+                  setState(() {
+                    _searchResults = results;
+                  });
+                }
+              } else {
+                setState(() {
+                  _searchResults = const AsyncValue.data([]);
+                });
               }
             },
           ),
-          AsyncValueWidget<GameState>(
-            value: ref.watch(gameNotifierProvider),
-            data: (gameState) => SizedBox(
+          AsyncValueWidget<List<Game>>(
+            value: _searchResults,
+            data: (games) => SizedBox(
               height: 200,
-              child: _buildGameList(gameState.availableGames),
+              child: _buildGameList(games),
             ),
             loading: () => const SizedBox(
               height: 200,
@@ -233,11 +248,19 @@ class _CreateNewGroupDialogState extends ConsumerState<CreateNewGroupDialog> {
                             color: Theme.of(context).colorScheme.error)),
                     const SizedBox(height: 16),
                     ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         HapticFeedback.lightImpact();
-                        ref
+                        setState(() {
+                          _searchResults = const AsyncValue.loading();
+                        });
+                        final results = await ref
                             .read(gameNotifierProvider.notifier)
                             .searchGames(_gameSearchController.text);
+                        if (mounted) {
+                          setState(() {
+                            _searchResults = results;
+                          });
+                        }
                       },
                       child: const Text('Retry'),
                     ),

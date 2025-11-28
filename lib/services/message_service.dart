@@ -105,7 +105,8 @@ class MessageService {
       'reactions': reactions,
       'pollId': pollId,
       'replyTo': replyTo,
-      'delivered': false,
+      'delivered':
+          true, // Mark as delivered immediately since we're successfully writing to Firestore
       'read': false,
       'timestamp': FieldValue.serverTimestamp(),
     };
@@ -223,7 +224,8 @@ class MessageService {
         'sender': user.displayName ?? 'User',
         'timestamp': FieldValue.serverTimestamp(),
         'replyTo': messageId,
-        'delivered': false,
+        'delivered':
+            true, // Mark as delivered since we're successfully writing to Firestore
         'read': false,
       });
 

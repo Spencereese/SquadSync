@@ -21,6 +21,7 @@ import 'chat_scroll_controller.dart';
 /// for the chat screen. This extracts the complex build logic from ChatScreen.
 class ChatUIManager {
   final ChatService _chatService = ChatService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // UI state
   String _searchQuery = '';
@@ -370,154 +371,139 @@ class ChatUIManager {
     }
 
     if (_processedMessages.isEmpty) {
-      return Column(
-        children: [
-          const Spacer(),
-          const Center(
-            child:
-                Text('No messages yet', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+      return const Center(
+        child: Text('No messages yet', style: TextStyle(color: Colors.white)),
       );
     }
 
-    return Column(
-      children: [
-        const Spacer(),
-        StatefulBuilder(
-          builder: (context, setState) {
-            return ValueListenableBuilder<double>(
-              valueListenable: swipeOffset,
-              builder: (context, offset, child) {
-                return GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    // Allow tap events to pass through to parent for keyboard dismissal
-                  },
-                  onHorizontalDragUpdate: (details) {
-                    // Only update if drag is mostly horizontal to avoid interfering with vertical scroll
-                    if (details.delta.dx.abs() > details.delta.dy.abs()) {
-                      // Dismiss keyboard on swipe
-                      FocusScope.of(context).unfocus();
-                      swipeOffset.value += details.delta.dx;
-                      swipeOffset.value = swipeOffset.value.clamp(-40.0, 0.0);
-                    }
-                  },
-                  onHorizontalDragEnd: (details) {
-                    // Animate back to 0 with spring effect
-                    _animateSwipeBack();
-                  },
-                  child: Stack(
-                    children: [
-                      // Main messages list
-                      ListView.builder(
-                        controller: scrollController.scrollController,
-                        reverse: true,
-                        padding: const EdgeInsets.only(
-                          left: 8.0,
-                          right: 8.0,
-                          top: 4.0,
-                          bottom:
-                              10.0, // Further reduced bottom padding to bring messages closer to input bar
-                        ),
-                        itemCount: _processedMessages.length +
-                            (scrollController.isLoadingMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          // Show loading indicator at the top (for loading older messages)
-                          if (scrollController.isLoadingMore &&
-                              index == _processedMessages.length) {
-                            return const Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.cyanAccent,
-                                  ),
-                                ),
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return ValueListenableBuilder<double>(
+          valueListenable: swipeOffset,
+          builder: (context, offset, child) {
+            return GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                // Allow tap events to pass through to parent for keyboard dismissal
+              },
+              onHorizontalDragUpdate: (details) {
+                // Only update if drag is mostly horizontal to avoid interfering with vertical scroll
+                if (details.delta.dx.abs() > details.delta.dy.abs()) {
+                  // Dismiss keyboard on swipe
+                  FocusScope.of(context).unfocus();
+                  swipeOffset.value += details.delta.dx;
+                  swipeOffset.value = swipeOffset.value.clamp(-40.0, 0.0);
+                }
+              },
+              onHorizontalDragEnd: (details) {
+                // Animate back to 0 with spring effect
+                _animateSwipeBack();
+              },
+              child: Stack(
+                children: [
+                  // Main messages list
+                  ListView.builder(
+                    controller: scrollController.scrollController,
+                    reverse: true,
+                    padding: const EdgeInsets.only(
+                      left: 8.0,
+                      right: 8.0,
+                      top: 4.0,
+                      bottom:
+                          80.0, // Reduced bottom padding to bring messages closer to input bar
+                    ),
+                    itemCount: _processedMessages.length +
+                        (scrollController.isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      // Show loading indicator at the top (for loading older messages)
+                      if (scrollController.isLoadingMore &&
+                          index == _processedMessages.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.cyanAccent,
                               ),
-                            );
-                          }
+                            ),
+                          ),
+                        );
+                      }
 
-                          // Adjust index for loading indicator
-                          final messageGroupIndex =
-                              scrollController.isLoadingMore
-                                  ? index - 1
-                                  : index;
-                          if (messageGroupIndex < 0 || messageGroupIndex >= _processedMessages.length) {
-                            return const SizedBox.shrink();
-                          }
-                          final messageGroup =
-                              _processedMessages[messageGroupIndex]
-                                  as MessageGroupData;
+                      // Adjust index for loading indicator
+                      final messageGroupIndex =
+                          scrollController.isLoadingMore ? index - 1 : index;
+                      final messageGroup = _processedMessages[messageGroupIndex]
+                          as MessageGroupData;
 
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2.0),
-                            child: Stack(
-                              children: [
-                                Transform.translate(
-                                  offset: Offset(offset, 0),
-                                  child: MessageGroup(
-                                    messages: [
-                                      messageGroup.parentMessage,
-                                      ...messageGroup.replies
-                                    ],
-                                    showSender: true,
-                                    showTimestamp: messageGroup
-                                        .parentMessage.shouldShowTimestamp,
-                                    showReadIndicator: false,
-                                    onTap: onMessageTap,
-                                    onLongPress: () {},
-                                    sendingStatus: {},
-                                    chatGroupId: chatGroupId,
-                                    chatType: chatType,
-                                    chatService: _chatService,
-                                    squadId: chatType == ChatType.squad
-                                        ? chatGroupId
-                                        : null,
-                                  ).animate().fadeIn(duration: 300.ms),
-                                ),
-                                if (offset < -2)
-                                  Positioned(
-                                    right: 0,
-                                    top: messageGroup
-                                            .parentMessage.shouldShowTimestamp
-                                        ? 40
-                                        : 0,
-                                    height: 60,
-                                    child: Transform.translate(
-                                      offset: Offset(
-                                          (50 + offset * 1.25).clamp(0, 50), 0),
-                                      child: Container(
-                                        width: 50,
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          _formatTimestamp(messageGroup
-                                              .parentMessage.timestamp),
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Stack(
+                          children: [
+                            Transform.translate(
+                              offset: Offset(offset, 0),
+                              child: MessageGroup(
+                                parentMessage: messageGroup.parentMessage,
+                                replies: messageGroup.replies,
+                                isMe: messageGroup.parentMessage.senderUid ==
+                                    _auth.currentUser?.uid,
+                                showSender:
+                                    true, // Will be determined per message in MessageGroup
+                                showAvatar:
+                                    true, // Will be determined per message in MessageGroup
+                                showTimestamp: messageGroup.parentMessage
+                                    .shouldShowTimestamp, // Show timestamp based on time gap logic
+                                showReadIndicator:
+                                    false, // TODO: Implement per-message read indicators
+                                onTap: onMessageTap,
+                                onLongPress:
+                                    () {}, // Handled by individual MessageBubbles
+                                sendingStatus: {}, // TODO: Pass appropriate sending status
+                                chatGroupId: chatGroupId,
+                                chatType: chatType,
+                                chatService: _chatService,
+                              ).animate().fadeIn(duration: 300.ms),
+                            ),
+                            if (offset < -2)
+                              Positioned(
+                                right: 0,
+                                top: messageGroup
+                                        .parentMessage.shouldShowTimestamp
+                                    ? 40
+                                    : 0,
+                                height: 60,
+                                child: Transform.translate(
+                                  offset: Offset(
+                                      (50 + offset * 1.25).clamp(0, 50), 0),
+                                  child: Container(
+                                    width: 50,
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      _formatTimestamp(
+                                          messageGroup.parentMessage.timestamp),
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
                                       ),
                                     ),
                                   ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
+                ],
+              );
             );
           },
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -588,26 +574,31 @@ class ChatUIManager {
             ),
           ),
           // The reply preview bubble
-          GestureDetector(
-            onTap: onClearReply,
-            behavior: HitTestBehavior.translucent,
-            child: MessageBubble(
-              message: messageData,
-              isMe: isMe,
-              showSender: false,
-              showAvatar: !isMe,
-              showTimestamp: false,
-              showReadIndicator: false,
-              isFirstInGroup: true,
-              isLastInGroup: true,
-              onTap: () {},
-              onLongPress: () {},
-              sendingStatus: const {},
-              chatType: chatType,
-              squadId: chatType == ChatType.squad
-                  ? squadState.selectedSquadId
-                  : null,
-            ),
+          Stack(
+            children: [
+              // Full-size tap detector for dismissing by tapping outside
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: onClearReply,
+                  behavior: HitTestBehavior.translucent,
+                ),
+              ),
+              // The actual message bubble
+              MessageBubble(
+                message: messageData,
+                isMe: isMe,
+                showSender: !isMe, // Show sender name if not from current user
+                showAvatar: !isMe, // Show avatar if not from current user
+                showTimestamp: true,
+                showReadIndicator: false,
+                onTap: () {}, // No action needed for reply preview
+                onLongPress: () {}, // No action needed for reply preview
+                sendingStatus: const {}, // Empty map for preview
+                chatGroupId: null, // Not needed for preview
+                chatType: chatType,
+                chatService: _chatService,
+              ),
+            ],
           ),
         ],
       ),
@@ -683,38 +674,15 @@ class ChatUIManager {
       }
     }
 
-    // Create message groups with threading support
+    // Create message groups (simplified - no thread grouping)
     final List<MessageGroupData> messageGroups = [];
-    final Map<String, MessageGroupData> messageGroupsById = {};
 
-    // First pass: create groups for all messages
     for (final message in messageDataList) {
-      messageGroupsById[message.id] = MessageGroupData(
+      // Each message is its own group with no replies
+      messageGroups.add(MessageGroupData(
         parentMessage: message,
         replies: [],
-      );
-    }
-
-    // Second pass: organize into threads
-    for (final message in messageDataList) {
-      if (message.replyTo != null) {
-        // This is a reply - add it to the parent message's group
-        final parentGroup = messageGroupsById[message.replyTo];
-        if (parentGroup != null) {
-          parentGroup.replies.add(message);
-        } else {
-          // Parent not found, treat as standalone message
-          messageGroups.add(messageGroupsById[message.id]!);
-        }
-      } else {
-        // This is a root message
-        messageGroups.add(messageGroupsById[message.id]!);
-      }
-    }
-
-    // Sort replies within each group by timestamp
-    for (final group in messageGroups) {
-      group.replies.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      ));
     }
 
     // Sort messages by timestamp (oldest first for display)

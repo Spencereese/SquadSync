@@ -16,6 +16,9 @@ class GrokService {
   static const int _maxRetries = 3;
   static const int _baseDelayMs = 1000;
 
+  // Cache for smart replies (1 minute TTL)
+  final Map<String, _CachedReplies> _smartReplyCache = {};
+
   /// Check if a message is directed at Grok
   bool isMessageForGrok(String message) {
     final lowerMessage = message.toLowerCase().trim();
@@ -72,6 +75,47 @@ class GrokService {
     } catch (e) {
       _logger.e('Error calling backend Grok API: $e');
       return _getFallbackResponse(userMessage);
+    }
+  }
+
+  /// Get smart reply suggestions based on last 5 messages
+  Future<List<String>> getSmartReplies(List<String> lastFiveMessages) async {
+    if (lastFiveMessages.isEmpty) return [];
+
+    // Simple cache with 1 minute TTL
+    final cacheKey = lastFiveMessages.join('|');
+    final now = DateTime.now();
+    if (_smartReplyCache.containsKey(cacheKey)) {
+      final cached = _smartReplyCache[cacheKey]!;
+      if (now.difference(cached.timestamp).inMinutes < 1) {
+        return cached.replies;
+      }
+    }
+
+    try {
+      final response = await _callWithBackoff(() async {
+        final result = await http.post(
+          Uri.parse('$_backendUrl/smart-replies'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'messages': lastFiveMessages}),
+        );
+        return result;
+      });
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final replies = List<String>.from(data['replies'] ?? []);
+        // Cache the result
+        _smartReplyCache[cacheKey] = _CachedReplies(now, replies);
+        return replies.take(3).toList(); // Return max 3 replies
+      } else {
+        _logger.e(
+            'Smart replies API error: ${response.statusCode} - ${response.body}');
+        return _getFallbackSmartReplies(lastFiveMessages);
+      }
+    } catch (e) {
+      _logger.e('Error getting smart replies: $e');
+      return _getFallbackSmartReplies(lastFiveMessages);
     }
   }
 
@@ -171,4 +215,28 @@ class GrokService {
       return "I'm here for gaming strategy, squad management, and game recommendations. Ask away. My connection's temporarily disrupted.";
     }
   }
+
+  /// Fallback smart replies when API is unavailable
+  List<String> _getFallbackSmartReplies(List<String> lastFiveMessages) {
+    final lastMessage =
+        lastFiveMessages.isNotEmpty ? lastFiveMessages.last.toLowerCase() : '';
+
+    if (lastMessage.contains('ready') || lastMessage.contains('in')) {
+      return ['Sounds good!', 'Count me in!', 'Let\'s do this!'];
+    } else if (lastMessage.contains('game') || lastMessage.contains('play')) {
+      return ['What game?', 'I\'m down!', 'Let\'s play!'];
+    } else if (lastMessage.contains('?')) {
+      return ['Good question!', 'I\'m not sure', 'Ask Grok!'];
+    } else {
+      return ['Nice!', 'Agreed!', 'LOL'];
+    }
+  }
+}
+
+/// Cached smart replies with timestamp
+class _CachedReplies {
+  final DateTime timestamp;
+  final List<String> replies;
+
+  _CachedReplies(this.timestamp, this.replies);
 }

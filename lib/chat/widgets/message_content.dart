@@ -20,6 +20,7 @@ class MessageContent extends StatelessWidget {
   final String? chatGroupId;
   final ChatService? chatService;
   final ChatType? chatType;
+  final String? squadId;
 
   const MessageContent({
     super.key,
@@ -29,6 +30,7 @@ class MessageContent extends StatelessWidget {
     this.chatGroupId,
     this.chatService,
     this.chatType,
+    this.squadId,
   });
 
   @override
@@ -53,7 +55,7 @@ class MessageContent extends StatelessWidget {
         if (message.replyTo?.isNotEmpty == true)
           FutureBuilder<MessageData?>(
             future: chatService?.getMessageById(message.replyTo!,
-                chatGroupId: chatGroupId),
+                chatGroupId: chatGroupId, chatType: chatType, squadId: squadId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return Container(
@@ -117,18 +119,17 @@ class MessageContent extends StatelessWidget {
                 child: MessageBubble(
                   message: repliedMessage,
                   isMe: isRepliedMessageFromMe,
-                  showSender: !isRepliedMessageFromMe,
+                  showSender: false,
                   showAvatar: !isRepliedMessageFromMe,
-                  showTimestamp: true,
+                  showTimestamp: false,
                   showReadIndicator: false,
-                  onTap: () {
-                    // TODO: Implement scroll to message
-                  },
+                  isFirstInGroup: true,
+                  isLastInGroup: true,
+                  onTap: () {},
                   onLongPress: () {},
-                  sendingStatus: const {}, // Not applicable for quoted messages
-                  chatGroupId: chatGroupId,
-                  chatType: ChatType.squad, // Default to squad
-                  chatService: chatService,
+                  sendingStatus: const {},
+                  chatType: chatType ?? ChatType.squad,
+                  squadId: squadId,
                 ),
               );
             },

@@ -12,12 +12,12 @@ import 'package:squad_sync/chat/sqlite_helper.dart';
 import 'package:squad_sync/services/firestore_service_refactored.dart';
 
 // Generate mocks
-@GenerateMocks([
-  GrokService,
-  NotificationManager,
-  SQLiteHelper,
-])
-import 'firestore_service_refactored_simple_test.mocks.dart';
+// @GenerateMocks([
+//   GrokService,
+//   NotificationManager,
+//   SQLiteHelper,
+// ])
+// import 'firestore_service_refactored_simple_test.mocks.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -96,13 +96,17 @@ void main() {
           .thenAnswer((_) async => []);
       when(mockSQLiteHelper.getCacheMetadata(any))
           .thenAnswer((_) async => null);
-      when(mockSQLiteHelper.cacheGroups(any, any, any))
-          .thenAnswer((_) async {});
+      when(mockSQLiteHelper.cacheGroups(any, any, any)).thenAnswer((_) async {
+        return null;
+      });
       when(mockSQLiteHelper.insertCacheMetadata(any, any))
-          .thenAnswer((_) async {});
+          .thenAnswer((_) async {
+        return null;
+      });
     });
 
-    test('buildSuggestedGroupsStream returns groups for public filter', () async {
+    test('buildSuggestedGroupsStream returns groups for public filter',
+        () async {
       final filters = GroupQueryFilters(isPublic: true);
 
       final stream = queryBuilder.buildSuggestedGroupsStream(filters);
@@ -133,7 +137,8 @@ void main() {
       final results = await stream.first;
 
       expect(results, isNotEmpty);
-      expect(results.every((group) => (group['memberCount'] as int) >= 9), true);
+      expect(
+          results.every((group) => (group['memberCount'] as int) >= 9), true);
     });
 
     test('buildSuggestedGroupsStream limits results to pageSize', () async {
@@ -157,7 +162,8 @@ void main() {
       expect(results.length, equals(20));
     });
 
-    test('buildSuggestedGroupsStream orders by memberCount descending', () async {
+    test('buildSuggestedGroupsStream orders by memberCount descending',
+        () async {
       final filters = GroupQueryFilters(isPublic: true);
       final stream = queryBuilder.buildSuggestedGroupsStream(filters);
       final results = await stream.first;
@@ -165,7 +171,8 @@ void main() {
       // Check that results are ordered by memberCount descending
       for (int i = 1; i < results.length; i++) {
         expect(
-          (results[i - 1]['memberCount'] as int) >= (results[i]['memberCount'] as int),
+          (results[i - 1]['memberCount'] as int) >=
+              (results[i]['memberCount'] as int),
           true,
         );
       }
@@ -180,10 +187,9 @@ void main() {
 
       when(mockSQLiteHelper.getCachedGroups(any, any))
           .thenAnswer((_) async => cachedGroups);
-      when(mockSQLiteHelper.getCacheMetadata(any))
-          .thenAnswer((_) async => {
-                'cached_at': DateTime.now().millisecondsSinceEpoch,
-              });
+      when(mockSQLiteHelper.getCacheMetadata(any)).thenAnswer((_) async => {
+            'cached_at': DateTime.now().millisecondsSinceEpoch,
+          });
 
       final filters = GroupQueryFilters(isPublic: true);
       final stream = queryBuilder.buildSuggestedGroupsStream(filters);
@@ -353,7 +359,8 @@ void main() {
       // Results should be ordered by memberCount descending
       for (int i = 1; i < results.length; i++) {
         expect(
-          (results[i - 1]['memberCount'] as int) >= (results[i]['memberCount'] as int),
+          (results[i - 1]['memberCount'] as int) >=
+              (results[i]['memberCount'] as int),
           true,
         );
       }

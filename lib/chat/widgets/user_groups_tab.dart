@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as p;
 import '../chat_screen.dart';
-import '../../squad_state_notifier.dart';
+import '../chat_state.dart';
+import '../../presentation/notifiers/chat_notifier.dart' as cn;
 import '../../domain/entities/message.dart';
+import '../dialogs/group_actions_dialog.dart';
 
 class UserGroupsTab extends ConsumerWidget {
   final VoidCallback onTapDM;
@@ -28,7 +30,7 @@ class UserGroupsTab extends ConsumerWidget {
   }
 
   void _showLeaveGroupDialog(
-      BuildContext context, String groupId, String groupName) {
+      BuildContext context, String groupId, String groupName, WidgetRef ref) {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -54,9 +56,9 @@ class UserGroupsTab extends ConsumerWidget {
               onPressed: () async {
                 Navigator.of(dialogContext).pop(); // Close dialog first
                 try {
-                  final squadState =
-                      p.Provider.of<SquadState>(context, listen: false);
-                  await squadState.leaveChatGroup(groupId);
+                  await ref
+                      .read(cn.chatNotifierProvider.notifier)
+                      .leaveGroup(groupId);
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -184,125 +186,187 @@ class UserGroupsTab extends ConsumerWidget {
           return bTime.compareTo(aTime); // Descending order
         });
 
-        return Container(
-          color: Colors.black,
-          child: ListView.separated(
+        // If no groups, show empty state
+        if (groups.isEmpty) {
+          return ListView(
             padding: EdgeInsets.zero,
-            itemCount: groups.length + 1, // +1 for DM card
-            separatorBuilder: (context, index) => const Divider(
-              color: Colors.grey,
-              height: 0.5,
-              indent: 72,
-              thickness: 0.5,
-            ),
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                // DM card
-                return _buildDMCard(context, 0);
-              }
-
-              final groupIndex = index - 1;
-              final group = groups[groupIndex];
-              final groupData = group.data() as Map<String, dynamic>;
-              final groupName = groupData['name'] ?? 'Unnamed Group';
-              final lastMessage = groupData['lastMessage'] ?? '';
-              final lastMessageTime =
-                  groupData['lastMessageTime'] as Timestamp?;
-              final memberCount = groupData['memberCount'] ?? 0;
-              final isPublic = groupData['isPublic'] ?? false;
-              final imageUrl = groupData['imageUrl'];
-
-              return ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+            children: [
+              _buildDMCard(context, 0),
+              const SizedBox(height: 40),
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.group_add,
+                      size: 64,
+                      color: Colors.grey[600],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No groups yet',
+                      style: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Create a group or join an existing one\nto start chatting!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        // Open group actions dialog
+                        showDialog(
+                          context: context,
+                          builder: (context) => const GroupActionsDialog(),
+                        );
+                      },
+                      icon: const Icon(Icons.add, color: Colors.black),
+                      label: const Text(
+                        'Create or Join Group',
+                        style: TextStyle(color: Colors.black),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.cyanAccent,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                leading: CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Colors.grey[800],
-                  backgroundImage:
-                      imageUrl != null ? NetworkImage(imageUrl) : null,
-                  child: imageUrl == null
-                      ? Icon(
-                          isPublic ? Icons.public : Icons.group,
-                          color: Colors.cyanAccent,
-                          size: 24,
-                        )
-                      : null,
-                ),
-                title: Row(
+              ),
+            ],
+          );
+        }
+
+        return ListView.separated(
+          padding: EdgeInsets.zero,
+          itemCount: groups.length + 1, // +1 for DM card
+          separatorBuilder: (context, index) => const Divider(
+            color: Colors.grey,
+            height: 0.5,
+            indent: 72,
+            thickness: 0.5,
+          ),
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              // DM card
+              return _buildDMCard(context, 0);
+            }
+
+            final groupIndex = index - 1;
+            final group = groups[groupIndex];
+            final groupData = group.data() as Map<String, dynamic>;
+            final groupName = groupData['name'] ?? 'Unnamed Group';
+            final lastMessage = groupData['lastMessage'] ?? '';
+            final lastMessageTime = groupData['lastMessageTime'] as Timestamp?;
+            final memberCount = groupData['memberCount'] ?? 0;
+            final isPublic = groupData['isPublic'] ?? false;
+            final imageUrl = groupData['imageUrl'];
+
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              leading: CircleAvatar(
+                radius: 28,
+                backgroundColor: Colors.grey[800],
+                backgroundImage:
+                    imageUrl != null ? NetworkImage(imageUrl) : null,
+                child: imageUrl == null
+                    ? Icon(
+                        isPublic ? Icons.public : Icons.group,
+                        color: Colors.cyanAccent,
+                        size: 24,
+                      )
+                    : null,
+              ),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      groupName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (lastMessageTime != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        _formatTime(lastMessageTime.toDate()),
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
                   children: [
                     Expanded(
                       child: Text(
-                        groupName,
+                        lastMessage.isNotEmpty
+                            ? lastMessage
+                            : '$memberCount members',
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
+                          color: Colors.grey,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (lastMessageTime != null) ...[
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Text(
-                          _formatTime(lastMessageTime.toDate()),
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          lastMessage.isNotEmpty
-                              ? lastMessage
-                              : '$memberCount members',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w400,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                onTap: () {
-                  // Navigate to chat screen for this group
-                  debugPrint(
-                      'DEBUG UserGroupsTab: Tapping on user group ${group.id}');
-                  if (group.id.isNotEmpty) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => ChatScreen(
+              ),
+              onTap: () {
+                // Navigate to chat screen for this group
+                debugPrint(
+                    'DEBUG UserGroupsTab: Tapping on user group ${group.id}');
+                if (group.id.isNotEmpty) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => p.ChangeNotifierProvider<ChatState>(
+                        create: (_) => ChatState(),
+                        child: ChatScreen(
                           chatType: ChatType.userGroup,
                           chatGroupId: group.id,
                           chatGroupName: groupName,
                         ),
                       ),
-                    );
-                  }
-                },
-                onLongPress: () {
-                  // Show leave group confirmation dialog
-                  _showLeaveGroupDialog(context, group.id, groupName);
-                },
-              );
-            },
-          ),
+                    ),
+                  );
+                }
+              },
+              onLongPress: () {
+                // Show leave group confirmation dialog
+                _showLeaveGroupDialog(context, group.id, groupName, ref);
+              },
+            );
+          },
         );
       },
     );

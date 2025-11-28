@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async'; // Added for StreamSubscription
 
 import '../utils.dart';
-import '../providers.dart';
+import '../presentation/notifiers/chat_notifier.dart';
 
 import 'chat_input_bar.dart';
 import 'peacock_modal.dart';
@@ -212,12 +212,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       );
 
       // Load messages using the new ChatNotifier
-      ref
-          .read(cn.chatNotifierProvider.notifier)
-          .selectChatGroup(widget.chatGroupId);
-      ref.read(cn.chatNotifierProvider.notifier).loadMessages(
-            widget.chatGroupId!,
-          );
+      if (widget.chatGroupId != null) {
+        ref
+            .read(cn.chatNotifierProvider.notifier)
+            .initializeMessagesStream(widget.chatGroupId!, widget.chatType);
+      }
     });
 
     // Initialize scroll controller with callbacks
@@ -354,6 +353,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       if (user == null) return;
 
       await ref.read(cn.chatNotifierProvider.notifier).sendMessage(
+            ref,
             widget.chatGroupId!,
             _messageController.text,
             msg.MessageType.text,
@@ -375,8 +375,15 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       await _checkFirstMessage();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Send failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send—retrying...'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _sendMessage(replyToMessage, squadState),
+            ),
+          ),
+        );
       }
     }
   }
@@ -911,6 +918,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             top: true,
             bottom: false,
             child: Scaffold(
+              resizeToAvoidBottomInset: false,
               body: _buildChatContent(context, squadState, chatState),
             ),
           );
@@ -946,10 +954,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Use the passed chatStateData instead of Provider.of for Riverpod migration
     final chatState = chatStateData;
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    final bottomPadding = keyboardHeight > 0 ? keyboardHeight : 16.0;
-    return MediaQuery.removePadding(
-      context: context,
-      removeBottom: keyboardHeight > 0,
+    final isKeyboardVisible = keyboardHeight > 0;
+
+    return AnimatedPadding(
+      padding: EdgeInsets.only(bottom: keyboardHeight),
+      duration: const Duration(milliseconds: 250), // Smooth animation
+      curve: Curves.easeOut,
       child: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -960,208 +970,192 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           ),
         ),
         child: GestureDetector(
-          onTap: () => FocusScope.of(context)
-              .unfocus(), // Dismiss keyboard when tapping chat area
-          child: Stack(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Column(
             children: [
-              Column(
-                children: [
-                  _uiManager
-                      .buildChatHeader(
+              _uiManager
+                  .buildChatHeader(
+                    context: context,
+                    chatGroupId: widget.chatGroupId,
+                    onBackPressed: () => Navigator.pop(context),
+                    onToggleNotifications: _toggleNotifications,
+                    onViewGroupInfo: () => _viewGroupInfo(squadStateData),
+                    onReportBug: _reportBug,
+                    onLeaveGroup: _leaveGroup,
+                    onInviteMembers: _inviteMembers,
+                    onChangeChatName: () async {
+                      ChatSettingsMenu.showChangeChatNameDialog(
                         context: context,
-                        chatGroupId: widget.chatGroupId,
-                        onBackPressed: () => Navigator.pop(context),
-                        onToggleNotifications: _toggleNotifications,
-                        onViewGroupInfo: () => _viewGroupInfo(squadStateData),
-                        onReportBug: _reportBug,
-                        onLeaveGroup: _leaveGroup,
-                        onInviteMembers: _inviteMembers,
-                        onChangeChatName: () async {
-                          ChatSettingsMenu.showChangeChatNameDialog(
-                            context: context,
-                            currentName: _chatName,
-                            onSave: (newName) async {
-                              if (widget.chatGroupId != null) {
-                                try {
-                                  // User group: update in users/{uid}/chat_groups/{groupId}
-                                  final currentUser =
-                                      FirebaseAuth.instance.currentUser;
-                                  if (currentUser == null) return;
+                        currentName: _chatName,
+                        onSave: (newName) async {
+                          if (widget.chatGroupId != null) {
+                            try {
+                              // User group: update in users/{uid}/chat_groups/{groupId}
+                              final currentUser =
+                                  FirebaseAuth.instance.currentUser;
+                              if (currentUser == null) return;
 
-                                  final groupRef = FirebaseFirestore.instance
-                                      .collection('users')
-                                      .doc(currentUser.uid)
-                                      .collection('chat_groups')
-                                      .doc(widget.chatGroupId!);
+                              final groupRef = FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(currentUser.uid)
+                                  .collection('chat_groups')
+                                  .doc(widget.chatGroupId!);
 
-                                  // Update the chat group name in Firestore
-                                  await groupRef.set({
-                                    'name': newName,
-                                    'timestamp': FieldValue.serverTimestamp(),
-                                  }, SetOptions(merge: true));
+                              // Update the chat group name in Firestore
+                              await groupRef.set({
+                                'name': newName,
+                                'timestamp': FieldValue.serverTimestamp(),
+                              }, SetOptions(merge: true));
 
-                                  // Update local state
-                                  if (mounted) {
-                                    setState(() => _chatName = newName);
-                                  }
-                                  // Update UI manager
-                                  _uiManager.chatName = newName;
-
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                            'Chat name updated successfully'),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  debugPrint('Error updating chat name: $e');
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                            'Failed to update chat name: $e'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                }
+                              // Update local state
+                              if (mounted) {
+                                setState(() => _chatName = newName);
                               }
-                            },
-                          );
+                              // Update UI manager
+                              _uiManager.chatName = newName;
+
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content:
+                                        Text('Chat name updated successfully'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              debugPrint('Error updating chat name: $e');
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content:
+                                        Text('Failed to update chat name: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          }
                         },
-                        onChangeChatImage: () async {
-                          await _mediaHandler.changeChatImage(
-                            context,
+                      );
+                    },
+                    onChangeChatImage: () async {
+                      await _mediaHandler.changeChatImage(
+                        context,
+                        chatGroupId: widget.chatGroupId,
+                        onImageUpdated: (url) => mounted
+                            ? setState(() => _chatImageUrl = url)
+                            : null,
+                      );
+                    },
+                    onClearChat: () async {
+                      // This will be implemented when we integrate with ChatSettingsMenu
+                    },
+                    onQuickReactionPicker: () {
+                      // This will be implemented when we integrate with ChatSettingsMenu
+                    },
+                    onViewMediaGallery: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => MediaHistoryScreen(
                             chatGroupId: widget.chatGroupId,
-                            onImageUpdated: (url) => mounted
-                                ? setState(() => _chatImageUrl = url)
-                                : null,
-                          );
-                        },
-                        onClearChat: () async {
-                          // This will be implemented when we integrate with ChatSettingsMenu
-                        },
-                        onQuickReactionPicker: () {
-                          // This will be implemented when we integrate with ChatSettingsMenu
-                        },
-                        onViewMediaGallery: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => MediaHistoryScreen(
-                                chatGroupId: widget.chatGroupId,
-                                chatType: widget.chatType,
-                              ),
-                            ),
-                          );
-                        },
-                      )
-                      .animate()
-                      .fadeIn(),
-                  // Active Squad Header Card
-                  _uiManager.buildActiveSquadHeader(context,
-                      chatGroupId: widget.chatGroupId),
-                  // Available Squads Widget
-                  // const AvailableSquadsWidget(), // Removed - keeping only "Your Active Squad" widget
-                  Expanded(
-                    child: _uiManager.buildMessagesList(
-                      ref: ref,
-                      chatGroupId: widget.chatGroupId,
-                      chatType: widget.chatType,
-                      scrollController: _scrollControllerService,
-                      onMessageLongPress: () {}, // Will be implemented
-                      onMessageTap: () {}, // Will be implemented
-                      getSender: _getSender,
-                      getTimestampMs: _getTimestampMs,
-                      cleanText: _cleanText,
-                      markAsDelivered:
-                          ref.read(chatServiceProvider).markAsDelivered,
-                    ),
-                  ),
-                ],
-              ),
-              ...(chatState.replyToMessage != null
-                  ? [
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: GestureDetector(
-                          onTap: () => ref
-                              .read(cn.chatNotifierProvider.notifier)
-                              .clearReplyToMessage(),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 3.0, sigmaY: 3.0),
-                            child: Container(
-                              color: Colors.black.withValues(alpha: 0.2),
-                            ),
+                            chatType: widget.chatType,
                           ),
                         ),
-                      ),
-                    ]
-                  : []),
-              // Input bar positioned at bottom
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Semantics(
-                  label: 'Chat input bar',
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      bottom: bottomPadding,
-                      left: 8.0,
-                      right: 8.0,
-                    ),
-                    child: ChatInputBar(
-                      controller: _messageController,
-                      focusNode: _inputFocusNode,
-                      isRecording: chatState.isRecording,
-                      isUploading: chatState.isUploading,
-                      onSend: () => _sendMessage(
-                          chatState.replyToMessage, squadStateData),
-                      onMedia: _sendMedia,
-                      onRecordStart: _startRecording,
-                      onRecordStop: _stopRecording,
-                      onPlusMenu: () => _showPlusMenu(context),
-                      onTextChanged: (value) {
-                        _typingManager.onTextChanged(
-                          value,
-                          ref,
+                      );
+                    },
+                  )
+                  .animate()
+                  .fadeIn(),
+              // Active Squad Header Card
+              _uiManager.buildActiveSquadHeader(context,
+                  chatGroupId: widget.chatGroupId),
+              // Messages List
+              Expanded(
+                child: ref.watch(cn.chatNotifierProvider).when(
+                      data: (chatStateData) {
+                        final messages =
+                            chatStateData.chatMessages[widget.chatGroupId] ??
+                                [];
+                        return _uiManager.buildMessagesList(
+                          ref: ref,
                           chatGroupId: widget.chatGroupId,
+                          chatType: widget.chatType,
+                          scrollController: _scrollControllerService,
+                          messages: messages,
+                          onMessageLongPress: () {}, // Will be implemented
+                          onMessageTap: () {}, // Will be implemented
+                          getSender: _getSender,
+                          getTimestampMs: _getTimestampMs,
+                          cleanText: _cleanText,
+                          markAsDelivered: ref
+                              .read(chatNotifierProvider.notifier)
+                              .markAsDelivered,
                         );
                       },
-                      quickReactionEmoji: chatState.quickReactionEmoji,
-                      hintText: chatState.replyToMessage != null
-                          ? 'Reply'
-                          : 'Message',
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (error, stack) =>
+                          Center(child: Text('Error loading messages: $error')),
+                    ),
+              ),
+              // Input Bar Area with SingleChildScrollView
+              SingleChildScrollView(
+                physics: const NeverScrollableScrollPhysics(),
+                child: AnimatedOpacity(
+                  opacity: isKeyboardVisible ? 1.0 : 0.9,
+                  duration: const Duration(milliseconds: 200),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Reply preview if exists
+                        if (chatState.replyToMessage != null)
+                          _uiManager.buildReplyPreview(
+                            context,
+                            chatState,
+                            squadStateData,
+                            widget.chatType,
+                            () => ref
+                                .read(cn.chatNotifierProvider.notifier)
+                                .clearReplyToMessage(),
+                          ),
+                        // Input bar
+                        Semantics(
+                          label: 'Chat input bar',
+                          child: ChatInputBar(
+                            controller: _messageController,
+                            focusNode: _inputFocusNode,
+                            isRecording: chatState.isRecording,
+                            isUploading: chatState.isUploading,
+                            onSend: () => _sendMessage(
+                                chatState.replyToMessage, squadStateData),
+                            onMedia: _sendMedia,
+                            onRecordStart: _startRecording,
+                            onRecordStop: _stopRecording,
+                            onPlusMenu: () => _showPlusMenu(context),
+                            onTextChanged: (value) {
+                              _typingManager.onTextChanged(
+                                value,
+                                ref,
+                                chatGroupId: widget.chatGroupId,
+                              );
+                            },
+                            quickReactionEmoji: chatState.quickReactionEmoji,
+                            hintText: chatState.replyToMessage != null
+                                ? 'Reply'
+                                : 'Message',
+                          ),
+                        ),
+                        // Add some bottom padding when keyboard is visible
+                        SizedBox(height: isKeyboardVisible ? 8.0 : 8.0),
+                      ],
                     ),
                   ),
                 ),
               ),
-              // Reply preview positioned above input bar
-              ...(chatState.replyToMessage != null
-                  ? [
-                      Positioned(
-                        bottom: 80, // Position above input bar
-                        left: 0,
-                        right: 0,
-                        child: _uiManager.buildReplyPreview(
-                          context,
-                          chatState,
-                          squadStateData,
-                          widget.chatType,
-                          () => ref
-                              .read(cn.chatNotifierProvider.notifier)
-                              .clearReplyToMessage(),
-                        ),
-                      ),
-                    ]
-                  : []),
             ],
           ),
         ),

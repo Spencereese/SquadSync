@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:provider/provider.dart' as p;
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
-import '../chat/chat_state.dart';
-import '../chat/chat_groups_screen.dart';
-import 'package:flutter/services.dart';
+import 'package:confetti/confetti.dart';
+import 'package:share_plus/share_plus.dart';
 import 'presentation/notifiers/user_notifier.dart';
 import 'presentation/notifiers/squad_notifier.dart' as sn;
+import 'presentation/notifiers/game_notifier.dart';
+import 'screens/add_game_screen.dart';
+import 'screens/squad_tab_screen.dart';
+import 'screens/profile_editing_screen.dart';
+import 'screens/availability_settings_screen.dart';
+import 'screens/performance_stats_screen.dart';
 import 'domain/entities/squad_state.dart';
+import 'domain/entities/app_user.dart';
 
 class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
@@ -22,1086 +24,1316 @@ class ProfileTab extends ConsumerStatefulWidget {
 
 class _ProfileTabState extends ConsumerState<ProfileTab>
     with SingleTickerProviderStateMixin {
-  late TextEditingController _nameController;
-  late TextEditingController _feedbackController;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  bool _isDarkTheme = true;
-  bool _notificationsEnabled = true;
-  bool _soundsEnabled = true;
-  bool _tiltEnabled = true; // New tilt toggle
-  // Privacy settings
-  bool _onlineStatusVisible = true;
-  late TextEditingController _blockUserController;
-  // Friends section
-  late TextEditingController _searchController;
+  late AnimationController _glowController;
+  final ScrollController _scrollController = ScrollController();
+  late ConfettiController _confettiController;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController();
-    _feedbackController = TextEditingController();
-    _blockUserController = TextEditingController();
-    _searchController = TextEditingController();
-    _animationController = AnimationController(
+    _glowController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _fadeAnimation =
-        Tween<double>(begin: 0.0, end: 1.0).animate(_animationController);
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!context.mounted) return;
-    setState(() {
-      _isDarkTheme = prefs.getBool('isDarkTheme') ?? true;
-      _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
-      _soundsEnabled = prefs.getBool('soundsEnabled') ?? true;
-      _tiltEnabled = prefs.getBool('tiltEnabled') ?? true; // Load tilt setting
-      // Load privacy settings
-      _onlineStatusVisible = prefs.getBool('onlineStatusVisible') ?? true;
-    });
-    ref
-        .read(sn.squadNotifierProvider.notifier)
-        .updateTiltEnabled(_tiltEnabled); // Sync with SquadState
-    _animationController.forward();
-  }
-
-  Future<void> _saveSettings(String key, dynamic value) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (value is bool) {
-      await prefs.setBool(key, value);
-      if (key == 'tiltEnabled') {
-        ref
-            .read(sn.squadNotifierProvider.notifier)
-            .updateTiltEnabled(value); // Update SquadState
-      }
-    }
-    if (value is String?) await prefs.setString(key, value ?? '');
-  }
-
-  Future<void> _updateProfilePicture() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile == null || !context.mounted) return;
-    File imageFile = File(pickedFile.path);
-    String uid = FirebaseAuth.instance.currentUser!.uid;
-    Reference storageRef =
-        FirebaseStorage.instance.ref().child('profile_pics/$uid.jpg');
-    await storageRef.putFile(imageFile);
-    String downloadUrl = await storageRef.getDownloadURL();
-    // Update both local state and persist to Firebase
-    ref.read(sn.squadNotifierProvider.notifier).updateProfileImage(downloadUrl);
-    await ref
-        .read(userNotifierProvider.notifier)
-        .updateProfileImage(downloadUrl);
-    await _saveSettings('profileImageUrl', downloadUrl);
-
-    if (!context.mounted) return;
-    // ignore: use_build_context_synchronously
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile picture updated!')),
-    );
-  }
-
-  Future<void> _updateDisplayName() async {
-    if (_nameController.text.isNotEmpty && context.mounted) {
-      try {
-        // Update both local state and persist to Firebase
-        ref
-            .read(sn.squadNotifierProvider.notifier)
-            .updateDisplayName(_nameController.text);
-        await ref
-            .read(userNotifierProvider.notifier)
-            .updateDisplayName(_nameController.text);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Display name updated!')),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to update display name: $e')),
-          );
-        }
-      }
-    }
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 2));
   }
 
   @override
-  Widget build(BuildContext context) {
+  void dispose() {
+    _glowController.dispose();
+    _scrollController.dispose();
+    _confettiController.dispose();
+    super.dispose();
+  }
+
+  String _getStatusText() {
     final squadAsync = ref.watch(sn.squadNotifierProvider);
 
-    return squadAsync.when(
-      data: (squadState) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Profile'),
-          elevation: 0,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () => _showSettingsSheet(context),
-              tooltip: 'Settings',
-            ),
-          ],
-        ),
-        body: FadeTransition(
-          opacity: _fadeAnimation,
-          child: ListView(
-            padding: const EdgeInsets.all(16.0),
-            children: [
-              _buildProfileCard(squadState),
-              const SizedBox(height: 24),
-              _buildFriendsSection(),
-              const SizedBox(height: 24),
-              _buildPendingRequestsSection(),
-            ],
-          ),
-        ),
-      ),
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, stack) => Scaffold(
-        body: Center(child: Text('Error: $error')),
-      ),
+    return squadAsync.maybeWhen(
+      data: (squadState) {
+        // Check if in squad and playing a game
+        if (squadState.selectedSquadId != null &&
+            squadState.currentGame != null) {
+          final gameName = squadState.currentGame!['name'] ?? 'Game';
+          return 'Playing $gameName';
+        }
+
+        // Check if in peacock queue
+        if (squadState.peacockQueue.isNotEmpty) {
+          final gameName = squadState.currentGame?['name'] ?? 'Game';
+          return 'Looking for Squad · $gameName';
+        }
+
+        // Check if has active timers
+        if (squadState.spotTimerStates.isNotEmpty ||
+            squadState.peacockTimerStates.isNotEmpty) {
+          return 'Active in Squad';
+        }
+
+        // Default status
+        return 'Online';
+      },
+      orElse: () => 'Loading...',
     );
   }
 
-  void _showSettingsSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.9,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: Colors.grey, width: 0.5),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Settings',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              // Settings content
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    _buildSectionHeader('Appearance'),
-                    SwitchListTile(
-                      activeThumbColor: Colors.cyan,
-                      title: const Text('Dark Theme',
-                          style: TextStyle(color: Colors.white)),
-                      value: _isDarkTheme,
-                      onChanged: (value) {
-                        setState(() => _isDarkTheme = value);
-                        _saveSettings('isDarkTheme', value);
-                      },
-                      secondary:
-                          const Icon(Icons.brightness_6, color: Colors.cyan),
-                    ),
-                    SwitchListTile(
-                      activeThumbColor: Colors.cyan,
-                      title: const Text('Enable Tab Tilt',
-                          style: TextStyle(color: Colors.white)),
-                      value: _tiltEnabled,
-                      onChanged: (value) {
-                        setState(() => _tiltEnabled = value);
-                        _saveSettings('tiltEnabled', value);
-                      },
-                      secondary:
-                          const Icon(Icons.threed_rotation, color: Colors.cyan),
-                    ),
-                    _buildSectionHeader('Notifications'),
-                    SwitchListTile(
-                      activeThumbColor: Colors.cyan,
-                      title: const Text('Push Notifications',
-                          style: TextStyle(color: Colors.white)),
-                      value: _notificationsEnabled,
-                      onChanged: (value) {
-                        setState(() => _notificationsEnabled = value);
-                        _saveSettings('notificationsEnabled', value);
-                      },
-                      secondary:
-                          const Icon(Icons.notifications, color: Colors.cyan),
-                    ),
-                    SwitchListTile(
-                      activeThumbColor: Colors.cyan,
-                      title: const Text('Sound Effects',
-                          style: TextStyle(color: Colors.white)),
-                      value: _soundsEnabled,
-                      onChanged: (value) {
-                        setState(() => _soundsEnabled = value);
-                        _saveSettings('soundsEnabled', value);
-                      },
-                      secondary:
-                          const Icon(Icons.volume_up, color: Colors.cyan),
-                    ),
-                    SwitchListTile(
-                      activeThumbColor: Colors.cyan,
-                      title: const Text('Show Online Status',
-                          style: TextStyle(color: Colors.white)),
-                      value: _onlineStatusVisible,
-                      onChanged: (value) {
-                        setState(() => _onlineStatusVisible = value);
-                        _saveSettings('onlineStatusVisible', value);
-                      },
-                      secondary:
-                          const Icon(Icons.access_time, color: Colors.cyan),
-                    ),
-                    _buildSectionHeader('Data & Privacy'),
-                    ListTile(
-                      leading: const Icon(Icons.storage, color: Colors.cyan),
-                      title: const Text('Clear Cache',
-                          style: TextStyle(color: Colors.white)),
-                      subtitle: const Text('Free up storage space',
-                          style: TextStyle(color: Colors.grey)),
-                      onTap: () => _clearCache(context),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.feedback, color: Colors.cyan),
-                      title: const Text('Send Feedback',
-                          style: TextStyle(color: Colors.white)),
-                      subtitle: const Text('Help us improve the app',
-                          style: TextStyle(color: Colors.grey)),
-                      onTap: () => _showFeedbackDialog(context),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.info, color: Colors.cyan),
-                      title: const Text('About',
-                          style: TextStyle(color: Colors.white)),
-                      subtitle: const Text('App version and info',
-                          style: TextStyle(color: Colors.grey)),
-                      onTap: () => _showAboutDialog(context),
-                    ),
-                    _buildSectionHeader('Account'),
-                    ListTile(
-                      leading:
-                          const Icon(Icons.logout, color: Colors.redAccent),
-                      title: const Text('Sign Out',
-                          style: TextStyle(color: Colors.white)),
-                      subtitle: const Text('Sign out of your account',
-                          style: TextStyle(color: Colors.grey)),
-                      onTap: () => _signOut(context),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildHeroHeader() {
+    final userAsync = ref.watch(userNotifierProvider);
+    final squadAsync = ref.watch(sn.squadNotifierProvider);
 
-  Widget _buildProfileCard(SquadState squadState) {
-    return Card(
-      color: Colors.grey[900],
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+    return SliverToBoxAdapter(
+      child: Container(
+        height: 400, // Increased height to accommodate content
+        child: Stack(
           children: [
-            const Text(
-              'Your Profile',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            // Animated gradient background
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.purple.shade900,
+                    Colors.blue.shade900,
+                    Colors.cyan.shade900,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
               ),
+            )
+                .animate(
+              onPlay: (controller) => controller.repeat(reverse: true),
+            )
+                .shimmer(
+              duration: 3000.ms,
+              colors: [
+                Colors.purple.shade900,
+                Colors.blue.shade800,
+                Colors.purple.shade900,
+              ],
             ),
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: _updateProfilePicture,
-              child: CircleAvatar(
-                radius: 40,
-                backgroundImage: squadState.profileImage != null
-                    ? NetworkImage(squadState.profileImage!)
-                    : null,
-                child: squadState.profileImage == null
-                    ? const Icon(Icons.person, size: 40, color: Colors.cyan)
-                    : null,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Tap to change profile picture',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.person, color: Colors.cyan),
-              title: const Text('Display Name',
-                  style: TextStyle(color: Colors.white)),
-              subtitle: Text(squadState.displayName,
-                  style: TextStyle(color: Colors.grey)),
-              trailing: const Icon(Icons.edit, color: Colors.cyan),
-              onTap: () {
-                _nameController.text = squadState.displayName;
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Edit Display Name'),
-                    content: TextField(
-                      controller: _nameController,
-                      decoration:
-                          const InputDecoration(hintText: 'Enter new name'),
+
+            // Content overlay
+            userAsync.maybeWhen(
+              data: (user) => squadAsync.maybeWhen(
+                data: (squadState) => SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Add some top spacing to push content down slightly
+                        const SizedBox(height: 20),
+                        // Avatar with glowing border
+                        AnimatedBuilder(
+                          animation: _glowController,
+                          builder: (context, child) {
+                            return Container(
+                              width: 120,
+                              height: 120,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.cyan.withValues(
+                                        alpha: _glowController.value * 0.8),
+                                    Colors.purple.withValues(
+                                        alpha: _glowController.value * 0.8),
+                                    Colors.pink.withValues(
+                                        alpha: _glowController.value * 0.8),
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.cyan.withValues(
+                                        alpha: _glowController.value * 0.6),
+                                    blurRadius: 20,
+                                    spreadRadius: 5,
+                                  ),
+                                ],
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
+                                child: CircleAvatar(
+                                  radius: 56,
+                                  backgroundImage: user?.profileImage != null
+                                      ? NetworkImage(user!.profileImage!)
+                                      : null,
+                                  backgroundColor: Colors.grey.shade800,
+                                  child: user?.profileImage == null
+                                      ? Icon(Icons.person,
+                                          size: 40, color: Colors.white70)
+                                      : null,
+                                ),
+                              ),
+                            );
+                          },
+                        ).animate().scale(
+                              duration: 600.ms,
+                              curve: Curves.elasticOut,
+                            ),
+
+                        const SizedBox(height: 16),
+
+                        // Display name
+                        Text(
+                          user?.displayName ?? 'Gamer',
+                          style: GoogleFonts.robotoMono(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ).animate().fadeIn(duration: 800.ms, delay: 200.ms),
+
+                        const SizedBox(height: 12),
+
+                        // Live status pill
+                        StreamBuilder(
+                          stream: Stream.periodic(const Duration(seconds: 1)),
+                          builder: (context, snapshot) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.cyan.withValues(alpha: 0.5),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.green,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  )
+                                      .animate(
+                                          onPlay: (controller) =>
+                                              controller.repeat())
+                                      .shimmer(duration: 1000.ms),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _getStatusText(),
+                                    style: GoogleFonts.robotoMono(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ).animate().slideY(
+                              begin: 0.5,
+                              duration: 600.ms,
+                              delay: 400.ms,
+                              curve: Curves.elasticOut,
+                            ),
+                      ],
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          await _updateDisplayName();
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                          }
-                        },
-                        child: const Text('Save'),
-                      ),
-                    ],
                   ),
-                );
-              },
+                ),
+                orElse: () => const Center(
+                  child: CircularProgressIndicator(color: Colors.cyan),
+                ),
+              ),
+              orElse: () => const Center(
+                child: CircularProgressIndicator(color: Colors.cyan),
+              ),
             ),
-            // Add Peacock status if active
-            // TODO: Add peacock status when selectedPeacockId is available
-            // if (squadState.selectedPeacockId != null)
-            //   ListTile(
-            //     leading: const Icon(Icons.flag, color: Colors.cyan),
-            //     title: const Text('Active Alert', style: TextStyle(color: Colors.white)),
-            //     subtitle: Text('Peacock: ${squadState.selectedPeacockId}', style: TextStyle(color: Colors.grey)),
-            //   ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildFriendsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Friends',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 8),
-        // Search bar
-        TextField(
-          controller: _searchController,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'Search friends...',
-            hintStyle: TextStyle(color: Colors.grey[400]),
-            filled: true,
-            fillColor: Colors.grey[800],
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            prefixIcon: const Icon(Icons.search, color: Colors.grey),
-          ),
-          onChanged: (value) {
-            setState(() {
-              // Trigger rebuild to show search results
-            });
-          },
-        ),
-        const SizedBox(height: 16),
-        // Friends list or search results
-        Consumer(
-          builder: (context, ref, child) {
-            final searchQuery = _searchController.text.trim();
+  Widget _buildStatsCards() {
+    final userAsync = ref.watch(userNotifierProvider);
+    final squadAsync = ref.watch(sn.squadNotifierProvider);
 
-            if (searchQuery.isNotEmpty) {
-              // Show search results
-              return FutureBuilder<List<Map<String, dynamic>>>(
-                future: ref
-                    .read(userNotifierProvider.notifier)
-                    .searchUsers(searchQuery),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                        child: CircularProgressIndicator(
-                            color: Colors.cyanAccent));
-                  }
-
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        'Error searching users: ${snapshot.error}',
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    );
-                  }
-
-                  final searchResults = snapshot.data ?? [];
-
-                  if (searchResults.isEmpty) {
-                    return Container(
-                      padding: const EdgeInsets.all(32),
-                      child: const Column(
-                        children: [
-                          Icon(Icons.search_off, size: 64, color: Colors.grey),
-                          SizedBox(height: 16),
-                          Text(
-                            'No users found',
-                            style: TextStyle(color: Colors.grey, fontSize: 16),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: searchResults.length,
-                    itemBuilder: (context, index) {
-                      final user = searchResults[index];
-                      return _buildUserSearchTile(context, user);
-                    },
-                  );
-                },
-              );
-            } else {
-              // Show friends list
-              return StreamBuilder<List<Map<String, dynamic>>>(
-                stream:
-                    ref.watch(userNotifierProvider.notifier).streamFriends(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                        child: CircularProgressIndicator(
-                            color: Colors.cyanAccent));
-                  }
-
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        'Error loading friends: ${snapshot.error}',
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    );
-                  }
-
-                  final friends = snapshot.data ?? [];
-
-                  if (friends.isEmpty) {
-                    return Container(
-                      padding: const EdgeInsets.all(32),
-                      child: const Column(
-                        children: [
-                          Icon(Icons.people, size: 64, color: Colors.grey),
-                          SizedBox(height: 16),
-                          Text(
-                            'No friends yet—add via DMs tab!',
-                            style: TextStyle(color: Colors.grey, fontSize: 16),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: friends.length,
-                    itemBuilder: (context, index) {
-                      final friend = friends[index];
-                      return _buildFriendTile(context, friend);
-                    },
-                  );
-                },
-              );
-            }
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildUserSearchTile(BuildContext context, Map<String, dynamic> user) {
-    final displayName = user['displayName'] ?? 'Unknown';
-    final profileImage = user['profileImage'];
-    final isOnline = user['isOnline'] ?? false;
-
-    return ListTile(
-      leading: Stack(
-        children: [
-          CircleAvatar(
-            backgroundImage:
-                profileImage != null ? NetworkImage(profileImage) : null,
-            child: profileImage == null
-                ? Text(
-                    displayName.isNotEmpty ? displayName[0].toUpperCase() : '?')
-                : null,
-          ),
-          if (isOnline)
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.black, width: 2),
-                ),
-              ),
-            ),
-        ],
-      ),
-      title: Text(displayName, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(
-        isOnline ? 'Online' : 'Offline',
-        style: TextStyle(color: isOnline ? Colors.green : Colors.grey),
-      ),
-      trailing: IconButton(
-        icon: const Icon(Icons.person_add, color: Colors.cyan),
-        onPressed: () => _sendFriendRequest(context, user['uid'], displayName),
-        tooltip: 'Add Friend',
-      ),
-    );
-  }
-
-  void _sendFriendRequest(
-      BuildContext context, String userId, String displayName) async {
-    try {
-      await ref.read(userNotifierProvider.notifier).sendFriendRequest(userId);
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
+    return SliverToBoxAdapter(
+      child: Container(
+        height: 140,
+        margin: const EdgeInsets.symmetric(vertical: 16),
+        child: userAsync.maybeWhen(
+          data: (user) => squadAsync.maybeWhen(
+            data: (squadState) => ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              physics: const BouncingScrollPhysics(),
               children: [
-                const Icon(
-                  Icons.person_add,
-                  color: Colors.white,
-                  size: 24,
+                _buildStatCard(
+                  title: 'Squads This Week',
+                  value: _calculateSquadsThisWeek(squadState),
+                  icon: Icons.group,
+                  color: Colors.purple,
+                  delay: 0,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'Friend Request Sent!',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Text(
-                        'Request sent to $displayName',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 230),
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
+                const SizedBox(width: 16),
+                _buildStatCard(
+                  title: 'Rating',
+                  value: _calculateAverageRating(user),
+                  icon: Icons.star,
+                  color: Colors.amber,
+                  delay: 100,
+                  showProgress: true,
+                ),
+                const SizedBox(width: 16),
+                _buildStatCard(
+                  title: 'Turkey Count',
+                  value: _calculateTurkeyCount(user),
+                  icon: Icons.restaurant,
+                  color: Colors.orange,
+                  delay: 200,
+                ),
+                const SizedBox(width: 16),
+                _buildStatCard(
+                  title: 'Hours Played',
+                  value: _calculateHoursPlayedThisMonth(user),
+                  icon: Icons.schedule,
+                  color: Colors.cyan,
+                  delay: 300,
                 ),
               ],
             ),
-            backgroundColor: Colors.green.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: const EdgeInsets.all(16),
-            duration: const Duration(seconds: 3),
-            action: SnackBarAction(
-              label: 'UNDO',
-              textColor: Colors.white,
-              onPressed: () {
-                // TODO: Implement undo functionality if needed
-              },
-            ),
+            orElse: () => const SizedBox.shrink(),
           ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: Colors.white,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'Failed to Send Request',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Text(
-                        'Could not send request to $displayName',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 230),
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: const EdgeInsets.all(16),
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-    }
-  }
-
-  Widget _buildFriendTile(BuildContext context, Map<String, dynamic> friend) {
-    final displayName = friend['displayName'] ?? 'Unknown';
-    final isOnline = friend['isOnline'] ?? false;
-    final profileImage = friend['profileImage'];
-
-    return ListTile(
-      leading: Stack(
-        children: [
-          CircleAvatar(
-            backgroundImage:
-                profileImage != null ? NetworkImage(profileImage) : null,
-            child: profileImage == null
-                ? Text(
-                    displayName.isNotEmpty ? displayName[0].toUpperCase() : '?')
-                : null,
-          ),
-          if (isOnline)
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.black, width: 2),
-                ),
-              ),
-            ),
-        ],
-      ),
-      title: Text(displayName, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(
-        isOnline ? 'Online' : 'Offline',
-        style: TextStyle(color: isOnline ? Colors.green : Colors.grey),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.message, color: Colors.cyan),
-            onPressed: () => _startDMWithFriend(context, friend['uid']),
-            tooltip: 'DM',
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Colors.cyan),
-            onPressed: () => _sendAlertToFriend(context, friend['uid']),
-            tooltip: 'Alert',
-          ),
-          IconButton(
-            icon: const Icon(Icons.person_remove, color: Colors.red),
-            onPressed: () => _removeFriend(context, friend['uid']),
-            tooltip: 'Remove',
-          ),
-        ],
+          orElse: () => const SizedBox.shrink(),
+        ),
       ),
     );
   }
 
-  Widget _buildPendingRequestsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Pending Requests',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required int delay,
+    bool showProgress = false,
+  }) {
+    return Container(
+      width: 140,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withValues(alpha: 0.3),
+          width: 1,
         ),
-        const SizedBox(height: 8),
-        Consumer(
-          builder: (context, ref, child) {
-            return StreamBuilder<List<Map<String, dynamic>>>(
-              stream: ref
-                  .watch(userNotifierProvider.notifier)
-                  .streamPendingRequests(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child:
-                          CircularProgressIndicator(color: Colors.cyanAccent));
-                }
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 24,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (showProgress && value.contains('★'))
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: CircularProgressIndicator(
+                value: _parseRating(value) / 5.0,
+                strokeWidth: 3,
+                backgroundColor: color.withValues(alpha: 0.2),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            )
+          else
+            Text(
+              value,
+              style: GoogleFonts.robotoMono(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ).animate().fadeIn(duration: 600.ms).scale(begin: Offset(0.8, 0.8)),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: GoogleFonts.robotoMono(
+              fontSize: 12,
+              color: Colors.white70,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 800.ms, delay: delay.ms).slideX(begin: 0.2);
+  }
 
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      'Error loading requests: ${snapshot.error}',
-                      style: const TextStyle(color: Colors.white),
+  String _calculateSquadsThisWeek(SquadState squadState) {
+    // Calculate squads created/joined this week from gameHistory
+    final now = DateTime.now();
+    final weekAgo = now.subtract(const Duration(days: 7));
+
+    final recentSquads = squadState.gameHistory
+        .where((game) =>
+            game['timestamp'] != null &&
+            DateTime.parse(game['timestamp']).isAfter(weekAgo))
+        .length;
+
+    return recentSquads.toString();
+  }
+
+  String _calculateAverageRating(AppUser? user) {
+    if (user == null || user.allTimeRatings.isEmpty) return '0.0★';
+
+    double totalRating = 0;
+    int totalVotes = 0;
+
+    user.allTimeRatings.forEach((game, ratings) {
+      ratings.forEach((player, rating) {
+        totalRating += rating.toDouble();
+        totalVotes++;
+      });
+    });
+
+    if (totalVotes == 0) return '0.0★';
+
+    final average = totalRating / totalVotes;
+    return '${average.toStringAsFixed(1)}★';
+  }
+
+  String _calculateTurkeyCount(AppUser? user) {
+    if (user == null) return '0';
+
+    // Count complaints (turkeys) given
+    int turkeyCount = 0;
+    user.complaints.forEach((game, complaints) {
+      turkeyCount += complaints.length;
+    });
+    return turkeyCount.toString();
+  }
+
+  String _calculateHoursPlayedThisMonth(AppUser? user) {
+    // This would need to be calculated from actual playtime data
+    // For now, return a placeholder based on game history
+    // Rough estimate: assume 2 hours per game session
+    final recentGames = 12; // Placeholder
+    final estimatedHours = recentGames * 2;
+
+    return '${estimatedHours}h';
+  }
+
+  double _parseRating(String rating) {
+    final match = RegExp(r'(\d+\.?\d*)').firstMatch(rating);
+    return double.tryParse(match?.group(1) ?? '0') ?? 0.0;
+  }
+
+  Widget _buildPinnedGamesSection() {
+    final userAsync = ref.watch(userNotifierProvider);
+    final gameAsync = ref.watch(gameNotifierProvider);
+    final squadAsync = ref.watch(sn.squadNotifierProvider);
+
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Section header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'PINNED GAMES',
+                    style: GoogleFonts.robotoMono(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.cyan,
+                      letterSpacing: 2,
                     ),
-                  );
-                }
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add, color: Colors.cyan),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const AddGameScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ).animate().fadeIn(duration: 600.ms),
 
-                final requests = snapshot.data ?? [];
+            const SizedBox(height: 16),
 
-                if (requests.isEmpty) {
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    child: const Text(
-                      'No pending requests',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  );
-                }
+            // Games list
+            userAsync.maybeWhen(
+              data: (user) => gameAsync.maybeWhen(
+                data: (gameState) => squadAsync.maybeWhen(
+                  data: (squadState) {
+                    final pinnedGames = user?.pinnedGames ?? [];
+                    if (pinnedGames.isEmpty) {
+                      return _buildEmptyPinnedGames();
+                    }
+                    return SizedBox(
+                      height: 220,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: pinnedGames.length,
+                        itemBuilder: (context, index) {
+                          final pinnedGame = pinnedGames[index];
+                          final gameName = pinnedGame['name'] as String? ?? '';
+                          final isSelected =
+                              squadState.currentGame?['name'] == gameName;
 
-                return ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: requests.length,
-                  itemBuilder: (context, index) {
-                    final request = requests[index];
-                    return _buildPendingRequestTile(context, request);
+                          return _buildGameCard(
+                            gameName: gameName,
+                            coverUrl: pinnedGame['coverUrl'] as String?,
+                            platforms:
+                                pinnedGame['platforms'] as List<dynamic>? ?? [],
+                            isSelected: isSelected,
+                            delay: index * 100,
+                          );
+                        },
+                      ),
+                    );
                   },
-                );
-              },
-            );
-          },
+                  orElse: () => const SizedBox.shrink(),
+                ),
+                orElse: () => const SizedBox.shrink(),
+              ),
+              orElse: () => const SizedBox.shrink(),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
-  Widget _buildPendingRequestTile(
-      BuildContext context, Map<String, dynamic> request) {
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: ref
-          .read(userNotifierProvider.notifier)
-          .getCachedSenderDetails(request['senderId']),
-      builder: (context, snapshot) {
-        final displayName = snapshot.data?['displayName'] ?? 'Unknown';
-        final profileImage = snapshot.data?['profileImage'];
+  Widget _buildGameCard({
+    required String gameName,
+    required String? coverUrl,
+    required List<dynamic> platforms,
+    required bool isSelected,
+    required int delay,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        // Select the game
+        final gameData = {
+          'name': gameName,
+          'coverUrl': coverUrl,
+          'platforms': platforms
+        };
+        ref.read(gameNotifierProvider.notifier).selectGame(gameData);
 
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundImage:
-                profileImage != null ? NetworkImage(profileImage) : null,
-            child: profileImage == null
-                ? Text(
-                    displayName.isNotEmpty ? displayName[0].toUpperCase() : '?')
-                : null,
-          ),
-          title: Text(displayName, style: const TextStyle(color: Colors.white)),
-          subtitle: const Text('Wants to be friends',
-              style: TextStyle(color: Colors.grey)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.check, color: Colors.green),
-                onPressed: request['senderId'] != null
-                    ? () => _acceptFriendRequest(context, request['senderId'])
-                    : null,
-                tooltip: 'Accept',
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.red),
-                onPressed: request['senderId'] != null
-                    ? () => _declineFriendRequest(context, request['senderId'])
-                    : null,
-                tooltip: 'Decline',
-              ),
-            ],
+        // Navigate to squad tab
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => SquadTabScreen(game: gameData),
           ),
         );
       },
+      child: Container(
+        width: 160,
+        height: 200,
+        margin: const EdgeInsets.only(right: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? Colors.cyan : Colors.transparent,
+            width: 2,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.cyan.withValues(alpha: 0.3),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : null,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            children: [
+              // Game cover
+              if (coverUrl != null)
+                Image.network(
+                  coverUrl,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: Colors.grey.shade800,
+                    child: const Icon(
+                      Icons.videogame_asset,
+                      color: Colors.white54,
+                      size: 40,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  color: Colors.grey.shade800,
+                  child: const Icon(
+                    Icons.videogame_asset,
+                    color: Colors.white54,
+                    size: 40,
+                  ),
+                ),
+
+              // Gradient overlay
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.7),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Platform icons
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Row(
+                  children: platforms.take(3).map((platform) {
+                    return Container(
+                      margin: const EdgeInsets.only(left: 4),
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        _getPlatformIcon(platform.toString()),
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+
+              // Game name
+              Positioned(
+                bottom: 12,
+                left: 12,
+                right: 12,
+                child: Text(
+                  gameName,
+                  style: GoogleFonts.robotoMono(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withValues(alpha: 0.8),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+
+              // Selected indicator
+              if (isSelected)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.cyan,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.black,
+                      size: 16,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    )
+        .animate()
+        .fadeIn(duration: 800.ms, delay: delay.ms)
+        .scale(begin: Offset(0.9, 0.9));
+  }
+
+  IconData _getPlatformIcon(String platform) {
+    switch (platform.toLowerCase()) {
+      case 'playstation':
+      case 'ps4':
+      case 'ps5':
+        return Icons.play_arrow;
+      case 'xbox':
+      case 'xbox one':
+      case 'xbox series x':
+        return Icons.games;
+      case 'pc':
+      case 'windows':
+        return Icons.computer;
+      case 'nintendo switch':
+        return Icons.gamepad;
+      default:
+        return Icons.videogame_asset;
+    }
+  }
+
+  Widget _buildEmptyPinnedGames() {
+    return Container(
+      height: 180,
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.cyan.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => const AddGameScreen(),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.cyan.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(50),
+                  ),
+                  child: const Icon(
+                    Icons.add,
+                    color: Colors.cyan,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Pin Your Games',
+                  style: GoogleFonts.robotoMono(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Add games to quickly access your squads',
+                  style: GoogleFonts.robotoMono(
+                    fontSize: 14,
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 800.ms).scale(begin: Offset(0.9, 0.9));
+  }
+
+  Widget _buildStatsSection() {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.cyan.withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'GAMER STATS',
+              style: GoogleFonts.robotoMono(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.cyan,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Placeholder for stats - will be implemented
+            _buildStatRow('Total Games', '247'),
+            _buildStatRow('Win Rate', '68.4%'),
+            _buildStatRow('Hours Played', '1,234'),
+            _buildStatRow('Current Streak', '12'),
+          ],
+        ),
+      ).animate().fadeIn(duration: 600.ms, delay: 600.ms),
     );
   }
 
-  void _startDMWithFriend(BuildContext context, String friendId) async {
-    final chatId = // ignore: unused_local_variable
-        await ref.read(userNotifierProvider.notifier).startDMThread(friendId);
-    if (context.mounted) {
-      // Navigate to Chat tab with DM filter
-      final chatState = p.Provider.of<ChatState>(context, listen: false);
-      chatState.setDMView(true);
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatGroupsScreen(),
+  Widget _buildStatRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: GoogleFonts.robotoMono(
+              fontSize: 14,
+              color: Colors.white70,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.robotoMono(
+              fontSize: 16,
+              color: Colors.cyan,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAchievementsSection() {
+    // Placeholder achievements data - in real app this would come from AchievementManager
+    final achievements = [
+      {
+        'title': 'First Win',
+        'icon': Icons.emoji_events,
+        'unlocked': true,
+        'description': 'Win your first game'
+      },
+      {
+        'title': 'Squad Leader',
+        'icon': Icons.groups,
+        'unlocked': true,
+        'description': 'Lead 10 squads'
+      },
+      {
+        'title': 'Voice Veteran',
+        'icon': Icons.mic,
+        'unlocked': false,
+        'description': 'Use voice chat for 100 hours'
+      },
+      {
+        'title': 'Game Master',
+        'icon': Icons.videogame_asset,
+        'unlocked': true,
+        'description': 'Play 50 different games'
+      },
+      {
+        'title': 'Streak Master',
+        'icon': Icons.local_fire_department,
+        'unlocked': false,
+        'description': 'Win 10 games in a row'
+      },
+      {
+        'title': 'Social Butterfly',
+        'icon': Icons.people,
+        'unlocked': true,
+        'description': 'Add 20 friends'
+      },
+      {
+        'title': 'Chat Champion',
+        'icon': Icons.chat,
+        'unlocked': false,
+        'description': 'Send 1000 messages'
+      },
+      {
+        'title': 'Loyal Player',
+        'icon': Icons.loyalty,
+        'unlocked': true,
+        'description': 'Play for 30 days'
+      },
+    ];
+
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.purple.withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'ACHIEVEMENTS',
+              style: GoogleFonts.robotoMono(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.purple,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 16),
+            GridView.count(
+              crossAxisCount: 4,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              children: achievements.map((achievement) {
+                return _buildAchievementBadge(
+                  achievement['title'] as String,
+                  achievement['icon'] as IconData,
+                  achievement['unlocked'] as bool,
+                  achievement['description'] as String,
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ).animate().fadeIn(duration: 600.ms, delay: 800.ms),
+    );
+  }
+
+  Widget _buildAchievementBadge(
+      String title, IconData icon, bool unlocked, String description) {
+    return GestureDetector(
+      onTap: () => _showAchievementDialog(title, description, unlocked),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: unlocked
+              ? Colors.purple.withValues(alpha: 0.1)
+              : Colors.grey.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: unlocked
+                ? Colors.purple.withValues(alpha: 0.3)
+                : Colors.grey.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: unlocked ? Colors.purple : Colors.grey,
+              size: 24,
+            ).animate(target: unlocked ? 1 : 0).scale(
+                  begin: const Offset(1.2, 1.2),
+                  end: const Offset(1.0, 1.0),
+                  duration: 500.ms,
+                  curve: Curves.elasticOut,
+                ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              style: GoogleFonts.robotoMono(
+                fontSize: 10,
+                color: unlocked ? Colors.white : Colors.grey,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ).animate(target: unlocked ? 1 : 0).scale(
+            begin: const Offset(0.8, 0.8),
+            end: const Offset(1.0, 1.0),
+            duration: 500.ms,
+            curve: Curves.elasticOut,
+          ),
+    );
+  }
+
+  void _showAchievementDialog(String title, String description, bool unlocked) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          title,
+          style: GoogleFonts.robotoMono(
+            color: unlocked ? Colors.purple : Colors.grey,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          unlocked ? '$description\n\nUnlocked! 🎉' : description,
+          style: GoogleFonts.robotoMono(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'OK',
+              style: GoogleFonts.robotoMono(color: Colors.cyan),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsSection() {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.orange.withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'SETTINGS',
+              style: GoogleFonts.robotoMono(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.orange,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Placeholder for settings - will be implemented
+            _buildSettingRow('Notifications', true),
+            _buildSettingRow('Sound Effects', true),
+            _buildSettingRow('Dark Theme', true),
+            _buildSettingRow('Privacy Mode', false),
+          ],
+        ),
+      ).animate().fadeIn(duration: 600.ms, delay: 1000.ms),
+    );
+  }
+
+  Widget _buildSettingRow(String label, bool value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.robotoMono(
+              fontSize: 14,
+              color: Colors.white70,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: (newValue) {
+              // Placeholder - will implement settings logic
+            },
+            activeThumbColor: Colors.orange,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActionsSection() {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.cyan.withValues(alpha: 0.2),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'QUICK ACTIONS',
+              style: GoogleFonts.robotoMono(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.cyan,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildQuickActionButton(
+                  'Edit Profile',
+                  Icons.edit,
+                  () {
+                    // Navigate to profile editing screen
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const ProfileEditingScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildQuickActionButton(
+                  'Availability',
+                  Icons.access_time,
+                  () {
+                    // Navigate to availability settings
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const AvailabilitySettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildQuickActionButton(
+                  'Performance',
+                  Icons.bar_chart,
+                  () {
+                    // Navigate to performance stats
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const PerformanceStatsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildQuickActionButton(
+                  'Share',
+                  Icons.share,
+                  () async {
+                    // TODO: Implement share functionality
+                    try {
+                      await Share.share(
+                        'Check out my SquadSync profile! Join me for some gaming fun.',
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Sharing not available on this platform',
+                            style: GoogleFonts.robotoMono(),
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ).animate().fadeIn(duration: 600.ms, delay: 1100.ms),
+    );
+  }
+
+  Widget _buildQuickActionButton(
+      String label, IconData icon, VoidCallback onPressed) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.cyan.withValues(alpha: 0.1),
+        foregroundColor: Colors.cyan,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 0,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: GoogleFonts.robotoMono(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onRefresh() async {
+    // Simulate refreshing user data
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    // Check for new achievements (placeholder logic)
+    final hasNewAchievements = _checkForNewAchievements();
+
+    if (hasNewAchievements && mounted) {
+      // Show confetti for new achievements
+      _confettiController.play();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'New achievements unlocked! 🎉',
+            style: GoogleFonts.robotoMono(),
+          ),
+          backgroundColor: Colors.purple,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      // Stop confetti after a few seconds
+      Future.delayed(const Duration(seconds: 3), () {
+        _confettiController.stop();
+      });
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Profile refreshed!',
+            style: GoogleFonts.robotoMono(),
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
         ),
       );
     }
   }
 
-  void _sendAlertToFriend(BuildContext context, String friendId) {
-    // TODO: Implement alert sending
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Alert feature coming soon!')),
-    );
-  }
-
-  void _removeFriend(BuildContext context, String friendId) async {
-    await ref.read(userNotifierProvider.notifier).removeFriend(friendId);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Friend removed')),
-    );
-  }
-
-  void _acceptFriendRequest(BuildContext context, String requesterId) async {
-    await ref
-        .read(userNotifierProvider.notifier)
-        .acceptFriendRequest(requesterId);
-    if (!context.mounted) return;
-    HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Friend request accepted')),
-    );
-  }
-
-  void _declineFriendRequest(BuildContext context, String requesterId) async {
-    await ref
-        .read(userNotifierProvider.notifier)
-        .declineFriendRequest(requesterId);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Friend request declined')),
-    );
-  }
-
-  Future<void> _signOut(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('Sign Out', style: TextStyle(color: Colors.white)),
-        content: const Text('Are you sure you want to sign out?',
-            style: TextStyle(color: Colors.white)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.cyan)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign Out',
-                style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      // Reset SquadState before signing out to prevent state persistence
-      ref.read(sn.squadNotifierProvider.notifier).reset();
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('profileImageUrl');
-      await FirebaseAuth.instance.signOut();
-      // Navigation will be handled automatically by the StreamBuilder in main.dart
-    }
-  }
-
-  Future<void> _clearCache(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('Clear Cache', style: TextStyle(color: Colors.white)),
-        content: const Text('This will clear cached images and data. Continue?',
-            style: TextStyle(color: Colors.white)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.cyan)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Clear', style: TextStyle(color: Colors.orange)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      try {
-        // Clear image cache
-        // Note: In a real app, you'd clear more cache types
-        final prefs = await SharedPreferences.getInstance();
-        // Clear any cached data we store
-        await prefs.remove('cached_user_data');
-
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Cache cleared successfully')),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to clear cache: $e')),
-          );
-        }
-      }
-    }
-  }
-
-  void _showFeedbackDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title:
-            const Text('Send Feedback', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _feedbackController,
-              maxLines: 4,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: 'Tell us what you think...',
-                hintStyle: TextStyle(color: Colors.grey),
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.cyan)),
-          ),
-          TextButton(
-            onPressed: () {
-              // TODO: Implement actual feedback sending
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Thank you for your feedback!')),
-              );
-            },
-            child: const Text('Send', style: TextStyle(color: Colors.cyan)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAboutDialog(BuildContext context) {
-    showAboutDialog(
-      context: context,
-      applicationName: 'SquadSync',
-      applicationVersion: '1.0.0',
-      applicationIcon: const Icon(Icons.games, color: Colors.cyan, size: 48),
-      applicationLegalese: '© 2025 SquadSync Team',
-      children: [
-        const SizedBox(height: 16),
-        const Text(
-          'SquadSync is a gaming squad management app that helps you coordinate with your gaming friends and manage squad activities.',
-          style: TextStyle(color: Colors.white),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'Features include:\n'
-          '• Real-time chat with groups and DMs\n'
-          '• Squad lobby management\n'
-          '• Friend system\n'
-          '• Game integration\n'
-          '• Push notifications',
-          style: TextStyle(color: Colors.white),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Colors.cyan,
-        ),
-      ),
-    );
+  bool _checkForNewAchievements() {
+    // Placeholder: Simulate checking for new achievements
+    // In real app, this would compare current achievements with previous state
+    return DateTime.now().second % 3 == 0; // Random chance for demo
   }
 
   @override
-  void dispose() {
-    _nameController.dispose();
-    _feedbackController.dispose();
-    _blockUserController.dispose();
-    _animationController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            onPressed: () {
+              // Placeholder - will implement settings navigation
+            },
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: _onRefresh,
+            color: Colors.cyan,
+            backgroundColor: Colors.black87,
+            child: CustomScrollView(
+              controller: _scrollController,
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                _buildHeroHeader(),
+                _buildStatsCards(),
+                _buildPinnedGamesSection(),
+                _buildStatsSection(),
+                _buildAchievementsSection(),
+                _buildSettingsSection(),
+                _buildQuickActionsSection(),
+                // Add more sections as needed
+                const SliverToBoxAdapter(
+                  child: SizedBox(height: 100), // Bottom padding
+                ),
+              ],
+            ),
+          ),
+          // Confetti widget for achievement celebrations
+          ConfettiWidget(
+            confettiController: _confettiController,
+            blastDirectionality: BlastDirectionality.explosive,
+            shouldLoop: false,
+            colors: const [
+              Colors.purple,
+              Colors.cyan,
+              Colors.pink,
+              Colors.orange,
+              Colors.green,
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

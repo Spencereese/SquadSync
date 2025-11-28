@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:squad_sync/domain/entities/game.dart';
 import 'package:squad_sync/domain/repositories/game_repository.dart';
@@ -25,7 +27,8 @@ class GameRepositoryImpl implements GameRepository {
 
     // Try API
     try {
-      final games = await _remoteDataSource.fetchGamesFromIgdb(query, limit: limit);
+      final games =
+          await _remoteDataSource.fetchGamesFromIgdb(query, limit: limit);
 
       // Cache results
       await _localDataSource.cacheGames(query, games);
@@ -47,7 +50,50 @@ class GameRepositoryImpl implements GameRepository {
 
   @override
   Future<List<Game>> getPopularGames() async {
-    return await fetchGames('', limit: 20);
+    // Try cache first (1 hour TTL)
+    final cachedGames = await _localDataSource.getCachedPopularGames();
+    if (cachedGames.isNotEmpty) {
+      return cachedGames;
+    }
+
+    // Try API
+    try {
+      final games = await _remoteDataSource.fetchPopularGames();
+
+      // Cache results with 1 hour TTL
+      await _localDataSource.cachePopularGames(games);
+
+      // Sync to Firestore
+      await syncGamesToFirestore('popular', games);
+
+      return games;
+    } catch (e) {
+      // Fallback to offline
+      return await _getOfflinePopularGames();
+    }
+  }
+
+  Future<List<Game>> _getOfflinePopularGames() async {
+    try {
+      final jsonString =
+          await rootBundle.loadString('assets/popular_games.json');
+      final data = json.decode(jsonString) as List<dynamic>;
+      final games = data.map((item) => Game.fromCache(item)).toList();
+
+      // Sort by popularity_score if available, else by name
+      games.sort((a, b) {
+        final aScore = (a as dynamic).popularityScore ?? 0;
+        final bScore = (b as dynamic).popularityScore ?? 0;
+        if (aScore != bScore) {
+          return bScore.compareTo(aScore); // Descending
+        }
+        return a.name.compareTo(b.name);
+      });
+
+      return games.take(20).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   @override

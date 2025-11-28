@@ -17,7 +17,8 @@ class MockGetGameDetailsUseCase extends Mock implements GetGameDetailsUseCase {
   Future<Game?> call(int igdbId) async => null;
 }
 
-class MockLoadPopularGamesUseCase extends Mock implements LoadPopularGamesUseCase {
+class MockLoadPopularGamesUseCase extends Mock
+    implements LoadPopularGamesUseCase {
   @override
   Future<List<Game>> call({int limit = 10}) async => [];
 }
@@ -50,7 +51,8 @@ void main() {
       provider: gameNotifierProvider,
       setUp: () {
         // Setup mocks for initialization
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => []);
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenAnswer((_) async => []);
       },
       expect: () => [const AsyncLoading<List<Game>>()],
     );
@@ -59,7 +61,8 @@ void main() {
       'build should initialize with popular games',
       provider: gameNotifierProvider,
       setUp: () {
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => [testGame]);
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenAnswer((_) async => [testGame]);
       },
       expect: () => [
         const AsyncLoading<List<Game>>(),
@@ -71,7 +74,8 @@ void main() {
       'build should handle initialization errors',
       provider: gameNotifierProvider,
       setUp: () {
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenThrow(Exception('Init error'));
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenThrow(Exception('Init error'));
       },
       expect: () => [
         const AsyncLoading<List<Game>>(),
@@ -79,43 +83,41 @@ void main() {
       ],
     );
 
-    testNotifier<GameNotifier, AsyncValue<List<Game>>>(
-      'searchGames should update state with search results',
-      provider: gameNotifierProvider,
-      setUp: () {
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => []);
-        when(mockSearchGamesUseCase('test query', limit: 10)).thenAnswer((_) async => [testGame]);
-      },
-      act: (notifier) => notifier.searchGames('test query', limit: 10),
-      expect: () => [
-        const AsyncLoading<List<Game>>(),
-        const AsyncData<List<Game>>([]), // Initial popular games
-        const AsyncLoading<List<Game>>(), // Loading during search
-        AsyncData<List<Game>>([testGame]), // Search results
-      ],
-    );
+    test('searchGames should return search results', () async {
+      when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => []);
+      when(mockSearchGamesUseCase('test query'))
+          .thenAnswer((_) async => [testGame]);
 
-    testNotifier<GameNotifier, AsyncValue<List<Game>>>(
-      'searchGames should handle search errors',
-      provider: gameNotifierProvider,
-      setUp: () {
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => []);
-        when(mockSearchGamesUseCase('test query', limit: 10)).thenThrow(Exception('Search error'));
-      },
-      act: (notifier) => notifier.searchGames('test query', limit: 10),
-      expect: () => [
-        const AsyncLoading<List<Game>>(),
-        const AsyncData<List<Game>>([]),
-        const AsyncLoading<List<Game>>(),
-        isA<AsyncError<List<Game>>>(),
-      ],
-    );
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final notifier = container.read(gameNotifierProvider.notifier);
+      final result = await notifier.searchGames('test query');
+
+      expect(result, isA<AsyncData<List<Game>>>());
+      result.whenData((games) => expect(games, [testGame]));
+    });
+
+    test('searchGames should handle search errors', () async {
+      when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => []);
+      when(mockSearchGamesUseCase('test query'))
+          .thenThrow(Exception('Search error'));
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final notifier = container.read(gameNotifierProvider.notifier);
+      final result = await notifier.searchGames('test query');
+
+      expect(result, isA<AsyncError<List<Game>>>());
+    });
 
     testNotifier<GameNotifier, AsyncValue<Game?>>(
       'getGameDetails should return game details',
       provider: gameDetailsNotifierProvider(12345),
       setUp: () {
-        when(mockGetGameDetailsUseCase(12345)).thenAnswer((_) async => testGame);
+        when(mockGetGameDetailsUseCase(12345))
+            .thenAnswer((_) async => testGame);
       },
       expect: () => [
         const AsyncLoading<Game?>(),
@@ -139,7 +141,8 @@ void main() {
       'getGameDetails should handle errors',
       provider: gameDetailsNotifierProvider(12345),
       setUp: () {
-        when(mockGetGameDetailsUseCase(12345)).thenThrow(Exception('Details error'));
+        when(mockGetGameDetailsUseCase(12345))
+            .thenThrow(Exception('Details error'));
       },
       expect: () => [
         const AsyncLoading<Game?>(),
@@ -151,8 +154,10 @@ void main() {
       'loadPopularGames should update with popular games',
       provider: gameNotifierProvider,
       setUp: () {
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => []);
-        when(mockLoadPopularGamesUseCase(limit: 15)).thenAnswer((_) async => [testGame]);
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenAnswer((_) async => []);
+        when(mockLoadPopularGamesUseCase(limit: 15))
+            .thenAnswer((_) async => [testGame]);
       },
       act: (notifier) => notifier.loadPopularGames(limit: 15),
       expect: () => [
@@ -167,8 +172,10 @@ void main() {
       'loadPopularGames should handle errors',
       provider: gameNotifierProvider,
       setUp: () {
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => []);
-        when(mockLoadPopularGamesUseCase(limit: 15)).thenThrow(Exception('Popular error'));
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenAnswer((_) async => []);
+        when(mockLoadPopularGamesUseCase(limit: 15))
+            .thenThrow(Exception('Popular error'));
       },
       act: (notifier) => notifier.loadPopularGames(limit: 15),
       expect: () => [
@@ -183,8 +190,10 @@ void main() {
       'clearSearch should reset to popular games',
       provider: gameNotifierProvider,
       setUp: () {
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => [testGame]);
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => [testGame]); // Second call for clear
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenAnswer((_) async => [testGame]);
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenAnswer((_) async => [testGame]); // Second call for clear
       },
       act: (notifier) => notifier.clearSearch(),
       expect: () => [
@@ -199,8 +208,10 @@ void main() {
       'refresh should reload popular games',
       provider: gameNotifierProvider,
       setUp: () {
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => []);
-        when(mockLoadPopularGamesUseCase(limit: 20)).thenAnswer((_) async => [testGame]); // For refresh
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenAnswer((_) async => []);
+        when(mockLoadPopularGamesUseCase(limit: 20))
+            .thenAnswer((_) async => [testGame]); // For refresh
       },
       act: (notifier) => notifier.refresh(),
       expect: () => [

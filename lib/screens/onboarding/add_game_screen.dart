@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../services/onboarding_service.dart';
-import '../../providers.dart';
+import '../../presentation/notifiers/game_notifier.dart';
 
 class AddGameScreen extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
@@ -26,7 +26,7 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
   @override
   Widget build(BuildContext context) {
     final onboardingState = ref.watch(onboardingServiceProvider);
-    final popularGames = ref.watch(popularGamesProvider);
+    final popularGamesAsync = ref.watch(gameNotifierProvider);
     final isValid = (onboardingState.value?.pinnedGames.length ?? 0) >= 1;
 
     return Padding(
@@ -53,9 +53,10 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
           ).animate().slideX(begin: -0.2, duration: 400.ms),
           const SizedBox(height: 16),
           Expanded(
-            child: popularGames.when(
-              data: (games) => _buildGameList(
-                  games, onboardingState.value?.pinnedGames ?? []),
+            child: popularGamesAsync.when(
+              data: (state) => _buildGameList(
+                  state.availableGames.map((g) => g.toJson()).toList(),
+                  onboardingState.value?.pinnedGames ?? []),
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, stack) => Center(
                 child: Column(
@@ -65,7 +66,7 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
                     const SizedBox(height: 16),
                     Text('Error: $error'),
                     ElevatedButton(
-                      onPressed: () => ref.invalidate(popularGamesProvider),
+                      onPressed: () => ref.invalidate(gameNotifierProvider),
                       child: const Text('Retry'),
                     ),
                   ],
@@ -97,7 +98,7 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
     HapticFeedback.lightImpact();
     if (_gameSearchController.text.isEmpty) return;
     // For now, just invalidate to refresh
-    ref.invalidate(popularGamesProvider);
+    ref.invalidate(gameNotifierProvider);
   }
 
   Widget _buildGameList(List<Map<String, dynamic>> games,

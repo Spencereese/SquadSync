@@ -106,7 +106,7 @@ class ChatSettingsMenu {
             ),
             _buildSectionTitle(context, 'Chat Management'),
             ListTile(
-              leading: Image.asset('assets/images/gallery_icon.png',
+              leading: Image.asset('assets/images/photo_icon.png',
                   width: 24, height: 24),
               title: const Text('Media Gallery'),
               trailing: Icon(Icons.arrow_forward_ios,

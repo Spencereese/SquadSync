@@ -67,8 +67,12 @@ class ChatInitializationService {
       sendMessage(initialMessage);
     }
 
-    // Scroll to bottom after everything is loaded
-    scrollToBottom();
+    // Scroll to bottom after everything is loaded and UI is built
+    if (context.mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        scrollToBottom();
+      });
+    }
   }
 
   Future<void> _loadChatDetails({

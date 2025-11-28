@@ -4,12 +4,26 @@ import 'package:squad_sync/domain/entities/app_user.dart';
 import 'package:squad_sync/domain/repositories/user_repository.dart';
 import 'package:squad_sync/data/datasources/user_local_datasource.dart';
 import 'package:squad_sync/data/datasources/user_remote_datasource.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserRepositoryImpl implements UserRepository {
   final UserLocalDataSource _localDataSource;
   final UserRemoteDataSource _remoteDataSource;
 
   UserRepositoryImpl(this._localDataSource, this._remoteDataSource);
+
+  /// Helper method to convert Timestamp objects to serializable format
+  dynamic _convertTimestamps(dynamic value) {
+    if (value is Timestamp) {
+      return value.toDate().toIso8601String();
+    } else if (value is Map<String, dynamic>) {
+      return value.map((key, val) => MapEntry(key, _convertTimestamps(val)));
+    } else if (value is List) {
+      return value.map(_convertTimestamps).toList();
+    } else {
+      return value;
+    }
+  }
 
   @override
   Future<AppUser?> getCurrentUser() async {
@@ -25,18 +39,33 @@ class UserRepositoryImpl implements UserRepository {
 
     if (profile == null) return null;
 
+    // Convert any Timestamp objects to serializable format
+    final convertedProfile =
+        _convertTimestamps(profile) as Map<String, dynamic>;
+    final convertedRatings = ratings != null
+        ? _convertTimestamps(ratings) as Map<String, dynamic>
+        : null;
+    final convertedComplaints = complaints != null
+        ? _convertTimestamps(complaints) as Map<String, dynamic>
+        : null;
+
+    final pinnedGames =
+        List<Map<String, dynamic>>.from(convertedProfile['pinnedGames'] ?? []);
+
+    // Sync remote pinned games to local storage
+    await _localDataSource.setPinnedGames(pinnedGames);
+
     return AppUser(
       uid: user.uid,
-      displayName: profile['displayName'],
-      profileImage: profile['profileImage'],
+      displayName: convertedProfile['displayName'],
+      profileImage: convertedProfile['profileImage'],
       preferredModes:
-          Map<String, String?>.from(profile['preferredModes'] ?? {}),
-      userBlocks:
-          Map<String, Map<String, bool>>.from(profile['userBlocks'] ?? {}),
-      pinnedGames:
-          List<Map<String, dynamic>>.from(profile['pinnedGames'] ?? []),
+          Map<String, String?>.from(convertedProfile['preferredModes'] ?? {}),
+      userBlocks: Map<String, Map<String, bool>>.from(
+          convertedProfile['userBlocks'] ?? {}),
+      pinnedGames: pinnedGames,
       notificationSettings:
-          Map<String, bool>.from(profile['notificationSettings'] ??
+          Map<String, bool>.from(convertedProfile['notificationSettings'] ??
               {
                 'pushNotifications': true,
                 'soundEnabled': true,
@@ -50,24 +79,27 @@ class UserRepositoryImpl implements UserRepository {
                 'achievementAlerts': true,
               }),
       hasRatedGame: {},
-      dailyRatings:
-          Map<String, Map<String, int>>.from(ratings?['dailyRatings'] ?? {}),
-      allTimeRatings:
-          Map<String, Map<String, int>>.from(ratings?['allTimeRatings'] ?? {}),
-      currentStreaks: Map<String, int>.from(ratings?['currentStreaks'] ?? {}),
-      complaints:
-          Map<String, Map<String, int>>.from(complaints?['complaints'] ?? {}),
+      dailyRatings: Map<String, Map<String, int>>.from(
+          convertedRatings?['dailyRatings'] ?? {}),
+      allTimeRatings: Map<String, Map<String, int>>.from(
+          convertedRatings?['allTimeRatings'] ?? {}),
+      currentStreaks:
+          Map<String, int>.from(convertedRatings?['currentStreaks'] ?? {}),
+      complaints: Map<String, Map<String, int>>.from(
+          convertedComplaints?['complaints'] ?? {}),
       bans: {}, // Need to load bans separately
       dailyBanVotes: {},
       blockedUsers: [], // Derived from userBlocks
-      friends: List<String>.from(profile['friends'] ?? []),
-      alerts: List<String>.from(profile['alerts'] ?? []),
-      userGroups: List<Map<String, dynamic>>.from(profile['userGroups'] ?? []),
+      friends: List<String>.from(convertedProfile['friends'] ?? []),
+      alerts: List<String>.from(convertedProfile['alerts'] ?? []),
+      userGroups:
+          List<Map<String, dynamic>>.from(convertedProfile['userGroups'] ?? []),
       alertCircles: List<String>.from(
-          profile['alertCircles'] ?? ['Squad', 'Friends', 'Public']),
-      publicGroups:
-          List<Map<String, dynamic>>.from(profile['publicGroups'] ?? []),
-      pinnedMessages: List<String>.from(profile['pinnedMessages'] ?? []),
+          convertedProfile['alertCircles'] ?? ['Squad', 'Friends', 'Public']),
+      publicGroups: List<Map<String, dynamic>>.from(
+          convertedProfile['publicGroups'] ?? []),
+      pinnedMessages:
+          List<String>.from(convertedProfile['pinnedMessages'] ?? []),
     );
   }
 
@@ -173,16 +205,34 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> addPinnedGame(Map<String, dynamic> game) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Update local storage
     final currentPinned = await _localDataSource.getPinnedGames();
     currentPinned.add(game);
     await _localDataSource.setPinnedGames(currentPinned);
+
+    // Update remote storage (Firestore)
+    await _remoteDataSource.updateUserProfile(user.uid, {
+      'pinnedGames': currentPinned,
+    });
   }
 
   @override
   Future<void> removePinnedGame(String gameName) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Update local storage
     final currentPinned = await _localDataSource.getPinnedGames();
     currentPinned.removeWhere((g) => g['name'] == gameName);
     await _localDataSource.setPinnedGames(currentPinned);
+
+    // Update remote storage (Firestore)
+    await _remoteDataSource.updateUserProfile(user.uid, {
+      'pinnedGames': currentPinned,
+    });
   }
 
   @override

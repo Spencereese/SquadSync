@@ -8,80 +8,104 @@ import 'chat_service.dart';
 import '../domain/entities/message.dart';
 import '../presentation/notifiers/chat_notifier.dart' as cn;
 import '../presentation/notifiers/squad_notifier.dart' as sn;
-import 'models/message_data.dart' as models show MessageData, MessageType;
+import 'models/message_data.dart' as models
+    show MessageData, MessageType, MessageStatus;
 import 'widgets/message_content.dart';
 import 'widgets/message_reactions.dart';
 import 'widgets/message_avatar.dart';
-import 'widgets/message_sender.dart';
 import 'widgets/imessage_reactions_bar.dart';
 import '../presentation/notifiers/user_notifier.dart';
+import 'widgets/smart_reply_bottom_sheet.dart';
 
-/// Sub-widget for the bubble header (avatar and sender)
-class _BubbleHeader extends StatelessWidget {
+/// Enhanced message bubble with iMessage-style tails and animations
+class _AnimatedMessageBubble extends StatefulWidget {
   final models.MessageData messageData;
   final bool isMe;
-  final bool showSender;
-  final bool showAvatar;
-
-  const _BubbleHeader({
-    required this.messageData,
-    required this.isMe,
-    required this.showSender,
-    required this.showAvatar,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (isMe) return const SizedBox.shrink();
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (showAvatar)
-          MessageAvatar(
-            senderName: messageData.sender,
-            isFromCurrentUser: isMe,
-          ),
-        if (showAvatar) const SizedBox(width: 8),
-        if (showSender) MessageSender(message: messageData),
-      ],
-    );
-  }
-}
-
-/// Sub-widget for the bubble content (message container)
-class _BubbleContent extends StatefulWidget {
-  final models.MessageData messageData;
-  final bool isMe;
+  final bool isFirstInGroup;
+  final bool isLastInGroup;
   final String? chatGroupId;
   final ChatService? chatService;
+  final ChatType chatType;
+  final String? squadId;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final Function(Offset, Size, double) onLongPressDetails;
+  final int index; // For stagger animation
 
-  const _BubbleContent({
+  const _AnimatedMessageBubble({
     required this.messageData,
     required this.isMe,
+    required this.isFirstInGroup,
+    required this.isLastInGroup,
     this.chatGroupId,
     this.chatService,
+    required this.chatType,
+    this.squadId,
     required this.onTap,
     required this.onLongPress,
     required this.onLongPressDetails,
+    required this.index,
   });
 
   @override
-  State<_BubbleContent> createState() => _BubbleContentState();
+  State<_AnimatedMessageBubble> createState() => _AnimatedMessageBubbleState();
 }
 
-class _BubbleContentState extends State<_BubbleContent> {
+class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
+    with TickerProviderStateMixin {
   final GlobalKey _messageKey = GlobalKey();
   bool _isPressed = false;
+  late AnimationController _reactionController;
+  late Animation<double> _reactionAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _reactionController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _reactionAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(parent: _reactionController, curve: Curves.elasticOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _reactionController.dispose();
+    super.dispose();
+  }
+
+  BorderRadius get borderRadius {
+    if (widget.isFirstInGroup && widget.isLastInGroup)
+      return BorderRadius.circular(20);
+    if (widget.isFirstInGroup)
+      return BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+          bottomLeft: widget.isMe ? Radius.circular(20) : Radius.circular(6),
+          bottomRight: widget.isMe ? Radius.circular(6) : Radius.circular(20));
+    if (widget.isLastInGroup)
+      return BorderRadius.only(
+          topLeft: widget.isMe ? Radius.circular(20) : Radius.circular(6),
+          topRight: widget.isMe ? Radius.circular(6) : Radius.circular(20),
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20));
+    // middle
+    return BorderRadius.only(
+        topLeft: widget.isMe ? Radius.circular(20) : Radius.circular(6),
+        topRight: widget.isMe ? Radius.circular(6) : Radius.circular(20),
+        bottomLeft: widget.isMe ? Radius.circular(20) : Radius.circular(6),
+        bottomRight: widget.isMe ? Radius.circular(6) : Radius.circular(20));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final color =
+        widget.isMe ? const Color(0xFF007AFF) : const Color(0xFF2C2C2E);
+
     return GestureDetector(
       onTap: () {
-        // Remove haptics to avoid overload
         FocusScope.of(context).unfocus();
         widget.onTap();
       },
@@ -117,40 +141,41 @@ class _BubbleContentState extends State<_BubbleContent> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          AnimatedContainer(
-            key: _messageKey,
-            duration: const Duration(milliseconds: 150),
-            margin: const EdgeInsets.symmetric(vertical: 2.0),
-            padding: _getMessagePadding(),
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.7,
-            ),
-            decoration: _getMessageDecoration().copyWith(
-              boxShadow: _isPressed
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 6,
-                        spreadRadius: 1,
-                        offset: const Offset(0, 2),
+          // Main bubble with pill shape
+          AnimatedBuilder(
+            animation: _reactionAnimation,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: _reactionAnimation.value,
+                child: Container(
+                  key: _messageKey,
+                  margin: const EdgeInsets.symmetric(vertical: 1.0),
+                  padding: _getMessagePadding(),
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isPressed ? color.withValues(alpha: 0.8) : color,
+                    borderRadius: borderRadius,
+                  ),
+                  child: Semantics(
+                    label: 'Message from ${widget.messageData.sender}',
+                    child: IntrinsicWidth(
+                      child: MessageContent(
+                        message: widget.messageData,
+                        isFromCurrentUser: widget.isMe,
+                        chatGroupId: widget.chatGroupId,
+                        chatService: widget.chatService,
+                        chatType: widget.chatType,
+                        squadId: widget.squadId,
                       ),
-                    ]
-                  : _getMessageDecoration().boxShadow,
-            ),
-            child: Semantics(
-              label: 'Message from ${widget.messageData.sender}',
-              child: IntrinsicWidth(
-                child: MessageContent(
-                  message: widget.messageData,
-                  isFromCurrentUser: widget.isMe,
-                  chatGroupId: widget.chatGroupId,
-                  chatService: widget.chatService,
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
-          // Pending sync indicator
-          if (!widget.messageData.delivered)
+          if (widget.messageData.status == models.MessageStatus.sending)
             Positioned(
               bottom: -2,
               right: widget.isMe ? 8 : null,
@@ -169,56 +194,27 @@ class _BubbleContentState extends State<_BubbleContent> {
               ),
             ),
         ],
-      ).animate().fadeIn(duration: const Duration(milliseconds: 300)).slideY(
-          begin: 0.2,
-          end: 0.0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut),
-    );
-  }
-
-  BoxDecoration _getMessageDecoration() {
-    if (widget.messageData.isGrokMessage) {
-      return BoxDecoration(
-        color: const Color(0xFF0A0A0A),
-        border: Border.all(
-          color: const Color(0xFF8B0000),
-          width: 1.5,
-        ),
-        borderRadius: BorderRadius.circular(2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF8B0000).withValues(alpha: 0.3),
-            blurRadius: 8,
-            spreadRadius: 1,
-            offset: const Offset(0, 0),
+      )
+          // Enhanced send-in animation with stagger
+          .animate()
+          .fadeIn(
+            duration: const Duration(milliseconds: 400),
+            delay: Duration(milliseconds: widget.index * 100), // 100ms stagger
+          )
+          .slideY(
+            begin: 0.3,
+            end: 0.0,
+            duration: const Duration(milliseconds: 400),
+            delay: Duration(milliseconds: widget.index * 100),
+            curve: Curves.easeOutQuart,
+          )
+          .scale(
+            begin: const Offset(0.8, 0.8),
+            end: const Offset(1.0, 1.0),
+            duration: const Duration(milliseconds: 300),
+            delay: Duration(milliseconds: widget.index * 100 + 50),
+            curve: Curves.elasticOut,
           ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.7),
-            blurRadius: 15,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      );
-    }
-
-    return BoxDecoration(
-      color: widget.isMe ? const Color(0xFF007AFF) : const Color(0xFF2C2C2E),
-      borderRadius: BorderRadius.only(
-        topLeft: const Radius.circular(16),
-        topRight: const Radius.circular(16),
-        bottomLeft:
-            widget.isMe ? const Radius.circular(16) : const Radius.circular(4),
-        bottomRight:
-            widget.isMe ? const Radius.circular(4) : const Radius.circular(16),
-      ),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.1),
-          blurRadius: 4,
-          offset: const Offset(0, 1),
-        ),
-      ],
     );
   }
 
@@ -268,12 +264,15 @@ class MessageBubble extends ConsumerStatefulWidget {
   final bool showAvatar;
   final bool showTimestamp;
   final bool showReadIndicator;
+  final bool isFirstInGroup;
+  final bool isLastInGroup;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final Map<String, bool> sendingStatus;
   final String? chatGroupId;
   final ChatType chatType;
   final ChatService? chatService; // Add optional ChatService parameter
+  final String? squadId;
 
   const MessageBubble({
     super.key,
@@ -283,12 +282,15 @@ class MessageBubble extends ConsumerStatefulWidget {
     required this.showAvatar,
     required this.showTimestamp,
     required this.showReadIndicator,
+    required this.isFirstInGroup,
+    required this.isLastInGroup,
     required this.onTap,
     required this.onLongPress,
     required this.sendingStatus,
     this.chatGroupId,
     required this.chatType,
     this.chatService, // Optional parameter
+    this.squadId,
   });
 
   @override
@@ -347,6 +349,11 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     final menuSpacing = 4.0;
     final availableHeight = screenSize.height - keyboardHeight - 20;
 
+    final squadId = ref.read(sn.squadNotifierProvider).maybeWhen(
+          data: (data) => data.selectedSquadId,
+          orElse: () => null,
+        );
+
     late final OverlayEntry reactionsOverlay;
     late final OverlayEntry menuOverlay;
 
@@ -362,6 +369,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
             messagePosition: messagePosition,
             messageSize: messageSize,
             floatingOffset: floatingOffset,
+            squadId: squadId,
           ),
         ],
       ),
@@ -422,47 +430,68 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
 
     // Standard layout for regular messages
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0).add(
+          EdgeInsets.only(
+              left: widget.isMe
+                  ? 0
+                  : 40) // Add extra left padding for received messages to accommodate avatar
+          ),
       child: Column(
         crossAxisAlignment:
             widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment:
-                widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.end,
+          Stack(
+            clipBehavior: Clip.none,
             children: [
-              if (!widget.isMe)
-                _BubbleHeader(
-                  messageData: _messageData,
-                  isMe: widget.isMe,
-                  showSender: widget.showSender,
-                  showAvatar: widget.showAvatar,
-                ),
-              Flexible(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    _BubbleContent(
-                      messageData: _messageData,
-                      isMe: widget.isMe,
-                      chatGroupId: widget.chatGroupId,
-                      chatService: widget.chatService,
-                      onTap: widget.onTap,
-                      onLongPress: widget.onLongPress,
-                      onLongPressDetails: (position, size, offset) {
-                        _showOverlays(position, size, offset);
-                      },
+              // Message bubble
+              Row(
+                mainAxisAlignment: widget.isMe
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Flexible(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _AnimatedMessageBubble(
+                          messageData: _messageData,
+                          isMe: widget.isMe,
+                          chatGroupId: widget.chatGroupId,
+                          chatService: widget.chatService,
+                          chatType: widget.chatType,
+                          squadId: widget.squadId,
+                          onTap: widget.onTap,
+                          onLongPress: widget.onLongPress,
+                          onLongPressDetails: (position, size, offset) {
+                            _showOverlays(position, size, offset);
+                          },
+                          index: 0, // Will be set by parent
+                          isFirstInGroup: widget.isFirstInGroup,
+                          isLastInGroup: widget.isLastInGroup,
+                        ),
+                        if (_messageData.reactions.isNotEmpty)
+                          _BubbleReactions(
+                            reactions: _messageData.reactions,
+                            isOutgoing: widget.isMe,
+                            onReactionTap: (emoji) =>
+                                _showReactionDetails(emoji),
+                          ),
+                      ],
                     ),
-                    if (_messageData.reactions.isNotEmpty)
-                      _BubbleReactions(
-                        reactions: _messageData.reactions,
-                        isOutgoing: widget.isMe,
-                        onReactionTap: (emoji) => _showReactionDetails(emoji),
-                      ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+              // Avatar positioned at bottom of message for received messages
+              if (!widget.isMe && widget.showAvatar)
+                Positioned(
+                  bottom: 2, // Align with the bottom of the bubble
+                  left: -40, // Position to the left of the bubble
+                  child: MessageAvatar(
+                    senderName: _messageData.sender,
+                    isFromCurrentUser: widget.isMe,
+                  ),
+                ),
             ],
           ),
         ],
@@ -714,6 +743,12 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                         _dismissOverlays();
                       },
                     ),
+                    _buildDivider(),
+                    _buildModernMenuItem(
+                      icon: Icons.smart_toy,
+                      label: 'Smart Reply',
+                      onTap: () => _showSmartReplyBottomSheet(),
+                    ),
                   ],
                 ),
                 // Secondary actions
@@ -934,35 +969,36 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     required VoidCallback onTap,
     Color? color,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 70, // Fixed width for consistent alignment
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 22,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 70, // Fixed width for consistent alignment
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: Colors.white
+              .withValues(alpha: 0.1), // Add slight background for tap feedback
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 22,
+              color: color ?? Colors.white.withValues(alpha: 0.9),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
                 color: color ?? Colors.white.withValues(alpha: 0.9),
               ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: color ?? Colors.white.withValues(alpha: 0.9),
-                ),
-                textAlign:
-                    TextAlign.center, // Center text for consistent appearance
-              ),
-            ],
-          ),
+              textAlign:
+                  TextAlign.center, // Center text for consistent appearance
+            ),
+          ],
         ),
       ),
     );
@@ -1081,5 +1117,29 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
       );
       Overlay.of(context).insert(reactionsOverlay);
     });
+  }
+
+  void _showSmartReplyBottomSheet() {
+    _dismissOverlays();
+
+    // Get last 5 messages for context
+    final chatState = ref.read(cn.chatNotifierProvider).maybeWhen(
+          data: (data) => data,
+          orElse: () => null,
+        );
+
+    if (chatState == null) return;
+
+    final messages = chatState.chatMessages[widget.chatGroupId] ?? [];
+    final lastFiveMessages = messages.take(5).map((m) => m.text).toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SmartReplyBottomSheet(
+        lastFiveMessages: lastFiveMessages,
+        onReplySelected: null, // Will copy to clipboard
+      ),
+    );
   }
 }

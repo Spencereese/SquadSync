@@ -7,7 +7,3 @@ targets:
         options:
           provider_name_suffix: 'Provider'
           provider_implementation_suffix: 'Impl'
-      mockito|dart:mockBuilder:
-        generate_for:
-          exclude:
-            - lib/**

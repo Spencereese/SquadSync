@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers.dart';
 import '../../presentation/notifiers/squad_notifier.dart';
 import 'member_management_dialog.dart';
 import 'ban_dialog.dart';
@@ -104,7 +103,7 @@ class SettingsDialog {
 
   static Future<void> _closeLobby(
       BuildContext context, WidgetRef ref, String lobbyId) async {
-    final squadManager = ref.read(squadManagerProvider);
+    final squadNotifier = ref.read(squadNotifierProvider.notifier);
 
     try {
       // Show confirmation dialog
@@ -129,7 +128,7 @@ class SettingsDialog {
       );
 
       if (confirmed == true) {
-        await squadManager.closeLobby(lobbyId);
+        await squadNotifier.closeLobby(lobbyId);
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

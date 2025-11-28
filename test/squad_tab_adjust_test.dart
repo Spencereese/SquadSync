@@ -1,10 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
 import 'package:mockito/mockito.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:squad_sync/screens/squad_tab_screen.dart';
 import 'package:squad_sync/managers/stubs.dart';
 import 'package:squad_sync/squad_state_notifier.dart';
 import 'test_setup.dart';

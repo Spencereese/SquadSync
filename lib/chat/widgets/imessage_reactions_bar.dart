@@ -15,6 +15,7 @@ class IMessageReactionsBar extends StatefulWidget {
   final Offset messagePosition;
   final Size messageSize;
   final double floatingOffset;
+  final String? squadId;
 
   const IMessageReactionsBar({
     super.key,
@@ -26,6 +27,7 @@ class IMessageReactionsBar extends StatefulWidget {
     required this.messagePosition,
     required this.messageSize,
     this.floatingOffset = 0.0,
+    this.squadId,
   });
 
   @override
@@ -114,6 +116,7 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
       widget.messageId,
       widget.chatGroupId,
       widget.chatType,
+      widget.squadId,
     );
     _dismiss();
   }

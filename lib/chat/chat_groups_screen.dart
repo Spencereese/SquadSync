@@ -1,21 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as p;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/entities/message.dart';
 import '../domain/entities/squad_state.dart';
 import 'chat_screen.dart';
+import 'chat_state.dart';
 import '../screens/notifications_screen.dart';
-import '../profile_tab.dart';
 import '../app_theme.dart';
 import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
 import 'dialogs/group_actions_dialog.dart';
 import 'dialogs/add_friend_dialog.dart';
 import '../presentation/notifiers/squad_notifier.dart' as sn;
-import '../presentation/notifiers/chat_notifier.dart';
+import '../profile_tab.dart';
 
 class ChatGroupsScreen extends ConsumerStatefulWidget {
   const ChatGroupsScreen({super.key});
@@ -135,7 +136,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutBack,
-        padding: const EdgeInsets.only(top: 12, bottom: 16),
+        padding: const EdgeInsets.only(top: 8, bottom: 20),
         child: Stack(
           alignment: Alignment.topCenter,
           children: [
@@ -158,48 +159,6 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                     color: isSelected
                         ? AppTheme.accentColor
                         : Colors.white.withValues(alpha: 0.7),
-                  ),
-                if (index == 2)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Menu',
-                      style: TextStyle(
-                        color: isSelected
-                            ? AppTheme.accentColor
-                            : Colors.white.withValues(alpha: 0.7),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                if (index == 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Chats',
-                      style: TextStyle(
-                        color: isSelected
-                            ? AppTheme.accentColor
-                            : Colors.white.withValues(alpha: 0.7),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                if (index == 1)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Alerts',
-                      style: TextStyle(
-                        color: isSelected
-                            ? AppTheme.accentColor
-                            : Colors.white.withValues(alpha: 0.7),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
                   ),
               ],
             ),
@@ -233,49 +192,45 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   }
 
   Widget _buildChatGroupsPage(SquadState squadState, WidgetRef ref) {
-    final chatAsync = ref.watch(chatNotifierProvider);
-
-    return chatAsync.maybeWhen(
-      data: (chatState) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Chats'),
-          backgroundColor: Colors.black,
-          elevation: 0,
-          leading: _isDMView
-              ? IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.cyanAccent),
-                  onPressed: () => setState(() => _isDMView = false),
-                  tooltip: 'Back to all chats',
-                )
-              : null,
-          actions: [
-            if (_isDMView)
-              IconButton(
-                icon: const Icon(Icons.person_add, color: Colors.cyanAccent),
-                onPressed: () => showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (context) => const AddFriendDialog(),
-                ),
-                tooltip: 'Add friend',
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('Chats'),
+        backgroundColor: Colors.black,
+        elevation: 0,
+        leading: _isDMView
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.cyanAccent),
+                onPressed: () => setState(() => _isDMView = false),
+                tooltip: 'Back to all chats',
               )
-            else ...[
-              // Single + button for all group actions
-              IconButton(
-                icon: const Icon(Icons.add, color: Colors.cyanAccent),
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (context) => const GroupActionsDialog(),
-                ),
-                tooltip: 'Group actions',
+            : null,
+        actions: [
+          if (_isDMView)
+            IconButton(
+              icon: const Icon(Icons.person_add, color: Colors.cyanAccent),
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (context) => const AddFriendDialog(),
               ),
-            ],
+              tooltip: 'Add friend',
+            )
+          else ...[
+            // Single + button for all group actions
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.cyanAccent),
+              onPressed: () => showDialog(
+                context: context,
+                builder: (context) => const GroupActionsDialog(),
+              ),
+              tooltip: 'Group actions',
+            ),
           ],
-        ),
-        body: _buildChatContent(squadState),
+        ],
       ),
-      orElse: () => const SizedBox.shrink(),
+      body: _buildChatContent(squadState),
     );
   }
 
@@ -321,17 +276,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                   children: [
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 500),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.black,
-                            AppTheme.primaryColor,
-                            AppTheme.accentColor.withValues(alpha: 0.2),
-                          ],
-                        ),
-                      ),
+                      color: Colors.black,
                       child: NotificationListener<ScrollNotification>(
                         onNotification: _updateNavOpacity,
                         child: PageView(
@@ -451,10 +396,13 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => ChatScreen(
-                chatGroupId: lastGroupId,
-                chatGroupName: groupData?['name'] ?? 'Unknown Group',
-                chatType: ChatType.userGroup,
+              builder: (context) => p.ChangeNotifierProvider<ChatState>(
+                create: (_) => ChatState(),
+                child: ChatScreen(
+                  chatGroupId: lastGroupId,
+                  chatGroupName: groupData?['name'] ?? 'Unknown Group',
+                  chatType: ChatType.userGroup,
+                ),
               ),
             ),
           );

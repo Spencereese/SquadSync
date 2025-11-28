@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../chat/chat_groups_screen.dart' as chat_groups;
 import '../screens/notifications_screen.dart';
-import '../profile_tab.dart';
 import '../app_theme.dart';
 import '../presentation/notifiers/squad_notifier.dart' as sn;
 import 'widgets/bottom_navigation_widget.dart';
 import 'widgets/loading_screen_widget.dart';
 import 'mixins/keyboard_handler.dart';
 import 'managers/page_navigation_manager.dart';
+import '../profile_tab.dart';
 
 class SquadQueuePage extends ConsumerStatefulWidget {
   const SquadQueuePage({super.key});
@@ -58,25 +58,6 @@ class SquadQueuePageState extends ConsumerState<SquadQueuePage>
           child: Scaffold(
             body: Stack(
               children: [
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    margin: const EdgeInsets.only(top: 50),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'DEBUG: 14 QUEUE',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 500),
                   decoration: BoxDecoration(

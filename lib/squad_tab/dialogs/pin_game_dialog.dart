@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/user_notifier.dart';
-import '../../providers.dart';
+import '../../presentation/notifiers/game_notifier.dart';
 
 class PinGameDialog extends ConsumerStatefulWidget {
   const PinGameDialog({super.key});
@@ -13,6 +13,7 @@ class PinGameDialog extends ConsumerStatefulWidget {
 
 class _PinGameDialogState extends ConsumerState<PinGameDialog> {
   final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _searchResults = [];
 
   @override
   void initState() {
@@ -25,10 +26,21 @@ class _PinGameDialogState extends ConsumerState<PinGameDialog> {
     super.dispose();
   }
 
-  void _searchGames() {
+  void _searchGames() async {
     if (_searchController.text.isEmpty) return;
 
-    ref.read(gameManagerProvider).fetchGamesFromIGDB(_searchController.text);
+    try {
+      final results = await ref
+          .read(gameNotifierProvider.notifier)
+          .fetchGamesFromIGDB(_searchController.text);
+      if (mounted) {
+        setState(() {
+          _searchResults = results;
+        });
+      }
+    } catch (e) {
+      // Handle error
+    }
   }
 
   void _togglePinGame(Map<String, dynamic> game) async {
@@ -58,7 +70,6 @@ class _PinGameDialogState extends ConsumerState<PinGameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final gameStateAsync = ref.watch(gameManagerProvider);
     final userStateAsync = ref.watch(userNotifierProvider);
     final pinnedGames = userStateAsync.maybeWhen(
       data: (userState) => userState?.pinnedGames ?? <Map<String, dynamic>>[],
@@ -92,13 +103,7 @@ class _PinGameDialogState extends ConsumerState<PinGameDialog> {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: gameStateAsync.isOffline
-                  ? Banner(
-                      message: 'Using offline cache',
-                      location: BannerLocation.topEnd,
-                      child: _buildGameList(gameStateAsync.games, pinnedGames),
-                    )
-                  : _buildGameList(gameStateAsync.games, pinnedGames),
+              child: _buildGameList(_searchResults, pinnedGames),
             ),
             const SizedBox(height: 16),
             Row(

@@ -1,61 +1,83 @@
-# SquadSync Changelog
+# SquadSync App Summary
 
-## Recent Updates
+## Overview
+SquadSync is a Flutter-based squad gaming app that facilitates real-time coordination for gaming squads. It features hybrid data architecture with Firebase Firestore for real-time chat and local SQLite for offline caching. The app uses Riverpod for state management and integrates xAI's Grok AI for smart replies and chat assistance.
 
-### Timer System Refactoring
-- **TimerState Refactored**: Converted `TimerState` from `ChangeNotifier` to `StateNotifier<Map<String, Duration>>` for better Riverpod integration.
-- **TimerService Singleton**: Implemented `TimerService` as a singleton with a single periodic `Timer` (5-second intervals) to manage all timers efficiently.
-- **Firebase Integration**: Added server-side timer processing via Firebase Cloud Functions (`processTimers` callable) for offline sync and background handling.
-- **Provider Updates**: Updated `timerStateProvider` to `StateNotifierProvider` injecting `TimerService`.
-- **UI Enhancements**:
-  - Updated `SpotTimerDisplay` and `PeacockTimerDisplay` widgets to use `StreamBuilder` for reactive timer updates.
-  - Replaced text countdowns with `LinearProgressIndicator` for visual progress bars.
-  - Added haptic feedback (`HapticFeedback.lightImpact()`) on timer expiration.
-  - Ensured theme compatibility with `Theme.of(context).colorScheme.surfaceContainerHighest`.
-- **Code Fixes**:
-  - Fixed compilation errors from missing `timerService` parameters.
-  - Removed outdated listener calls in `SquadState`.
-  - Updated deprecated APIs: `withOpacity` to `withValues`, `surfaceVariant` to `surfaceContainerHighest`.
-  - Added `stopAllTimers()` method to `TimerService` for cleanup.
+## Architecture
 
-### Unit Tests
-- Added comprehensive unit tests in `test/timer_service_test.dart` using `flutter_test`:
-  - Timer start and remaining time decrease verification.
-  - Expiration callback firing.
-  - Timer stopping mid-way.
-  - Error handling for non-existent keys.
-  - Stream emissions on changes.
-- Used `TestWidgetsFlutterBinding` for async test support.
-- Tests account for real-time execution with approximate checks for timing.
+### Frontend
+- **Framework**: Flutter 3.38.3 (latest stable)
+- **State Management**: Riverpod with StateNotifier for reactive UI updates
+- **Key Notifiers**:
+  - `SquadNotifier`: Manages squad data, spots, timers, and alerts
+  - `GameNotifier`: Handles game selection, IGDB integration, and available games
+  - `ChatNotifier`: Manages chat messages and real-time updates
+  - `UserNotifier`: User profiles, pinned games, and preferences
+  - `SystemNotifier`: App-wide settings and theme
 
-### Architecture Improvements
-- **Hybrid Storage**: Maintained Firestore for real-time chat and SQLite for offline caching.
-- **State Management**: Enhanced Provider pattern with focused manager classes (e.g., `SquadManager`, `PeacockManager`).
-- **UID-Based System**: Consistent use of Firebase UIDs for user identification with display name caching.
-- **Performance Optimizations**: Reduced per-second `notifyListeners` calls by using periodic updates and streams.
+### Data Layer
+- **Real-time Chat**: Firestore streams with StreamBuilder for live updates
+- **Offline Caching**: SQLite for message history and offline access
+- **Media Handling**: Firebase Storage with backend-generated signed URLs
+- **External APIs**: IGDB for game data, Google Cloud Storage for media, xAI Grok API for AI assistance
 
-### Development Workflow
-- **Building & Running**: Flutter app with Firebase emulator support.
-- **Testing**: Unit tests for timer logic, integration tests for UI components.
-- **Deployment**: Firebase Cloud Functions for server-side timers (critical for background processing).
+### Backend
+- **Server**: Node.js/Express with PostgreSQL for analytics
+- **Cloud Functions**: Firebase Functions for server-side timer processing
+- **Authentication**: Firebase Auth with UID-based user system
+- **AI Integration**: xAI Grok API (model: grok-4.1-fast-latest) for smart replies and chat responses
 
-### Key Files Modified
-- `lib/services/timer_service.dart`: Singleton implementation with periodic timer and Firebase integration.
-- `lib/managers/timer_state.dart`: StateNotifier for timer state management.
-- `lib/providers.dart`: Updated providers for TimerService and TimerState.
-- `lib/squad_tab/spot_widgets.dart`: Added `SpotTimerDisplay` with progress bar and haptic feedback.
-- `lib/squad_tab/peacock_widgets.dart`: Added `PeacockTimerDisplay` similarly.
-- `lib/squad_state.dart`: Removed outdated listeners.
-- `test/timer_service_test.dart`: New unit tests for TimerService.
+## Key Files and Structure
+- `lib/main.dart`: App initialization with Firebase and deep linking
+- `lib/presentation/notifiers/`: Riverpod notifiers for state management
+- `lib/squad_tab/`: Squad management UI components
+- `lib/chat/`: Chat UI and services with Grok AI integration
+- `lib/services/grok_service.dart`: xAI Grok AI integration service
+- `lib/screens/`: Screen-level widgets and navigation
+- `backend/server.js`: Express server with Grok API endpoints
 
-### Dependencies
-- Flutter Riverpod for state management.
-- Firebase Core, Firestore, Functions for backend integration.
-- Fake Async for testing (though real-time tests were used for accuracy).
+## Development Workflows
 
-### Known Issues & Future Improvements
-- Timer tests have minor timing sensitivities; consider using a testable clock for deterministic testing.
-- Ensure Firebase Cloud Functions are deployed for timer functionality in production.
-- Monitor UI performance with stream updates; add caching if needed.
+### Building & Running
+```bash
+# Flutter app
+flutter pub get
+flutter run  # Auto-detects platform
 
-This update improves timer efficiency, UI responsiveness, and code maintainability while maintaining backward compatibility.
+# Backend
+cd backend && npm install
+npm start  # Runs on port 8080
+```
+
+### Testing
+- Unit tests: `flutter test`
+- Integration tests: Manual testing across platforms
+
+### Firebase Cloud Functions Deployment
+**Critical for server-side timers** - timers only work when functions are deployed:
+```bash
+# Deploy timer functions (required for background timer processing)
+firebase deploy --only functions
+```
+
+## Key Patterns
+- **UID-Based Users**: Firebase UIDs as source of truth, cached display names
+- **Hybrid Chat Storage**: Firestore for real-time, SQLite for offline
+- **Manager Pattern**: Dedicated notifiers for focused functionality
+- **Async Error Handling**: Try-catch with SnackBar feedback
+- **Haptic Feedback**: `HapticFeedback.lightImpact()` for interactions
+- **Stream Cleanup**: Dispose subscriptions in `dispose()` methods
+- **AI Integration**: Grok AI for smart replies and contextual responses
+
+## Security
+- Never commit credentials; use environment variables
+- xAI API key stored securely in backend environment
+
+## Current State
+- ✅ Migrated to Riverpod notifiers, build successful
+- ✅ Flutter updated to 3.38.3 (latest stable)
+- ✅ Grok AI integration with grok-4.1-fast-latest model
+- ✅ Smart replies endpoint implemented in backend
+- ✅ Voice room temporarily disabled due to unmigrated provider
+- ✅ Ready for iOS deployment with manual dSYM inclusion for Agora SDK
+- ✅ Latest changes committed and pushed to main branch (master)

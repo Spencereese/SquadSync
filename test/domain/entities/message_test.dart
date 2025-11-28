@@ -6,7 +6,7 @@ void main() {
     const testId = 'msg123';
     const testSenderId = 'user123';
     const testText = 'Hello World';
-    final testTimestamp = DateTime(2023, 12, 25, 10, 30);
+    final testTimestamp = DateTime.utc(2023, 12, 25, 10, 30);
     const testMessageType = MessageType.text;
     const testMediaUrl = 'https://example.com/image.jpg';
     const testMediaType = 'image/jpeg';
@@ -17,9 +17,9 @@ void main() {
     const testAiResponse = 'AI response text';
     const testMetadata = {'key': 'value'};
     const testIsEdited = true;
-    final testEditedAt = DateTime(2023, 12, 25, 10, 35);
+    final testEditedAt = DateTime.utc(2023, 12, 25, 10, 35);
     const testIsDeleted = false;
-    final testDeletedAt = DateTime(2023, 12, 25, 11, 00);
+    final testDeletedAt = DateTime.utc(2023, 12, 25, 11, 00);
 
     final testMessage = Message(
       id: testId,
@@ -143,6 +143,43 @@ void main() {
         expect(deserialized.isEdited, isNull);
         expect(deserialized.isDeleted, isNull);
       });
+
+      test('should handle null timestamp in JSON', () {
+        final jsonWithNullTimestamp = {
+          'id': testId,
+          'senderId': testSenderId,
+          'text': testText,
+          'timestamp': null,
+          'messageType': testMessageType.name,
+        };
+
+        final deserialized = Message.fromJson(jsonWithNullTimestamp);
+
+        expect(deserialized.id, testId);
+        expect(deserialized.senderId, testSenderId);
+        expect(deserialized.text, testText);
+        expect(deserialized.timestamp,
+            isNotNull); // Should default to current time
+        expect(deserialized.messageType, testMessageType);
+      });
+
+      test('should handle missing timestamp field in JSON', () {
+        final jsonWithoutTimestamp = {
+          'id': testId,
+          'senderId': testSenderId,
+          'text': testText,
+          'messageType': testMessageType.name,
+        };
+
+        final deserialized = Message.fromJson(jsonWithoutTimestamp);
+
+        expect(deserialized.id, testId);
+        expect(deserialized.senderId, testSenderId);
+        expect(deserialized.text, testText);
+        expect(deserialized.timestamp,
+            isNotNull); // Should default to current time
+        expect(deserialized.messageType, testMessageType);
+      });
     });
 
     group('Equality and Hash', () {
@@ -238,10 +275,10 @@ void main() {
         'Red': ['user1', 'user2'],
         'Blue': ['user3']
       };
-      final testCreatedAt = DateTime(2023, 12, 25, 10, 30);
+      final testCreatedAt = DateTime.utc(2023, 12, 25, 10, 30);
       const testCreatedBy = 'user123';
       const testIsClosed = false;
-      final testClosedAt = DateTime(2023, 12, 25, 11, 00);
+      final testClosedAt = DateTime.utc(2023, 12, 25, 11, 00);
 
       final testPoll = Poll(
         id: testPollId,

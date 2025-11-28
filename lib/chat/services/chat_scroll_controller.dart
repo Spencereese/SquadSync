@@ -19,6 +19,7 @@ class ChatScrollController {
   // Getters for external access
   bool get showJumpToBottom => _showJumpToBottom;
   bool get isLoadingMore => _isLoadingMore;
+  bool get hasMoreMessages => _hasMoreMessages;
   List<Map<String, dynamic>> get historicalMessages => _historicalMessages;
 
   /// Initialize scroll listeners
@@ -43,8 +44,7 @@ class ChatScrollController {
     }
 
     // Load more messages when scrolling near the top
-    if (scrollController.position.pixels >=
-            scrollController.position.maxScrollExtent - 200 &&
+    if (scrollController.position.pixels <= 200 &&
         !_isLoadingMore &&
         _hasMoreMessages) {
       onLoadMoreMessages();
@@ -86,12 +86,17 @@ class ChatScrollController {
 
   /// Scroll to bottom of chat
   void scrollToBottom() {
-    if (scrollController.hasClients) {
-      scrollController.animateTo(
-        0.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+    try {
+      if (scrollController.hasClients) {
+        scrollController.animateTo(
+          scrollController.position.minScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    } catch (e) {
+      // Scroll controller not ready yet, ignore
+      debugPrint('Scroll controller not ready for scrollToBottom: $e');
     }
   }
 

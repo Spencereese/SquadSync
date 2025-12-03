@@ -4,7 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../core/app_theme.dart';
-import '../models/squad.dart';
+import '../domain/entities/squad.dart';
 
 /// Glassmorphic squad card for discovery screen with Tinder-style swipe support
 /// 
@@ -39,7 +39,7 @@ class GlassSquadCard extends StatelessWidget {
     final theme = Theme.of(context);
     final neonColor = gamePrimaryColor ?? theme.colorScheme.primary;
     final memberCount = squad.memberUids.length;
-    final maxSlots = squad.maxSpots ?? 6;
+    final maxSlots = squad.maxSpots;
 
     return Hero(
       tag: heroTag,
@@ -252,7 +252,7 @@ class GlassSquadCard extends StatelessWidget {
   }
 
   Widget _buildGameBadge(ThemeData theme, Color neonColor) {
-    final gameName = squad.primaryGameName ?? 'Unknown Game';
+    final gameName = squad.gameName;
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -337,7 +337,7 @@ class GlassSquadCard extends StatelessWidget {
               
               // Empty slots
               ...List.generate(
-                (squad.maxSpots ?? 6) - members.length,
+                squad.maxSpots - members.length,
                 (index) => _buildEmptySlot(neonColor),
               ),
             ],
@@ -434,7 +434,7 @@ class GlassSquadCard extends StatelessWidget {
 
   Widget _buildFooter(ThemeData theme, Color neonColor) {
     final memberCount = squad.memberUids.length;
-    final maxSlots = squad.maxSpots ?? 6;
+    final maxSlots = squad.maxSpots;
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

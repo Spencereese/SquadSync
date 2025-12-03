@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as p;
 import '../chat_screen.dart';
-import '../chat_state.dart';
 import '../../presentation/notifiers/chat_notifier.dart' as cn;
 import '../../domain/entities/message.dart';
 import '../dialogs/group_actions_dialog.dart';
@@ -349,13 +347,10 @@ class UserGroupsTab extends ConsumerWidget {
                 if (group.id.isNotEmpty) {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => p.ChangeNotifierProvider<ChatState>(
-                        create: (_) => ChatState(),
-                        child: ChatScreen(
-                          chatType: ChatType.userGroup,
-                          chatGroupId: group.id,
-                          chatGroupName: groupName,
-                        ),
+                      builder: (context) => ChatScreen(
+                        chatType: ChatType.userGroup,
+                        chatGroupId: group.id,
+                        chatGroupName: groupName,
                       ),
                     ),
                   );

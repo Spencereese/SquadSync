@@ -12,12 +12,14 @@ class MessageTimestamp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Convert to local time if needed
+    final localTime = timestamp.isUtc ? timestamp.toLocal() : timestamp;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Center(
         child: Semantics(
           label:
-              'Message sent on ${DateFormat('MMMM d, yyyy, h:mm a').format(timestamp)}',
+              'Message sent on ${DateFormat('MMMM d, yyyy, h:mm a').format(localTime)}',
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
@@ -25,7 +27,7 @@ class MessageTimestamp extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
-              DateFormat('h:mm a').format(timestamp),
+              DateFormat('h:mm a').format(localTime),
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 11,

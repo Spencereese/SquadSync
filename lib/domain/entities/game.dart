@@ -19,18 +19,23 @@ class Game with _$Game {
     required DateTime? cachedAt,
   }) = _Game;
 
-  factory Game.fromJson(Map<String, dynamic> json) =>
-      _$GameFromJson(json);
+  factory Game.fromJson(Map<String, dynamic> json) => _$GameFromJson(json);
 
   factory Game.fromIgdb(Map<String, dynamic> data) {
+    // Normalize IGDB cover URL (add https scheme and upscale from thumb)
+    final rawCover = data['cover']?['url'];
+    final processedCover = rawCover != null
+        ? 'https:${rawCover.replaceAll('t_thumb', 't_cover_big')}'
+        : null;
     return Game(
       name: data['name'] ?? '',
       slug: data['slug'] ?? '',
       igdbId: data['id'],
-      coverUrl: data['cover']?['url'],
+      coverUrl: processedCover,
       summary: data['summary'],
       firstReleaseDate: data['first_release_date'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(data['first_release_date'] * 1000)
+          ? DateTime.fromMillisecondsSinceEpoch(
+              data['first_release_date'] * 1000)
           : null,
       genres: (data['genres'] as List<dynamic>?)
               ?.map((g) => g['name'] as String? ?? '')
@@ -49,11 +54,19 @@ class Game with _$Game {
   }
 
   factory Game.fromCache(Map<String, dynamic> data) {
+    // Ensure cached cover URLs have scheme and preferred size
+    final cachedCover = data['coverUrl'];
+    String? normalizedCover;
+    if (cachedCover is String) {
+      normalizedCover = cachedCover.startsWith('http')
+          ? cachedCover.replaceAll('t_thumb', 't_cover_big')
+          : 'https:${cachedCover.replaceAll('t_thumb', 't_cover_big')}';
+    }
     return Game(
       name: data['name'] ?? '',
       slug: data['slug'] ?? '',
       igdbId: data['igdbId'],
-      coverUrl: data['coverUrl'],
+      coverUrl: normalizedCover,
       summary: data['summary'],
       firstReleaseDate: data['firstReleaseDate'] != null
           ? DateTime.parse(data['firstReleaseDate'])
@@ -62,9 +75,8 @@ class Game with _$Game {
       platforms: List<String>.from(data['platforms'] ?? []),
       maxSpots: data['maxSpots'],
       isCached: true,
-      cachedAt: data['cachedAt'] != null
-          ? DateTime.parse(data['cachedAt'])
-          : null,
+      cachedAt:
+          data['cachedAt'] != null ? DateTime.parse(data['cachedAt']) : null,
     );
   }
 }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../../utils.dart';
 import '../../domain/entities/message.dart';
@@ -10,7 +9,6 @@ import '../../presentation/notifiers/user_notifier.dart';
 import '../../presentation/notifiers/squad_notifier.dart' as sn;
 import '../../presentation/notifiers/game_notifier.dart';
 import '../chat_screen.dart';
-import '../chat_state.dart';
 
 /// Unified dialog for all group-related actions: join, create, and browse public groups
 class GroupActionsDialog extends ConsumerStatefulWidget {
@@ -404,13 +402,10 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
         Navigator.of(context).pop();
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => p.ChangeNotifierProvider<ChatState>(
-              create: (_) => ChatState(),
-              child: ChatScreen(
-                chatType: ChatType.userGroup,
-                chatGroupId: groupId,
-                chatGroupName: groupData['name'] ?? 'Unnamed Group',
-              ),
+            builder: (context) => ChatScreen(
+              chatType: ChatType.userGroup,
+              chatGroupId: groupId,
+              chatGroupName: groupData['name'] ?? 'Unnamed Group',
             ),
           ),
         );

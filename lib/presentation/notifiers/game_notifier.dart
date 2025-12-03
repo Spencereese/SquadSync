@@ -114,6 +114,7 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
   Future<AsyncValue<List<Game>>> loadPopularGames() async {
     try {
       final games = await getPopularGames();
+      state = AsyncValue.data(state.value!.copyWith(availableGames: games));
       return AsyncValue.data(games);
     } catch (e) {
       return AsyncValue.error(e, StackTrace.current);

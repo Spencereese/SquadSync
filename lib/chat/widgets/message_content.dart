@@ -35,6 +35,8 @@ class MessageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+        'DEBUG MessageContent: Building for message "${message.text}", hasContent: ${message.hasContent}, length: ${message.text.length}');
     if (!message.hasContent) {
       return const Text(
         '[Empty Message]',
@@ -187,12 +189,7 @@ class MessageContent extends StatelessWidget {
             text: message.text,
             style: TextStyle(
               fontSize: 16,
-              color: isFromCurrentUser
-                  ? Colors.white
-                  : message.isAiResponse
-                      ? Colors.white // White text for Grok messages
-                      : Colors
-                          .white70, // White for sent, light grey for received
+              color: Colors.white,
               fontWeight: FontWeight.normal,
               backgroundColor: Colors.transparent,
             ),

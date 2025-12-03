@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -397,7 +396,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
         orElse: () => <Map<String, dynamic>>[],
       );
       final availabilityManager =
-          p.Provider.of<AvailabilityManager>(_currentContext, listen: false);
+          ref.read(availabilityManagerProvider.notifier);
 
       if (pinnedGames.isNotEmpty) {
         _suggestedLobbies =

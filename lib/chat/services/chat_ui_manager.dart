@@ -93,7 +93,9 @@ class ChatUIManager {
 
   /// Format timestamp for display (always show time only for swipe reveal)
   String _formatTimestamp(DateTime timestamp) {
-    return '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
+    // Convert to local time if needed
+    final localTime = timestamp.isUtc ? timestamp.toLocal() : timestamp;
+    return '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
   }
 
   /// Build the chat header with settings menu and online count
@@ -370,154 +372,143 @@ class ChatUIManager {
     }
 
     if (_processedMessages.isEmpty) {
-      return Column(
-        children: [
-          const Spacer(),
-          const Center(
-            child:
-                Text('No messages yet', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+      return const Center(
+        child: Text('No messages yet', style: TextStyle(color: Colors.white)),
       );
     }
 
-    return Column(
-      children: [
-        const Spacer(),
-        StatefulBuilder(
-          builder: (context, setState) {
-            return ValueListenableBuilder<double>(
-              valueListenable: swipeOffset,
-              builder: (context, offset, child) {
-                return GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    // Allow tap events to pass through to parent for keyboard dismissal
-                  },
-                  onHorizontalDragUpdate: (details) {
-                    // Only update if drag is mostly horizontal to avoid interfering with vertical scroll
-                    if (details.delta.dx.abs() > details.delta.dy.abs()) {
-                      // Dismiss keyboard on swipe
-                      FocusScope.of(context).unfocus();
-                      swipeOffset.value += details.delta.dx;
-                      swipeOffset.value = swipeOffset.value.clamp(-40.0, 0.0);
-                    }
-                  },
-                  onHorizontalDragEnd: (details) {
-                    // Animate back to 0 with spring effect
-                    _animateSwipeBack();
-                  },
-                  child: Stack(
-                    children: [
-                      // Main messages list
-                      ListView.builder(
-                        controller: scrollController.scrollController,
-                        reverse: true,
-                        padding: const EdgeInsets.only(
-                          left: 8.0,
-                          right: 8.0,
-                          top: 4.0,
-                          bottom:
-                              10.0, // Further reduced bottom padding to bring messages closer to input bar
-                        ),
-                        itemCount: _processedMessages.length +
-                            (scrollController.isLoadingMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          // Show loading indicator at the top (for loading older messages)
-                          if (scrollController.isLoadingMore &&
-                              index == _processedMessages.length) {
-                            return const Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.cyanAccent,
-                                  ),
-                                ),
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return ValueListenableBuilder<double>(
+          valueListenable: swipeOffset,
+          builder: (context, offset, child) {
+            return GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                // Allow tap events to pass through to parent for keyboard dismissal
+              },
+              onHorizontalDragUpdate: (details) {
+                // Only update if drag is mostly horizontal to avoid interfering with vertical scroll
+                if (details.delta.dx.abs() > details.delta.dy.abs()) {
+                  // Dismiss keyboard on swipe
+                  FocusScope.of(context).unfocus();
+                  swipeOffset.value += details.delta.dx;
+                  swipeOffset.value = swipeOffset.value.clamp(-40.0, 0.0);
+                }
+              },
+              onHorizontalDragEnd: (details) {
+                // Animate back to 0 with spring effect
+                _animateSwipeBack();
+              },
+              child: Stack(
+                children: [
+                  // Main messages list
+                  ListView.builder(
+                    controller: scrollController.scrollController,
+                    reverse: true,
+                    padding: const EdgeInsets.only(
+                      left: 8.0,
+                      right: 8.0,
+                      top: 4.0,
+                      bottom:
+                          10.0, // Further reduced bottom padding to bring messages closer to input bar
+                    ),
+                    itemCount: _processedMessages.length +
+                        (scrollController.isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      debugPrint(
+                          'DEBUG ChatUIManager: Building item $index, processedMessages length: ${_processedMessages.length}');
+                      // Show loading indicator at the top (for loading older messages)
+                      if (scrollController.isLoadingMore &&
+                          index == _processedMessages.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.cyanAccent,
                               ),
-                            );
-                          }
+                            ),
+                          ),
+                        );
+                      }
 
-                          // Adjust index for loading indicator
-                          final messageGroupIndex =
-                              scrollController.isLoadingMore
-                                  ? index - 1
-                                  : index;
-                          if (messageGroupIndex < 0 || messageGroupIndex >= _processedMessages.length) {
-                            return const SizedBox.shrink();
-                          }
-                          final messageGroup =
-                              _processedMessages[messageGroupIndex]
-                                  as MessageGroupData;
+                      // Adjust index for loading indicator
+                      final messageGroupIndex =
+                          scrollController.isLoadingMore ? index - 1 : index;
+                      if (messageGroupIndex < 0 ||
+                          messageGroupIndex >= _processedMessages.length) {
+                        return const SizedBox.shrink();
+                      }
+                      final messageGroup = _processedMessages[messageGroupIndex]
+                          as MessageGroupData;
 
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2.0),
-                            child: Stack(
-                              children: [
-                                Transform.translate(
-                                  offset: Offset(offset, 0),
-                                  child: MessageGroup(
-                                    messages: [
-                                      messageGroup.parentMessage,
-                                      ...messageGroup.replies
-                                    ],
-                                    showSender: true,
-                                    showTimestamp: messageGroup
-                                        .parentMessage.shouldShowTimestamp,
-                                    showReadIndicator: false,
-                                    onTap: onMessageTap,
-                                    onLongPress: () {},
-                                    sendingStatus: {},
-                                    chatGroupId: chatGroupId,
-                                    chatType: chatType,
-                                    chatService: _chatService,
-                                    squadId: chatType == ChatType.squad
-                                        ? chatGroupId
-                                        : null,
-                                  ).animate().fadeIn(duration: 300.ms),
-                                ),
-                                if (offset < -2)
-                                  Positioned(
-                                    right: 0,
-                                    top: messageGroup
-                                            .parentMessage.shouldShowTimestamp
-                                        ? 40
-                                        : 0,
-                                    height: 60,
-                                    child: Transform.translate(
-                                      offset: Offset(
-                                          (50 + offset * 1.25).clamp(0, 50), 0),
-                                      child: Container(
-                                        width: 50,
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          _formatTimestamp(messageGroup
-                                              .parentMessage.timestamp),
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2.0),
+                        child: Stack(
+                          children: [
+                            Transform.translate(
+                              offset: Offset(offset, 0),
+                              child: MessageGroup(
+                                messages: [
+                                  messageGroup.parentMessage,
+                                  ...messageGroup.replies
+                                ],
+                                showSender: true,
+                                showTimestamp: messageGroup
+                                    .parentMessage.shouldShowTimestamp,
+                                showReadIndicator: false,
+                                onTap: onMessageTap,
+                                onLongPress: () {},
+                                sendingStatus: {},
+                                chatGroupId: chatGroupId,
+                                chatType: chatType,
+                                chatService: _chatService,
+                                squadId: chatType == ChatType.squad
+                                    ? chatGroupId
+                                    : null,
+                              ).animate().fadeIn(duration: 300.ms),
+                            ),
+                            if (offset < -2)
+                              Positioned(
+                                right: 0,
+                                top: messageGroup
+                                        .parentMessage.shouldShowTimestamp
+                                    ? 40
+                                    : 0,
+                                height: 60,
+                                child: Transform.translate(
+                                  offset: Offset(
+                                      (50 + offset * 1.25).clamp(0, 50), 0),
+                                  child: Container(
+                                    width: 50,
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      _formatTimestamp(
+                                          messageGroup.parentMessage.timestamp),
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
                                       ),
                                     ),
                                   ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
+                ],
+              ),
             );
           },
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -656,7 +647,13 @@ class ChatUIManager {
       List<Message> messages, String Function(String) cleanText) {
     // Convert messages to MessageData objects
     final messageDataList = messages.map((message) {
-      return MessageData.fromMap(message.toJson());
+      final json = message.toJson();
+      debugPrint(
+          'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", json keys: ${json.keys.toList()}');
+      final messageData = MessageData.fromMap(json);
+      debugPrint(
+          'DEBUG ChatUIManager: Created MessageData with text: "${messageData.text}", hasContent: ${messageData.hasContent}');
+      return messageData;
     }).toList();
 
     // Sort messages by timestamp (newest first) for processing

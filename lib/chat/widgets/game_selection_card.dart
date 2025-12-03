@@ -119,7 +119,7 @@ class _GameSelectionCardState extends ConsumerState<GameSelectionCard> {
               }
             },
             itemBuilder: (context, suggestion) {
-              final game = suggestion as Map<String, dynamic>;
+              final game = suggestion;
               final coverUrl = game['coverUrl'] as String?;
               return Container(
                 padding: const EdgeInsets.all(12),
@@ -132,7 +132,11 @@ class _GameSelectionCardState extends ConsumerState<GameSelectionCard> {
                         borderRadius: BorderRadius.circular(8),
                         image: coverUrl != null
                             ? DecorationImage(
-                                image: CachedNetworkImageProvider(coverUrl),
+                                image: CachedNetworkImageProvider(
+                                  coverUrl.startsWith('http')
+                                      ? coverUrl
+                                      : 'https:$coverUrl',
+                                ),
                                 fit: BoxFit.cover,
                               )
                             : null,
@@ -176,7 +180,7 @@ class _GameSelectionCardState extends ConsumerState<GameSelectionCard> {
               );
             },
             onSelected: (suggestion) async {
-              final game = suggestion as Map<String, dynamic>;
+              final game = suggestion;
               widget.controller.text = game['name'] as String? ?? '';
               widget.onGameSelected(game);
               // Ensure suggestions close
@@ -240,7 +244,11 @@ class GamePreviewCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               image: coverUrl != null
                   ? DecorationImage(
-                      image: CachedNetworkImageProvider(coverUrl),
+                      image: CachedNetworkImageProvider(
+                        coverUrl.startsWith('http')
+                            ? coverUrl
+                            : 'https:$coverUrl',
+                      ),
                       fit: BoxFit.cover,
                     )
                   : null,

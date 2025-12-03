@@ -3,13 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:qr_code_scanner/qr_code_scanner.dart';
 import '../../utils.dart';
 import '../../domain/entities/message.dart';
 import '../../presentation/notifiers/user_notifier.dart';
 import '../chat_screen.dart';
-import '../chat_state.dart';
 
 /// Enhanced dialog for joining groups via codes, links, or QR scanning
 class JoinGroupDialog extends ConsumerStatefulWidget {
@@ -175,13 +173,10 @@ class _JoinGroupDialogState extends ConsumerState<JoinGroupDialog>
         // Navigate to the chat screen
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => p.ChangeNotifierProvider<ChatState>(
-              create: (_) => ChatState(),
-              child: ChatScreen(
-                chatType: ChatType.userGroup,
-                chatGroupId: groupId,
-                chatGroupName: groupData['name'] ?? 'Unnamed Group',
-              ),
+            builder: (context) => ChatScreen(
+              chatType: ChatType.userGroup,
+              chatGroupId: groupId,
+              chatGroupName: groupData['name'] ?? 'Unnamed Group',
             ),
           ),
         );

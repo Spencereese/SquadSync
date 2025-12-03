@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -69,24 +70,37 @@ class OnboardingService extends _$OnboardingService {
     }
   }
 
+  Future<void> previousStep() async {
+    final currentStep = state.value!.currentStep;
+    if (currentStep > 0) {
+      state =
+          AsyncValue.data(state.value!.copyWith(currentStep: currentStep - 1));
+      await saveDraft();
+    }
+  }
+
   Future<void> completeOnboarding() async {
     if (isStepValid(0) && isStepValid(1)) {
-      // TODO: Update UserNotifier - this should be handled at UI level
-      // The UI should call the user notifier methods directly
-      // final userNotifier = ref.read(userNotifierProvider.notifier);
-      // await userNotifier.updateDisplayName(state.value!.displayName!);
-      // await userNotifier.updateProfileImage(state.value!.avatarUrl!);
-      // for (var game in state.value!.pinnedGames) {
-      //   await userNotifier.addPinnedGame(game);
-      // }
+      // Save user profile data to Firebase Auth, Firestore, and local storage
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && state.value != null) {
+        final displayName = state.value!.displayName!;
+        final avatarUrl = state.value!.avatarUrl!;
 
-      // Update GameNotifier if needed (e.g., set onboardingFlow to completed)
-      // final gameNotifier = ref.read(gameNotifierProvider.notifier);
-      // await gameNotifier.completeOnboarding();
+        // Update Firebase Auth profile
+        await user.updateProfile(displayName: displayName, photoURL: avatarUrl);
 
-      // Analytics tracking in SystemNotifier
-      // final systemNotifier = ref.read(systemNotifierProvider.notifier);
-      // await systemNotifier.trackEvent('onboarding_completed');
+        // Update Firestore user document
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'displayName': displayName,
+          'profileImage': avatarUrl,
+          'pinnedGames': state.value!.pinnedGames,
+        }, SetOptions(merge: true));
+
+        // Update local storage
+        await _prefs.setString('displayName', displayName);
+        await _prefs.setString('profileImage', avatarUrl);
+      }
 
       // Clear draft
       await _prefs.remove('onboarding_draft');

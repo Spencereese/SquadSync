@@ -73,6 +73,15 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   bool get isUserGroup => widget.chatType == ChatType.userGroup;
   bool get isDM => widget.chatType == ChatType.dm;
 
+  String? get effectiveChatGroupId {
+    if (widget.chatGroupId != null) return widget.chatGroupId;
+    if (widget.chatType == ChatType.squad) {
+      final squadAsync = ref.read(sn.squadNotifierProvider);
+      return squadAsync.value?.selectedSquadId;
+    }
+    return null;
+  }
+
   int? _getTimestampMs(dynamic message) {
     if (message is DocumentSnapshot) {
       final data = message.data() as Map<String, dynamic>?;
@@ -212,10 +221,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       );
 
       // Load messages using the new ChatNotifier
-      if (widget.chatGroupId != null) {
+      final chatGroupId = effectiveChatGroupId;
+      if (chatGroupId != null) {
         ref
             .read(cn.chatNotifierProvider.notifier)
-            .initializeMessagesStream(widget.chatGroupId!, widget.chatType);
+            .initializeMessagesStream(chatGroupId, widget.chatType);
       }
     });
 
@@ -352,9 +362,26 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       final user = _auth.currentUser;
       if (user == null) return;
 
+      // Determine chat group ID
+      String? chatGroupId = widget.chatGroupId;
+      if (chatGroupId == null && widget.chatType == ChatType.squad) {
+        final squadAsync = ref.read(sn.squadNotifierProvider);
+        chatGroupId = squadAsync.value?.selectedSquadId;
+      }
+      if (chatGroupId == null) {
+        // Cannot send message without chat group ID
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Cannot send message: no chat group selected')),
+          );
+        }
+        return;
+      }
+
       await ref.read(cn.chatNotifierProvider.notifier).sendMessage(
             ref,
-            widget.chatGroupId!,
+            chatGroupId,
             _messageController.text,
             msg.MessageType.text,
             widget.chatType,
@@ -369,7 +396,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       HapticFeedback.lightImpact();
       await _typingManager.onMessageSent(
         ref,
-        chatGroupId: widget.chatGroupId,
+        chatGroupId: chatGroupId,
       );
       _scrollToBottom();
       await _checkFirstMessage();
@@ -396,8 +423,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _sendMedia() async {
+    final chatGroupId = effectiveChatGroupId;
+    if (chatGroupId == null) return;
     await _mediaHandler.sendMedia(ref,
-        chatGroupId: widget.chatGroupId, chatType: widget.chatType);
+        chatGroupId: chatGroupId, chatType: widget.chatType);
   }
 
   Future<void> _startRecording() async {

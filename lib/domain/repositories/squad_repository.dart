@@ -5,6 +5,7 @@ abstract class SquadRepository {
   // Squad lifecycle
   Future<Squad> createSquad(String name, String gameName, int maxSpots);
   Future<Squad?> getSquad(String squadId);
+  Future<Squad?> getSquadByInviteCode(String inviteCode);
   Future<List<Squad>> getUserSquads(String userId);
   Future<void> deleteSquad(String squadId);
 

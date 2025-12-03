@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app_theme.dart';
-import 'chat_state.dart';
+import 'chat_state_notifier.dart';
 
 class ChatSettingsMenu {
   static void showChatOptions({
@@ -186,10 +186,11 @@ class ChatSettingsMenu {
 
   static void showQuickReactionPicker({
     required BuildContext context,
+    required WidgetRef ref,
     required Function(List<String>) onEmojisSelected,
   }) {
-    final chatState = Provider.of<ChatState>(context, listen: false);
-    final currentEmojis = List<String>.from(chatState.quickReactionEmojis);
+    final currentEmojis =
+        List<String>.from(ref.read(chatStateProvider).quickReactionEmojis);
     final selectedEmojis = Set<String>.from(currentEmojis);
 
     HapticFeedback.mediumImpact();

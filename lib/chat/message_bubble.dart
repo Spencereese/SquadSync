@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as p;
 import 'chat_service.dart';
 import '../domain/entities/message.dart';
 import '../presentation/notifiers/chat_notifier.dart' as cn;
@@ -743,14 +742,17 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                         _dismissOverlays();
                       },
                     ),
-                    _buildDivider(),
-                    _buildModernMenuItem(
-                      icon: Icons.smart_toy,
-                      label: 'Smart Reply',
-                      onTap: () => _showSmartReplyBottomSheet(),
-                    ),
                   ],
                 ),
+                // Smart Reply for received messages (spans 2 spaces)
+                if (!widget.isMe) ...[
+                  const SizedBox(height: 8),
+                  _buildWideMenuItem(
+                    icon: Icons.smart_toy,
+                    label: 'Smart Reply',
+                    onTap: () => _showSmartReplyBottomSheet(),
+                  ),
+                ],
                 // Secondary actions
                 if (widget.isMe) ...[
                   const SizedBox(height: 8),
@@ -796,10 +798,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                               result != _messageData.text &&
                               context.mounted) {
                             try {
-                              // Use the provided chatService or try to get from Provider
-                              final chatService = widget.chatService ??
-                                  p.Provider.of<ChatService>(context,
-                                      listen: false);
+                              // Use the provided chatService or create a new instance
+                              final chatService =
+                                  widget.chatService ?? ChatService();
                               final squadState =
                                   ref.read(sn.squadNotifierProvider).maybeWhen(
                                         data: (data) => data,
@@ -863,10 +864,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                           );
                           if (confirm == true && context.mounted) {
                             try {
-                              // Use the provided chatService or try to get from Provider
-                              final chatService = widget.chatService ??
-                                  p.Provider.of<ChatService>(context,
-                                      listen: false);
+                              // Use the provided chatService or create a new instance
+                              final chatService =
+                                  widget.chatService ?? ChatService();
                               final squadState =
                                   ref.read(sn.squadNotifierProvider).maybeWhen(
                                         data: (data) => data,
@@ -913,10 +913,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                       onTap: () async {
                         final messenger = ScaffoldMessenger.of(context);
                         try {
-                          // Use the provided chatService or try to get from Provider
-                          final chatService = widget.chatService ??
-                              p.Provider.of<ChatService>(context,
-                                  listen: false);
+                          // Use the provided chatService or create a new instance
+                          final chatService =
+                              widget.chatService ?? ChatService();
                           await chatService.bumpMessage(
                             _messageData.id,
                             widget.chatGroupId,
@@ -958,6 +957,46 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWideMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 148, // Double width (70 * 2 + 8 divider) for spanning 2 spaces
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: Colors.white.withValues(alpha: 0.1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 22,
+              color: color ?? Colors.white.withValues(alpha: 0.9),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: color ?? Colors.white.withValues(alpha: 0.9),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       ),
     );

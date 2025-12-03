@@ -87,7 +87,8 @@ class ChatScrollController {
   /// Scroll to bottom of chat
   void scrollToBottom() {
     try {
-      if (scrollController.hasClients) {
+      if (scrollController.hasClients &&
+          scrollController.position.hasContentDimensions) {
         scrollController.animateTo(
           scrollController.position.minScrollExtent,
           duration: const Duration(milliseconds: 300),

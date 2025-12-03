@@ -9,9 +9,9 @@ import 'package:squad_sync/setup_screen.dart';
 import 'package:squad_sync/screens/onboarding/onboarding_flow.dart';
 import 'package:squad_sync/join_squad_screen.dart';
 import 'package:squad_sync/screens/squad_tab_screen.dart';
-import 'package:squad_sync/squad_state.dart';
+import 'package:squad_sync/squad_state_notifier.dart';
 import 'package:squad_sync/chat/chat_state.dart';
-import 'package:squad_sync/managers/user_manager.dart';
+import 'package:squad_sync/managers/stubs.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

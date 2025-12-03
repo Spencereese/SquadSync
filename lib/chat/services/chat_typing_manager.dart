@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as p;
 import '../../domain/entities/message.dart';
 import '../chat_service.dart';
-import '../chat_state.dart';
+import '../chat_state_notifier.dart';
 import '../../squad_state_notifier.dart';
 
 /// Service responsible for managing typing indicators and status updates
@@ -32,9 +31,9 @@ class ChatTypingManager {
         .getTypingUser(ref, chatGroupId: chatGroupId, chatType: chatType)
         .listen((typingUser) {
       final myName = squadState?.displayName ?? '';
-      p.Provider.of<ChatState>(ref.context, listen: false).setTypingUser(
-        typingUser != null && typingUser != myName ? typingUser : null,
-      );
+      ref.read(chatStateProvider.notifier).setTypingUser(
+            typingUser != null && typingUser != myName ? typingUser : null,
+          );
     });
   }
 

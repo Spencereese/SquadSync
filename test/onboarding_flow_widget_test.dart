@@ -10,7 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:squad_sync/screens/onboarding/onboarding_flow.dart';
 import 'package:squad_sync/screens/onboarding/profile_setup_screen.dart';
-import 'package:squad_sync/screens/onboarding/add_game_screen.dart';
+import 'package:squad_sync/screens/add_game_screen.dart';
 import 'package:squad_sync/services/onboarding_service.dart';
 import 'package:squad_sync/providers/user_notifier.dart';
 import 'package:squad_sync/providers/game_notifier.dart';
@@ -19,10 +19,14 @@ import 'package:squad_sync/chat/chat_groups_screen.dart';
 import 'package:squad_sync/services/app_flow_manager.dart';
 
 // Define providers for testing
-final sharedPreferencesProvider = Provider<SharedPreferences>((ref) => throw UnimplementedError());
-final firebaseAuthProvider = Provider<FirebaseAuth>((ref) => throw UnimplementedError());
-final firebaseStorageProvider = Provider<FirebaseStorage>((ref) => throw UnimplementedError());
-final appFlowManagerProvider = Provider<AppFlowManager>((ref) => throw UnimplementedError());
+final sharedPreferencesProvider =
+    Provider<SharedPreferences>((ref) => throw UnimplementedError());
+final firebaseAuthProvider =
+    Provider<FirebaseAuth>((ref) => throw UnimplementedError());
+final firebaseStorageProvider =
+    Provider<FirebaseStorage>((ref) => throw UnimplementedError());
+final appFlowManagerProvider =
+    Provider<AppFlowManager>((ref) => throw UnimplementedError());
 
 void main() {
   late MockSharedPreferences mockPrefs;
@@ -41,7 +45,8 @@ void main() {
 
   setUp(() {
     mockPrefs = MockSharedPreferences();
-    mockAuth = MockFirebaseAuth(signedIn: true, mockUser: MockUser(uid: 'test-uid'));
+    mockAuth =
+        MockFirebaseAuth(signedIn: true, mockUser: MockUser(uid: 'test-uid'));
     mockStorage = MockFirebaseStorage();
     mockUser = MockUser();
     mockRef = MockReference();
@@ -60,15 +65,18 @@ void main() {
     when(mockStorage.ref()).thenReturn(mockRef);
     when(mockRef.child(any)).thenReturn(mockRef);
     when(mockRef.putFile(any)).thenReturn(mockUploadTask);
-    when(mockUploadTask.whenComplete(any)).thenAnswer((_) => Future.value(mockSnapshot));
+    when(mockUploadTask.whenComplete(any))
+        .thenAnswer((_) => Future.value(mockSnapshot));
     when(mockSnapshot.ref).thenReturn(mockRef);
-    when(mockRef.getDownloadURL()).thenReturn(Future.value('https://example.com/avatar.jpg'));
+    when(mockRef.getDownloadURL())
+        .thenReturn(Future.value('https://example.com/avatar.jpg'));
 
     when(mockPrefs.getString(any)).thenReturn(null);
     when(mockPrefs.setString(any, any)).thenAnswer((_) => Future.value(true));
     when(mockPrefs.remove(any)).thenAnswer((_) => Future.value(true));
 
-    when(mockImagePicker.pickImage(source: anyNamed('source'))).thenAnswer((_) => Future.value(mockXFile));
+    when(mockImagePicker.pickImage(source: anyNamed('source')))
+        .thenAnswer((_) => Future.value(mockXFile));
     when(mockXFile.path).thenReturn('/test/path.jpg');
 
     // Mock static instances
@@ -110,7 +118,8 @@ void main() {
       await tester.enterText(nameField, 'Hi'); // Too short
       await tester.pump();
 
-      expect(find.text('Display name must be longer than 3 characters'), findsOneWidget);
+      expect(find.text('Display name must be longer than 3 characters'),
+          findsOneWidget);
       expect(find.text('Please upload an avatar to continue'), findsOneWidget);
     });
 
@@ -148,7 +157,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(AddGameScreen), findsOneWidget);
-      expect(find.text('Pin Your Favorite Games'), findsOneWidget);
+      expect(find.text('Select Your Games'), findsOneWidget);
     });
 
     testWidgets('shows game pinning validation', (tester) async {
@@ -157,22 +166,31 @@ void main() {
       await tester.pumpAndSettle();
 
       // Simulate navigation to step 1
-      final onboardingService = tester.element(find.byType(OnboardingFlow)).read(onboardingServiceProvider.notifier);
-      await onboardingService.updateProfile('ValidName', 'https://example.com/avatar.jpg');
+      final onboardingService = tester
+          .element(find.byType(OnboardingFlow))
+          .read(onboardingServiceProvider.notifier);
+      await onboardingService.updateProfile(
+          'ValidName', 'https://example.com/avatar.jpg');
       await onboardingService.nextStep();
       await tester.pumpAndSettle();
 
       expect(find.text('Pin at least 1 game to continue'), findsOneWidget);
     });
 
-    testWidgets('completes onboarding and navigates to ChatGroupsScreen', (tester) async {
+    testWidgets('completes onboarding and navigates to ChatGroupsScreen',
+        (tester) async {
       await tester.pumpWidget(createTestWidget());
       await tester.pumpAndSettle();
 
       // Complete profile
-      final onboardingService = tester.element(find.byType(OnboardingFlow)).read(onboardingServiceProvider.notifier);
-      await onboardingService.updateProfile('ValidName', 'https://example.com/avatar.jpg');
-      await onboardingService.updatePinnedGames([{'id': '1', 'name': 'Game1'}]);
+      final onboardingService = tester
+          .element(find.byType(OnboardingFlow))
+          .read(onboardingServiceProvider.notifier);
+      await onboardingService.updateProfile(
+          'ValidName', 'https://example.com/avatar.jpg');
+      await onboardingService.updatePinnedGames([
+        {'id': '1', 'name': 'Game1'}
+      ]);
       await onboardingService.nextStep();
       await tester.pumpAndSettle();
 
@@ -209,7 +227,8 @@ void main() {
       expect(find.textContaining('Failed to upload avatar'), findsOneWidget);
     });
 
-    testWidgets('reactivity: buttons enable within 100ms of input changes', (tester) async {
+    testWidgets('reactivity: buttons enable within 100ms of input changes',
+        (tester) async {
       await tester.pumpWidget(createTestWidget());
       await tester.pumpAndSettle();
 

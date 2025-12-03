@@ -5,12 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:record/record.dart' as record_package;
 import '../../domain/entities/squad_state.dart';
 import '../../domain/entities/message.dart';
 import '../chat_service.dart';
-import '../chat_state.dart';
+import '../chat_state_notifier.dart';
 import '../../services/media_service.dart';
 
 /// Service responsible for handling media operations in chat including
@@ -35,12 +34,11 @@ class ChatMediaHandler {
     required String? chatGroupId,
     required ChatType chatType,
   }) async {
-    final chatState = p.Provider.of<ChatState>(ref.context, listen: false);
     try {
       final XFile? media = await _picker.pickMedia();
       if (media == null) return;
 
-      chatState.setUploading(true);
+      ref.read(chatStateProvider.notifier).setUploading(true);
       File file = File(media.path);
       bool isVideo = media.mimeType?.startsWith('video/') ?? false;
       final user = _auth.currentUser;
@@ -74,19 +72,17 @@ class ChatMediaHandler {
         chatType: chatType,
       );
 
-      chatState.setUploading(false);
+      ref.read(chatStateProvider.notifier).setUploading(false);
       HapticFeedback.lightImpact();
     } catch (e) {
       ScaffoldMessenger.of(ref.context)
           .showSnackBar(SnackBar(content: Text('Media upload failed: $e')));
-      chatState.setUploading(false);
+      ref.read(chatStateProvider.notifier).setUploading(false);
     }
   }
 
   /// Start audio recording
   Future<void> startRecording(WidgetRef ref) async {
-    final chatState = p.Provider.of<ChatState>(ref.context, listen: false);
-
     if (await _audioRecorder.hasPermission()) {
       try {
         final directory = Directory.systemTemp;
@@ -97,7 +93,7 @@ class ChatMediaHandler {
             '${directory.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
         await _audioRecorder.start(const record_package.RecordConfig(),
             path: path);
-        chatState.setRecording(true);
+        ref.read(chatStateProvider.notifier).setRecording(true);
         HapticFeedback.mediumImpact();
       } catch (e) {
         debugPrint('Recording start failed: $e');
@@ -120,11 +116,9 @@ class ChatMediaHandler {
     required String? chatGroupId,
     required ChatType chatType,
   }) async {
-    final chatState = p.Provider.of<ChatState>(ref.context, listen: false);
-
     try {
       String? path = await _audioRecorder.stop();
-      chatState.setRecording(false);
+      ref.read(chatStateProvider.notifier).setRecording(false);
 
       if (path != null) {
         _audioPath = path;
@@ -133,7 +127,7 @@ class ChatMediaHandler {
       HapticFeedback.mediumImpact();
     } catch (e) {
       debugPrint('Recording stop failed: $e');
-      chatState.setRecording(false);
+      ref.read(chatStateProvider.notifier).setRecording(false);
       if (ref.context.mounted) {
         ScaffoldMessenger.of(ref.context).showSnackBar(
             SnackBar(content: Text('Failed to stop recording: $e')));
@@ -147,10 +141,8 @@ class ChatMediaHandler {
     required String? chatGroupId,
     required ChatType chatType,
   }) async {
-    final chatState = p.Provider.of<ChatState>(ref.context, listen: false);
-
     if (_audioPath == null) return;
-    chatState.setUploading(true);
+    ref.read(chatStateProvider.notifier).setUploading(true);
 
     try {
       File file = File(_audioPath!);
@@ -173,12 +165,12 @@ class ChatMediaHandler {
         chatType: chatType,
       );
 
-      chatState.setUploading(false);
+      ref.read(chatStateProvider.notifier).setUploading(false);
       _audioPath = null;
     } catch (e) {
       ScaffoldMessenger.of(ref.context)
           .showSnackBar(SnackBar(content: Text('Audio upload failed: $e')));
-      chatState.setUploading(false);
+      ref.read(chatStateProvider.notifier).setUploading(false);
     }
   }
 

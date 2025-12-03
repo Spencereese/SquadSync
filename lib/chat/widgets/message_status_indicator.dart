@@ -98,17 +98,19 @@ class MessageStatusIndicator extends StatelessWidget {
   }
 
   String _formatTime(DateTime time) {
+    // Convert to local time if needed
+    final localTime = time.isUtc ? time.toLocal() : time;
     final now = DateTime.now();
-    final difference = now.difference(time);
+    final difference = now.difference(localTime);
 
     if (difference.inDays == 0) {
-      return DateFormat('h:mm a').format(time);
+      return DateFormat('h:mm a').format(localTime);
     } else if (difference.inDays == 1) {
       return 'Yesterday';
     } else if (difference.inDays < 7) {
       return '${difference.inDays}d ago';
     } else {
-      return DateFormat('M/d').format(time);
+      return DateFormat('M/d').format(localTime);
     }
   }
 }

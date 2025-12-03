@@ -18,6 +18,7 @@ import 'join_squad_screen.dart';
 import 'chat/dialogs/group_actions_dialog.dart';
 import 'managers/stubs.dart'; // TEMP: Keep for legacy managers
 import 'widgets/app_widgets.dart';
+import 'services/igdb_auth_service.dart';
 import 'core/injection.dart' as di;
 
 void main() async {
@@ -85,14 +86,14 @@ Future<void> _initializeFirebase() async {
     debugPrint('Dependency injection initialized');
 
     // IGDB credentials setup (uncomment for first run, then comment out)
-    // try {
-    //   print('About to call storeCredentials...');
-    //   final igdbService = IgdbAuthService();
-    //   await igdbService.storeCredentials();
-    //   print('IGDB credentials stored - comment out this code after first run');
-    // } catch (e) {
-    //   debugPrint('IGDB credentials setup failed: $e');
-    // }
+    try {
+      print('About to call storeCredentials...');
+      final igdbService = IgdbAuthService();
+      await igdbService.storeCredentials();
+      print('IGDB credentials stored - comment out this code after first run');
+    } catch (e) {
+      debugPrint('IGDB credentials setup failed: $e');
+    }
 
     // Grok API key setup (uncomment for first run, then comment out)
     // try {

@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:badges/badges.dart' as badges;
 import 'chat/chat_groups_screen.dart';
 import 'screens/squad_tab_screen.dart';
 import 'app_theme.dart';
 import 'managers/stubs.dart';
 
-class MainNavigationScreen extends StatefulWidget {
+class MainNavigationScreen extends ConsumerStatefulWidget {
   const MainNavigationScreen({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  ConsumerState<MainNavigationScreen> createState() =>
+      _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   int _selectedIndex = 0;
 
   static const List<Widget> _screens = <Widget>[
@@ -60,7 +61,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   Stream<int> _getUnreadNotificationCount() {
-    return p.Provider.of<NotificationManager>(context, listen: false)
+    return ref
+        .read(notificationManagerProvider.notifier)
         .getUnreadNotificationCount();
   }
 

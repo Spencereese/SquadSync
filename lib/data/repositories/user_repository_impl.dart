@@ -210,13 +210,23 @@ class UserRepositoryImpl implements UserRepository {
 
     // Update local storage
     final currentPinned = await _localDataSource.getPinnedGames();
-    currentPinned.add(game);
-    await _localDataSource.setPinnedGames(currentPinned);
 
-    // Update remote storage (Firestore)
-    await _remoteDataSource.updateUserProfile(user.uid, {
-      'pinnedGames': currentPinned,
-    });
+    // Check for duplicates by name or id
+    final gameName = game['name'];
+    final gameId = game['id'];
+    final isDuplicate = currentPinned.any((pinnedGame) =>
+        (gameName != null && pinnedGame['name'] == gameName) ||
+        (gameId != null && pinnedGame['id'] == gameId));
+
+    if (!isDuplicate) {
+      currentPinned.add(game);
+      await _localDataSource.setPinnedGames(currentPinned);
+
+      // Update remote storage (Firestore)
+      await _remoteDataSource.updateUserProfile(user.uid, {
+        'pinnedGames': currentPinned,
+      });
+    }
   }
 
   @override

@@ -13,6 +13,8 @@ import 'package:squad_sync/domain/usecases/fetch_games.dart';
 import 'package:squad_sync/domain/usecases/get_game_details.dart';
 import 'package:squad_sync/domain/usecases/get_popular_games.dart';
 import 'package:squad_sync/presentation/notifiers/game_notifier.dart';
+import 'package:squad_sync/chat/sqlite_helper.dart';
+import 'package:squad_sync/services/igdb_auth_service.dart';
 import 'package:squad_sync/screens/add_game_screen.dart';
 
 // Mock classes for integration test
@@ -20,7 +22,7 @@ class MockHttpClient extends Mock implements http.Client {}
 
 class MockFirebaseFirestore extends Mock implements FirebaseFirestore {}
 
-class MockSQLiteHelper extends Mock implements dynamic {
+class MockSQLiteHelper extends Mock implements SQLiteHelper {
   Future<List<Map<String, dynamic>>> getCachedGames(String query) async => [];
   Future<void> insertGames(List<Map<String, dynamic>> games) async {}
 }
@@ -49,9 +51,12 @@ void main() {
     slug: 'call-of-duty-modern-warfare',
     coverUrl: '//images.igdb.com/igdb/image/upload/t_cover_big/co1uqy.jpg',
     summary: 'A first-person shooter game',
-    releaseDate: DateTime(2019, 10, 25),
+    firstReleaseDate: DateTime(2019, 10, 25),
     genres: ['Shooter', 'Action'],
     platforms: ['PC', 'PlayStation 4'],
+    maxSpots: 4,
+    isCached: false,
+    cachedAt: null,
   );
 
   group('Game Search Flow Integration Test', () {
@@ -100,15 +105,14 @@ void main() {
       // Create real implementations with mocks
       final remoteDataSource =
           GameRemoteDataSourceImpl(mockHttpClient, MockIgdbAuthService());
-      final localDataSource =
-          GameLocalDataSourceImpl(mockSQLiteHelper, mockAssetBundle);
+      final localDataSource = GameLocalDataSourceImpl(mockSQLiteHelper);
       final repository =
           GameRepositoryImpl(localDataSource, remoteDataSource, mockFirestore);
 
       // Create use cases
-      final searchGamesUseCase = SearchGamesUseCase(repository);
-      final getGameDetailsUseCase = GetGameDetailsUseCase(repository);
-      final loadPopularGamesUseCase = LoadPopularGamesUseCase(repository);
+      final searchGamesUseCase = FetchGames(repository);
+      final getGameDetailsUseCase = GetGameDetails(repository);
+      final loadPopularGamesUseCase = GetPopularGames(repository);
 
       // Create notifier
       final container = ProviderContainer(
@@ -191,8 +195,7 @@ void main() {
       // Create implementations
       final remoteDataSource =
           GameRemoteDataSourceImpl(mockHttpClient, MockIgdbAuthService());
-      final localDataSource =
-          GameLocalDataSourceImpl(mockSQLiteHelper, mockAssetBundle);
+      final localDataSource = GameLocalDataSourceImpl(mockSQLiteHelper);
       final repository =
           GameRepositoryImpl(localDataSource, remoteDataSource, mockFirestore);
 
@@ -351,7 +354,7 @@ void main() {
 }
 
 // Additional mock classes
-class MockIgdbAuthService extends Mock implements dynamic {
+class MockIgdbAuthService extends Mock implements IgdbAuthService {
   Future<String> getAccessToken() async => 'mock_token';
   Future<String?> getClientId() async => 'mock_client_id';
   Future<void> refreshAccessToken() async {}
@@ -360,7 +363,7 @@ class MockIgdbAuthService extends Mock implements dynamic {
 class MockCollectionReference extends Mock
     implements CollectionReference<Map<String, dynamic>> {
   @override
-  DocumentReference<Map<String, dynamic>> doc(String path) =>
+  DocumentReference<Map<String, dynamic>> doc([String? path]) =>
       MockDocumentReference();
 }
 

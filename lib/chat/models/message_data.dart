@@ -80,8 +80,9 @@ class MessageData {
       audioUrl: data['audioUrl'] ?? _parseAudioUrl(data['audio']),
       timestamp: data['timestamp'] is Timestamp
           ? (data['timestamp'] as Timestamp).toDate()
-          : DateTime.fromMillisecondsSinceEpoch(
-              data['timestamp_ms'] ?? DateTime.now().millisecondsSinceEpoch),
+          : (data['timestamp_ms'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms'])
+              : DateTime.fromMillisecondsSinceEpoch(0)),
       delivered: data['delivered'] ?? false,
       read: data['read'] ?? false,
       reactions: _parseReactions(data['reactions']),
@@ -119,7 +120,9 @@ class MessageData {
       audioUrl: data['audioUrl'] ?? _parseAudioUrl(data['audio']),
       timestamp: data['timestamp_ms'] is int
           ? DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms'])
-          : DateTime.now(),
+          : (data['timestamp'] is Timestamp
+              ? (data['timestamp'] as Timestamp).toDate()
+              : DateTime.fromMillisecondsSinceEpoch(0)),
       delivered: data['delivered'] ?? false,
       read: data['read'] ?? false,
       reactions: _parseReactions(data['reactions']),

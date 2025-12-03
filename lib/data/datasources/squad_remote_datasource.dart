@@ -5,6 +5,7 @@ import 'package:squad_sync/domain/entities/squad.dart';
 abstract class SquadRemoteDataSource {
   Future<Squad> createSquad(Squad squad);
   Future<Squad?> getSquad(String squadId);
+  Future<Squad?> getSquadByInviteCode(String inviteCode);
   Future<List<Squad>> getUserSquads(String userId);
   Future<void> updateSquad(Squad squad);
   Future<void> deleteSquad(String squadId);
@@ -49,6 +50,20 @@ class SquadRemoteDataSourceImpl implements SquadRemoteDataSource {
     if (!doc.exists) return null;
 
     return Squad.fromJson(doc.data()!..['id'] = doc.id);
+  }
+
+  @override
+  Future<Squad?> getSquadByInviteCode(String inviteCode) async {
+    final query = await _firestore
+        .collection('squads')
+        .where('inviteCode', isEqualTo: inviteCode)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) return null;
+
+    final doc = query.docs.first;
+    return Squad.fromJson(doc.data()..['id'] = doc.id);
   }
 
   @override

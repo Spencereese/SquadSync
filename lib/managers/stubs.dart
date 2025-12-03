@@ -1,198 +1,268 @@
 // Stub implementations for removed manager classes
-// TODO: Migrate code using these to use the new Riverpod notifiers instead
+// Converted to Riverpod StateNotifier pattern
 
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:riverpod/riverpod.dart';
 
-class AchievementManager extends ChangeNotifier {
-  // Stub implementation
+// Simple state classes for managers
+class AchievementManagerState {}
+
+class AvailabilityManagerState {}
+
+class FirestoreManagerState {}
+
+class GameManagerState {
+  final List<Map<String, dynamic>> availableGames;
+  final List<Map<String, dynamic>> games;
+  final Map<String, dynamic>? currentGame;
+  final bool isOffline;
+
+  const GameManagerState({
+    this.availableGames = const [],
+    this.games = const [],
+    this.currentGame,
+    this.isOffline = false,
+  });
+
+  GameManagerState copyWith({
+    List<Map<String, dynamic>>? availableGames,
+    List<Map<String, dynamic>>? games,
+    Map<String, dynamic>? Function()? currentGame,
+    bool? isOffline,
+  }) {
+    return GameManagerState(
+      availableGames: availableGames ?? this.availableGames,
+      games: games ?? this.games,
+      currentGame: currentGame != null ? currentGame() : this.currentGame,
+      isOffline: isOffline ?? this.isOffline,
+    );
+  }
 }
 
-class AvailabilityManager extends ChangeNotifier {
-  // Stub implementation
+class NotificationManagerState {}
+
+class PeacockManagerState {}
+
+class ReviewManagerState {}
+
+class SquadDataManagerState {}
+
+class SquadManagerState {}
+
+class SquadPersistenceManagerState {}
+
+class SquadUIManagerState {}
+
+class SyncManagerState {}
+
+class UserManagerState {}
+
+// StateNotifier implementations
+class AchievementManager extends StateNotifier<AchievementManagerState> {
+  AchievementManager() : super(AchievementManagerState());
+}
+
+class AvailabilityManager extends StateNotifier<AvailabilityManagerState> {
+  AvailabilityManager() : super(AvailabilityManagerState());
+
   Future<List<Map<String, dynamic>>> suggestLobbies(
       [List<Map<String, dynamic>>? pinnedGames]) async {
-    // Stub implementation - return empty list
     return [];
   }
 }
 
-class FirestoreManager extends ChangeNotifier {
-  // Stub implementation
-  Future<void> addScheduleEvent(dynamic event) async {
-    // Stub implementation
-  }
+class FirestoreManager extends StateNotifier<FirestoreManagerState> {
+  FirestoreManager() : super(FirestoreManagerState());
 
-  Future<void> voteForScheduleEvent(dynamic eventId) async {
-    // Stub implementation
-  }
+  Future<void> addScheduleEvent(dynamic event) async {}
+
+  Future<void> voteForScheduleEvent(dynamic eventId) async {}
 
   Future<List<Map<String, dynamic>>> getUserScheduleEvents(
       [String? playerUid]) async {
-    // Stub implementation - return empty list
     return [];
   }
 
-  Future<void> deleteScheduleEvent(dynamic eventId) async {
-    // Stub implementation
-  }
+  Future<void> deleteScheduleEvent(dynamic eventId) async {}
 
-  Future<void> sendInvite(dynamic invite) async {
-    // Stub implementation
-  }
+  Future<void> sendInvite(dynamic invite) async {}
 }
 
-class GameManager extends ChangeNotifier {
-  // Stub implementation
-  List<Map<String, dynamic>> get availableGames => [];
+class GameManager extends StateNotifier<GameManagerState> {
+  GameManager() : super(const GameManagerState());
+
+  List<Map<String, dynamic>> get availableGames => state.availableGames;
 
   Future<List<Map<String, dynamic>>> fetchGamesFromIGDB(String query) async {
-    // Stub implementation - return empty list
     return [];
   }
 
-  bool get isOffline => false;
+  bool get isOffline => state.isOffline;
 
-  List<Map<String, dynamic>> get games => [];
+  List<Map<String, dynamic>> get games => state.games;
 
   bool isGameHidden(String gameName) {
-    // Stub implementation - never hidden
     return false;
   }
 
-  Map<String, dynamic>? get currentGame => null;
+  Map<String, dynamic>? get currentGame => state.currentGame;
 
   void selectGame(Map<String, dynamic> game) {
-    // Stub implementation
+    state = state.copyWith(currentGame: () => game);
   }
 }
 
-class NotificationManager extends ChangeNotifier {
-  // Stub implementation
-  void showNotification({String? title, String? body, String? message}) {
-    // Stub implementation
-  }
+class NotificationManager extends StateNotifier<NotificationManagerState> {
+  NotificationManager() : super(NotificationManagerState());
+
+  void showNotification({String? title, String? body, String? message}) {}
 
   Future<void> scheduleNotification(
-      {String? title, String? body, DateTime? scheduledTime}) async {
-    // Stub implementation
-  }
+      {String? title, String? body, DateTime? scheduledTime}) async {}
 
-  static Future<void> initialize() async {
-    // Stub implementation
-  }
+  static Future<void> initialize() async {}
 
   Stream<int> getUnreadNotificationCount() {
-    // Stub implementation - return stream of 0
     return Stream.value(0);
   }
 
-  Future<void> updateFCMToken([String? token]) async {
-    // Stub implementation
-  }
+  Future<void> updateFCMToken([String? token]) async {}
 
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
       getFilteredNotificationsStream({Set<String>? mutedGames}) {
-    // Stub implementation - return empty stream
     return Stream.value([]);
   }
 
-  Future<void> archiveNotification([String? notificationId]) async {
-    // Stub implementation
-  }
+  Future<void> archiveNotification([String? notificationId]) async {}
 
-  Future<void> markAsRead([String? notificationId]) async {
-    // Stub implementation
-  }
+  Future<void> markAsRead([String? notificationId]) async {}
 
   void showSmartNotification(
-      {String? title, String? body, String? channelId, String? payload}) {
-    // Stub implementation
-  }
+      {String? title, String? body, String? channelId, String? payload}) {}
 }
 
-class PeacockManager extends ChangeNotifier {
-  // Stub implementation
+class PeacockManager extends StateNotifier<PeacockManagerState> {
+  PeacockManager() : super(PeacockManagerState());
 }
 
-class ReviewManager extends ChangeNotifier {
-  // Stub implementation
+class ReviewManager extends StateNotifier<ReviewManagerState> {
+  ReviewManager() : super(ReviewManagerState());
 }
 
-class SquadDataManager extends ChangeNotifier {
-  // Stub implementation
+class SquadDataManager extends StateNotifier<SquadDataManagerState> {
+  SquadDataManager() : super(SquadDataManagerState());
 }
 
-class SquadManager extends ChangeNotifier {
-  // Stub implementation
-  Future<void> addViewer(String lobbyId, String userId) async {
-    // Stub implementation
-  }
+class SquadManager extends StateNotifier<SquadManagerState> {
+  SquadManager() : super(SquadManagerState());
 
-  Future<void> leaveLobby(String lobbyId, String userId) async {
-    // Stub implementation
-  }
+  Future<void> addViewer(String lobbyId, String userId) async {}
 
-  Future<void> removeViewer(String lobbyId, String userId) async {
-    // Stub implementation
-  }
+  Future<void> leaveLobby(String lobbyId, String userId) async {}
+
+  Future<void> removeViewer(String lobbyId, String userId) async {}
 
   Stream<QuerySnapshot<Object?>> getActiveLobbiesStream() {
-    // Stub implementation - return empty stream
     return Stream<QuerySnapshot<Object?>>.empty();
   }
 
-  Future<void> joinLobby(String peacockId, String userId) async {
-    // Stub implementation
-  }
+  Future<void> joinLobby(String peacockId, String userId) async {}
 
-  Future<void> closeLobby(String peacockId) async {
-    // Stub implementation
-  }
+  Future<void> closeLobby(String peacockId) async {}
 
   Future<void> claimPeacockSpot(
-      String peacockId, String userId, String gameName) async {
-    // Stub implementation
-  }
+      String peacockId, String userId, String gameName) async {}
 
   Future<void> lockPeacockSpot(
-      String peacockId, String userId, String gameName) async {
-    // Stub implementation
-  }
+      String peacockId, String userId, String gameName) async {}
 
   Future<List<Map<String, dynamic>>> getSquadAlerts(String squadId) async {
-    // Stub implementation
     return [];
   }
 
   Future<void> sendGameAlert(String squadId, String userId, String message,
-      {String? specificGame, List<String>? pinnedGames}) async {
-    // Stub implementation
-  }
+      {String? specificGame, List<String>? pinnedGames}) async {}
 
-  Future<void> clearGameAlerts(String squadId, String userId) async {
-    // Stub implementation
-  }
+  Future<void> clearGameAlerts(String squadId, String userId) async {}
 }
 
-class SquadPersistenceManager extends ChangeNotifier {
-  // Stub implementation
+class SquadPersistenceManager
+    extends StateNotifier<SquadPersistenceManagerState> {
+  SquadPersistenceManager() : super(SquadPersistenceManagerState());
 }
 
-class SquadUIManager extends ChangeNotifier {
-  // Stub implementation
+class SquadUIManager extends StateNotifier<SquadUIManagerState> {
+  SquadUIManager() : super(SquadUIManagerState());
 }
 
-class SyncManager extends ChangeNotifier {
-  SyncManager({required this.sqliteHelper});
-  final dynamic sqliteHelper; // SQLiteHelper type not available
+class SyncManager extends StateNotifier<SyncManagerState> {
+  SyncManager({required this.sqliteHelper}) : super(SyncManagerState());
+  final dynamic sqliteHelper;
 
-  // Stub implementation
-  Future<void> deltaSync(String chatGroupId) async {
-    // Stub implementation
-  }
+  Future<void> deltaSync(String chatGroupId) async {}
 }
 
-class UserManager extends ChangeNotifier {
-  // Stub implementation
+class UserManager extends StateNotifier<UserManagerState> {
+  UserManager() : super(UserManagerState());
 }
+
+// Riverpod providers for each manager
+final achievementManagerProvider =
+    StateNotifierProvider<AchievementManager, AchievementManagerState>((ref) {
+  return AchievementManager();
+});
+
+final availabilityManagerProvider =
+    StateNotifierProvider<AvailabilityManager, AvailabilityManagerState>((ref) {
+  return AvailabilityManager();
+});
+
+final firestoreManagerProvider =
+    StateNotifierProvider<FirestoreManager, FirestoreManagerState>((ref) {
+  return FirestoreManager();
+});
+
+final gameManagerProvider =
+    StateNotifierProvider<GameManager, GameManagerState>((ref) {
+  return GameManager();
+});
+
+final notificationManagerProvider =
+    StateNotifierProvider<NotificationManager, NotificationManagerState>((ref) {
+  return NotificationManager();
+});
+
+final peacockManagerProvider =
+    StateNotifierProvider<PeacockManager, PeacockManagerState>((ref) {
+  return PeacockManager();
+});
+
+final reviewManagerProvider =
+    StateNotifierProvider<ReviewManager, ReviewManagerState>((ref) {
+  return ReviewManager();
+});
+
+final squadDataManagerProvider =
+    StateNotifierProvider<SquadDataManager, SquadDataManagerState>((ref) {
+  return SquadDataManager();
+});
+
+final squadManagerProvider =
+    StateNotifierProvider<SquadManager, SquadManagerState>((ref) {
+  return SquadManager();
+});
+
+final squadPersistenceManagerProvider = StateNotifierProvider<
+    SquadPersistenceManager, SquadPersistenceManagerState>((ref) {
+  return SquadPersistenceManager();
+});
+
+final squadUIManagerProvider =
+    StateNotifierProvider<SquadUIManager, SquadUIManagerState>((ref) {
+  return SquadUIManager();
+});
+
+final userManagerProvider =
+    StateNotifierProvider<UserManager, UserManagerState>((ref) {
+  return UserManager();
+});

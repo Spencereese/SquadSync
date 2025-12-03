@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/Provider.dart';
-import '../squad_state_notifier.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../presentation/notifiers/squad_notifier.dart';
+import '../domain/entities/squad_state.dart';
 
 /// Bottom sheet showing squad roster, alert circles, and active spots summary
-class SquadSheet extends StatelessWidget {
+class SquadSheet extends ConsumerWidget {
   const SquadSheet({super.key});
 
   static void show(BuildContext context) {
@@ -16,101 +17,88 @@ class SquadSheet extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Selector<SquadState, int>(
-      selector: (context, squadState) {
-        // Return a value that changes when active spots change
-        final activeGames = squadState.availableGames.where((game) {
-          final spots = squadState.gameSquadSpots[game['name']] ?? [];
-          return spots.where((spot) => spot != null).isNotEmpty;
-        }).toList();
-        // Return hash of active games and their filled spots
-        int hash = 0;
-        for (final game in activeGames) {
-          final spots = squadState.gameSquadSpots[game['name']] ?? [];
-          final filledCount = spots.where((spot) => spot != null).length;
-          hash = hash ^ game['name'].hashCode ^ filledCount.hashCode;
-        }
-        return hash;
-      },
-      builder: (context, _, child) {
-        final squadState = context.read<SquadState>();
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
-          builder: (_, controller) => Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[900],
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.1),
-                width: 0.5,
-              ),
-            ),
-            child: Column(
-              children: [
-                // Header with drag handle
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(20)),
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.white.withValues(alpha: 0.1),
-                        Colors.white.withValues(alpha: 0.05),
-                      ],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Drag handle
-                      Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Title
-                      Text(
-                        'Squad Overview',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Content
-                Expanded(
-                  child: ListView(
-                    controller: controller,
-                    padding: const EdgeInsets.all(20),
-                    children: [
-                      // Active Spots Summary
-                      _buildActiveSpotsSection(squadState),
-                      const SizedBox(height: 24),
-                      // Roster
-                      _buildRosterSection(squadState),
-                    ],
-                  ),
-                ),
-              ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final squadStateAsync = ref.watch(squadNotifierProvider);
+
+    return squadStateAsync.when(
+      data: (squadState) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[900],
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.1),
+              width: 0.5,
             ),
           ),
-        );
-      },
+          child: Column(
+            children: [
+              // Header with drag handle
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withValues(alpha: 0.1),
+                      Colors.white.withValues(alpha: 0.05),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    // Drag handle
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Title
+                    Text(
+                      'Squad Overview',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    // Active Spots Summary
+                    _buildActiveSpotsSection(squadState),
+                    const SizedBox(height: 24),
+                    // Roster
+                    _buildRosterSection(squadState),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Text('Error: $error', style: const TextStyle(color: Colors.red)),
+      ),
     );
   }
 
@@ -224,7 +212,9 @@ class SquadSheet extends StatelessWidget {
   }
 
   Widget _buildRosterSection(SquadState squadState) {
-    final members = squadState.getFilteredMembers;
+    final members = squadState.squadMemberUids
+        .map((uid) => squadState.memberDisplayNames[uid] ?? uid)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -251,9 +241,17 @@ class SquadSheet extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         ...members.map((member) {
-          final status = squadState.statuses[member] ?? 'Offline';
-          final game = squadState.getPlayerGame(member);
+          final status = squadState.globalStatuses[member] ?? 'Offline';
           final isOnline = ['Strutting', 'Walking', 'Ready'].contains(status);
+
+          // Try to find the game this member is playing
+          String? gameForMember;
+          for (final gameName in squadState.gameStatuses.keys) {
+            if (squadState.gameStatuses[gameName]?[member] != null) {
+              gameForMember = gameName;
+              break;
+            }
+          }
 
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -290,7 +288,9 @@ class SquadSheet extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        game != null ? 'Playing: $game' : status,
+                        gameForMember != null
+                            ? 'Playing: $gameForMember'
+                            : status,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.7),
                           fontSize: 14,

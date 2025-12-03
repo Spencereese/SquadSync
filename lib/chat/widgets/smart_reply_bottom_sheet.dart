@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import '../../services/grok_service.dart';
 
 class SmartReplyBottomSheet extends StatefulWidget {
@@ -45,7 +44,7 @@ class _SmartReplyBottomSheetState extends State<SmartReplyBottomSheet>
 
   Future<void> _loadSmartReplies() async {
     try {
-      final grokService = Provider.of<GrokService>(context, listen: false);
+      final grokService = GrokService();
       final replies =
           await grokService.getSmartReplies(widget.lastFiveMessages);
       if (mounted) {

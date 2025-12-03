@@ -8,6 +8,7 @@ import '../setup_screen.dart';
 import '../screens/onboarding/onboarding_flow.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../app_theme.dart';
+import 'splash_screen.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
@@ -50,14 +51,39 @@ class SquadSyncMaterialApp extends ConsumerWidget {
 }
 
 /// ConsumerWidget for handling authentication and onboarding logic
-class AuthWrapper extends ConsumerWidget {
-  static final Logger _logger = Logger();
+class AuthWrapper extends ConsumerStatefulWidget {
   const AuthWrapper({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends ConsumerState<AuthWrapper> {
+  static final Logger _logger = Logger();
+  bool _minDurationElapsed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Ensure splash screen shows for minimum duration
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() {
+          _minDurationElapsed = true;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Watch auth state using Riverpod provider
     final authState = ref.watch(authStateProvider);
+
+    // Show splash screen until minimum duration elapsed
+    if (!_minDurationElapsed) {
+      return const SplashScreen();
+    }
 
     return authState.when(
       data: (user) {
@@ -76,12 +102,7 @@ class AuthWrapper extends ConsumerWidget {
           return const SetupScreen();
         }
       },
-      loading: () => Scaffold(
-        backgroundColor: Colors.black,
-        body: const Center(
-          child: CircularProgressIndicator(color: Colors.cyanAccent),
-        ),
-      ),
+      loading: () => const SplashScreen(),
       error: (error, stack) => Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -103,7 +124,7 @@ class OnboardingWrapper extends ConsumerWidget {
     final userStateAsync = ref.watch(userNotifierProvider);
 
     return userStateAsync.when(
-      loading: () => const ChatGroupsScreen(),
+      loading: () => const SplashScreen(),
       error: (error, stack) =>
           const ChatGroupsScreen(), // Default to main screen on error
       data: (userState) {

@@ -322,7 +322,7 @@ class __$$MessageImplCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$MessageImpl implements _Message {
+class _$MessageImpl extends _Message {
   const _$MessageImpl(
       {required this.id,
       required this.senderId,
@@ -343,7 +343,8 @@ class _$MessageImpl implements _Message {
       this.isDeleted,
       @TimestampConverter() this.deletedAt})
       : _reactions = reactions,
-        _metadata = metadata;
+        _metadata = metadata,
+        super._();
 
   @override
   final String id;
@@ -475,37 +476,9 @@ class _$MessageImpl implements _Message {
   @pragma('vm:prefer-inline')
   _$$MessageImplCopyWith<_$MessageImpl> get copyWith =>
       __$$MessageImplCopyWithImpl<_$MessageImpl>(this, _$identity);
-
-  @override
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'senderId': senderId,
-      'text': text,
-      'timestamp': const TimestampConverter().toJson(timestamp),
-      'messageType': const MessageTypeConverter().toJson(messageType),
-      'mediaUrl': mediaUrl,
-      'mediaType': mediaType,
-      'reactions': const ReactionConverter().toJson(reactions),
-      'replyTo': replyTo,
-      'poll': poll?.toJson(),
-      'voiceNoteUrl': voiceNoteUrl,
-      'voiceNoteDuration': voiceNoteDuration,
-      'aiResponse': aiResponse,
-      'metadata': metadata,
-      'isEdited': isEdited,
-      'editedAt': editedAt != null
-          ? const TimestampConverter().toJson(editedAt!)
-          : null,
-      'isDeleted': isDeleted,
-      'deletedAt': deletedAt != null
-          ? const TimestampConverter().toJson(deletedAt!)
-          : null,
-    };
-  }
 }
 
-abstract class _Message implements Message {
+abstract class _Message extends Message {
   const factory _Message(
       {required final String id,
       required final String senderId,
@@ -525,6 +498,7 @@ abstract class _Message implements Message {
       @TimestampConverter() final DateTime? editedAt,
       final bool? isDeleted,
       @TimestampConverter() final DateTime? deletedAt}) = _$MessageImpl;
+  const _Message._() : super._();
 
   @override
   String get id;
@@ -574,7 +548,4 @@ abstract class _Message implements Message {
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$MessageImplCopyWith<_$MessageImpl> get copyWith =>
       throw _privateConstructorUsedError;
-
-  /// Serializes this Message to a JSON map.
-  Map<String, dynamic> toJson();
 }

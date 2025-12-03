@@ -6,7 +6,7 @@ import '../../services/onboarding_service.dart';
 import '../../chat/chat_groups_screen.dart';
 import '../../services/app_flow_manager.dart';
 import 'profile_setup_screen.dart';
-import 'add_game_screen.dart';
+import '../add_game_screen.dart';
 
 class OnboardingFlow extends ConsumerStatefulWidget {
   const OnboardingFlow({super.key});
@@ -64,10 +64,16 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
         title:
             Text('Setup (${(onboardingState.value?.currentStep ?? 0) + 1}/2)'),
         automaticallyImplyLeading: false,
+        leading: (onboardingState.value?.currentStep ?? 0) > 0
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: _previousStepAction,
+              )
+            : null,
       ),
       body: PageView(
         controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
+        physics: const PageScrollPhysics(), // Allow swiping back
         children: [
           ProfileSetupScreen(onNext: _nextStep)
               .animate()
@@ -83,6 +89,11 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   void _nextStep() {
     final onboardingService = ref.read(onboardingServiceProvider.notifier);
     onboardingService.nextStep();
+  }
+
+  void _previousStepAction() {
+    final onboardingService = ref.read(onboardingServiceProvider.notifier);
+    onboardingService.previousStep();
   }
 
   void _completeOnboarding() async {

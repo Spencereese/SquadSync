@@ -98,6 +98,8 @@ enum MessageType {
 
 @freezed
 class Message with _$Message {
+  const Message._();
+
   const factory Message({
     required String id,
     required String senderId,

@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/entities/message.dart';
 import '../domain/entities/squad_state.dart';
 import 'chat_screen.dart';
-import 'chat_state.dart';
 import '../screens/notifications_screen.dart';
 import '../app_theme.dart';
 import 'widgets/user_groups_tab.dart';
@@ -396,13 +394,10 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => p.ChangeNotifierProvider<ChatState>(
-                create: (_) => ChatState(),
-                child: ChatScreen(
-                  chatGroupId: lastGroupId,
-                  chatGroupName: groupData?['name'] ?? 'Unknown Group',
-                  chatType: ChatType.userGroup,
-                ),
+              builder: (context) => ChatScreen(
+                chatGroupId: lastGroupId,
+                chatGroupName: groupData?['name'] ?? 'Unknown Group',
+                chatType: ChatType.userGroup,
               ),
             ),
           );

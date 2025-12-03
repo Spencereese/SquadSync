@@ -48,6 +48,7 @@ import 'package:squad_sync/domain/usecases/check_availability.dart';
 import 'package:squad_sync/domain/usecases/ban_user.dart';
 import 'package:squad_sync/domain/usecases/unban_user.dart';
 import 'package:squad_sync/domain/usecases/create_squad.dart';
+import '../services/firestore_service.dart';
 import 'package:squad_sync/domain/usecases/join_squad.dart';
 import 'package:squad_sync/domain/usecases/leave_squad.dart';
 import 'package:squad_sync/domain/usecases/assign_spot.dart';
@@ -137,6 +138,7 @@ Future<void> setupInjection() async {
 
   // Only register Firebase-dependent services if Firebase is available
   if (firebaseAvailable) {
+    getIt.registerSingleton<FirestoreService>(FirestoreService());
     // User data sources
     getIt.registerSingleton<UserLocalDataSource>(
       UserLocalDataSourceImpl(getIt<SharedPreferences>()),

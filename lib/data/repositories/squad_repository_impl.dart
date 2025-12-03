@@ -48,6 +48,12 @@ class SquadRepositoryImpl implements SquadRepository {
   }
 
   @override
+  Future<Squad?> getSquadByInviteCode(String inviteCode) async {
+    // Fetch from remote (invite codes are not cached locally typically)
+    return await _remoteDataSource.getSquadByInviteCode(inviteCode);
+  }
+
+  @override
   Future<List<Squad>> getUserSquads(String userId) async {
     // Try local cache first
     final localSquads = await _localDataSource.getUserSquads(userId);

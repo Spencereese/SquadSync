@@ -214,7 +214,11 @@ class _SquadTabScreenContentState
             borderRadius: BorderRadius.circular(16),
             image: game['coverUrl'] != null
                 ? DecorationImage(
-                    image: NetworkImage(game['coverUrl']),
+                    image: NetworkImage(
+                      game['coverUrl'].toString().startsWith('http')
+                          ? game['coverUrl']
+                          : 'https:${game['coverUrl']}',
+                    ),
                     fit: BoxFit.cover,
                   )
                 : null,

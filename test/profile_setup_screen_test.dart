@@ -5,7 +5,7 @@ import 'package:mockito/mockito.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:squad_sync/screens/onboarding/onboarding_flow.dart';
 import 'package:squad_sync/screens/onboarding/profile_setup_screen.dart';
-import 'package:squad_sync/screens/onboarding/add_game_screen.dart';
+import 'package:squad_sync/screens/add_game_screen.dart';
 import 'package:squad_sync/services/onboarding_service.dart';
 import 'package:squad_sync/services/app_flow_manager.dart';
 import 'package:squad_sync/chat/chat_groups_screen.dart';
@@ -32,10 +32,13 @@ void main() {
       currentStep: 0,
       displayName: 'Test User',
       profileImageUrl: 'https://example.com/image.jpg',
-      pinnedGames: [{'id': 'game1', 'name': 'Test Game'}],
+      pinnedGames: [
+        {'id': 'game1', 'name': 'Test Game'}
+      ],
     );
 
-    testWidgets('renders OnboardingFlow correctly with initial state', (WidgetTester tester) async {
+    testWidgets('renders OnboardingFlow correctly with initial state',
+        (WidgetTester tester) async {
       when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState);
 
       await tester.pumpWidget(
@@ -54,10 +57,12 @@ void main() {
 
       expect(find.text('Setup (1/2)'), findsOneWidget);
       expect(find.byType(ProfileSetupScreen), findsOneWidget);
-      expect(find.byType(AddGameScreen), findsNothing); // Should be on first page
+      expect(
+          find.byType(AddGameScreen), findsNothing); // Should be on first page
     });
 
-    testWidgets('loads draft and jumps to correct step on init', (WidgetTester tester) async {
+    testWidgets('loads draft and jumps to correct step on init',
+        (WidgetTester tester) async {
       final draftState = testOnboardingState.copyWith(currentStep: 1);
       when(mockOnboardingService.loadDraft()).thenReturn(draftState);
 
@@ -79,7 +84,8 @@ void main() {
       verify(mockOnboardingService.loadDraft()).called(1);
     });
 
-    testWidgets('navigates to next step when ProfileSetupScreen calls onNext', (WidgetTester tester) async {
+    testWidgets('navigates to next step when ProfileSetupScreen calls onNext',
+        (WidgetTester tester) async {
       when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState);
 
       await tester.pumpWidget(
@@ -104,7 +110,8 @@ void main() {
       verify(mockOnboardingService.nextStep()).called(1);
     });
 
-    testWidgets('animates to next page when step changes', (WidgetTester tester) async {
+    testWidgets('animates to next page when step changes',
+        (WidgetTester tester) async {
       when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState);
 
       await tester.pumpWidget(
@@ -122,7 +129,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Simulate step change to 1
-      when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState.copyWith(currentStep: 1));
+      when(mockOnboardingService.loadDraft())
+          .thenReturn(testOnboardingState.copyWith(currentStep: 1));
 
       // Trigger state change
       await tester.tap(find.byType(ElevatedButton));
@@ -133,9 +141,12 @@ void main() {
       expect(find.byType(AddGameScreen), findsOneWidget);
     });
 
-    testWidgets('completes onboarding and navigates to ChatGroupsScreen', (WidgetTester tester) async {
-      when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState.copyWith(currentStep: 1));
-      when(mockOnboardingService.completeOnboarding()).thenAnswer((_) async => Future.value());
+    testWidgets('completes onboarding and navigates to ChatGroupsScreen',
+        (WidgetTester tester) async {
+      when(mockOnboardingService.loadDraft())
+          .thenReturn(testOnboardingState.copyWith(currentStep: 1));
+      when(mockOnboardingService.completeOnboarding())
+          .thenAnswer((_) async => Future.value());
 
       await tester.pumpWidget(
         ProviderScope(
@@ -153,7 +164,8 @@ void main() {
 
       // Simulate completion from AddGameScreen
       // This would normally be triggered by AddGameScreen's onComplete callback
-      final state = tester.state<_OnboardingFlowState>(find.byType(OnboardingFlow));
+      final state =
+          tester.state<_OnboardingFlowState>(find.byType(OnboardingFlow));
       state._completeOnboarding();
       await tester.pumpAndSettle();
 
@@ -169,9 +181,12 @@ void main() {
       expect(find.byType(ChatGroupsScreen), findsOneWidget);
     });
 
-    testWidgets('handles onboarding completion errors gracefully', (WidgetTester tester) async {
-      when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState.copyWith(currentStep: 1));
-      when(mockOnboardingService.completeOnboarding()).thenThrow(Exception('Network error'));
+    testWidgets('handles onboarding completion errors gracefully',
+        (WidgetTester tester) async {
+      when(mockOnboardingService.loadDraft())
+          .thenReturn(testOnboardingState.copyWith(currentStep: 1));
+      when(mockOnboardingService.completeOnboarding())
+          .thenThrow(Exception('Network error'));
 
       await tester.pumpWidget(
         ProviderScope(
@@ -187,18 +202,23 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      final state = tester.state<_OnboardingFlowState>(find.byType(OnboardingFlow));
+      final state =
+          tester.state<_OnboardingFlowState>(find.byType(OnboardingFlow));
       state._completeOnboarding();
       await tester.pumpAndSettle();
 
       // Should show error snackbar
-      expect(find.text('Failed to complete onboarding: Exception: Network error'), findsOneWidget);
+      expect(
+          find.text('Failed to complete onboarding: Exception: Network error'),
+          findsOneWidget);
       // Should not navigate
       expect(find.byType(ChatGroupsScreen), findsNothing);
     });
 
-    testWidgets('prevents navigation beyond step 2', (WidgetTester tester) async {
-      when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState.copyWith(currentStep: 2));
+    testWidgets('prevents navigation beyond step 2',
+        (WidgetTester tester) async {
+      when(mockOnboardingService.loadDraft())
+          .thenReturn(testOnboardingState.copyWith(currentStep: 2));
 
       await tester.pumpWidget(
         ProviderScope(
@@ -218,7 +238,8 @@ void main() {
       verify(mockOnboardingService.completeOnboarding()).called(1);
     });
 
-    testWidgets('displays correct step counter in app bar', (WidgetTester tester) async {
+    testWidgets('displays correct step counter in app bar',
+        (WidgetTester tester) async {
       when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState);
 
       await tester.pumpWidget(
@@ -238,14 +259,16 @@ void main() {
       expect(find.text('Setup (1/2)'), findsOneWidget);
 
       // Change to step 1
-      when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState.copyWith(currentStep: 1));
+      when(mockOnboardingService.loadDraft())
+          .thenReturn(testOnboardingState.copyWith(currentStep: 1));
       await tester.tap(find.byType(ElevatedButton));
       await tester.pumpAndSettle();
 
       expect(find.text('Setup (2/2)'), findsOneWidget);
     });
 
-    testWidgets('uses NeverScrollableScrollPhysics to prevent manual swiping', (WidgetTester tester) async {
+    testWidgets('uses NeverScrollableScrollPhysics to prevent manual swiping',
+        (WidgetTester tester) async {
       when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState);
 
       await tester.pumpWidget(
@@ -270,7 +293,8 @@ void main() {
       expect(pageViewWidget.physics, isA<NeverScrollableScrollPhysics>());
     });
 
-    testWidgets('applies fade animations to screens', (WidgetTester tester) async {
+    testWidgets('applies fade animations to screens',
+        (WidgetTester tester) async {
       when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState);
 
       await tester.pumpWidget(
@@ -292,7 +316,8 @@ void main() {
       // Animation effects are applied via .animate() extension
     });
 
-    testWidgets('handles null onboarding state gracefully', (WidgetTester tester) async {
+    testWidgets('handles null onboarding state gracefully',
+        (WidgetTester tester) async {
       when(mockOnboardingService.loadDraft()).thenReturn(testOnboardingState);
 
       await tester.pumpWidget(

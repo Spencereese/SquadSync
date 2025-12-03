@@ -51,13 +51,22 @@ class GameSelector extends ConsumerWidget {
     Widget logo;
 
     if (currentGame != null && currentGame['coverUrl'] != null) {
+      // Ensure coverUrl has https protocol
+      final coverUrl = currentGame['coverUrl'] as String;
+      final fullUrl =
+          coverUrl.startsWith('http') ? coverUrl : 'https:$coverUrl';
+
       logo = Container(
         width: 200,
         height: 140,
         decoration: BoxDecoration(
           image: DecorationImage(
-            image: NetworkImage(currentGame['coverUrl']),
+            image: NetworkImage(fullUrl),
             fit: BoxFit.contain,
+            onError: (exception, stackTrace) {
+              debugPrint('Error loading game cover image: $exception');
+              debugPrint('URL: $fullUrl');
+            },
           ),
         ),
       );

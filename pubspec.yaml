@@ -42,7 +42,6 @@ dependencies:
   record: ^6.1.1
   cached_network_image: ^3.4.1
   clipboard: ^2.0.2
-  provider: ^6.0.0
   riverpod: ^2.5.1
   flutter_riverpod: ^2.5.1
   riverpod_annotation: ^2.5.1
@@ -148,6 +147,7 @@ flutter:
     - assets/images/Battlefield.png
     - assets/images/codwarzone.png
     - assets/images/satisfactory.png
+    - assets/images/splash.png
 
 flutter_launcher_icons:
   android: "launcher_icon"

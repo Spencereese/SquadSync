@@ -119,135 +119,137 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                 data: (squadState) => SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.all(20.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Add some top spacing to push content down slightly
-                        const SizedBox(height: 20),
-                        // Avatar with glowing border
-                        AnimatedBuilder(
-                          animation: _glowController,
-                          builder: (context, child) {
-                            return Container(
-                              width: 120,
-                              height: 120,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Colors.cyan.withValues(
-                                        alpha: _glowController.value * 0.8),
-                                    Colors.purple.withValues(
-                                        alpha: _glowController.value * 0.8),
-                                    Colors.pink.withValues(
-                                        alpha: _glowController.value * 0.8),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Add some top spacing to push content down slightly
+                          const SizedBox(height: 20),
+                          // Avatar with glowing border
+                          AnimatedBuilder(
+                            animation: _glowController,
+                            builder: (context, child) {
+                              return Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Colors.cyan.withValues(
+                                          alpha: _glowController.value * 0.8),
+                                      Colors.purple.withValues(
+                                          alpha: _glowController.value * 0.8),
+                                      Colors.pink.withValues(
+                                          alpha: _glowController.value * 0.8),
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.cyan.withValues(
+                                          alpha: _glowController.value * 0.6),
+                                      blurRadius: 20,
+                                      spreadRadius: 5,
+                                    ),
                                   ],
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.cyan.withValues(
-                                        alpha: _glowController.value * 0.6),
-                                    blurRadius: 20,
-                                    spreadRadius: 5,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(4.0),
+                                  child: CircleAvatar(
+                                    radius: 56,
+                                    backgroundImage: user?.profileImage != null
+                                        ? NetworkImage(user!.profileImage!)
+                                        : null,
+                                    backgroundColor: Colors.grey.shade800,
+                                    child: user?.profileImage == null
+                                        ? Icon(Icons.person,
+                                            size: 40, color: Colors.white70)
+                                        : null,
                                   ),
-                                ],
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(4.0),
-                                child: CircleAvatar(
-                                  radius: 56,
-                                  backgroundImage: user?.profileImage != null
-                                      ? NetworkImage(user!.profileImage!)
-                                      : null,
-                                  backgroundColor: Colors.grey.shade800,
-                                  child: user?.profileImage == null
-                                      ? Icon(Icons.person,
-                                          size: 40, color: Colors.white70)
-                                      : null,
                                 ),
+                              );
+                            },
+                          ).animate().scale(
+                                duration: 600.ms,
+                                curve: Curves.elasticOut,
                               ),
-                            );
-                          },
-                        ).animate().scale(
-                              duration: 600.ms,
-                              curve: Curves.elasticOut,
+
+                          const SizedBox(height: 16),
+
+                          // Display name
+                          Text(
+                            user?.displayName ?? 'Gamer',
+                            style: GoogleFonts.robotoMono(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ).animate().fadeIn(duration: 800.ms, delay: 200.ms),
 
-                        const SizedBox(height: 16),
+                          const SizedBox(height: 12),
 
-                        // Display name
-                        Text(
-                          user?.displayName ?? 'Gamer',
-                          style: GoogleFonts.robotoMono(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withValues(alpha: 0.5),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ).animate().fadeIn(duration: 800.ms, delay: 200.ms),
-
-                        const SizedBox(height: 12),
-
-                        // Live status pill
-                        StreamBuilder(
-                          stream: Stream.periodic(const Duration(seconds: 1)),
-                          builder: (context, snapshot) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.7),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: Colors.cyan.withValues(alpha: 0.5),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.green,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  )
-                                      .animate(
-                                          onPlay: (controller) =>
-                                              controller.repeat())
-                                      .shimmer(duration: 1000.ms),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _getStatusText(),
-                                    style: GoogleFonts.robotoMono(
-                                      fontSize: 14,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                          // Live status pill
+                          StreamBuilder(
+                            stream: Stream.periodic(const Duration(seconds: 1)),
+                            builder: (context, snapshot) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.7),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.cyan.withValues(alpha: 0.5),
+                                    width: 1,
                                   ),
-                                ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: Colors.green,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    )
+                                        .animate(
+                                            onPlay: (controller) =>
+                                                controller.repeat())
+                                        .shimmer(duration: 1000.ms),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _getStatusText(),
+                                      style: GoogleFonts.robotoMono(
+                                        fontSize: 14,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ).animate().slideY(
+                                begin: 0.5,
+                                duration: 600.ms,
+                                delay: 400.ms,
+                                curve: Curves.elasticOut,
                               ),
-                            );
-                          },
-                        ).animate().slideY(
-                              begin: 0.5,
-                              duration: 600.ms,
-                              delay: 400.ms,
-                              curve: Curves.elasticOut,
-                            ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -332,7 +334,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }) {
     return Container(
       width: 140,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
@@ -363,7 +365,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               size: 24,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (showProgress && value.contains('★'))
             SizedBox(
               width: 40,
@@ -384,7 +386,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                 color: Colors.white,
               ),
             ).animate().fadeIn(duration: 600.ms).scale(begin: Offset(0.8, 0.8)),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             title,
             style: GoogleFonts.robotoMono(
@@ -525,8 +527,6 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                           return _buildGameCard(
                             gameName: gameName,
                             coverUrl: pinnedGame['coverUrl'] as String?,
-                            platforms:
-                                pinnedGame['platforms'] as List<dynamic>? ?? [],
                             isSelected: isSelected,
                             delay: index * 100,
                           );
@@ -549,7 +549,6 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   Widget _buildGameCard({
     required String gameName,
     required String? coverUrl,
-    required List<dynamic> platforms,
     required bool isSelected,
     required int delay,
   }) {
@@ -559,7 +558,6 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         final gameData = {
           'name': gameName,
           'coverUrl': coverUrl,
-          'platforms': platforms
         };
         ref.read(gameNotifierProvider.notifier).selectGame(gameData);
 
@@ -634,28 +632,28 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                 ),
               ),
 
-              // Platform icons
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Row(
-                  children: platforms.take(3).map((platform) {
-                    return Container(
-                      margin: const EdgeInsets.only(left: 4),
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        _getPlatformIcon(platform.toString()),
-                        color: Colors.white,
-                        size: 12,
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
+              // Platform icons - removed as requested
+              // Positioned(
+              //   top: 8,
+              //   right: 8,
+              //   child: Row(
+              //     children: platforms.take(3).map((platform) {
+              //       return Container(
+              //         margin: const EdgeInsets.only(left: 4),
+              //         padding: const EdgeInsets.all(4),
+              //         decoration: BoxDecoration(
+              //           color: Colors.black.withValues(alpha: 0.7),
+              //           borderRadius: BorderRadius.circular(8),
+              //         ),
+              //         child: Icon(
+              //           _getPlatformIcon(platform.toString()),
+              //           color: Colors.white,
+              //           size: 12,
+              //         ),
+              //       );
+              //     }).toList(),
+              //   ),
+              // ),
 
               // Game name
               Positioned(
@@ -707,26 +705,6 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         .animate()
         .fadeIn(duration: 800.ms, delay: delay.ms)
         .scale(begin: Offset(0.9, 0.9));
-  }
-
-  IconData _getPlatformIcon(String platform) {
-    switch (platform.toLowerCase()) {
-      case 'playstation':
-      case 'ps4':
-      case 'ps5':
-        return Icons.play_arrow;
-      case 'xbox':
-      case 'xbox one':
-      case 'xbox series x':
-        return Icons.games;
-      case 'pc':
-      case 'windows':
-        return Icons.computer;
-      case 'nintendo switch':
-        return Icons.gamepad;
-      default:
-        return Icons.videogame_asset;
-    }
   }
 
   Widget _buildEmptyPinnedGames() {
@@ -939,11 +917,12 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
             ),
             const SizedBox(height: 16),
             GridView.count(
-              crossAxisCount: 4,
+              crossAxisCount: 3,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
+              childAspectRatio: 0.85,
               children: achievements.map((achievement) {
                 return _buildAchievementBadge(
                   achievement['title'] as String,
@@ -964,7 +943,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     return GestureDetector(
       onTap: () => _showAchievementDialog(title, description, unlocked),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: unlocked
               ? Colors.purple.withValues(alpha: 0.1)
@@ -1135,64 +1114,72 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildQuickActionButton(
-                  'Edit Profile',
-                  Icons.edit,
-                  () {
-                    // Navigate to profile editing screen
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const ProfileEditingScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildQuickActionButton(
-                  'Availability',
-                  Icons.access_time,
-                  () {
-                    // Navigate to availability settings
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            const AvailabilitySettingsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildQuickActionButton(
-                  'Performance',
-                  Icons.bar_chart,
-                  () {
-                    // Navigate to performance stats
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const PerformanceStatsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildQuickActionButton(
-                  'Share',
-                  Icons.share,
-                  () async {
-                    // TODO: Implement share functionality
-                    try {
-                      await Share.share(
-                        'Check out my SquadSync profile! Join me for some gaming fun.',
-                      );
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Sharing not available on this platform',
-                            style: GoogleFonts.robotoMono(),
-                          ),
-                          backgroundColor: Colors.red,
+                Flexible(
+                  child: _buildQuickActionButton(
+                    'Edit Profile',
+                    Icons.edit,
+                    () {
+                      // Navigate to profile editing screen
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const ProfileEditingScreen(),
                         ),
                       );
-                    }
-                  },
+                    },
+                  ),
+                ),
+                Flexible(
+                  child: _buildQuickActionButton(
+                    'Availability',
+                    Icons.access_time,
+                    () {
+                      // Navigate to availability settings
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              const AvailabilitySettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Flexible(
+                  child: _buildQuickActionButton(
+                    'Performance',
+                    Icons.bar_chart,
+                    () {
+                      // Navigate to performance stats
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const PerformanceStatsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Flexible(
+                  child: _buildQuickActionButton(
+                    'Share',
+                    Icons.share,
+                    () async {
+                      // TODO: Implement share functionality
+                      try {
+                        await Share.share(
+                          'Check out my SquadSync profile! Join me for some gaming fun.',
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Sharing not available on this platform',
+                              style: GoogleFonts.robotoMono(),
+                            ),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                  ),
                 ),
               ],
             ),
@@ -1209,7 +1196,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.cyan.withValues(alpha: 0.1),
         foregroundColor: Colors.cyan,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -1290,7 +1277,11 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
           IconButton(
             icon: const Icon(Icons.settings, color: Colors.white),
             onPressed: () {
-              // Placeholder - will implement settings navigation
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const AvailabilitySettingsScreen(),
+                ),
+              );
             },
           ),
         ],

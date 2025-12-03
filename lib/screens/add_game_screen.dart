@@ -5,20 +5,22 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/async_value_widget.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/game_notifier.dart';
-import 'game_platform_dialog.dart';
 
 /// Screen for first-time users to select games they play
 class AddGameScreen extends ConsumerStatefulWidget {
-  const AddGameScreen({super.key});
+  final VoidCallback? onComplete;
+
+  const AddGameScreen({super.key, this.onComplete});
 
   @override
   ConsumerState<AddGameScreen> createState() => _AddGameScreenState();
 }
 
 class _AddGameScreenState extends ConsumerState<AddGameScreen> {
-  final Set<String> _selectedGames = {};
+  final Map<String, Map<String, dynamic>> _selectedGames = {};
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  List<Map<String, dynamic>> _searchResults = [];
 
   @override
   void initState() {
@@ -43,7 +45,18 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Select Your Games'),
-        automaticallyImplyLeading: false,
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () {
+            if (widget.onComplete != null) {
+              // In setup flow, call onComplete to continue without selecting games
+              widget.onComplete!();
+            } else {
+              Navigator.of(context).pop();
+            }
+          },
+          tooltip: 'Cancel',
+        ),
         actions: [
           TextButton(
             onPressed:
@@ -79,6 +92,35 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
                 setState(() {
                   _searchQuery = value.toLowerCase();
                 });
+                if (_searchQuery.isNotEmpty) {
+                  ref
+                      .read(gameNotifierProvider.notifier)
+                      .searchGames(_searchQuery)
+                      .then((result) {
+                    result.when(
+                      data: (games) {
+                        if (mounted) {
+                          setState(() {
+                            _searchResults =
+                                games.map((g) => g.toJson()).toList();
+                          });
+                        }
+                      },
+                      error: (error, stack) {
+                        // Optionally show error
+                        if (mounted) {
+                          setState(() {
+                            _searchResults = [];
+                          });
+                        }
+                      },
+                      loading: () {},
+                    );
+                  });
+                } else {
+                  // Don't clear search results, let AsyncValueWidget show availableGames
+                  // by keeping _searchQuery empty
+                }
               },
             ),
           ),
@@ -87,7 +129,11 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
             child: AsyncValueWidget<GameState>(
               value: gameStateAsync,
               data: (gameState) => _buildGameContent(
-                gameState.availableGames.map((game) => game.toJson()).toList(),
+                _searchQuery.isNotEmpty
+                    ? _searchResults
+                    : gameState.availableGames
+                        .map((game) => game.toJson())
+                        .toList(),
               ),
               loading: () => const Center(
                 child: Column(
@@ -137,13 +183,16 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
   }
 
   Widget _buildGameContent(List<Map<String, dynamic>> games) {
-    // Filter games that have cover images
+    // Filter games that have valid data (allow games without covers to show fallback icon)
     final allGames = games.where((game) {
-      return game['coverUrl'] != null &&
-          game['coverUrl'].toString().isNotEmpty &&
-          game['name'] != null &&
-          game['name'].toString().isNotEmpty;
+      final hasName =
+          game['name'] != null && game['name'].toString().isNotEmpty;
+      return hasName;
     }).toList();
+
+    // Debug log to track game count
+    debugPrint(
+        'AddGameScreen: Building content with ${allGames.length} games (${games.length} total before filtering)');
 
     // Separate popular games (first 10) from others
     final popularGames = allGames.take(10).toList();
@@ -189,7 +238,9 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
                 itemCount: filteredPopularGames.length,
                 itemBuilder: (context, index) {
                   final game = filteredPopularGames[index];
-                  final isSelected = _selectedGames.contains(game['slug']);
+                  final gameId =
+                      (game['igdbId'] ?? game['slug'])?.toString() ?? '';
+                  final isSelected = _selectedGames.containsKey(gameId);
                   return Container(
                     width: 140,
                     margin: const EdgeInsets.only(right: 12),
@@ -233,7 +284,9 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final game = filteredOtherGames[index];
-                final isSelected = _selectedGames.contains(game['slug']);
+                final gameId =
+                    (game['igdbId'] ?? game['slug'])?.toString() ?? '';
+                final isSelected = _selectedGames.containsKey(gameId);
                 return _GameCard(
                   game: game,
                   isSelected: isSelected,
@@ -255,41 +308,18 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
   }
 
   void _onGameTap(Map<String, dynamic> game) async {
-    final gameSlug = game['slug'] as String;
+    final gameId = (game['igdbId'] ?? game['slug'])?.toString() ?? '';
 
-    if (_selectedGames.contains(gameSlug)) {
+    if (_selectedGames.containsKey(gameId)) {
       // Deselect game
       setState(() {
-        _selectedGames.remove(gameSlug);
+        _selectedGames.remove(gameId);
       });
     } else {
-      // Check if game has platforms configured
-      final gamePlatforms = game['platforms'] as List<dynamic>? ?? [];
-      final hasPlatforms = gamePlatforms.isNotEmpty;
-
-      GamePlatformConfig? result;
-
-      if (hasPlatforms) {
-        // Show platform configuration dialog for games with platforms
-        result = await showDialog<GamePlatformConfig?>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => GamePlatformDialog(game: game),
-        );
-      } else {
-        // For games without platforms, create a default config or skip dialog
-        result = const GamePlatformConfig(
-          allowCrossplay: true,
-          selectedConsoles: {'PC'}, // Default to PC for games without platforms
-        );
-      }
-
-      if (result != null && mounted) {
-        setState(() {
-          _selectedGames.add(gameSlug);
-        });
-        // TODO: Store platform config for later use
-      }
+      // Select game directly without configuration
+      setState(() {
+        _selectedGames[gameId] = game;
+      });
     }
   }
 
@@ -304,24 +334,27 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
 
     try {
       // Save selected games to pinned games
-      for (final gameSlug in _selectedGames) {
-        final game =
-            gameState.availableGames.firstWhere((g) => g.slug == gameSlug);
-        await userNotifier.addPinnedGame(game.toJson());
+      for (final game in _selectedGames.values) {
+        await userNotifier.addPinnedGame(game);
       }
 
       if (mounted) {
-        // Go back to previous screen (squad lobbies)
-        Navigator.of(context).pop();
+        // Check if this is onboarding (has onComplete callback)
+        if (widget.onComplete != null) {
+          widget.onComplete!();
+        } else {
+          // Go back to previous screen (squad lobbies)
+          Navigator.of(context).pop();
 
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '${_selectedGames.length} game${_selectedGames.length == 1 ? '' : 's'} added to your collection!'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  '${_selectedGames.length} game${_selectedGames.length == 1 ? '' : 's'} added to your collection!'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

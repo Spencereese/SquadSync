@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/squad_notifier.dart' as sn;
@@ -155,7 +154,7 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
 
       // Trigger notification
       final notificationManager =
-          p.Provider.of<NotificationManager>(context, listen: false);
+          ref.read(notificationManagerProvider.notifier);
       notificationManager.showNotification(
         title: 'Peacock Alert',
         body: 'Looking for ${_spots.toInt()} spots in $gameName',

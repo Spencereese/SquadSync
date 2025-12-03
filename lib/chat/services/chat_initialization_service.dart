@@ -1,12 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/squad_notifier.dart' as sn;
 import '../../domain/entities/squad_state.dart';
 import '../../domain/entities/message.dart';
-import '../chat_state.dart';
+import '../chat_state_notifier.dart';
 
 /// Service responsible for complex chat initialization logic
 class ChatInitializationService {
@@ -49,8 +48,7 @@ class ChatInitializationService {
     await _loadNotificationSettings();
 
     // Load quick reaction emoji
-    await p.Provider.of<ChatState>(context, listen: false)
-        .loadQuickReactionEmojis();
+    await ref.read(chatStateProvider.notifier).loadQuickReactionEmojis();
 
     // Load user display names for better performance
     await _loadUserDisplayNames(context);

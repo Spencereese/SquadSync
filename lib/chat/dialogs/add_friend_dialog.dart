@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as p;
 import '../../domain/entities/message.dart';
 import '../../utils.dart';
 import '../chat_screen.dart';
-import '../chat_state.dart';
 import '../../presentation/notifiers/user_notifier.dart';
 
 /// Dialog for adding friends and starting direct messages
@@ -51,13 +49,10 @@ class _AddFriendDialogState extends ConsumerState<AddFriendDialog>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => p.ChangeNotifierProvider<ChatState>(
-          create: (_) => ChatState(),
-          child: ChatScreen(
-            chatGroupId: chatId,
-            chatGroupName: safeDisplayName(user['displayName'] as String?),
-            chatType: ChatType.dm,
-          ),
+        builder: (context) => ChatScreen(
+          chatGroupId: chatId,
+          chatGroupName: safeDisplayName(user['displayName'] as String?),
+          chatType: ChatType.dm,
         ),
       ),
     );
@@ -75,13 +70,10 @@ class _AddFriendDialogState extends ConsumerState<AddFriendDialog>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => p.ChangeNotifierProvider<ChatState>(
-          create: (_) => ChatState(),
-          child: ChatScreen(
-            chatGroupId: chatId,
-            chatGroupName: displayName,
-            chatType: ChatType.dm,
-          ),
+        builder: (context) => ChatScreen(
+          chatGroupId: chatId,
+          chatGroupName: displayName,
+          chatType: ChatType.dm,
         ),
       ),
     );

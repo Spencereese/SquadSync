@@ -21,7 +21,10 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
 
   @override
   Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
-    await _firestore.collection('users').doc(uid).update(data);
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .set(data, SetOptions(merge: true));
   }
 
   @override

@@ -131,9 +131,14 @@ class SquadNotifier extends AutoDisposeAsyncNotifier<SquadState> {
     state = await AsyncValue.guard(() => _loadSquadState());
   }
 
-  // TODO: Implement setCurrentGame method
   Future<void> setCurrentGame(Map<String, dynamic>? game) async {
-    // Placeholder implementation
+    final currentState = state;
+    if (currentState is AsyncData && currentState.value != null) {
+      debugPrint(
+          'Setting current game: ${game?['name']}, coverUrl: ${game?['coverUrl']}');
+      final updatedState = currentState.value!.copyWith(currentGame: game);
+      state = AsyncValue.data(updatedState);
+    }
   }
 
   // TODO: Implement addToPeacock method (alias for addToPeacockQueue)
@@ -231,19 +236,99 @@ class SquadNotifier extends AutoDisposeAsyncNotifier<SquadState> {
     return 'active';
   }
 
-  // TODO: Implement claimSpot method
   Future<void> claimSpot(String gameName, int spotIndex) async {
-    // TODO: Implement spot claiming
+    debugPrint('claimSpot called: game=$gameName, spotIndex=$spotIndex');
+    final currentState = state;
+    if (currentState is AsyncData && currentState.value != null) {
+      final squadState = currentState.value!;
+      final squadId = squadState.selectedSquadId;
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+
+      debugPrint('squadId: $squadId, userId: $userId');
+
+      if (squadId != null && userId != null) {
+        // Update local state immediately for responsive UI
+        final updatedSpots =
+            Map<String, List<String?>>.from(squadState.gameSquadSpots);
+        updatedSpots[gameName] =
+            List<String?>.from(updatedSpots[gameName] ?? []);
+
+        // Ensure the list is large enough
+        while (updatedSpots[gameName]!.length <= spotIndex) {
+          updatedSpots[gameName]!.add(null);
+        }
+
+        // Set the spot with calling status
+        updatedSpots[gameName]![spotIndex] = '${userId}_calling';
+
+        debugPrint('Updated spots for $gameName: ${updatedSpots[gameName]}');
+
+        // Update global status
+        final updatedGlobalStatuses =
+            Map<String, String>.from(squadState.globalStatuses);
+        updatedGlobalStatuses[userId] = 'Calling';
+
+        // Update state immediately
+        state = AsyncValue.data(squadState.copyWith(
+          gameSquadSpots: updatedSpots,
+          globalStatuses: updatedGlobalStatuses,
+        ));
+
+        debugPrint('State updated locally, making async calls...');
+
+        // Then make async calls
+        try {
+          await _assignSpot(squadId, spotIndex, userId);
+          // Start the timer
+          await _timerService.startSpotTimer(
+              gameName, userId, const Duration(minutes: 5));
+          debugPrint('Spot claimed successfully');
+        } catch (e) {
+          debugPrint('Error claiming spot: $e');
+          // Reload state to reflect actual state if error occurred
+          state = await AsyncValue.guard(() => _loadSquadState());
+        }
+      } else {
+        debugPrint('Cannot claim spot: squadId or userId is null');
+      }
+    } else {
+      debugPrint('Cannot claim spot: state is not ready');
+    }
   }
 
-  // TODO: Implement lockSpot method
   Future<void> lockSpot(String gameName, int spotIndex) async {
-    // TODO: Implement spot locking
+    final currentState = state;
+    if (currentState is AsyncData) {
+      final squadState = currentState.value!;
+      final userId = FirebaseAuth.instance.currentUser!.uid;
+      // Cancel the timer
+      final timerKey = 'spot_${gameName}_$userId';
+      await _timerService.stopTimer(timerKey);
+      // Update status to Ready
+      await _updateMemberStatus(squadState.selectedSquadId!, userId, 'Ready');
+      // Reload state
+      state = await AsyncValue.guard(() => _loadSquadState());
+    }
   }
 
-  // TODO: Implement removeSpot method
   Future<void> removeSpot(String gameName, int spotIndex) async {
-    // TODO: Implement spot removal
+    final currentState = state;
+    if (currentState is AsyncData) {
+      final squadState = currentState.value!;
+      final squadId = squadState.selectedSquadId;
+      if (squadId != null) {
+        final userId = FirebaseAuth.instance.currentUser!.uid;
+        await _assignSpot(squadId, spotIndex, null);
+        // Cancel timer if user is removing their own spot
+        final spots = squadState.gameSquadSpots[gameName] ?? [];
+        if (spotIndex < spots.length && spots[spotIndex] == userId) {
+          final timerKey = 'spot_${gameName}_$userId';
+          await _timerService.stopTimer(timerKey);
+        }
+        // Reload state
+        state = await AsyncValue.guard(() => _loadSquadState());
+      }
+    }
   }
 
   // TODO: Implement recordWin method

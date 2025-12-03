@@ -12,7 +12,7 @@ class AppTheme {
   static const Color _defaultNeon = Color(0xFF00F5FF); // Cyan neon default
 
   /// Creates a dark theme with dynamic color seed from game cover art
-  /// 
+  ///
   /// [dynamicSeedColor] - Color extracted from IGDB cover art to generate
   /// the dynamic color scheme. Defaults to cyan neon if not provided.
   static ThemeData dark({Color? dynamicSeedColor}) {
@@ -29,28 +29,28 @@ class AppTheme {
       brightness: Brightness.dark,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: _darkBackground,
-      
+
       // Custom text theme with Orbitron for headings, Inter for body
       textTheme: _buildTextTheme(colorScheme),
-      
+
       // Custom input decoration with glass style
       inputDecorationTheme: _buildInputDecorationTheme(colorScheme),
-      
+
       // Elevated button with glass fill and neon border
       elevatedButtonTheme: _buildElevatedButtonTheme(colorScheme),
-      
+
       // Card theme with glass effect
       cardTheme: _buildCardTheme(colorScheme),
-      
+
       // App bar with glass background
       appBarTheme: _buildAppBarTheme(colorScheme),
-      
+
       // Bottom navigation with glass effect
       bottomNavigationBarTheme: _buildBottomNavTheme(colorScheme),
-      
+
       // Dialog theme with glassmorphic style
       dialogTheme: _buildDialogTheme(colorScheme),
-      
+
       // Floating action button with neon glow
       floatingActionButtonTheme: _buildFABTheme(colorScheme),
     );
@@ -119,7 +119,7 @@ class AppTheme {
         letterSpacing: 0,
         color: colorScheme.onBackground,
       ),
-      
+
       // Body text with Inter (clean, readable)
       bodyLarge: GoogleFonts.inter(
         fontSize: 16,
@@ -139,7 +139,7 @@ class AppTheme {
         letterSpacing: 0.4,
         color: colorScheme.onBackground.withOpacity(0.8),
       ),
-      
+
       // Labels with Inter
       labelLarge: GoogleFonts.inter(
         fontSize: 14,
@@ -159,7 +159,7 @@ class AppTheme {
         letterSpacing: 0.5,
         color: colorScheme.onBackground.withOpacity(0.8),
       ),
-      
+
       // Titles with Orbitron
       titleLarge: GoogleFonts.orbitron(
         fontSize: 22,
@@ -183,9 +183,10 @@ class AppTheme {
   }
 
   // Input decoration with glass style and floating neon label
-  static InputDecorationTheme _buildInputDecorationTheme(ColorScheme colorScheme) {
+  static InputDecorationTheme _buildInputDecorationTheme(
+      ColorScheme colorScheme) {
     final neonColor = colorScheme.primary;
-    
+
     return InputDecorationTheme(
       filled: true,
       fillColor: Colors.white.withOpacity(0.05),
@@ -243,9 +244,10 @@ class AppTheme {
   }
 
   // Elevated button with glass fill and neon border
-  static ElevatedButtonThemeData _buildElevatedButtonTheme(ColorScheme colorScheme) {
+  static ElevatedButtonThemeData _buildElevatedButtonTheme(
+      ColorScheme colorScheme) {
     final neonColor = colorScheme.primary;
-    
+
     return ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         foregroundColor: Colors.white,
@@ -324,7 +326,8 @@ class AppTheme {
   }
 
   // Bottom navigation with glass effect
-  static BottomNavigationBarThemeData _buildBottomNavTheme(ColorScheme colorScheme) {
+  static BottomNavigationBarThemeData _buildBottomNavTheme(
+      ColorScheme colorScheme) {
     return BottomNavigationBarThemeData(
       backgroundColor: Colors.white.withOpacity(0.05),
       selectedItemColor: colorScheme.primary,
@@ -383,7 +386,7 @@ class AppTheme {
 /// Extension to add neon glow effect to any Color
 extension NeonGlow on Color {
   /// Creates a neon glow box shadow effect
-  /// 
+  ///
   /// [spread] - How far the glow spreads (default: 0)
   /// [blur] - Blur radius of the glow (default: 20)
   /// [opacity] - Opacity of the glow (default: 0.5)
@@ -412,11 +415,11 @@ extension NeonGlow on Color {
 /// Extension to create glassmorphic containers
 extension GlassyWidgets on ThemeData {
   /// Creates a glassmorphic card decoration with backdrop blur
-  /// 
+  ///
   /// [neonColor] - Border and glow color (uses primary if not provided)
   BoxDecoration glassyCard({Color? neonColor}) {
     final borderColor = neonColor ?? colorScheme.primary;
-    
+
     return BoxDecoration(
       color: Colors.white.withOpacity(0.08),
       borderRadius: BorderRadius.circular(20),
@@ -442,11 +445,11 @@ extension GlassyWidgets on ThemeData {
   }
 
   /// Creates a glassmorphic surface decoration (lighter than card)
-  /// 
+  ///
   /// [neonColor] - Border and glow color (uses primary if not provided)
   BoxDecoration glassySurface({Color? neonColor}) {
     final borderColor = neonColor ?? colorScheme.primary;
-    
+
     return BoxDecoration(
       color: Colors.white.withOpacity(0.05),
       borderRadius: BorderRadius.circular(16),
@@ -465,7 +468,7 @@ extension GlassyWidgets on ThemeData {
   }
 
   /// Creates a neon border decoration
-  /// 
+  ///
   /// [neonColor] - Border color (uses primary if not provided)
   /// [width] - Border width (default: 1.5)
   /// [radius] - Border radius (default: 16)
@@ -475,7 +478,7 @@ extension GlassyWidgets on ThemeData {
     double radius = 16,
   }) {
     final borderColor = neonColor ?? colorScheme.primary;
-    
+
     return BoxDecoration(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(radius),

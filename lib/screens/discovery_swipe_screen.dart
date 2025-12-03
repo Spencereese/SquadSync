@@ -12,7 +12,7 @@ import '../widgets/glass_squad_card.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
 
 /// Tinder-style squad discovery screen with card swiping
-/// 
+///
 /// Features:
 /// - Top 4 cards visible with parallax scaling
 /// - Swipe left/right gestures for pass/like
@@ -24,7 +24,8 @@ class DiscoverySwipeScreen extends ConsumerStatefulWidget {
   const DiscoverySwipeScreen({super.key});
 
   @override
-  ConsumerState<DiscoverySwipeScreen> createState() => _DiscoverySwipeScreenState();
+  ConsumerState<DiscoverySwipeScreen> createState() =>
+      _DiscoverySwipeScreenState();
 }
 
 class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
@@ -34,43 +35,43 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
   double _dragDistance = 0;
   double _rotation = 0;
   bool _isDragging = false;
-  
+
   // Auto-play timer
   Timer? _autoPlayTimer;
   static const _autoPlayDuration = Duration(seconds: 8);
-  
+
   // Confetti controller
   late ConfettiController _confettiController;
-  
+
   // Animation controllers
   late AnimationController _swipeAwayController;
   late AnimationController _neonIntensityController;
-  
+
   // Current card index
   int _currentIndex = 0;
-  
+
   @override
   void initState() {
     super.initState();
-    
+
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 3),
     );
-    
+
     _swipeAwayController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    
+
     _neonIntensityController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
       value: 0,
     );
-    
+
     _startAutoPlayTimer();
   }
-  
+
   @override
   void dispose() {
     _autoPlayTimer?.cancel();
@@ -79,7 +80,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     _neonIntensityController.dispose();
     super.dispose();
   }
-  
+
   void _startAutoPlayTimer() {
     _autoPlayTimer?.cancel();
     _autoPlayTimer = Timer(_autoPlayDuration, () {
@@ -88,19 +89,19 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       }
     });
   }
-  
+
   void _resetAutoPlayTimer() {
     _startAutoPlayTimer();
   }
-  
+
   Future<void> _autoSwipeRight() async {
     final squads = ref.read(publicSquadsProvider).value ?? [];
     if (squads.isEmpty) return;
-    
+
     // Get Grok's best suggestion (for now, just use current top card)
     await _swipeRight(animated: true);
   }
-  
+
   void _onPanStart(DragStartDetails details) {
     setState(() {
       _isDragging = true;
@@ -108,28 +109,28 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       _dragDistance = 0;
       _rotation = 0;
     });
-    
+
     _neonIntensityController.animateTo(0.3);
     _autoPlayTimer?.cancel();
     HapticFeedback.lightImpact();
   }
-  
+
   void _onPanUpdate(DragUpdateDetails details) {
     setState(() {
       _dragPosition += details.delta;
       _dragDistance = _dragPosition.distance;
       _rotation = (_dragPosition.dx / 1000).clamp(-0.3, 0.3);
     });
-    
+
     // Intensify neon as drag increases
     final intensity = (_dragDistance / 200).clamp(0.0, 1.0);
     _neonIntensityController.value = intensity;
   }
-  
+
   void _onPanEnd(DragEndDetails details) {
     final screenWidth = MediaQuery.of(context).size.width;
     final threshold = screenWidth * 0.3;
-    
+
     if (_dragDistance > threshold) {
       // Swipe threshold reached
       if (_dragPosition.dx > 0) {
@@ -142,72 +143,72 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       _resetCardPosition();
     }
   }
-  
+
   Future<void> _swipeRight({bool animated = false}) async {
     HapticFeedback.mediumImpact();
-    
+
     if (animated) {
       setState(() {
         _dragPosition = Offset(MediaQuery.of(context).size.width * 1.5, -100);
         _rotation = 0.3;
       });
     }
-    
+
     await _animateCardAway();
     await _joinSquad();
     _showConfetti();
-    
+
     setState(() {
       _currentIndex++;
       _resetCardPosition();
     });
-    
+
     _resetAutoPlayTimer();
   }
-  
+
   Future<void> _swipeLeft() async {
     HapticFeedback.lightImpact();
-    
+
     setState(() {
       _dragPosition = Offset(-MediaQuery.of(context).size.width * 1.5, -100);
       _rotation = -0.3;
     });
-    
+
     await _animateCardAway();
-    
+
     setState(() {
       _currentIndex++;
       _resetCardPosition();
     });
-    
+
     _resetAutoPlayTimer();
   }
-  
+
   Future<void> _superLike() async {
     HapticFeedback.heavyImpact();
-    
+
     setState(() {
       _dragPosition = Offset(0, -MediaQuery.of(context).size.height * 1.2);
       _rotation = 0;
     });
-    
+
     await _animateCardAway();
     await _joinSquad(instant: true);
     _showConfetti();
-    
+
     setState(() {
       _currentIndex++;
       _resetCardPosition();
     });
-    
+
     _resetAutoPlayTimer();
   }
-  
+
   Future<void> _animateCardAway() async {
     await _swipeAwayController.forward();
     _swipeAwayController.reset();
   }
-  
+
   void _resetCardPosition() {
     setState(() {
       _isDragging = false;
@@ -217,41 +218,44 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     });
     _neonIntensityController.animateTo(0);
   }
-  
+
   Future<void> _joinSquad({bool instant = false}) async {
     final squads = ref.read(publicSquadsProvider).value ?? [];
-    
+
     if (_currentIndex < squads.length) {
       final squad = squads[_currentIndex];
-      
+
       // TODO: Call actual join squad API
       // await ref.read(discoveryNotifierProvider.notifier).joinSquad(squad.id);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              instant ? '⚡ Super Joined ${squad.name}!' : '✨ Joined ${squad.name}!',
+              instant
+                  ? '⚡ Super Joined ${squad.name}!'
+                  : '✨ Joined ${squad.name}!',
               style: GoogleFonts.orbitron(fontWeight: FontWeight.w600),
             ),
             backgroundColor: Theme.of(context).colorScheme.primary,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
         );
       }
     }
   }
-  
+
   void _showConfetti() {
     _confettiController.play();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final squadsAsync = ref.watch(publicSquadsProvider);
-    
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -282,24 +286,25 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
               ),
             ),
           ),
-          
+
           // Main content
           SafeArea(
             child: squadsAsync.when(
               data: (squads) {
-                final visibleSquads = squads.skip(_currentIndex).take(4).toList();
-                
+                final visibleSquads =
+                    squads.skip(_currentIndex).take(4).toList();
+
                 if (visibleSquads.isEmpty) {
                   return _buildEmptyState(theme);
                 }
-                
+
                 return _buildCardStack(visibleSquads, theme);
               },
               loading: () => _buildLoadingState(theme),
               error: (error, stack) => _buildErrorState(theme, error),
             ),
           ),
-          
+
           // Action buttons overlay
           Positioned(
             left: 0,
@@ -307,7 +312,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
             bottom: 40,
             child: _buildActionButtons(theme),
           ),
-          
+
           // Confetti overlay
           Align(
             alignment: Alignment.topCenter,
@@ -333,7 +338,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       ),
     );
   }
-  
+
   Widget _buildCardStack(List<Squad> squads, ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
@@ -348,21 +353,20 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
               theme,
             ),
           ).reversed,
-          
+
           // Top card (draggable)
-          if (squads.isNotEmpty)
-            _buildTopCard(squads[0], theme),
+          if (squads.isNotEmpty) _buildTopCard(squads[0], theme),
         ],
       ),
     );
   }
-  
+
   Widget _buildBackgroundCard(Squad squad, int depth, ThemeData theme) {
     // Parallax effect: cards further back are smaller and offset upward
     final scale = 1.0 - (depth * 0.05);
     final offsetY = depth * 12.0;
     final opacity = 1.0 - (depth * 0.2);
-    
+
     return Transform.scale(
       scale: scale,
       child: Transform.translate(
@@ -386,23 +390,24 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
         .fadeIn(duration: 300.ms, delay: (depth * 50).ms)
         .slideY(begin: 0.1, duration: 400.ms, delay: (depth * 50).ms);
   }
-  
+
   Widget _buildTopCard(Squad squad, ThemeData theme) {
     final neonColor = theme.colorScheme.primary;
-    
+
     return GestureDetector(
       onPanStart: _onPanStart,
       onPanUpdate: _onPanUpdate,
       onPanEnd: _onPanEnd,
       onDoubleTap: _superLike,
       child: AnimatedBuilder(
-        animation: Listenable.merge([_swipeAwayController, _neonIntensityController]),
+        animation:
+            Listenable.merge([_swipeAwayController, _neonIntensityController]),
         builder: (context, child) {
           final swipeProgress = _swipeAwayController.value;
           final position = _dragPosition * (1 + swipeProgress * 2);
           final rotation = _rotation * (1 + swipeProgress);
           final neonIntensity = _neonIntensityController.value;
-          
+
           return Transform.translate(
             offset: position,
             child: Transform.rotate(
@@ -423,7 +428,8 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
                       gameCoverUrl: null, // TODO: Get from IGDB
                       gamePrimaryColor: neonColor,
                       heroTag: 'squad_${squad.id}',
-                      showPeacockTimer: squad.spotTimers.any((timer) => timer != null),
+                      showPeacockTimer:
+                          squad.spotTimers.any((timer) => timer != null),
                       peacockProgress: 0.5, // TODO: Calculate actual progress
                       onTap: () {
                         // Navigate to detail on tap (without swiping)
@@ -432,7 +438,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
                         }
                       },
                     ),
-                    
+
                     // Swipe direction indicator
                     if (_isDragging && _dragDistance > 50)
                       _buildSwipeIndicator(neonColor),
@@ -445,11 +451,11 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       ),
     );
   }
-  
+
   Widget _buildSwipeIndicator(Color neonColor) {
     final isRight = _dragPosition.dx > 0;
     final opacity = (_dragDistance / 200).clamp(0.0, 1.0);
-    
+
     return Positioned(
       top: 40,
       left: isRight ? null : 40,
@@ -459,7 +465,9 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           decoration: BoxDecoration(
-            color: isRight ? Colors.green.withOpacity(0.9) : Colors.red.withOpacity(0.9),
+            color: isRight
+                ? Colors.green.withOpacity(0.9)
+                : Colors.red.withOpacity(0.9),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: Colors.white,
@@ -489,7 +497,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
         .scale(begin: const Offset(0.8, 0.8))
         .shake(hz: 2, curve: Curves.easeInOut);
   }
-  
+
   Widget _buildActionButtons(ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -504,7 +512,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
             onPressed: _swipeLeft,
             label: 'PASS',
           ),
-          
+
           // Super like button
           _buildActionButton(
             icon: Icons.star_rounded,
@@ -514,7 +522,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
             label: 'SUPER',
             isPrimary: true,
           ),
-          
+
           // Like/Join button
           _buildActionButton(
             icon: Icons.favorite_rounded,
@@ -527,7 +535,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       ),
     );
   }
-  
+
   Widget _buildActionButton({
     required IconData icon,
     required Color color,
@@ -584,7 +592,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       ],
     );
   }
-  
+
   Widget _buildEmptyState(ThemeData theme) {
     return Center(
       child: Column(
@@ -609,9 +617,9 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
                 end: const Offset(1.05, 1.05),
                 duration: 2000.ms,
               ),
-          
+
           const SizedBox(height: 32),
-          
+
           GlassmorphicContainer(
             padding: const EdgeInsets.all(32),
             borderRadius: 24,
@@ -666,14 +674,15 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       ),
     );
   }
-  
+
   Widget _buildLoadingState(ThemeData theme) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+            valueColor:
+                AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
           )
               .animate(
                 onPlay: (controller) => controller.repeat(),
@@ -692,7 +701,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       ),
     );
   }
-  
+
   Widget _buildErrorState(ThemeData theme, Object error) {
     return Center(
       child: GlassmorphicContainer(
@@ -742,7 +751,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       ),
     );
   }
-  
+
   void _navigateToDetail(Squad squad) {
     // TODO: Navigate to squad detail screen with hero animation
     Navigator.of(context).pushNamed(

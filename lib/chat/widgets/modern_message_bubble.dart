@@ -9,7 +9,7 @@ import '../../core/app_theme.dart';
 import '../models/message_data.dart';
 
 /// Modern 2025-2026 MessageBubble with glassmorphic design
-/// 
+///
 /// Features:
 /// - Sharp corners (10px border radius)
 /// - Glassmorphic fill with backdrop blur
@@ -54,42 +54,43 @@ class ModernMessageBubble extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<ModernMessageBubble> createState() => _ModernMessageBubbleState();
+  ConsumerState<ModernMessageBubble> createState() =>
+      _ModernMessageBubbleState();
 }
 
 class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
     with TickerProviderStateMixin {
   // Swipe tracking
   double _swipeOffset = 0;
-  
+
   // Timestamp visibility
   bool _showTimestamp = false;
-  
+
   // Long press menu
   OverlayEntry? _reactionPickerOverlay;
-  
+
   // Animation controllers
   late AnimationController _pressController;
   late AnimationController _swipeController;
-  
+
   // Reaction animations
   final List<String> _newReactions = [];
-  
+
   @override
   void initState() {
     super.initState();
-    
+
     _pressController = AnimationController(
       duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    
+
     _swipeController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
   }
-  
+
   @override
   void dispose() {
     _pressController.dispose();
@@ -97,15 +98,15 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
     _removeReactionPicker();
     super.dispose();
   }
-  
+
   @override
   void didUpdateWidget(ModernMessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     // Detect new reactions
     final oldCount = oldWidget.message.reactions.length;
     final newCount = widget.message.reactions.length;
-    
+
     if (newCount > oldCount) {
       // New reaction added - could track specific emoji if needed
       setState(() {
@@ -113,11 +114,11 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       });
     }
   }
-  
+
   void _handleHorizontalDragStart(DragStartDetails details) {
     // Drag started
   }
-  
+
   void _handleHorizontalDragUpdate(DragUpdateDetails details) {
     // Only allow right swipe
     if (details.delta.dx > 0) {
@@ -126,14 +127,14 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       });
     }
   }
-  
+
   void _handleHorizontalDragEnd(DragEndDetails details) {
     // Trigger reply if swiped far enough
     if (_swipeOffset > 60) {
       widget.onReply?.call(widget.message);
       HapticFeedback.mediumImpact();
     }
-    
+
     // Animate back to position
     _swipeController.forward(from: 0).then((_) {
       setState(() {
@@ -141,25 +142,25 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       });
     });
   }
-  
+
   void _handleTap() {
     setState(() {
       _showTimestamp = !_showTimestamp;
     });
     widget.onTap?.call();
   }
-  
+
   void _handleLongPress() {
     HapticFeedback.mediumImpact();
     _showReactionPickerOverlay();
     widget.onLongPress?.call();
   }
-  
+
   void _showReactionPickerOverlay() {
     final renderBox = context.findRenderObject() as RenderBox;
     final position = renderBox.localToGlobal(Offset.zero);
     final size = renderBox.size;
-    
+
     _reactionPickerOverlay = OverlayEntry(
       builder: (context) => _ReactionPickerOverlay(
         position: position,
@@ -172,20 +173,20 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
         onDismiss: _removeReactionPicker,
       ),
     );
-    
+
     Overlay.of(context).insert(_reactionPickerOverlay!);
   }
-  
+
   void _removeReactionPicker() {
     _reactionPickerOverlay?.remove();
     _reactionPickerOverlay = null;
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accentColor = widget.senderAccentColor ?? theme.colorScheme.primary;
-    
+
     return GestureDetector(
       onHorizontalDragStart: _handleHorizontalDragStart,
       onHorizontalDragUpdate: _handleHorizontalDragUpdate,
@@ -200,7 +201,8 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
           bottom: widget.isLastInCluster ? 8 : 2,
         ),
         child: Row(
-          mainAxisAlignment: widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          mainAxisAlignment:
+              widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             // Avatar (only on last message in cluster)
@@ -208,18 +210,22 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
               _buildAvatar(accentColor)
             else if (!widget.isMe)
               const SizedBox(width: 40),
-            
+
             const SizedBox(width: 8),
-            
+
             // Message bubble with swipe offset
             Flexible(
               child: Transform.translate(
                 offset: Offset(_swipeOffset, 0),
                 child: Column(
-                  crossAxisAlignment: widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                  crossAxisAlignment: widget.isMe
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
                   children: [
                     // Sender name (if first in cluster and not me)
-                    if (!widget.isMe && widget.isFirstInCluster && widget.senderDisplayName != null)
+                    if (!widget.isMe &&
+                        widget.isFirstInCluster &&
+                        widget.senderDisplayName != null)
                       Padding(
                         padding: const EdgeInsets.only(left: 12, bottom: 4),
                         child: Text(
@@ -231,10 +237,10 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
                           ),
                         ),
                       ),
-                    
+
                     // Main bubble
                     _buildBubble(theme, accentColor),
-                    
+
                     // Timestamp (shown on tap)
                     if (_showTimestamp)
                       _buildTimestamp(theme)
@@ -245,7 +251,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
                 ),
               ),
             ),
-            
+
             // Reply indicator (when swiping)
             if (_swipeOffset > 20)
               Padding(
@@ -253,12 +259,10 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
                 child: Icon(
                   Icons.reply_rounded,
                   size: 24,
-                  color: theme.colorScheme.primary.withOpacity(_swipeOffset / 80),
+                  color:
+                      theme.colorScheme.primary.withOpacity(_swipeOffset / 80),
                 ),
-              )
-                  .animate()
-                  .fadeIn()
-                  .scale(begin: const Offset(0.5, 0.5)),
+              ).animate().fadeIn().scale(begin: const Offset(0.5, 0.5)),
           ],
         ),
       ),
@@ -275,7 +279,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
           curve: Curves.easeOutCubic,
         );
   }
-  
+
   Widget _buildAvatar(Color accentColor) {
     return Container(
       width: 32,
@@ -308,12 +312,12 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
           : _buildAvatarFallback(),
     );
   }
-  
+
   Widget _buildAvatarFallback() {
     final initial = widget.senderDisplayName?.isNotEmpty == true
         ? widget.senderDisplayName![0].toUpperCase()
         : '?';
-    
+
     return Center(
       child: Text(
         initial,
@@ -325,7 +329,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ),
     );
   }
-  
+
   Widget _buildBubble(ThemeData theme, Color accentColor) {
     return Stack(
       clipBehavior: Clip.none,
@@ -348,9 +352,8 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
                 borderRadius: BorderRadius.circular(10),
                 border: Border(
                   left: BorderSide(
-                    color: widget.isMe
-                        ? theme.colorScheme.primary
-                        : accentColor,
+                    color:
+                        widget.isMe ? theme.colorScheme.primary : accentColor,
                     width: 3,
                   ),
                 ),
@@ -366,7 +369,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
             ),
           ),
         ),
-        
+
         // Reactions (positioned below bubble)
         if (widget.message.reactions.isNotEmpty)
           Positioned(
@@ -378,7 +381,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ],
     );
   }
-  
+
   Widget _buildMessageContent(ThemeData theme) {
     switch (widget.message.type) {
       case MessageType.audio:
@@ -391,15 +394,14 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
         return _buildTextMessage(theme);
     }
   }
-  
+
   Widget _buildTextMessage(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Reply preview (if replying to another message)
-        if (widget.message.replyTo != null)
-          _buildReplyPreview(theme),
-        
+        if (widget.message.replyTo != null) _buildReplyPreview(theme),
+
         // Message text
         Text(
           widget.message.text,
@@ -410,7 +412,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
             height: 1.4,
           ),
         ),
-        
+
         // Edited indicator
         if (widget.message.edited)
           Padding(
@@ -427,7 +429,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ],
     );
   }
-  
+
   Widget _buildReplyPreview(ThemeData theme) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -453,11 +455,11 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ),
     );
   }
-  
+
   Widget _buildVoiceMessage(ThemeData theme) {
     final duration = 30; // TODO: Get actual duration from audioUrl metadata
     final progress = 0.0; // TODO: Implement playback progress
-    
+
     return Container(
       width: 220,
       padding: const EdgeInsets.all(12),
@@ -475,7 +477,8 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
                   value: progress,
                   strokeWidth: 3,
                   backgroundColor: Colors.white.withOpacity(0.1),
-                  valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
                 ),
               ),
               // Play icon
@@ -486,16 +489,16 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
               ),
             ],
           ),
-          
+
           const SizedBox(width: 12),
-          
+
           // Waveform
           Expanded(
             child: _buildWaveform(theme, progress),
           ),
-          
+
           const SizedBox(width: 8),
-          
+
           // Duration
           Text(
             _formatDuration(duration),
@@ -508,14 +511,14 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ),
     );
   }
-  
+
   Widget _buildWaveform(ThemeData theme, double progress) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: List.generate(20, (index) {
         final height = 4.0 + (index % 5) * 4.0;
         final isPlayed = (index / 20) <= progress;
-        
+
         return Container(
           width: 2,
           height: height,
@@ -529,16 +532,17 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       }),
     );
   }
-  
+
   String _formatDuration(int seconds) {
     final minutes = seconds ~/ 60;
     final secs = seconds % 60;
     return '$minutes:${secs.toString().padLeft(2, '0')}';
   }
-  
+
   Widget _buildVideoMessage(ThemeData theme) {
-    final thumbnailUrl = widget.message.videoUrl; // Use video URL as placeholder
-    
+    final thumbnailUrl =
+        widget.message.videoUrl; // Use video URL as placeholder
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -564,7 +568,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
                   child: const Icon(Icons.error_outline, color: Colors.white54),
                 ),
               ),
-            
+
             // Glass overlay with play button
             BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
@@ -584,7 +588,8 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
                         color: theme.colorScheme.primary.withOpacity(0.6),
                         width: 2,
                       ),
-                      boxShadow: theme.colorScheme.primary.neonGlow(blur: 20, opacity: 0.4),
+                      boxShadow: theme.colorScheme.primary
+                          .neonGlow(blur: 20, opacity: 0.4),
                     ),
                     child: Icon(
                       Icons.play_arrow_rounded,
@@ -600,14 +605,14 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ),
     );
   }
-  
+
   Widget _buildImageMessage(ThemeData theme) {
-    final imageUrl = widget.message.photos.isNotEmpty 
+    final imageUrl = widget.message.photos.isNotEmpty
         ? widget.message.photos[0]['uri'] as String?
         : null;
-    
+
     if (imageUrl == null) return const SizedBox.shrink();
-    
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -636,17 +641,17 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ),
     );
   }
-  
+
   Widget _buildReactions(ThemeData theme) {
     final reactions = widget.message.reactions;
-    
+
     // Group reactions by emoji
     final Map<String, int> reactionCounts = {};
     for (final reaction in reactions) {
       final emoji = reaction['emoji'] as String? ?? '👍';
       reactionCounts[emoji] = (reactionCounts[emoji] ?? 0) + 1;
     }
-    
+
     if (reactionCounts.isEmpty) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -671,7 +676,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
           final emoji = entry.key;
           final count = entry.value;
           final isNew = _newReactions.contains(emoji);
-          
+
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Row(
@@ -712,7 +717,7 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ),
     );
   }
-  
+
   Widget _buildTimestamp(ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.only(top: 4, left: 12, right: 12),
@@ -725,11 +730,11 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
       ),
     );
   }
-  
+
   String _formatTimestamp(DateTime timestamp) {
     final now = DateTime.now();
     final difference = now.difference(timestamp);
-    
+
     if (difference.inMinutes < 1) {
       return 'Just now';
     } else if (difference.inHours < 1) {
@@ -763,7 +768,7 @@ class _ReactionPickerOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return GestureDetector(
       onTap: onDismiss,
       behavior: HitTestBehavior.translucent,
@@ -773,18 +778,21 @@ class _ReactionPickerOverlay extends StatelessWidget {
           Container(
             color: Colors.black.withOpacity(0.3),
           ),
-          
+
           // Reaction picker positioned above message
           Positioned(
             left: isMe ? null : position.dx,
-            right: isMe ? MediaQuery.of(context).size.width - position.dx - size.width : null,
+            right: isMe
+                ? MediaQuery.of(context).size.width - position.dx - size.width
+                : null,
             top: position.dy - 80,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.7),
                     borderRadius: BorderRadius.circular(16),
@@ -808,9 +816,7 @@ class _ReactionPickerOverlay extends StatelessWidget {
                             emoji,
                             style: const TextStyle(fontSize: 28),
                           ),
-                        )
-                            .animate()
-                            .scale(
+                        ).animate().scale(
                               begin: const Offset(0, 0),
                               duration: 200.ms,
                               delay: (_quickReactions.indexOf(emoji) * 30).ms,
@@ -826,11 +832,13 @@ class _ReactionPickerOverlay extends StatelessWidget {
                 .fadeIn(duration: 150.ms)
                 .slideY(begin: 0.2, duration: 200.ms, curve: Curves.easeOut),
           ),
-          
+
           // Menu options below message
           Positioned(
             left: isMe ? null : position.dx,
-            right: isMe ? MediaQuery.of(context).size.width - position.dx - size.width : null,
+            right: isMe
+                ? MediaQuery.of(context).size.width - position.dx - size.width
+                : null,
             top: position.dy + size.height + 8,
             child: _buildMenuOptions(theme),
           ),
@@ -838,7 +846,7 @@ class _ReactionPickerOverlay extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildMenuOptions(ThemeData theme) {
     final options = [
       {'icon': Icons.reply_rounded, 'label': 'Reply'},
@@ -846,7 +854,7 @@ class _ReactionPickerOverlay extends StatelessWidget {
       {'icon': Icons.edit_rounded, 'label': 'Edit'},
       {'icon': Icons.delete_outline_rounded, 'label': 'Delete'},
     ];
-    
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -870,7 +878,8 @@ class _ReactionPickerOverlay extends StatelessWidget {
                   onDismiss();
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -895,9 +904,7 @@ class _ReactionPickerOverlay extends StatelessWidget {
           ),
         ),
       ),
-    )
-        .animate()
-        .fadeIn(duration: 150.ms, delay: 100.ms)
-        .slideY(begin: -0.2, duration: 200.ms, delay: 100.ms, curve: Curves.easeOut);
+    ).animate().fadeIn(duration: 150.ms, delay: 100.ms).slideY(
+        begin: -0.2, duration: 200.ms, delay: 100.ms, curve: Curves.easeOut);
   }
 }

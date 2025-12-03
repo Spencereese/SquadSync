@@ -7,7 +7,7 @@ import '../core/app_theme.dart';
 import '../domain/entities/squad.dart';
 
 /// Glassmorphic squad card for discovery screen with Tinder-style swipe support
-/// 
+///
 /// Features:
 /// - Heavy backdrop blur with game cover background
 /// - Dynamic neon glow matching game colors
@@ -47,7 +47,8 @@ class GlassSquadCard extends StatelessWidget {
         onTap: onTap,
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
-          child: _buildAnimatedCard(context, theme, neonColor, memberCount, maxSlots),
+          child: _buildAnimatedCard(
+              context, theme, neonColor, memberCount, maxSlots),
         ),
       ),
     );
@@ -67,7 +68,7 @@ class GlassSquadCard extends StatelessWidget {
         children: [
           // Base card with glass effect and background
           _buildGlassCard(context, theme, neonColor),
-          
+
           // Peacock timer ring overlay (if active)
           if (showPeacockTimer && peacockProgress != null)
             _buildPeacockTimerRing(neonColor),
@@ -88,14 +89,15 @@ class GlassSquadCard extends StatelessWidget {
         );
   }
 
-  Widget _buildGlassCard(BuildContext context, ThemeData theme, Color neonColor) {
+  Widget _buildGlassCard(
+      BuildContext context, ThemeData theme, Color neonColor) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: Stack(
         children: [
           // Background: Game cover with dark overlay
           _buildBackground(),
-          
+
           // Heavy backdrop blur
           Positioned.fill(
             child: BackdropFilter(
@@ -114,7 +116,7 @@ class GlassSquadCard extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Glass surface with neon border
           Container(
             decoration: BoxDecoration(
@@ -131,7 +133,7 @@ class GlassSquadCard extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Content
           Positioned.fill(
             child: Padding(
@@ -164,12 +166,13 @@ class GlassSquadCard extends StatelessWidget {
           ),
           errorWidget: (context, url, error) => Container(
             color: const Color(0xFF14181F),
-            child: const Icon(Icons.videogame_asset, size: 80, color: Colors.white24),
+            child: const Icon(Icons.videogame_asset,
+                size: 80, color: Colors.white24),
           ),
         ),
       );
     }
-    
+
     return Positioned.fill(
       child: Container(
         decoration: BoxDecoration(
@@ -192,19 +195,19 @@ class GlassSquadCard extends StatelessWidget {
       children: [
         // Header: Squad name with glow
         _buildHeader(theme, neonColor),
-        
+
         const SizedBox(height: 16),
-        
+
         // Game badge
         _buildGameBadge(theme, neonColor),
-        
+
         const Spacer(),
-        
+
         // Member avatars grid
         _buildMemberAvatars(theme, neonColor),
-        
+
         const SizedBox(height: 16),
-        
+
         // Footer: Stats and indicators
         _buildFooter(theme, neonColor),
       ],
@@ -253,7 +256,7 @@ class GlassSquadCard extends StatelessWidget {
 
   Widget _buildGameBadge(ThemeData theme, Color neonColor) {
     final gameName = squad.gameName;
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -294,7 +297,7 @@ class GlassSquadCard extends StatelessWidget {
     final members = squad.memberUids;
     final displayCount = members.length > 5 ? 5 : members.length;
     final remaining = members.length > 5 ? members.length - 5 : 0;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -330,11 +333,10 @@ class GlassSquadCard extends StatelessWidget {
                   index,
                 );
               }),
-              
+
               // Show "+X" if more members
-              if (remaining > 0)
-                _buildRemainingCount(remaining, neonColor),
-              
+              if (remaining > 0) _buildRemainingCount(remaining, neonColor),
+
               // Empty slots
               ...List.generate(
                 squad.maxSpots - members.length,
@@ -377,9 +379,7 @@ class GlassSquadCard extends StatelessWidget {
           ),
         ),
       ),
-    )
-        .animate(delay: (index * 100).ms)
-        .scale(
+    ).animate(delay: (index * 100).ms).scale(
           begin: const Offset(0, 0),
           duration: 300.ms,
           curve: Curves.elasticOut,
@@ -435,7 +435,7 @@ class GlassSquadCard extends StatelessWidget {
   Widget _buildFooter(ThemeData theme, Color neonColor) {
     final memberCount = squad.memberUids.length;
     final maxSlots = squad.maxSpots;
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -454,9 +454,9 @@ class GlassSquadCard extends StatelessWidget {
             label: '$memberCount/$maxSlots',
             neonColor: neonColor,
           ),
-          
+
           const SizedBox(width: 16),
-          
+
           // Voice indicator
           _buildStatBadge(
             icon: Icons.mic_rounded,
@@ -464,9 +464,9 @@ class GlassSquadCard extends StatelessWidget {
             neonColor: neonColor,
             isActive: true,
           ),
-          
+
           const Spacer(),
-          
+
           // Join arrow
           Icon(
             Icons.arrow_forward_rounded,

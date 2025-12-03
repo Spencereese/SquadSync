@@ -7,8 +7,9 @@ import '../chat/chat_groups_screen.dart';
 import '../setup_screen.dart';
 import '../screens/onboarding/onboarding_flow.dart';
 import '../presentation/notifiers/user_notifier.dart';
-import '../app_theme.dart';
 import 'splash_screen.dart';
+import '../presentation/widgets/animated_theme_wrapper.dart';
+import '../presentation/hooks/game_theme_sync.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
@@ -20,32 +21,34 @@ class SquadSyncMaterialApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeData = AppTheme.darkTheme;
+    // Sync theme with current game selection
+    GameThemeSync.watch(ref);
 
-    return MaterialApp(
-      title: 'SquadSync',
-      theme: themeData,
-      routes: {
-        '/squad': (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is Map<String, dynamic>) {
-            // New format: Map with gameName, chatGroupId, etc.
-            return SquadTabScreen(
-              gameName: args['gameName'],
-              lobbyId: args['lobbyId'],
-              game: args['game'],
-              chatGroupId: args['chatGroupId'],
-            );
-          } else if (args is String) {
-            // Legacy format: just gameName as string
-            return SquadTabScreen(gameName: args);
-          }
-          return const SquadTabScreen();
+    return AnimatedThemeWrapper(
+      child: MaterialApp(
+        title: 'SquadSync',
+        routes: {
+          '/squad': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments;
+            if (args is Map<String, dynamic>) {
+              // New format: Map with gameName, chatGroupId, etc.
+              return SquadTabScreen(
+                gameName: args['gameName'],
+                lobbyId: args['lobbyId'],
+                game: args['game'],
+                chatGroupId: args['chatGroupId'],
+              );
+            } else if (args is String) {
+              // Legacy format: just gameName as string
+              return SquadTabScreen(gameName: args);
+            }
+            return const SquadTabScreen();
+          },
+          '/main': (context) => const ChatGroupsScreen(),
         },
-        '/main': (context) => const ChatGroupsScreen(),
-      },
-      home: const AuthWrapper(),
-      debugShowCheckedModeBanner: false,
+        home: const AuthWrapper(),
+        debugShowCheckedModeBanner: false,
+      ),
     );
   }
 }

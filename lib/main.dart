@@ -6,6 +6,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'presentation/controllers/game_theme_controller.dart';
 import 'package:app_links/app_links.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
@@ -29,6 +31,9 @@ void main() async {
     debugPrint('dotenv load failed: $e');
   }
 
+  // Initialize SharedPreferences for theme persistence
+  final prefs = await SharedPreferences.getInstance();
+
   // Ensure Firebase is initialized FIRST
   await _initializeFirebase();
 
@@ -40,7 +45,7 @@ void main() async {
     // Continue anyway - some features might work without injection
   }
 
-  runApp(const SquadSyncApp());
+  runApp(SquadSyncApp(prefs: prefs));
 }
 
 Future<void> _initializeFirebase() async {
@@ -111,7 +116,9 @@ Future<void> _initializeFirebase() async {
 }
 
 class SquadSyncApp extends ConsumerStatefulWidget {
-  const SquadSyncApp({super.key});
+  final SharedPreferences prefs;
+  
+  const SquadSyncApp({super.key, required this.prefs});
 
   @override
   ConsumerState<SquadSyncApp> createState() => _SquadSyncAppState();
@@ -274,6 +281,9 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(widget.prefs),
+      ],
       child: const SquadSyncMaterialApp(),
     );
   }

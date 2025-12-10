@@ -92,7 +92,7 @@ class SystemNotifier extends AutoDisposeAsyncNotifier<SystemState> {
   /// Send push notification to multiple users
   ///
   /// [title] - Notification title
-  /// [body] - Notification body  
+  /// [body] - Notification body
   /// [recipientUids] - List of user UIDs
   /// [data] - Optional data payload
   Future<void> sendPushNotification({

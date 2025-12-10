@@ -1,5 +1,47 @@
 # Lobby Notifications & Realtime Implementation - Status Report
 
+## 🚀 Quick Start
+
+### Apply Database Schema Changes
+
+**IMPORTANT**: Before testing the new features, apply the SQL schema changes:
+
+1. **Option 1 - Supabase Dashboard (Recommended)**:
+   - Open [Supabase Dashboard](https://app.supabase.com)
+   - Navigate to your project → SQL Editor
+   - Copy contents of `add_lobby_multi_support.sql`
+   - Paste and run the SQL script
+   - Verify output shows successful table alterations and cron job creation
+
+2. **Option 2 - Command Line**:
+   ```bash
+   # Using psql with connection string
+   psql "$DATABASE_URL" < add_lobby_multi_support.sql
+   
+   # Or using Supabase CLI
+   supabase db execute < add_lobby_multi_support.sql
+   ```
+
+3. **Verify Installation**:
+   ```sql
+   -- Check lobby_ids column exists
+   SELECT column_name, data_type 
+   FROM information_schema.columns 
+   WHERE table_name = 'chat_groups' AND column_name = 'lobby_ids';
+   
+   -- Check pg_cron jobs are scheduled
+   SELECT * FROM cron.job WHERE jobname LIKE '%lobby%';
+   ```
+
+**What the SQL Script Does**:
+- ✅ Adds `lobby_ids` JSONB column to `chat_groups` table
+- ✅ Creates GIN index for fast lobby_ids queries
+- ✅ Enables pg_cron extension for scheduled jobs
+- ✅ Creates 2 cron jobs: cleanup (delete old lobbies) and mark inactive (auto-expire)
+- ✅ Jobs run every 5 minutes to maintain database hygiene
+
+---
+
 ## ✅ Completed Features
 
 ### 1. FCM Push Notifications System
@@ -119,75 +161,57 @@ psql "$DATABASE_URL" < add_lobby_multi_support.sql
 
 ## 🚧 Remaining Work
 
-### 1. UI Dropdown for Multiple Lobbies (ChatScreen)
+### 1. Database Migration
 
-**Requirements**:
-- Add dropdown/chip selector in ChatScreen app bar
-- Display all active lobbies for the chat group
-- Allow switching between lobbies
-- Update `currentLobbyIdProvider` on selection
+**Action Required**: Apply SQL schema changes to production Supabase database
+- **File**: `add_lobby_multi_support.sql`
+- **Instructions**: See "Apply Database Schema Changes" section above
+- **Critical**: Required for multiple lobby support and auto-expiration
+
+### 2. FCM Server Key Configuration
+
+**Action Required**: Update Firebase Cloud Messaging server key
+- **File**: `lib/notification_service.dart` (lines 218, 261)
+- **Current**: Placeholder `'YOUR_FCM_SERVER_KEY_HERE'`
+- **Source**: Firebase Console → Project Settings → Cloud Messaging → Server Key
+- **Security**: Consider using environment variables for production
+
+### 3. Manual Testing
+
+**Checklist** (see Testing Checklist section below):
+- [ ] Create lobby, verify all members receive notification
+- [ ] Claim spot, verify realtime updates in SpotsSheet
+- [ ] Switch between multiple lobbies using dropdown
+- [ ] Trigger errors, verify retry actions work
+- [ ] Wait 1 hour, verify inactive lobbies are cleaned up
+
+---
+
+## ✅ Code Implementation Complete
+
+All code features have been implemented:
+
+### 1. ~~UI Dropdown for Multiple Lobbies (ChatScreen)~~ ✅ COMPLETE
 
 **Implementation**:
-```dart
-// In ChatScreen, add lobby selector widget
-Widget _buildLobbySelector() {
-  final chatGroupId = widget.chatGroupId;
-  if (chatGroupId == null) return SizedBox.shrink();
+- Added `_buildLobbySelector()` method in ChatScreen
+- Fetches all active lobbies for chat group via Supabase query
+- Dropdown widget with game name and current spots display
+- Updates `currentLobbyIdProvider` on selection
+- Shows feedback SnackBar when switching lobbies
+- Automatically hides if only 1 or 0 lobbies exist
 
-  return FutureBuilder<List<Map<String, dynamic>>>(
-    future: SupabaseService.client
-        .from('chat_groups')
-        .select('lobby_ids')
-        .eq('id', chatGroupId)
-        .single()
-        .then((data) {
-          final lobbyIds = (data['lobby_ids'] as List<dynamic>?)?.cast<String>() ?? [];
-          if (lobbyIds.isEmpty) return [];
-          
-          return SupabaseService.client
-              .from('lobbies')
-              .select('id, game_name, max_spots, spots')
-              .in_('id', lobbyIds)
-              .eq('is_active', true);
-        }),
-    builder: (context, snapshot) {
-      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-        return SizedBox.shrink();
-      }
+**Location**: ChatScreen after NeonChatAppBar in CustomScrollView
 
-      final lobbies = snapshot.data!;
-      final currentLobbyId = ref.watch(currentLobbyIdProvider);
+### 2. ~~Error Handling & SnackBars~~ ✅ COMPLETE
 
-      return DropdownButton<String>(
-        value: currentLobbyId,
-        items: lobbies.map((lobby) {
-          final gameName = lobby['game_name'];
-          final spots = (lobby['spots'] as List).where((s) => s != null).length;
-          final maxSpots = lobby['max_spots'];
-          return DropdownMenuItem(
-            value: lobby['id'],
-            child: Text('$gameName ($spots/$maxSpots)'),
-          );
-        }).toList(),
-        onChanged: (newLobbyId) {
-          ref.read(currentLobbyIdProvider.notifier).state = newLobbyId;
-        },
-      );
-    },
-  );
-}
-```
+**Enhanced Files**:
+- `lib/chat/spots_sheet.dart` - Retry actions on claim/update failures
+- `lib/chat/chat_screen.dart` - Retry on lobby creation/fetch failures
+- All error SnackBars use `Theme.of(context).colorScheme.error` background
+- SnackBarAction with "Retry" label and white text for failed operations
 
-**Location**: Add to `NeonChatAppBar` or ChatScreen's scaffold
-
-### 2. Error Handling & SnackBars
-
-**Files to Update**:
-- `lib/chat/spots_sheet.dart` - Add error handling for realtime subscription failures
-- `lib/lobbies_tab/lobbies_tab.dart` - Add SnackBars for lobby creation errors
-- `lib/presentation/notifiers/lobby_notifier.dart` - Enhanced error messages
-
-**Pattern**:
+**Pattern Applied**:
 ```dart
 try {
   // Operation
@@ -199,6 +223,7 @@ try {
       backgroundColor: Theme.of(context).colorScheme.error,
       action: SnackBarAction(
         label: 'Retry',
+        textColor: Colors.white,
         onPressed: () => _retryOperation(),
       ),
     ),
@@ -206,40 +231,32 @@ try {
 }
 ```
 
-### 3. SpotsSheet Realtime Integration
+### 3. ~~SpotsSheet Realtime Integration~~ ✅ COMPLETE
 
-**Enhancement Needed**:
-```dart
-// In SpotsSheet, add CurrentLobbyNotifier listener
-@override
-Widget build(BuildContext context) {
-  final currentLobby = ref.watch(currentLobbyProvider);
-  
-  return currentLobby.when(
-    data: (lobby) {
-      if (lobby == null) return _buildDefaultView();
-      
-      // Display realtime lobby data
-      return _buildLobbySpots(lobby);
-    },
-    loading: () => CircularProgressIndicator(),
-    error: (error, stack) => Text('Error: $error'),
-  );
-}
-```
+**Implementation**:
+- SpotsSheet now uses `ref.watch(currentLobbyProvider)` for realtime updates
+- Sets `currentLobbyIdProvider` in `_loadLobbyData()` method
+- Spots list rebuilds automatically when lobby changes via Supabase Realtime
+- Removed LobbyNotifier dependency for spot display (still used for display names)
+- Claim spot now uses `CurrentLobbyNotifier.claimSpot(spotIndex)` directly
+- Removed lock spot button (not supported in CurrentLobbyNotifier)
 
-**Set Current Lobby ID**:
+**Changes Made**:
 ```dart
-@override
-void initState() {
-  super.initState();
-  if (_lobbyId != null) {
-    // Watch this lobby's realtime updates
-    Future.microtask(() {
-      ref.read(currentLobbyIdProvider.notifier).state = _lobbyId;
-    });
-  }
+// In _loadLobbyData() - Set current lobby for realtime
+if (lobbyId != null) {
+  ref.read(currentLobbyIdProvider.notifier).state = lobbyId;
 }
+
+// In build() - Watch CurrentLobbyProvider
+ref.watch(currentLobbyProvider).when(
+  data: (currentLobby) {
+    // Display realtime lobby spots
+    return ListView.builder(...);
+  },
+  loading: () => CircularProgressIndicator(),
+  error: (error, _) => Text('Error: $error'),
+);
 ```
 
 ---
@@ -411,11 +428,15 @@ const serverKey = 'YOUR_FCM_SERVER_KEY_HERE';
 
 Implementation complete when:
 - [x] Users receive notifications on lobby create/spot claim
-- [x] Realtime updates work without manual refresh
-- [x] Inactive lobbies automatically cleaned up after 1 hour
-- [x] Multiple lobbies per chat group supported in schema
-- [ ] UI dropdown allows switching between lobbies
-- [ ] Error handling prevents crashes from notification failures
-- [ ] All tests pass (manual checklist completed)
+- [x] Realtime updates work without manual refresh (CurrentLobbyNotifier)
+- [x] Inactive lobbies automatically cleaned up after 1 hour (pg_cron)
+- [x] Multiple lobbies per chat group supported in schema (lobby_ids JSONB)
+- [x] UI dropdown allows switching between lobbies (ChatScreen)
+- [x] SpotsSheet uses CurrentLobbyNotifier for realtime spot updates
+- [x] Error handling prevents crashes with retry actions
+- [ ] All tests pass (manual checklist - user verification)
+- [ ] SQL schema applied to Supabase database
+- [ ] FCM server key configured in NotificationService
 
-**Status**: 70% Complete - Core functionality implemented, UI polish remaining
+**Status**: 95% Complete - All code implemented, requires database migration and FCM configuration
+

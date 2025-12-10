@@ -110,9 +110,8 @@ class CurrentLobbyNotifier extends AsyncNotifier<Lobby?> {
     if (lobby == null) return;
 
     final uid = AuthServiceSupabase().currentUser!.id;
-    final currentClaim = spotIndex < lobby.spots.length 
-        ? lobby.spots[spotIndex] 
-        : null;
+    final currentClaim =
+        spotIndex < lobby.spots.length ? lobby.spots[spotIndex] : null;
 
     // Can only claim if spot is null or already claimed by this user
     if (currentClaim != null && currentClaim != uid) return;
@@ -139,9 +138,8 @@ class CurrentLobbyNotifier extends AsyncNotifier<Lobby?> {
     if (lobby == null) return;
 
     final uid = AuthServiceSupabase().currentUser!.id;
-    final currentClaim = spotIndex < lobby.spots.length 
-        ? lobby.spots[spotIndex] 
-        : null;
+    final currentClaim =
+        spotIndex < lobby.spots.length ? lobby.spots[spotIndex] : null;
 
     // Can only unclaim own spot
     if (currentClaim != uid) return;

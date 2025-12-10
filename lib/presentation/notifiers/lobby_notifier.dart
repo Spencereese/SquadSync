@@ -129,9 +129,8 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
 
             final currentUserId = AuthServiceSupabase().currentUser?.id;
             // Exclude current user from notifications
-            final recipientUids = memberUids
-                .where((uid) => uid != currentUserId)
-                .toList();
+            final recipientUids =
+                memberUids.where((uid) => uid != currentUserId).toList();
 
             if (recipientUids.isNotEmpty) {
               await NotificationService.sendNotificationToUsers(
@@ -145,11 +144,13 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
                   'chat_group_id': chatGroupId,
                 },
               );
-              debugPrint('📬 Sent lobby creation notifications to ${recipientUids.length} members');
+              debugPrint(
+                  '📬 Sent lobby creation notifications to ${recipientUids.length} members');
             }
           }
         } else if (isPublic) {
-          debugPrint('📢 Public lobby created, notifications skipped (no specific recipients)');
+          debugPrint(
+              '📢 Public lobby created, notifications skipped (no specific recipients)');
         }
       } catch (e) {
         debugPrint('⚠️ Failed to send lobby creation notifications: $e');
@@ -411,9 +412,8 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
                   (lobbyResponse['member_uids'] as List<dynamic>?)
                           ?.cast<String>() ??
                       [];
-              final recipientUids = memberUids
-                  .where((uid) => uid != userId)
-                  .toList();
+              final recipientUids =
+                  memberUids.where((uid) => uid != userId).toList();
 
               if (recipientUids.isNotEmpty) {
                 final currentUserName = squadState.displayName;
@@ -428,7 +428,8 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
                     'spot_index': spotIndex.toString(),
                   },
                 );
-                debugPrint('📬 Sent spot claim notifications to ${recipientUids.length} members');
+                debugPrint(
+                    '📬 Sent spot claim notifications to ${recipientUids.length} members');
               }
             }
           } catch (e) {

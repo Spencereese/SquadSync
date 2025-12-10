@@ -5,6 +5,7 @@ import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../presentation/notifiers/current_lobby_notifier.dart';
 import '../widgets/rating_widgets.dart';
 import '../services/message_service.dart';
 import '../domain/entities/message.dart';
@@ -82,8 +83,15 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
           .maybeSingle();
 
       if (response != null && mounted) {
+        final lobbyId = response['id'] as String?;
+        
+        // Set the current lobby ID in CurrentLobbyNotifier for realtime updates
+        if (lobbyId != null) {
+          ref.read(currentLobbyIdProvider.notifier).state = lobbyId;
+        }
+        
         setState(() {
-          _lobbyId = response['id'] as String?;
+          _lobbyId = lobbyId;
           _isCreator = response['created_by'] == currentUser.id;
           _isPublic = response['is_public'] as bool? ?? false;
           _isLoadingLobbyData = false;
@@ -126,6 +134,11 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
         SnackBar(
           content: Text('Failed to update lobby: $e'),
           backgroundColor: Theme.of(context).colorScheme.error,
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: () => _updateIsPublic(value),
+          ),
         ),
       );
     }
@@ -155,21 +168,33 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                ref.watch(ln.lobbyNotifierProvider).maybeWhen(
-                      data: (squadState) {
-                        final spots =
-                            squadState.gameLobbySpots[widget.gameName] ?? [];
+                // Use CurrentLobbyNotifier for realtime updates
+                ref.watch(currentLobbyProvider).when(
+                      data: (currentLobby) {
+                        if (currentLobby == null) {
+                          return const Text(
+                            'No active lobby',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          );
+                        }
+
+                        // Get display names from LobbyNotifier
+                        final lobbyState = ref.read(ln.lobbyNotifierProvider).value;
                         final filledSpots =
-                            spots.where((uid) => uid != null).length;
-                        final names = spots
+                            currentLobby.spots.where((uid) => uid != null).length;
+                        final names = currentLobby.spots
                             .where((uid) => uid != null)
                             .map((uid) =>
-                                squadState.memberDisplayNames[uid!] ??
-                                'Unknown')
+                                lobbyState?.memberDisplayNames[uid!] ?? 'Unknown')
                             .join(', ');
 
                         return Text(
-                          'Current: $names ($filledSpots/${widget.maxSpots} ${widget.gameName})',
+                          'Current: $names ($filledSpots/${currentLobby.maxSpots} ${currentLobby.gameName})',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -178,12 +203,20 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
                           textAlign: TextAlign.center,
                         );
                       },
-                      orElse: () => const Text(
+                      loading: () => const Text(
                         'Loading...',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      error: (error, _) => Text(
+                        'Error: $error',
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontSize: 14,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -219,29 +252,37 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
 
           // Spots list
           Expanded(
-            child: ref.watch(ln.lobbyNotifierProvider).maybeWhen(
-                  data: (squadState) {
-                    final spots =
-                        squadState.gameLobbySpots[widget.gameName] ?? [];
+            child: ref.watch(currentLobbyProvider).when(
+                  data: (currentLobby) {
+                    if (currentLobby == null) {
+                      return const Center(
+                        child: Text(
+                          'No active lobby',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      );
+                    }
+
+                    // Get display names from LobbyNotifier
+                    final lobbyState = ref.read(ln.lobbyNotifierProvider).value;
 
                     return ListView.builder(
                       padding: const EdgeInsets.all(16),
-                      itemCount: widget.maxSpots,
+                      itemCount: currentLobby.maxSpots,
                       itemBuilder: (context, index) {
-                        final isOccupied =
-                            index < spots.length && spots[index] != null;
-                        final spotValue = isOccupied ? spots[index] : null;
+                        final isOccupied = index < currentLobby.spots.length &&
+                            currentLobby.spots[index] != null;
+                        final spotValue =
+                            isOccupied ? currentLobby.spots[index] : null;
                         final isCalling =
                             spotValue?.endsWith('_calling') ?? false;
                         final occupantUid = isCalling
                             ? spotValue!.replaceAll('_calling', '')
                             : spotValue;
                         final occupantName = occupantUid != null
-                            ? squadState.memberDisplayNames[occupantUid] ??
+                            ? lobbyState?.memberDisplayNames[occupantUid] ??
                                 'Unknown'
                             : null;
-                        final isCurrentUser = occupantUid ==
-                            AuthServiceSupabase().currentUser?.id;
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -292,20 +333,6 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
                                     ),
                                   ),
                                 ),
-                                if (isCalling && isCurrentUser) ...[
-                                  const SizedBox(width: 8),
-                                  ElevatedButton(
-                                    onPressed: () => _lockSpot(index),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.green,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 6),
-                                      textStyle: const TextStyle(fontSize: 12),
-                                    ),
-                                    child: const Text('Lock'),
-                                  ),
-                                ],
                               ],
                             ],
                           ),
@@ -313,8 +340,13 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
                       },
                     );
                   },
-                  orElse: () =>
-                      const Center(child: CircularProgressIndicator()),
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (error, _) => Center(
+                    child: Text(
+                      'Error: $error',
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
                 ),
           ),
 
@@ -347,53 +379,57 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
   }
 
   Future<void> _claimSpot() async {
-    final squadState = ref.read(ln.lobbyNotifierProvider).requireValue;
+    final currentLobby = ref.read(currentLobbyProvider).value;
     final user = AuthServiceSupabase().currentUser;
-    if (user == null) return;
+    if (user == null || currentLobby == null) return;
 
     setState(() => _isClaiming = true);
 
     try {
       // Check current spots
-      final spots = squadState.gameLobbySpots[widget.gameName] ?? [];
-      final filledCount = spots.where((spot) => spot != null).length;
+      final filledCount = currentLobby.spots.where((spot) => spot != null).length;
 
-      if (filledCount >= widget.maxSpots) {
+      if (filledCount >= currentLobby.maxSpots) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Spots filled—next time!')),
+            SnackBar(
+              content: const Text('Spots filled—next time!'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
           );
         }
         return;
       }
 
       // Find first available spot
-      final availableIndex = spots.indexWhere((spot) => spot == null);
+      final availableIndex = currentLobby.spots.indexWhere((spot) => spot == null);
       if (availableIndex == -1) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Spots filled—next time!')),
+            SnackBar(
+              content: const Text('Spots filled—next time!'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
           );
         }
         return;
       }
 
-      // Call the spot (set calling status)
+      // Claim the spot using CurrentLobbyNotifier
       await ref
-          .read(ln.lobbyNotifierProvider.notifier)
-          .claimSpot(widget.gameName, availableIndex);
+          .read(currentLobbyProvider.notifier)
+          .claimSpot(availableIndex);
 
       // Send message to chat thread
       final chatService = MessageService();
-      final displayName = ref
-          .read(ln.lobbyNotifierProvider.notifier)
-          .getDisplayNameForUid(user.id);
+      final lobbyState = ref.read(ln.lobbyNotifierProvider).value;
+      final displayName = lobbyState?.memberDisplayNames[user.id] ?? 'Unknown';
 
       await chatService.sendMessage(
         ref,
         senderUid: user.id,
         text:
-            '$displayName claimed spot ${availableIndex + 1} in ${widget.gameName}!',
+            '$displayName claimed spot ${availableIndex + 1} in ${currentLobby.gameName}!',
         chatGroupId: widget.chatGroupId,
         chatType: widget.chatType,
       );
@@ -426,49 +462,20 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error claiming spot: $e')),
+          SnackBar(
+            content: Text('Error claiming spot: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () => _claimSpot(),
+            ),
+          ),
         );
       }
     } finally {
       if (mounted) {
         setState(() => _isClaiming = false);
-      }
-    }
-  }
-
-  Future<void> _lockSpot(int index) async {
-    final user = AuthServiceSupabase().currentUser;
-    if (user == null) return;
-
-    try {
-      await ref
-          .read(ln.lobbyNotifierProvider.notifier)
-          .lockSpot(widget.gameName, index);
-
-      // Send message to chat thread
-      final chatService = MessageService();
-      final displayName = ref
-          .read(ln.lobbyNotifierProvider.notifier)
-          .getDisplayNameForUid(user.id);
-
-      await chatService.sendMessage(
-        ref,
-        senderUid: user.id,
-        text: '$displayName locked spot ${index + 1} in ${widget.gameName}!',
-        chatGroupId: widget.chatGroupId,
-        chatType: widget.chatType,
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Spot locked!')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error locking spot: $e')),
-        );
       }
     }
   }

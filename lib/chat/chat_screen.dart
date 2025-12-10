@@ -35,6 +35,7 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../domain/entities/lobby_state.dart';
 import 'widgets/neon_chat_app_bar.dart';
 import 'screens/chat_info_screen.dart';
+import '../presentation/notifiers/current_lobby_notifier.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
@@ -584,7 +585,16 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             if (mounted) {
               HapticFeedback.heavyImpact();
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Failed to create lobby: $e')),
+                SnackBar(
+                  content: Text('Failed to create lobby: $e'),
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                  duration: const Duration(seconds: 5),
+                  action: SnackBarAction(
+                    label: 'Retry',
+                    textColor: Colors.white,
+                    onPressed: () => _handleLobbyCreation(),
+                  ),
+                ),
               );
             }
           }
@@ -867,6 +877,119 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
+  /// Build lobby selector dropdown for multiple lobbies per chat group
+  Widget _buildLobbySelector() {
+    final currentLobbyId = ref.watch(currentLobbyIdProvider);
+
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _fetchLobbiesForChatGroup(widget.chatGroupId!),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink(); // Hide if no lobbies
+        }
+
+        final lobbies = snapshot.data!;
+        if (lobbies.length == 1) {
+          return const SizedBox.shrink(); // Hide if only one lobby
+        }
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.sports_esports,
+                size: 18,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Lobby:',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButton<String>(
+                  value: currentLobbyId,
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  dropdownColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                  items: lobbies.map((lobby) {
+                    return DropdownMenuItem<String>(
+                      value: lobby['id'] as String,
+                      child: Text(
+                        '${lobby['name']} - ${lobby['game_name']}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (newLobbyId) {
+                    if (newLobbyId != null && newLobbyId != currentLobbyId) {
+                      // Update current lobby ID
+                      ref.read(currentLobbyIdProvider.notifier).state = newLobbyId;
+                      
+                      // Show feedback
+                      if (mounted) {
+                        HapticFeedback.lightImpact();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Switched to lobby: ${lobbies.firstWhere((l) => l['id'] == newLobbyId)['name']}'),
+                            duration: const Duration(seconds: 2),
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Fetch all lobbies for the current chat group
+  Future<List<Map<String, dynamic>>> _fetchLobbiesForChatGroup(String chatGroupId) async {
+    try {
+      final response = await SupabaseService.client
+          .from('lobbies')
+          .select('id, name, game_name, is_active')
+          .eq('chat_group_id', chatGroupId)
+          .eq('is_active', true)
+          .order('created_at', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('❌ Error fetching lobbies for chat group: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load lobbies: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+      return [];
+    }
+  }
+
   Widget _buildChatContent(BuildContext context, LobbyState squadStateData,
       cn_state.ChatState chatStateData) {
     // Use the passed chatStateData instead of Provider.of for Riverpod migration
@@ -970,6 +1093,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                           );
                         },
                       ),
+                      // Lobby Selector Dropdown (for multiple lobbies per chat group)
+                      if (isUserGroup && widget.chatGroupId != null)
+                        SliverToBoxAdapter(
+                          child: _buildLobbySelector(),
+                        ),
                       // Active Squad Header Card (if needed)
                       SliverToBoxAdapter(
                         child: _uiManager.buildActiveSquadHeader(context,

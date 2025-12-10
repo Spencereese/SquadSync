@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../domain/entities/lobby_state.dart';
-import '../squad_tab/squad_tab.dart';
+import '../lobbies_tab/lobbies_tab.dart';
 import '../utils.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import 'add_game_screen.dart';

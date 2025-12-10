@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../squad_tab/widgets/clips_tab.dart';
+import '../lobbies_tab/widgets/clips_tab.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
 /// Main clips screen for the navigation bar

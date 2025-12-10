@@ -544,7 +544,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         onGameSelected: (gameName, maxSpots) async {
           try {
             HapticFeedback.mediumImpact();
-            
+
             // Show loading indicator
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -946,7 +946,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                         squadName: _chatName,
                         avatarUrl: _chatImageUrl,
                         onBackPressed: () => Navigator.pop(context),
-                        onGamepadPressed: isUserGroup ? _handleLobbyCreation : null,
+                        onGamepadPressed:
+                            isUserGroup ? _handleLobbyCreation : null,
                         onCenterTapped: () {
                           // Open ChatInfoScreen with hero animation
                           Navigator.push(

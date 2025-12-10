@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../widgets/rating_widgets.dart';
@@ -48,6 +50,10 @@ class SpotsSheet extends ConsumerStatefulWidget {
 class _SpotsSheetState extends ConsumerState<SpotsSheet> {
   bool _isClaiming = false;
   late RatingNudge _ratingNudge;
+  bool _isLoadingLobbyData = true;
+  bool _isCreator = false;
+  bool _isPublic = false;
+  String? _lobbyId;
 
   @override
   void initState() {
@@ -60,6 +66,70 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
         // Could add additional logic here if needed
       },
     );
+    _loadLobbyData();
+  }
+
+  Future<void> _loadLobbyData() async {
+    try {
+      final currentUser = AuthServiceSupabase().currentUser;
+      if (currentUser == null) return;
+
+      // Query lobby by chat_group_id
+      final response = await SupabaseService.client
+          .from('lobbies')
+          .select('id, created_by, is_public')
+          .eq('chat_group_id', widget.chatGroupId)
+          .maybeSingle();
+
+      if (response != null && mounted) {
+        setState(() {
+          _lobbyId = response['id'] as String?;
+          _isCreator = response['created_by'] == currentUser.id;
+          _isPublic = response['is_public'] as bool? ?? false;
+          _isLoadingLobbyData = false;
+        });
+      } else if (mounted) {
+        setState(() => _isLoadingLobbyData = false);
+      }
+    } catch (e) {
+      print('Error loading lobby data: $e');
+      if (mounted) {
+        setState(() => _isLoadingLobbyData = false);
+      }
+    }
+  }
+
+  Future<void> _updateIsPublic(bool value) async {
+    if (_lobbyId == null) return;
+
+    try {
+      setState(() => _isPublic = value);
+      HapticFeedback.selectionClick();
+
+      await SupabaseService.client
+          .from('lobbies')
+          .update({'is_public': value})
+          .eq('id', _lobbyId!);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Lobby is now ${value ? "public" : "private"}'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ),
+      );
+    } catch (e) {
+      // Revert on error
+      setState(() => _isPublic = !value);
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update lobby: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 
   @override
@@ -122,6 +192,31 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
               ],
             ),
           ),
+
+          // Public toggle (only for creators)
+          if (_isCreator && !_isLoadingLobbyData)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey[900],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SwitchListTile(
+                title: const Text(
+                  'Public Lobby',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'Allow others to discover and join this lobby',
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+                value: _isPublic,
+                onChanged: _updateIsPublic,
+                activeColor: Theme.of(context).colorScheme.primary,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
 
           // Spots list
           Expanded(

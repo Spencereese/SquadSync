@@ -5,7 +5,7 @@ import '../../domain/entities/lobby.dart';
 final discoveryFilterProvider =
     StateProvider<String>((ref) => 'hot'); // 'hot' | 'new' | gameId | 'friends'
 
-final publicSquadsProvider = StreamProvider<List<Lobby>>((ref) async* {
+final publicLobbiesProvider = StreamProvider<List<Lobby>>((ref) async* {
   final filter = ref.watch(discoveryFilterProvider);
 
   // Build Supabase query based on filter
@@ -13,52 +13,57 @@ final publicSquadsProvider = StreamProvider<List<Lobby>>((ref) async* {
 
   if (filter == 'hot') {
     query = SupabaseService.client
-        .from('squads')
-        .stream(primaryKey: ['id'])
-        .eq('is_public', true)
-        .order('bump_timestamp', ascending: false)
-        .limit(50);
-  } else if (filter == 'new') {
-    query = SupabaseService.client
-        .from('squads')
+        .from('lobbies')
         .stream(primaryKey: ['id'])
         .eq('is_public', true)
         .order('created_at', ascending: false)
-        .limit(50);
+        .limit(50)
+        .map((data) => data.where((lobby) => lobby['is_active'] == true).toList());
+  } else if (filter == 'new') {
+    query = SupabaseService.client
+        .from('lobbies')
+        .stream(primaryKey: ['id'])
+        .eq('is_public', true)
+        .order('created_at', ascending: false)
+        .limit(50)
+        .map((data) => data.where((lobby) => lobby['is_active'] == true).toList());
   } else {
     // game-specific filter - filter in-memory after receiving stream
     final baseQuery = SupabaseService.client
-        .from('squads')
+        .from('lobbies')
         .stream(primaryKey: ['id'])
         .eq('is_public', true)
-        .order('bump_timestamp', ascending: false)
+        .order('created_at', ascending: false)
         .limit(100); // Get more to filter
 
     query = baseQuery.map((data) => data
-        .where((squad) => squad['primary_game_id'] == filter)
+        .where((lobby) => lobby['is_active'] == true && lobby['game_name'] == filter)
         .take(50)
         .toList());
   }
 
   await for (final data in query) {
-    final squads = data.map((json) => Squad.fromJson(json)).toList();
-    yield squads;
+    final lobbies = data.map((json) => Lobby.fromJson(json)).toList();
+    yield lobbies;
   }
 });
 
 final popularGamesProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final data = await SupabaseService.client
-      .from('squads')
-      .select('primary_game_id')
+      .from('lobbies')
+      .select('game_name')
       .eq('is_public', true);
 
   final Map<String, int> counts = {};
   for (var row in data) {
-    final gameId = row['primary_game_id'] as String?;
-    if (gameId != null) counts[gameId] = (counts[gameId] ?? 0) + 1;
+    final gameName = row['game_name'] as String?;
+    final isActive = row['is_active'] as bool? ?? true;
+    if (gameName != null && isActive) {
+      counts[gameName] = (counts[gameName] ?? 0) + 1;
+    }
   }
 
-  return counts.entries.map((e) => {'gameId': e.key, 'count': e.value}).toList()
+  return counts.entries.map((e) => {'gameName': e.key, 'count': e.value}).toList()
     ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 });

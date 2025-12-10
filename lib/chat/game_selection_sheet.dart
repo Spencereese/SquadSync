@@ -7,7 +7,7 @@ import '../domain/entities/game.dart';
 import '../core/app_theme.dart';
 
 /// Game selection bottom sheet for creating lobbies
-/// 
+///
 /// Shows pinned games and IGDB search functionality
 /// Used in both chat groups (private lobbies) and public lobby creation
 class GameSelectionSheet extends ConsumerStatefulWidget {
@@ -184,7 +184,8 @@ class _GameSelectionSheetState extends ConsumerState<GameSelectionSheet> {
               },
               decoration: InputDecoration(
                 hintText: 'Search games (IGDB)',
-                prefixIcon: Icon(Icons.search, color: theme.colorScheme.primary),
+                prefixIcon:
+                    Icon(Icons.search, color: theme.colorScheme.primary),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear),

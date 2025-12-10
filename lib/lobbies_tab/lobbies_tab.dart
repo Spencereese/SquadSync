@@ -7,6 +7,7 @@ import '../services/supabase_service.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/game_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import '../chat/game_selection_sheet.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'squad_dialogs.dart';
@@ -438,6 +439,67 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     }
   }
 
+  Future<void> _handleCreatePublicLobby() async {
+    HapticFeedback.mediumImpact();
+    
+    await GameSelectionSheet.show(
+      context,
+      onGameSelected: (gameName, maxSpots) async {
+        try {
+          HapticFeedback.mediumImpact();
+          
+          // Show loading indicator
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 16),
+                  Text('Creating public lobby...'),
+                ],
+              ),
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          // Create public lobby without chat group linkage
+          final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+          await lobbyNotifier.createLobby(
+            chatGroupId: '', // Empty for standalone public lobbies
+            gameName: gameName,
+            maxSpots: maxSpots,
+            isPublic: true,
+          );
+
+          HapticFeedback.lightImpact();
+          
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Public lobby created for $gameName!'),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            ),
+          );
+        } catch (e) {
+          HapticFeedback.heavyImpact();
+          
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to create lobby: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      },
+    );
+  }
+
   List<String> _getMembersForCircle() {
     if (_circle == null) {
       // Default to chat group members if circle not loaded yet
@@ -580,7 +642,12 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
               callSpot: _callSpot,
               lockSpot: _lockSpot,
             )
-          : null,
+          : FloatingActionButton.extended(
+              onPressed: _handleCreatePublicLobby,
+              icon: const Icon(Icons.add),
+              label: const Text('Create Public Lobby'),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            ),
     );
   }
 

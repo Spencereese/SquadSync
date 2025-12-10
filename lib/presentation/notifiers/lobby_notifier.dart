@@ -84,12 +84,12 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
   }
 
   /// Create a lobby linked to a chat group
-  /// 
+  ///
   /// [chatGroupId] - The chat group ID to link this lobby to
   /// [gameName] - The game for this lobby
   /// [maxSpots] - Maximum number of spots (default: 8)
   /// [isPublic] - Whether this lobby is discoverable (default: false)
-  /// 
+  ///
   /// Returns the created lobby ID
   Future<String> createLobby({
     required String chatGroupId,
@@ -98,20 +98,21 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
     bool isPublic = false,
   }) async {
     try {
-      debugPrint('🎮 Creating lobby: chatGroupId=$chatGroupId, game=$gameName, maxSpots=$maxSpots, isPublic=$isPublic');
-      
+      debugPrint(
+          '🎮 Creating lobby: chatGroupId=$chatGroupId, game=$gameName, maxSpots=$maxSpots, isPublic=$isPublic');
+
       final lobbyId = await _createLobbyForGroup(
         chatGroupId: chatGroupId,
         gameName: gameName,
         name: 'Lobby', // Default name
         maxSpots: maxSpots,
       );
-      
+
       debugPrint('✅ Lobby created: $lobbyId');
-      
+
       // Reload state to include new lobby
       state = await AsyncValue.guard(() => _loadLobbyState());
-      
+
       return lobbyId;
     } catch (e) {
       debugPrint('❌ Error creating lobby: $e');

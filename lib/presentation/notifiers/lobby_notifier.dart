@@ -16,6 +16,7 @@ import 'package:squad_sync/core/injection.dart' as di;
 import 'package:squad_sync/services/auth_service_supabase.dart';
 import 'package:squad_sync/services/supabase_service.dart';
 import '../../services/timer_service.dart';
+import '../../notification_service.dart';
 
 class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
   late final CreateLobby _createSquad;
@@ -109,6 +110,51 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
       );
 
       debugPrint('✅ Lobby created: $lobbyId');
+
+      // Send notifications to chat group members (or all if public)
+      try {
+        if (chatGroupId.isNotEmpty) {
+          // Get chat group member UIDs
+          final chatGroupResponse = await SupabaseService.client
+              .from('chat_groups')
+              .select('member_uids')
+              .eq('id', chatGroupId)
+              .maybeSingle();
+
+          if (chatGroupResponse != null) {
+            final memberUids =
+                (chatGroupResponse['member_uids'] as List<dynamic>?)
+                        ?.cast<String>() ??
+                    [];
+
+            final currentUserId = AuthServiceSupabase().currentUser?.id;
+            // Exclude current user from notifications
+            final recipientUids = memberUids
+                .where((uid) => uid != currentUserId)
+                .toList();
+
+            if (recipientUids.isNotEmpty) {
+              await NotificationService.sendNotificationToUsers(
+                title: 'New Lobby Created!',
+                body: 'A new $gameName lobby has been created',
+                recipientUids: recipientUids,
+                data: {
+                  'type': 'lobby_created',
+                  'lobby_id': lobbyId,
+                  'game_name': gameName,
+                  'chat_group_id': chatGroupId,
+                },
+              );
+              debugPrint('📬 Sent lobby creation notifications to ${recipientUids.length} members');
+            }
+          }
+        } else if (isPublic) {
+          debugPrint('📢 Public lobby created, notifications skipped (no specific recipients)');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Failed to send lobby creation notifications: $e');
+        // Don't fail the lobby creation if notifications fail
+      }
 
       // Reload state to include new lobby
       state = await AsyncValue.guard(() => _loadLobbyState());
@@ -351,6 +397,44 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
           await _timerService.startSpotTimer(
               gameName, userId, const Duration(minutes: 5));
           debugPrint('Spot claimed successfully');
+
+          // Send notification to other lobby members
+          try {
+            final lobbyResponse = await SupabaseService.client
+                .from('lobbies')
+                .select('member_uids, chat_group_id')
+                .eq('id', squadId)
+                .maybeSingle();
+
+            if (lobbyResponse != null) {
+              final memberUids =
+                  (lobbyResponse['member_uids'] as List<dynamic>?)
+                          ?.cast<String>() ??
+                      [];
+              final recipientUids = memberUids
+                  .where((uid) => uid != userId)
+                  .toList();
+
+              if (recipientUids.isNotEmpty) {
+                final currentUserName = squadState.displayName;
+                await NotificationService.sendNotificationToUsers(
+                  title: 'Spot Claimed!',
+                  body: '$currentUserName claimed a spot in $gameName',
+                  recipientUids: recipientUids,
+                  data: {
+                    'type': 'spot_claimed',
+                    'lobby_id': squadId,
+                    'game_name': gameName,
+                    'spot_index': spotIndex.toString(),
+                  },
+                );
+                debugPrint('📬 Sent spot claim notifications to ${recipientUids.length} members');
+              }
+            }
+          } catch (e) {
+            debugPrint('⚠️ Failed to send spot claim notifications: $e');
+            // Don't fail the spot claim if notifications fail
+          }
         } catch (e) {
           debugPrint('Error claiming spot: $e');
           // Reload state to reflect actual state if error occurred

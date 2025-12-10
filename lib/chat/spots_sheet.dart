@@ -108,8 +108,7 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
 
       await SupabaseService.client
           .from('lobbies')
-          .update({'is_public': value})
-          .eq('id', _lobbyId!);
+          .update({'is_public': value}).eq('id', _lobbyId!);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -121,7 +120,7 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
     } catch (e) {
       // Revert on error
       setState(() => _isPublic = !value);
-      
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

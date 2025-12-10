@@ -5,18 +5,18 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../models/public_squad.dart';
+import '../../domain/entities/lobby.dart';
 
 final currentLobbyIdProvider = StateProvider<String?>((ref) => null);
 
 final currentLobbyProvider =
-    AsyncNotifierProvider<CurrentLobbyNotifier, PublicSquad?>(
+    AsyncNotifierProvider<CurrentLobbyNotifier, Lobby?>(
         () => CurrentLobbyNotifier());
 
-/// CurrentSquadNotifier - Supabase Migration
-/// Replaces Firebase Firestore with Supabase PostgreSQL + Realtime
-/// Uses PublicSquad model for public squad discovery features
-class CurrentLobbyNotifier extends AsyncNotifier<PublicSquad?> {
+/// CurrentLobbyNotifier - Realtime Lobby Tracking
+/// Tracks active lobby with Supabase Realtime subscriptions
+/// Monitors lobby changes: spots, timers, statuses, member updates
+class CurrentLobbyNotifier extends AsyncNotifier<Lobby?> {
   StreamSubscription<List<Map<String, dynamic>>>? _subscription;
   final SupabaseClient _supabase = SupabaseService.client;
 
@@ -34,53 +34,33 @@ class CurrentLobbyNotifier extends AsyncNotifier<PublicSquad?> {
     return null;
   }
 
-  /// Convert Supabase squad data to PublicSquad model
-  PublicSquad _squadFromSupabase(Map<String, dynamic> data) {
-    // Parse peacock timers
-    final peacockTimersData =
-        data['peacock_timers'] as Map<String, dynamic>? ?? {};
-    final peacockTimers = peacockTimersData.map((key, value) {
-      final timerData = value as Map<String, dynamic>? ?? {};
-      final endTime = _parseTimestamp(timerData['endTime']) ?? DateTime.now();
-      final isActive = timerData['isActive'] as bool? ?? false;
-
-      return MapEntry(
-        key,
-        PeacockTimer(
-          endTime: endTime,
-          isActive: isActive,
-        ),
-      );
-    });
-
-    return PublicSquad(
+  /// Convert Supabase lobby data to Lobby model
+  Lobby _lobbyFromSupabase(Map<String, dynamic> data) {
+    return Lobby(
       id: data['id'] as String,
-      name: data['name'] as String? ?? 'Unnamed Squad',
-      primaryGameId: data['primary_game_id'] as String?,
-      primaryGameName: data['primary_game_name'] as String?,
-      maxSpots: data['max_spots'] as int?,
-      creatorUid: data['creator_uid'] as String? ?? '',
-      createdAt: _parseTimestamp(data['created_at']) ?? DateTime.now(),
-      isPublic: data['is_public'] as bool? ?? false,
-      inviteCode: data['invite_code'] as String?,
+      name: data['name'] as String? ?? 'Unnamed Lobby',
       memberUids: (data['member_uids'] as List<dynamic>?)?.cast<String>() ?? [],
-      lastActivity: _parseTimestamp(data['last_activity']) ?? DateTime.now(),
-      spotClaims: Map<String, String?>.from(
-          data['spot_claims'] as Map<String, dynamic>? ?? {}),
-      peacockTimers: peacockTimers,
-      userStatuses: Map<String, String>.from(
-          data['user_statuses'] as Map<String, dynamic>? ?? {}),
-      tags: (data['tags'] as List<dynamic>?)?.cast<String>() ?? [],
-      lookingForMore: data['looking_for_more'] as bool? ?? false,
-      description: data['description'] as String? ?? '',
-      bumpTimestamp: data['bump_timestamp'] != null
-          ? _parseTimestamp(data['bump_timestamp'])
-          : null,
+      gameName: data['game_name'] as String,
+      maxSpots: data['max_spots'] as int,
+      createdBy: data['created_by'] as String? ?? '',
+      createdAt: _parseTimestamp(data['created_at']) ?? DateTime.now(),
+      spots: (data['spots'] as List<dynamic>?)?.cast<String?>() ??
+          List.filled(data['max_spots'] as int? ?? 8, null),
+      spotTimers: (data['spot_timers'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>?)
+              .toList() ??
+          List.filled(data['max_spots'] as int? ?? 8, null),
+      viewers: (data['viewers'] as List<dynamic>?)?.cast<String>() ?? [],
+      statuses: Map<String, String>.from(
+          data['statuses'] as Map<String, dynamic>? ?? {}),
+      isActive: data['is_active'] as bool? ?? true,
+      description: data['description'] as String?,
+      settings: data['settings'] as Map<String, dynamic>?,
     );
   }
 
   @override
-  FutureOr<PublicSquad?> build() async {
+  FutureOr<Lobby?> build() async {
     final lobbyId = ref.watch(currentLobbyIdProvider);
     _subscription?.cancel();
     _subscription = null;
@@ -99,14 +79,14 @@ class CurrentLobbyNotifier extends AsyncNotifier<PublicSquad?> {
 
       // Fetch initial data
       final response =
-          await _supabase.from('squads').select().eq('id', lobbyId).single();
+          await _supabase.from('lobbies').select().eq('id', lobbyId).single();
 
-      final squad = _squadFromSupabase(response);
-      state = AsyncData(squad);
+      final lobby = _lobbyFromSupabase(response);
+      state = AsyncData(lobby);
 
-      // Listen to realtime changes
+      // Listen to realtime changes for this lobby
       _subscription = _supabase
-          .from('squads')
+          .from('lobbies')
           .stream(primaryKey: ['id'])
           .eq('id', lobbyId)
           .listen((data) {
@@ -114,230 +94,121 @@ class CurrentLobbyNotifier extends AsyncNotifier<PublicSquad?> {
               state = const AsyncData(null);
               return;
             }
-            final updatedSquad = _squadFromSupabase(data.first);
-            state = AsyncData(updatedSquad);
+            final updatedLobby = _lobbyFromSupabase(data.first);
+            state = AsyncData(updatedLobby);
           });
 
-      return squad;
+      return lobby;
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);
       return null;
     }
   }
 
-  Future<void> claimSpot(String spotNumber) async {
-    final squad = state.value;
-    if (squad == null) return;
+  Future<void> claimSpot(int spotIndex) async {
+    final lobby = state.value;
+    if (lobby == null) return;
 
     final uid = AuthServiceSupabase().currentUser!.id;
-    final currentClaim = squad.spotClaims[spotNumber];
+    final currentClaim = spotIndex < lobby.spots.length 
+        ? lobby.spots[spotIndex] 
+        : null;
 
     // Can only claim if spot is null or already claimed by this user
     if (currentClaim != null && currentClaim != uid) return;
 
     // Check if within maxSpots
-    if (squad.maxSpots != null &&
-        (int.tryParse(spotNumber) == null ||
-            int.parse(spotNumber) > squad.maxSpots!)) {
-      return;
+    if (spotIndex >= lobby.maxSpots) return;
+
+    // Update spots
+    final updatedSpots = List<String?>.from(lobby.spots);
+    // Ensure list is large enough
+    while (updatedSpots.length <= spotIndex) {
+      updatedSpots.add(null);
     }
+    updatedSpots[spotIndex] = uid;
 
-    // Update spot claims
-    final updatedSpotClaims = Map<String, String?>.from(squad.spotClaims);
-    updatedSpotClaims[spotNumber] = uid;
-
-    await _supabase.from('squads').update({
-      'spot_claims': updatedSpotClaims,
-      'last_activity': DateTime.now().toIso8601String(),
-    }).eq('id', squad.id);
-
-    // Bump squad if it's public
-    await _bumpSquadIfPublic();
+    await _supabase.from('lobbies').update({
+      'spots': updatedSpots,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', lobby.id);
   }
 
-  Future<void> unclaimSpot(String spotNumber) async {
-    final squad = state.value;
-    if (squad == null) return;
+  Future<void> unclaimSpot(int spotIndex) async {
+    final lobby = state.value;
+    if (lobby == null) return;
 
     final uid = AuthServiceSupabase().currentUser!.id;
-    final currentClaim = squad.spotClaims[spotNumber];
+    final currentClaim = spotIndex < lobby.spots.length 
+        ? lobby.spots[spotIndex] 
+        : null;
 
     // Can only unclaim own spot
     if (currentClaim != uid) return;
 
-    final updatedSpotClaims = Map<String, String?>.from(squad.spotClaims);
-    updatedSpotClaims[spotNumber] = null;
+    final updatedSpots = List<String?>.from(lobby.spots);
+    updatedSpots[spotIndex] = null;
 
-    await _supabase.from('squads').update({
-      'spot_claims': updatedSpotClaims,
-      'last_activity': DateTime.now().toIso8601String(),
-    }).eq('id', squad.id);
+    await _supabase.from('lobbies').update({
+      'spots': updatedSpots,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', lobby.id);
   }
 
-  Future<void> startPeacockTimer(String uid, Duration duration) async {
-    final squad = state.value;
-    if (squad == null) return;
+  Future<void> updateStatus(String status) async {
+    final lobby = state.value;
+    if (lobby == null) return;
 
-    final endTime = DateTime.now().add(duration);
-    final timerData = {
-      'endTime': endTime.toIso8601String(),
-      'isActive': true,
-    };
+    final uid = AuthServiceSupabase().currentUser!.id;
 
-    final updatedTimers = Map<String, dynamic>.from(squad.peacockTimers.map(
-      (key, value) => MapEntry(key, {
-        'endTime': value.endTime.toIso8601String(),
-        'isActive': value.isActive,
-      }),
-    ));
-    updatedTimers[uid] = timerData;
-
-    await _supabase.from('squads').update({
-      'peacock_timers': updatedTimers,
-      'last_activity': DateTime.now().toIso8601String(),
-    }).eq('id', squad.id);
-  }
-
-  Future<void> cancelPeacockTimer(String uid) async {
-    final squad = state.value;
-    if (squad == null) return;
-
-    final updatedTimers = Map<String, dynamic>.from(squad.peacockTimers.map(
-      (key, value) => MapEntry(key, {
-        'endTime': value.endTime.toIso8601String(),
-        'isActive': value.isActive,
-      }),
-    ));
-    updatedTimers.remove(uid);
-
-    await _supabase.from('squads').update({
-      'peacock_timers': updatedTimers,
-      'last_activity': DateTime.now().toIso8601String(),
-    }).eq('id', squad.id);
-  }
-
-  Future<void> setStatus(String uid, String status) async {
-    final squad = state.value;
-    if (squad == null) return;
-
-    final updatedStatuses = Map<String, String>.from(squad.userStatuses);
+    final updatedStatuses = Map<String, String>.from(lobby.statuses);
     updatedStatuses[uid] = status;
 
-    await _supabase.from('squads').update({
-      'user_statuses': updatedStatuses,
-      'last_activity': DateTime.now().toIso8601String(),
-    }).eq('id', squad.id);
+    await _supabase.from('lobbies').update({
+      'statuses': updatedStatuses,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', lobby.id);
   }
 
   Future<void> updateLastActivity() async {
-    final squad = state.value;
-    if (squad == null) return;
+    final lobby = state.value;
+    if (lobby == null) return;
 
-    await _supabase.from('squads').update({
-      'last_activity': DateTime.now().toIso8601String(),
-    }).eq('id', squad.id);
+    await _supabase.from('lobbies').update({
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', lobby.id);
   }
 
-  Future<void> updatePrimaryGame({
-    required String? gameId,
-    required String? gameName,
-    required int? maxSpots,
-  }) async {
-    final lobbyId = ref.read(currentLobbyIdProvider);
-    if (lobbyId == null) return;
-
-    await _supabase.from('squads').update({
-      'primary_game_id': gameId,
-      'primary_game_name': gameName,
-      'max_spots': maxSpots,
-    }).eq('id', lobbyId);
-  }
-
-  Future<void> bumpSquad() async {
-    final lobbyId = state.valueOrNull?.id;
-    if (lobbyId == null) return;
-
-    final squadData = await _supabase
-        .from('squads')
-        .select('bump_timestamp')
-        .eq('id', lobbyId)
-        .single();
-
-    final lastBump = _parseTimestamp(squadData['bump_timestamp']);
-
-    if (lastBump != null &&
-        DateTime.now().difference(lastBump) < const Duration(hours: 1)) {
-      throw Exception("Can only bump once per hour");
-    }
-
-    await _supabase.from('squads').update({
-      'bump_timestamp': DateTime.now().toIso8601String(),
-    }).eq('id', lobbyId);
-  }
-
-  Future<void> _bumpSquadIfPublic() async {
-    final squad = state.value;
-    if (squad == null || !squad.isPublic) return;
-
-    try {
-      final squadData = await _supabase
-          .from('squads')
-          .select('bump_timestamp')
-          .eq('id', squad.id)
-          .single();
-
-      final lastBump = _parseTimestamp(squadData['bump_timestamp']);
-
-      // 5-minute cooldown for activity-based bumping
-      if (lastBump != null &&
-          DateTime.now().difference(lastBump) < const Duration(minutes: 5)) {
-        return; // Too soon, skip bump
-      }
-
-      await _supabase.from('squads').update({
-        'bump_timestamp': DateTime.now().toIso8601String(),
-      }).eq('id', squad.id);
-    } catch (e) {
-      // Ignore bump errors to not interrupt main flow
-    }
-  }
-
-  Future<void> leaveSquad() async {
-    final squad = state.value;
-    if (squad == null) return;
+  Future<void> leaveLobby() async {
+    final lobby = state.value;
+    if (lobby == null) return;
 
     final uid = AuthServiceSupabase().currentUser!.id;
 
     // Remove from memberUids
     final updatedMembers =
-        squad.memberUids.where((member) => member != uid).toList();
+        lobby.memberUids.where((member) => member != uid).toList();
 
     // Clear spots claimed by this user
-    final updatedSpotClaims = Map<String, String?>.from(squad.spotClaims);
-    updatedSpotClaims.removeWhere((spot, claimUid) => claimUid == uid);
-
-    // Clear peacock timer
-    final updatedTimers = Map<String, dynamic>.from(squad.peacockTimers.map(
-      (key, value) => MapEntry(key, {
-        'endTime': value.endTime.toIso8601String(),
-        'isActive': value.isActive,
-      }),
-    ));
-    updatedTimers.remove(uid);
+    final updatedSpots = List<String?>.from(lobby.spots);
+    for (int i = 0; i < updatedSpots.length; i++) {
+      if (updatedSpots[i] == uid) {
+        updatedSpots[i] = null;
+      }
+    }
 
     // Clear status
-    final updatedStatuses = Map<String, String>.from(squad.userStatuses);
+    final updatedStatuses = Map<String, String>.from(lobby.statuses);
     updatedStatuses.remove(uid);
 
-    await _supabase.from('squads').update({
+    await _supabase.from('lobbies').update({
       'member_uids': updatedMembers,
-      'spot_claims': updatedSpotClaims,
-      'peacock_timers': updatedTimers,
-      'user_statuses': updatedStatuses,
-      'last_activity': DateTime.now().toIso8601String(),
-    }).eq('id', squad.id);
+      'spots': updatedSpots,
+      'statuses': updatedStatuses,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', lobby.id);
 
-    // Clear current squad
+    // Clear current lobby
     ref.read(currentLobbyIdProvider.notifier).state = null;
   }
 }

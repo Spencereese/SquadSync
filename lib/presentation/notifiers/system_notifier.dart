@@ -11,6 +11,7 @@ import '../../domain/usecases/check_availability.dart';
 import '../../domain/usecases/ban_user.dart';
 import '../../domain/usecases/unban_user.dart';
 import '../../core/injection.dart' as di;
+import '../../notification_service.dart';
 
 class SystemNotifier extends AutoDisposeAsyncNotifier<SystemState> {
   late final LoadSystemState _loadSystemState;
@@ -86,6 +87,26 @@ class SystemNotifier extends AutoDisposeAsyncNotifier<SystemState> {
   Future<void> unbanUser(String userId) async {
     await _unbanUser(userId);
     state = await AsyncValue.guard(() => _loadSystemState());
+  }
+
+  /// Send push notification to multiple users
+  ///
+  /// [title] - Notification title
+  /// [body] - Notification body  
+  /// [recipientUids] - List of user UIDs
+  /// [data] - Optional data payload
+  Future<void> sendPushNotification({
+    required String title,
+    required String body,
+    required List<String> recipientUids,
+    Map<String, dynamic>? data,
+  }) async {
+    await NotificationService.sendNotificationToUsers(
+      title: title,
+      body: body,
+      recipientUids: recipientUids,
+      data: data,
+    );
   }
 }
 

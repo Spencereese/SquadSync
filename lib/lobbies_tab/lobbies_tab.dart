@@ -441,13 +441,13 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
 
   Future<void> _handleCreatePublicLobby() async {
     HapticFeedback.mediumImpact();
-    
+
     await GameSelectionSheet.show(
       context,
       onGameSelected: (gameName, maxSpots) async {
         try {
           HapticFeedback.mediumImpact();
-          
+
           // Show loading indicator
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -477,7 +477,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
           );
 
           HapticFeedback.lightImpact();
-          
+
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -487,7 +487,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
           );
         } catch (e) {
           HapticFeedback.heavyImpact();
-          
+
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

@@ -18,7 +18,8 @@ final publicLobbiesProvider = StreamProvider<List<Lobby>>((ref) async* {
         .eq('is_public', true)
         .order('created_at', ascending: false)
         .limit(50)
-        .map((data) => data.where((lobby) => lobby['is_active'] == true).toList());
+        .map((data) =>
+            data.where((lobby) => lobby['is_active'] == true).toList());
   } else if (filter == 'new') {
     query = SupabaseService.client
         .from('lobbies')
@@ -26,7 +27,8 @@ final publicLobbiesProvider = StreamProvider<List<Lobby>>((ref) async* {
         .eq('is_public', true)
         .order('created_at', ascending: false)
         .limit(50)
-        .map((data) => data.where((lobby) => lobby['is_active'] == true).toList());
+        .map((data) =>
+            data.where((lobby) => lobby['is_active'] == true).toList());
   } else {
     // game-specific filter - filter in-memory after receiving stream
     final baseQuery = SupabaseService.client
@@ -37,7 +39,8 @@ final publicLobbiesProvider = StreamProvider<List<Lobby>>((ref) async* {
         .limit(100); // Get more to filter
 
     query = baseQuery.map((data) => data
-        .where((lobby) => lobby['is_active'] == true && lobby['game_name'] == filter)
+        .where((lobby) =>
+            lobby['is_active'] == true && lobby['game_name'] == filter)
         .take(50)
         .toList());
   }
@@ -64,6 +67,8 @@ final popularGamesProvider =
     }
   }
 
-  return counts.entries.map((e) => {'gameName': e.key, 'count': e.value}).toList()
+  return counts.entries
+      .map((e) => {'gameName': e.key, 'count': e.value})
+      .toList()
     ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 });

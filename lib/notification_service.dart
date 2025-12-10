@@ -145,6 +145,87 @@ class NotificationService {
     developer.log('Sending broadcast notification: $title - $body');
   }
 
+  /// Send notification to multiple users by UIDs
+  ///
+  /// [title] - Notification title
+  /// [body] - Notification body
+  /// [recipientUids] - List of user UIDs to send notification to
+  /// [data] - Optional data payload for navigation/actions
+  static Future<void> sendNotificationToUsers({
+    required String title,
+    required String body,
+    required List<String> recipientUids,
+    Map<String, dynamic>? data,
+  }) async {
+    if (recipientUids.isEmpty) {
+      developer.log('No recipients specified for notification');
+      return;
+    }
+
+    try {
+      // Fetch FCM tokens for all recipients
+      final response = await SupabaseService.client
+          .from('users')
+          .select('id, fcm_token')
+          .inFilter('id', recipientUids);
+
+      if (response.isEmpty) {
+        developer.log('No FCM tokens found for recipients');
+        return;
+      }
+
+      final tokens = <String>[];
+      for (final user in response) {
+        final token = user['fcm_token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          tokens.add(token);
+        }
+      }
+
+      if (tokens.isEmpty) {
+        developer.log('No valid FCM tokens available');
+        return;
+      }
+
+      // FCM server key (replace with your Firebase project's server key)
+      const serverKey = 'YOUR_FCM_SERVER_KEY_HERE'; // Add from Firebase Console
+      final url = Uri.parse('https://fcm.googleapis.com/fcm/send');
+
+      // Send to multiple tokens
+      for (final token in tokens) {
+        try {
+          final response2 = await http.post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'key=$serverKey',
+            },
+            body: jsonEncode({
+              'to': token,
+              'notification': {
+                'title': title,
+                'body': body,
+              },
+              'data': data ?? {},
+            }),
+          );
+
+          if (response2.statusCode == 200) {
+            developer.log('Notification sent successfully');
+          } else {
+            developer.log('Failed to send notification: ${response2.body}');
+          }
+        } catch (e) {
+          developer.log('Error sending to token: $e');
+        }
+      }
+
+      developer.log('Sent notifications to ${tokens.length} users');
+    } catch (e) {
+      developer.log('Error sending notifications: $e');
+    }
+  }
+
   static Future<void> sendNotificationToUser({
     required String recipientDisplayName,
     required String title,

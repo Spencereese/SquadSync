@@ -84,12 +84,12 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
 
       if (response != null && mounted) {
         final lobbyId = response['id'] as String?;
-        
+
         // Set the current lobby ID in CurrentLobbyNotifier for realtime updates
         if (lobbyId != null) {
           ref.read(currentLobbyIdProvider.notifier).state = lobbyId;
         }
-        
+
         setState(() {
           _lobbyId = lobbyId;
           _isCreator = response['created_by'] == currentUser.id;
@@ -184,13 +184,16 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
                         }
 
                         // Get display names from LobbyNotifier
-                        final lobbyState = ref.read(ln.lobbyNotifierProvider).value;
-                        final filledSpots =
-                            currentLobby.spots.where((uid) => uid != null).length;
+                        final lobbyState =
+                            ref.read(ln.lobbyNotifierProvider).value;
+                        final filledSpots = currentLobby.spots
+                            .where((uid) => uid != null)
+                            .length;
                         final names = currentLobby.spots
                             .where((uid) => uid != null)
                             .map((uid) =>
-                                lobbyState?.memberDisplayNames[uid!] ?? 'Unknown')
+                                lobbyState?.memberDisplayNames[uid!] ??
+                                'Unknown')
                             .join(', ');
 
                         return Text(
@@ -340,7 +343,8 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
                       },
                     );
                   },
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (error, _) => Center(
                     child: Text(
                       'Error: $error',
@@ -387,7 +391,8 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
 
     try {
       // Check current spots
-      final filledCount = currentLobby.spots.where((spot) => spot != null).length;
+      final filledCount =
+          currentLobby.spots.where((spot) => spot != null).length;
 
       if (filledCount >= currentLobby.maxSpots) {
         if (mounted) {
@@ -402,7 +407,8 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
       }
 
       // Find first available spot
-      final availableIndex = currentLobby.spots.indexWhere((spot) => spot == null);
+      final availableIndex =
+          currentLobby.spots.indexWhere((spot) => spot == null);
       if (availableIndex == -1) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -416,9 +422,7 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
       }
 
       // Claim the spot using CurrentLobbyNotifier
-      await ref
-          .read(currentLobbyProvider.notifier)
-          .claimSpot(availableIndex);
+      await ref.read(currentLobbyProvider.notifier).claimSpot(availableIndex);
 
       // Send message to chat thread
       final chatService = MessageService();

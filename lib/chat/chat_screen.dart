@@ -897,7 +897,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            color: Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withOpacity(0.3),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
@@ -925,7 +928,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   value: currentLobbyId,
                   isExpanded: true,
                   underline: const SizedBox.shrink(),
-                  dropdownColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  dropdownColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface,
                       ),
@@ -941,16 +945,19 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   onChanged: (newLobbyId) {
                     if (newLobbyId != null && newLobbyId != currentLobbyId) {
                       // Update current lobby ID
-                      ref.read(currentLobbyIdProvider.notifier).state = newLobbyId;
-                      
+                      ref.read(currentLobbyIdProvider.notifier).state =
+                          newLobbyId;
+
                       // Show feedback
                       if (mounted) {
                         HapticFeedback.lightImpact();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Switched to lobby: ${lobbies.firstWhere((l) => l['id'] == newLobbyId)['name']}'),
+                            content: Text(
+                                'Switched to lobby: ${lobbies.firstWhere((l) => l['id'] == newLobbyId)['name']}'),
                             duration: const Duration(seconds: 2),
-                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
                           ),
                         );
                       }
@@ -966,7 +973,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   /// Fetch all lobbies for the current chat group
-  Future<List<Map<String, dynamic>>> _fetchLobbiesForChatGroup(String chatGroupId) async {
+  Future<List<Map<String, dynamic>>> _fetchLobbiesForChatGroup(
+      String chatGroupId) async {
     try {
       final response = await SupabaseService.client
           .from('lobbies')

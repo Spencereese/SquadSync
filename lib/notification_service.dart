@@ -145,12 +145,15 @@ class NotificationService {
     developer.log('Sending broadcast notification: $title - $body');
   }
 
-  /// Send notification to multiple users by UIDs
+  /// Send notification to multiple users by UIDs using FCM v1 API
   ///
   /// [title] - Notification title
   /// [body] - Notification body
   /// [recipientUids] - List of user UIDs to send notification to
   /// [data] - Optional data payload for navigation/actions
+  ///
+  /// IMPORTANT: This uses Supabase Edge Function to send FCM notifications
+  /// The Edge Function handles OAuth2 authentication with service account credentials
   static Future<void> sendNotificationToUsers({
     required String title,
     required String body,
@@ -187,42 +190,28 @@ class NotificationService {
         return;
       }
 
-      // FCM server key (replace with your Firebase project's server key)
-      const serverKey = 'YOUR_FCM_SERVER_KEY_HERE'; // Add from Firebase Console
-      final url = Uri.parse('https://fcm.googleapis.com/fcm/send');
+      developer.log('Sending notifications to ${tokens.length} users via Supabase Edge Function');
 
-      // Send to multiple tokens
-      for (final token in tokens) {
-        try {
-          final response2 = await http.post(
-            url,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'key=$serverKey',
-            },
-            body: jsonEncode({
-              'to': token,
-              'notification': {
-                'title': title,
-                'body': body,
-              },
-              'data': data ?? {},
-            }),
-          );
+      // Call Supabase Edge Function to send notifications
+      // The Edge Function handles FCM v1 API authentication
+      final edgeFunctionResponse = await SupabaseService.client.functions.invoke(
+        'send-push-notification',
+        body: {
+          'tokens': tokens,
+          'title': title,
+          'body': body,
+          'data': data ?? {},
+        },
+      );
 
-          if (response2.statusCode == 200) {
-            developer.log('Notification sent successfully');
-          } else {
-            developer.log('Failed to send notification: ${response2.body}');
-          }
-        } catch (e) {
-          developer.log('Error sending to token: $e');
-        }
+      if (edgeFunctionResponse.status == 200) {
+        developer.log('✅ Notifications sent successfully via Edge Function');
+      } else {
+        developer.log('⚠️ Edge Function response: ${edgeFunctionResponse.status} - ${edgeFunctionResponse.data}');
       }
-
-      developer.log('Sent notifications to ${tokens.length} users');
     } catch (e) {
-      developer.log('Error sending notifications: $e');
+      developer.log('❌ Error sending notifications: $e');
+      // Gracefully fail - don't block the main operation
     }
   }
 

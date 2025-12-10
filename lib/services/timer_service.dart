@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:cloud_functions/cloud_functions.dart';
+// TODO: Migrate to Supabase Edge Functions
+// import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import '../chat/sqlite_helper.dart';
-import '../presentation/notifiers/squad_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../core/injection.dart' as di;
-import '../services/firestore_service.dart';
 
 /// Timer data structure for persistence
 class TimerData {
@@ -207,9 +207,9 @@ class TimerOrchestrator {
 /// A Riverpod provider for the TimerService.
 final timerServiceProvider =
     StateNotifierProvider<TimerServiceNotifier, AsyncValue<void>>((ref) {
-  final firestoreService = di.getIt<FirestoreService>();
+  // TODO: Migrate to Supabase for timer sync
   final sqliteHelper = di.getIt<SQLiteHelper>();
-  return TimerServiceNotifier(ref, firestoreService, sqliteHelper);
+  return TimerServiceNotifier(ref, sqliteHelper);
 });
 
 /// SQLite helper provider
@@ -219,7 +219,6 @@ final sqliteHelperProvider = Provider<SQLiteHelper>((ref) => SQLiteHelper());
 /// Uses TimerOrchestrator for efficient batch processing.
 class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
   final Ref _ref;
-  final FirestoreService _firestoreService;
   final SQLiteHelper _sqliteHelper;
   final TimerOrchestrator _orchestrator = TimerOrchestrator();
   SharedPreferences? _prefs;
@@ -232,7 +231,7 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
   // Interpolation support
   final Map<String, Duration> _interpolatedRemaining = {};
 
-  TimerServiceNotifier(this._ref, this._firestoreService, this._sqliteHelper)
+  TimerServiceNotifier(this._ref, this._sqliteHelper)
       : super(const AsyncValue.data(null)) {
     _initialize();
   }
@@ -327,12 +326,12 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// Spot timer expiration handler
   void _onSpotTimerExpire(String gameName, String userId) {
-    final squadNotifier = _ref.read(squadNotifierProvider.notifier);
-    final squadAsync = _ref.read(squadNotifierProvider);
+    final squadNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
+    final squadAsync = _ref.read(ln.lobbyNotifierProvider);
     if (squadAsync.hasValue) {
       final squadState = squadAsync.value!;
-      final gameSquadSpots = squadState.gameSquadSpots[gameName] ?? [];
-      final spotIndex = gameSquadSpots.indexOf(userId);
+      final gameLobbySpots = squadState.gameLobbySpots[gameName] ?? [];
+      final spotIndex = gameLobbySpots.indexOf(userId);
       if (spotIndex != -1) {
         squadNotifier.removeSpot(gameName, spotIndex);
       }
@@ -342,8 +341,8 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// Peacock timer expiration handler
   void _onPeacockTimerExpire(String userId) {
-    final squadNotifier = _ref.read(squadNotifierProvider.notifier);
-    final squadAsync = _ref.read(squadNotifierProvider);
+    final squadNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
+    final squadAsync = _ref.read(ln.lobbyNotifierProvider);
     if (squadAsync.hasValue) {
       final squadState = squadAsync.value!;
       final gameName = squadState.currentGame?['name'] ?? '';
@@ -428,15 +427,10 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// Syncs with Firestore for cross-device consistency
   Future<void> _syncWithFirestore() async {
-    if (_isOfflineMode) return;
-
-    try {
-      await _firestoreService.loadFirestoreData(displayNameCache: {});
-      // Sync gameSpotTimers and peacockTimers from Firestore
-      // Implementation depends on your specific data structure
-    } catch (e) {
-      _isOfflineMode = true;
-    }
+    // TODO: Migrate to Supabase realtime subscriptions
+    debugPrint(
+        '[TimerService] Firestore sync not available - needs Supabase migration');
+    return;
   }
 
   /// Calls Cloud Functions with dev fallback
@@ -448,7 +442,9 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
     }
 
     try {
-      await FirebaseFunctions.instance.httpsCallable('processTimers').call();
+      // TODO: Migrate to Supabase Edge Functions
+      // await FirebaseFunctions.instance.httpsCallable('processTimers').call();
+      await _processTimersLocally();
     } catch (e) {
       // Fallback to local processing
       await _processTimersLocally();

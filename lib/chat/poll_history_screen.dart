@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/poll.dart';
 import '../services/poll_service.dart';
@@ -87,7 +87,7 @@ class _PollHistoryScreenState extends ConsumerState<PollHistoryScreen> {
                   poll: poll,
                   chatGroupId: widget.chatGroupId,
                   isFromCurrentUser:
-                      poll.creatorUid == FirebaseAuth.instance.currentUser?.uid,
+                      poll.creatorUid == AuthServiceSupabase().currentUser?.id,
                 ),
               );
             },

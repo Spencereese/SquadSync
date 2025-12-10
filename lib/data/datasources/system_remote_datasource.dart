@@ -1,10 +1,11 @@
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:timezone/timezone.dart' as tz;
+import 'package:squad_sync/services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/auth_service_supabase.dart';
 
 abstract class SystemRemoteDataSource {
   Future<List<Map<String, dynamic>>> getNotifications(String userId);
@@ -37,15 +38,13 @@ abstract class SystemRemoteDataSource {
 
 class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
   final Logger _logger = Logger();
-  final FirebaseFirestore _firestore;
-  final FirebaseAuth _auth;
+  final AuthServiceSupabase _authService = AuthServiceSupabase();
+  final SupabaseClient _supabase = SupabaseService.client;
   final FlutterLocalNotificationsPlugin _localNotifications;
   final http.Client _httpClient;
   final String? _analyticsEndpoint;
 
   SystemRemoteDataSourceImpl(
-    this._firestore,
-    this._auth,
     this._localNotifications,
     this._httpClient,
     this._analyticsEndpoint,
@@ -53,39 +52,36 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
 
   @override
   Future<List<Map<String, dynamic>>> getNotifications(String userId) async {
-    final snapshot = await _firestore
-        .collection('notifications')
-        .where('userId', isEqualTo: userId)
-        .orderBy('timestamp', descending: true)
-        .limit(50)
-        .get();
+    final response = await _supabase
+        .from('notifications')
+        .select()
+        .eq('user_id', userId)
+        .order('timestamp', ascending: false)
+        .limit(50);
 
-    return snapshot.docs.map((doc) => doc.data()).toList();
+    return List<Map<String, dynamic>>.from(response as List);
   }
 
   @override
   Future<List<Map<String, dynamic>>> getAvailabilitySlots(String userId) async {
-    final snapshot = await _firestore
-        .collection('availability')
-        .where('userId', isEqualTo: userId)
-        .get();
+    final response = await _supabase
+        .from('availability_slots')
+        .select()
+        .eq('user_id', userId);
 
-    return snapshot.docs.map((doc) => doc.data()).toList();
+    return List<Map<String, dynamic>>.from(response as List);
   }
 
   @override
   Future<Map<String, Map<String, bool>>> getDailyBanVotes() async {
     final today = DateTime.now().toIso8601String().split('T')[0];
-    final snapshot = await _firestore
-        .collection('ban_votes')
-        .where('date', isEqualTo: today)
-        .get();
+    final response =
+        await _supabase.from('ban_votes').select().eq('date', today);
 
     final dailyBanVotes = <String, Map<String, bool>>{};
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      final voterId = data['voterId'] as String;
-      final targetId = data['targetId'] as String;
+    for (var data in response as List) {
+      final voterId = data['voter_id'] as String;
+      final targetId = data['target_id'] as String;
       final vote = data['vote'] as bool;
 
       dailyBanVotes.putIfAbsent(voterId, () => {})[targetId] = vote;
@@ -96,84 +92,88 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
 
   @override
   Future<List<Map<String, dynamic>>> getBans(String userId) async {
-    final snapshot = await _firestore
-        .collection('bans')
-        .where('userId', isEqualTo: userId)
-        .get();
+    final response =
+        await _supabase.from('bans').select().eq('user_id', userId);
 
-    return snapshot.docs.map((doc) => doc.data()).toList();
+    return List<Map<String, dynamic>>.from(response as List);
   }
 
   @override
   Future<void> addNotification(
       String userId, Map<String, dynamic> notification) async {
-    await _firestore.collection('notifications').add({
+    await _supabase.from('notifications').insert({
       ...notification,
-      'userId': userId,
-      'timestamp': FieldValue.serverTimestamp(),
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'user_id': userId,
+      'timestamp': DateTime.now().toIso8601String(),
       'read': false,
     });
   }
 
   @override
   Future<void> markNotificationsAsRead(String userId) async {
-    final batch = _firestore.batch();
-    final snapshot = await _firestore
-        .collection('notifications')
-        .where('userId', isEqualTo: userId)
-        .where('read', isEqualTo: false)
-        .get();
-
-    for (var doc in snapshot.docs) {
-      batch.update(doc.reference, {'read': true});
-    }
-
-    await batch.commit();
+    await _supabase
+        .from('notifications')
+        .update({'read': true})
+        .eq('user_id', userId)
+        .eq('read', false);
   }
 
   @override
   Future<void> deleteNotification(String notificationId) async {
-    await _firestore.collection('notifications').doc(notificationId).delete();
+    await _supabase.from('notifications').delete().eq('id', notificationId);
   }
 
   @override
   Future<void> addAvailabilitySlot(
       String userId, Map<String, dynamic> slot) async {
-    await _firestore.collection('availability').add({
+    await _supabase.from('availability_slots').insert({
       ...slot,
-      'userId': userId,
-      'timestamp': FieldValue.serverTimestamp(),
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'user_id': userId,
+      'timestamp': DateTime.now().toIso8601String(),
     });
   }
 
   @override
   Future<void> removeAvailabilitySlot(String slotId) async {
-    await _firestore.collection('availability').doc(slotId).delete();
+    await _supabase.from('availability_slots').delete().eq('id', slotId);
   }
 
   @override
   Future<void> updateAvailabilitySlot(
       String slotId, Map<String, dynamic> updates) async {
-    await _firestore.collection('availability').doc(slotId).update(updates);
+    await _supabase.from('availability_slots').update(updates).eq('id', slotId);
   }
 
   @override
   Future<void> submitBanVote(
       String voterId, String targetUserId, bool vote) async {
     final today = DateTime.now().toIso8601String().split('T')[0];
-    await _firestore.collection('ban_votes').add({
-      'voterId': voterId,
-      'targetId': targetUserId,
+    await _supabase.from('ban_votes').insert({
+      'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'voter_id': voterId,
+      'target_id': targetUserId,
       'vote': vote,
       'date': today,
-      'timestamp': FieldValue.serverTimestamp(),
+      'timestamp': DateTime.now().toIso8601String(),
     });
   }
 
   @override
   Future<void> sendAnalyticsEvent(
       String event, Map<String, dynamic> data) async {
-    if (_analyticsEndpoint == null) return;
+    if (_analyticsEndpoint == null) {
+      // If no HTTP endpoint, use Supabase analytics table
+      final userId = _authService.currentUserId;
+      await _supabase.from('analytics').insert({
+        'user_id': userId,
+        'event': event,
+        'data': data,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      return;
+    }
 
     try {
       await _httpClient.post(
@@ -194,8 +194,14 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
   @override
   Future<Map<String, dynamic>> getAnalyticsMetrics() async {
     // This would fetch aggregated metrics from PostgreSQL
-    // For now, return empty map
-    return {};
+    // Using Supabase RPC functions for complex queries
+    try {
+      final response = await _supabase.rpc('get_analytics_metrics');
+      return response as Map<String, dynamic>;
+    } catch (e) {
+      _logger.w('Analytics metrics not available: $e');
+      return {};
+    }
   }
 
   @override
@@ -257,18 +263,11 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
   Future<void> clearOldNotifications({Duration? olderThan}) async {
     final cutoff =
         DateTime.now().subtract(olderThan ?? const Duration(days: 30));
-    final batch = _firestore.batch();
 
-    final snapshot = await _firestore
-        .collection('notifications')
-        .where('timestamp', isLessThan: Timestamp.fromDate(cutoff))
-        .get();
-
-    for (var doc in snapshot.docs) {
-      batch.delete(doc.reference);
-    }
-
-    await batch.commit();
+    await _supabase
+        .from('notifications')
+        .delete()
+        .filter('timestamp', 'lt', cutoff.toIso8601String());
   }
 
   @override
@@ -277,18 +276,8 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
         .subtract(const Duration(days: 1))
         .toIso8601String()
         .split('T')[0];
-    final batch = _firestore.batch();
 
-    final snapshot = await _firestore
-        .collection('ban_votes')
-        .where('date', isLessThan: yesterday)
-        .get();
-
-    for (var doc in snapshot.docs) {
-      batch.delete(doc.reference);
-    }
-
-    await batch.commit();
+    await _supabase.from('ban_votes').delete().filter('date', 'lt', yesterday);
   }
 
   @override
@@ -300,17 +289,10 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
     await clearOldNotifications(olderThan: olderThan);
 
     // Purge old availability slots
-    final availabilityBatch = _firestore.batch();
-    final availabilitySnapshot = await _firestore
-        .collection('availability')
-        .where('timestamp', isLessThan: Timestamp.fromDate(cutoff))
-        .get();
-
-    for (var doc in availabilitySnapshot.docs) {
-      availabilityBatch.delete(doc.reference);
-    }
-
-    await availabilityBatch.commit();
+    await _supabase
+        .from('availability_slots')
+        .delete()
+        .filter('timestamp', 'lt', cutoff.toIso8601String());
 
     // Purge old ban votes
     await resetDailyVotes();
@@ -318,26 +300,33 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
 
   @override
   Future<void> banUser(String userId, String reason) async {
-    await _firestore.collection('bans').doc(userId).set({
-      'userId': userId,
+    await _supabase.from('bans').insert({
+      'id': userId, // Use user_id as primary key for unique constraint
+      'user_id': userId,
       'reason': reason,
-      'bannedAt': FieldValue.serverTimestamp(),
-      'bannedBy': _auth.currentUser?.uid,
+      'banned_at': DateTime.now().toIso8601String(),
+      'banned_by': _authService.currentUserId,
     });
   }
 
   @override
   Future<void> unbanUser(String userId) async {
-    await _firestore.collection('bans').doc(userId).delete();
+    await _supabase.from('bans').delete().eq('user_id', userId);
   }
 
   @override
   Future<bool> checkAvailability() async {
     try {
-      // Simple availability check - could be more sophisticated
-      await _firestore.collection('system').doc('health').get();
-      return true;
+      // Simple availability check - query system health table
+      final response = await _supabase
+          .from('system_health')
+          .select()
+          .eq('id', 'health')
+          .maybeSingle();
+
+      return response != null && response['status'] == 'ok';
     } catch (e) {
+      _logger.e('Availability check failed: $e');
       return false;
     }
   }

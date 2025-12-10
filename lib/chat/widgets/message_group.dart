@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
 import '../models/message_data.dart';
 import '../message_bubble.dart';
-import '../chat_service.dart';
+import '../../services/message_service.dart';
 import '../../domain/entities/message.dart';
 
 /// Widget for displaying a group of messages with proper grouping by sender
@@ -16,7 +16,7 @@ class MessageGroup extends StatefulWidget {
   final Map<String, bool> sendingStatus;
   final String? chatGroupId;
   final ChatType chatType;
-  final ChatService? chatService;
+  final MessageService? chatService;
   final String? squadId;
 
   const MessageGroup({
@@ -146,7 +146,7 @@ class _MessageGroupState extends State<MessageGroup> {
 
   /// Get current user ID
   String? _getCurrentUserId() {
-    return FirebaseAuth.instance.currentUser?.uid;
+    return AuthServiceSupabase().currentUser?.id;
   }
 
   /// Format timestamp for display

@@ -2,17 +2,15 @@ import 'dart:io';
 import 'dart:developer' as developer;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'managers/stubs.dart';
 
 class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   static Future<void> initialize() async {
     // Initialize local notifications
@@ -69,18 +67,19 @@ class NotificationService {
     // Store FCM token for the current user
     String? token = await _messaging.getToken();
     developer.log('FCM Token: $token');
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user != null && token != null) {
-      // Use NotificationManager to handle token storage
-      final notificationManager = NotificationManager();
-      await notificationManager.updateFCMToken(token);
+      await SupabaseService.client.from('users').update({
+        'fcm_token': token,
+      }).eq('id', user.id);
     }
     _messaging.onTokenRefresh.listen((newToken) async {
       developer.log('New FCM Token: $newToken');
-      if (user != null) {
-        // Use NotificationManager to update token
-        final notificationManager = NotificationManager();
-        await notificationManager.updateFCMToken(newToken);
+      final currentUser = AuthServiceSupabase().currentUser;
+      if (currentUser != null) {
+        await SupabaseService.client.from('users').update({
+          'fcm_token': newToken,
+        }).eq('id', currentUser.id);
       }
     });
   }
@@ -153,16 +152,17 @@ class NotificationService {
   }) async {
     try {
       // Find the user's FCM token by displayName
-      final userDocs = await _firestore
-          .collection('users')
-          .where('displayName', isEqualTo: recipientDisplayName)
-          .limit(1)
-          .get();
-      if (userDocs.docs.isEmpty) {
+      final response = await SupabaseService.client
+          .from('users')
+          .select('fcm_token')
+          .eq('display_name', recipientDisplayName)
+          .maybeSingle();
+
+      if (response == null) {
         developer.log('No FCM token found for $recipientDisplayName');
         return;
       }
-      final fcmToken = userDocs.docs.first.data()['fcmToken'] as String?;
+      final fcmToken = response['fcm_token'] as String?;
 
       if (fcmToken == null) {
         developer.log('FCM token not available for $recipientDisplayName');
@@ -173,7 +173,7 @@ class NotificationService {
       const serverKey = 'YOUR_FCM_SERVER_KEY_HERE'; // Add from Firebase Console
       final url = Uri.parse('https://fcm.googleapis.com/fcm/send');
 
-      final response = await http.post(
+      final response2 = await http.post(
         url,
         headers: {
           'Content-Type': 'application/json',
@@ -191,11 +191,11 @@ class NotificationService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response2.statusCode == 200) {
         developer
             .log('Notification sent to $recipientDisplayName: $title - $body');
       } else {
-        developer.log('Failed to send notification: ${response.body}');
+        developer.log('Failed to send notification: ${response2.body}');
       }
     } catch (e) {
       developer.log('Error sending notification to $recipientDisplayName: $e');

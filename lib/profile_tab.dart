@@ -1,11 +1,13 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:confetti/confetti.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'presentation/notifiers/user_notifier.dart';
-import 'presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'presentation/notifiers/game_notifier.dart';
 import 'screens/add_game_screen.dart';
 import 'screens/squad_tab_screen.dart';
@@ -14,6 +16,7 @@ import 'screens/availability_settings_screen.dart';
 import 'screens/performance_stats_screen.dart';
 import 'domain/entities/squad_state.dart';
 import 'domain/entities/app_user.dart';
+import 'core/app_theme.dart';
 
 class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
@@ -28,6 +31,20 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   final ScrollController _scrollController = ScrollController();
   late ConfettiController _confettiController;
 
+  // Notification settings
+  bool _pushNotifications = true;
+  bool _soundEnabled = true;
+  bool _vibrationEnabled = true;
+  bool _showPreviews = true;
+  bool _quietHoursEnabled = false;
+  TimeOfDay _quietStartTime = const TimeOfDay(hour: 22, minute: 0);
+  TimeOfDay _quietEndTime = const TimeOfDay(hour: 8, minute: 0);
+  bool _lobbyInvites = true;
+  bool _friendRequests = true;
+  bool _gameUpdates = false;
+  bool _achievementAlerts = true;
+  Set<String> _mutedGames = {};
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +54,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     )..repeat(reverse: true);
     _confettiController =
         ConfettiController(duration: const Duration(seconds: 2));
+    _loadNotificationSettings();
   }
 
   @override
@@ -48,12 +66,12 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   String _getStatusText() {
-    final squadAsync = ref.watch(sn.squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return squadAsync.maybeWhen(
       data: (squadState) {
         // Check if in squad and playing a game
-        if (squadState.selectedSquadId != null &&
+        if (squadState.selectedLobbyId != null &&
             squadState.currentGame != null) {
           final gameName = squadState.currentGame!['name'] ?? 'Game';
           return 'Playing $gameName';
@@ -80,7 +98,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
   Widget _buildHeroHeader() {
     final userAsync = ref.watch(userNotifierProvider);
-    final squadAsync = ref.watch(sn.squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return SliverToBoxAdapter(
       child: Container(
@@ -88,29 +106,35 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         child: Stack(
           children: [
             // Animated gradient background
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
+            Builder(
+              builder: (context) {
+                final theme = Theme.of(context);
+                final colorScheme = theme.colorScheme;
+                return Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.gradient1(colorScheme),
+                        AppTheme.gradient2(colorScheme),
+                        AppTheme.gradient3(colorScheme),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                )
+                    .animate(
+                  onPlay: (controller) => controller.repeat(reverse: true),
+                )
+                    .shimmer(
+                  duration: 3000.ms,
                   colors: [
-                    Colors.purple.shade900,
-                    Colors.blue.shade900,
-                    Colors.cyan.shade900,
+                    AppTheme.gradient1(colorScheme),
+                    AppTheme.gradient2(colorScheme),
+                    AppTheme.gradient1(colorScheme),
                   ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-            )
-                .animate(
-              onPlay: (controller) => controller.repeat(reverse: true),
-            )
-                .shimmer(
-              duration: 3000.ms,
-              colors: [
-                Colors.purple.shade900,
-                Colors.blue.shade800,
-                Colors.purple.shade900,
-              ],
+                );
+              },
             ),
 
             // Content overlay
@@ -130,42 +154,47 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                           AnimatedBuilder(
                             animation: _glowController,
                             builder: (context, child) {
-                              return Container(
-                                width: 120,
-                                height: 120,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.cyan.withValues(
-                                          alpha: _glowController.value * 0.8),
-                                      Colors.purple.withValues(
-                                          alpha: _glowController.value * 0.8),
-                                      Colors.pink.withValues(
-                                          alpha: _glowController.value * 0.8),
-                                    ],
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.cyan.withValues(
-                                          alpha: _glowController.value * 0.6),
-                                      blurRadius: 20,
-                                      spreadRadius: 5,
+                              final theme = Theme.of(context);
+                              final neonColor = theme.colorScheme.primary;
+                              return SizedBox(
+                                width: 140,
+                                height: 140,
+                                child: Center(
+                                  child: Container(
+                                    width: 120,
+                                    height: 120,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: neonColor.withOpacity(
+                                            _glowController.value * 0.8),
+                                        width: 3,
+                                      ),
+                                      boxShadow: neonColor.neonGlow(
+                                        blur: 30,
+                                        spread: _glowController.value * 5,
+                                        opacity: _glowController.value * 0.6,
+                                      ),
                                     ),
-                                  ],
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(4.0),
-                                  child: CircleAvatar(
-                                    radius: 56,
-                                    backgroundImage: user?.profileImage != null
-                                        ? NetworkImage(user!.profileImage!)
-                                        : null,
-                                    backgroundColor: Colors.grey.shade800,
-                                    child: user?.profileImage == null
-                                        ? Icon(Icons.person,
-                                            size: 40, color: Colors.white70)
-                                        : null,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(4.0),
+                                      child: CircleAvatar(
+                                        radius: 56,
+                                        backgroundImage: user?.profileImage !=
+                                                null
+                                            ? NetworkImage(user!.profileImage!)
+                                            : null,
+                                        backgroundColor: theme.colorScheme
+                                            .surfaceContainerHighest,
+                                        child: user?.profileImage == null
+                                            ? Icon(Icons.person,
+                                                size: 40,
+                                                color: theme
+                                                    .colorScheme.onSurface
+                                                    .withOpacity(0.7))
+                                            : null,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               );
@@ -203,14 +232,17 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                           StreamBuilder(
                             stream: Stream.periodic(const Duration(seconds: 1)),
                             builder: (context, snapshot) {
+                              final theme = Theme.of(context);
                               return Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 16, vertical: 8),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.7),
+                                  color: theme.colorScheme.surface
+                                      .withOpacity(0.7),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                    color: Colors.cyan.withValues(alpha: 0.5),
+                                    color: theme.colorScheme.primary
+                                        .withOpacity(0.5),
                                     width: 1,
                                   ),
                                 ),
@@ -220,8 +252,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                                     Container(
                                       width: 8,
                                       height: 8,
-                                      decoration: const BoxDecoration(
-                                        color: Colors.green,
+                                      decoration: BoxDecoration(
+                                        color:
+                                            AppTheme.success(theme.colorScheme),
                                         shape: BoxShape.circle,
                                       ),
                                     )
@@ -253,12 +286,14 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                     ),
                   ),
                 ),
-                orElse: () => const Center(
-                  child: CircularProgressIndicator(color: Colors.cyan),
+                orElse: () => Center(
+                  child: CircularProgressIndicator(
+                      color: Theme.of(context).colorScheme.primary),
                 ),
               ),
-              orElse: () => const Center(
-                child: CircularProgressIndicator(color: Colors.cyan),
+              orElse: () => Center(
+                child: CircularProgressIndicator(
+                    color: Theme.of(context).colorScheme.primary),
               ),
             ),
           ],
@@ -269,7 +304,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
   Widget _buildStatsCards() {
     final userAsync = ref.watch(userNotifierProvider);
-    final squadAsync = ref.watch(sn.squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return SliverToBoxAdapter(
       child: Container(
@@ -277,44 +312,49 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         margin: const EdgeInsets.symmetric(vertical: 16),
         child: userAsync.maybeWhen(
           data: (user) => squadAsync.maybeWhen(
-            data: (squadState) => ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              physics: const BouncingScrollPhysics(),
-              children: [
-                _buildStatCard(
-                  title: 'Squads This Week',
-                  value: _calculateSquadsThisWeek(squadState),
-                  icon: Icons.group,
-                  color: Colors.purple,
-                  delay: 0,
-                ),
-                const SizedBox(width: 16),
-                _buildStatCard(
-                  title: 'Rating',
-                  value: _calculateAverageRating(user),
-                  icon: Icons.star,
-                  color: Colors.amber,
-                  delay: 100,
-                  showProgress: true,
-                ),
-                const SizedBox(width: 16),
-                _buildStatCard(
-                  title: 'Turkey Count',
-                  value: _calculateTurkeyCount(user),
-                  icon: Icons.restaurant,
-                  color: Colors.orange,
-                  delay: 200,
-                ),
-                const SizedBox(width: 16),
-                _buildStatCard(
-                  title: 'Hours Played',
-                  value: _calculateHoursPlayedThisMonth(user),
-                  icon: Icons.schedule,
-                  color: Colors.cyan,
-                  delay: 300,
-                ),
-              ],
+            data: (squadState) => Builder(
+              builder: (context) {
+                final colorScheme = Theme.of(context).colorScheme;
+                return ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    _buildStatCard(
+                      title: 'Squads This Week',
+                      value: _calculateSquadsThisWeek(squadState),
+                      icon: Icons.group,
+                      color: AppTheme.gradient1(colorScheme),
+                      delay: 0,
+                    ),
+                    const SizedBox(width: 16),
+                    _buildStatCard(
+                      title: 'Rating',
+                      value: _calculateAverageRating(user),
+                      icon: Icons.star,
+                      color: AppTheme.warning(colorScheme),
+                      delay: 100,
+                      showProgress: true,
+                    ),
+                    const SizedBox(width: 16),
+                    _buildStatCard(
+                      title: 'Turkey Count',
+                      value: _calculateTurkeyCount(user),
+                      icon: Icons.restaurant,
+                      color: AppTheme.warning(colorScheme).withBlue(50),
+                      delay: 200,
+                    ),
+                    const SizedBox(width: 16),
+                    _buildStatCard(
+                      title: 'Hours Played',
+                      value: _calculateHoursPlayedThisMonth(user),
+                      icon: Icons.schedule,
+                      color: colorScheme.primary,
+                      delay: 300,
+                    ),
+                  ],
+                );
+              },
             ),
             orElse: () => const SizedBox.shrink(),
           ),
@@ -332,76 +372,83 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     required int delay,
     bool showProgress = false,
   }) {
-    return Container(
-      width: 140,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-          width: 1,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          width: 140,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: color.withOpacity(0.4),
+              width: 1.5,
+            ),
+            boxShadow: color.neonGlow(
+              blur: 15,
+              spread: 0,
+              opacity: 0.3,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: color,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (showProgress && value.contains('★'))
+                SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: CircularProgressIndicator(
+                    value: _parseRating(value) / 5.0,
+                    strokeWidth: 3,
+                    backgroundColor: color.withValues(alpha: 0.2),
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ),
+                )
+              else
+                Text(
+                  value,
+                  style: GoogleFonts.robotoMono(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                )
+                    .animate()
+                    .fadeIn(duration: 600.ms)
+                    .scale(begin: const Offset(0.8, 0.8)),
+              const SizedBox(height: 2),
+              Text(
+                title,
+                style: GoogleFonts.robotoMono(
+                  fontSize: 12,
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
-          ),
-          const SizedBox(height: 6),
-          if (showProgress && value.contains('★'))
-            SizedBox(
-              width: 40,
-              height: 40,
-              child: CircularProgressIndicator(
-                value: _parseRating(value) / 5.0,
-                strokeWidth: 3,
-                backgroundColor: color.withValues(alpha: 0.2),
-                valueColor: AlwaysStoppedAnimation<Color>(color),
-              ),
-            )
-          else
-            Text(
-              value,
-              style: GoogleFonts.robotoMono(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ).animate().fadeIn(duration: 600.ms).scale(begin: Offset(0.8, 0.8)),
-          const SizedBox(height: 2),
-          Text(
-            title,
-            style: GoogleFonts.robotoMono(
-              fontSize: 12,
-              color: Colors.white70,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
       ),
     ).animate().fadeIn(duration: 800.ms, delay: delay.ms).slideX(begin: 0.2);
   }
 
-  String _calculateSquadsThisWeek(SquadState squadState) {
+  String _calculateSquadsThisWeek(LobbyState squadState) {
     // Calculate squads created/joined this week from gameHistory
     final now = DateTime.now();
     final weekAgo = now.subtract(const Duration(days: 7));
@@ -463,7 +510,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   Widget _buildPinnedGamesSection() {
     final userAsync = ref.watch(userNotifierProvider);
     final gameAsync = ref.watch(gameNotifierProvider);
-    final squadAsync = ref.watch(sn.squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return SliverToBoxAdapter(
       child: Container(
@@ -477,22 +524,33 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'PINNED GAMES',
-                    style: GoogleFonts.robotoMono(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.cyan,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add, color: Colors.cyan),
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const AddGameScreen(),
+                  Builder(
+                    builder: (context) {
+                      final primaryColor =
+                          Theme.of(context).colorScheme.primary;
+                      return Text(
+                        'PINNED GAMES',
+                        style: GoogleFonts.robotoMono(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: primaryColor,
+                          letterSpacing: 2,
                         ),
+                      );
+                    },
+                  ),
+                  Builder(
+                    builder: (context) {
+                      return IconButton(
+                        icon: Icon(Icons.add,
+                            color: Theme.of(context).colorScheme.primary),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => const AddGameScreen(),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -568,138 +626,141 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
           ),
         );
       },
-      child: Container(
-        width: 160,
-        height: 200,
-        margin: const EdgeInsets.only(right: 16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? Colors.cyan : Colors.transparent,
-            width: 2,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.cyan.withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                  ),
-                ]
-              : null,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: Stack(
-            children: [
-              // Game cover
-              if (coverUrl != null)
-                Image.network(
-                  coverUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: Colors.grey.shade800,
-                    child: const Icon(
-                      Icons.videogame_asset,
-                      color: Colors.white54,
-                      size: 40,
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  color: Colors.grey.shade800,
-                  child: const Icon(
-                    Icons.videogame_asset,
-                    color: Colors.white54,
-                    size: 40,
-                  ),
-                ),
-
-              // Gradient overlay
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.7),
-                    ],
-                  ),
-                ),
+      child: Builder(
+        builder: (context) {
+          final primaryColor = Theme.of(context).colorScheme.primary;
+          return Container(
+            width: 160,
+            height: 200,
+            margin: const EdgeInsets.only(right: 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSelected ? primaryColor : Colors.transparent,
+                width: 2,
               ),
-
-              // Platform icons - removed as requested
-              // Positioned(
-              //   top: 8,
-              //   right: 8,
-              //   child: Row(
-              //     children: platforms.take(3).map((platform) {
-              //       return Container(
-              //         margin: const EdgeInsets.only(left: 4),
-              //         padding: const EdgeInsets.all(4),
-              //         decoration: BoxDecoration(
-              //           color: Colors.black.withValues(alpha: 0.7),
-              //           borderRadius: BorderRadius.circular(8),
-              //         ),
-              //         child: Icon(
-              //           _getPlatformIcon(platform.toString()),
-              //           color: Colors.white,
-              //           size: 12,
-              //         ),
-              //       );
-              //     }).toList(),
-              //   ),
-              // ),
-
-              // Game name
-              Positioned(
-                bottom: 12,
-                left: 12,
-                right: 12,
-                child: Text(
-                  gameName,
-                  style: GoogleFonts.robotoMono(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withValues(alpha: 0.8),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
+              boxShadow: isSelected
+                  ? primaryColor.neonGlow(
+                      blur: 20,
+                      spread: 2,
+                      opacity: 0.3,
+                    )
+                  : null,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                children: [
+                  // Game cover
+                  if (coverUrl != null)
+                    Image.network(
+                      coverUrl,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        color: Colors.grey.shade800,
+                        child: const Icon(
+                          Icons.videogame_asset,
+                          color: Colors.white54,
+                          size: 40,
+                        ),
                       ),
-                    ],
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+                    )
+                  else
+                    Container(
+                      color: Colors.grey.shade800,
+                      child: const Icon(
+                        Icons.videogame_asset,
+                        color: Colors.white54,
+                        size: 40,
+                      ),
+                    ),
 
-              // Selected indicator
-              if (isSelected)
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
+                  // Gradient overlay
+                  Container(
                     decoration: BoxDecoration(
-                      color: Colors.cyan,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.black,
-                      size: 16,
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.7),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
-        ),
+
+                  // Platform icons - removed as requested
+                  // Positioned(
+                  //   top: 8,
+                  //   right: 8,
+                  //   child: Row(
+                  //     children: platforms.take(3).map((platform) {
+                  //       return Container(
+                  //         margin: const EdgeInsets.only(left: 4),
+                  //         padding: const EdgeInsets.all(4),
+                  //         decoration: BoxDecoration(
+                  //           color: Colors.black.withValues(alpha: 0.7),
+                  //           borderRadius: BorderRadius.circular(8),
+                  //         ),
+                  //         child: Icon(
+                  //           _getPlatformIcon(platform.toString()),
+                  //           color: Colors.white,
+                  //           size: 12,
+                  //         ),
+                  //       );
+                  //     }).toList(),
+                  //   ),
+                  // ),
+
+                  // Game name
+                  Positioned(
+                    bottom: 12,
+                    left: 12,
+                    right: 12,
+                    child: Text(
+                      gameName,
+                      style: GoogleFonts.robotoMono(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withValues(alpha: 0.8),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+
+                  // Selected indicator
+                  if (isSelected)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: primaryColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.check,
+                          color: Colors.black,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     )
         .animate()
@@ -708,69 +769,74 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   Widget _buildEmptyPinnedGames() {
-    return Container(
-      height: 180,
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.cyan.withValues(alpha: 0.3),
-          width: 1,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => const AddGameScreen(),
-              ),
-            );
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.cyan.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(50),
-                  ),
-                  child: const Icon(
-                    Icons.add,
-                    color: Colors.cyan,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Pin Your Games',
-                  style: GoogleFonts.robotoMono(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Add games to quickly access your squads',
-                  style: GoogleFonts.robotoMono(
-                    fontSize: 14,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+    return Builder(
+      builder: (context) {
+        final primaryColor = Theme.of(context).colorScheme.primary;
+        return Container(
+          height: 180,
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: primaryColor.withOpacity(0.3),
+              width: 1,
             ),
           ),
-        ),
-      ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const AddGameScreen(),
+                  ),
+                );
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(50),
+                      ),
+                      child: Icon(
+                        Icons.add,
+                        color: primaryColor,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Pin Your Games',
+                      style: GoogleFonts.robotoMono(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Add games to quickly access your squads',
+                      style: GoogleFonts.robotoMono(
+                        fontSize: 14,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     ).animate().fadeIn(duration: 800.ms).scale(begin: Offset(0.9, 0.9));
   }
 
@@ -1023,6 +1089,12 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   Widget _buildSettingsSection() {
+    final userAsync = ref.watch(userNotifierProvider);
+    final pinnedGames = userAsync.maybeWhen(
+      data: (user) => user?.pinnedGames ?? [],
+      orElse: () => [],
+    );
+
     return SliverToBoxAdapter(
       child: Container(
         margin: const EdgeInsets.all(16),
@@ -1048,18 +1120,190 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               ),
             ),
             const SizedBox(height: 16),
-            // Placeholder for settings - will be implemented
-            _buildSettingRow('Notifications', true),
-            _buildSettingRow('Sound Effects', true),
-            _buildSettingRow('Dark Theme', true),
-            _buildSettingRow('Privacy Mode', false),
+
+            // Notification Settings Header
+            Text(
+              'Notifications',
+              style: GoogleFonts.robotoMono(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildSettingRow('Push Notifications', _pushNotifications, (val) {
+              setState(() => _pushNotifications = val);
+              _saveSetting('pushNotifications', val);
+            }),
+            _buildSettingRow('Sound', _soundEnabled, (val) {
+              setState(() => _soundEnabled = val);
+              _saveSetting('soundEnabled', val);
+            }, enabled: _pushNotifications),
+            _buildSettingRow('Vibration', _vibrationEnabled, (val) {
+              setState(() => _vibrationEnabled = val);
+              _saveSetting('vibrationEnabled', val);
+            }, enabled: _pushNotifications),
+            _buildSettingRow('Show Previews', _showPreviews, (val) {
+              setState(() => _showPreviews = val);
+              _saveSetting('showPreviews', val);
+            }, enabled: _pushNotifications),
+
+            const Divider(height: 24, color: Colors.white24),
+
+            // Alert Types
+            Text(
+              'Alert Types',
+              style: GoogleFonts.robotoMono(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildSettingRow('Lobby Invites', _lobbyInvites, (val) {
+              setState(() => _lobbyInvites = val);
+              _saveSetting('lobbyInvites', val);
+            }),
+            _buildSettingRow('Friend Requests', _friendRequests, (val) {
+              setState(() => _friendRequests = val);
+              _saveSetting('friendRequests', val);
+            }),
+            _buildSettingRow('Game Updates', _gameUpdates, (val) {
+              setState(() => _gameUpdates = val);
+              _saveSetting('gameUpdates', val);
+            }),
+            _buildSettingRow('Achievements', _achievementAlerts, (val) {
+              setState(() => _achievementAlerts = val);
+              _saveSetting('achievementAlerts', val);
+            }),
+
+            const Divider(height: 24, color: Colors.white24),
+
+            // Quiet Hours
+            _buildSettingRow('Quiet Hours', _quietHoursEnabled, (val) {
+              setState(() => _quietHoursEnabled = val);
+              _saveSetting('quietHoursEnabled', val);
+            }),
+            if (_quietHoursEnabled) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => _selectTime(context, true),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.access_time,
+                                  color: Colors.cyan, size: 16),
+                              const SizedBox(width: 8),
+                              Text(
+                                _quietStartTime.format(context),
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child:
+                          Text('to', style: TextStyle(color: Colors.white70)),
+                    ),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => _selectTime(context, false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.access_time,
+                                  color: Colors.cyan, size: 16),
+                              const SizedBox(width: 8),
+                              Text(
+                                _quietEndTime.format(context),
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const Divider(height: 24, color: Colors.white24),
+
+            // Game-specific muting
+            if (pinnedGames.isNotEmpty) ...[
+              Text(
+                'Muted Games',
+                style: GoogleFonts.robotoMono(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...pinnedGames.take(3).map((game) {
+                final gameSlug = game['slug'] ?? game['name'] ?? '';
+                final isMuted = _mutedGames.contains(gameSlug);
+                return _buildSettingRow(
+                  game['name'] ?? 'Unknown',
+                  !isMuted,
+                  (val) {
+                    setState(() {
+                      if (val) {
+                        _mutedGames.remove(gameSlug);
+                      } else {
+                        _mutedGames.add(gameSlug);
+                      }
+                    });
+                  },
+                );
+              }),
+              if (pinnedGames.length > 3)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '+ ${pinnedGames.length - 3} more games',
+                    style: GoogleFonts.robotoMono(
+                      fontSize: 12,
+                      color: Colors.white54,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+            ],
           ],
         ),
       ).animate().fadeIn(duration: 600.ms, delay: 1000.ms),
     );
   }
 
-  Widget _buildSettingRow(String label, bool value) {
+  Widget _buildSettingRow(
+      String label, bool value, ValueChanged<bool>? onChanged,
+      {bool enabled = true}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -1069,20 +1313,99 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
             label,
             style: GoogleFonts.robotoMono(
               fontSize: 14,
-              color: Colors.white70,
+              color: enabled ? Colors.white70 : Colors.white38,
               fontWeight: FontWeight.w500,
             ),
           ),
           Switch(
             value: value,
-            onChanged: (newValue) {
-              // Placeholder - will implement settings logic
-            },
+            onChanged: enabled ? onChanged : null,
             activeThumbColor: Colors.orange,
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _loadNotificationSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _pushNotifications = prefs.getBool('pushNotifications') ?? true;
+          _soundEnabled = prefs.getBool('soundEnabled') ?? true;
+          _vibrationEnabled = prefs.getBool('vibrationEnabled') ?? true;
+          _showPreviews = prefs.getBool('showPreviews') ?? true;
+          _quietHoursEnabled = prefs.getBool('quietHoursEnabled') ?? false;
+          _lobbyInvites = prefs.getBool('lobbyInvites') ?? true;
+          _friendRequests = prefs.getBool('friendRequests') ?? true;
+          _gameUpdates = prefs.getBool('gameUpdates') ?? false;
+          _achievementAlerts = prefs.getBool('achievementAlerts') ?? true;
+
+          // Load quiet hours times
+          final quietStart = prefs.getString('quietStartTime');
+          final quietEnd = prefs.getString('quietEndTime');
+          if (quietStart != null) {
+            final parts = quietStart.split(':');
+            _quietStartTime = TimeOfDay(
+                hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+          }
+          if (quietEnd != null) {
+            final parts = quietEnd.split(':');
+            _quietEndTime = TimeOfDay(
+                hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+          }
+        });
+      }
+    } catch (e) {
+      print('Error loading notification settings: $e');
+    }
+  }
+
+  Future<void> _saveSetting(String key, dynamic value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (value is bool) {
+        await prefs.setBool(key, value);
+      } else if (value is String) {
+        await prefs.setString(key, value);
+      }
+    } catch (e) {
+      print('Error saving setting $key: $e');
+    }
+  }
+
+  Future<void> _selectTime(BuildContext context, bool isStartTime) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: isStartTime ? _quietStartTime : _quietEndTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            timePickerTheme: TimePickerThemeData(
+              backgroundColor: Theme.of(context).cardColor,
+              hourMinuteTextColor: Colors.white,
+              dialHandColor: Colors.cyan,
+              dialBackgroundColor: Colors.black26,
+              entryModeIconColor: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        if (isStartTime) {
+          _quietStartTime = picked;
+          _saveSetting('quietStartTime', '${picked.hour}:${picked.minute}');
+        } else {
+          _quietEndTime = picked;
+          _saveSetting('quietEndTime', '${picked.hour}:${picked.minute}');
+        }
+      });
+    }
   }
 
   Widget _buildQuickActionsSection() {

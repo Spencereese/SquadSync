@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../domain/entities/squad_state.dart';
-import 'base_dialog.dart';
+import '../../domain/entities/lobby_state.dart';
 
 /// Dialog for rating players with star ratings
 class RatingsDialog extends StatefulWidget {
-  final SquadState squadState;
+  final LobbyState squadState;
   final String player;
   final ScaffoldMessengerState messenger;
 
@@ -20,7 +19,7 @@ class RatingsDialog extends StatefulWidget {
 
   /// Static method to show the dialog (maintains compatibility)
   static void show(BuildContext context, ScaffoldMessengerState messenger,
-      SquadState squadState, String player) {
+      LobbyState squadState, String player) {
     final canRate = squadState.canRateMember(player);
 
     if (!canRate) {
@@ -53,7 +52,9 @@ class _RatingsDialogState extends State<RatingsDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      shape: BaseSquadDialog.dialogShape,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       title: Text('Rate ${widget.player}'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -80,18 +81,16 @@ class _RatingsDialogState extends State<RatingsDialog> {
                 ))
             .toList(),
       ),
-      actions: BaseSquadDialog.dialogActions(
-        context: context,
-        actions: [
-          BaseSquadDialog.cancelButton(context),
-          BaseSquadDialog.submitButton(
-            context: context,
-            text: 'Submit',
-            onPressed: _submitRatings,
-            enabled: true,
-          ),
-        ],
-      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submitRatings,
+          child: const Text('Submit'),
+        ),
+      ],
     );
   }
 

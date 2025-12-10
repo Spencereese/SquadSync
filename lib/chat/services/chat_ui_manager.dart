@@ -1,26 +1,26 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../services/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' as r;
-import '../../squad_state_notifier.dart';
-import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../domain/entities/message.dart';
-import '../models/message_data.dart' as md;
 import '../../domain/entities/chat_state.dart' as cn_state;
-import '../chat_service.dart';
+import '../models/message_data.dart' as md;
 import '../message_bubble.dart';
 import '../models/message_data.dart';
 import '../models/message_group_data.dart';
 import '../widgets/message_group.dart';
 import '../chat_settings_menu.dart';
 import 'chat_scroll_controller.dart';
+import 'chat_message_search_delegate.dart';
 
 /// Service responsible for coordinating UI state and building complex UI components
 /// for the chat screen. This extracts the complex build logic from ChatScreen.
 class ChatUIManager {
-  final ChatService _chatService = ChatService();
+  final MessageService _chatService = MessageService();
 
   // UI state
   String _searchQuery = '';
@@ -102,7 +102,6 @@ class ChatUIManager {
   Widget buildChatHeader({
     required BuildContext context,
     required String? chatGroupId,
-    SquadState? squadState,
     required VoidCallback onBackPressed,
     required VoidCallback onToggleNotifications,
     required VoidCallback onViewGroupInfo,
@@ -117,10 +116,10 @@ class ChatUIManager {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.9),
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
+            color: Colors.black.withOpacity(0.3),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -140,7 +139,6 @@ class ChatUIManager {
                   onTap: () => _showChatOptionsMenu(
                     context: context,
                     chatGroupId: chatGroupId,
-                    squadState: squadState,
                     onChangeChatName: onChangeChatName,
                     onChangeChatImage: onChangeChatImage,
                     onClearChat: onClearChat,
@@ -161,9 +159,9 @@ class ChatUIManager {
                           Padding(
                             padding: const EdgeInsets.only(right: 8.0),
                             child: IconButton(
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.arrow_back,
-                                color: Colors.cyanAccent,
+                                color: Theme.of(context).colorScheme.primary,
                                 size: 24,
                               ),
                               onPressed: onBackPressed,
@@ -180,22 +178,22 @@ class ChatUIManager {
                             ),
                           )
                         else
-                          const Padding(
-                            padding: EdgeInsets.only(right: 8.0),
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8.0),
                             child: CircleAvatar(
                               radius: 20,
-                              child:
-                                  Icon(Icons.group, color: Colors.cyanAccent),
+                              child: Icon(Icons.group,
+                                  color: Theme.of(context).colorScheme.primary),
                             ),
                           ),
                         // Chat name
                         Expanded(
                           child: Text(
                             _chatName,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
-                              color: Colors.cyanAccent,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -208,16 +206,16 @@ class ChatUIManager {
               // Squad button/counter
               r.Consumer(
                 builder: (context, ref, _) {
-                  final squadAsync = ref.watch(sn.squadNotifierProvider);
+                  final squadAsync = ref.watch(ln.lobbyNotifierProvider);
                   final squadState = squadAsync.value;
                   if (squadState == null) return const SizedBox.shrink();
 
                   // Count how many squad members are currently in squad spots
                   int inSquadCount = 0;
-                  final squadMembers = squadState.squadMemberUids;
+                  final squadMembers = squadState.lobbyMemberUids;
 
                   // Check all games for squad spots occupied by squad members
-                  for (final gameSpots in squadState.gameSquadSpots.values) {
+                  for (final gameSpots in squadState.gameLobbySpots.values) {
                     for (final spot in gameSpots) {
                       if (spot != null && squadMembers.contains(spot)) {
                         inSquadCount++;
@@ -236,39 +234,48 @@ class ChatUIManager {
                       label: showCounter
                           ? '$inSquadCount squad members in game spots, tap to view squad'
                           : 'View squad, tap to see squad spots',
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: showCounter
-                              ? Colors.green.withValues(alpha: 0.2)
-                              : Colors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              showCounter ? 'In Squad: $inSquadCount' : 'Squad',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: showCounter
-                                    ? Colors.greenAccent
-                                    : Colors.white,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              showCounter
-                                  ? Icons.group
-                                  : Icons.keyboard_arrow_down,
+                      child: Builder(
+                        builder: (context) {
+                          final theme = Theme.of(context);
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
                               color: showCounter
-                                  ? Colors.greenAccent.withValues(alpha: 0.7)
-                                  : Colors.white.withValues(alpha: 0.7),
-                              size: 16,
+                                  ? theme.colorScheme.tertiary.withOpacity(0.2)
+                                  : theme.colorScheme.surface.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
                             ),
-                          ],
-                        ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  showCounter
+                                      ? 'In Squad: $inSquadCount'
+                                      : 'Squad',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: showCounter
+                                        ? theme.colorScheme.tertiary
+                                        : theme.colorScheme.onSurface,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  showCounter
+                                      ? Icons.group
+                                      : Icons.keyboard_arrow_down,
+                                  color: showCounter
+                                      ? theme.colorScheme.tertiary
+                                          .withOpacity(0.7)
+                                      : theme.colorScheme.onSurface
+                                          .withOpacity(0.7),
+                                  size: 16,
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ),
                   );
@@ -285,7 +292,7 @@ class ChatUIManager {
   Widget buildActiveSquadHeader(BuildContext context, {String? chatGroupId}) {
     return r.Consumer(
       builder: (context, ref, child) {
-        final squadAsync = ref.watch(sn.squadNotifierProvider);
+        final squadAsync = ref.watch(ln.lobbyNotifierProvider);
         final squadState = squadAsync.value;
         if (squadState == null) return const SizedBox.shrink();
 
@@ -296,7 +303,7 @@ class ChatUIManager {
 
         final gameName = currentGame['name'] ?? 'Unknown Game';
         final maxSpots = currentGame['maxSpots'] ?? 4;
-        final spots = squadState.gameSquadSpots[gameName] ?? [];
+        final spots = squadState.gameLobbySpots[gameName] ?? [];
         final claimed = spots.where((spot) => spot != null).length;
 
         // Only show if there are claimed spots
@@ -356,14 +363,14 @@ class ChatUIManager {
     required ChatType chatType,
     required ChatScrollController scrollController,
     required List<Message> messages,
-    SquadState? squadState,
     cn_state.ChatState? chatState,
     required VoidCallback onMessageLongPress,
     required VoidCallback onMessageTap,
     required String? Function(dynamic) getSender,
     required int? Function(dynamic) getTimestampMs,
     required String Function(String) cleanText,
-    required Future<void> Function(String) markAsDelivered,
+    Future<void> Function(String)?
+        markAsDelivered, // Made optional for Supabase migration
   }) {
     // Process messages if needed
     if (_needsMessageProcessing ||
@@ -538,8 +545,8 @@ class ChatUIManager {
     );
 
     // Determine if the reply message is from the current user
-    final currentUser = FirebaseAuth.instance.currentUser;
-    final isMe = replyMessage.senderId == currentUser?.uid;
+    final currentUser = AuthServiceSupabase().currentUser;
+    final isMe = replyMessage.senderId == currentUser?.id;
 
     // Format the timestamp
     final formattedTime = _formatTimestamp(replyMessage.timestamp);
@@ -596,7 +603,7 @@ class ChatUIManager {
               sendingStatus: const {},
               chatType: chatType,
               squadId: chatType == ChatType.squad
-                  ? squadState.selectedSquadId
+                  ? squadState.selectedLobbyId
                   : null,
             ),
           ),
@@ -726,7 +733,6 @@ class ChatUIManager {
   void _showChatOptionsMenu({
     required BuildContext context,
     required String? chatGroupId,
-    SquadState? squadState,
     required Future<void> Function() onChangeChatName,
     required Future<void> Function() onChangeChatImage,
     required Future<void> Function() onClearChat,
@@ -741,14 +747,17 @@ class ChatUIManager {
     ChatSettingsMenu.showChatOptions(
       context: context,
       onSearchMessages: () {
-        // TODO: Implement search messages
+        showSearch(
+          context: context,
+          delegate: ChatMessageSearchDelegate(),
+        );
       },
       onChangeChatName: onChangeChatName,
       onChangeChatImage: onChangeChatImage,
       onClearChat: onClearChat,
       onQuickReactionPicker: onQuickReactionPicker,
       onToggleNotifications: onToggleNotifications,
-      isMuted: false, // TODO: Get actual mute status
+      isMuted: _isMuted,
       onViewGroupInfo: onViewGroupInfo,
       onReportBug: onReportBug,
       onLeaveGroup: onLeaveGroup,

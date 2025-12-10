@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
+import '../services/message_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
 import '../../services/ai_service.dart';
 import '../../domain/entities/message.dart' hide Poll;
-import '../../chat/chat_service.dart';
-import '../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../presentation/notifiers/user_notifier.dart';
 
 class PollCreationDialog extends ConsumerStatefulWidget {
@@ -200,7 +200,7 @@ class _PollCreationDialogState extends ConsumerState<PollCreationDialog> {
 
     try {
       // Get current game context for better suggestions
-      final squadState = ref.read(sn.squadNotifierProvider).value;
+      final squadState = ref.read(ln.lobbyNotifierProvider).value;
       final currentGame = squadState?.currentGame;
       final gameContext = currentGame != null
           ? 'Current game: ${currentGame['name']} (${currentGame['genres']?.join(', ') ?? 'Unknown genre'})'
@@ -315,12 +315,12 @@ class _PollCreationDialogState extends ConsumerState<PollCreationDialog> {
 
       if (pollId != null && mounted) {
         // Send a chat message with the poll
-        final chatService = ChatService();
-        final currentUser = FirebaseAuth.instance.currentUser;
+        final chatService = MessageService();
+        final currentUser = AuthServiceSupabase().currentUser;
         if (currentUser != null) {
           await chatService.sendMessage(
             ref,
-            senderUid: currentUser.uid,
+            senderUid: currentUser.id,
             text: '📊 ${_titleController.text.trim()}', // Poll emoji + title
             pollId: pollId,
             chatGroupId: widget.chatGroupId,

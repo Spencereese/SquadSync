@@ -1,24 +1,26 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 
 class NotificationManager {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
   Future<void> updateFCMToken(String token) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user != null) {
-      await _firestore.collection('users').doc(user.uid).update({
-        'fcmToken': token,
-        'lastTokenUpdate': FieldValue.serverTimestamp(),
-      });
+      await SupabaseService.client.from('users').update({
+        'fcm_token': token,
+        'last_token_update': DateTime.now().toIso8601String(),
+      }).eq('id', user.id);
     }
   }
 
   Future<String?> getFCMToken() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user != null) {
-      final doc = await _firestore.collection('users').doc(user.uid).get();
-      return doc.data()?['fcmToken'] as String?;
+      final response = await SupabaseService.client
+          .from('users')
+          .select('fcm_token')
+          .eq('id', user.id)
+          .maybeSingle();
+      return response?['fcm_token'] as String?;
     }
     return null;
   }

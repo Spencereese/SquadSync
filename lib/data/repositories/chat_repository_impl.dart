@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
 import 'package:squad_sync/data/datasources/chat_local_datasource.dart';
 import 'package:squad_sync/data/datasources/chat_remote_datasource.dart';
 import 'package:squad_sync/domain/entities/message.dart';
@@ -21,13 +21,13 @@ class ChatRepositoryImpl implements ChatRepository {
       Poll? poll,
       String? voiceNoteUrl,
       int? voiceNoteDuration}) async {
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUser = AuthServiceSupabase().currentUser;
     if (currentUser == null) {
       throw Exception('User not authenticated');
     }
 
     final message = Message.create(
-      senderId: currentUser.uid,
+      senderId: currentUser.id,
       text: text,
       messageType: messageType,
       mediaUrl: mediaUrl,
@@ -213,15 +213,21 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<ChatGroup> createGroup(String name, bool isPublic,
       {String? description}) async {
+    final currentUser = AuthServiceSupabase().currentUser;
+    if (currentUser == null) {
+      throw Exception('User not authenticated');
+    }
+
     final group = ChatGroup.create(
       name: name,
-      createdBy: 'current_user_id',
+      createdBy: currentUser.id,
       isPublic: isPublic,
       description: description,
     );
 
     final createdGroup = await _remoteDataSource.createGroup(group);
-    await _localDataSource.updateChatGroup(createdGroup);
+    // TODO: Add chat_groups table to SQLite schema before enabling caching
+    // await _localDataSource.updateChatGroup(createdGroup);
     return createdGroup;
   }
 

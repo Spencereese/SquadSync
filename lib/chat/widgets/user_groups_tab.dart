@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
+import '../../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../chat_screen.dart';
 import '../../presentation/notifiers/chat_notifier.dart' as cn;
@@ -11,6 +11,39 @@ class UserGroupsTab extends ConsumerWidget {
   final VoidCallback onTapDM;
 
   const UserGroupsTab({super.key, required this.onTapDM});
+
+  Future<List<Map<String, dynamic>>> _loadUserGroups(String userId) async {
+    // First get user's group IDs
+    final userData = await supabase.Supabase.instance.client
+        .from('users')
+        .select('user_groups')
+        .eq('uid', userId)
+        .maybeSingle();
+
+    if (userData == null || userData['user_groups'] == null) {
+      return [];
+    }
+
+    final userGroups =
+        List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
+    final groupIds = userGroups
+        .map((g) => g['chat_group_id'] as String?)
+        .where((id) => id != null)
+        .cast<String>()
+        .toList();
+
+    if (groupIds.isEmpty) {
+      return [];
+    }
+
+    // Then fetch full group data
+    final groupsData = await supabase.Supabase.instance.client
+        .from('chat_groups')
+        .select()
+        .inFilter('id', groupIds);
+
+    return List<Map<String, dynamic>>.from(groupsData);
+  }
 
   String _formatTime(DateTime time) {
     final now = DateTime.now();
@@ -141,16 +174,11 @@ class UserGroupsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final FirebaseFirestore firestore = FirebaseFirestore.instance;
-    final User currentUser = FirebaseAuth.instance.currentUser!;
+    final supabase.User currentUser = AuthServiceSupabase().currentUser!;
 
-    return StreamBuilder<QuerySnapshot>(
-      key: ValueKey('user_groups_${currentUser.uid}'),
-      stream: firestore
-          .collection('users')
-          .doc(currentUser.uid)
-          .collection('chat_groups')
-          .snapshots(),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      key: ValueKey('user_groups_${currentUser.id}'),
+      future: _loadUserGroups(currentUser.id),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Center(
@@ -167,21 +195,22 @@ class UserGroupsTab extends ConsumerWidget {
           );
         }
 
-        final groups = snapshot.data?.docs ?? [];
-        debugPrint(
-            'UserGroupsTab: loaded ${groups.length} groups from Firestore');
+        final groups = snapshot.data ?? [];
+        // Reduced logging to avoid clutter - only log on significant changes
+        if (groups.isEmpty || groups.length > 5) {
+          debugPrint(
+              'UserGroupsTab: loaded ${groups.length} groups from Supabase');
+        }
 
-        // Sort groups by lastMessageTime in memory to avoid frequent rebuilds
-        // caused by orderBy in Firestore query
+        // Sort groups by last_message_time in memory
         groups.sort((a, b) {
-          final aTime = (a.data() as Map<String, dynamic>)['lastMessageTime']
-              as Timestamp?;
-          final bTime = (b.data() as Map<String, dynamic>)['lastMessageTime']
-              as Timestamp?;
+          final aTime = a['last_message_time'] as String?;
+          final bTime = b['last_message_time'] as String?;
           if (aTime == null && bTime == null) return 0;
           if (aTime == null) return 1;
           if (bTime == null) return -1;
-          return bTime.compareTo(aTime); // Descending order
+          return DateTime.parse(bTime)
+              .compareTo(DateTime.parse(aTime)); // Descending
         });
 
         // If no groups, show empty state
@@ -264,13 +293,12 @@ class UserGroupsTab extends ConsumerWidget {
 
             final groupIndex = index - 1;
             final group = groups[groupIndex];
-            final groupData = group.data() as Map<String, dynamic>;
-            final groupName = groupData['name'] ?? 'Unnamed Group';
-            final lastMessage = groupData['lastMessage'] ?? '';
-            final lastMessageTime = groupData['lastMessageTime'] as Timestamp?;
-            final memberCount = groupData['memberCount'] ?? 0;
-            final isPublic = groupData['isPublic'] ?? false;
-            final imageUrl = groupData['imageUrl'];
+            final groupName = group['name'] ?? 'Unnamed Group';
+            final lastMessage = group['last_message'] ?? '';
+            final lastMessageTime = group['last_message_time'] as String?;
+            final memberCount = group['member_count'] ?? 0;
+            final isPublic = group['is_public'] ?? false;
+            final imageUrl = group['image_url'];
 
             return ListTile(
               contentPadding: const EdgeInsets.symmetric(
@@ -308,7 +336,7 @@ class UserGroupsTab extends ConsumerWidget {
                     Padding(
                       padding: const EdgeInsets.only(left: 8),
                       child: Text(
-                        _formatTime(lastMessageTime.toDate()),
+                        _formatTime(DateTime.parse(lastMessageTime)),
                         style: const TextStyle(
                           color: Colors.grey,
                           fontSize: 12,
@@ -342,14 +370,15 @@ class UserGroupsTab extends ConsumerWidget {
               ),
               onTap: () {
                 // Navigate to chat screen for this group
+                final groupId = group['id'] as String?;
                 debugPrint(
-                    'DEBUG UserGroupsTab: Tapping on user group ${group.id}');
-                if (group.id.isNotEmpty) {
+                    'DEBUG UserGroupsTab: Tapping on user group $groupId');
+                if (groupId != null && groupId.isNotEmpty) {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (context) => ChatScreen(
                         chatType: ChatType.userGroup,
-                        chatGroupId: group.id,
+                        chatGroupId: groupId,
                         chatGroupName: groupName,
                       ),
                     ),
@@ -357,8 +386,11 @@ class UserGroupsTab extends ConsumerWidget {
                 }
               },
               onLongPress: () {
+                final groupId = group['id'] as String?;
                 // Show leave group confirmation dialog
-                _showLeaveGroupDialog(context, group.id, groupName, ref);
+                if (groupId != null) {
+                  _showLeaveGroupDialog(context, groupId, groupName, ref);
+                }
               },
             );
           },

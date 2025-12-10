@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'presentation/notifiers/squad_notifier.dart' as sn;
+import '../services/auth_service_supabase.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
 class JoinSquadScreen extends ConsumerStatefulWidget {
   final String? initialCode;
@@ -96,12 +96,12 @@ class _JoinSquadScreenState extends ConsumerState<JoinSquadScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = AuthServiceSupabase().currentUser;
       if (user == null) throw 'User not authenticated';
 
       await ref
-          .read(sn.squadNotifierProvider.notifier)
-          .joinSquad(code, user.uid);
+          .read(ln.lobbyNotifierProvider.notifier)
+          .joinSquad(code, user.id);
       HapticFeedback.lightImpact();
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {

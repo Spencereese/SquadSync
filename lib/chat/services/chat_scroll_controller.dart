@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../chat_service.dart';
+import '../../services/message_service.dart';
 
 /// Service responsible for scroll management and message pagination
 class ChatScrollController {
   final ScrollController scrollController = ScrollController();
-  final ChatService _chatService = ChatService();
+  final MessageService _chatService = MessageService();
 
   // Pagination state
   bool _isLoadingMore = false;

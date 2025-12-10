@@ -33,6 +33,7 @@ mixin _$Message {
   int? get voiceNoteDuration => throw _privateConstructorUsedError;
   String? get aiResponse => throw _privateConstructorUsedError;
   Map<String, dynamic>? get metadata => throw _privateConstructorUsedError;
+  Map<String, dynamic>? get clipData => throw _privateConstructorUsedError;
   bool? get isEdited => throw _privateConstructorUsedError;
   @TimestampConverter()
   DateTime? get editedAt => throw _privateConstructorUsedError;
@@ -66,6 +67,7 @@ abstract class $MessageCopyWith<$Res> {
       int? voiceNoteDuration,
       String? aiResponse,
       Map<String, dynamic>? metadata,
+      Map<String, dynamic>? clipData,
       bool? isEdited,
       @TimestampConverter() DateTime? editedAt,
       bool? isDeleted,
@@ -101,6 +103,7 @@ class _$MessageCopyWithImpl<$Res, $Val extends Message>
     Object? voiceNoteDuration = freezed,
     Object? aiResponse = freezed,
     Object? metadata = freezed,
+    Object? clipData = freezed,
     Object? isEdited = freezed,
     Object? editedAt = freezed,
     Object? isDeleted = freezed,
@@ -163,6 +166,10 @@ class _$MessageCopyWithImpl<$Res, $Val extends Message>
           ? _value.metadata
           : metadata // ignore: cast_nullable_to_non_nullable
               as Map<String, dynamic>?,
+      clipData: freezed == clipData
+          ? _value.clipData
+          : clipData // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>?,
       isEdited: freezed == isEdited
           ? _value.isEdited
           : isEdited // ignore: cast_nullable_to_non_nullable
@@ -205,6 +212,7 @@ abstract class _$$MessageImplCopyWith<$Res> implements $MessageCopyWith<$Res> {
       int? voiceNoteDuration,
       String? aiResponse,
       Map<String, dynamic>? metadata,
+      Map<String, dynamic>? clipData,
       bool? isEdited,
       @TimestampConverter() DateTime? editedAt,
       bool? isDeleted,
@@ -238,6 +246,7 @@ class __$$MessageImplCopyWithImpl<$Res>
     Object? voiceNoteDuration = freezed,
     Object? aiResponse = freezed,
     Object? metadata = freezed,
+    Object? clipData = freezed,
     Object? isEdited = freezed,
     Object? editedAt = freezed,
     Object? isDeleted = freezed,
@@ -300,6 +309,10 @@ class __$$MessageImplCopyWithImpl<$Res>
           ? _value._metadata
           : metadata // ignore: cast_nullable_to_non_nullable
               as Map<String, dynamic>?,
+      clipData: freezed == clipData
+          ? _value._clipData
+          : clipData // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>?,
       isEdited: freezed == isEdited
           ? _value.isEdited
           : isEdited // ignore: cast_nullable_to_non_nullable
@@ -338,12 +351,14 @@ class _$MessageImpl extends _Message {
       this.voiceNoteDuration,
       this.aiResponse,
       final Map<String, dynamic>? metadata,
+      final Map<String, dynamic>? clipData,
       this.isEdited,
       @TimestampConverter() this.editedAt,
       this.isDeleted,
       @TimestampConverter() this.deletedAt})
       : _reactions = reactions,
         _metadata = metadata,
+        _clipData = clipData,
         super._();
 
   @override
@@ -393,6 +408,16 @@ class _$MessageImpl extends _Message {
     return EqualUnmodifiableMapView(value);
   }
 
+  final Map<String, dynamic>? _clipData;
+  @override
+  Map<String, dynamic>? get clipData {
+    final value = _clipData;
+    if (value == null) return null;
+    if (_clipData is EqualUnmodifiableMapView) return _clipData;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(value);
+  }
+
   @override
   final bool? isEdited;
   @override
@@ -406,7 +431,7 @@ class _$MessageImpl extends _Message {
 
   @override
   String toString() {
-    return 'Message(id: $id, senderId: $senderId, text: $text, timestamp: $timestamp, messageType: $messageType, mediaUrl: $mediaUrl, mediaType: $mediaType, reactions: $reactions, replyTo: $replyTo, poll: $poll, voiceNoteUrl: $voiceNoteUrl, voiceNoteDuration: $voiceNoteDuration, aiResponse: $aiResponse, metadata: $metadata, isEdited: $isEdited, editedAt: $editedAt, isDeleted: $isDeleted, deletedAt: $deletedAt)';
+    return 'Message(id: $id, senderId: $senderId, text: $text, timestamp: $timestamp, messageType: $messageType, mediaUrl: $mediaUrl, mediaType: $mediaType, reactions: $reactions, replyTo: $replyTo, poll: $poll, voiceNoteUrl: $voiceNoteUrl, voiceNoteDuration: $voiceNoteDuration, aiResponse: $aiResponse, metadata: $metadata, clipData: $clipData, isEdited: $isEdited, editedAt: $editedAt, isDeleted: $isDeleted, deletedAt: $deletedAt)';
   }
 
   @override
@@ -437,6 +462,7 @@ class _$MessageImpl extends _Message {
             (identical(other.aiResponse, aiResponse) ||
                 other.aiResponse == aiResponse) &&
             const DeepCollectionEquality().equals(other._metadata, _metadata) &&
+            const DeepCollectionEquality().equals(other._clipData, _clipData) &&
             (identical(other.isEdited, isEdited) ||
                 other.isEdited == isEdited) &&
             (identical(other.editedAt, editedAt) ||
@@ -448,26 +474,28 @@ class _$MessageImpl extends _Message {
   }
 
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      id,
-      senderId,
-      text,
-      timestamp,
-      messageType,
-      mediaUrl,
-      mediaType,
-      const DeepCollectionEquality().hash(_reactions),
-      replyTo,
-      poll,
-      voiceNoteUrl,
-      voiceNoteDuration,
-      aiResponse,
-      const DeepCollectionEquality().hash(_metadata),
-      isEdited,
-      editedAt,
-      isDeleted,
-      deletedAt);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        id,
+        senderId,
+        text,
+        timestamp,
+        messageType,
+        mediaUrl,
+        mediaType,
+        const DeepCollectionEquality().hash(_reactions),
+        replyTo,
+        poll,
+        voiceNoteUrl,
+        voiceNoteDuration,
+        aiResponse,
+        const DeepCollectionEquality().hash(_metadata),
+        const DeepCollectionEquality().hash(_clipData),
+        isEdited,
+        editedAt,
+        isDeleted,
+        deletedAt
+      ]);
 
   /// Create a copy of Message
   /// with the given fields replaced by the non-null parameter values.
@@ -494,6 +522,7 @@ abstract class _Message extends Message {
       final int? voiceNoteDuration,
       final String? aiResponse,
       final Map<String, dynamic>? metadata,
+      final Map<String, dynamic>? clipData,
       final bool? isEdited,
       @TimestampConverter() final DateTime? editedAt,
       final bool? isDeleted,
@@ -531,6 +560,8 @@ abstract class _Message extends Message {
   String? get aiResponse;
   @override
   Map<String, dynamic>? get metadata;
+  @override
+  Map<String, dynamic>? get clipData;
   @override
   bool? get isEdited;
   @override

@@ -1,9 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'supabase_service.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'package:logger/logger.dart';
-import '../domain/entities/squad_state.dart';
+import '../domain/entities/lobby_state.dart';
 import '../services/grok_service.dart';
 import '../chat/sqlite_helper.dart';
 import '../domain/entities/message.dart';
@@ -13,11 +12,10 @@ import '../domain/entities/message.dart';
 class AiService {
   final Logger _logger = Logger();
   final GrokService _grokService = GrokService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final SQLiteHelper _sqliteHelper = SQLiteHelper();
 
   /// Generate AI response from Grok for messages directed at it
-  Future<void> generateGrokResponse(SquadState squadState, String userMessage,
+  Future<void> generateGrokResponse(LobbyState squadState, String userMessage,
       String senderUid, String? squadId, String? chatGroupId,
       {required ChatType chatType}) async {
     try {
@@ -47,42 +45,27 @@ class AiService {
 
       final grokMessageData = {
         'id': grokMsgId,
-        'senderUid': 'grok-ai', // Special UID for Grok
+        'sender_uid': 'grok-ai', // Special UID for Grok
         'timestamp_ms': timestampMs,
         'text': grokResponse,
-        'imageUrl': null,
-        'videoUrl': null,
-        'audioUrl': null,
+        'image_url': null,
+        'video_url': null,
+        'audio_url': null,
         'photos': [],
         'videos': [],
         'audio': [],
         'reactions': [],
         'reply_to': null,
-        'pollId': null,
+        'poll_id': null,
         'delivered': true,
         'read': false,
-        'timestamp': FieldValue.serverTimestamp(),
-        'isAiResponse': true, // Flag to identify AI responses
+        'timestamp': DateTime.now().toIso8601String(),
+        'is_ai_response': true, // Flag to identify AI responses
+        'chat_group_id': chatGroupId,
       };
 
-      // Determine collection path
-      String collectionPath;
-      if (chatType == ChatType.userGroup) {
-        final currentUser = FirebaseAuth.instance.currentUser;
-        if (currentUser == null) return;
-        collectionPath =
-            'users/${currentUser.uid}/chat_groups/$chatGroupId/messages';
-      } else if (chatType == ChatType.dm) {
-        collectionPath = 'chats/$chatGroupId/messages';
-      } else {
-        throw ArgumentError('Unsupported chat type: $chatType');
-      }
-
-      // Send Grok's response
-      await _firestore
-          .collection(collectionPath)
-          .doc(grokMsgId)
-          .set(grokMessageData);
+      // Send Grok's response to Supabase
+      await SupabaseService.client.from('messages').insert(grokMessageData);
 
       // Cache locally
       await _sqliteHelper.insertMessage(grokMessageData,
@@ -97,25 +80,20 @@ class AiService {
   Future<List<String>> _getRecentMessages(String? squadId, String? chatGroupId,
       {int limit = 5, required ChatType chatType, String? userId}) async {
     try {
-      String collectionPath;
-      if (chatType == ChatType.userGroup) {
-        collectionPath = 'users/$userId/chat_groups/$chatGroupId/messages';
-      } else {
-        // DMs: chats/{chatGroupId}/messages
-        collectionPath = 'chats/$chatGroupId/messages';
-      }
+      if (chatGroupId == null) return [];
 
-      final snapshot = await _firestore
-          .collection(collectionPath)
-          .orderBy('timestamp_ms', descending: true)
-          .limit(limit * 2) // Get more to filter out AI responses
-          .get();
+      final response = await SupabaseService.client
+          .from('messages')
+          .select('text, is_ai_response')
+          .eq('chat_group_id', chatGroupId)
+          .order('timestamp_ms', ascending: false)
+          .limit(limit * 2); // Get more to filter out AI responses
 
-      final messages = snapshot.docs
-          .where((doc) =>
-              !(doc.data()['isAiResponse'] ?? false)) // Exclude AI responses
+      final messages = response
+          .where((row) =>
+              !(row['is_ai_response'] ?? false)) // Exclude AI responses
           .take(limit)
-          .map((doc) => doc.data()['text'] as String?)
+          .map((row) => row['text'] as String?)
           .where((text) => text != null && text.isNotEmpty)
           .cast<String>()
           .toList();

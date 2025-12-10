@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// Core message data model to replace the Map<String, dynamic> usage
 class MessageData {
   final String id;
@@ -25,6 +23,7 @@ class MessageData {
   final bool edited;
   final DateTime? editedAt;
   final String? replyTo;
+  final ClipMessageData? clipData;
   bool shouldShowTimestamp;
 
   MessageData({
@@ -51,55 +50,9 @@ class MessageData {
     this.edited = false,
     this.editedAt,
     this.replyTo,
+    this.clipData,
     this.shouldShowTimestamp = false,
-  }) : timestamp = timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
-
-  /// Factory constructor to create MessageData from Firestore DocumentSnapshot
-  factory MessageData.fromDocument(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-    final isAiResponse = data['isAiResponse'] ?? false;
-    final senderUid = data['senderId'] ?? data['senderUid'] ?? '';
-
-    return MessageData(
-      id: doc.id,
-      sender: isAiResponse && senderUid == 'grok-ai'
-          ? '' // No name for Grok - shadow mode
-          : data['sender'] ?? data['sender_name'] ?? 'Unknown',
-      senderUid: senderUid,
-      text: data['text'] ?? data['content'] ?? '',
-      content: data['text'] ?? data['content'],
-      photos: data['imageUrl'] != null
-          ? [
-              {
-                'uri': data['imageUrl'],
-                'creation_timestamp': data['timestamp_ms']
-              }
-            ]
-          : _parsePhotos(data['photos']),
-      videoUrl: data['videoUrl'] ?? _parseVideoUrl(data['videos']),
-      audioUrl: data['audioUrl'] ?? _parseAudioUrl(data['audio']),
-      timestamp: data['timestamp'] is Timestamp
-          ? (data['timestamp'] as Timestamp).toDate()
-          : (data['timestamp_ms'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms'])
-              : DateTime.fromMillisecondsSinceEpoch(0)),
-      delivered: data['delivered'] ?? false,
-      read: data['read'] ?? false,
-      reactions: _parseReactions(data['reactions']),
-      pollId: data['pollId'],
-      isAiResponse: isAiResponse,
-      pinned: data['pinned'] ?? false,
-      isBumped: data['isBumped'] ?? false,
-      originalId: data['originalId'],
-      bumpedBy: data['bumpedBy'],
-      edited: data['edited'] ?? false,
-      editedAt: data['editedAt'] is Timestamp
-          ? (data['editedAt'] as Timestamp).toDate()
-          : null,
-      replyTo: data['replyTo'],
-      shouldShowTimestamp: false, // Will be set by message processing logic
-    );
-  }
+  }) : timestamp = timestamp ?? DateTime.now();
 
   /// Factory constructor to create MessageData from Map
   factory MessageData.fromMap(Map<String, dynamic> data) {
@@ -118,11 +71,11 @@ class MessageData {
       photos: _parsePhotos(data['photos']),
       videoUrl: data['videoUrl'] ?? _parseVideoUrl(data['videos']),
       audioUrl: data['audioUrl'] ?? _parseAudioUrl(data['audio']),
-      timestamp: data['timestamp_ms'] is int
+      timestamp: data['timestamp_ms'] is int && data['timestamp_ms'] != 0
           ? DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms'])
-          : (data['timestamp'] is Timestamp
-              ? (data['timestamp'] as Timestamp).toDate()
-              : DateTime.fromMillisecondsSinceEpoch(0)),
+          : (data['timestamp'] is String
+              ? DateTime.parse(data['timestamp'])
+              : DateTime.now()),
       delivered: data['delivered'] ?? false,
       read: data['read'] ?? false,
       reactions: _parseReactions(data['reactions']),
@@ -133,10 +86,12 @@ class MessageData {
       originalId: data['originalId'],
       bumpedBy: data['bumpedBy'],
       edited: data['edited'] ?? false,
-      editedAt: data['editedAt'] is Timestamp
-          ? (data['editedAt'] as Timestamp).toDate()
-          : null,
+      editedAt:
+          data['editedAt'] is String ? DateTime.parse(data['editedAt']) : null,
       replyTo: data['replyTo'],
+      clipData: data['clipData'] != null
+          ? ClipMessageData.fromJson(data['clipData'] as Map<String, dynamic>)
+          : null,
       shouldShowTimestamp: false, // Will be set by message processing logic
     );
   }
@@ -267,10 +222,83 @@ class MessageData {
       'edited': edited,
       'editedAt': editedAt?.millisecondsSinceEpoch,
       'replyTo': replyTo,
+      'clipData': clipData?.toJson(),
     };
   }
 }
 
-enum MessageType { text, image, video, audio, poll, system }
+/// Clip message metadata
+class ClipMessageData {
+  final String videoUrl;
+  final String thumbnailUrl;
+  final int durationSec;
+  final int views;
+  final List<String> hypeReactions; // UIDs who hyped
+  final String clipId;
+  final int width;
+  final int height;
+
+  ClipMessageData({
+    required this.videoUrl,
+    required this.thumbnailUrl,
+    required this.durationSec,
+    this.views = 0,
+    this.hypeReactions = const [],
+    required this.clipId,
+    this.width = 0,
+    this.height = 0,
+  });
+
+  factory ClipMessageData.fromJson(Map<String, dynamic> json) {
+    return ClipMessageData(
+      videoUrl: json['videoUrl'] as String? ?? '',
+      thumbnailUrl: json['thumbnailUrl'] as String? ?? '',
+      durationSec: json['durationSec'] as int? ?? 0,
+      views: json['views'] as int? ?? 0,
+      hypeReactions: (json['hypeReactions'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      clipId: json['clipId'] as String? ?? '',
+      width: json['width'] as int? ?? 0,
+      height: json['height'] as int? ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'videoUrl': videoUrl,
+        'thumbnailUrl': thumbnailUrl,
+        'durationSec': durationSec,
+        'views': views,
+        'hypeReactions': hypeReactions,
+        'clipId': clipId,
+        'width': width,
+        'height': height,
+      };
+
+  ClipMessageData copyWith({
+    String? videoUrl,
+    String? thumbnailUrl,
+    int? durationSec,
+    int? views,
+    List<String>? hypeReactions,
+    String? clipId,
+    int? width,
+    int? height,
+  }) {
+    return ClipMessageData(
+      videoUrl: videoUrl ?? this.videoUrl,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      durationSec: durationSec ?? this.durationSec,
+      views: views ?? this.views,
+      hypeReactions: hypeReactions ?? this.hypeReactions,
+      clipId: clipId ?? this.clipId,
+      width: width ?? this.width,
+      height: height ?? this.height,
+    );
+  }
+}
+
+enum MessageType { text, image, video, audio, poll, clip, system }
 
 enum MessageStatus { sending, sent, delivered, read, failed }

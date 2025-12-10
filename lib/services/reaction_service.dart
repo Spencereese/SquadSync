@@ -1,11 +1,10 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'auth_service_supabase.dart';
+import 'supabase_service.dart';
 import '../domain/entities/message.dart';
 
 /// Service for managing message reactions
 class ReactionService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AuthServiceSupabase _authService = AuthServiceSupabase();
 
   /// Add a reaction to a message
   Future<void> addReaction({
@@ -14,29 +13,14 @@ class ReactionService {
     required String emoji,
     required ChatType chatType,
   }) async {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user == null) return;
 
-    String collectionPath;
-    if (chatType == ChatType.userGroup) {
-      collectionPath = 'users/${user.uid}/chat_groups/$chatGroupId/messages';
-    } else if (chatType == ChatType.dm) {
-      collectionPath = 'chats/$chatGroupId/messages';
-    } else {
-      return;
-    }
-
-    final reactionId = '${user.uid}_$emoji';
-
-    await _firestore
-        .collection(collectionPath)
-        .doc(messageId)
-        .collection('reactions')
-        .doc(reactionId)
-        .set({
-      'userId': user.uid,
+    await SupabaseService.client.from('reactions').upsert({
+      'message_id': messageId,
+      'user_id': user.id,
       'emoji': emoji,
-      'timestamp': FieldValue.serverTimestamp(),
+      'created_at': DateTime.now().toIso8601String(),
     });
   }
 
@@ -47,26 +31,15 @@ class ReactionService {
     required String emoji,
     required ChatType chatType,
   }) async {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user == null) return;
 
-    String collectionPath;
-    if (chatType == ChatType.userGroup) {
-      collectionPath = 'users/${user.uid}/chat_groups/$chatGroupId/messages';
-    } else if (chatType == ChatType.dm) {
-      collectionPath = 'chats/$chatGroupId/messages';
-    } else {
-      return;
-    }
-
-    final reactionId = '${user.uid}_$emoji';
-
-    await _firestore
-        .collection(collectionPath)
-        .doc(messageId)
-        .collection('reactions')
-        .doc(reactionId)
-        .delete();
+    await SupabaseService.client
+        .from('reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', user.id)
+        .eq('emoji', emoji);
   }
 
   /// Get reactions for a message
@@ -75,39 +48,28 @@ class ReactionService {
     required String messageId,
     required ChatType chatType,
   }) {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user == null) return Stream.value({});
 
-    String collectionPath;
-    if (chatType == ChatType.userGroup) {
-      collectionPath = 'users/${user.uid}/chat_groups/$chatGroupId/messages';
-    } else if (chatType == ChatType.dm) {
-      collectionPath = 'chats/$chatGroupId/messages';
-    } else {
-      return Stream.value({});
-    }
+    return SupabaseService.client
+        .from('reactions')
+        .stream(primaryKey: ['id'])
+        .eq('message_id', messageId)
+        .map((data) {
+          final reactions = <String, List<String>>{};
 
-    return _firestore
-        .collection(collectionPath)
-        .doc(messageId)
-        .collection('reactions')
-        .snapshots()
-        .map((snapshot) {
-      final reactions = <String, List<String>>{};
+          for (final row in data) {
+            final emoji = row['emoji'] as String;
+            final userId = row['user_id'] as String;
 
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final emoji = data['emoji'] as String;
-        final userId = data['userId'] as String;
+            if (!reactions.containsKey(emoji)) {
+              reactions[emoji] = [];
+            }
+            reactions[emoji]!.add(userId);
+          }
 
-        if (!reactions.containsKey(emoji)) {
-          reactions[emoji] = [];
-        }
-        reactions[emoji]!.add(userId);
-      }
-
-      return reactions;
-    });
+          return reactions;
+        });
   }
 
   /// Check if current user has reacted with specific emoji
@@ -117,27 +79,17 @@ class ReactionService {
     required String emoji,
     required ChatType chatType,
   }) async {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user == null) return false;
 
-    String collectionPath;
-    if (chatType == ChatType.userGroup) {
-      collectionPath = 'users/${user.uid}/chat_groups/$chatGroupId/messages';
-    } else if (chatType == ChatType.dm) {
-      collectionPath = 'chats/$chatGroupId/messages';
-    } else {
-      return false;
-    }
+    final data = await SupabaseService.client
+        .from('reactions')
+        .select('id')
+        .eq('message_id', messageId)
+        .eq('user_id', user.id)
+        .eq('emoji', emoji)
+        .maybeSingle();
 
-    final reactionId = '${user.uid}_$emoji';
-
-    final doc = await _firestore
-        .collection(collectionPath)
-        .doc(messageId)
-        .collection('reactions')
-        .doc(reactionId)
-        .get();
-
-    return doc.exists;
+    return data != null;
   }
 }

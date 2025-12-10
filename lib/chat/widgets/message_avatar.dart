@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../presentation/notifiers/squad_notifier.dart';
+import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/user_notifier.dart';
 
 /// Message avatar component - displays user profile image or initials
@@ -19,7 +19,7 @@ class MessageAvatar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadAsync = ref.watch(squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return squadAsync.maybeWhen(
       data: (squadState) {
@@ -76,7 +76,7 @@ class _UserMenuSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadAsync = ref.watch(squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return squadAsync.maybeWhen(
       data: (squadState) {
@@ -135,7 +135,7 @@ class _UserMenuSheet extends ConsumerWidget {
                 onTap: () {
                   Navigator.pop(context);
                   ref
-                      .read(squadNotifierProvider.notifier)
+                      .read(ln.lobbyNotifierProvider.notifier)
                       .addBan(uid, squadState.displayName);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('$userName has been voted for ban')),

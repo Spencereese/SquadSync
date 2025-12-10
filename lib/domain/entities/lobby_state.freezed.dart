@@ -1,0 +1,1285 @@
+// coverage:ignore-file
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: type=lint
+// ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
+
+part of 'lobby_state.dart';
+
+// **************************************************************************
+// FreezedGenerator
+// **************************************************************************
+
+T _$identity<T>(T value) => value;
+
+final _privateConstructorUsedError = UnsupportedError(
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
+
+LobbyState _$LobbyStateFromJson(Map<String, dynamic> json) {
+  return _LobbyState.fromJson(json);
+}
+
+/// @nodoc
+mixin _$LobbyState {
+  bool get isInitialized => throw _privateConstructorUsedError;
+  bool get isInitialDataLoaded => throw _privateConstructorUsedError;
+  String get displayName => throw _privateConstructorUsedError;
+  String? get profileImage => throw _privateConstructorUsedError;
+  Map<String, String?>? get memberProfileImages =>
+      throw _privateConstructorUsedError; // Game-specific data
+  Map<String, List<String?>> get gameLobbySpots =>
+      throw _privateConstructorUsedError;
+  Map<String, List<Map<String, dynamic>?>> get gameSpotTimers =>
+      throw _privateConstructorUsedError;
+  Map<String, Map<String, String>> get gameStatuses =>
+      throw _privateConstructorUsedError;
+  Map<String, String> get globalStatuses =>
+      throw _privateConstructorUsedError; // Lobby data
+  List<String> get lobbyMemberUids => throw _privateConstructorUsedError;
+  Map<String, String> get memberDisplayNames =>
+      throw _privateConstructorUsedError;
+  List<String> get userLobbyIds => throw _privateConstructorUsedError;
+  String? get selectedLobbyId => throw _privateConstructorUsedError;
+  Map<String, Lobby> get userLobbies => throw _privateConstructorUsedError;
+  Map<String, dynamic>? get currentLobbyData =>
+      throw _privateConstructorUsedError; // UI state
+  Map<String, bool> get typing => throw _privateConstructorUsedError;
+  bool get tiltEnabled => throw _privateConstructorUsedError;
+  bool get hasNewLobbySpot => throw _privateConstructorUsedError;
+  bool get hasUnreadMessages => throw _privateConstructorUsedError; // Game data
+  List<Map<String, dynamic>> get gameHistory =>
+      throw _privateConstructorUsedError;
+  Map<String, String?> get preferredModes => throw _privateConstructorUsedError;
+  Map<String, Map<String, bool>> get userBlocks =>
+      throw _privateConstructorUsedError;
+  Map<String, Map<String, int>> get dailyBanVotes =>
+      throw _privateConstructorUsedError;
+  Map<String, List<Map<String, dynamic>>> get bans =>
+      throw _privateConstructorUsedError;
+  List<Map<String, dynamic>> get availableGames =>
+      throw _privateConstructorUsedError;
+  Map<String, List<Map<String, dynamic>>> get gameLobbies =>
+      throw _privateConstructorUsedError;
+  Set<String> get preferredPeacockGames => throw _privateConstructorUsedError;
+  Set<String> get mutedGames => throw _privateConstructorUsedError;
+  Set<String> get hiddenGames => throw _privateConstructorUsedError;
+  Map<String, Map<String, dynamic>?> get peacockTimers =>
+      throw _privateConstructorUsedError;
+  List<String> get peacockQueue => throw _privateConstructorUsedError;
+  List<Map<String, dynamic>> get scheduledTimes =>
+      throw _privateConstructorUsedError;
+  bool get hasNewAvailability =>
+      throw _privateConstructorUsedError; // Current game
+  Map<String, dynamic>? get currentGame =>
+      throw _privateConstructorUsedError; // Timer states
+  Map<String, Duration> get spotTimerStates =>
+      throw _privateConstructorUsedError;
+  Map<String, Duration> get peacockTimerStates =>
+      throw _privateConstructorUsedError; // Ratings
+  Map<String, Map<String, int>> get dailyRatings =>
+      throw _privateConstructorUsedError;
+  Map<String, Map<String, int>> get allTimeRatings =>
+      throw _privateConstructorUsedError;
+  Map<String, dynamic> get analyticsMetrics =>
+      throw _privateConstructorUsedError; // Analytics and tracking
+  DateTime get lastSyncTimestamp => throw _privateConstructorUsedError;
+
+  /// Serializes this LobbyState to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of LobbyState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $LobbyStateCopyWith<LobbyState> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $LobbyStateCopyWith<$Res> {
+  factory $LobbyStateCopyWith(
+          LobbyState value, $Res Function(LobbyState) then) =
+      _$LobbyStateCopyWithImpl<$Res, LobbyState>;
+  @useResult
+  $Res call(
+      {bool isInitialized,
+      bool isInitialDataLoaded,
+      String displayName,
+      String? profileImage,
+      Map<String, String?>? memberProfileImages,
+      Map<String, List<String?>> gameLobbySpots,
+      Map<String, List<Map<String, dynamic>?>> gameSpotTimers,
+      Map<String, Map<String, String>> gameStatuses,
+      Map<String, String> globalStatuses,
+      List<String> lobbyMemberUids,
+      Map<String, String> memberDisplayNames,
+      List<String> userLobbyIds,
+      String? selectedLobbyId,
+      Map<String, Lobby> userLobbies,
+      Map<String, dynamic>? currentLobbyData,
+      Map<String, bool> typing,
+      bool tiltEnabled,
+      bool hasNewLobbySpot,
+      bool hasUnreadMessages,
+      List<Map<String, dynamic>> gameHistory,
+      Map<String, String?> preferredModes,
+      Map<String, Map<String, bool>> userBlocks,
+      Map<String, Map<String, int>> dailyBanVotes,
+      Map<String, List<Map<String, dynamic>>> bans,
+      List<Map<String, dynamic>> availableGames,
+      Map<String, List<Map<String, dynamic>>> gameLobbies,
+      Set<String> preferredPeacockGames,
+      Set<String> mutedGames,
+      Set<String> hiddenGames,
+      Map<String, Map<String, dynamic>?> peacockTimers,
+      List<String> peacockQueue,
+      List<Map<String, dynamic>> scheduledTimes,
+      bool hasNewAvailability,
+      Map<String, dynamic>? currentGame,
+      Map<String, Duration> spotTimerStates,
+      Map<String, Duration> peacockTimerStates,
+      Map<String, Map<String, int>> dailyRatings,
+      Map<String, Map<String, int>> allTimeRatings,
+      Map<String, dynamic> analyticsMetrics,
+      DateTime lastSyncTimestamp});
+}
+
+/// @nodoc
+class _$LobbyStateCopyWithImpl<$Res, $Val extends LobbyState>
+    implements $LobbyStateCopyWith<$Res> {
+  _$LobbyStateCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of LobbyState
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? isInitialized = null,
+    Object? isInitialDataLoaded = null,
+    Object? displayName = null,
+    Object? profileImage = freezed,
+    Object? memberProfileImages = freezed,
+    Object? gameLobbySpots = null,
+    Object? gameSpotTimers = null,
+    Object? gameStatuses = null,
+    Object? globalStatuses = null,
+    Object? lobbyMemberUids = null,
+    Object? memberDisplayNames = null,
+    Object? userLobbyIds = null,
+    Object? selectedLobbyId = freezed,
+    Object? userLobbies = null,
+    Object? currentLobbyData = freezed,
+    Object? typing = null,
+    Object? tiltEnabled = null,
+    Object? hasNewLobbySpot = null,
+    Object? hasUnreadMessages = null,
+    Object? gameHistory = null,
+    Object? preferredModes = null,
+    Object? userBlocks = null,
+    Object? dailyBanVotes = null,
+    Object? bans = null,
+    Object? availableGames = null,
+    Object? gameLobbies = null,
+    Object? preferredPeacockGames = null,
+    Object? mutedGames = null,
+    Object? hiddenGames = null,
+    Object? peacockTimers = null,
+    Object? peacockQueue = null,
+    Object? scheduledTimes = null,
+    Object? hasNewAvailability = null,
+    Object? currentGame = freezed,
+    Object? spotTimerStates = null,
+    Object? peacockTimerStates = null,
+    Object? dailyRatings = null,
+    Object? allTimeRatings = null,
+    Object? analyticsMetrics = null,
+    Object? lastSyncTimestamp = null,
+  }) {
+    return _then(_value.copyWith(
+      isInitialized: null == isInitialized
+          ? _value.isInitialized
+          : isInitialized // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isInitialDataLoaded: null == isInitialDataLoaded
+          ? _value.isInitialDataLoaded
+          : isInitialDataLoaded // ignore: cast_nullable_to_non_nullable
+              as bool,
+      displayName: null == displayName
+          ? _value.displayName
+          : displayName // ignore: cast_nullable_to_non_nullable
+              as String,
+      profileImage: freezed == profileImage
+          ? _value.profileImage
+          : profileImage // ignore: cast_nullable_to_non_nullable
+              as String?,
+      memberProfileImages: freezed == memberProfileImages
+          ? _value.memberProfileImages
+          : memberProfileImages // ignore: cast_nullable_to_non_nullable
+              as Map<String, String?>?,
+      gameLobbySpots: null == gameLobbySpots
+          ? _value.gameLobbySpots
+          : gameLobbySpots // ignore: cast_nullable_to_non_nullable
+              as Map<String, List<String?>>,
+      gameSpotTimers: null == gameSpotTimers
+          ? _value.gameSpotTimers
+          : gameSpotTimers // ignore: cast_nullable_to_non_nullable
+              as Map<String, List<Map<String, dynamic>?>>,
+      gameStatuses: null == gameStatuses
+          ? _value.gameStatuses
+          : gameStatuses // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, String>>,
+      globalStatuses: null == globalStatuses
+          ? _value.globalStatuses
+          : globalStatuses // ignore: cast_nullable_to_non_nullable
+              as Map<String, String>,
+      lobbyMemberUids: null == lobbyMemberUids
+          ? _value.lobbyMemberUids
+          : lobbyMemberUids // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      memberDisplayNames: null == memberDisplayNames
+          ? _value.memberDisplayNames
+          : memberDisplayNames // ignore: cast_nullable_to_non_nullable
+              as Map<String, String>,
+      userLobbyIds: null == userLobbyIds
+          ? _value.userLobbyIds
+          : userLobbyIds // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      selectedLobbyId: freezed == selectedLobbyId
+          ? _value.selectedLobbyId
+          : selectedLobbyId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      userLobbies: null == userLobbies
+          ? _value.userLobbies
+          : userLobbies // ignore: cast_nullable_to_non_nullable
+              as Map<String, Lobby>,
+      currentLobbyData: freezed == currentLobbyData
+          ? _value.currentLobbyData
+          : currentLobbyData // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>?,
+      typing: null == typing
+          ? _value.typing
+          : typing // ignore: cast_nullable_to_non_nullable
+              as Map<String, bool>,
+      tiltEnabled: null == tiltEnabled
+          ? _value.tiltEnabled
+          : tiltEnabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasNewLobbySpot: null == hasNewLobbySpot
+          ? _value.hasNewLobbySpot
+          : hasNewLobbySpot // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasUnreadMessages: null == hasUnreadMessages
+          ? _value.hasUnreadMessages
+          : hasUnreadMessages // ignore: cast_nullable_to_non_nullable
+              as bool,
+      gameHistory: null == gameHistory
+          ? _value.gameHistory
+          : gameHistory // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      preferredModes: null == preferredModes
+          ? _value.preferredModes
+          : preferredModes // ignore: cast_nullable_to_non_nullable
+              as Map<String, String?>,
+      userBlocks: null == userBlocks
+          ? _value.userBlocks
+          : userBlocks // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, bool>>,
+      dailyBanVotes: null == dailyBanVotes
+          ? _value.dailyBanVotes
+          : dailyBanVotes // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
+      bans: null == bans
+          ? _value.bans
+          : bans // ignore: cast_nullable_to_non_nullable
+              as Map<String, List<Map<String, dynamic>>>,
+      availableGames: null == availableGames
+          ? _value.availableGames
+          : availableGames // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      gameLobbies: null == gameLobbies
+          ? _value.gameLobbies
+          : gameLobbies // ignore: cast_nullable_to_non_nullable
+              as Map<String, List<Map<String, dynamic>>>,
+      preferredPeacockGames: null == preferredPeacockGames
+          ? _value.preferredPeacockGames
+          : preferredPeacockGames // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
+      mutedGames: null == mutedGames
+          ? _value.mutedGames
+          : mutedGames // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
+      hiddenGames: null == hiddenGames
+          ? _value.hiddenGames
+          : hiddenGames // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
+      peacockTimers: null == peacockTimers
+          ? _value.peacockTimers
+          : peacockTimers // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, dynamic>?>,
+      peacockQueue: null == peacockQueue
+          ? _value.peacockQueue
+          : peacockQueue // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      scheduledTimes: null == scheduledTimes
+          ? _value.scheduledTimes
+          : scheduledTimes // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      hasNewAvailability: null == hasNewAvailability
+          ? _value.hasNewAvailability
+          : hasNewAvailability // ignore: cast_nullable_to_non_nullable
+              as bool,
+      currentGame: freezed == currentGame
+          ? _value.currentGame
+          : currentGame // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>?,
+      spotTimerStates: null == spotTimerStates
+          ? _value.spotTimerStates
+          : spotTimerStates // ignore: cast_nullable_to_non_nullable
+              as Map<String, Duration>,
+      peacockTimerStates: null == peacockTimerStates
+          ? _value.peacockTimerStates
+          : peacockTimerStates // ignore: cast_nullable_to_non_nullable
+              as Map<String, Duration>,
+      dailyRatings: null == dailyRatings
+          ? _value.dailyRatings
+          : dailyRatings // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
+      allTimeRatings: null == allTimeRatings
+          ? _value.allTimeRatings
+          : allTimeRatings // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
+      analyticsMetrics: null == analyticsMetrics
+          ? _value.analyticsMetrics
+          : analyticsMetrics // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>,
+      lastSyncTimestamp: null == lastSyncTimestamp
+          ? _value.lastSyncTimestamp
+          : lastSyncTimestamp // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$LobbyStateImplCopyWith<$Res>
+    implements $LobbyStateCopyWith<$Res> {
+  factory _$$LobbyStateImplCopyWith(
+          _$LobbyStateImpl value, $Res Function(_$LobbyStateImpl) then) =
+      __$$LobbyStateImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {bool isInitialized,
+      bool isInitialDataLoaded,
+      String displayName,
+      String? profileImage,
+      Map<String, String?>? memberProfileImages,
+      Map<String, List<String?>> gameLobbySpots,
+      Map<String, List<Map<String, dynamic>?>> gameSpotTimers,
+      Map<String, Map<String, String>> gameStatuses,
+      Map<String, String> globalStatuses,
+      List<String> lobbyMemberUids,
+      Map<String, String> memberDisplayNames,
+      List<String> userLobbyIds,
+      String? selectedLobbyId,
+      Map<String, Lobby> userLobbies,
+      Map<String, dynamic>? currentLobbyData,
+      Map<String, bool> typing,
+      bool tiltEnabled,
+      bool hasNewLobbySpot,
+      bool hasUnreadMessages,
+      List<Map<String, dynamic>> gameHistory,
+      Map<String, String?> preferredModes,
+      Map<String, Map<String, bool>> userBlocks,
+      Map<String, Map<String, int>> dailyBanVotes,
+      Map<String, List<Map<String, dynamic>>> bans,
+      List<Map<String, dynamic>> availableGames,
+      Map<String, List<Map<String, dynamic>>> gameLobbies,
+      Set<String> preferredPeacockGames,
+      Set<String> mutedGames,
+      Set<String> hiddenGames,
+      Map<String, Map<String, dynamic>?> peacockTimers,
+      List<String> peacockQueue,
+      List<Map<String, dynamic>> scheduledTimes,
+      bool hasNewAvailability,
+      Map<String, dynamic>? currentGame,
+      Map<String, Duration> spotTimerStates,
+      Map<String, Duration> peacockTimerStates,
+      Map<String, Map<String, int>> dailyRatings,
+      Map<String, Map<String, int>> allTimeRatings,
+      Map<String, dynamic> analyticsMetrics,
+      DateTime lastSyncTimestamp});
+}
+
+/// @nodoc
+class __$$LobbyStateImplCopyWithImpl<$Res>
+    extends _$LobbyStateCopyWithImpl<$Res, _$LobbyStateImpl>
+    implements _$$LobbyStateImplCopyWith<$Res> {
+  __$$LobbyStateImplCopyWithImpl(
+      _$LobbyStateImpl _value, $Res Function(_$LobbyStateImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of LobbyState
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? isInitialized = null,
+    Object? isInitialDataLoaded = null,
+    Object? displayName = null,
+    Object? profileImage = freezed,
+    Object? memberProfileImages = freezed,
+    Object? gameLobbySpots = null,
+    Object? gameSpotTimers = null,
+    Object? gameStatuses = null,
+    Object? globalStatuses = null,
+    Object? lobbyMemberUids = null,
+    Object? memberDisplayNames = null,
+    Object? userLobbyIds = null,
+    Object? selectedLobbyId = freezed,
+    Object? userLobbies = null,
+    Object? currentLobbyData = freezed,
+    Object? typing = null,
+    Object? tiltEnabled = null,
+    Object? hasNewLobbySpot = null,
+    Object? hasUnreadMessages = null,
+    Object? gameHistory = null,
+    Object? preferredModes = null,
+    Object? userBlocks = null,
+    Object? dailyBanVotes = null,
+    Object? bans = null,
+    Object? availableGames = null,
+    Object? gameLobbies = null,
+    Object? preferredPeacockGames = null,
+    Object? mutedGames = null,
+    Object? hiddenGames = null,
+    Object? peacockTimers = null,
+    Object? peacockQueue = null,
+    Object? scheduledTimes = null,
+    Object? hasNewAvailability = null,
+    Object? currentGame = freezed,
+    Object? spotTimerStates = null,
+    Object? peacockTimerStates = null,
+    Object? dailyRatings = null,
+    Object? allTimeRatings = null,
+    Object? analyticsMetrics = null,
+    Object? lastSyncTimestamp = null,
+  }) {
+    return _then(_$LobbyStateImpl(
+      isInitialized: null == isInitialized
+          ? _value.isInitialized
+          : isInitialized // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isInitialDataLoaded: null == isInitialDataLoaded
+          ? _value.isInitialDataLoaded
+          : isInitialDataLoaded // ignore: cast_nullable_to_non_nullable
+              as bool,
+      displayName: null == displayName
+          ? _value.displayName
+          : displayName // ignore: cast_nullable_to_non_nullable
+              as String,
+      profileImage: freezed == profileImage
+          ? _value.profileImage
+          : profileImage // ignore: cast_nullable_to_non_nullable
+              as String?,
+      memberProfileImages: freezed == memberProfileImages
+          ? _value._memberProfileImages
+          : memberProfileImages // ignore: cast_nullable_to_non_nullable
+              as Map<String, String?>?,
+      gameLobbySpots: null == gameLobbySpots
+          ? _value._gameLobbySpots
+          : gameLobbySpots // ignore: cast_nullable_to_non_nullable
+              as Map<String, List<String?>>,
+      gameSpotTimers: null == gameSpotTimers
+          ? _value._gameSpotTimers
+          : gameSpotTimers // ignore: cast_nullable_to_non_nullable
+              as Map<String, List<Map<String, dynamic>?>>,
+      gameStatuses: null == gameStatuses
+          ? _value._gameStatuses
+          : gameStatuses // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, String>>,
+      globalStatuses: null == globalStatuses
+          ? _value._globalStatuses
+          : globalStatuses // ignore: cast_nullable_to_non_nullable
+              as Map<String, String>,
+      lobbyMemberUids: null == lobbyMemberUids
+          ? _value._lobbyMemberUids
+          : lobbyMemberUids // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      memberDisplayNames: null == memberDisplayNames
+          ? _value._memberDisplayNames
+          : memberDisplayNames // ignore: cast_nullable_to_non_nullable
+              as Map<String, String>,
+      userLobbyIds: null == userLobbyIds
+          ? _value._userLobbyIds
+          : userLobbyIds // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      selectedLobbyId: freezed == selectedLobbyId
+          ? _value.selectedLobbyId
+          : selectedLobbyId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      userLobbies: null == userLobbies
+          ? _value._userLobbies
+          : userLobbies // ignore: cast_nullable_to_non_nullable
+              as Map<String, Lobby>,
+      currentLobbyData: freezed == currentLobbyData
+          ? _value._currentLobbyData
+          : currentLobbyData // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>?,
+      typing: null == typing
+          ? _value._typing
+          : typing // ignore: cast_nullable_to_non_nullable
+              as Map<String, bool>,
+      tiltEnabled: null == tiltEnabled
+          ? _value.tiltEnabled
+          : tiltEnabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasNewLobbySpot: null == hasNewLobbySpot
+          ? _value.hasNewLobbySpot
+          : hasNewLobbySpot // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasUnreadMessages: null == hasUnreadMessages
+          ? _value.hasUnreadMessages
+          : hasUnreadMessages // ignore: cast_nullable_to_non_nullable
+              as bool,
+      gameHistory: null == gameHistory
+          ? _value._gameHistory
+          : gameHistory // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      preferredModes: null == preferredModes
+          ? _value._preferredModes
+          : preferredModes // ignore: cast_nullable_to_non_nullable
+              as Map<String, String?>,
+      userBlocks: null == userBlocks
+          ? _value._userBlocks
+          : userBlocks // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, bool>>,
+      dailyBanVotes: null == dailyBanVotes
+          ? _value._dailyBanVotes
+          : dailyBanVotes // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
+      bans: null == bans
+          ? _value._bans
+          : bans // ignore: cast_nullable_to_non_nullable
+              as Map<String, List<Map<String, dynamic>>>,
+      availableGames: null == availableGames
+          ? _value._availableGames
+          : availableGames // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      gameLobbies: null == gameLobbies
+          ? _value._gameLobbies
+          : gameLobbies // ignore: cast_nullable_to_non_nullable
+              as Map<String, List<Map<String, dynamic>>>,
+      preferredPeacockGames: null == preferredPeacockGames
+          ? _value._preferredPeacockGames
+          : preferredPeacockGames // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
+      mutedGames: null == mutedGames
+          ? _value._mutedGames
+          : mutedGames // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
+      hiddenGames: null == hiddenGames
+          ? _value._hiddenGames
+          : hiddenGames // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
+      peacockTimers: null == peacockTimers
+          ? _value._peacockTimers
+          : peacockTimers // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, dynamic>?>,
+      peacockQueue: null == peacockQueue
+          ? _value._peacockQueue
+          : peacockQueue // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      scheduledTimes: null == scheduledTimes
+          ? _value._scheduledTimes
+          : scheduledTimes // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
+      hasNewAvailability: null == hasNewAvailability
+          ? _value.hasNewAvailability
+          : hasNewAvailability // ignore: cast_nullable_to_non_nullable
+              as bool,
+      currentGame: freezed == currentGame
+          ? _value._currentGame
+          : currentGame // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>?,
+      spotTimerStates: null == spotTimerStates
+          ? _value._spotTimerStates
+          : spotTimerStates // ignore: cast_nullable_to_non_nullable
+              as Map<String, Duration>,
+      peacockTimerStates: null == peacockTimerStates
+          ? _value._peacockTimerStates
+          : peacockTimerStates // ignore: cast_nullable_to_non_nullable
+              as Map<String, Duration>,
+      dailyRatings: null == dailyRatings
+          ? _value._dailyRatings
+          : dailyRatings // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
+      allTimeRatings: null == allTimeRatings
+          ? _value._allTimeRatings
+          : allTimeRatings // ignore: cast_nullable_to_non_nullable
+              as Map<String, Map<String, int>>,
+      analyticsMetrics: null == analyticsMetrics
+          ? _value._analyticsMetrics
+          : analyticsMetrics // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>,
+      lastSyncTimestamp: null == lastSyncTimestamp
+          ? _value.lastSyncTimestamp
+          : lastSyncTimestamp // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$LobbyStateImpl implements _LobbyState {
+  const _$LobbyStateImpl(
+      {required this.isInitialized,
+      required this.isInitialDataLoaded,
+      required this.displayName,
+      this.profileImage,
+      final Map<String, String?>? memberProfileImages,
+      required final Map<String, List<String?>> gameLobbySpots,
+      required final Map<String, List<Map<String, dynamic>?>> gameSpotTimers,
+      required final Map<String, Map<String, String>> gameStatuses,
+      required final Map<String, String> globalStatuses,
+      required final List<String> lobbyMemberUids,
+      required final Map<String, String> memberDisplayNames,
+      required final List<String> userLobbyIds,
+      this.selectedLobbyId,
+      required final Map<String, Lobby> userLobbies,
+      final Map<String, dynamic>? currentLobbyData,
+      required final Map<String, bool> typing,
+      required this.tiltEnabled,
+      required this.hasNewLobbySpot,
+      required this.hasUnreadMessages,
+      required final List<Map<String, dynamic>> gameHistory,
+      required final Map<String, String?> preferredModes,
+      required final Map<String, Map<String, bool>> userBlocks,
+      required final Map<String, Map<String, int>> dailyBanVotes,
+      required final Map<String, List<Map<String, dynamic>>> bans,
+      required final List<Map<String, dynamic>> availableGames,
+      required final Map<String, List<Map<String, dynamic>>> gameLobbies,
+      required final Set<String> preferredPeacockGames,
+      required final Set<String> mutedGames,
+      required final Set<String> hiddenGames,
+      required final Map<String, Map<String, dynamic>?> peacockTimers,
+      required final List<String> peacockQueue,
+      required final List<Map<String, dynamic>> scheduledTimes,
+      required this.hasNewAvailability,
+      final Map<String, dynamic>? currentGame,
+      required final Map<String, Duration> spotTimerStates,
+      required final Map<String, Duration> peacockTimerStates,
+      required final Map<String, Map<String, int>> dailyRatings,
+      required final Map<String, Map<String, int>> allTimeRatings,
+      required final Map<String, dynamic> analyticsMetrics,
+      required this.lastSyncTimestamp})
+      : _memberProfileImages = memberProfileImages,
+        _gameLobbySpots = gameLobbySpots,
+        _gameSpotTimers = gameSpotTimers,
+        _gameStatuses = gameStatuses,
+        _globalStatuses = globalStatuses,
+        _lobbyMemberUids = lobbyMemberUids,
+        _memberDisplayNames = memberDisplayNames,
+        _userLobbyIds = userLobbyIds,
+        _userLobbies = userLobbies,
+        _currentLobbyData = currentLobbyData,
+        _typing = typing,
+        _gameHistory = gameHistory,
+        _preferredModes = preferredModes,
+        _userBlocks = userBlocks,
+        _dailyBanVotes = dailyBanVotes,
+        _bans = bans,
+        _availableGames = availableGames,
+        _gameLobbies = gameLobbies,
+        _preferredPeacockGames = preferredPeacockGames,
+        _mutedGames = mutedGames,
+        _hiddenGames = hiddenGames,
+        _peacockTimers = peacockTimers,
+        _peacockQueue = peacockQueue,
+        _scheduledTimes = scheduledTimes,
+        _currentGame = currentGame,
+        _spotTimerStates = spotTimerStates,
+        _peacockTimerStates = peacockTimerStates,
+        _dailyRatings = dailyRatings,
+        _allTimeRatings = allTimeRatings,
+        _analyticsMetrics = analyticsMetrics;
+
+  factory _$LobbyStateImpl.fromJson(Map<String, dynamic> json) =>
+      _$$LobbyStateImplFromJson(json);
+
+  @override
+  final bool isInitialized;
+  @override
+  final bool isInitialDataLoaded;
+  @override
+  final String displayName;
+  @override
+  final String? profileImage;
+  final Map<String, String?>? _memberProfileImages;
+  @override
+  Map<String, String?>? get memberProfileImages {
+    final value = _memberProfileImages;
+    if (value == null) return null;
+    if (_memberProfileImages is EqualUnmodifiableMapView)
+      return _memberProfileImages;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(value);
+  }
+
+// Game-specific data
+  final Map<String, List<String?>> _gameLobbySpots;
+// Game-specific data
+  @override
+  Map<String, List<String?>> get gameLobbySpots {
+    if (_gameLobbySpots is EqualUnmodifiableMapView) return _gameLobbySpots;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_gameLobbySpots);
+  }
+
+  final Map<String, List<Map<String, dynamic>?>> _gameSpotTimers;
+  @override
+  Map<String, List<Map<String, dynamic>?>> get gameSpotTimers {
+    if (_gameSpotTimers is EqualUnmodifiableMapView) return _gameSpotTimers;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_gameSpotTimers);
+  }
+
+  final Map<String, Map<String, String>> _gameStatuses;
+  @override
+  Map<String, Map<String, String>> get gameStatuses {
+    if (_gameStatuses is EqualUnmodifiableMapView) return _gameStatuses;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_gameStatuses);
+  }
+
+  final Map<String, String> _globalStatuses;
+  @override
+  Map<String, String> get globalStatuses {
+    if (_globalStatuses is EqualUnmodifiableMapView) return _globalStatuses;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_globalStatuses);
+  }
+
+// Lobby data
+  final List<String> _lobbyMemberUids;
+// Lobby data
+  @override
+  List<String> get lobbyMemberUids {
+    if (_lobbyMemberUids is EqualUnmodifiableListView) return _lobbyMemberUids;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_lobbyMemberUids);
+  }
+
+  final Map<String, String> _memberDisplayNames;
+  @override
+  Map<String, String> get memberDisplayNames {
+    if (_memberDisplayNames is EqualUnmodifiableMapView)
+      return _memberDisplayNames;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_memberDisplayNames);
+  }
+
+  final List<String> _userLobbyIds;
+  @override
+  List<String> get userLobbyIds {
+    if (_userLobbyIds is EqualUnmodifiableListView) return _userLobbyIds;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_userLobbyIds);
+  }
+
+  @override
+  final String? selectedLobbyId;
+  final Map<String, Lobby> _userLobbies;
+  @override
+  Map<String, Lobby> get userLobbies {
+    if (_userLobbies is EqualUnmodifiableMapView) return _userLobbies;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_userLobbies);
+  }
+
+  final Map<String, dynamic>? _currentLobbyData;
+  @override
+  Map<String, dynamic>? get currentLobbyData {
+    final value = _currentLobbyData;
+    if (value == null) return null;
+    if (_currentLobbyData is EqualUnmodifiableMapView) return _currentLobbyData;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(value);
+  }
+
+// UI state
+  final Map<String, bool> _typing;
+// UI state
+  @override
+  Map<String, bool> get typing {
+    if (_typing is EqualUnmodifiableMapView) return _typing;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_typing);
+  }
+
+  @override
+  final bool tiltEnabled;
+  @override
+  final bool hasNewLobbySpot;
+  @override
+  final bool hasUnreadMessages;
+// Game data
+  final List<Map<String, dynamic>> _gameHistory;
+// Game data
+  @override
+  List<Map<String, dynamic>> get gameHistory {
+    if (_gameHistory is EqualUnmodifiableListView) return _gameHistory;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_gameHistory);
+  }
+
+  final Map<String, String?> _preferredModes;
+  @override
+  Map<String, String?> get preferredModes {
+    if (_preferredModes is EqualUnmodifiableMapView) return _preferredModes;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_preferredModes);
+  }
+
+  final Map<String, Map<String, bool>> _userBlocks;
+  @override
+  Map<String, Map<String, bool>> get userBlocks {
+    if (_userBlocks is EqualUnmodifiableMapView) return _userBlocks;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_userBlocks);
+  }
+
+  final Map<String, Map<String, int>> _dailyBanVotes;
+  @override
+  Map<String, Map<String, int>> get dailyBanVotes {
+    if (_dailyBanVotes is EqualUnmodifiableMapView) return _dailyBanVotes;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_dailyBanVotes);
+  }
+
+  final Map<String, List<Map<String, dynamic>>> _bans;
+  @override
+  Map<String, List<Map<String, dynamic>>> get bans {
+    if (_bans is EqualUnmodifiableMapView) return _bans;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_bans);
+  }
+
+  final List<Map<String, dynamic>> _availableGames;
+  @override
+  List<Map<String, dynamic>> get availableGames {
+    if (_availableGames is EqualUnmodifiableListView) return _availableGames;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_availableGames);
+  }
+
+  final Map<String, List<Map<String, dynamic>>> _gameLobbies;
+  @override
+  Map<String, List<Map<String, dynamic>>> get gameLobbies {
+    if (_gameLobbies is EqualUnmodifiableMapView) return _gameLobbies;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_gameLobbies);
+  }
+
+  final Set<String> _preferredPeacockGames;
+  @override
+  Set<String> get preferredPeacockGames {
+    if (_preferredPeacockGames is EqualUnmodifiableSetView)
+      return _preferredPeacockGames;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableSetView(_preferredPeacockGames);
+  }
+
+  final Set<String> _mutedGames;
+  @override
+  Set<String> get mutedGames {
+    if (_mutedGames is EqualUnmodifiableSetView) return _mutedGames;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableSetView(_mutedGames);
+  }
+
+  final Set<String> _hiddenGames;
+  @override
+  Set<String> get hiddenGames {
+    if (_hiddenGames is EqualUnmodifiableSetView) return _hiddenGames;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableSetView(_hiddenGames);
+  }
+
+  final Map<String, Map<String, dynamic>?> _peacockTimers;
+  @override
+  Map<String, Map<String, dynamic>?> get peacockTimers {
+    if (_peacockTimers is EqualUnmodifiableMapView) return _peacockTimers;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_peacockTimers);
+  }
+
+  final List<String> _peacockQueue;
+  @override
+  List<String> get peacockQueue {
+    if (_peacockQueue is EqualUnmodifiableListView) return _peacockQueue;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_peacockQueue);
+  }
+
+  final List<Map<String, dynamic>> _scheduledTimes;
+  @override
+  List<Map<String, dynamic>> get scheduledTimes {
+    if (_scheduledTimes is EqualUnmodifiableListView) return _scheduledTimes;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_scheduledTimes);
+  }
+
+  @override
+  final bool hasNewAvailability;
+// Current game
+  final Map<String, dynamic>? _currentGame;
+// Current game
+  @override
+  Map<String, dynamic>? get currentGame {
+    final value = _currentGame;
+    if (value == null) return null;
+    if (_currentGame is EqualUnmodifiableMapView) return _currentGame;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(value);
+  }
+
+// Timer states
+  final Map<String, Duration> _spotTimerStates;
+// Timer states
+  @override
+  Map<String, Duration> get spotTimerStates {
+    if (_spotTimerStates is EqualUnmodifiableMapView) return _spotTimerStates;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_spotTimerStates);
+  }
+
+  final Map<String, Duration> _peacockTimerStates;
+  @override
+  Map<String, Duration> get peacockTimerStates {
+    if (_peacockTimerStates is EqualUnmodifiableMapView)
+      return _peacockTimerStates;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_peacockTimerStates);
+  }
+
+// Ratings
+  final Map<String, Map<String, int>> _dailyRatings;
+// Ratings
+  @override
+  Map<String, Map<String, int>> get dailyRatings {
+    if (_dailyRatings is EqualUnmodifiableMapView) return _dailyRatings;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_dailyRatings);
+  }
+
+  final Map<String, Map<String, int>> _allTimeRatings;
+  @override
+  Map<String, Map<String, int>> get allTimeRatings {
+    if (_allTimeRatings is EqualUnmodifiableMapView) return _allTimeRatings;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_allTimeRatings);
+  }
+
+  final Map<String, dynamic> _analyticsMetrics;
+  @override
+  Map<String, dynamic> get analyticsMetrics {
+    if (_analyticsMetrics is EqualUnmodifiableMapView) return _analyticsMetrics;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_analyticsMetrics);
+  }
+
+// Analytics and tracking
+  @override
+  final DateTime lastSyncTimestamp;
+
+  @override
+  String toString() {
+    return 'LobbyState(isInitialized: $isInitialized, isInitialDataLoaded: $isInitialDataLoaded, displayName: $displayName, profileImage: $profileImage, memberProfileImages: $memberProfileImages, gameLobbySpots: $gameLobbySpots, gameSpotTimers: $gameSpotTimers, gameStatuses: $gameStatuses, globalStatuses: $globalStatuses, lobbyMemberUids: $lobbyMemberUids, memberDisplayNames: $memberDisplayNames, userLobbyIds: $userLobbyIds, selectedLobbyId: $selectedLobbyId, userLobbies: $userLobbies, currentLobbyData: $currentLobbyData, typing: $typing, tiltEnabled: $tiltEnabled, hasNewLobbySpot: $hasNewLobbySpot, hasUnreadMessages: $hasUnreadMessages, gameHistory: $gameHistory, preferredModes: $preferredModes, userBlocks: $userBlocks, dailyBanVotes: $dailyBanVotes, bans: $bans, availableGames: $availableGames, gameLobbies: $gameLobbies, preferredPeacockGames: $preferredPeacockGames, mutedGames: $mutedGames, hiddenGames: $hiddenGames, peacockTimers: $peacockTimers, peacockQueue: $peacockQueue, scheduledTimes: $scheduledTimes, hasNewAvailability: $hasNewAvailability, currentGame: $currentGame, spotTimerStates: $spotTimerStates, peacockTimerStates: $peacockTimerStates, dailyRatings: $dailyRatings, allTimeRatings: $allTimeRatings, analyticsMetrics: $analyticsMetrics, lastSyncTimestamp: $lastSyncTimestamp)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$LobbyStateImpl &&
+            (identical(other.isInitialized, isInitialized) ||
+                other.isInitialized == isInitialized) &&
+            (identical(other.isInitialDataLoaded, isInitialDataLoaded) ||
+                other.isInitialDataLoaded == isInitialDataLoaded) &&
+            (identical(other.displayName, displayName) ||
+                other.displayName == displayName) &&
+            (identical(other.profileImage, profileImage) ||
+                other.profileImage == profileImage) &&
+            const DeepCollectionEquality()
+                .equals(other._memberProfileImages, _memberProfileImages) &&
+            const DeepCollectionEquality()
+                .equals(other._gameLobbySpots, _gameLobbySpots) &&
+            const DeepCollectionEquality()
+                .equals(other._gameSpotTimers, _gameSpotTimers) &&
+            const DeepCollectionEquality()
+                .equals(other._gameStatuses, _gameStatuses) &&
+            const DeepCollectionEquality()
+                .equals(other._globalStatuses, _globalStatuses) &&
+            const DeepCollectionEquality()
+                .equals(other._lobbyMemberUids, _lobbyMemberUids) &&
+            const DeepCollectionEquality()
+                .equals(other._memberDisplayNames, _memberDisplayNames) &&
+            const DeepCollectionEquality()
+                .equals(other._userLobbyIds, _userLobbyIds) &&
+            (identical(other.selectedLobbyId, selectedLobbyId) ||
+                other.selectedLobbyId == selectedLobbyId) &&
+            const DeepCollectionEquality()
+                .equals(other._userLobbies, _userLobbies) &&
+            const DeepCollectionEquality()
+                .equals(other._currentLobbyData, _currentLobbyData) &&
+            const DeepCollectionEquality().equals(other._typing, _typing) &&
+            (identical(other.tiltEnabled, tiltEnabled) ||
+                other.tiltEnabled == tiltEnabled) &&
+            (identical(other.hasNewLobbySpot, hasNewLobbySpot) ||
+                other.hasNewLobbySpot == hasNewLobbySpot) &&
+            (identical(other.hasUnreadMessages, hasUnreadMessages) ||
+                other.hasUnreadMessages == hasUnreadMessages) &&
+            const DeepCollectionEquality()
+                .equals(other._gameHistory, _gameHistory) &&
+            const DeepCollectionEquality()
+                .equals(other._preferredModes, _preferredModes) &&
+            const DeepCollectionEquality()
+                .equals(other._userBlocks, _userBlocks) &&
+            const DeepCollectionEquality()
+                .equals(other._dailyBanVotes, _dailyBanVotes) &&
+            const DeepCollectionEquality().equals(other._bans, _bans) &&
+            const DeepCollectionEquality()
+                .equals(other._availableGames, _availableGames) &&
+            const DeepCollectionEquality()
+                .equals(other._gameLobbies, _gameLobbies) &&
+            const DeepCollectionEquality()
+                .equals(other._preferredPeacockGames, _preferredPeacockGames) &&
+            const DeepCollectionEquality()
+                .equals(other._mutedGames, _mutedGames) &&
+            const DeepCollectionEquality()
+                .equals(other._hiddenGames, _hiddenGames) &&
+            const DeepCollectionEquality()
+                .equals(other._peacockTimers, _peacockTimers) &&
+            const DeepCollectionEquality()
+                .equals(other._peacockQueue, _peacockQueue) &&
+            const DeepCollectionEquality()
+                .equals(other._scheduledTimes, _scheduledTimes) &&
+            (identical(other.hasNewAvailability, hasNewAvailability) ||
+                other.hasNewAvailability == hasNewAvailability) &&
+            const DeepCollectionEquality()
+                .equals(other._currentGame, _currentGame) &&
+            const DeepCollectionEquality()
+                .equals(other._spotTimerStates, _spotTimerStates) &&
+            const DeepCollectionEquality()
+                .equals(other._peacockTimerStates, _peacockTimerStates) &&
+            const DeepCollectionEquality()
+                .equals(other._dailyRatings, _dailyRatings) &&
+            const DeepCollectionEquality()
+                .equals(other._allTimeRatings, _allTimeRatings) &&
+            const DeepCollectionEquality()
+                .equals(other._analyticsMetrics, _analyticsMetrics) &&
+            (identical(other.lastSyncTimestamp, lastSyncTimestamp) ||
+                other.lastSyncTimestamp == lastSyncTimestamp));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        isInitialized,
+        isInitialDataLoaded,
+        displayName,
+        profileImage,
+        const DeepCollectionEquality().hash(_memberProfileImages),
+        const DeepCollectionEquality().hash(_gameLobbySpots),
+        const DeepCollectionEquality().hash(_gameSpotTimers),
+        const DeepCollectionEquality().hash(_gameStatuses),
+        const DeepCollectionEquality().hash(_globalStatuses),
+        const DeepCollectionEquality().hash(_lobbyMemberUids),
+        const DeepCollectionEquality().hash(_memberDisplayNames),
+        const DeepCollectionEquality().hash(_userLobbyIds),
+        selectedLobbyId,
+        const DeepCollectionEquality().hash(_userLobbies),
+        const DeepCollectionEquality().hash(_currentLobbyData),
+        const DeepCollectionEquality().hash(_typing),
+        tiltEnabled,
+        hasNewLobbySpot,
+        hasUnreadMessages,
+        const DeepCollectionEquality().hash(_gameHistory),
+        const DeepCollectionEquality().hash(_preferredModes),
+        const DeepCollectionEquality().hash(_userBlocks),
+        const DeepCollectionEquality().hash(_dailyBanVotes),
+        const DeepCollectionEquality().hash(_bans),
+        const DeepCollectionEquality().hash(_availableGames),
+        const DeepCollectionEquality().hash(_gameLobbies),
+        const DeepCollectionEquality().hash(_preferredPeacockGames),
+        const DeepCollectionEquality().hash(_mutedGames),
+        const DeepCollectionEquality().hash(_hiddenGames),
+        const DeepCollectionEquality().hash(_peacockTimers),
+        const DeepCollectionEquality().hash(_peacockQueue),
+        const DeepCollectionEquality().hash(_scheduledTimes),
+        hasNewAvailability,
+        const DeepCollectionEquality().hash(_currentGame),
+        const DeepCollectionEquality().hash(_spotTimerStates),
+        const DeepCollectionEquality().hash(_peacockTimerStates),
+        const DeepCollectionEquality().hash(_dailyRatings),
+        const DeepCollectionEquality().hash(_allTimeRatings),
+        const DeepCollectionEquality().hash(_analyticsMetrics),
+        lastSyncTimestamp
+      ]);
+
+  /// Create a copy of LobbyState
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$LobbyStateImplCopyWith<_$LobbyStateImpl> get copyWith =>
+      __$$LobbyStateImplCopyWithImpl<_$LobbyStateImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$LobbyStateImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _LobbyState implements LobbyState {
+  const factory _LobbyState(
+      {required final bool isInitialized,
+      required final bool isInitialDataLoaded,
+      required final String displayName,
+      final String? profileImage,
+      final Map<String, String?>? memberProfileImages,
+      required final Map<String, List<String?>> gameLobbySpots,
+      required final Map<String, List<Map<String, dynamic>?>> gameSpotTimers,
+      required final Map<String, Map<String, String>> gameStatuses,
+      required final Map<String, String> globalStatuses,
+      required final List<String> lobbyMemberUids,
+      required final Map<String, String> memberDisplayNames,
+      required final List<String> userLobbyIds,
+      final String? selectedLobbyId,
+      required final Map<String, Lobby> userLobbies,
+      final Map<String, dynamic>? currentLobbyData,
+      required final Map<String, bool> typing,
+      required final bool tiltEnabled,
+      required final bool hasNewLobbySpot,
+      required final bool hasUnreadMessages,
+      required final List<Map<String, dynamic>> gameHistory,
+      required final Map<String, String?> preferredModes,
+      required final Map<String, Map<String, bool>> userBlocks,
+      required final Map<String, Map<String, int>> dailyBanVotes,
+      required final Map<String, List<Map<String, dynamic>>> bans,
+      required final List<Map<String, dynamic>> availableGames,
+      required final Map<String, List<Map<String, dynamic>>> gameLobbies,
+      required final Set<String> preferredPeacockGames,
+      required final Set<String> mutedGames,
+      required final Set<String> hiddenGames,
+      required final Map<String, Map<String, dynamic>?> peacockTimers,
+      required final List<String> peacockQueue,
+      required final List<Map<String, dynamic>> scheduledTimes,
+      required final bool hasNewAvailability,
+      final Map<String, dynamic>? currentGame,
+      required final Map<String, Duration> spotTimerStates,
+      required final Map<String, Duration> peacockTimerStates,
+      required final Map<String, Map<String, int>> dailyRatings,
+      required final Map<String, Map<String, int>> allTimeRatings,
+      required final Map<String, dynamic> analyticsMetrics,
+      required final DateTime lastSyncTimestamp}) = _$LobbyStateImpl;
+
+  factory _LobbyState.fromJson(Map<String, dynamic> json) =
+      _$LobbyStateImpl.fromJson;
+
+  @override
+  bool get isInitialized;
+  @override
+  bool get isInitialDataLoaded;
+  @override
+  String get displayName;
+  @override
+  String? get profileImage;
+  @override
+  Map<String, String?>? get memberProfileImages; // Game-specific data
+  @override
+  Map<String, List<String?>> get gameLobbySpots;
+  @override
+  Map<String, List<Map<String, dynamic>?>> get gameSpotTimers;
+  @override
+  Map<String, Map<String, String>> get gameStatuses;
+  @override
+  Map<String, String> get globalStatuses; // Lobby data
+  @override
+  List<String> get lobbyMemberUids;
+  @override
+  Map<String, String> get memberDisplayNames;
+  @override
+  List<String> get userLobbyIds;
+  @override
+  String? get selectedLobbyId;
+  @override
+  Map<String, Lobby> get userLobbies;
+  @override
+  Map<String, dynamic>? get currentLobbyData; // UI state
+  @override
+  Map<String, bool> get typing;
+  @override
+  bool get tiltEnabled;
+  @override
+  bool get hasNewLobbySpot;
+  @override
+  bool get hasUnreadMessages; // Game data
+  @override
+  List<Map<String, dynamic>> get gameHistory;
+  @override
+  Map<String, String?> get preferredModes;
+  @override
+  Map<String, Map<String, bool>> get userBlocks;
+  @override
+  Map<String, Map<String, int>> get dailyBanVotes;
+  @override
+  Map<String, List<Map<String, dynamic>>> get bans;
+  @override
+  List<Map<String, dynamic>> get availableGames;
+  @override
+  Map<String, List<Map<String, dynamic>>> get gameLobbies;
+  @override
+  Set<String> get preferredPeacockGames;
+  @override
+  Set<String> get mutedGames;
+  @override
+  Set<String> get hiddenGames;
+  @override
+  Map<String, Map<String, dynamic>?> get peacockTimers;
+  @override
+  List<String> get peacockQueue;
+  @override
+  List<Map<String, dynamic>> get scheduledTimes;
+  @override
+  bool get hasNewAvailability; // Current game
+  @override
+  Map<String, dynamic>? get currentGame; // Timer states
+  @override
+  Map<String, Duration> get spotTimerStates;
+  @override
+  Map<String, Duration> get peacockTimerStates; // Ratings
+  @override
+  Map<String, Map<String, int>> get dailyRatings;
+  @override
+  Map<String, Map<String, int>> get allTimeRatings;
+  @override
+  Map<String, dynamic> get analyticsMetrics; // Analytics and tracking
+  @override
+  DateTime get lastSyncTimestamp;
+
+  /// Create a copy of LobbyState
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$LobbyStateImplCopyWith<_$LobbyStateImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}

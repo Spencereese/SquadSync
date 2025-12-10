@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../presentation/notifiers/squad_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../services/timer_service.dart';
 
 class SpotTimerDisplay extends ConsumerStatefulWidget {
@@ -21,7 +21,7 @@ class _SpotTimerDisplayState extends ConsumerState<SpotTimerDisplay> {
 
   @override
   Widget build(BuildContext context) {
-    final squadAsync = ref.watch(squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     if (!squadAsync.hasValue) {
       return const SizedBox(
@@ -35,7 +35,7 @@ class _SpotTimerDisplayState extends ConsumerState<SpotTimerDisplay> {
     final gameName = squadState.currentGame?['name'] ?? '';
 
     final timerService = ref.watch(timerServiceProvider.notifier);
-    final spots = squadState.gameSquadSpots[gameName] ?? [];
+    final spots = squadState.gameLobbySpots[gameName] ?? [];
     final uid = spots.length > widget.index && spots[widget.index] != null
         ? spots[widget.index]!
         : '';

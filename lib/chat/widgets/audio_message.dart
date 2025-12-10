@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:squad_sync/app_theme.dart';
 
 class AudioMessage extends StatefulWidget {
   final String url;
@@ -50,6 +49,8 @@ class _AudioMessageState extends State<AudioMessage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     if (_isError) {
       return Container(
         constraints: const BoxConstraints(maxWidth: 220),
@@ -88,7 +89,7 @@ class _AudioMessageState extends State<AudioMessage> {
                 _isPlaying
                     ? Icons.pause_circle_filled
                     : Icons.play_circle_filled,
-                color: AppTheme.accentColor,
+                color: theme.colorScheme.primary,
                 size: 28,
               ),
               onPressed: _togglePlay,
@@ -110,7 +111,7 @@ class _AudioMessageState extends State<AudioMessage> {
                       : 1,
                   onChanged: (value) =>
                       _player.seek(Duration(seconds: value.toInt())),
-                  activeColor: AppTheme.accentColor,
+                  activeColor: theme.colorScheme.primary,
                   inactiveColor: Colors.grey[600],
                 ),
                 Semantics(

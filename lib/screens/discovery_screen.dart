@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/supabase_service.dart';
+import '../services/auth_service_supabase.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
 import '../presentation/notifiers/current_squad_notifier.dart';
-import '../domain/entities/squad.dart';
+import '../domain/entities/lobby.dart';
 import '../domain/entities/message.dart';
-import '../app_theme.dart';
+import '../core/app_theme.dart';
 import '../chat/chat_screen.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
@@ -32,7 +32,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     final publicSquadsAsync = ref.watch(publicSquadsProvider);
 
     return Theme(
-      data: AppTheme.darkTheme,
+      data: AppTheme.dark(),
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(
@@ -324,7 +324,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     );
   }
 
-  List<String> _getAvailableSpots(Squad squad) {
+  List<String> _getAvailableSpots(Lobby lobby) {
     final availableSpots = <String>[];
     final maxSpots = squad.maxSpots;
     for (int i = 1; i <= maxSpots; i++) {
@@ -337,11 +337,11 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
   Future<void> _onRefresh() async {
     // Bump current squad if it's public
-    final currentSquadAsync = ref.read(currentSquadProvider);
+    final currentSquadAsync = ref.read(currentLobbyProvider);
     currentSquadAsync.maybeWhen(
       data: (squad) {
         if (squad?.isPublic == true) {
-          ref.read(currentSquadProvider.notifier).bumpSquad().catchError((_) {
+          ref.read(currentLobbyProvider.notifier).bumpSquad().catchError((_) {
             // Ignore bump errors during refresh
           });
         }
@@ -355,32 +355,41 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
   void _joinSquad(BuildContext context, Squad squad, WidgetRef ref) async {
     try {
-      final uid = FirebaseAuth.instance.currentUser!.uid;
-      final batch = FirebaseFirestore.instance.batch();
-      final squadDocRef =
-          FirebaseFirestore.instance.collection('squads').doc(squad.id);
+      final uid = AuthServiceSupabase().currentUser!.id;
 
-      // Add user to memberUids
-      batch.update(squadDocRef, {
-        'memberUids': FieldValue.arrayUnion([uid]),
-        'lastActivity': FieldValue.serverTimestamp(),
-      });
+      // Get current squad data
+      final squadData = await SupabaseService.client
+          .from('squads')
+          .select('member_uids, spots')
+          .eq('id', squad.id)
+          .maybeSingle();
+
+      if (squadData == null) return;
+
+      // Add user to member_uids
+      final memberUids = List<String>.from(squadData['member_uids'] ?? []);
+      if (!memberUids.contains(uid)) {
+        memberUids.add(uid);
+      }
 
       // Auto-claim first available spot
+      final spots = List<String?>.from(squadData['spots'] ?? []);
       final maxSpots = squad.maxSpots;
-      for (int i = 1; i <= maxSpots; i++) {
-        if (squad.spots[i - 1] == null) {
-          batch.update(squadDocRef, {
-            'spots': FieldValue.arrayUnion([uid]),
-          });
+      for (int i = 0; i < maxSpots && i < spots.length; i++) {
+        if (spots[i] == null) {
+          spots[i] = uid;
           break; // Only claim the first available spot
         }
       }
 
-      await batch.commit();
+      await SupabaseService.client.from('squads').update({
+        'member_uids': memberUids,
+        'spots': spots,
+        'last_activity': DateTime.now().toIso8601String(),
+      }).eq('id', squad.id);
 
       // Set as current squad
-      ref.read(currentSquadIdProvider.notifier).state = squad.id;
+      ref.read(currentLobbyIdProvider.notifier).state = squad.id;
 
       // Show success toast
       if (mounted) {

@@ -1,5 +1,5 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../services/supabase_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class SquadSummary {
@@ -56,12 +56,12 @@ class SquadSummary {
 }
 
 final userSquadsProvider = StreamProvider<List<SquadSummary>>((ref) {
-  final uid = FirebaseAuth.instance.currentUser!.uid;
+  final uid = AuthServiceSupabase().currentUser!.id;
 
-  /// Safely parse timestamp from Firestore data (handles both Timestamp and String)
+  /// Safely parse timestamp from data (handles both DateTime and String)
   DateTime _parseTimestamp(dynamic value) {
     if (value == null) return DateTime.now();
-    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
     if (value is String) {
       try {
         return DateTime.parse(value);
@@ -72,27 +72,33 @@ final userSquadsProvider = StreamProvider<List<SquadSummary>>((ref) {
     return DateTime.now();
   }
 
-  return FirebaseFirestore.instance
-      .collection('squads')
-      .where('memberUids', arrayContains: uid)
-      .orderBy('lastActivity', descending: true)
-      .snapshots()
-      .map((snapshot) => snapshot.docs.map((doc) {
-            final data = doc.data();
-            final spots = data['spots'] as List<dynamic>? ?? [];
-            final activeSpots = spots.where((spot) => spot != null).length;
-            final squadMaxSpots = data['maxSpots'] as int?;
+  return SupabaseService.client
+      .from('squads')
+      .stream(primaryKey: ['id'])
+      .order('last_activity', ascending: false)
+      .map((data) {
+        // Filter in-memory for member_uids containment
+        final filteredData = data.where((row) {
+          final memberUids = List<String>.from(row['member_uids'] ?? []);
+          return memberUids.contains(uid);
+        }).toList();
 
-            return SquadSummary(
-              id: doc.id,
-              name: data['name'] as String,
-              primaryGameName: data['gameName'] as String?,
-              memberCount: (data['memberUids'] as List<dynamic>).length,
-              lastMessage: data['lastMessage'] as String? ?? '',
-              lastActivity: _parseTimestamp(data['lastActivity']),
-              unreadCount: null, // TODO: calculate unread count
-              maxSpots: squadMaxSpots,
-              activeSpots: activeSpots,
-            );
-          }).toList());
+        return filteredData.map((row) {
+          final spots = row['spots'] as List<dynamic>? ?? [];
+          final activeSpots = spots.where((spot) => spot != null).length;
+          final squadMaxSpots = row['max_spots'] as int?;
+
+          return SquadSummary(
+            id: row['id'] as String,
+            name: row['name'] as String,
+            primaryGameName: row['game_name'] as String?,
+            memberCount: (row['member_uids'] as List<dynamic>).length,
+            lastMessage: row['last_message'] as String? ?? '',
+            lastActivity: _parseTimestamp(row['last_activity']),
+            unreadCount: null, // TODO: calculate unread count
+            maxSpots: squadMaxSpots,
+            activeSpots: activeSpots,
+          );
+        }).toList();
+      });
 });

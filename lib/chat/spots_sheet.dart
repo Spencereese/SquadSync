@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
 import '../presentation/notifiers/user_notifier.dart';
-import '../presentation/notifiers/squad_notifier.dart' as sn;
+import '../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../widgets/rating_widgets.dart';
-import 'chat_service.dart';
+import '../services/message_service.dart';
 import '../domain/entities/message.dart';
 
 class SpotsSheet extends ConsumerStatefulWidget {
@@ -86,10 +86,10 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                ref.watch(sn.squadNotifierProvider).maybeWhen(
+                ref.watch(ln.lobbyNotifierProvider).maybeWhen(
                       data: (squadState) {
                         final spots =
-                            squadState.gameSquadSpots[widget.gameName] ?? [];
+                            squadState.gameLobbySpots[widget.gameName] ?? [];
                         final filledSpots =
                             spots.where((uid) => uid != null).length;
                         final names = spots
@@ -125,10 +125,10 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
 
           // Spots list
           Expanded(
-            child: ref.watch(sn.squadNotifierProvider).maybeWhen(
+            child: ref.watch(ln.lobbyNotifierProvider).maybeWhen(
                   data: (squadState) {
                     final spots =
-                        squadState.gameSquadSpots[widget.gameName] ?? [];
+                        squadState.gameLobbySpots[widget.gameName] ?? [];
 
                     return ListView.builder(
                       padding: const EdgeInsets.all(16),
@@ -147,7 +147,7 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
                                 'Unknown'
                             : null;
                         final isCurrentUser = occupantUid ==
-                            FirebaseAuth.instance.currentUser?.uid;
+                            AuthServiceSupabase().currentUser?.id;
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -253,15 +253,15 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
   }
 
   Future<void> _claimSpot() async {
-    final squadState = ref.read(sn.squadNotifierProvider).requireValue;
-    final user = FirebaseAuth.instance.currentUser;
+    final squadState = ref.read(ln.lobbyNotifierProvider).requireValue;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
     setState(() => _isClaiming = true);
 
     try {
       // Check current spots
-      final spots = squadState.gameSquadSpots[widget.gameName] ?? [];
+      final spots = squadState.gameLobbySpots[widget.gameName] ?? [];
       final filledCount = spots.where((spot) => spot != null).length;
 
       if (filledCount >= widget.maxSpots) {
@@ -286,18 +286,18 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
 
       // Call the spot (set calling status)
       await ref
-          .read(sn.squadNotifierProvider.notifier)
+          .read(ln.lobbyNotifierProvider.notifier)
           .claimSpot(widget.gameName, availableIndex);
 
       // Send message to chat thread
-      final chatService = ChatService();
+      final chatService = MessageService();
       final displayName = ref
-          .read(sn.squadNotifierProvider.notifier)
-          .getDisplayNameForUid(user.uid);
+          .read(ln.lobbyNotifierProvider.notifier)
+          .getDisplayNameForUid(user.id);
 
       await chatService.sendMessage(
         ref,
-        senderUid: user.uid,
+        senderUid: user.id,
         text:
             '$displayName claimed spot ${availableIndex + 1} in ${widget.gameName}!',
         chatGroupId: widget.chatGroupId,
@@ -343,23 +343,23 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
   }
 
   Future<void> _lockSpot(int index) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
     try {
       await ref
-          .read(sn.squadNotifierProvider.notifier)
+          .read(ln.lobbyNotifierProvider.notifier)
           .lockSpot(widget.gameName, index);
 
       // Send message to chat thread
-      final chatService = ChatService();
+      final chatService = MessageService();
       final displayName = ref
-          .read(sn.squadNotifierProvider.notifier)
-          .getDisplayNameForUid(user.uid);
+          .read(ln.lobbyNotifierProvider.notifier)
+          .getDisplayNameForUid(user.id);
 
       await chatService.sendMessage(
         ref,
-        senderUid: user.uid,
+        senderUid: user.id,
         text: '$displayName locked spot ${index + 1} in ${widget.gameName}!',
         chatGroupId: widget.chatGroupId,
         chatType: widget.chatType,

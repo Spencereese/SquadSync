@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/message_data.dart';
-import '../../presentation/notifiers/squad_notifier.dart';
+import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 
 /// Message sender name component
 class MessageSender extends ConsumerWidget {
@@ -20,7 +20,7 @@ class MessageSender extends ConsumerWidget {
     }
 
     // Get the display name from the cache instead of using the cached sender name
-    final displayName = ref.watch(squadNotifierProvider.select(
+    final displayName = ref.watch(ln.lobbyNotifierProvider.select(
       (state) => state.maybeWhen(
         data: (data) =>
             data.memberDisplayNames[message.senderUid] ?? message.sender,

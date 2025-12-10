@@ -1,47 +1,61 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../../domain/entities/squad.dart';
+import '../../services/supabase_service.dart';
+import '../../domain/entities/lobby.dart';
 
 final discoveryFilterProvider =
     StateProvider<String>((ref) => 'hot'); // 'hot' | 'new' | gameId | 'friends'
 
-final publicSquadsProvider = StreamProvider<List<Squad>>((ref) async* {
+final publicSquadsProvider = StreamProvider<List<Lobby>>((ref) async* {
   final filter = ref.watch(discoveryFilterProvider);
 
-  Query query = FirebaseFirestore.instance
-      .collection('squads')
-      .where('isPublic', isEqualTo: true);
+  // Build Supabase query based on filter
+  late final Stream<List<Map<String, dynamic>>> query;
 
   if (filter == 'hot') {
-    query = query.orderBy('bumpTimestamp', descending: true);
+    query = SupabaseService.client
+        .from('squads')
+        .stream(primaryKey: ['id'])
+        .eq('is_public', true)
+        .order('bump_timestamp', ascending: false)
+        .limit(50);
   } else if (filter == 'new') {
-    query = query.orderBy('createdAt', descending: true);
+    query = SupabaseService.client
+        .from('squads')
+        .stream(primaryKey: ['id'])
+        .eq('is_public', true)
+        .order('created_at', ascending: false)
+        .limit(50);
   } else {
-    // game-specific
-    query = query
-        .where('primaryGameId', isEqualTo: filter)
-        .orderBy('bumpTimestamp', descending: true);
+    // game-specific filter - filter in-memory after receiving stream
+    final baseQuery = SupabaseService.client
+        .from('squads')
+        .stream(primaryKey: ['id'])
+        .eq('is_public', true)
+        .order('bump_timestamp', ascending: false)
+        .limit(100); // Get more to filter
+
+    query = baseQuery.map((data) => data
+        .where((squad) => squad['primary_game_id'] == filter)
+        .take(50)
+        .toList());
   }
 
-  await for (final snapshot in query.limit(50).snapshots()) {
-    final squads = snapshot.docs
-        .map((doc) => Squad.fromJson(doc.data() as Map<String, dynamic>))
-        .toList();
+  await for (final data in query) {
+    final squads = data.map((json) => Squad.fromJson(json)).toList();
     yield squads;
   }
 });
 
 final popularGamesProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final snapshot = await FirebaseFirestore.instance
-      .collection('squads')
-      .where('isPublic', isEqualTo: true)
-      .get();
+  final data = await SupabaseService.client
+      .from('squads')
+      .select('primary_game_id')
+      .eq('is_public', true);
 
   final Map<String, int> counts = {};
-  for (var doc in snapshot.docs) {
-    final gameId = doc['primaryGameId'] as String?;
+  for (var row in data) {
+    final gameId = row['primary_game_id'] as String?;
     if (gameId != null) counts[gameId] = (counts[gameId] ?? 0) + 1;
   }
 

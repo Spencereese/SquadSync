@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
 class MemberWidgets {
   static Widget buildPlayerStatusRow(
       BuildContext context, WidgetRef ref, String player) {
-    return ref.read(sn.squadNotifierProvider).when(
+    return ref.read(ln.lobbyNotifierProvider).when(
           data: (squadState) {
             final gameName = squadState.currentGame?['name'] ?? '';
             final globalStatuses = squadState.globalStatuses;
             final gameStatuses = squadState.gameStatuses[gameName] ?? {};
             final status =
                 gameStatuses[player] ?? globalStatuses[player] ?? 'Offline';
-            final squadSpots = squadState.gameSquadSpots[gameName] ?? [];
+            final squadSpots = squadState.gameLobbySpots[gameName] ?? [];
             final timerIndex = squadSpots.indexOf(player);
             final timerDisplay = timerIndex != -1
                 ? 'Timer'
@@ -88,7 +88,7 @@ class MemberWidgets {
 
   static Widget _buildMemberSubtitle(
       BuildContext context, WidgetRef ref, String player) {
-    return ref.read(sn.squadNotifierProvider).when(
+    return ref.read(ln.lobbyNotifierProvider).when(
           data: (squadState) {
             final gameName = squadState.currentGame?['name'] ?? '';
             final globalStatuses = squadState.globalStatuses;
@@ -127,7 +127,7 @@ class MemberWidgets {
           showComplaintDialog,
       {String? circle,
       List<String>? friends}) {
-    return ref.read(sn.squadNotifierProvider).when(
+    return ref.read(ln.lobbyNotifierProvider).when(
           data: (squadState) {
             final streak = 0; // Placeholder, need to implement currentStreaks
             final banCount = 0; // Placeholder, need to implement getBanCount
@@ -289,7 +289,7 @@ class MemberWidgets {
 
   static void _sendFriendRequest(
       BuildContext context, WidgetRef ref, String player) async {
-    final asyncState = ref.read(sn.squadNotifierProvider);
+    final asyncState = ref.read(ln.lobbyNotifierProvider);
     if (asyncState is AsyncData) {
       final squadState = asyncState.value!;
       final memberDisplayNames = squadState.memberDisplayNames;

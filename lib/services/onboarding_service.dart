@@ -1,8 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'auth_service_supabase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -81,21 +79,21 @@ class OnboardingService extends _$OnboardingService {
 
   Future<void> completeOnboarding() async {
     if (isStepValid(0) && isStepValid(1)) {
-      // Save user profile data to Firebase Auth, Firestore, and local storage
-      final user = FirebaseAuth.instance.currentUser;
+      // Save user profile data to Supabase Auth
+      final authService = AuthServiceSupabase();
+      final user = authService.currentUser;
       if (user != null && state.value != null) {
         final displayName = state.value!.displayName!;
         final avatarUrl = state.value!.avatarUrl!;
 
-        // Update Firebase Auth profile
-        await user.updateProfile(displayName: displayName, photoURL: avatarUrl);
-
-        // Update Firestore user document
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'displayName': displayName,
-          'profileImage': avatarUrl,
-          'pinnedGames': state.value!.pinnedGames,
-        }, SetOptions(merge: true));
+        // Update Supabase Auth profile
+        await authService.updateProfile(
+          displayName: displayName,
+          additionalData: {
+            'photo_url': avatarUrl,
+            'pinned_games': state.value!.pinnedGames,
+          },
+        );
 
         // Update local storage
         await _prefs.setString('displayName', displayName);
@@ -109,14 +107,9 @@ class OnboardingService extends _$OnboardingService {
 
   Future<String?> uploadAvatar(File imageFile) async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return null;
-
-      final storageRef =
-          FirebaseStorage.instance.ref().child('avatars/${user.uid}');
-      await storageRef.putFile(imageFile);
-      final downloadUrl = await storageRef.getDownloadURL();
-      return downloadUrl;
+      // TODO: Implement Supabase Storage upload
+      // For now, return null - avatar upload needs Supabase Storage integration
+      return null;
     } catch (e) {
       // Handle error
       return null;

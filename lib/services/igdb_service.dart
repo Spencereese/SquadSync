@@ -5,7 +5,6 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../chat/sqlite_helper.dart';
-import 'firestore_service.dart';
 
 /// Error types for IGDB API calls
 enum IgdbErrorType {
@@ -30,13 +29,13 @@ class IgdbService {
   ];
 
   final SQLiteHelper _sqliteHelper;
-  final FirestoreService _firestoreService;
   SharedPreferences? _storage;
   String? _accessToken;
   DateTime? _tokenExpiry;
   final http.Client _httpClient;
 
-  IgdbService(this._sqliteHelper, this._firestoreService, [SharedPreferences? storage, http.Client? httpClient])
+  IgdbService(this._sqliteHelper,
+      [SharedPreferences? storage, http.Client? httpClient])
       : _httpClient = httpClient ?? http.Client() {
     _storage = storage;
   }
@@ -69,7 +68,8 @@ class IgdbService {
     // Check if we have a valid cached token
     if (_accessToken != null &&
         _tokenExpiry != null &&
-        DateTime.now().isBefore(_tokenExpiry!.subtract(const Duration(minutes: 5)))) {
+        DateTime.now()
+            .isBefore(_tokenExpiry!.subtract(const Duration(minutes: 5)))) {
       return _accessToken!;
     }
 
@@ -79,7 +79,8 @@ class IgdbService {
 
     if (storedToken != null && storedExpiry != null) {
       final expiry = DateTime.parse(storedExpiry);
-      if (DateTime.now().isBefore(expiry.subtract(const Duration(minutes: 5)))) {
+      if (DateTime.now()
+          .isBefore(expiry.subtract(const Duration(minutes: 5)))) {
         _accessToken = storedToken;
         _tokenExpiry = expiry;
         return _accessToken!;
@@ -96,7 +97,8 @@ class IgdbService {
     final clientSecret = await getClientSecret();
 
     if (clientId == null || clientSecret == null) {
-      throw Exception('IGDB credentials not found. Please set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET.');
+      throw Exception(
+          'IGDB credentials not found. Please set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET.');
     }
 
     IgdbErrorType? lastError;
@@ -120,12 +122,14 @@ class IgdbService {
 
           // Cache token
           await _storage!.setString(_tokenKey, _accessToken!);
-          await _storage!.setString(_tokenExpiryKey, _tokenExpiry!.toIso8601String());
+          await _storage!
+              .setString(_tokenExpiryKey, _tokenExpiry!.toIso8601String());
 
           return _accessToken!;
         } else {
           lastError = _classifyError(response.statusCode, response.body);
-          if (lastError == IgdbErrorType.auth || lastError == IgdbErrorType.server) {
+          if (lastError == IgdbErrorType.auth ||
+              lastError == IgdbErrorType.server) {
             // Don't retry for auth or server errors
             break;
           }
@@ -141,7 +145,8 @@ class IgdbService {
       }
     }
 
-    throw Exception('Failed to fetch IGDB token after $_maxRetries attempts. Last error: $lastError');
+    throw Exception(
+        'Failed to fetch IGDB token after $_maxRetries attempts. Last error: $lastError');
   }
 
   /// Classify HTTP error responses
@@ -165,7 +170,8 @@ class IgdbService {
   }
 
   /// Fetch games with caching, retries, and offline fallback
-  Future<List<Map<String, dynamic>>> fetchGames(String query, {int limit = 10}) async {
+  Future<List<Map<String, dynamic>>> fetchGames(String query,
+      {int limit = 10}) async {
     // Try cache first
     final cachedGames = await _sqliteHelper.getCachedGames(query);
     if (cachedGames.isNotEmpty) {
@@ -193,7 +199,8 @@ class IgdbService {
   }
 
   /// Fetch games from IGDB API with exponential backoff
-  Future<List<Map<String, dynamic>>> _fetchGamesFromApi(String query, {int limit = 10}) async {
+  Future<List<Map<String, dynamic>>> _fetchGamesFromApi(String query,
+      {int limit = 10}) async {
     final token = await getAccessToken();
     final clientId = await getClientId();
     if (clientId == null) throw Exception('IGDB client ID not found.');
@@ -233,7 +240,8 @@ class IgdbService {
           continue;
         } else {
           lastError = _classifyError(response.statusCode, response.body);
-          if (lastError == IgdbErrorType.auth || lastError == IgdbErrorType.server) {
+          if (lastError == IgdbErrorType.auth ||
+              lastError == IgdbErrorType.server) {
             break;
           }
         }
@@ -248,7 +256,8 @@ class IgdbService {
       }
     }
 
-    throw Exception('Failed to fetch games after $_maxRetries attempts. Last error: $lastError');
+    throw Exception(
+        'Failed to fetch games after $_maxRetries attempts. Last error: $lastError');
   }
 
   /// Refresh token on 401 errors
@@ -286,9 +295,11 @@ class IgdbService {
   }
 
   /// Get offline games from assets
-  Future<List<Map<String, dynamic>>> _getOfflineGames(String query, int limit) async {
+  Future<List<Map<String, dynamic>>> _getOfflineGames(
+      String query, int limit) async {
     try {
-      final jsonString = await rootBundle.loadString('assets/popular_games.json');
+      final jsonString =
+          await rootBundle.loadString('assets/popular_games.json');
       final data = json.decode(jsonString) as List<dynamic>;
 
       final games = data.map((game) => _processGameData(game)).toList();
@@ -309,18 +320,14 @@ class IgdbService {
     }
   }
 
-  /// Sync games to Firestore for cross-device availability
-  Future<void> _syncGamesToFirestore(String query, List<Map<String, dynamic>> games) async {
+  /// Sync games for analytics (optional)
+  Future<void> _syncGamesToFirestore(
+      String query, List<Map<String, dynamic>> games) async {
     try {
-      final gameData = {
-        'query': query,
-        'games': games,
-        'lastUpdated': DateTime.now().toIso8601String(),
-      };
-
-      await _firestoreService.saveGameSearch(query, gameData);
+      // TODO: Optionally save to Supabase for analytics
+      debugPrint('Game search: $query (${games.length} results)');
     } catch (e) {
-      debugPrint('Failed to sync games to Firestore: $e');
+      debugPrint('Sync error: $e');
       // Don't throw - caching should work even if sync fails
     }
   }
@@ -341,7 +348,8 @@ class IgdbService {
   Future<void> storeCredentials() async {
     await _ensureStorage();
     await _storage!.setString(_clientIdKey, 'yq7hidzec8wv7khe9niom9m6znzrxf');
-    await _storage!.setString(_clientSecretKey, '4ycghqkzf2ylgxbilypdxu4ga937u5');
+    await _storage!
+        .setString(_clientSecretKey, '4ycghqkzf2ylgxbilypdxu4ga937u5');
     debugPrint('IGDB credentials stored');
   }
 }

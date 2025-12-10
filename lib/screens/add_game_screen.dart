@@ -190,9 +190,11 @@ class _AddGameScreenState extends ConsumerState<AddGameScreen> {
       return hasName;
     }).toList();
 
-    // Debug log to track game count
-    debugPrint(
-        'AddGameScreen: Building content with ${allGames.length} games (${games.length} total before filtering)');
+    // Reduced logging - only log once on significant change
+    if (allGames.isEmpty || games.isEmpty) {
+      debugPrint(
+          'AddGameScreen: Building content with ${allGames.length} games (${games.length} total before filtering)');
+    }
 
     // Separate popular games (first 10) from others
     final popularGames = allGames.take(10).toList();

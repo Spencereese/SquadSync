@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
 import '../link_preview.dart';
 import '../widgets/video_message.dart';
 import '../widgets/audio_message.dart';
@@ -9,7 +9,7 @@ import '../../models/poll.dart';
 import '../../services/poll_service.dart';
 import '../models/message_data.dart';
 import '../../domain/entities/message.dart' hide Poll;
-import '../chat_service.dart';
+import '../../services/message_service.dart';
 import '../message_bubble.dart';
 
 /// Message content renderer - handles text, media, and special formatting
@@ -18,7 +18,7 @@ class MessageContent extends StatelessWidget {
   final bool isFromCurrentUser;
   final VoidCallback? onMediaTap;
   final String? chatGroupId;
-  final ChatService? chatService;
+  final MessageService? chatService;
   final ChatType? chatType;
   final String? squadId;
 
@@ -56,8 +56,8 @@ class MessageContent extends StatelessWidget {
       children: [
         if (message.replyTo?.isNotEmpty == true)
           FutureBuilder<MessageData?>(
-            future: chatService?.getMessageById(message.replyTo!,
-                chatGroupId: chatGroupId, chatType: chatType, squadId: squadId),
+            future:
+                Future.value(null), // TODO: Migrate getMessageById to Supabase
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return Container(
@@ -111,8 +111,8 @@ class MessageContent extends StatelessWidget {
               }
 
               // Determine if the replied message is from the current user
-              final currentUserUid =
-                  FirebaseAuth.instance.currentUser?.uid ?? '';
+              final authService = AuthServiceSupabase();
+              final currentUserUid = authService.currentUserId ?? '';
               final isRepliedMessageFromMe =
                   repliedMessage.senderUid == currentUserUid;
 

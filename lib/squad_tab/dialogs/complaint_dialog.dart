@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../services/auth_service_supabase.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
 /// Dialog for filing complaints against players
 class ComplaintDialog extends ConsumerStatefulWidget {
@@ -72,16 +72,16 @@ class _ComplaintDialogState extends ConsumerState<ComplaintDialog> {
   void _submitComplaint() async {
     if (reason != null && category != null) {
       try {
-        final currentUser = FirebaseAuth.instance.currentUser;
+        final currentUser = AuthServiceSupabase().currentUser;
         if (currentUser == null) return;
 
-        final squadMembers = ref.read(sn.squadNotifierProvider).maybeWhen(
-              data: (data) => data.squadMemberUids,
+        final squadMembers = ref.read(ln.lobbyNotifierProvider).maybeWhen(
+              data: (data) => data.lobbyMemberUids,
               orElse: () => <String>[],
             );
 
-        await ref.read(sn.squadNotifierProvider.notifier).submitComplaint(
-              submittedBy: currentUser.uid,
+        await ref.read(ln.lobbyNotifierProvider.notifier).submitComplaint(
+              submittedBy: currentUser.id,
               targetMember: widget.player,
               reason: reason!,
               category: category!,

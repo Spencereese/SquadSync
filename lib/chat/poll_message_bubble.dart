@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
@@ -176,10 +176,10 @@ class _PollBubbleContentState extends ConsumerState<_PollBubbleContent>
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final isCreator = user?.uid == widget.poll.creatorUid;
-    final hasVoted = user != null && widget.poll.hasUserVoted(user.uid);
-    final userVotes = user != null ? widget.poll.getUserVotes(user.uid) : [];
+    final user = AuthServiceSupabase().currentUser;
+    final isCreator = user?.id == widget.poll.creatorUid;
+    final hasVoted = user != null && widget.poll.hasUserVoted(user.id);
+    final userVotes = user != null ? widget.poll.getUserVotes(user.id) : [];
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),

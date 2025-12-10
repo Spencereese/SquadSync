@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:confetti/confetti.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
-import '../domain/entities/squad.dart';
+import '../domain/entities/lobby.dart';
 import '../widgets/glass_squad_card.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
 
@@ -339,7 +339,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     );
   }
 
-  Widget _buildCardStack(List<Squad> squads, ThemeData theme) {
+  Widget _buildCardStack(List<Lobby> squads, ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Stack(
@@ -361,7 +361,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     );
   }
 
-  Widget _buildBackgroundCard(Squad squad, int depth, ThemeData theme) {
+  Widget _buildBackgroundCard(Lobby lobby, int depth, ThemeData theme) {
     // Parallax effect: cards further back are smaller and offset upward
     final scale = 1.0 - (depth * 0.05);
     final offsetY = depth * 12.0;
@@ -391,7 +391,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
         .slideY(begin: 0.1, duration: 400.ms, delay: (depth * 50).ms);
   }
 
-  Widget _buildTopCard(Squad squad, ThemeData theme) {
+  Widget _buildTopCard(Lobby lobby, ThemeData theme) {
     final neonColor = theme.colorScheme.primary;
 
     return GestureDetector(
@@ -752,7 +752,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     );
   }
 
-  void _navigateToDetail(Squad squad) {
+  void _navigateToDetail(Lobby lobby) {
     // TODO: Navigate to squad detail screen with hero animation
     Navigator.of(context).pushNamed(
       '/squad-detail',

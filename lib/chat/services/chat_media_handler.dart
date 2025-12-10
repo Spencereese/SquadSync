@@ -1,14 +1,14 @@
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../services/supabase_service.dart';
+import '../../services/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart' as record_package;
-import '../../domain/entities/squad_state.dart';
+import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/message.dart';
-import '../chat_service.dart';
 import '../chat_state_notifier.dart';
 import '../../services/media_service.dart';
 
@@ -18,8 +18,8 @@ class ChatMediaHandler {
   final ImagePicker _picker = ImagePicker();
   final record_package.AudioRecorder _audioRecorder =
       record_package.AudioRecorder();
-  final ChatService _chatService = ChatService();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final MessageService _chatService = MessageService();
+  final AuthServiceSupabase _authService = AuthServiceSupabase();
 
   String? _audioPath;
 
@@ -41,11 +41,11 @@ class ChatMediaHandler {
       ref.read(chatStateProvider.notifier).setUploading(true);
       File file = File(media.path);
       bool isVideo = media.mimeType?.startsWith('video/') ?? false;
-      final user = _auth.currentUser;
+      final user = _authService.currentUser;
       if (user == null) return;
 
       String fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${user.uid}.${isVideo ? 'mp4' : 'jpg'}';
+          '${DateTime.now().millisecondsSinceEpoch}_${user.id}.${isVideo ? 'mp4' : 'jpg'}';
 
       // Use new media service with signed URLs
       final mediaService = MediaService();
@@ -56,7 +56,7 @@ class ChatMediaHandler {
 
       await _chatService.sendMessage(
         ref,
-        senderUid: user.uid,
+        senderUid: user.id,
         text: '',
         photos: !isVideo
             ? [
@@ -146,17 +146,17 @@ class ChatMediaHandler {
 
     try {
       File file = File(_audioPath!);
-      final user = _auth.currentUser;
+      final user = _authService.currentUser;
       if (user == null) return;
 
       String fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${user.uid}.m4a';
+          '${DateTime.now().millisecondsSinceEpoch}_${user.id}.m4a';
       String downloadUrl = await _chatService.uploadAudio(file, fileName);
       final timestampMs = DateTime.now().millisecondsSinceEpoch;
 
       await _chatService.sendMessage(
         ref,
-        senderUid: user.uid,
+        senderUid: user.id,
         text: '',
         audio: [
           {'uri': downloadUrl, 'creation_timestamp': timestampMs}
@@ -191,7 +191,7 @@ class ChatMediaHandler {
   Future<void> changeChatImage(
     BuildContext context, {
     required String? chatGroupId,
-    SquadState? squadState,
+    LobbyState? squadState,
     required Function(String) onImageUpdated,
   }) async {
     final imagePath = await pickChatImage();
@@ -204,21 +204,36 @@ class ChatMediaHandler {
       String downloadUrl =
           await _chatService.uploadMedia(file, fileName, false);
 
-      // User group chat image
-      final currentUser = FirebaseAuth.instance.currentUser;
+      // Update user group chat image in Supabase
+      final currentUser = AuthServiceSupabase().currentUser;
       if (currentUser == null || chatGroupId == null) return;
 
-      final imageRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.uid)
-          .collection('chat_groups')
-          .doc(chatGroupId);
+      // Fetch current user_groups array
+      final response = await SupabaseService.client
+          .from('users')
+          .select('user_groups')
+          .eq('id', currentUser.id)
+          .maybeSingle();
 
-      // Update the image URL in Firestore
-      await imageRef.set({
-        'imageUrl': downloadUrl,
-        'timestamp': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      if (response != null) {
+        final userGroups =
+            List<Map<String, dynamic>>.from(response['user_groups'] ?? []);
+
+        // Find and update the specific chat group
+        final groupIndex = userGroups
+            .indexWhere((group) => group['chat_group_id'] == chatGroupId);
+
+        if (groupIndex != -1) {
+          userGroups[groupIndex]['image_url'] = downloadUrl;
+          userGroups[groupIndex]['timestamp'] =
+              DateTime.now().toIso8601String();
+
+          // Update the entire user_groups array
+          await SupabaseService.client.from('users').update({
+            'user_groups': userGroups,
+          }).eq('id', currentUser.id);
+        }
+      }
 
       // Update local state and provide feedback
       onImageUpdated(downloadUrl);

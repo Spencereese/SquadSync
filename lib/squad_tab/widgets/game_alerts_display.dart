@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../presentation/notifiers/squad_notifier.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 
 /// GameAlertsDisplay component - shows active game alerts from squad members
 class GameAlertsDisplay extends ConsumerStatefulWidget {
@@ -33,16 +33,16 @@ class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
   }
 
   Future<void> _loadAlerts() async {
-    final squadStateAsync = ref.watch(squadNotifierProvider);
-    final squadNotifier = ref.read(squadNotifierProvider.notifier);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
+    final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
-    final selectedSquadId = squadStateAsync.maybeWhen(
-      data: (squadState) => squadState.selectedSquadId,
+    final selectedLobbyId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedLobbyId,
       orElse: () => null,
     );
 
-    if (selectedSquadId != null) {
-      final alerts = await squadNotifier.getSquadAlerts(selectedSquadId);
+    if (selectedLobbyId != null) {
+      final alerts = await squadNotifier.getSquadAlerts(selectedLobbyId);
       if (mounted) {
         setState(() {
           _alerts = alerts;
@@ -57,14 +57,14 @@ class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
 
-    final user = FirebaseAuth.instance.currentUser;
-    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final user = AuthServiceSupabase().currentUser;
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return squadStateAsync.maybeWhen(
       data: (squadState) {
         // Filter out current user's alerts (they see their own in the controls)
         final otherAlerts =
-            _alerts.where((alert) => alert['userUid'] != user?.uid).toList();
+            _alerts.where((alert) => alert['userUid'] != user?.id).toList();
 
         if (otherAlerts.isEmpty) {
           return const SliverToBoxAdapter(child: SizedBox.shrink());
@@ -112,7 +112,7 @@ class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
 
   Widget _buildAlertItem(BuildContext context, Map<String, dynamic> alert) {
     final displayName = ref
-        .read(squadNotifierProvider.notifier)
+        .read(ln.lobbyNotifierProvider.notifier)
         .getDisplayNameForUid(alert['userUid']);
 
     String alertText;

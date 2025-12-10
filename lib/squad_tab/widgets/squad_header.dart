@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'game_selector.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../dialogs/settings_dialog.dart';
 
 /// SquadHeader component - handles navigation and game info display
@@ -39,11 +39,68 @@ class SquadHeader extends ConsumerWidget {
                 ),
               ),
 
-              // Centered game selector - clickable to show game selection
+              // Centered game name - clickable to show game selection
               Expanded(
                 child: Center(
-                  child: GameSelector(
-                    onGameTap: () => _showGameSelectionDialog(context, ref),
+                  child: GestureDetector(
+                    onTap: () => _showGameSelectionDialog(context, ref),
+                    child: Consumer(
+                      builder: (context, ref, child) {
+                        final squadStateAsync =
+                            ref.watch(ln.lobbyNotifierProvider);
+                        final gameName = squadStateAsync.maybeWhen(
+                          data: (state) =>
+                              state.currentGame?['name'] ?? 'Select Game',
+                          orElse: () => 'Select Game',
+                        );
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.cyanAccent.withOpacity(0.3),
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.cyanAccent.withOpacity(0.2),
+                                blurRadius: 15,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.gamepad,
+                                color: Colors.cyanAccent,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                gameName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.cyanAccent,
+                                size: 24,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),

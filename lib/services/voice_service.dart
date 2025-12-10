@@ -5,14 +5,12 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'auth_service_supabase.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:retry/retry.dart';
-import '../managers/stubs.dart';
 import 'app_flow_manager.dart';
-import 'firestore_service.dart';
+import 'supabase_voice_room_service.dart';
 import '../chat/sqlite_helper.dart';
 
 /// Voice service error types
@@ -236,9 +234,7 @@ class AgoraConfigEnhanced {
 class VoiceService {
   RtcEngine? _engine;
   final RtcEngine Function() _engineFactory;
-  final NotificationManager? _notificationManager;
   final AppFlowManager? _appFlowManager; // ignore: unused_field
-  final FirestoreService? _firestoreService; // ignore: unused_field
   final SQLiteHelper? _sqliteHelper; // ignore: unused_field
 
   // Network monitoring
@@ -254,14 +250,10 @@ class VoiceService {
 
   VoiceService({
     RtcEngine Function()? engineFactory,
-    NotificationManager? notificationManager,
     AppFlowManager? appFlowManager,
-    FirestoreService? firestoreService,
     SQLiteHelper? sqliteHelper,
   })  : _engineFactory = engineFactory ?? createAgoraRtcEngine,
-        _notificationManager = notificationManager,
         _appFlowManager = appFlowManager,
-        _firestoreService = firestoreService,
         _sqliteHelper = sqliteHelper {
     _initializeConnectivityMonitoring();
   }
@@ -327,11 +319,7 @@ class VoiceService {
     }
 
     if (status.isPermanentlyDenied) {
-      _notificationManager?.showNotification(
-        title: 'Microphone Permission Required',
-        body:
-            'Please enable microphone access in app settings to use voice chat.',
-      );
+      // TODO: Show notification - Microphone Permission Required
       await openAppSettings();
       return VoiceServiceResult.failure(
         VoiceServiceError.permissionDenied,
@@ -442,10 +430,11 @@ class VoiceService {
       final token = await generateToken(channelName, uid);
 
       if (token != null) {
+        final authService = AuthServiceSupabase();
         await _engine!.joinChannelWithUserAccount(
           token: token,
           channelId: channelName,
-          userAccount: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+          userAccount: authService.currentFirebaseUid ?? 'anonymous',
           options: const ChannelMediaOptions(
             autoSubscribeAudio: true,
             publishMicrophoneTrack: true,
@@ -500,8 +489,9 @@ class VoiceService {
     }
 
     try {
+      final authService = AuthServiceSupabase();
       await _engine!.muteLocalAudioStream(muted);
-      onMuteChanged?.call(FirebaseAuth.instance.currentUser?.uid ?? '0', muted);
+      onMuteChanged?.call(authService.currentFirebaseUid ?? '0', muted);
       return VoiceServiceResult.success(null);
     } catch (e) {
       final error = _classifyError(e);
@@ -541,29 +531,25 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
   final String roomId;
   final String roomName;
   final VoiceService _voiceService;
-  final NotificationManager? _notificationManager; // ignore: unused_field
   final AppFlowManager? _appFlowManager; // ignore: unused_field
-  final FirestoreService? _firestoreService; // ignore: unused_field
   final SQLiteHelper? _sqliteHelper; // ignore: unused_field
 
-  // Room sync
-  StreamSubscription? _roomSyncSubscription;
+  // Supabase voice room service for real-time state
+  late final SupabaseVoiceRoomService _supabaseVoiceRoom;
+  StreamSubscription? _participantsSubscription;
   DateTime? _joinTime;
 
   VoiceRoomNotifier({
     required this.roomId,
     required this.roomName,
     required VoiceService voiceService,
-    NotificationManager? notificationManager,
     AppFlowManager? appFlowManager,
-    FirestoreService? firestoreService,
     SQLiteHelper? sqliteHelper,
   })  : _voiceService = voiceService,
-        _notificationManager = notificationManager,
         _appFlowManager = appFlowManager,
-        _firestoreService = firestoreService,
         _sqliteHelper = sqliteHelper,
         super(const AsyncValue.loading()) {
+    _supabaseVoiceRoom = SupabaseVoiceRoomService(roomId: roomId);
     _initializeVoiceService();
   }
 
@@ -638,9 +624,10 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
   }
 
   void _handleVoiceError(VoiceServiceError error, String message) {
+    final authService = AuthServiceSupabase();
     state = AsyncValue.error(message, StackTrace.current);
     _appFlowManager?.trackError(
-      userId: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+      userId: authService.currentFirebaseUid ?? 'anonymous',
       errorType: error.toString(),
       errorMessage: message,
     );
@@ -671,29 +658,42 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
   }
 
   Future<void> _initializeRoomSync() async {
-    // Set up Firestore room sync
-    _roomSyncSubscription =
-        _firestoreService?.getVoiceRoomStream(roomId).listen(
-      (roomData) {
-        if (roomData != null) {
-          _handleRoomSyncUpdate(roomData);
-        }
-      },
-      onError: (error) {
-        debugPrint('Room sync error: $error');
-      },
-    );
+    // Set up Supabase Realtime room sync
+    try {
+      _participantsSubscription =
+          _supabaseVoiceRoom.streamParticipants().listen(
+        (participants) {
+          _handleParticipantsUpdate(participants);
+        },
+        onError: (error) {
+          debugPrint('Room sync error: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('Failed to initialize room sync: $e');
+    }
   }
 
-  void _handleRoomSyncUpdate(Map<String, dynamic> roomData) {
+  void _handleParticipantsUpdate(
+      List<VoiceRoomParticipant> supabaseParticipants) {
     state.whenData((currentState) {
-      final participants = (roomData['participants'] as List<dynamic>?)
-              ?.map((p) => VoiceParticipant.fromMap(p as Map<String, dynamic>))
-              .toList() ??
-          [];
+      // Convert Supabase participants to VoiceParticipant
+      final participants = supabaseParticipants
+          .map((sp) => VoiceParticipant(
+                uid: sp.uid,
+                displayName: sp.displayName,
+                isMuted: sp.isMuted,
+                isSpeaking: sp.isSpeaking,
+                isHost: sp.isHost,
+                isOnline: sp.isOnline,
+                lastSeen: sp.lastSeen,
+              ))
+          .toList();
 
+      final authService = AuthServiceSupabase();
+      final currentUserId = authService.currentFirebaseUid;
       final isHost =
-          roomData['hostUid'] == FirebaseAuth.instance.currentUser?.uid;
+          supabaseParticipants.any((p) => p.uid == currentUserId && p.isHost);
 
       state = AsyncValue.data(currentState.copyWith(
         participants: participants,
@@ -706,12 +706,23 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
     state = const AsyncValue.loading();
 
     try {
+      // Join Supabase Realtime room first
+      final authService = AuthServiceSupabase();
+      final currentUser = authService.currentUser;
+      if (currentUser != null) {
+        final displayName = currentUser.userMetadata?['display_name'] ?? 'User';
+        await _supabaseVoiceRoom.joinRoom(
+          displayName: displayName,
+          isHost: false, // Will be updated by room logic
+        );
+      }
+
       final result = await _voiceService.joinChannel(roomId);
       if (result.isSuccess) {
         _joinTime = DateTime.now();
 
         // Track analytics
-        final userId = FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
+        final userId = authService.currentFirebaseUid ?? 'anonymous';
         await _appFlowManager?.trackVoiceSession(
           userId: userId,
           roomId: roomId,
@@ -735,8 +746,9 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
       if (result.isSuccess) {
         // Track session duration
         if (_joinTime != null) {
+          final authService = AuthServiceSupabase();
           final duration = DateTime.now().difference(_joinTime!);
-          final userId = FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
+          final userId = authService.currentFirebaseUid ?? 'anonymous';
           await _appFlowManager?.trackVoiceSession(
             userId: userId,
             roomId: roomId,
@@ -744,6 +756,9 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
           );
           _joinTime = null;
         }
+
+        // Leave Supabase room
+        await _supabaseVoiceRoom.leaveRoom();
 
         // Cache room state
         await _cacheRoomState();
@@ -781,12 +796,16 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
 
   Future<void> toggleMute() async {
     try {
-      final result =
-          await _voiceService.toggleMute(state.value?.isMuted ?? false);
+      final currentMuted = state.value?.isMuted ?? false;
+      final result = await _voiceService.toggleMute(currentMuted);
       if (result.isSuccess) {
+        final newMuted = !currentMuted;
+
+        // Update Supabase state
+        await _supabaseVoiceRoom.updateMuteState(newMuted);
+
         state.whenData((currentState) {
-          state = AsyncValue.data(
-              currentState.copyWith(isMuted: !currentState.isMuted));
+          state = AsyncValue.data(currentState.copyWith(isMuted: newMuted));
         });
       } else {
         state = AsyncValue.error(result.errorMessage!, StackTrace.current);
@@ -849,39 +868,19 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
   }
 
   Future<void> _syncRoomState() async {
-    if (_firestoreService == null) return;
-
-    state.whenData((currentState) async {
-      final roomData = {
-        'roomId': currentState.roomId,
-        'roomName': currentState.roomName,
-        'participants':
-            currentState.participants.map((p) => p.toMap()).toList(),
-        'hostUid': FirebaseAuth.instance.currentUser?.uid,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      await _firestoreService.updateVoiceRoom(currentState.roomId, roomData);
-    });
+    // Room state now managed via Supabase Realtime
+    // No explicit sync needed - happens via presence tracking
   }
 
   Future<void> _syncParticipantState(String uid) async {
-    if (_firestoreService == null) return;
-
-    state.whenData((currentState) async {
-      final participant = currentState.participants.firstWhere(
-        (p) => p.uid == uid,
-        orElse: () => VoiceParticipant(uid: uid, displayName: 'Unknown'),
-      );
-
-      await _firestoreService.updateVoiceParticipant(
-          currentState.roomId, uid, participant.toMap());
-    });
+    // Participant state now managed via Supabase Realtime
+    // No explicit sync needed - happens via presence tracking
   }
 
   @override
   void dispose() {
-    _roomSyncSubscription?.cancel();
+    _participantsSubscription?.cancel();
+    _supabaseVoiceRoom.dispose();
     _voiceService.dispose();
     super.dispose();
   }

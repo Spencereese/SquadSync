@@ -1,40 +1,44 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'auth_service_supabase.dart';
+import 'supabase_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/notifiers/current_squad_notifier.dart';
 
 /// Service for automatically selecting a squad on app launch
 Future<String?> autoSelectSquad(WidgetRef ref) async {
-  final user = FirebaseAuth.instance.currentUser;
+  final user = AuthServiceSupabase().currentUser;
   if (user == null) return null;
 
-  final userDoc =
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+  final userData = await SupabaseService.client
+      .from('users')
+      .select('squad_ids, pinned_squad_id')
+      .eq('uid', user.id)
+      .maybeSingle();
 
-  final data = userDoc.data() ?? {};
+  final data = userData ?? {};
   final squadIds =
-      (data['squadIds'] as List<dynamic>?)?.cast<String>() ?? <String>[];
+      (data['squad_ids'] as List<dynamic>?)?.cast<String>() ?? <String>[];
 
   String? chosenId;
 
   // 1. Pinned squad first
-  final pinned = data['pinnedSquadId'] as String?;
+  final pinned = data['pinned_squad_id'] as String?;
   if (pinned != null && squadIds.contains(pinned)) {
     chosenId = pinned;
   }
-  // 2. Most recent by lastActivity
+  // 2. Most recent by last_activity
   else if (squadIds.isNotEmpty) {
-    final query = await FirebaseFirestore.instance
-        .collection('squads')
-        .where('memberUids', arrayContains: user.uid)
-        .orderBy('lastActivity', descending: true)
-        .limit(1)
-        .get();
-    chosenId = query.docs.firstOrNull?.id;
+    final squads = await SupabaseService.client
+        .from('squads')
+        .select('id')
+        .contains('member_uids', [user.id])
+        .order('last_activity', ascending: false)
+        .limit(1);
+
+    chosenId = squads.isNotEmpty ? squads.first['id'] as String? : null;
   }
 
   if (chosenId != null) {
-    ref.read(currentSquadIdProvider.notifier).state = chosenId;
+    ref.read(currentLobbyIdProvider.notifier).state = chosenId;
   }
 
   return chosenId;

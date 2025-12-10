@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../services/supabase_service.dart';
 import 'package:flutter/services.dart';
 import '../../domain/entities/message.dart';
 
@@ -14,7 +14,7 @@ class ReactionService {
     String? squadId,
   ) async {
     try {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
+      final userId = AuthServiceSupabase().currentUser?.id;
       if (userId == null || messageId.isEmpty || emoji.isEmpty) {
         debugPrint(
             'Invalid reaction data: userId=$userId, messageId=$messageId, emoji="$emoji"');
@@ -27,192 +27,37 @@ class ReactionService {
         return;
       }
 
-      // Determine collection path based on chat type
-      String collectionPath;
-      if (chatType == ChatType.userGroup) {
-        // User group chats: users/{uid}/chat_groups/{groupId}/messages
-        collectionPath = chatGroupId != null
-            ? 'users/$userId/chat_groups/$chatGroupId/messages'
-            : 'users/$userId/chat_groups/default/messages'; // fallback
-      } else if (chatType == ChatType.squad) {
-        // Squad chats: squads/{squadId}/messages
-        collectionPath = squadId != null
-            ? 'squads/$squadId/messages'
-            : 'squads/default/messages'; // fallback
-      } else {
-        // DMs: chats/{chatGroupId}/messages
-        collectionPath = chatGroupId != null
-            ? 'chats/$chatGroupId/messages'
-            : 'chats/default/messages'; // fallback
-      }
-
       debugPrint(
-          'Adding reaction: emoji=$emoji, messageId=$messageId, collection=$collectionPath');
+          'Adding reaction: emoji=$emoji, messageId=$messageId, userId=$userId');
 
-      try {
-        debugPrint('About to get document snapshot...');
-        final docSnapshot = await FirebaseFirestore.instance
-            .collection(collectionPath)
-            .doc(messageId)
-            .get();
-        debugPrint(
-            'Document snapshot retrieved, exists: ${docSnapshot.exists}');
+      // Check if user already reacted with this emoji
+      final existingReaction = await SupabaseService.client
+          .from('reactions')
+          .select()
+          .eq('message_id', messageId)
+          .eq('user_id', userId)
+          .eq('emoji', emoji)
+          .maybeSingle();
 
-        if (!docSnapshot.exists) {
-          debugPrint('Message not found: $messageId in $collectionPath');
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Message not found')),
-            );
-          }
-          return;
-        }
-
-        debugPrint('About to get message data...');
-        final messageData = docSnapshot.data();
-        debugPrint(
-            'Message data retrieved: ${messageData != null ? 'not null' : 'null'}');
-
-        if (messageData == null) {
-          debugPrint('Message data is null: $messageId in $collectionPath');
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Message data unavailable')),
-            );
-          }
-          return;
-        }
-        debugPrint('Message data keys: ${messageData.keys.toList()}');
-
-        // Normalize reactions data - handle both old string format and new map format
-        debugPrint('About to get raw reactions...');
-        final rawReactions = messageData['reactions'];
-        debugPrint(
-            'Raw reactions retrieved: $rawReactions, type: ${rawReactions.runtimeType}');
-        final currentReactions = <Map<String, dynamic>>[];
-
-        if (rawReactions is List) {
-          debugPrint(
-              'Raw reactions is List, processing ${rawReactions.length} items...');
-          for (final reaction in rawReactions) {
-            debugPrint(
-                'Processing reaction: $reaction, type: ${reaction.runtimeType}');
-            if (reaction is Map<String, dynamic>) {
-              // New format
-              currentReactions.add(reaction);
-            } else if (reaction is String) {
-              // Old format - convert to new format
-              currentReactions.add({
-                'userId': 'unknown', // We don't know who added old reactions
-                'reaction': reaction,
-                'timestamp': DateTime.now()
-                    .millisecondsSinceEpoch, // Use numeric timestamp
-              });
-            }
-            // Skip invalid reaction types
-          }
-        } else {
-          debugPrint('Raw reactions is not a List: $rawReactions');
-        }
-
-        debugPrint('Current reactions after processing: $currentReactions');
-
-        // Check if user already reacted with this emoji (be more robust with type checking)
-        debugPrint('About to check existing reactions...');
-        int existingReactionIndex = -1;
-        try {
-          existingReactionIndex = currentReactions.indexWhere(
-            (reaction) {
-              final reactionUserId = reaction['userId']?.toString();
-              final reactionEmoji = reaction['reaction']?.toString();
-              return reactionUserId == userId && reactionEmoji == emoji;
-            },
-          );
-        } catch (e) {
-          debugPrint('Error checking existing reactions: $e');
-          // If we can't check, assume no existing reaction
-          existingReactionIndex = -1;
-        }
-
-        // Create a clean, validated reaction object
-        final newReaction = <String, dynamic>{
-          'userId': userId,
-          'reaction': emoji.trim(),
-          'timestamp': DateTime.now()
-              .millisecondsSinceEpoch, // Use numeric timestamp instead of FieldValue
-        };
-
-        // Always use the set with merge fallback for iOS compatibility
-        final updatedReactions =
-            List<Map<String, dynamic>>.from(currentReactions);
-
-        if (existingReactionIndex != -1) {
-          // User already reacted with this emoji, remove it
-          updatedReactions.removeAt(existingReactionIndex);
-        } else {
-          // User hasn't reacted with this emoji, add it
-          updatedReactions.add(newReaction);
-        }
-
-        // Filter out any invalid reactions and limit to reasonable number
-        final cleanReactions = <Map<String, dynamic>>[];
-        try {
-          cleanReactions.addAll(updatedReactions
-              .where((r) {
-                try {
-                  return r['userId']?.toString().isNotEmpty == true &&
-                      r['reaction']?.toString().isNotEmpty == true;
-                } catch (e) {
-                  debugPrint('Error validating reaction: $e, reaction: $r');
-                  return false;
-                }
-              })
-              .take(50)
-              .toList()); // Limit reactions per message
-        } catch (e) {
-          debugPrint('Error filtering reactions: $e');
-          // If filtering fails, use the updated reactions as-is (limited)
-          cleanReactions.addAll(updatedReactions.take(50));
-        }
-
-        try {
-          debugPrint(
-              'About to update Firestore with reactions: $cleanReactions');
-          await FirebaseFirestore.instance
-              .collection(collectionPath)
-              .doc(messageId)
-              .set({'reactions': cleanReactions}, SetOptions(merge: true));
-          debugPrint('Firestore set successful');
-        } catch (firestoreError) {
-          debugPrint('Firestore set failed, trying update: $firestoreError');
-          // Fallback: try update operation
-          try {
-            await FirebaseFirestore.instance
-                .collection(collectionPath)
-                .doc(messageId)
-                .update({'reactions': cleanReactions});
-          } catch (updateError) {
-            debugPrint('Update also failed: $updateError');
-            // Final fallback: don't update reactions but don't crash
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Reaction saved locally')),
-              );
-            }
-            return;
-          }
-        }
-
-        HapticFeedback.lightImpact();
-      } catch (e) {
-        debugPrint('Error during Firestore operations: $e');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error accessing message: $e')),
-          );
-        }
-        return;
+      if (existingReaction != null) {
+        // User already reacted with this emoji, remove it
+        await SupabaseService.client
+            .from('reactions')
+            .delete()
+            .eq('id', existingReaction['id']);
+        debugPrint('Removed existing reaction');
+      } else {
+        // User hasn't reacted with this emoji, add it
+        await SupabaseService.client.from('reactions').insert({
+          'message_id': messageId,
+          'user_id': userId,
+          'emoji': emoji.trim(),
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        debugPrint('Added new reaction');
       }
+
+      HapticFeedback.lightImpact();
     } catch (e) {
       debugPrint('Error updating reaction: $e');
       if (context.mounted) {

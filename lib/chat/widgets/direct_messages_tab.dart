@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
+import '../../services/auth_service_supabase.dart';
+import '../../services/supabase_service.dart';
 import '../chat_screen.dart';
 import '../../domain/entities/message.dart';
 import '../../utils.dart';
@@ -25,9 +26,12 @@ class DirectMessagesTab extends StatelessWidget {
 
   Future<Map<String, dynamic>?> _getUserProfile(String userId) async {
     try {
-      final firestore = FirebaseFirestore.instance;
-      final doc = await firestore.collection('users').doc(userId).get();
-      return doc.data();
+      final profile = await SupabaseService.client
+          .from('users')
+          .select()
+          .eq('uid', userId)
+          .maybeSingle();
+      return profile;
     } catch (e) {
       debugPrint('Error fetching user profile: $e');
       return null;
@@ -180,15 +184,15 @@ class DirectMessagesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FirebaseFirestore firestore = FirebaseFirestore.instance;
-    final User currentUser = FirebaseAuth.instance.currentUser!;
+    final supabase.User currentUser = AuthServiceSupabase().currentUser!;
 
-    return StreamBuilder<QuerySnapshot>(
-      key: ValueKey('dm_list_${currentUser.uid}'),
-      stream: firestore
-          .collection('chats')
-          .where('participants', arrayContains: currentUser.uid)
-          .snapshots(),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      key: ValueKey('dm_list_${currentUser.id}'),
+      future: SupabaseService.client
+          .from('chats')
+          .select()
+          .contains('participants', [currentUser.id]).order('last_message_time',
+              ascending: false),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Center(
@@ -205,24 +209,11 @@ class DirectMessagesTab extends StatelessWidget {
           );
         }
 
-        final chats = snapshot.data?.docs ?? [];
-        final dmChats = chats.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
+        final chats = snapshot.data ?? [];
+        final dmChats = chats.where((data) {
           final participants = List<String>.from(data['participants'] ?? []);
           return participants.length == 2;
         }).toList();
-
-        // Sort by lastMessageTime in memory since we can't use orderBy with arrayContains
-        dmChats.sort((a, b) {
-          final aTime = (a.data() as Map<String, dynamic>)['lastMessageTime']
-              as Timestamp?;
-          final bTime = (b.data() as Map<String, dynamic>)['lastMessageTime']
-              as Timestamp?;
-          if (aTime == null && bTime == null) return 0;
-          if (aTime == null) return 1;
-          if (bTime == null) return -1;
-          return bTime.compareTo(aTime); // Descending order
-        });
 
         if (dmChats.isEmpty) {
           return Container(
@@ -304,21 +295,22 @@ class DirectMessagesTab extends StatelessWidget {
           ),
           itemBuilder: (context, index) {
             final chat = dmChats[index];
-            final chatData = chat.data() as Map<String, dynamic>;
+            final chatData = chat;
             final participants =
                 List<String>.from(chatData['participants'] ?? []);
             final otherUserId =
-                participants.firstWhere((id) => id != currentUser.uid);
-            final lastMessage = chatData['lastMessage'] ?? '';
-            final lastMessageTime = chatData['lastMessageTime'] as Timestamp?;
-            final unreadCount = chatData['unreadCount']?[currentUser.uid] ?? 0;
+                participants.firstWhere((id) => id != currentUser.id);
+            final lastMessage = chatData['last_message'] ?? '';
+            final lastMessageTime = chatData['last_message_time'];
+            final unreadCount =
+                (chatData['unread_count'] as Map?)?[currentUser.id] ?? 0;
 
             return FutureBuilder<Map<String, dynamic>?>(
               future: _getUserProfile(otherUserId),
               builder: (context, userSnapshot) {
                 final userData = userSnapshot.data;
-                final displayName = safeDisplayName(userData?['displayName']);
-                final profileImage = userData?['profileImage'];
+                final displayName = safeDisplayName(userData?['display_name']);
+                final profileImage = userData?['profile_image'];
 
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(
@@ -402,7 +394,7 @@ class DirectMessagesTab extends StatelessWidget {
                           ),
                         )
                       : null,
-                  onTap: () => _openDMChat(context, chat.id, displayName),
+                  onTap: () => _openDMChat(context, chat['id'], displayName),
                 );
               },
             );

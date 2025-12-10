@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../app_theme.dart';
+import '../../core/app_theme.dart';
 
 class LoadingScreenWidget extends StatelessWidget {
   const LoadingScreenWidget({super.key});
@@ -7,7 +7,7 @@ class LoadingScreenWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: AppTheme.darkTheme,
+      data: AppTheme.dark(),
       child: Scaffold(
         backgroundColor: Colors.black,
         body: Center(

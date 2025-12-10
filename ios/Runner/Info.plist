@@ -56,6 +56,15 @@
 			<key>CFBundleURLName</key>
 			<string>com.example.codSquadApp</string>
 		</dict>
+		<!-- Supabase Auth Callback -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.squadsync.app</string>
+			</array>
+		</dict>
 	</array>
 	<!-- Handoff and Siri Activity Types -->
 	<key>NSUserActivityTypes</key>

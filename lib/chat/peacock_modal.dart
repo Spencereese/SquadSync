@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/notifiers/user_notifier.dart';
-import '../presentation/notifiers/squad_notifier.dart' as sn;
-import '../managers/stubs.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'widgets/peacock_modal_header.dart';
 import 'widgets/game_selection_card.dart';
 import 'widgets/group_settings_card.dart';
@@ -58,10 +57,10 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
     setState(() => _isLoading = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = AuthServiceSupabase().currentUser;
       if (user == null) return;
 
-      final squadState = ref.read(sn.squadNotifierProvider).value;
+      final squadState = ref.read(ln.lobbyNotifierProvider).value;
       if (squadState == null) return;
       final userState = ref.read(userNotifierProvider).value;
       final displayName = userState?.displayName ?? 'Unknown';
@@ -76,7 +75,7 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
       // Assign creator to spot 1 as caller with 5-minute countdown
       // Use direct assignment instead of callSpotForGame since creator gets longer timer
       final currentSquadSpots =
-          Map<String, List<String?>>.from(squadState.gameSquadSpots);
+          Map<String, List<String?>>.from(squadState.gameLobbySpots);
       currentSquadSpots[gameName] ??=
           List.of(List.filled(_spots.toInt(), null));
       final currentSpotTimers2 =
@@ -93,7 +92,7 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
           : 300; // 60 minutes for solo, 5 minutes for groups
 
       // Set creator in spot 1 with calling timer
-      currentSquadSpots[gameName]![0] = '${user.uid}_calling';
+      currentSquadSpots[gameName]![0] = '${user.id}_calling';
       currentSpotTimers2[gameName]![0] = {
         'startTime': DateTime.now().millisecondsSinceEpoch,
         'duration': timerDuration, // Dynamic duration based on solo status
@@ -110,35 +109,35 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
       // Update state
       // Note: State updates should be handled by notifier methods, but for migration we'll skip for now
 
-      // Create peacock document in Firestore for lobby visibility
-      final peacockData = {
-        'hostUid': user.uid,
-        'hostName': displayName,
-        'game': {'name': gameName},
-        'spots': _spots.toInt(),
-        'filled': [
-          {'uid': user.uid, 'spot': 1, 'status': 'ready'}
-        ], // Creator auto-assigned to spot 1 with ready status
-        'viewers': <String>[], // Start with empty viewers list
-        'timer': Timestamp.fromDate(DateTime.now()
-            .add(Duration(seconds: timerDuration))), // Dynamic timer for lobby
-        'createdAt': Timestamp.now(),
-        'circle': _selectedCircle,
-      };
-
-      await FirebaseFirestore.instance.collection('peacocks').add(peacockData);
+      // Create peacock document in Supabase for lobby visibility
+      final timerEnd = DateTime.now()
+          .add(Duration(seconds: timerDuration))
+          .toIso8601String();
+      final now = DateTime.now().toIso8601String();
 
       // Start voice room for the squad
       final voiceRoomId =
-          'voice_${user.uid}_${DateTime.now().millisecondsSinceEpoch}';
+          'voice_${user.id}_${DateTime.now().millisecondsSinceEpoch}';
 
-      // Add voice room info to peacock data
-      peacockData['voiceRoomId'] = voiceRoomId;
+      final peacockData = {
+        'host_uid': user.id,
+        'host_name': displayName,
+        'game_name': gameName,
+        'spots': _spots.toInt(),
+        'filled': [
+          {'uid': user.id, 'spot': 1, 'status': 'ready'}
+        ],
+        'viewers': <String>[],
+        'timer': timerEnd,
+        'created_at': now,
+        'circle': _selectedCircle,
+        'voice_room_id': voiceRoomId,
+      };
 
-      await FirebaseFirestore.instance.collection('peacocks').add(peacockData);
+      await SupabaseService.client.from('peacocks').insert(peacockData);
 
-      // Update Firestore user doc
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      // Update Supabase user doc
+      await SupabaseService.client.from('users').update({
         'peacock': {
           'game': gameName,
           'spots': _spots.toInt(),
@@ -147,18 +146,12 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
               .millisecondsSinceEpoch,
           'circle': _selectedCircle,
         }
-      }, SetOptions(merge: true));
+      }).eq('uid', user.id);
 
       // Update user status to indicate they're looking for squad
       // Note: Status updates should be handled by notifier methods, but for migration we'll skip for now
 
-      // Trigger notification
-      final notificationManager =
-          ref.read(notificationManagerProvider.notifier);
-      notificationManager.showNotification(
-        title: 'Peacock Alert',
-        body: 'Looking for ${_spots.toInt()} spots in $gameName',
-      );
+      // TODO: Show peacock notification via NotificationService
 
       // Ask if user wants to pin the game for quick access
       if (_selectedGame != null && mounted) {

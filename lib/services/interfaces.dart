@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'firestore_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
 /// Interfaces for better testability and dependency injection
 
 /// Interface for authentication service
 abstract class IAuthService {
-  Stream<User?> get authStateChanges;
-  User? get currentUser;
-  void initialize({required Function(User?) onAuthStateChanged});
+  Stream<supabase.User?> get authStateChanges;
+  supabase.User? get currentUser;
+  void initialize({required Function(supabase.User?) onAuthStateChanged});
   Future<String?> loadDisplayName();
   Future<String?> loadProfileImage();
   Future<void> saveDisplayName(String displayName);
@@ -33,9 +31,9 @@ abstract class ICacheService {
   void setDefaultMaxAge(String key, Duration maxAge);
 }
 
-/// Interface for Firestore service
+/// Interface for Firestore service (LEGACY - migrating to Supabase)
 abstract class IFirestoreService {
-  void registerField<T>(FirestoreFieldSerializer<T> serializer);
+  // void registerField<T>(FirestoreFieldSerializer<T> serializer);
   void markFieldChanged(String fieldName);
   Future<void> updateFirestore({
     required Map<String, String> displayNameCache,
@@ -47,7 +45,8 @@ abstract class IFirestoreService {
   // Voice room methods
   Stream<Map<String, dynamic>?> getVoiceRoomStream(String roomId);
   Future<void> updateVoiceRoom(String roomId, Map<String, dynamic> data);
-  Future<void> updateVoiceParticipant(String roomId, String uid, Map<String, dynamic> data);
+  Future<void> updateVoiceParticipant(
+      String roomId, String uid, Map<String, dynamic> data);
 }
 
 /// Interface for game manager
@@ -139,7 +138,8 @@ abstract class IFirestoreManager {
   Future<void> updateDocument(
       String collection, String document, Map<String, dynamic> data);
   Future<Map<String, dynamic>?> getDocument(String collection, String document);
-  Stream<DocumentSnapshot> listenToDocument(String collection, String document);
+  Stream<Map<String, dynamic>?> listenToDocument(
+      String collection, String document);
 }
 
 /// Interface for availability manager
@@ -157,11 +157,11 @@ abstract class IAvailabilityManager {
 /// Interface for squad data manager
 abstract class ISquadDataManager {
   // Data properties
-  Map<String, List<String?>> get gameSquadSpots;
+  Map<String, List<String?>> get gameLobbySpots;
   Map<String, List<Map<String, dynamic>?>> get gameSpotTimers;
   Map<String, Map<String, String>> get gameStatuses;
   Map<String, String> get globalStatuses;
-  List<String> get squadMemberUids;
+  List<String> get lobbyMemberUids;
   Map<String, String> get memberDisplayNames;
   List<String> get squadMembers;
   Map<String, String?> get memberProfileImages;
@@ -179,7 +179,7 @@ abstract class ISquadDataManager {
   Map<String, Map<String, dynamic>?> get peacockTimers;
   List<String> get peacockQueue;
   List<String> get userSquadIds;
-  String? get selectedSquadId;
+  String? get selectedLobbyId;
   Map<String, Map<String, dynamic>> get userSquads;
   Map<String, dynamic>? get currentSquad;
   List<String> get filteredMembers;
@@ -196,7 +196,7 @@ abstract class ISquadDataManager {
 
   // Data update methods (for internal use)
   void setSquadMemberUids(List<String> uids);
-  void setSelectedSquadId(String? squadId);
+  void setSelectedLobbyId(String? squadId);
   void setCurrentSquadData(Map<String, dynamic>? data);
   void addUserSquad(String squadId, Map<String, dynamic> squadData);
   void removeUserSquad(String squadId);
@@ -215,7 +215,7 @@ abstract class ISquadUIManager {
   bool get hasNewSquadSpot;
   bool get hasUnreadMessages;
   Map<String, bool> get typing;
-  DocumentSnapshot? get replyingTo;
+  Map<String, dynamic>? get replyingTo;
   String? get profileImage;
   bool get isCreator;
 
@@ -223,7 +223,7 @@ abstract class ISquadUIManager {
   void updateTiltEnabled(bool value);
   void setNewAvailability(bool value);
   void setNewSquadSpot(bool value, [String? gameName]);
-  void setReplyingTo(DocumentSnapshot? message);
+  void setReplyingTo(Map<String, dynamic>? message);
   void setTyping(String userId, bool isTyping);
 }
 

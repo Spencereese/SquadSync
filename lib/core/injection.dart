@@ -1,6 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:get_it/get_it.dart';
@@ -30,6 +27,7 @@ import 'package:squad_sync/domain/usecases/get_popular_games.dart';
 import 'package:squad_sync/domain/usecases/initialize_games.dart';
 import 'package:squad_sync/domain/usecases/sync_games_to_firestore.dart';
 import 'package:squad_sync/services/igdb_auth_service.dart';
+import 'package:squad_sync/services/friends_service.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 
 // System imports
@@ -47,23 +45,23 @@ import 'package:squad_sync/domain/usecases/update_notification_settings.dart';
 import 'package:squad_sync/domain/usecases/check_availability.dart';
 import 'package:squad_sync/domain/usecases/ban_user.dart';
 import 'package:squad_sync/domain/usecases/unban_user.dart';
-import 'package:squad_sync/domain/usecases/create_squad.dart';
-import '../services/firestore_service.dart';
-import 'package:squad_sync/domain/usecases/join_squad.dart';
-import 'package:squad_sync/domain/usecases/leave_squad.dart';
+import 'package:squad_sync/domain/usecases/create_lobby.dart';
+import 'package:squad_sync/domain/usecases/create_lobby_for_group.dart';
+import 'package:squad_sync/domain/usecases/join_lobby.dart';
+import 'package:squad_sync/domain/usecases/leave_lobby.dart';
 import 'package:squad_sync/domain/usecases/assign_spot.dart';
 import 'package:squad_sync/domain/usecases/start_spot_timer.dart';
 import 'package:squad_sync/domain/usecases/process_timers.dart';
 import 'package:squad_sync/domain/usecases/manage_peacock_queue.dart';
 import 'package:squad_sync/domain/usecases/update_member_status.dart';
-import 'package:squad_sync/domain/usecases/load_squad_state.dart';
-import 'package:squad_sync/domain/usecases/sync_squad_data.dart';
+import 'package:squad_sync/domain/usecases/load_lobby_state.dart';
+import 'package:squad_sync/domain/usecases/sync_lobby_data.dart';
 
 // Squad imports
-import 'package:squad_sync/data/datasources/squad_local_datasource.dart';
-import 'package:squad_sync/data/datasources/squad_remote_datasource.dart';
-import 'package:squad_sync/data/repositories/squad_repository_impl.dart';
-import 'package:squad_sync/domain/repositories/squad_repository.dart';
+import 'package:squad_sync/data/datasources/lobby_local_datasource.dart';
+import 'package:squad_sync/data/datasources/lobby_remote_datasource.dart';
+import 'package:squad_sync/data/repositories/lobby_repository_impl.dart';
+import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 
 // Chat imports
 import 'package:squad_sync/data/datasources/chat_local_datasource.dart';
@@ -86,13 +84,13 @@ import 'package:squad_sync/domain/usecases/update_typing_indicator.dart';
 import 'package:squad_sync/domain/usecases/pin_message.dart';
 import 'package:squad_sync/domain/usecases/load_media_history.dart';
 
-import 'package:squad_sync/presentation/notifiers/squad_notifier.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/user_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/game_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/system_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/chat_notifier.dart';
 
-import 'package:squad_sync/domain/entities/squad_state.dart';
+import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/domain/entities/app_user.dart';
 import 'package:squad_sync/domain/entities/game.dart';
 import 'package:squad_sync/domain/entities/system_state.dart';
@@ -111,18 +109,6 @@ Future<void> setupInjection() async {
   final sharedPreferences = await SharedPreferences.getInstance();
   getIt.registerSingleton<SharedPreferences>(sharedPreferences);
 
-  // Register Firebase services with error handling
-  bool firebaseAvailable = true;
-  try {
-    getIt.registerSingleton<FirebaseFirestore>(FirebaseFirestore.instance);
-    getIt.registerSingleton<FirebaseAuth>(FirebaseAuth.instance);
-    getIt.registerSingleton<FirebaseStorage>(FirebaseStorage.instance);
-    debugPrint('Firebase services registered successfully');
-  } catch (e) {
-    debugPrint('Firebase services failed to register: $e');
-    firebaseAvailable = false;
-  }
-
   getIt.registerSingleton<http.Client>(http.Client());
 
   // Local notifications - may not work on all platforms
@@ -134,211 +120,206 @@ Future<void> setupInjection() async {
   }
 
   getIt.registerSingleton<IgdbAuthService>(IgdbAuthService());
+  getIt.registerSingleton<FriendsService>(FriendsService());
   getIt.registerSingleton<SQLiteHelper>(SQLiteHelper());
 
-  // Only register Firebase-dependent services if Firebase is available
-  if (firebaseAvailable) {
-    getIt.registerSingleton<FirestoreService>(FirestoreService());
-    // User data sources
-    getIt.registerSingleton<UserLocalDataSource>(
-      UserLocalDataSourceImpl(getIt<SharedPreferences>()),
-    );
-    getIt.registerSingleton<UserRemoteDataSource>(
-      UserRemoteDataSourceImpl(getIt<FirebaseFirestore>()),
-    );
+  // User data sources
+  getIt.registerSingleton<UserLocalDataSource>(
+    UserLocalDataSourceImpl(getIt<SharedPreferences>()),
+  );
+  getIt.registerSingleton<UserRemoteDataSource>(
+    UserRemoteDataSourceImpl(),
+  );
 
-    // System data sources
-    getIt.registerSingleton<SystemLocalDataSource>(
-      SystemLocalDataSourceImpl(getIt<SharedPreferences>()),
-    );
-    getIt.registerSingleton<SystemRemoteDataSource>(
-      SystemRemoteDataSourceImpl(
-        getIt<FirebaseFirestore>(),
-        getIt<FirebaseAuth>(),
-        getIt<FlutterLocalNotificationsPlugin>(),
-        getIt<http.Client>(),
-        null, // analytics endpoint
-      ),
-    );
+  // System data sources
+  getIt.registerSingleton<SystemLocalDataSource>(
+    SystemLocalDataSourceImpl(getIt<SharedPreferences>()),
+  );
+  getIt.registerSingleton<SystemRemoteDataSource>(
+    SystemRemoteDataSourceImpl(
+      getIt<FlutterLocalNotificationsPlugin>(),
+      getIt<http.Client>(),
+      null, // analyticsEndpoint - can be configured later
+    ),
+  );
 
-    // Squad data sources
-    getIt.registerSingleton<SquadLocalDataSource>(
-      SquadLocalDataSourceImpl(
-          getIt<SharedPreferences>(), getIt<SQLiteHelper>()),
-    );
-    getIt.registerSingleton<SquadRemoteDataSource>(
-      SquadRemoteDataSourceImpl(
-          getIt<FirebaseFirestore>(), getIt<FirebaseAuth>()),
-    );
+  // Squad data sources
+  getIt.registerSingleton<LobbyLocalDataSource>(
+    LobbyLocalDataSourceImpl(getIt<SharedPreferences>(), getIt<SQLiteHelper>()),
+  );
+  getIt.registerSingleton<LobbyRemoteDataSource>(
+    LobbyRemoteDataSourceImpl(), // Now uses Supabase!
+  );
 
-    // Chat data sources
-    getIt.registerSingleton<ChatLocalDataSource>(
-      ChatLocalDataSourceImpl(getIt<SQLiteHelper>()),
-    );
-    getIt.registerSingleton<ChatRemoteDataSource>(
-      ChatRemoteDataSourceImpl(
-          getIt<FirebaseFirestore>(), getIt<FirebaseStorage>()),
-    );
+  // Chat data sources
+  getIt.registerSingleton<ChatLocalDataSource>(
+    ChatLocalDataSourceImpl(getIt<SQLiteHelper>()),
+  );
+  getIt.registerSingleton<ChatRemoteDataSource>(
+    ChatRemoteDataSourceImpl(), // Now uses Supabase!
+  );
 
-    // Repositories
-    getIt.registerSingleton<UserRepository>(
-      UserRepositoryImpl(
-        getIt<UserLocalDataSource>(),
-        getIt<UserRemoteDataSource>(),
-      ),
-    );
-    getIt.registerSingleton<SystemRepository>(
-      SystemRepositoryImpl(
-        getIt<SystemLocalDataSource>(),
-        getIt<SystemRemoteDataSource>(),
-        getIt<FirebaseAuth>(),
-      ),
-    );
-    getIt.registerSingleton<SquadRepository>(
-      SquadRepositoryImpl(
-        getIt<SquadLocalDataSource>(),
-        getIt<SquadRemoteDataSource>(),
-      ),
-    );
-    getIt.registerSingleton<ChatRepository>(
-      ChatRepositoryImpl(
-        getIt<ChatLocalDataSource>(),
-        getIt<ChatRemoteDataSource>(),
-      ),
-    );
+  // Repositories
+  getIt.registerSingleton<UserRepository>(
+    UserRepositoryImpl(
+      getIt<UserLocalDataSource>(),
+      getIt<UserRemoteDataSource>(),
+    ),
+  );
 
-    // Use cases
-    getIt.registerSingleton<GetCurrentUser>(
-      GetCurrentUser(getIt<UserRepository>()),
-    );
-    getIt.registerSingleton<UpdateProfileImage>(
-      UpdateProfileImage(getIt<UserRepository>()),
-    );
-    getIt.registerSingleton<UpdateDisplayName>(
-      UpdateDisplayName(getIt<UserRepository>()),
-    );
-    getIt.registerSingleton<BlockUser>(
-      BlockUser(getIt<UserRepository>()),
-    );
-    getIt.registerSingleton<UnblockUser>(
-      UnblockUser(getIt<UserRepository>()),
-    );
-    getIt.registerSingleton<AddPinnedGame>(
-      AddPinnedGame(getIt<UserRepository>()),
-    );
-    getIt.registerSingleton<RemovePinnedGame>(
-      RemovePinnedGame(getIt<UserRepository>()),
-    );
+  getIt.registerSingleton<ChatRepository>(
+    ChatRepositoryImpl(
+      getIt<ChatLocalDataSource>(),
+      getIt<ChatRemoteDataSource>(),
+    ),
+  );
 
-    // System use cases
-    getIt.registerSingleton<LoadSystemState>(
-      LoadSystemState(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<UpdateThemeMode>(
-      UpdateThemeMode(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<TrackAnalyticsEvent>(
-      TrackAnalyticsEvent(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<SendLocalNotification>(
-      SendLocalNotification(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<UpdateLastSync>(
-      UpdateLastSync(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<PurgeOldData>(
-      PurgeOldData(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<UpdateNotificationSettings>(
-      UpdateNotificationSettings(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<CheckAvailability>(
-      CheckAvailability(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<BanUser>(
-      BanUser(getIt<SystemRepository>()),
-    );
-    getIt.registerSingleton<UnbanUser>(
-      UnbanUser(getIt<SystemRepository>()),
-    );
+  getIt.registerSingleton<LobbyRepository>(
+    LobbyRepositoryImpl(
+      getIt<LobbyLocalDataSource>(),
+      getIt<LobbyRemoteDataSource>(),
+    ),
+  );
 
-    // Squad use cases
-    getIt.registerSingleton<CreateSquad>(
-      CreateSquad(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<JoinSquad>(
-      JoinSquad(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<LeaveSquad>(
-      LeaveSquad(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<AssignSpot>(
-      AssignSpot(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<StartSpotTimer>(
-      StartSpotTimer(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<ProcessTimers>(
-      ProcessTimers(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<ManagePeacockQueue>(
-      ManagePeacockQueue(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<UpdateMemberStatus>(
-      UpdateMemberStatus(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<LoadSquadState>(
-      LoadSquadState(getIt<SquadRepository>()),
-    );
-    getIt.registerSingleton<SyncSquadData>(
-      SyncSquadData(getIt<SquadRepository>()),
-    );
+  getIt.registerSingleton<SystemRepository>(
+    SystemRepositoryImpl(
+      getIt<SystemLocalDataSource>(),
+      getIt<SystemRemoteDataSource>(),
+    ),
+  );
 
-    // Chat use cases
-    getIt.registerSingleton<SendMessage>(
-      SendMessage(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<LoadMessages>(
-      LoadMessages(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<DeltaSync>(
-      DeltaSync(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<AddReaction>(
-      AddReaction(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<CreatePoll>(
-      CreatePoll(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<VotePoll>(
-      VotePoll(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<UploadMedia>(
-      UploadMedia(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<CreateGroup>(
-      CreateGroup(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<JoinGroup>(
-      JoinGroup(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<LeaveGroup>(
-      LeaveGroup(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<UpdateTypingIndicator>(
-      UpdateTypingIndicator(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<PinMessage>(
-      PinMessage(getIt<ChatRepository>()),
-    );
-    getIt.registerSingleton<LoadMediaHistory>(
-      LoadMediaHistory(getIt<ChatRepository>()),
-    );
-  } else {
-    debugPrint('Skipping Firebase-dependent service registration');
-  }
+  // Use cases
+  getIt.registerSingleton<GetCurrentUser>(
+    GetCurrentUser(getIt<UserRepository>()),
+  );
+  getIt.registerSingleton<UpdateProfileImage>(
+    UpdateProfileImage(getIt<UserRepository>()),
+  );
+  getIt.registerSingleton<UpdateDisplayName>(
+    UpdateDisplayName(getIt<UserRepository>()),
+  );
+  getIt.registerSingleton<BlockUser>(
+    BlockUser(getIt<UserRepository>()),
+  );
+  getIt.registerSingleton<UnblockUser>(
+    UnblockUser(getIt<UserRepository>()),
+  );
+  getIt.registerSingleton<AddPinnedGame>(
+    AddPinnedGame(getIt<UserRepository>()),
+  );
+  getIt.registerSingleton<RemovePinnedGame>(
+    RemovePinnedGame(getIt<UserRepository>()),
+  );
 
-  // Game services (don't depend on Firebase)
+  // System use cases
+  getIt.registerSingleton<LoadSystemState>(
+    LoadSystemState(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<UpdateThemeMode>(
+    UpdateThemeMode(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<TrackAnalyticsEvent>(
+    TrackAnalyticsEvent(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<SendLocalNotification>(
+    SendLocalNotification(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<UpdateLastSync>(
+    UpdateLastSync(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<PurgeOldData>(
+    PurgeOldData(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<UpdateNotificationSettings>(
+    UpdateNotificationSettings(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<CheckAvailability>(
+    CheckAvailability(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<BanUser>(
+    BanUser(getIt<SystemRepository>()),
+  );
+  getIt.registerSingleton<UnbanUser>(
+    UnbanUser(getIt<SystemRepository>()),
+  );
+
+  // Squad use cases
+  getIt.registerSingleton<CreateLobby>(
+    CreateLobby(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<CreateLobbyForGroup>(
+    CreateLobbyForGroup(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<JoinLobby>(
+    JoinLobby(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<LeaveLobby>(
+    LeaveLobby(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<AssignSpot>(
+    AssignSpot(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<StartSpotTimer>(
+    StartSpotTimer(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<ProcessTimers>(
+    ProcessTimers(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<ManagePeacockQueue>(
+    ManagePeacockQueue(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<UpdateMemberStatus>(
+    UpdateMemberStatus(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<LoadLobbyState>(
+    LoadLobbyState(getIt<LobbyRepository>()),
+  );
+  getIt.registerSingleton<SyncLobbyData>(
+    SyncLobbyData(getIt<LobbyRepository>()),
+  );
+
+  // Chat use cases
+  getIt.registerSingleton<SendMessage>(
+    SendMessage(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<LoadMessages>(
+    LoadMessages(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<DeltaSync>(
+    DeltaSync(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<AddReaction>(
+    AddReaction(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<CreatePoll>(
+    CreatePoll(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<VotePoll>(
+    VotePoll(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<UploadMedia>(
+    UploadMedia(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<CreateGroup>(
+    CreateGroup(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<JoinGroup>(
+    JoinGroup(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<LeaveGroup>(
+    LeaveGroup(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<UpdateTypingIndicator>(
+    UpdateTypingIndicator(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<PinMessage>(
+    PinMessage(getIt<ChatRepository>()),
+  );
+  getIt.registerSingleton<LoadMediaHistory>(
+    LoadMediaHistory(getIt<ChatRepository>()),
+  );
+
+  // Game services
   getIt.registerSingleton<GameLocalDataSource>(
     GameLocalDataSourceImpl(getIt<SQLiteHelper>()),
   );
@@ -346,38 +327,30 @@ Future<void> setupInjection() async {
     GameRemoteDataSourceImpl(getIt<http.Client>(), getIt<IgdbAuthService>()),
   );
 
-  // Game repository - handle Firebase availability
-  if (firebaseAvailable) {
-    getIt.registerSingleton<GameRepository>(
-      GameRepositoryImpl(
-        getIt<GameLocalDataSource>(),
-        getIt<GameRemoteDataSource>(),
-        getIt<FirebaseFirestore>(),
-      ),
-    );
+  // Game repository (no longer depends on Firebase)
+  getIt.registerSingleton<GameRepository>(
+    GameRepositoryImpl(
+      getIt<GameLocalDataSource>(),
+      getIt<GameRemoteDataSource>(),
+    ),
+  );
 
-    // Game use cases
-    getIt.registerSingleton<FetchGames>(
-      FetchGames(getIt<GameRepository>()),
-    );
-    getIt.registerSingleton<GetGameDetails>(
-      GetGameDetails(getIt<GameRepository>()),
-    );
-    getIt.registerSingleton<GetPopularGames>(
-      GetPopularGames(getIt<GameRepository>()),
-    );
-    getIt.registerSingleton<InitializeGames>(
-      InitializeGames(getIt<GameRepository>()),
-    );
-    getIt.registerSingleton<SyncGamesToFirestore>(
-      SyncGamesToFirestore(getIt<GameRepository>()),
-    );
-  } else {
-    // For now, skip game repository if Firebase is not available
-    // In a real app, you'd create a mock or local-only implementation
-    debugPrint(
-        'Firebase is NOT available, skipping Firebase-dependent services...');
-  }
+  // Game use cases
+  getIt.registerSingleton<FetchGames>(
+    FetchGames(getIt<GameRepository>()),
+  );
+  getIt.registerSingleton<GetGameDetails>(
+    GetGameDetails(getIt<GameRepository>()),
+  );
+  getIt.registerSingleton<GetPopularGames>(
+    GetPopularGames(getIt<GameRepository>()),
+  );
+  getIt.registerSingleton<InitializeGames>(
+    InitializeGames(getIt<GameRepository>()),
+  );
+  getIt.registerSingleton<SyncGamesToFirestore>(
+    SyncGamesToFirestore(getIt<GameRepository>()),
+  );
 
   debugPrint('Dependency injection setup completed');
 }
@@ -429,10 +402,10 @@ final banUserProvider = Provider<BanUser>((ref) => getIt<BanUser>());
 final unbanUserProvider = Provider<UnbanUser>((ref) => getIt<UnbanUser>());
 
 // Squad providers
-final createSquadProvider =
-    Provider<CreateSquad>((ref) => getIt<CreateSquad>());
-final joinSquadProvider = Provider<JoinSquad>((ref) => getIt<JoinSquad>());
-final leaveSquadProvider = Provider<LeaveSquad>((ref) => getIt<LeaveSquad>());
+final createLobbyProvider =
+    Provider<CreateLobby>((ref) => getIt<CreateLobby>());
+final joinLobbyProvider = Provider<JoinLobby>((ref) => getIt<JoinLobby>());
+final leaveLobbyProvider = Provider<LeaveLobby>((ref) => getIt<LeaveLobby>());
 final assignSpotProvider = Provider<AssignSpot>((ref) => getIt<AssignSpot>());
 final startSpotTimerProvider =
     Provider<StartSpotTimer>((ref) => getIt<StartSpotTimer>());
@@ -442,10 +415,10 @@ final managePeacockQueueProvider =
     Provider<ManagePeacockQueue>((ref) => getIt<ManagePeacockQueue>());
 final updateMemberStatusProvider =
     Provider<UpdateMemberStatus>((ref) => getIt<UpdateMemberStatus>());
-final loadSquadStateProvider =
-    Provider<LoadSquadState>((ref) => getIt<LoadSquadState>());
-final syncSquadDataProvider =
-    Provider<SyncSquadData>((ref) => getIt<SyncSquadData>());
+final loadLobbyStateProvider =
+    Provider<LoadLobbyState>((ref) => getIt<LoadLobbyState>());
+final syncLobbyDataProvider =
+    Provider<SyncLobbyData>((ref) => getIt<SyncLobbyData>());
 
 // Chat providers
 final sendMessageProvider =
@@ -470,9 +443,9 @@ final loadMediaHistoryProvider =
     Provider<LoadMediaHistory>((ref) => getIt<LoadMediaHistory>());
 
 // Notifier providers
-final squadNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<SquadNotifier, SquadState>(
-  () => SquadNotifier(),
+final ln.lobbyNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<LobbyNotifier, LobbyState>(
+  () => LobbyNotifier(),
 );
 
 final userNotifierProvider =

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../presentation/notifiers/squad_notifier.dart';
+import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import 'member_management_dialog.dart';
 import 'ban_dialog.dart';
 import 'manage_games_dialog.dart';
@@ -33,9 +33,9 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.redAccent),
               title: const Text('Clear All Spots'),
               onTap: () {
-                final squadNotifier = ref.read(squadNotifierProvider.notifier);
+                final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
                 final gameName = ref
-                        .read(squadNotifierProvider)
+                        .read(ln.lobbyNotifierProvider)
                         .value
                         ?.currentGame?['name'] ??
                     '';
@@ -48,9 +48,9 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.blueGrey),
               title: const Text('Reset Timers'),
               onTap: () {
-                final squadNotifier = ref.read(squadNotifierProvider.notifier);
+                final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
                 final gameName = ref
-                        .read(squadNotifierProvider)
+                        .read(ln.lobbyNotifierProvider)
                         .value
                         ?.currentGame?['name'] ??
                     '';
@@ -83,7 +83,7 @@ class SettingsDialog {
                 Navigator.pop(context);
                 ManageGamesDialog.show(
                     context,
-                    ref.read(squadNotifierProvider).maybeWhen(
+                    ref.read(ln.lobbyNotifierProvider).maybeWhen(
                           data: (state) => state,
                           orElse: () =>
                               throw Exception('Squad state not available'),
@@ -103,7 +103,7 @@ class SettingsDialog {
 
   static Future<void> _closeLobby(
       BuildContext context, WidgetRef ref, String lobbyId) async {
-    final squadNotifier = ref.read(squadNotifierProvider.notifier);
+    final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
     try {
       // Show confirmation dialog

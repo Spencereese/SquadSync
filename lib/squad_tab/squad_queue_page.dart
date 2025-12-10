@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../chat/chat_groups_screen.dart' as chat_groups;
-import '../screens/notifications_screen.dart';
-import '../app_theme.dart';
-import '../presentation/notifiers/squad_notifier.dart' as sn;
-import 'widgets/bottom_navigation_widget.dart';
+import '../core/app_theme.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'widgets/loading_screen_widget.dart';
 import 'mixins/keyboard_handler.dart';
 import 'managers/page_navigation_manager.dart';
 import '../profile_tab.dart';
+import '../screens/discovery_screen.dart';
 
 class SquadQueuePage extends ConsumerStatefulWidget {
   const SquadQueuePage({super.key});
@@ -34,12 +33,8 @@ class SquadQueuePageState extends ConsumerState<SquadQueuePage>
     super.dispose();
   }
 
-  void _onTabTapped(int index) {
-    _navigationManager.onTabTapped(index, () => _clearNotification(index));
-  }
-
   void _clearNotification(int index) {
-    ref.read(sn.squadNotifierProvider.notifier).clearNotifications(index);
+    ref.read(ln.lobbyNotifierProvider.notifier).clearNotifications(index);
   }
 
   bool _updateNavOpacity(ScrollNotification notification) {
@@ -48,13 +43,14 @@ class SquadQueuePageState extends ConsumerState<SquadQueuePage>
 
   @override
   Widget build(BuildContext context) {
-    final squadAsync = ref.watch(sn.squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
     final bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return squadAsync.when(
       data: (squadState) {
+        final theme = Theme.of(context);
         return Theme(
-          data: AppTheme.darkTheme,
+          data: AppTheme.dark(),
           child: Scaffold(
             body: Stack(
               children: [
@@ -67,10 +63,10 @@ class SquadQueuePageState extends ConsumerState<SquadQueuePage>
                       colors: [
                         Colors.black,
                         _navigationManager.selectedIndexNotifier.value == 2
-                            ? AppTheme.primaryColor.withValues(alpha: 0.8)
-                            : AppTheme.primaryColor,
+                            ? theme.colorScheme.primary.withValues(alpha: 0.8)
+                            : theme.colorScheme.primary,
                         if (_navigationManager.selectedIndexNotifier.value == 2)
-                          AppTheme.accentColor.withValues(alpha: 0.2),
+                          theme.colorScheme.primary.withValues(alpha: 0.2),
                       ],
                     ),
                   ),
@@ -83,14 +79,15 @@ class SquadQueuePageState extends ConsumerState<SquadQueuePage>
                     ),
                   ),
                 ),
-                BottomNavigationWidget(
-                  selectedIndexNotifier:
-                      _navigationManager.selectedIndexNotifier,
-                  navOpacity: navOpacity,
-                  navBottomOffset: navBottomOffset,
-                  squadState: squadState,
-                  onTabTapped: _onTabTapped,
-                ),
+                // TODO: Restore BottomNavigationWidget once migrated to new architecture
+                // BottomNavigationWidget(
+                //   selectedIndexNotifier:
+                //       _navigationManager.selectedIndexNotifier,
+                //   navOpacity: navOpacity,
+                //   navBottomOffset: navBottomOffset,
+                //   squadState: squadState,
+                //   onTabTapped: _onTabTapped,
+                // ),
               ],
             ),
           ),
@@ -109,7 +106,12 @@ class SquadQueuePageState extends ConsumerState<SquadQueuePage>
         padding: EdgeInsets.only(bottom: isKeyboardVisible ? 0 : 75),
         child: const chat_groups.ChatGroupsScreen(),
       ),
-      const NotificationsScreen(),
+      AnimatedPadding(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        padding: EdgeInsets.only(bottom: isKeyboardVisible ? 0 : 75),
+        child: const DiscoveryScreen(),
+      ),
       const ProfileTab(),
     ];
   }

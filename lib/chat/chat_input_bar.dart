@@ -104,7 +104,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           _buildMentionSuggestions(),
         // Input bar
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -153,7 +153,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         maxHeight: 120,
       ),
       decoration: BoxDecoration(
-        color: Colors.white, // Solid white background to appear above blur
+        color: Colors.white, // Solid white background - same as TextField
         borderRadius: BorderRadius.circular(20),
         border: null, // Remove blue border when focused
       ),
@@ -186,8 +186,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 enabledBorder: InputBorder.none,
                 disabledBorder: InputBorder.none,
                 isDense: true,
-                filled: true,
-                fillColor: Colors.grey[200],
+                filled: false, // Disable fill to use parent container color
               ),
               textCapitalization: TextCapitalization.sentences,
               autocorrect: true,

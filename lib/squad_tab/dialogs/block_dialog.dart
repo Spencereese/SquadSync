@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../services/auth_service_supabase.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
 /// Dialog for blocking/unblocking players
 class BlockDialog extends ConsumerWidget {
@@ -21,8 +21,8 @@ class BlockDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    return ref.watch(sn.squadNotifierProvider).when(
+    final uid = AuthServiceSupabase().currentUser?.id ?? '';
+    return ref.watch(ln.lobbyNotifierProvider).when(
           data: (squadState) {
             final isBlocked =
                 squadState.userBlocks[uid]?.containsKey(player) ?? false;
@@ -46,11 +46,11 @@ class BlockDialog extends ConsumerWidget {
                     try {
                       if (isBlocked) {
                         // await ref
-                        //     .read(sn.squadNotifierProvider.notifier)
+                        //     .read(ln.lobbyNotifierProvider.notifier)
                         //     .unblockUser(player);
                       } else {
                         // await ref
-                        //     .read(sn.squadNotifierProvider.notifier)
+                        //     .read(ln.lobbyNotifierProvider.notifier)
                         //     .blockUser(player);
                       }
                       if (context.mounted) {

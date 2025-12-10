@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -127,31 +128,52 @@ class PerformanceStatsScreen extends ConsumerWidget {
   }
 
   Widget _buildStatsCard(String title, List<Widget> stats) {
-    return Card(
-      color: Colors.grey[900],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Colors.cyan, width: 1),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title.toUpperCase(),
-              style: GoogleFonts.robotoMono(
-                color: Colors.cyan,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
+    return Builder(
+      builder: (context) {
+        final theme = Theme.of(context);
+        final neonColor = theme.colorScheme.primary;
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: neonColor.withOpacity(0.4),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: neonColor.withOpacity(0.2),
+                    blurRadius: 15,
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title.toUpperCase(),
+                    style: GoogleFonts.robotoMono(
+                      color: neonColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ...stats,
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            ...stats,
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

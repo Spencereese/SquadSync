@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'models/message_data.dart';
 import '../domain/entities/message.dart';
@@ -33,37 +32,41 @@ class _MediaHistoryScreenState extends ConsumerState<MediaHistoryScreen> {
   }
 
   Stream<List<MessageData>> _getMediaMessagesStream() {
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUser = AuthServiceSupabase().currentUser;
     if (currentUser == null) {
       return Stream.value([]);
     }
 
-    String collectionPath;
-    if (widget.chatType == ChatType.userGroup) {
-      collectionPath =
-          'users/${currentUser.uid}/chat_groups/${widget.chatGroupId}/messages';
-    } else if (widget.chatType == ChatType.dm) {
-      collectionPath = 'chats/${widget.chatGroupId}/messages';
+    // Get chat_group_id based on chat type
+    String? chatGroupId;
+    if (widget.chatType == ChatType.userGroup ||
+        widget.chatType == ChatType.dm) {
+      chatGroupId = widget.chatGroupId;
     } else {
       return Stream.value([]);
     }
 
-    return FirebaseFirestore.instance
-        .collection(collectionPath)
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => MessageData.fromDocument(doc))
-          .where((message) {
-            // Filter for media messages
-            return message.photos.isNotEmpty ||
-                message.videoUrl != null ||
-                message.audioUrl != null;
-          })
-          .whereType<MessageData>()
-          .toList();
-    });
+    if (chatGroupId == null) {
+      return Stream.value([]);
+    }
+
+    return SupabaseService.client
+        .from('messages')
+        .stream(primaryKey: ['id'])
+        .eq('chat_group_id', chatGroupId)
+        .order('timestamp', ascending: false)
+        .map((data) {
+          return data
+              .map((row) => MessageData.fromMap(row))
+              .where((message) {
+                // Filter for media messages
+                return message.photos.isNotEmpty ||
+                    message.videoUrl != null ||
+                    message.audioUrl != null;
+              })
+              .whereType<MessageData>()
+              .toList();
+        });
   }
 
   List<MessageData> _filterAndSortMedia(List<MessageData> messages) {
@@ -348,15 +351,19 @@ class _MediaHistoryScreenState extends ConsumerState<MediaHistoryScreen> {
             pathSegments[0] == 'v0' &&
             pathSegments[1] == 'b' &&
             pathSegments[2] == 'o') {
-          final objectPath = pathSegments.sublist(3).join('/');
-          final decodedPath = Uri.decodeComponent(objectPath);
-
+          // TODO: Migrate to Supabase Storage
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Storage URL handling needs Supabase migration')),
+          );
+          /*
           final storageRef = FirebaseStorage.instance.ref().child(decodedPath);
           final downloadUrl = await storageRef.getDownloadURL();
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Storage URL ready: $downloadUrl')),
           );
+          */
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Opening: $url')),

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../domain/entities/squad_state.dart';
+import '../../domain/entities/lobby_state.dart';
 
 class AddGameDialog {
-  static void show(BuildContext context, SquadState squadState) {
+  static void show(BuildContext context, LobbyState squadState) {
     String gameName = '';
 
     showDialog(

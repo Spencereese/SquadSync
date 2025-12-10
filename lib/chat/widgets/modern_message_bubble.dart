@@ -76,6 +76,9 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
   // Reaction animations
   final List<String> _newReactions = [];
 
+  // Message bubble vertical offset for long press menu repositioning
+  double _menuOffsetY = 0;
+
   @override
   void initState() {
     super.initState();
@@ -160,12 +163,31 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
     final renderBox = context.findRenderObject() as RenderBox;
     final position = renderBox.localToGlobal(Offset.zero);
     final size = renderBox.size;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    // Calculate if we need to shift the message up
+    // Reaction picker is 80px above, menu is below (approx 200px total)
+    const menuHeight = 200.0;
+
+    // Check if menu would go below screen
+    final menuBottom = position.dy + size.height + menuHeight;
+    double offsetY = 0;
+
+    if (menuBottom > screenHeight - 50) {
+      // Need to shift up - calculate how much
+      offsetY = -(menuBottom - (screenHeight - 50));
+    }
+
+    setState(() {
+      _menuOffsetY = offsetY;
+    });
 
     _reactionPickerOverlay = OverlayEntry(
       builder: (context) => _ReactionPickerOverlay(
         position: position,
         size: size,
         isMe: widget.isMe,
+        offsetY: offsetY,
         onReaction: (emoji) {
           widget.onReaction?.call(emoji);
           _removeReactionPicker();
@@ -180,6 +202,9 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
   void _removeReactionPicker() {
     _reactionPickerOverlay?.remove();
     _reactionPickerOverlay = null;
+    setState(() {
+      _menuOffsetY = 0; // Reset offset when closing
+    });
   }
 
   @override
@@ -200,70 +225,75 @@ class _ModernMessageBubbleState extends ConsumerState<ModernMessageBubble>
           top: widget.isFirstInCluster ? 8 : 2,
           bottom: widget.isLastInCluster ? 8 : 2,
         ),
-        child: Row(
-          mainAxisAlignment:
-              widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // Avatar (only on last message in cluster)
-            if (!widget.isMe && widget.isLastInCluster)
-              _buildAvatar(accentColor)
-            else if (!widget.isMe)
-              const SizedBox(width: 40),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          transform: Matrix4.translationValues(0, _menuOffsetY, 0),
+          child: Row(
+            mainAxisAlignment:
+                widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Avatar (only on last message in cluster)
+              if (!widget.isMe && widget.isLastInCluster)
+                _buildAvatar(accentColor)
+              else if (!widget.isMe)
+                const SizedBox(width: 40),
 
-            const SizedBox(width: 8),
+              const SizedBox(width: 8),
 
-            // Message bubble with swipe offset
-            Flexible(
-              child: Transform.translate(
-                offset: Offset(_swipeOffset, 0),
-                child: Column(
-                  crossAxisAlignment: widget.isMe
-                      ? CrossAxisAlignment.end
-                      : CrossAxisAlignment.start,
-                  children: [
-                    // Sender name (if first in cluster and not me)
-                    if (!widget.isMe &&
-                        widget.isFirstInCluster &&
-                        widget.senderDisplayName != null)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 12, bottom: 4),
-                        child: Text(
-                          widget.senderDisplayName!,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: accentColor,
+              // Message bubble with swipe offset
+              Flexible(
+                child: Transform.translate(
+                  offset: Offset(_swipeOffset, 0),
+                  child: Column(
+                    crossAxisAlignment: widget.isMe
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
+                    children: [
+                      // Sender name (if first in cluster and not me)
+                      if (!widget.isMe &&
+                          widget.isFirstInCluster &&
+                          widget.senderDisplayName != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 12, bottom: 4),
+                          child: Text(
+                            widget.senderDisplayName!,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: accentColor,
+                            ),
                           ),
                         ),
-                      ),
 
-                    // Main bubble
-                    _buildBubble(theme, accentColor),
+                      // Main bubble
+                      _buildBubble(theme, accentColor),
 
-                    // Timestamp (shown on tap)
-                    if (_showTimestamp)
-                      _buildTimestamp(theme)
-                          .animate()
-                          .fadeIn(duration: 200.ms)
-                          .slideY(begin: -0.2, duration: 200.ms),
-                  ],
+                      // Timestamp (shown on tap)
+                      if (_showTimestamp)
+                        _buildTimestamp(theme)
+                            .animate()
+                            .fadeIn(duration: 200.ms)
+                            .slideY(begin: -0.2, duration: 200.ms),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            // Reply indicator (when swiping)
-            if (_swipeOffset > 20)
-              Padding(
-                padding: const EdgeInsets.only(left: 8, bottom: 8),
-                child: Icon(
-                  Icons.reply_rounded,
-                  size: 24,
-                  color:
-                      theme.colorScheme.primary.withOpacity(_swipeOffset / 80),
-                ),
-              ).animate().fadeIn().scale(begin: const Offset(0.5, 0.5)),
-          ],
+              // Reply indicator (when swiping)
+              if (_swipeOffset > 20)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, bottom: 8),
+                  child: Icon(
+                    Icons.reply_rounded,
+                    size: 24,
+                    color: theme.colorScheme.primary
+                        .withOpacity(_swipeOffset / 80),
+                  ),
+                ).animate().fadeIn().scale(begin: const Offset(0.5, 0.5)),
+            ],
+          ),
         ),
       ),
     )
@@ -752,6 +782,7 @@ class _ReactionPickerOverlay extends StatelessWidget {
   final Offset position;
   final Size size;
   final bool isMe;
+  final double offsetY;
   final Function(String) onReaction;
   final VoidCallback onDismiss;
 
@@ -759,6 +790,7 @@ class _ReactionPickerOverlay extends StatelessWidget {
     required this.position,
     required this.size,
     required this.isMe,
+    required this.offsetY,
     required this.onReaction,
     required this.onDismiss,
   });
@@ -768,6 +800,9 @@ class _ReactionPickerOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // Apply the same offset to the overlay elements
+    final adjustedPosition = Offset(position.dx, position.dy + offsetY);
 
     return GestureDetector(
       onTap: onDismiss,
@@ -781,11 +816,13 @@ class _ReactionPickerOverlay extends StatelessWidget {
 
           // Reaction picker positioned above message
           Positioned(
-            left: isMe ? null : position.dx,
+            left: isMe ? null : adjustedPosition.dx,
             right: isMe
-                ? MediaQuery.of(context).size.width - position.dx - size.width
+                ? MediaQuery.of(context).size.width -
+                    adjustedPosition.dx -
+                    size.width
                 : null,
-            top: position.dy - 80,
+            top: adjustedPosition.dy - 80,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: BackdropFilter(
@@ -835,11 +872,13 @@ class _ReactionPickerOverlay extends StatelessWidget {
 
           // Menu options below message
           Positioned(
-            left: isMe ? null : position.dx,
+            left: isMe ? null : adjustedPosition.dx,
             right: isMe
-                ? MediaQuery.of(context).size.width - position.dx - size.width
+                ? MediaQuery.of(context).size.width -
+                    adjustedPosition.dx -
+                    size.width
                 : null,
-            top: position.dy + size.height + 8,
+            top: adjustedPosition.dy + size.height + 8,
             child: _buildMenuOptions(theme),
           ),
         ],

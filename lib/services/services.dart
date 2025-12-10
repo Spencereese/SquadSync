@@ -1,7 +1,7 @@
-export 'auth_service.dart';
+export 'auth_service_supabase.dart';
 export 'audio_service.dart';
 export 'cache_service.dart';
-export 'firestore_service.dart';
+export 'clip_service.dart';
 export 'interfaces.dart';
 export 'media_service.dart';
 export 'poll_service.dart';

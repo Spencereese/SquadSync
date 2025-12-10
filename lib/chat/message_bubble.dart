@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'chat_service.dart';
+import '../services/message_service.dart';
 import '../domain/entities/message.dart';
 import '../presentation/notifiers/chat_notifier.dart' as cn;
-import '../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'models/message_data.dart' as models
     show MessageData, MessageType, MessageStatus;
 import 'widgets/message_content.dart';
@@ -23,7 +23,7 @@ class _AnimatedMessageBubble extends StatefulWidget {
   final bool isFirstInGroup;
   final bool isLastInGroup;
   final String? chatGroupId;
-  final ChatService? chatService;
+  final MessageService? chatService;
   final ChatType chatType;
   final String? squadId;
   final VoidCallback onTap;
@@ -270,7 +270,7 @@ class MessageBubble extends ConsumerStatefulWidget {
   final Map<String, bool> sendingStatus;
   final String? chatGroupId;
   final ChatType chatType;
-  final ChatService? chatService; // Add optional ChatService parameter
+  final MessageService? chatService; // Add optional MessageService parameter
   final String? squadId;
 
   const MessageBubble({
@@ -348,8 +348,8 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     final menuSpacing = 4.0;
     final availableHeight = screenSize.height - keyboardHeight - 20;
 
-    final squadId = ref.read(sn.squadNotifierProvider).maybeWhen(
-          data: (data) => data.selectedSquadId,
+    final squadId = ref.read(ln.lobbyNotifierProvider).maybeWhen(
+          data: (data) => data.selectedLobbyId,
           orElse: () => null,
         );
 
@@ -800,14 +800,14 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                             try {
                               // Use the provided chatService or create a new instance
                               final chatService =
-                                  widget.chatService ?? ChatService();
+                                  widget.chatService ?? MessageService();
                               final squadState =
-                                  ref.read(sn.squadNotifierProvider).maybeWhen(
+                                  ref.read(ln.lobbyNotifierProvider).maybeWhen(
                                         data: (data) => data,
                                         orElse: () => null,
                                       );
                               if (squadState != null) {
-                                final squadId = squadState.selectedSquadId;
+                                final squadId = squadState.selectedLobbyId;
                                 if (squadId != null) {
                                   await chatService.editMessage(
                                       _messageData.id, result, squadId,
@@ -866,14 +866,14 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                             try {
                               // Use the provided chatService or create a new instance
                               final chatService =
-                                  widget.chatService ?? ChatService();
+                                  widget.chatService ?? MessageService();
                               final squadState =
-                                  ref.read(sn.squadNotifierProvider).maybeWhen(
+                                  ref.read(ln.lobbyNotifierProvider).maybeWhen(
                                         data: (data) => data,
                                         orElse: () => null,
                                       );
                               if (squadState != null) {
-                                final squadId = squadState.selectedSquadId;
+                                final squadId = squadState.selectedLobbyId;
                                 if (squadId != null) {
                                   await chatService.deleteMessage(
                                       _messageData.id, squadId,
@@ -912,24 +912,12 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                       label: 'Bump',
                       onTap: () async {
                         final messenger = ScaffoldMessenger.of(context);
-                        try {
-                          // Use the provided chatService or create a new instance
-                          final chatService =
-                              widget.chatService ?? ChatService();
-                          await chatService.bumpMessage(
-                            _messageData.id,
-                            widget.chatGroupId,
-                            widget.chatType,
-                          );
-                          messenger.showSnackBar(
-                            const SnackBar(content: Text('Message bumped')),
-                          );
-                        } catch (e) {
-                          messenger.showSnackBar(
-                            SnackBar(
-                                content: Text('Failed to bump message: $e')),
-                          );
-                        }
+                        // TODO: Migrate bumpMessage to Supabase
+                        messenger.showSnackBar(
+                          const SnackBar(
+                              content:
+                                  Text('Bump message feature needs migration')),
+                        );
                         _dismissOverlays();
                       },
                     ),

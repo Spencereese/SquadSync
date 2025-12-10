@@ -1,0 +1,575 @@
+import 'package:riverpod/riverpod.dart';
+import 'package:flutter/foundation.dart';
+import 'package:squad_sync/domain/entities/lobby_state.dart';
+import 'package:squad_sync/domain/usecases/create_lobby.dart';
+import 'package:squad_sync/domain/usecases/create_lobby_for_group.dart';
+import 'package:squad_sync/domain/usecases/join_lobby.dart';
+import 'package:squad_sync/domain/usecases/leave_lobby.dart';
+import 'package:squad_sync/domain/usecases/assign_spot.dart';
+import 'package:squad_sync/domain/usecases/start_spot_timer.dart';
+import 'package:squad_sync/domain/usecases/process_timers.dart';
+import 'package:squad_sync/domain/usecases/manage_peacock_queue.dart';
+import 'package:squad_sync/domain/usecases/update_member_status.dart';
+import 'package:squad_sync/domain/usecases/load_lobby_state.dart';
+import 'package:squad_sync/domain/usecases/sync_lobby_data.dart';
+import 'package:squad_sync/core/injection.dart' as di;
+import 'package:squad_sync/services/auth_service_supabase.dart';
+import 'package:squad_sync/services/supabase_service.dart';
+import '../../services/timer_service.dart';
+
+class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
+  late final CreateLobby _createSquad;
+  late final CreateLobbyForGroup _createLobbyForGroup;
+  late final JoinLobby _joinSquad;
+  late final LeaveLobby _leaveSquad;
+  late final AssignSpot _assignSpot;
+  late final StartSpotTimer _startSpotTimer;
+  late final ProcessTimers _processTimers;
+  late final ManagePeacockQueue _managePeacockQueue;
+  late final UpdateMemberStatus _updateMemberStatus;
+  late final LoadLobbyState _loadLobbyState;
+  late final SyncLobbyData _syncSquadData;
+  late final TimerServiceNotifier _timerService;
+
+  @override
+  Future<LobbyState> build() async {
+    try {
+      // Get dependencies from get_it
+      _createSquad = di.getIt<CreateLobby>();
+      _createLobbyForGroup = di.getIt<CreateLobbyForGroup>();
+      _joinSquad = di.getIt<JoinLobby>();
+      _leaveSquad = di.getIt<LeaveLobby>();
+      _assignSpot = di.getIt<AssignSpot>();
+      _startSpotTimer = di.getIt<StartSpotTimer>();
+      _processTimers = di.getIt<ProcessTimers>();
+      _managePeacockQueue = di.getIt<ManagePeacockQueue>();
+      _updateMemberStatus = di.getIt<UpdateMemberStatus>();
+      _loadLobbyState = di.getIt<LoadLobbyState>();
+      _syncSquadData = di.getIt<SyncLobbyData>();
+
+      _timerService = ref.watch(timerServiceProvider.notifier);
+
+      // Load state synchronously to ensure proper loading state transition
+      return await _loadState();
+    } catch (e) {
+      debugPrint('Error initializing squad notifier: $e');
+      return LobbyState.initial();
+    }
+  }
+
+  Future<LobbyState> _loadState() async {
+    try {
+      debugPrint('SquadNotifier: Loading squad state...');
+      // Add timeout to prevent indefinite hanging
+      final state = await _loadLobbyState.call().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint(
+              'SquadNotifier: Load state timed out, using initial state');
+          return LobbyState.initial();
+        },
+      );
+      debugPrint('SquadNotifier: Squad state loaded successfully');
+      return state;
+    } catch (e, stackTrace) {
+      debugPrint('SquadNotifier: Error loading squad state: $e');
+      debugPrint('SquadNotifier: Stack trace: $stackTrace');
+      return LobbyState.initial();
+    }
+  }
+
+  Future<void> createSquad(String name, String gameName, int maxSpots) async {
+    await _createSquad(name, gameName, maxSpots);
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  /// Create a lobby linked to a chat group
+  /// 
+  /// [chatGroupId] - The chat group ID to link this lobby to
+  /// [gameName] - The game for this lobby
+  /// [maxSpots] - Maximum number of spots (default: 8)
+  /// [isPublic] - Whether this lobby is discoverable (default: false)
+  /// 
+  /// Returns the created lobby ID
+  Future<String> createLobby({
+    required String chatGroupId,
+    required String gameName,
+    required int maxSpots,
+    bool isPublic = false,
+  }) async {
+    try {
+      debugPrint('🎮 Creating lobby: chatGroupId=$chatGroupId, game=$gameName, maxSpots=$maxSpots, isPublic=$isPublic');
+      
+      final lobbyId = await _createLobbyForGroup(
+        chatGroupId: chatGroupId,
+        gameName: gameName,
+        name: 'Lobby', // Default name
+        maxSpots: maxSpots,
+      );
+      
+      debugPrint('✅ Lobby created: $lobbyId');
+      
+      // Reload state to include new lobby
+      state = await AsyncValue.guard(() => _loadLobbyState());
+      
+      return lobbyId;
+    } catch (e) {
+      debugPrint('❌ Error creating lobby: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> joinSquad(String squadId, String userId) async {
+    await _joinSquad(squadId, userId);
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> leaveSquad(String squadId, String userId) async {
+    await _leaveSquad(squadId, userId);
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> assignSpot(String squadId, int spotIndex, String? userId) async {
+    await _assignSpot(squadId, spotIndex, userId);
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> startSpotTimer(
+      String squadId, int spotIndex, Duration duration) async {
+    await _startSpotTimer(squadId, spotIndex, duration);
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> processExpiredTimers() async {
+    await _processTimers();
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> addToPeacockQueue(String userId, String gameName) async {
+    await _managePeacockQueue.addToQueue(userId, gameName);
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> removeFromPeacockQueue(String userId) async {
+    await _managePeacockQueue.removeFromQueue(userId);
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> processPeacockQueue() async {
+    await _managePeacockQueue.processQueue();
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> updateMemberStatus(
+      String squadId, String userId, String status) async {
+    await _updateMemberStatus(squadId, userId, status);
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> syncSquadData() async {
+    await _syncSquadData();
+    state = await AsyncValue.guard(() => _loadLobbyState());
+  }
+
+  Future<void> setCurrentGame(Map<String, dynamic>? game) async {
+    final currentState = state;
+    if (currentState is AsyncData && currentState.value != null) {
+      debugPrint(
+          'Setting current game: ${game?['name']}, coverUrl: ${game?['coverUrl']}');
+      final updatedState = currentState.value!.copyWith(currentGame: game);
+      state = AsyncValue.data(updatedState);
+    }
+  }
+
+  // TODO: Implement addToPeacock method (alias for addToPeacockQueue)
+  Future<void> addToPeacock(String userId) async {
+    await addToPeacockQueue(userId, ''); // TODO: Pass proper game name
+  }
+
+  // TODO: Implement removeFromPeacock method (alias for removeFromPeacockQueue)
+  Future<void> removeFromPeacock(String gameName, [String? userId]) async {
+    // TODO: Implement with game context
+    if (userId != null) {
+      await removeFromPeacockQueue(userId);
+    }
+  }
+
+  // Computed properties for game-scoped data
+  Map<String, List<String?>> get gameLobbySpots => state.maybeWhen(
+        data: (data) => data.gameLobbySpots,
+        orElse: () => {},
+      );
+
+  Map<String, List<Map<String, dynamic>?>> get gameSpotTimers =>
+      state.maybeWhen(
+        data: (data) => data.gameSpotTimers,
+        orElse: () => {},
+      );
+
+  Map<String, Map<String, String>> get gameStatuses => state.maybeWhen(
+        data: (data) => data.gameStatuses,
+        orElse: () => {},
+      );
+
+  Map<String, String> get globalStatuses => state.maybeWhen(
+        data: (data) => data.globalStatuses,
+        orElse: () => {},
+      );
+
+  List<String> get peacockQueue => state.maybeWhen(
+        data: (data) => data.peacockQueue,
+        orElse: () => [],
+      );
+
+  Map<String, Duration> get spotTimerStates => state.maybeWhen(
+        data: (data) => data.spotTimerStates,
+        orElse: () => {},
+      );
+
+  Map<String, Duration> get peacockTimerStates => state.maybeWhen(
+        data: (data) => data.peacockTimerStates,
+        orElse: () => {},
+      );
+
+  // Helper methods
+  String getDisplayNameForUid(String uid) {
+    return state.maybeWhen(
+      data: (data) => data.memberDisplayNames[uid] ?? 'Unknown User',
+      orElse: () => 'Unknown User',
+    );
+  }
+
+  List<String?> getSquadSpots(String gameName) {
+    return gameLobbySpots[gameName] ?? [];
+  }
+
+  List<Map<String, dynamic>?> getSquadSpotTimers(String gameName) {
+    return gameSpotTimers[gameName] ?? [];
+  }
+
+  Map<String, String> getSquadStatuses(String gameName) {
+    return gameStatuses[gameName] ?? {};
+  }
+
+  bool isUserInSquad(String userId, String? squadId) {
+    if (squadId == null) return false;
+    return state.maybeWhen(
+      data: (data) =>
+          data.userLobbies[squadId]?.memberUids.contains(userId) ?? false,
+      orElse: () => false,
+    );
+  }
+
+  int getActiveSquadMembersCount(String? squadId) {
+    if (squadId == null) return 0;
+    return state.maybeWhen(
+      data: (data) => data.userLobbies[squadId]?.memberUids.length ?? 0,
+      orElse: () => 0,
+    );
+  }
+
+  String getSquadHealthStatus(String? squadId) {
+    if (squadId == null) return 'unknown';
+    final memberCount = getActiveSquadMembersCount(squadId);
+    if (memberCount == 0) return 'empty';
+    if (memberCount < 3) return 'forming';
+    return 'active';
+  }
+
+  Future<void> claimSpot(String gameName, int spotIndex) async {
+    debugPrint('claimSpot called: game=$gameName, spotIndex=$spotIndex');
+    final currentState = state;
+    if (currentState is AsyncData && currentState.value != null) {
+      final squadState = currentState.value!;
+      final squadId = squadState.selectedLobbyId;
+      final authService = AuthServiceSupabase();
+      final userId = authService.currentUser?.id;
+
+      debugPrint('squadId: $squadId, userId: $userId');
+
+      if (squadId != null && userId != null) {
+        // Verify lobby exists in database before claiming spot
+        try {
+          debugPrint('🔍 Checking if lobby exists: $squadId');
+          final lobbyResponse = await SupabaseService.client
+              .from('lobbies')
+              .select()
+              .eq('id', squadId)
+              .maybeSingle();
+
+          if (lobbyResponse == null) {
+            debugPrint('⚠️ Lobby not found in database, creating...');
+            // Lobby doesn't exist - create it using the squadId as chat_group_id
+            await _createLobbyForGroup(
+              chatGroupId: squadId,
+              gameName: gameName,
+            );
+            debugPrint('✅ Lobby created for group: $squadId');
+          } else {
+            debugPrint('✅ Lobby exists, proceeding with spot claim');
+          }
+        } catch (e) {
+          debugPrint('❌ Error checking/creating lobby: $e');
+          // If lobby check/creation fails, show error and return
+          return;
+        }
+
+        // Update local state immediately for responsive UI
+        final updatedSpots =
+            Map<String, List<String?>>.from(squadState.gameLobbySpots);
+        updatedSpots[gameName] =
+            List<String?>.from(updatedSpots[gameName] ?? []);
+
+        // Ensure the list is large enough
+        while (updatedSpots[gameName]!.length <= spotIndex) {
+          updatedSpots[gameName]!.add(null);
+        }
+
+        // Set the spot with calling status
+        updatedSpots[gameName]![spotIndex] = '${userId}_calling';
+
+        debugPrint('Updated spots for $gameName: ${updatedSpots[gameName]}');
+
+        // Update global status
+        final updatedGlobalStatuses =
+            Map<String, String>.from(squadState.globalStatuses);
+        updatedGlobalStatuses[userId] = 'Calling';
+
+        // Update state immediately
+        state = AsyncValue.data(squadState.copyWith(
+          gameLobbySpots: updatedSpots,
+          globalStatuses: updatedGlobalStatuses,
+        ));
+
+        debugPrint('State updated locally, making async calls...');
+
+        // Then make async calls
+        try {
+          await _assignSpot(squadId, spotIndex, userId);
+          // Start the timer
+          await _timerService.startSpotTimer(
+              gameName, userId, const Duration(minutes: 5));
+          debugPrint('Spot claimed successfully');
+        } catch (e) {
+          debugPrint('Error claiming spot: $e');
+          // Reload state to reflect actual state if error occurred
+          state = await AsyncValue.guard(() => _loadLobbyState());
+        }
+      } else {
+        debugPrint('Cannot claim spot: squadId or userId is null');
+      }
+    } else {
+      debugPrint('Cannot claim spot: state is not ready');
+    }
+  }
+
+  Future<void> lockSpot(String gameName, int spotIndex) async {
+    final currentState = state;
+    if (currentState is AsyncData) {
+      final squadState = currentState.value!;
+      final authService = AuthServiceSupabase();
+      final userId = authService.currentUser?.id;
+      if (userId == null) return;
+      // Cancel the timer
+      final timerKey = 'spot_${gameName}_$userId';
+      await _timerService.stopTimer(timerKey);
+      // Update status to Ready
+      await _updateMemberStatus(squadState.selectedLobbyId!, userId, 'Ready');
+      // Reload state
+      state = await AsyncValue.guard(() => _loadLobbyState());
+    }
+  }
+
+  Future<void> removeSpot(String gameName, int spotIndex) async {
+    final currentState = state;
+    if (currentState is AsyncData) {
+      final squadState = currentState.value!;
+      final squadId = squadState.selectedLobbyId;
+      if (squadId != null) {
+        final authService = AuthServiceSupabase();
+        final userId = authService.currentUser?.id;
+        if (userId == null) return;
+        await _assignSpot(squadId, spotIndex, null);
+        // Cancel timer if user is removing their own spot
+        final spots = squadState.gameLobbySpots[gameName] ?? [];
+        if (spotIndex < spots.length && spots[spotIndex] == userId) {
+          final timerKey = 'spot_${gameName}_$userId';
+          await _timerService.stopTimer(timerKey);
+        }
+        // Reload state
+        state = await AsyncValue.guard(() => _loadLobbyState());
+      }
+    }
+  }
+
+  // TODO: Implement recordWin method
+  Future<void> recordWin(List<String> playerUids) async {
+    // TODO: Implement win recording
+  }
+
+  // TODO: Implement recordLoss method
+  Future<void> recordLoss(List<String> playerUids) async {
+    // TODO: Implement loss recording
+  }
+
+  // TODO: Implement addBan method
+  Future<void> addBan(String userId, String reason) async {
+    // TODO: Implement ban adding
+  }
+
+  // TODO: Implement getFilteredMembers getter
+  List<String> get getFilteredMembers => state.maybeWhen(
+        data: (data) => data.lobbyMemberUids,
+        orElse: () => [],
+      );
+
+  // TODO: Implement clearAllSpots method
+  Future<void> clearAllSpots(String gameName) async {
+    // TODO: Implement clearing all spots
+  }
+
+  // TODO: Implement resetTimers method
+  Future<void> resetTimers(String gameName) async {
+    // TODO: Implement timer reset
+  }
+
+  // Update tilt enabled setting
+  void updateTiltEnabled(bool enabled) {
+    state = state.maybeWhen(
+      data: (data) => AsyncValue.data(data.copyWith(tiltEnabled: enabled)),
+      orElse: () => state,
+    );
+  }
+
+  // Update profile image
+  void updateProfileImage(String? imageUrl) {
+    state = state.maybeWhen(
+      data: (data) => AsyncValue.data(data.copyWith(profileImage: imageUrl)),
+      orElse: () => state,
+    );
+  }
+
+  // Update display name
+  void updateDisplayName(String? name) {
+    state = state.maybeWhen(
+      data: (data) =>
+          AsyncValue.data(data.copyWith(displayName: name ?? 'Unknown User')),
+      orElse: () => state,
+    );
+  }
+
+  // Reset state
+  void reset() {
+    state = const AsyncValue.loading();
+  }
+
+  // Clear notifications for a tab
+  void clearNotifications(int tabIndex) {
+    // TODO: Implement notification clearing
+  }
+
+  Future<void> leaveChatGroup(String groupId) async {
+    // Stub implementation
+  }
+
+  void updateTypingStatus(String user, bool isTyping) {
+    // Stub implementation
+  }
+
+  Future<void> submitComplaint({
+    required String submittedBy,
+    required String targetMember,
+    required String reason,
+    required String category,
+    List<String>? squadMembers,
+  }) async {
+    // TODO: Implement submit complaint using appropriate usecase
+    // For now, stub
+  }
+
+  Future<void> submitRatings(String playerUid, Map<String, int> ratings) async {
+    final currentState = state.value;
+    if (currentState != null) {
+      final updatedDailyRatings =
+          Map<String, Map<String, int>>.from(currentState.dailyRatings);
+      final updatedAllTimeRatings =
+          Map<String, Map<String, int>>.from(currentState.allTimeRatings);
+
+      // Update daily ratings
+      updatedDailyRatings[playerUid] = ratings;
+
+      // Update all-time ratings (accumulate)
+      final existingAllTime = updatedAllTimeRatings[playerUid] ?? {};
+      final newAllTime = Map<String, int>.from(existingAllTime);
+      ratings.forEach((category, rating) {
+        newAllTime[category] = (newAllTime[category] ?? 0) + rating;
+      });
+      updatedAllTimeRatings[playerUid] = newAllTime;
+
+      // Update state
+      state = AsyncData(currentState.copyWith(
+        dailyRatings: updatedDailyRatings,
+        allTimeRatings: updatedAllTimeRatings,
+      ));
+
+      // TODO: Persist to Firestore
+      // await _firestoreManager.updateFirestore({'dailyRatings': updatedDailyRatings, 'allTimeRatings': updatedAllTimeRatings});
+    }
+  }
+
+  Future<void> callSpotForGame(int spotIndex, String gameName) async {
+    final currentState = state;
+    if (currentState is AsyncData) {
+      final squadState = currentState.value!;
+      final squadId = squadState.selectedLobbyId;
+      if (squadId != null) {
+        final authService = AuthServiceSupabase();
+        final userId = authService.currentUser?.id;
+        if (userId == null) return;
+        await _assignSpot(squadId, spotIndex, userId);
+        // Start the timer
+        await _timerService.startSpotTimer(
+            gameName, userId, const Duration(minutes: 5));
+        // Reload state
+        state = await AsyncValue.guard(() => _loadLobbyState());
+      }
+    }
+  }
+
+  Future<void> claimPeacockSpot(
+      String lobbyId, String userId, String gameName) async {
+    await _managePeacockQueue.addToQueue(userId, gameName);
+  }
+
+  Future<void> lockPeacockSpot(
+      String lobbyId, String userId, String gameName) async {
+    await _managePeacockQueue.removeFromQueue(userId);
+  }
+
+  Future<List<Map<String, dynamic>>> getSquadAlerts(String squadId) async {
+    return [];
+  }
+
+  Future<void> sendGameAlert(String squadId, String userId, String alertType,
+      {String? specificGame, List<String>? pinnedGames}) async {
+    // TODO
+  }
+
+  Future<void> clearGameAlerts(String squadId, String userId) async {
+    // TODO
+  }
+
+  Future<void> closeLobby(String lobbyId) async {
+    // TODO
+  }
+
+  void setSelectedLobbyId(String? squadId) {
+    state = state.whenData(
+        (squadState) => squadState.copyWith(selectedLobbyId: squadId));
+  }
+}
+
+final lobbyNotifierProvider =
+    AutoDisposeAsyncNotifierProvider<LobbyNotifier, LobbyState>(
+  () => LobbyNotifier(),
+);

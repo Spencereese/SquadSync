@@ -1,9 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../services/supabase_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../presentation/notifiers/squad_notifier.dart' as sn;
-import '../../domain/entities/squad_state.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/message.dart';
 import '../chat_state_notifier.dart';
 
@@ -24,7 +24,7 @@ class ChatInitializationService {
     required TextEditingController messageController,
     required String? initialMessage,
   }) async {
-    final squadState = ref.read(sn.squadNotifierProvider).valueOrNull;
+    final squadState = ref.read(ln.lobbyNotifierProvider).valueOrNull;
 
     if (squadState == null) {
       // Handle loading state
@@ -77,28 +77,37 @@ class ChatInitializationService {
     required BuildContext context,
     required String? chatGroupId,
     required ChatType chatType,
-    required SquadState squadState,
+    required LobbyState squadState,
     required Function(String) setChatName,
     required Function(String?) setChatImageUrl,
   }) async {
     if (!context.mounted || chatGroupId == null) return;
 
     try {
-      final currentUser = FirebaseAuth.instance.currentUser;
+      final currentUser = AuthServiceSupabase().currentUser;
       if (currentUser == null) return;
 
       if (chatType == ChatType.userGroup) {
-        final groupDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUser.uid)
-            .collection('chat_groups')
-            .doc(chatGroupId)
-            .get();
+        // Query user_groups JSONB field from users table
+        final userData = await SupabaseService.client
+            .from('users')
+            .select('user_groups')
+            .eq('uid', currentUser.id)
+            .maybeSingle();
 
-        if (groupDoc.exists && context.mounted) {
-          final groupData = groupDoc.data() as Map<String, dynamic>;
-          setChatName(groupData['name'] ?? 'Group Chat');
-          setChatImageUrl(groupData['imageUrl']);
+        if (userData != null && context.mounted) {
+          final userGroups =
+              List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
+          // Find the specific group by chatGroupId
+          final groupData = userGroups.firstWhere(
+            (group) => group['id'] == chatGroupId,
+            orElse: () => <String, dynamic>{},
+          );
+
+          if (groupData.isNotEmpty) {
+            setChatName(groupData['name'] ?? 'Group Chat');
+            setChatImageUrl(groupData['image_url']);
+          }
         }
       }
       // For DMs, no additional loading needed
@@ -122,14 +131,14 @@ class ChatInitializationService {
     // This handles cases where the app was terminated while composing
   }
 
-  void _updateOnlineStatus(bool isOnline, SquadState squadState) {
+  void _updateOnlineStatus(bool isOnline, LobbyState squadState) {
     // Implementation moved from ChatScreen
     // Updates user's online status in Firestore
   }
 
   /// Cleanup operations when chat is disposed
   void dispose(BuildContext context, WidgetRef ref) {
-    final squadState = ref.read(sn.squadNotifierProvider).valueOrNull;
+    final squadState = ref.read(ln.lobbyNotifierProvider).valueOrNull;
     if (squadState != null) {
       _updateOnlineStatus(false, squadState);
     }

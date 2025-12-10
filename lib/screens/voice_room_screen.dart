@@ -9,7 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 
 /// Voice room screen with spatial audio visualization
-/// 
+///
 /// Features:
 /// - Floating glass orbs for participants in grid layout
 /// - Dynamic orb scaling and neon ring pulsing based on voice volume
@@ -44,32 +44,32 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
   final Map<String, double> _userVolumes = {};
   final Set<String> _raisedHands = {};
   String? _screenShareUserId;
-  
+
   // Local state
   bool _isMuted = false;
   bool _isSpeakerOn = true;
   bool _isHandRaised = false;
-  
+
   // Animation controllers
   late AnimationController _particleController;
   final Map<String, AnimationController> _orbPulseControllers = {};
-  
+
   // Mock participants (replace with actual data from VoiceService)
   List<VoiceParticipant> _participants = [];
-  
+
   @override
   void initState() {
     super.initState();
-    
+
     _particleController = AnimationController(
       duration: const Duration(seconds: 20),
       vsync: this,
     )..repeat();
-    
+
     _initializeVoiceRoom();
     _loadMockParticipants();
   }
-  
+
   @override
   void dispose() {
     _particleController.dispose();
@@ -79,12 +79,12 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     _leaveVoiceRoom();
     super.dispose();
   }
-  
+
   Future<void> _initializeVoiceRoom() async {
     // TODO: Initialize VoiceService and join channel
     // final voiceService = ref.read(voiceServiceProvider);
     // await voiceService.joinChannel(widget.roomId);
-    
+
     // Setup volume change listener
     // voiceService.onVolumeChanged = (userId, volume) {
     //   setState(() {
@@ -92,13 +92,13 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     //   });
     // };
   }
-  
+
   Future<void> _leaveVoiceRoom() async {
     // TODO: Leave voice channel
     // final voiceService = ref.read(voiceServiceProvider);
     // await voiceService.leaveChannel();
   }
-  
+
   void _loadMockParticipants() {
     // Mock data for demonstration
     setState(() {
@@ -132,7 +132,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
           isMuted: false,
         ),
       ];
-      
+
       // Initialize pulse controllers
       for (final participant in _participants) {
         _orbPulseControllers[participant.id] = AnimationController(
@@ -142,7 +142,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       }
     });
   }
-  
+
   void _toggleMute() {
     setState(() {
       _isMuted = !_isMuted;
@@ -151,7 +151,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     // TODO: Update voice service
     // ref.read(voiceServiceProvider).toggleMute();
   }
-  
+
   void _toggleSpeaker() {
     setState(() {
       _isSpeakerOn = !_isSpeakerOn;
@@ -160,7 +160,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     // TODO: Update voice service
     // ref.read(voiceServiceProvider).toggleSpeaker();
   }
-  
+
   void _toggleHandRaise() {
     setState(() {
       _isHandRaised = !_isHandRaised;
@@ -173,16 +173,16 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     HapticFeedback.heavyImpact();
     // TODO: Notify other participants
   }
-  
+
   void _leaveRoom() {
     Navigator.of(context).pop();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accentColor = widget.themeColor ?? theme.colorScheme.primary;
-    
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       backgroundColor: Colors.transparent,
@@ -191,29 +191,29 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
         children: [
           // Animated background with particles
           _buildAnimatedBackground(accentColor),
-          
+
           // Main content
           SafeArea(
             child: Column(
               children: [
                 // Room info header
                 _buildRoomHeader(theme, accentColor),
-                
+
                 // Participant orbs grid
                 Expanded(
                   child: _buildParticipantGrid(theme, accentColor),
                 ),
-                
+
                 // Raised hands queue bar
                 if (_raisedHands.isNotEmpty)
                   _buildRaisedHandsBar(theme, accentColor),
-                
+
                 // Bottom control bar
                 _buildControlBar(theme, accentColor),
               ],
             ),
           ),
-          
+
           // Screen share preview (if active)
           if (_screenShareUserId != null)
             _buildScreenSharePreview(theme, accentColor),
@@ -221,7 +221,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ),
     );
   }
-  
+
   PreferredSizeWidget _buildAppBar(ThemeData theme, Color accentColor) {
     return AppBar(
       backgroundColor: Colors.transparent,
@@ -248,7 +248,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ],
     );
   }
-  
+
   Widget _buildAnimatedBackground(Color accentColor) {
     return Stack(
       children: [
@@ -269,7 +269,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
             ),
           ),
         ),
-        
+
         // Animated particles
         AnimatedBuilder(
           animation: _particleController,
@@ -286,7 +286,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ],
     );
   }
-  
+
   Widget _buildRoomHeader(ThemeData theme, Color accentColor) {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -338,7 +338,8 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: accentColor.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
@@ -374,7 +375,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ),
     );
   }
-  
+
   Widget _buildParticipantGrid(ThemeData theme, Color accentColor) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -394,7 +395,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ),
     );
   }
-  
+
   Widget _buildParticipantOrb(
     ThemeData theme,
     Color accentColor,
@@ -403,15 +404,16 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     final volume = _userVolumes[participant.id] ?? 0.0;
     final isSpeaking = volume > 0.1;
     final isHandRaised = _raisedHands.contains(participant.id);
-    
+
     // Trigger pulse animation when speaking
-    if (isSpeaking && !(_orbPulseControllers[participant.id]?.isAnimating ?? false)) {
+    if (isSpeaking &&
+        !(_orbPulseControllers[participant.id]?.isAnimating ?? false)) {
       _orbPulseControllers[participant.id]?.repeat(reverse: true);
     } else if (!isSpeaking) {
       _orbPulseControllers[participant.id]?.stop();
       _orbPulseControllers[participant.id]?.reset();
     }
-    
+
     return Stack(
       clipBehavior: Clip.none,
       alignment: Alignment.center,
@@ -440,7 +442,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
                   curve: Curves.easeInOut,
                 ),
           ),
-        
+
         // Host crown
         if (participant.isHost)
           Positioned(
@@ -463,7 +465,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
                   color: Colors.amber.withOpacity(0.5),
                 ),
           ),
-        
+
         // Main orb
         AnimatedBuilder(
           animation: _orbPulseControllers[participant.id]!,
@@ -471,7 +473,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
             final scale = isSpeaking
                 ? 1.0 + (_orbPulseControllers[participant.id]!.value * 0.3)
                 : 1.0;
-            
+
             return Transform.scale(
               scale: scale,
               child: _buildOrbContent(theme, accentColor, participant, volume),
@@ -481,7 +483,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ],
     );
   }
-  
+
   Widget _buildOrbContent(
     ThemeData theme,
     Color accentColor,
@@ -490,7 +492,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
   ) {
     final isSpeaking = volume > 0.1;
     final orbColor = participant.isMuted ? Colors.grey : accentColor;
-    
+
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -524,7 +526,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
                 begin: 1.0,
                 duration: 500.ms,
               ),
-        
+
         // Waveform ring
         if (isSpeaking)
           SizedBox(
@@ -537,7 +539,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
               ),
             ),
           ),
-        
+
         // Glass orb
         ClipOval(
           child: BackdropFilter(
@@ -547,7 +549,8 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
               height: 110,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(participant.isMuted ? 0.05 : 0.12),
+                color:
+                    Colors.white.withOpacity(participant.isMuted ? 0.05 : 0.12),
                 border: Border.all(
                   color: orbColor.withOpacity(0.6),
                   width: 2,
@@ -565,7 +568,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
                 children: [
                   // Avatar or initial
                   _buildAvatar(participant, orbColor),
-                  
+
                   // Mute slash overlay
                   if (participant.isMuted)
                     Container(
@@ -584,7 +587,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
             ),
           ),
         ),
-        
+
         // Name label below
         Positioned(
           bottom: -30,
@@ -613,7 +616,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ],
     );
   }
-  
+
   Widget _buildAvatar(VoiceParticipant participant, Color accentColor) {
     if (participant.avatarUrl != null) {
       return ClipOval(
@@ -622,17 +625,19 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
           width: 80,
           height: 80,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => _buildAvatarFallback(participant, accentColor),
+          errorBuilder: (context, error, stackTrace) =>
+              _buildAvatarFallback(participant, accentColor),
         ),
       );
     }
-    
+
     return _buildAvatarFallback(participant, accentColor);
   }
-  
+
   Widget _buildAvatarFallback(VoiceParticipant participant, Color accentColor) {
-    final initial = participant.name.isNotEmpty ? participant.name[0].toUpperCase() : '?';
-    
+    final initial =
+        participant.name.isNotEmpty ? participant.name[0].toUpperCase() : '?';
+
     return Container(
       width: 80,
       height: 80,
@@ -659,7 +664,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ),
     );
   }
-  
+
   Widget _buildRaisedHandsBar(ThemeData theme, Color accentColor) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -721,7 +726,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
         .fadeIn(duration: 300.ms)
         .slideY(begin: 0.3, duration: 400.ms, curve: Curves.easeOut);
   }
-  
+
   Widget _buildControlBar(ThemeData theme, Color accentColor) {
     return Container(
       margin: const EdgeInsets.all(16),
@@ -751,7 +756,9 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
                   onPressed: _toggleMute,
                 ),
                 _buildControlButton(
-                  icon: _isSpeakerOn ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                  icon: _isSpeakerOn
+                      ? Icons.volume_up_rounded
+                      : Icons.volume_off_rounded,
                   label: 'Speaker',
                   color: accentColor,
                   isActive: _isSpeakerOn,
@@ -778,7 +785,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       ),
     );
   }
-  
+
   Widget _buildControlButton({
     required IconData icon,
     required String label,
@@ -792,15 +799,15 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
         width: 70,
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: isActive ? color.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+          color: isActive
+              ? color.withOpacity(0.2)
+              : Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isActive ? color : Colors.white.withOpacity(0.2),
             width: 1.5,
           ),
-          boxShadow: isActive
-              ? color.neonGlow(blur: 15, opacity: 0.4)
-              : null,
+          boxShadow: isActive ? color.neonGlow(blur: 15, opacity: 0.4) : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -822,15 +829,13 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
           ],
         ),
       ),
-    )
-        .animate(target: isActive ? 1 : 0)
-        .scaleXY(
+    ).animate(target: isActive ? 1 : 0).scaleXY(
           begin: 1.0,
           end: 1.05,
           duration: 200.ms,
         );
   }
-  
+
   Widget _buildScreenSharePreview(ThemeData theme, Color accentColor) {
     return Positioned(
       top: 100,
@@ -861,7 +866,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
                     color: accentColor.withOpacity(0.6),
                   ),
                 ),
-                
+
                 // Close button
                 Positioned(
                   top: 4,
@@ -932,12 +937,14 @@ class _ParticlePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final random = math.Random(42); // Fixed seed for consistency
-    
+
     for (int i = 0; i < 30; i++) {
-      final x = (random.nextDouble() * size.width + (progress * 50)) % size.width;
-      final y = (random.nextDouble() * size.height + (progress * 30)) % size.height;
+      final x =
+          (random.nextDouble() * size.width + (progress * 50)) % size.width;
+      final y =
+          (random.nextDouble() * size.height + (progress * 30)) % size.height;
       final radius = 2 + random.nextDouble() * 4;
-      
+
       canvas.drawCircle(
         Offset(x, y),
         radius,
@@ -977,32 +984,32 @@ class _WaveformRingPainter extends CustomPainter {
     for (int i = 0; i < segmentCount; i++) {
       final angle = i * segmentAngle - math.pi / 2;
       final nextAngle = (i + 1) * segmentAngle - math.pi / 2;
-      
+
       // Vary height based on volume
       final height = 5 + (volume * 15 * math.sin(i * 0.5));
-      
+
       final innerRadius = radius - height;
-      
+
       final startOuter = Offset(
         center.dx + radius * math.cos(angle),
         center.dy + radius * math.sin(angle),
       );
-      
+
       final endOuter = Offset(
         center.dx + radius * math.cos(nextAngle),
         center.dy + radius * math.sin(nextAngle),
       );
-      
+
       final startInner = Offset(
         center.dx + innerRadius * math.cos(angle),
         center.dy + innerRadius * math.sin(angle),
       );
-      
+
       final endInner = Offset(
         center.dx + innerRadius * math.cos(nextAngle),
         center.dy + innerRadius * math.sin(nextAngle),
       );
-      
+
       // Draw segment
       final path = Path()
         ..moveTo(startOuter.dx, startOuter.dy)
@@ -1010,7 +1017,7 @@ class _WaveformRingPainter extends CustomPainter {
         ..lineTo(endInner.dx, endInner.dy)
         ..lineTo(endOuter.dx, endOuter.dy)
         ..close();
-      
+
       canvas.drawPath(path, paint..style = PaintingStyle.fill);
     }
   }

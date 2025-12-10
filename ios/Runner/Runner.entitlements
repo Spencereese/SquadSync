@@ -4,5 +4,13 @@
 <dict>
 	<key>aps-environment</key>
 	<string>development</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.squadsync.app</string>
+	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:sfckxrnoiwetmzdycqaa.supabase.co</string>
+	</array>
 </dict>
 </plist>

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../domain/entities/squad_state.dart';
+import '../../domain/entities/lobby_state.dart';
 
 class EditGameDialog {
-  static void show(BuildContext context, SquadState squadState, int index) {
+  static void show(BuildContext context, LobbyState squadState, int index) {
     final game = squadState.availableGames[index];
     final TextEditingController nameController =
         TextEditingController(text: game['name']);

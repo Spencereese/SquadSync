@@ -381,6 +381,16 @@ class AppTheme {
       ),
     );
   }
+
+  // Semantic color helpers for consistent theming
+  static Color success(ColorScheme scheme) =>
+      const Color(0xFF00FF41); // Neon green
+  static Color warning(ColorScheme scheme) => const Color(0xFFFFA500); // Orange
+  static Color info(ColorScheme scheme) => scheme.primary; // Theme primary
+  static Color gradient1(ColorScheme scheme) =>
+      const Color(0xFF6A4C93); // Purple
+  static Color gradient2(ColorScheme scheme) => const Color(0xFF2196F3); // Blue
+  static Color gradient3(ColorScheme scheme) => scheme.primary; // Theme cyan
 }
 
 /// Extension to add neon glow effect to any Color

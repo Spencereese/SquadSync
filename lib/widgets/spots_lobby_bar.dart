@@ -1,12 +1,12 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/squad.dart';
+import '../models/public_squad.dart';
 import '../presentation/notifiers/current_squad_notifier.dart';
 import '../utils.dart';
 
 class SpotsLobbyBar extends ConsumerWidget {
-  final Squad squad;
+  final PublicSquad squad;
 
   const SpotsLobbyBar({super.key, required this.squad});
 
@@ -43,11 +43,11 @@ class SpotsLobbyBar extends ConsumerWidget {
   }
 
   void _claimSpot(WidgetRef ref, String spotNumber) {
-    ref.read(currentSquadProvider.notifier).claimSpot(spotNumber);
+    ref.read(currentLobbyProvider.notifier).claimSpot(spotNumber);
   }
 
   void _unclaimSpot(WidgetRef ref, String spotNumber) {
-    ref.read(currentSquadProvider.notifier).unclaimSpot(spotNumber);
+    ref.read(currentLobbyProvider.notifier).unclaimSpot(spotNumber);
   }
 }
 
@@ -80,8 +80,11 @@ class _SpotItem extends StatelessWidget {
           Text(
             spotNumber,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-            ),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.7),
+                ),
           ),
           const SizedBox(height: 4),
 
@@ -119,9 +122,9 @@ class _SpotItem extends StatelessWidget {
               child: Text(
                 'P', // Placeholder for timer
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSecondary,
-                  fontSize: 10,
-                ),
+                      color: Theme.of(context).colorScheme.onSecondary,
+                      fontSize: 10,
+                    ),
               ),
             ),
         ],
@@ -141,9 +144,9 @@ class _SpotItem extends StatelessWidget {
       child: Text(
         initials,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onPrimary,
-          fontWeight: FontWeight.bold,
-        ),
+              color: Theme.of(context).colorScheme.onPrimary,
+              fontWeight: FontWeight.bold,
+            ),
       ),
     );
   }

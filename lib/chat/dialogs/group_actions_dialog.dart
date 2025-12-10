@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/supabase_service.dart';
+import '../../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../../utils.dart';
 import '../../domain/entities/message.dart';
 import '../../presentation/notifiers/user_notifier.dart';
-import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/game_notifier.dart';
+import '../../presentation/notifiers/chat_notifier.dart';
 import '../chat_screen.dart';
 
 /// Unified dialog for all group-related actions: join, create, and browse public groups
@@ -133,8 +134,7 @@ class _JoinGroupTab extends ConsumerStatefulWidget {
 class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
   final _codeController = TextEditingController();
   final _searchController = TextEditingController();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AuthServiceSupabase _authService = AuthServiceSupabase();
 
   List<Map<String, dynamic>> _searchResults = [];
   List<Map<String, dynamic>> _suggestedGroups = [];
@@ -158,30 +158,30 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
   }
 
   Future<void> _loadSuggestedGroups() async {
-    final currentUser = _auth.currentUser;
+    final currentUser = _authService.currentUser;
     if (currentUser == null) return;
 
     try {
       // Get popular public groups (most members first)
-      final query = _firestore
-          .collectionGroup('chat_groups')
-          .where('isPublic', isEqualTo: true)
-          .orderBy('memberCount', descending: true)
+      final response = await SupabaseService.client
+          .from('chat_groups')
+          .select()
+          .eq('is_public', true)
+          .order('member_count', ascending: false)
           .limit(10);
 
-      final snapshot = await query.get();
       final groups = <Map<String, dynamic>>[];
 
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final members = List<String>.from(data['members'] ?? []);
-        final isAlreadyMember = members.contains(currentUser.uid);
+      for (var data in (response as List<dynamic>)) {
+        final groupData = data as Map<String, dynamic>;
+        final members = List<String>.from(groupData['member_uids'] ?? []);
+        final isAlreadyMember = members.contains(currentUser.id);
 
         // Only show groups the user is not already a member of
         if (!isAlreadyMember) {
           groups.add({
-            'id': doc.id,
-            'data': data,
+            'id': groupData['id'],
+            'data': groupData,
             'type': 'user_group',
           });
         }
@@ -237,11 +237,11 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
 
         // If chat group join fails, try squad join as fallback
         try {
-          final currentUser = FirebaseAuth.instance.currentUser;
+          final currentUser = AuthServiceSupabase().currentUser;
           if (currentUser == null) throw Exception('User not authenticated');
 
-          final squadNotifier = ref.read(sn.squadNotifierProvider.notifier);
-          await squadNotifier.joinSquad(code, currentUser.uid);
+          final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+          await squadNotifier.joinSquad(code, currentUser.id);
           if (mounted) {
             Navigator.pop(context);
             showSnackBar(context, 'Successfully joined squad!');
@@ -286,32 +286,30 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
   }
 
   Future<List<Map<String, dynamic>>> _searchPublicGroups(String query) async {
-    final currentUser = _auth.currentUser;
+    final currentUser = _authService.currentUser;
     if (currentUser == null) return [];
 
     try {
-      // Search for public user groups with single field query to avoid index issues
-      final userGroupsQuery = _firestore
-          .collectionGroup('chat_groups')
-          .where('isPublic', isEqualTo: true)
-          .where('name', isGreaterThanOrEqualTo: query)
-          .where('name', isLessThanOrEqualTo: '$query\uf8ff')
+      // Search for public groups using Supabase ilike
+      final response = await SupabaseService.client
+          .from('chat_groups')
+          .select()
+          .eq('is_public', true)
+          .ilike('name', '%$query%')
           .limit(20);
-
-      final userGroupsSnapshot = await userGroupsQuery.get();
 
       final results = <Map<String, dynamic>>[];
 
-      for (var doc in userGroupsSnapshot.docs) {
-        final data = doc.data();
-        final members = List<String>.from(data['members'] ?? []);
-        final isAlreadyMember = members.contains(currentUser.uid);
+      for (var data in (response as List<dynamic>)) {
+        final groupData = data as Map<String, dynamic>;
+        final members = List<String>.from(groupData['member_uids'] ?? []);
+        final isAlreadyMember = members.contains(currentUser.id);
 
         // Only show groups the user is not already a member of
         if (!isAlreadyMember) {
           results.add({
-            'id': doc.id,
-            'data': data,
+            'id': groupData['id'],
+            'data': groupData,
             'type': 'user_group',
           });
         }
@@ -320,81 +318,52 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
       return results;
     } catch (e) {
       debugPrint('Error searching public groups: $e');
-      // Fallback: try searching with just the public filter
-      try {
-        final fallbackQuery = _firestore
-            .collectionGroup('chat_groups')
-            .where('isPublic', isEqualTo: true)
-            .limit(50);
-
-        final fallbackSnapshot = await fallbackQuery.get();
-        final results = <Map<String, dynamic>>[];
-
-        for (var doc in fallbackSnapshot.docs) {
-          final data = doc.data();
-          final name = data['name']?.toString().toLowerCase() ?? '';
-          final members = List<String>.from(data['members'] ?? []);
-          final isAlreadyMember = members.contains(currentUser.uid);
-
-          // Filter by name client-side and exclude already joined groups
-          if (!isAlreadyMember && name.contains(query.toLowerCase())) {
-            results.add({
-              'id': doc.id,
-              'data': data,
-              'type': 'user_group',
-            });
-          }
-        }
-
-        return results.take(20).toList();
-      } catch (fallbackError) {
-        debugPrint('Fallback search also failed: $fallbackError');
-        return [];
-      }
+      return [];
     }
   }
 
   Future<void> _joinPublicGroup(
       String groupId, Map<String, dynamic> groupData) async {
-    final currentUser = _auth.currentUser;
+    final currentUser = _authService.currentUser;
     if (currentUser == null) return;
 
     try {
-      // For user groups, we need to find the creator's user document
-      // and add the current user to the members array
-      final creatorUid = groupData['createdBy'];
-      if (creatorUid == null) return;
+      // Add user to the group's members array
+      final existingMembers = List<String>.from(groupData['member_uids'] ?? []);
+      if (!existingMembers.contains(currentUser.id)) {
+        existingMembers.add(currentUser.id);
+      }
 
-      // First, add the group to the current user's chat_groups collection
-      await _firestore
-          .collection('users')
-          .doc(currentUser.uid)
-          .collection('chat_groups')
-          .doc(groupId)
-          .set({
-        'name': groupData['name'] ?? 'Unnamed Group',
-        'isPublic': groupData['isPublic'] ?? false,
-        'createdBy': creatorUid,
-        'createdAt': groupData['createdAt'] ?? FieldValue.serverTimestamp(),
-        'lastMessage': groupData['lastMessage'] ?? '',
-        'lastMessageTime':
-            groupData['lastMessageTime'] ?? FieldValue.serverTimestamp(),
-        'memberCount': (groupData['memberCount'] ?? 0) + 1,
-        'members': [...(groupData['members'] ?? []), currentUser.uid],
-        'imageUrl': groupData['imageUrl'],
-        'gameFocus': groupData['gameFocus'],
-      });
+      // Update the group with new member
+      await SupabaseService.client.from('chat_groups').update({
+        'member_uids': existingMembers,
+        'member_count': existingMembers.length,
+      }).eq('id', groupId);
 
-      // Then update the creator's group document
-      await _firestore
-          .collection('users')
-          .doc(creatorUid)
-          .collection('chat_groups')
-          .doc(groupId)
-          .update({
-        'members': FieldValue.arrayUnion([currentUser.uid]),
-        'memberCount': FieldValue.increment(1),
-      });
+      // Add group to user's user_groups array
+      final userResponse = await SupabaseService.client
+          .from('users')
+          .select('user_groups')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+
+      final userGroups = userResponse != null
+          ? List<Map<String, dynamic>>.from(userResponse['user_groups'] ?? [])
+          : <Map<String, dynamic>>[];
+
+      // Check if group already exists in user_groups
+      final existingIndex =
+          userGroups.indexWhere((g) => g['chat_group_id'] == groupId);
+      if (existingIndex == -1) {
+        userGroups.add({
+          'chat_group_id': groupId,
+          'joined_at': DateTime.now().toIso8601String(),
+        });
+
+        await SupabaseService.client
+            .from('users')
+            .update({'user_groups': userGroups}).eq('id', currentUser.id);
+      }
 
       if (mounted) {
         showSnackBar(context, 'Successfully joined group!');
@@ -739,35 +708,25 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
     setState(() => _isLoading = true);
 
     try {
-      final currentUser = FirebaseAuth.instance.currentUser;
+      final currentUser = AuthServiceSupabase().currentUser;
       if (currentUser == null) return;
 
-      // Create group document - always create user-specific groups
-      final groupRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.uid)
-          .collection('chat_groups')
-          .doc();
+      // Use proper repository pattern instead of direct Supabase calls
+      final chatNotifier = ref.read(chatNotifierProvider.notifier);
 
-      await groupRef.set({
-        'name': groupName,
-        'isPublic': _isPublic,
-        'createdBy': currentUser.uid,
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastMessage': '',
-        'lastMessageTime': FieldValue.serverTimestamp(),
-        'memberCount': 1,
-        'members': [currentUser.uid],
-        'imageUrl': null,
-        'gameFocus': _selectedGames.isNotEmpty
-            ? _selectedGames
-            : null, // Save as list or null
-      });
+      // TODO: Add support for games in group metadata
+      final newGroup = await chatNotifier.createGroup(
+        groupName,
+        _isPublic,
+        description: _selectedGames.isNotEmpty
+            ? 'Games: ${_selectedGames.join(", ")}'
+            : null,
+      );
 
-      if (mounted) {
+      if (mounted && newGroup != null) {
         // Show invite code dialog for private groups
         if (!_isPublic) {
-          _showInviteCodeDialog(groupRef.id, groupName);
+          _showInviteCodeDialog(newGroup.id, groupName);
         } else {
           Navigator.pop(context);
           // Use addPostFrameCallback to ensure context is valid for navigation
@@ -775,7 +734,7 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
             if (mounted) {
               showSnackBar(context, 'Group created successfully!');
               // Navigate to the new group
-              _openChatGroup(groupRef.id, groupName);
+              _openChatGroup(newGroup.id, groupName);
             }
           });
         }
@@ -871,20 +830,22 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
   }
 
   void _openChatGroup(String groupId, String groupName) {
-    Navigator.pushNamed(
+    // Use MaterialPageRoute instead of named route
+    Navigator.push(
       context,
-      '/chat',
-      arguments: {
-        'chatGroupId': groupId,
-        'chatGroupName': groupName,
-        'chatType': 'group',
-      },
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          chatType: ChatType.userGroup,
+          chatGroupId: groupId,
+          chatGroupName: groupName,
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final squadAsync = ref.watch(sn.squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
     final gameAsync = ref.watch(gameNotifierProvider);
     final gameState = gameAsync.maybeWhen(
         data: (state) => state, orElse: () => GameState.initial());

@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/message.dart';
-import '../chat_service.dart';
+import '../../services/message_service.dart';
 import '../chat_state_notifier.dart';
-import '../../squad_state_notifier.dart';
+import '../../presentation/notifiers/user_notifier.dart';
 
 /// Service responsible for managing typing indicators and status updates
 class ChatTypingManager {
@@ -21,16 +21,16 @@ class ChatTypingManager {
     WidgetRef ref, {
     String? chatGroupId,
     required ChatType chatType,
-    SquadState? squadState,
   }) {
     // Cancel previous subscription to prevent memory leaks
     _typingSubscription?.cancel();
 
-    final chatService = ChatService();
+    final chatService = MessageService();
     _typingSubscription = chatService
         .getTypingUser(ref, chatGroupId: chatGroupId, chatType: chatType)
         .listen((typingUser) {
-      final myName = squadState?.displayName ?? '';
+      final userState = ref.read(userNotifierProvider);
+      final myName = userState.value?.displayName ?? '';
       ref.read(chatStateProvider.notifier).setTypingUser(
             typingUser != null && typingUser != myName ? typingUser : null,
           );
@@ -41,10 +41,10 @@ class ChatTypingManager {
   Future<void> startTyping(
     WidgetRef ref, {
     required String? chatGroupId,
-    SquadState? squadState,
   }) async {
-    final chatService = ChatService();
-    final displayName = squadState?.displayName ?? '';
+    final chatService = MessageService();
+    final userState = ref.read(userNotifierProvider);
+    final displayName = userState.value?.displayName ?? '';
 
     // Cancel existing timer
     _typingTimer?.cancel();
@@ -55,7 +55,7 @@ class ChatTypingManager {
 
     // Set timer to stop typing indicator after 3 seconds of inactivity
     _typingTimer = Timer(const Duration(seconds: 3), () async {
-      await stopTyping(ref, chatGroupId: chatGroupId, squadState: squadState);
+      await stopTyping(ref, chatGroupId: chatGroupId);
     });
   }
 
@@ -63,10 +63,10 @@ class ChatTypingManager {
   Future<void> stopTyping(
     WidgetRef ref, {
     required String? chatGroupId,
-    SquadState? squadState,
   }) async {
-    final chatService = ChatService();
-    final displayName = squadState?.displayName ?? '';
+    final chatService = MessageService();
+    final userState = ref.read(userNotifierProvider);
+    final displayName = userState.value?.displayName ?? '';
 
     // Cancel timer
     _typingTimer?.cancel();
@@ -81,12 +81,11 @@ class ChatTypingManager {
     String text,
     WidgetRef ref, {
     required String? chatGroupId,
-    SquadState? squadState,
   }) {
     if (text.isNotEmpty) {
-      startTyping(ref, chatGroupId: chatGroupId, squadState: squadState);
+      startTyping(ref, chatGroupId: chatGroupId);
     } else {
-      stopTyping(ref, chatGroupId: chatGroupId, squadState: squadState);
+      stopTyping(ref, chatGroupId: chatGroupId);
     }
   }
 
@@ -94,8 +93,7 @@ class ChatTypingManager {
   Future<void> onMessageSent(
     WidgetRef ref, {
     required String? chatGroupId,
-    SquadState? squadState,
   }) async {
-    await stopTyping(ref, chatGroupId: chatGroupId, squadState: squadState);
+    await stopTyping(ref, chatGroupId: chatGroupId);
   }
 }

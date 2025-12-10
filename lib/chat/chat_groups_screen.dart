@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/entities/message.dart';
-import '../domain/entities/squad_state.dart';
+import '../domain/entities/lobby_state.dart';
 import 'chat_screen.dart';
-import '../screens/notifications_screen.dart';
-import '../app_theme.dart';
+import '../core/app_theme.dart';
 import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
 import 'dialogs/group_actions_dialog.dart';
 import 'dialogs/add_friend_dialog.dart';
-import '../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import '../presentation/notifiers/user_notifier.dart';
 import '../profile_tab.dart';
+import '../screens/squad_tab_screen.dart';
+import '../screens/clips_screen.dart';
 
 class ChatGroupsScreen extends ConsumerStatefulWidget {
   const ChatGroupsScreen({super.key});
@@ -24,8 +26,7 @@ class ChatGroupsScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AuthServiceSupabase _authService = AuthServiceSupabase();
   late PageController _pageController;
   final ValueNotifier<int> _selectedIndexNotifier = ValueNotifier<int>(0);
   double _navOpacity = 0.9;
@@ -95,7 +96,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   }
 
   void _clearNotification(int index) {
-    ref.read(sn.squadNotifierProvider.notifier).clearNotifications(index);
+    ref.read(ln.lobbyNotifierProvider.notifier).clearNotifications(index);
   }
 
   bool _updateNavOpacity(ScrollNotification notification) {
@@ -119,13 +120,15 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     return true;
   }
 
-  Widget _buildTabItem(int index, int selectedIndex, SquadState squadState) {
+  Widget _buildTabItem(int index, int selectedIndex, LobbyState squadState) {
     bool isSelected = selectedIndex == index;
     final tabs = [
       'assets/images/chat.png',
-      Icons.notifications,
-      Icons.menu,
+      Icons.group,
+      Icons.video_library,
+      Icons.person,
     ];
+    final labels = ['Chats', 'Squad', 'Clips', 'Profile'];
     bool hasNotification =
         !isSelected && (index == 0 && squadState.hasUnreadMessages);
 
@@ -147,7 +150,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                     width: 28,
                     height: 28,
                     color: isSelected
-                        ? AppTheme.accentColor
+                        ? Theme.of(context).colorScheme.primary
                         : Colors.white.withValues(alpha: 0.7),
                   )
                 else
@@ -155,9 +158,22 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                     tabs[index] as IconData,
                     size: 28,
                     color: isSelected
-                        ? AppTheme.accentColor
+                        ? Theme.of(context).colorScheme.primary
                         : Colors.white.withValues(alpha: 0.7),
                   ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    labels[index],
+                    style: TextStyle(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.white.withValues(alpha: 0.7),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
               ],
             ),
             if (hasNotification)
@@ -168,7 +184,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: AppTheme.accentColor,
+                    color: Theme.of(context).colorScheme.primary,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.black, width: 1),
                   ),
@@ -181,15 +197,16 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   }
 
   List<Widget> _buildPages(
-      BuildContext context, bool isKeyboardVisible, SquadState squadState) {
+      BuildContext context, bool isKeyboardVisible, LobbyState squadState) {
     return [
       _buildChatGroupsPage(squadState, ref),
-      const NotificationsScreen(),
+      const SquadTabScreen(),
+      const ClipsScreen(),
       const ProfileTab(),
     ];
   }
 
-  Widget _buildChatGroupsPage(SquadState squadState, WidgetRef ref) {
+  Widget _buildChatGroupsPage(LobbyState squadState, WidgetRef ref) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -205,15 +222,55 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
             : null,
         actions: [
           if (_isDMView)
-            IconButton(
-              icon: const Icon(Icons.person_add, color: Colors.cyanAccent),
-              onPressed: () => showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (context) => const AddFriendDialog(),
-              ),
-              tooltip: 'Add friend',
+            // Add friend button with pending requests badge
+            StreamBuilder<List<Map<String, dynamic>>>(
+              stream: ref
+                  .watch(userNotifierProvider.notifier)
+                  .streamPendingRequests(),
+              builder: (context, snapshot) {
+                final pendingCount = snapshot.data?.length ?? 0;
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.person_add,
+                          color: Colors.cyanAccent),
+                      onPressed: () => showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (context) => const AddFriendDialog(),
+                      ),
+                      tooltip: 'Add friend',
+                    ),
+                    if (pendingCount > 0)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            pendingCount > 9 ? '9+' : '$pendingCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             )
           else ...[
             // Single + button for all group actions
@@ -234,7 +291,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ref.watch(sn.squadNotifierProvider).when(
+    return ref.watch(ln.lobbyNotifierProvider).when(
           data: (squadState) {
             final bool isKeyboardVisible =
                 MediaQuery.of(context).viewInsets.bottom > 0;
@@ -242,7 +299,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
             // Show loading screen while initializing or loading initial data
             if (!squadState.isInitialized || !squadState.isInitialDataLoaded) {
               return Theme(
-                data: AppTheme.darkTheme,
+                data: AppTheme.dark(),
                 child: Scaffold(
                   backgroundColor: Colors.black,
                   body: Center(
@@ -268,7 +325,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
             }
 
             return Theme(
-              data: AppTheme.darkTheme,
+              data: AppTheme.dark(),
               child: Scaffold(
                 body: Stack(
                   children: [
@@ -317,6 +374,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                                   _buildTabItem(0, selectedIndex, squadState),
                                   _buildTabItem(1, selectedIndex, squadState),
                                   _buildTabItem(2, selectedIndex, squadState),
+                                  _buildTabItem(3, selectedIndex, squadState),
                                 ],
                               );
                             },
@@ -334,16 +392,16 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
         );
   }
 
-  Widget _buildChatContent(SquadState squadState) {
+  Widget _buildChatContent(LobbyState squadState) {
     // Check if user is authenticated
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUser = AuthServiceSupabase().currentUser;
     if (currentUser == null) {
       return const Center(
         child: CircularProgressIndicator(color: Colors.cyanAccent),
       );
     }
 
-    if (squadState.selectedSquadId == null) {
+    if (squadState.selectedLobbyId == null) {
       // Show user-specific groups instead of squad groups
       if (_isDMView) {
         // Show DMs
@@ -369,34 +427,34 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     final lastGroupId = prefs.getString('last_chat_group');
     if (lastGroupId != null && mounted) {
       // Check if the group still exists and user has access
-      final squadState = ref.read(sn.squadNotifierProvider).maybeWhen(
+      final squadState = ref.read(ln.lobbyNotifierProvider).maybeWhen(
             data: (data) => data,
             orElse: () => null,
           );
-      if (squadState == null || squadState.selectedSquadId == null) {
+      if (squadState == null || squadState.selectedLobbyId == null) {
         // User doesn't have a selected squad, can't check squad chat groups
         return;
       }
-      final groupDoc = await _firestore
-          .collection('squads')
-          .doc(squadState.selectedSquadId)
-          .collection('chat_groups')
-          .doc(lastGroupId)
-          .get();
 
-      if (groupDoc.exists && mounted) {
-        final groupData = groupDoc.data();
-        final members = List<String>.from(groupData?['members'] ?? []);
-        final isPrivate = groupData?['isPrivate'] ?? false;
+      final response = await SupabaseService.client
+          .from('chat_groups')
+          .select()
+          .eq('id', lastGroupId)
+          .eq('squad_id', squadState.selectedLobbyId!)
+          .maybeSingle();
 
-        if (!isPrivate || members.contains(_auth.currentUser?.uid)) {
+      if (response != null && mounted) {
+        final members = List<String>.from(response['member_uids'] ?? []);
+        final isPrivate = response['is_private'] ?? false;
+
+        if (!isPrivate || members.contains(_authService.currentUser?.id)) {
           // Navigate to the last chat group
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (context) => ChatScreen(
                 chatGroupId: lastGroupId,
-                chatGroupName: groupData?['name'] ?? 'Unknown Group',
+                chatGroupName: response['name'] ?? 'Unknown Group',
                 chatType: ChatType.userGroup,
               ),
             ),

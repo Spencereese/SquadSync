@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../domain/entities/squad_state.dart';
+import '../../domain/entities/lobby_state.dart';
 import 'add_game_dialog.dart';
 import 'edit_game_dialog.dart';
 import 'delete_game_dialog.dart';
 
 class ManageGamesDialog {
-  static void show(BuildContext context, SquadState squadState) {
+  static void show(BuildContext context, LobbyState squadState) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(

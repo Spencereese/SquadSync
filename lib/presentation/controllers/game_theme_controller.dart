@@ -65,42 +65,42 @@ class GameColorPresets {
       vibrant: Color(0xFF39FF14),
       accent: Color(0xFF00CC33),
     ),
-    
+
     // Valorant
     'valorant': GameColors(
       dominant: Color(0xFFFF4655),
       vibrant: Color(0xFFFF1744),
       accent: Color(0xFFD32F2F),
     ),
-    
+
     // Apex Legends
     'apex legends': GameColors(
       dominant: Color(0xFFFF6347),
       vibrant: Color(0xFFFF4500),
       accent: Color(0xFFE64A19),
     ),
-    
+
     // Fortnite
     'fortnite': GameColors(
       dominant: Color(0xFF00B4FF),
       vibrant: Color(0xFF00D9FF),
       accent: Color(0xFF0091EA),
     ),
-    
+
     // League of Legends
     'league of legends': GameColors(
       dominant: Color(0xFF0AC8B9),
       vibrant: Color(0xFF00E5CC),
       accent: Color(0xFF00BFA5),
     ),
-    
+
     // Overwatch
     'overwatch': GameColors(
       dominant: Color(0xFFFFA500),
       vibrant: Color(0xFFFFB300),
       accent: Color(0xFFFF8F00),
     ),
-    
+
     // Counter-Strike
     'counter-strike': GameColors(
       dominant: Color(0xFFFFD700),
@@ -117,28 +117,28 @@ class GameColorPresets {
       vibrant: Color(0xFFFFC107),
       accent: Color(0xFFFFA000),
     ),
-    
+
     // Rocket League
     'rocket league': GameColors(
       dominant: Color(0xFF0080FF),
       vibrant: Color(0xFF2196F3),
       accent: Color(0xFF1976D2),
     ),
-    
+
     // Destiny 2
     'destiny 2': GameColors(
       dominant: Color(0xFF6A4C93),
       vibrant: Color(0xFF7E57C2),
       accent: Color(0xFF5E35B1),
     ),
-    
+
     // Minecraft
     'minecraft': GameColors(
       dominant: Color(0xFF8BC34A),
       vibrant: Color(0xFF9CCC65),
       accent: Color(0xFF7CB342),
     ),
-    
+
     // Default fallback
     'default': GameColors(
       dominant: Color(0xFF00F5FF),
@@ -149,21 +149,22 @@ class GameColorPresets {
 
   static GameColors getPreset(String? gameName) {
     if (gameName == null) return presets['default']!;
-    
+
     final normalizedName = gameName.toLowerCase().trim();
-    
+
     // Try exact match first
     if (presets.containsKey(normalizedName)) {
       return presets[normalizedName]!;
     }
-    
+
     // Try partial match
     for (final entry in presets.entries) {
-      if (normalizedName.contains(entry.key) || entry.key.contains(normalizedName)) {
+      if (normalizedName.contains(entry.key) ||
+          entry.key.contains(normalizedName)) {
         return entry.value;
       }
     }
-    
+
     return presets['default']!;
   }
 }
@@ -258,7 +259,7 @@ class GameThemeController extends StateNotifier<GameThemeState> {
 
     // Try to get preset colors first (instant fallback)
     final preset = GameColorPresets.getPreset(gameName);
-    
+
     // Update with preset immediately
     state = state.copyWith(
       currentGameId: gameId,
@@ -269,7 +270,7 @@ class GameThemeController extends StateNotifier<GameThemeState> {
       accentColor: preset.accent,
       isLoading: false,
     );
-    
+
     await _saveTheme();
 
     // If we have a cover URL, extract colors in background
@@ -357,10 +358,10 @@ class GameThemeController extends StateNotifier<GameThemeState> {
   /// Ensure color is vibrant enough for neon effects
   Color _ensureVibrant(Color color) {
     final hslColor = HSLColor.fromColor(color);
-    
+
     // Ensure saturation is at least 0.5
     final saturation = hslColor.saturation < 0.5 ? 0.7 : hslColor.saturation;
-    
+
     // Ensure lightness is between 0.4 and 0.7 for good visibility
     var lightness = hslColor.lightness;
     if (lightness < 0.4) {
@@ -369,13 +370,16 @@ class GameThemeController extends StateNotifier<GameThemeState> {
       lightness = 0.6;
     }
 
-    return hslColor.withSaturation(saturation).withLightness(lightness).toColor();
+    return hslColor
+        .withSaturation(saturation)
+        .withLightness(lightness)
+        .toColor();
   }
 
   /// Reset to default theme
   Future<void> resetToDefault() async {
     final defaultColors = GameColorPresets.presets['default']!;
-    
+
     state = const GameThemeState().copyWith(
       dominantColor: defaultColors.dominant,
       vibrantColor: defaultColors.vibrant,

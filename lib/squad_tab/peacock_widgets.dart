@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../presentation/notifiers/squad_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart' as ln;
 
 class PeacockTimerDisplay extends ConsumerStatefulWidget {
   final String player;
@@ -27,7 +27,7 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
 
   @override
   Widget build(BuildContext context) {
-    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return squadStateAsync.when(
       data: (squadState) {
@@ -117,14 +117,14 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
 class PeacockWidgets {
   static Widget buildPeacockSpot(
       BuildContext context, WidgetRef ref, Function() togglePeacockMembers) {
-    final yourName = ref.read(squadNotifierProvider.select((asyncValue) =>
+    final yourName = ref.read(ln.lobbyNotifierProvider.select((asyncValue) =>
         asyncValue.value?.memberDisplayNames.values
             .firstWhere((name) => name.isNotEmpty, orElse: () => 'You') ??
         'You'));
-    final gameName = ref.read(squadNotifierProvider
+    final gameName = ref.read(ln.lobbyNotifierProvider
         .select((asyncValue) => asyncValue.value?.currentGame?['name'] ?? ''));
-    final squadSpots = ref.read(squadNotifierProvider.select(
-        (asyncValue) => asyncValue.value?.gameSquadSpots[gameName] ?? []));
+    final squadSpots = ref.read(ln.lobbyNotifierProvider.select(
+        (asyncValue) => asyncValue.value?.gameLobbySpots[gameName] ?? []));
     final youAreAssigned = squadSpots.contains(yourName);
     // Placeholder for peacockTimers and peacockQueue - need to implement
 

@@ -1,5 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:squad_sync/domain/entities/system_state.dart';
+import '../../services/auth_service_supabase.dart';
 import 'package:squad_sync/domain/repositories/system_repository.dart';
 import 'package:squad_sync/data/datasources/system_local_datasource.dart';
 import 'package:squad_sync/data/datasources/system_remote_datasource.dart';
@@ -7,28 +7,27 @@ import 'package:squad_sync/data/datasources/system_remote_datasource.dart';
 class SystemRepositoryImpl implements SystemRepository {
   final SystemLocalDataSource _localDataSource;
   final SystemRemoteDataSource _remoteDataSource;
-  final FirebaseAuth _auth;
+  final AuthServiceSupabase _authService = AuthServiceSupabase();
 
   SystemRepositoryImpl(
     this._localDataSource,
     this._remoteDataSource,
-    this._auth,
   );
 
   @override
   Future<SystemState> loadSystemState() async {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user == null) {
       return _localDataSource.loadSystemState();
     }
 
     try {
       final localState = await _localDataSource.loadSystemState();
-      final notifications = await _remoteDataSource.getNotifications(user.uid);
+      final notifications = await _remoteDataSource.getNotifications(user.id);
       final availabilitySlots =
-          await _remoteDataSource.getAvailabilitySlots(user.uid);
+          await _remoteDataSource.getAvailabilitySlots(user.id);
       final dailyBanVotes = await _remoteDataSource.getDailyBanVotes();
-      final bans = await _remoteDataSource.getBans(user.uid);
+      final bans = await _remoteDataSource.getBans(user.id);
 
       return localState.copyWith(
         notifications: notifications,
@@ -119,9 +118,9 @@ class SystemRepositoryImpl implements SystemRepository {
       {Map<String, dynamic>? data}) async {
     // This would need to get squad members and send to each
     // For now, just send to the current user as an example
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user != null) {
-      await sendNotificationToUser(user.uid, title, body, data: data);
+      await sendNotificationToUser(user.id, title, body, data: data);
     }
   }
 
@@ -135,17 +134,17 @@ class SystemRepositoryImpl implements SystemRepository {
 
   @override
   Future<void> addNotification(Map<String, dynamic> notification) async {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user != null) {
-      await _remoteDataSource.addNotification(user.uid, notification);
+      await _remoteDataSource.addNotification(user.id, notification);
     }
   }
 
   @override
   Future<void> markNotificationsAsRead() async {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user != null) {
-      await _remoteDataSource.markNotificationsAsRead(user.uid);
+      await _remoteDataSource.markNotificationsAsRead(user.id);
     }
   }
 
@@ -156,9 +155,9 @@ class SystemRepositoryImpl implements SystemRepository {
 
   @override
   Future<void> addAvailabilitySlot(Map<String, dynamic> slot) async {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user != null) {
-      await _remoteDataSource.addAvailabilitySlot(user.uid, slot);
+      await _remoteDataSource.addAvailabilitySlot(user.id, slot);
     }
   }
 
@@ -175,9 +174,9 @@ class SystemRepositoryImpl implements SystemRepository {
 
   @override
   Future<void> submitBanVote(String targetUserId, bool vote) async {
-    final user = _auth.currentUser;
+    final user = _authService.currentUser;
     if (user != null) {
-      await _remoteDataSource.submitBanVote(user.uid, targetUserId, vote);
+      await _remoteDataSource.submitBanVote(user.id, targetUserId, vote);
     }
   }
 

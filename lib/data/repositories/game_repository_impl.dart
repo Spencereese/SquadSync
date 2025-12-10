@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:squad_sync/domain/entities/game.dart';
 import 'package:squad_sync/domain/repositories/game_repository.dart';
 import 'package:squad_sync/data/datasources/game_local_datasource.dart';
@@ -9,12 +8,10 @@ import 'package:squad_sync/data/datasources/game_remote_datasource.dart';
 class GameRepositoryImpl implements GameRepository {
   final GameLocalDataSource _localDataSource;
   final GameRemoteDataSource _remoteDataSource;
-  final FirebaseFirestore _firestore;
 
   GameRepositoryImpl(
     this._localDataSource,
     this._remoteDataSource,
-    this._firestore,
   );
 
   @override
@@ -98,14 +95,9 @@ class GameRepositoryImpl implements GameRepository {
 
   @override
   Future<void> syncGamesToFirestore(String query, List<Game> games) async {
-    final batch = _firestore.batch();
-
-    for (final game in games) {
-      final docRef = _firestore.collection('games').doc(game.slug);
-      batch.set(docRef, game.toJson(), SetOptions(merge: true));
-    }
-
-    await batch.commit();
+    // TODO: Migrate to Supabase when needed
+    // No longer using Firestore for game syncing
+    return;
   }
 
   @override
@@ -125,24 +117,15 @@ class GameRepositoryImpl implements GameRepository {
 
   @override
   Future<List<Map<String, dynamic>>> getAvailableGames() async {
-    final snapshot = await _firestore.collection('games').orderBy('name').get();
-    return snapshot.docs.map((doc) => doc.data()).toList();
+    // TODO: Migrate to Supabase when needed
+    // Return empty list for now
+    return [];
   }
 
   @override
   Future<Map<String, List<Map<String, dynamic>>>> getGameLobbies() async {
-    final snapshot = await _firestore
-        .collection('lobbies')
-        .where('isVisible', isEqualTo: true)
-        .get();
-
-    final gameLobbies = <String, List<Map<String, dynamic>>>{};
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      final gameName = data['gameName'] as String;
-      gameLobbies.putIfAbsent(gameName, () => []).add(data);
-    }
-
-    return gameLobbies;
+    // TODO: Migrate to Supabase when needed
+    // Return empty map for now
+    return {};
   }
 }

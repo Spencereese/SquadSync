@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
-// import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-// import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import '../presentation/notifiers/user_notifier.dart';
-// import '../managers/review_manager.dart'; // TODO: Remove when implementing review functionality in new architecture
 import '../domain/entities/message.dart';
-// import '../chat/chat_service.dart';
 
 /// Conditional rating nudge shown only for first-time users of a game
 class RatingNudge extends ConsumerStatefulWidget {
@@ -214,8 +210,8 @@ class _ReviewSubmitDialogState extends ConsumerState<ReviewSubmitDialog> {
       /*
       final reviewManager =
           provider.Provider.of<ReviewManager>(context, listen: false);
-      final chatService = ChatService();
-      final user = FirebaseAuth.instance.currentUser;
+      final chatService = MessageService();
+      final user = AuthServiceSupabase().currentUser;
 
       if (user == null) return;
 
@@ -243,7 +239,7 @@ class _ReviewSubmitDialogState extends ConsumerState<ReviewSubmitDialog> {
 
       await chatService.sendMessage(
         ref,
-        senderUid: user.uid,
+        senderUid: user.id,
         text: '$displayName rated ${widget.gameName} $ratingText$reviewText',
         chatGroupId: widget.chatGroupId,
         chatType: widget.chatType,

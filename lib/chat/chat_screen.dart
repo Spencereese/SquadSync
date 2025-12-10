@@ -1,22 +1,25 @@
 import 'dart:convert';
 import 'dart:ui';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dart:async'; // Added for StreamSubscription
 
 import '../utils.dart';
-import '../presentation/notifiers/chat_notifier.dart';
+import '../services/background_service.dart';
 
 import 'chat_input_bar.dart';
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
+import 'game_selection_sheet.dart';
+import 'spots_sheet.dart';
 import '../screens/squad_tab_screen.dart';
 import 'services/chat_initialization_service.dart';
 import 'services/chat_scroll_controller.dart';
@@ -28,11 +31,10 @@ import '../domain/entities/chat_state.dart' as cn_state;
 import '../domain/entities/chat_state.dart' as cs;
 import '../domain/entities/message.dart' as msg;
 import '../domain/entities/message.dart' show ChatType;
-import '../presentation/notifiers/squad_notifier.dart' as sn;
-import '../domain/entities/squad_state.dart';
-import 'chat_settings_menu.dart'; // Importing ChatSettingsMenu
-import 'media_history_screen.dart'; // Importing MediaHistoryScreen
-import 'dialogs/invite_members_dialog.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import '../domain/entities/lobby_state.dart';
+import 'widgets/neon_chat_app_bar.dart';
+import 'screens/chat_info_screen.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
@@ -54,7 +56,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _inputFocusNode = FocusNode();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AuthServiceSupabase _auth = AuthServiceSupabase();
 
   // Service instances
   late final ChatInitializationService _initializationService;
@@ -62,6 +64,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   late final ChatMediaHandler _mediaHandler;
   late final ChatTypingManager _typingManager;
   late final ChatUIManager _uiManager;
+  late final BackgroundService _backgroundService;
 
   late AnimationController _animationController;
   late ScrollController _scrollController;
@@ -76,30 +79,27 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   String? get effectiveChatGroupId {
     if (widget.chatGroupId != null) return widget.chatGroupId;
     if (widget.chatType == ChatType.squad) {
-      final squadAsync = ref.read(sn.squadNotifierProvider);
-      return squadAsync.value?.selectedSquadId;
+      final squadAsync = ref.read(ln.lobbyNotifierProvider);
+      return squadAsync.value?.selectedLobbyId;
     }
     return null;
   }
 
   int? _getTimestampMs(dynamic message) {
-    if (message is DocumentSnapshot) {
-      final data = message.data() as Map<String, dynamic>?;
-      if (data?['timestamp'] is Timestamp) {
-        return (data?['timestamp'] as Timestamp).millisecondsSinceEpoch;
+    if (message is Map<String, dynamic>) {
+      // Handle both timestamp_ms (Supabase) and timestamp as ISO string
+      if (message['timestamp_ms'] != null) {
+        return message['timestamp_ms'] as int?;
       }
-      return data?['timestamp_ms'] as int?;
-    } else if (message is Map<String, dynamic>) {
-      return message['timestamp_ms'] as int?;
+      if (message['timestamp'] is String) {
+        return DateTime.parse(message['timestamp']).millisecondsSinceEpoch;
+      }
     }
     return null;
   }
 
   String? _getSender(dynamic message) {
-    if (message is DocumentSnapshot) {
-      final data = message.data() as Map<String, dynamic>?;
-      return data?['senderUid'] as String?;
-    } else if (message is Map<String, dynamic>) {
+    if (message is Map<String, dynamic>) {
       return message['senderUid'] as String?;
     }
     return null;
@@ -145,6 +145,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     _mediaHandler = ChatMediaHandler();
     _typingManager = ChatTypingManager();
     _uiManager = ChatUIManager();
+    _backgroundService = BackgroundService();
 
     _animationController = AnimationController(
       vsync: this,
@@ -170,14 +171,23 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     // Save this chat group as the last used chat group
+    debugPrint(
+        '🔍 ChatScreen init: chatType=${widget.chatType}, chatGroupId=${widget.chatGroupId}');
     if (widget.chatType == ChatType.userGroup && widget.chatGroupId != null) {
+      debugPrint('🔍 Conditions met for setting squad ID');
       _saveLastChatGroup(widget.chatGroupId!);
+    } else {
+      debugPrint(
+          '⚠️ Conditions NOT met: chatType=${widget.chatType}, chatGroupId=${widget.chatGroupId}');
     }
 
     // Set chat name from widget parameters if provided (for chat groups)
     if (widget.chatGroupName != null) {
       _chatName = widget.chatGroupName!;
     }
+
+    // Load mute status from local storage first
+    _loadMuteStatus();
 
     // Initialize UI manager with current state AFTER setting the correct chat name
     _uiManager.initialize(
@@ -190,6 +200,57 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
+    // Set squad ID for user group chats by querying lobby table
+    if (widget.chatType == ChatType.userGroup && widget.chatGroupId != null) {
+      // Run async lobby query after frame builds to avoid setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+
+        try {
+          debugPrint(
+              '🔍 Querying lobby for chat_group_id: ${widget.chatGroupId}');
+
+          // Query lobby by chat_group_id
+          final lobbyResponse = await SupabaseService.client
+              .from('lobbies')
+              .select()
+              .eq('chat_group_id', widget.chatGroupId!)
+              .maybeSingle();
+
+          String lobbyId;
+
+          if (lobbyResponse == null) {
+            debugPrint(
+                '⚠️ No lobby found for chat group, using chat_group_id as lobby_id');
+            // If no lobby found, the lobby ID is the same as chat_group_id
+            // (lobbies are created with id = chat_group_id in chat_remote_datasource_impl.dart)
+            lobbyId = widget.chatGroupId!;
+          } else {
+            lobbyId = lobbyResponse['id'] as String;
+            debugPrint(
+                '✅ Found lobby: $lobbyId for chat_group_id: ${widget.chatGroupId}');
+          }
+
+          // Set the lobby ID in the notifier
+          if (mounted) {
+            final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+            squadNotifier.setSelectedLobbyId(lobbyId);
+            debugPrint('✅ Set lobby ID in didChangeDependencies: $lobbyId');
+          }
+        } catch (e) {
+          debugPrint(
+              '❌ Error querying/setting lobby ID in didChangeDependencies: $e');
+          // Fallback: use chat_group_id as lobby ID
+          if (mounted) {
+            final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+            squadNotifier.setSelectedLobbyId(widget.chatGroupId!);
+            debugPrint(
+                '⚠️ Fallback: Set chat_group_id as lobby ID: ${widget.chatGroupId}');
+          }
+        }
+      });
+    }
 
     // Initialize provider-dependent services here, after the widget is mounted
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -316,34 +377,77 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     _scrollControllerService.scrollToBottom();
   }
 
-  Future<void> _toggleNotifications() async {
-    if (!mounted) return;
-    final wasMuted = _isMuted;
-    setState(() {
-      _isMuted = !_isMuted;
-    });
+  /// Load mute status from Firestore and SharedPreferences
+  Future<void> _loadMuteStatus() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('chat_muted', _isMuted);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  _isMuted ? 'Notifications muted' : 'Notifications unmuted')),
-        );
+      final localMuted =
+          prefs.getBool('chat_muted_${widget.chatGroupId ?? 'squad'}');
+
+      // Try to load from Supabase for cross-device sync
+      final currentUserId = _auth.currentUserId;
+      if (currentUserId != null && widget.chatGroupId != null) {
+        final userData = await SupabaseService.client
+            .from('users')
+            .select('user_groups')
+            .eq('uid', currentUserId)
+            .maybeSingle();
+
+        if (userData != null) {
+          final userGroups =
+              List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
+          final groupData = userGroups.firstWhere(
+            (g) => g['id'] == widget.chatGroupId,
+            orElse: () => <String, dynamic>{},
+          );
+
+          if (groupData.isNotEmpty &&
+              groupData['notifications_enabled'] != null) {
+            final supabaseMuted = !(groupData['notifications_enabled'] as bool);
+            if (mounted) {
+              setState(() {
+                _isMuted = supabaseMuted;
+              });
+            }
+            // Update local cache
+            await prefs.setBool(
+                'chat_muted_${widget.chatGroupId ?? 'squad'}', supabaseMuted);
+            return;
+          }
+        }
+      } else if (currentUserId != null && widget.chatType == ChatType.squad) {
+        final userData = await SupabaseService.client
+            .from('users')
+            .select('squad_chat_muted')
+            .eq('uid', currentUserId)
+            .maybeSingle();
+
+        if (userData != null && userData['squad_chat_muted'] != null) {
+          final supabaseMuted = userData['squad_chat_muted'] as bool;
+          if (mounted) {
+            setState(() {
+              _isMuted = supabaseMuted;
+            });
+          }
+          await prefs.setBool(
+              'chat_muted_${widget.chatGroupId ?? 'squad'}', supabaseMuted);
+          return;
+        }
       }
-    } catch (e) {
-      // Revert state on error
-      if (mounted) {
+
+      // Fall back to local storage
+      if (localMuted != null && mounted) {
         setState(() {
-          _isMuted = wasMuted;
+          _isMuted = localMuted;
         });
       }
+    } catch (e) {
+      debugPrint('Error loading mute status: $e');
     }
   }
 
   Future<void> _sendMessage(msg.Message? replyToMessage,
-      [SquadState? squadState]) async {
+      [LobbyState? squadState]) async {
     if (_messageController.text.isEmpty) {
       return;
     }
@@ -365,8 +469,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       // Determine chat group ID
       String? chatGroupId = widget.chatGroupId;
       if (chatGroupId == null && widget.chatType == ChatType.squad) {
-        final squadAsync = ref.read(sn.squadNotifierProvider);
-        chatGroupId = squadAsync.value?.selectedSquadId;
+        final squadAsync = ref.read(ln.lobbyNotifierProvider);
+        chatGroupId = squadAsync.value?.selectedLobbyId;
       }
       if (chatGroupId == null) {
         // Cannot send message without chat group ID
@@ -420,6 +524,75 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       _showPeacockModal(context);
     }
     // Add other commands here if needed
+  }
+
+  /// Handle lobby creation from chat
+  /// Shows game selection sheet, then creates lobby and shows spots sheet
+  Future<void> _handleLobbyCreation() async {
+    if (widget.chatGroupId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No chat group ID available')),
+        );
+      }
+      return;
+    }
+
+    try {
+      await GameSelectionSheet.show(
+        context,
+        onGameSelected: (gameName, maxSpots) async {
+          try {
+            HapticFeedback.mediumImpact();
+            
+            // Show loading indicator
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Creating lobby...'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+
+            // Create lobby
+            final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+            await lobbyNotifier.createLobby(
+              chatGroupId: widget.chatGroupId!,
+              gameName: gameName,
+              maxSpots: maxSpots,
+              isPublic: false, // Private lobby for chat groups
+            );
+
+            if (mounted) {
+              HapticFeedback.lightImpact();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Lobby created for $gameName!')),
+              );
+
+              // Show spots sheet
+              SpotsSheet.show(
+                context,
+                gameName: gameName,
+                maxSpots: maxSpots,
+                chatGroupId: widget.chatGroupId!,
+                chatType: widget.chatType,
+              );
+            }
+          } catch (e) {
+            debugPrint('❌ Error creating lobby: $e');
+            if (mounted) {
+              HapticFeedback.heavyImpact();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to create lobby: $e')),
+              );
+            }
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ Error showing game selection: $e');
+    }
   }
 
   Future<void> _sendMedia() async {
@@ -483,331 +656,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  void _viewGroupInfo(SquadState squadStateData) {
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(
-            title: const Text('Group Info'),
-            backgroundColor: Colors.black,
-          ),
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.black, Colors.indigo],
-              ),
-            ),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Group header
-                  Center(
-                    child: Column(
-                      children: [
-                        if (_chatImageUrl != null)
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundImage: NetworkImage(_chatImageUrl!),
-                          )
-                        else
-                          const CircleAvatar(
-                            radius: 50,
-                            child: Icon(
-                              Icons.group,
-                              color: Colors.cyanAccent,
-                              size: 50,
-                            ),
-                          ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _chatName,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${squadStateData.globalStatuses.length} members',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.white.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Group description (placeholder for now)
-                  const Text(
-                    'About',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.cyanAccent,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'This is a group chat for $_chatName. You can customize this description in group settings.',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Members section - clickable cards at top
-                  const Text(
-                    'Members',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.cyanAccent,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Column(
-                    children:
-                        squadStateData.globalStatuses.entries.map((entry) {
-                      final uid = entry.key;
-                      final status = entry.value;
-                      final displayName =
-                          squadStateData.memberDisplayNames[uid] ?? 'Unknown';
-                      final banCount =
-                          0; // TODO: Implement ban count in new architecture
-
-                      return GestureDetector(
-                        onTap: () => _showMemberMenu(
-                            context, displayName, squadStateData),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.2),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 20,
-                                child: Text(
-                                    displayName.substring(0, 1).toUpperCase()),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      displayName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    Text(
-                                      status,
-                                      style: TextStyle(
-                                        color:
-                                            Colors.white.withValues(alpha: 0.7),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (banCount > 0)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.red.withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '$banCount ban${banCount != 1 ? 's' : ''}',
-                                    style: const TextStyle(
-                                      color: Colors.redAccent,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              const Icon(
-                                Icons.more_vert,
-                                color: Colors.white70,
-                                size: 20,
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showMemberMenu(
-      BuildContext context, String userName, SquadState squadState) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.black.withValues(alpha: 0.9),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // User's name
-            Text(
-              userName,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(color: Colors.white),
-            ),
-            const SizedBox(height: 16),
-            // Options
-            _buildMemberMenuItem(
-              context,
-              icon: Icons.videocam,
-              label: 'Video Call',
-              onTap: () {
-                // TODO: Implement video call
-                Navigator.pop(context);
-              },
-            ),
-            _buildMemberMenuItem(
-              context,
-              icon: Icons.call,
-              label: 'Audio Call',
-              onTap: () {
-                // TODO: Implement audio call
-                Navigator.pop(context);
-              },
-            ),
-            _buildMemberMenuItem(
-              context,
-              icon: Icons.message,
-              label: 'Message',
-              onTap: () {
-                // TODO: Open 1-on-1 message
-                Navigator.pop(context);
-              },
-            ),
-            _buildMemberMenuItem(
-              context,
-              icon: Icons.gavel,
-              label: 'Ban',
-              onTap: () {
-                Navigator.pop(context);
-                // TODO: Implement ban functionality in new Riverpod architecture
-                // squadState.addBan(userName, ref.watch(userNotifierProvider.select((asyncValue) => asyncValue.value?.displayName ?? 'Unknown')));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('$userName has been voted for ban')),
-                );
-              },
-            ),
-            _buildMemberMenuItem(
-              context,
-              icon: Icons.person_off,
-              label: 'Block User',
-              onTap: () async {
-                Navigator.pop(context);
-                // TODO: Implement block functionality in new Riverpod architecture
-                // await squadState.blockUser(userName);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$userName has been blocked')),
-                  );
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMemberMenuItem(BuildContext context,
-      {required IconData icon,
-      required String label,
-      required VoidCallback onTap}) {
-    return ListTile(
-      leading: Icon(icon, color: Theme.of(context).primaryColor),
-      title: Text(label, style: const TextStyle(color: Colors.white)),
-      onTap: onTap,
-    );
-  }
-
-  void _inviteMembers() {
-    if (!mounted || widget.chatGroupId == null) return;
-
-    showDialog(
-      context: context,
-      builder: (context) => InviteMembersDialog(
-        chatGroupId: widget.chatGroupId!,
-        chatGroupName: _chatName,
-        isSquadGroup: widget.chatType == ChatType.userGroup,
-      ),
-    );
-  }
-
-  void _reportBug() {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Bug report submitted')),
-    );
-  }
-
-  void _leaveGroup() async {
-    if (!mounted) return;
-    try {
-      await ref
-          .read(cn.chatNotifierProvider.notifier)
-          .leaveGroup(widget.chatGroupId!);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text('You left "${widget.chatGroupName ?? 'the group'}"')),
-        );
-        // Navigate back to the previous screen
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to leave group: $e')),
-        );
-      }
-    }
-  }
-
   void _showPlusMenu(BuildContext context) {
     HapticFeedback.lightImpact();
     showModalBottomSheet(
@@ -818,7 +666,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Photo options row
+          // Media options row
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
@@ -838,6 +686,14 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   onTap: () {
                     Navigator.pop(context);
                     _sendMedia();
+                  },
+                ),
+                _buildPlusMenuItem(
+                  icon: Icons.videocam,
+                  label: 'Clip',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _sendClip();
                   },
                 ),
                 _buildPlusMenuItem(
@@ -879,10 +735,43 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
+  Future<void> _sendClip() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
+
+      if (video == null) return;
+
+      // Haptic feedback on selection
+      HapticFeedback.lightImpact();
+
+      // Send clip message via ChatNotifier (processClip is called internally)
+      await ref.read(cn.chatNotifierProvider.notifier).sendMessage(
+            ref,
+            widget.chatGroupId ?? '',
+            'Clip', // Message text
+            msg.MessageType.clip,
+            widget.chatType,
+            clipFilePath: video.path,
+          );
+
+      // Haptic feedback on send
+      HapticFeedback.mediumImpact();
+    } catch (e) {
+      debugPrint('Failed to send clip: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send clip: $e')),
+        );
+      }
+    }
+  }
+
   Widget _buildPlusMenuItem({
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    Color? iconColor,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -898,7 +787,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             ),
             child: Icon(
               icon,
-              color: Colors.white,
+              color: iconColor ?? Colors.white,
               size: 28,
             ),
           ),
@@ -932,7 +821,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   @override
   Widget build(BuildContext context) {
     // Watch Riverpod providers
-    final squadStateData = ref.watch(sn.squadNotifierProvider);
+    final squadStateData = ref.watch(ln.lobbyNotifierProvider);
     final chatStateData = ref.watch(cn.chatNotifierProvider);
 
     return squadStateData.when(
@@ -978,161 +867,148 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  Widget _buildChatContent(BuildContext context, SquadState squadStateData,
+  Widget _buildChatContent(BuildContext context, LobbyState squadStateData,
       cn_state.ChatState chatStateData) {
     // Use the passed chatStateData instead of Provider.of for Riverpod migration
     final chatState = chatStateData;
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final isKeyboardVisible = keyboardHeight > 0;
+    final chatGroupId = effectiveChatGroupId;
+
+    // If no chatGroupId, use default background
+    if (chatGroupId == null) {
+      return _buildChatContentWithBackground(
+        context,
+        squadStateData,
+        chatState,
+        keyboardHeight,
+        isKeyboardVisible,
+        {'type': 'color', 'value': '#0B0E14'},
+      );
+    }
+
+    // StreamBuilder for dynamic background
+    return StreamBuilder<Map<String, dynamic>>(
+      stream: _backgroundService.getCurrentBackground(chatGroupId),
+      builder: (context, snapshot) {
+        final background =
+            snapshot.data ?? {'type': 'color', 'value': '#0B0E14'};
+        return _buildChatContentWithBackground(
+          context,
+          squadStateData,
+          chatState,
+          keyboardHeight,
+          isKeyboardVisible,
+          background,
+        );
+      },
+    );
+  }
+
+  Widget _buildChatContentWithBackground(
+    BuildContext context,
+    LobbyState squadStateData,
+    cn_state.ChatState chatState,
+    double keyboardHeight,
+    bool isKeyboardVisible,
+    Map<String, dynamic> background,
+  ) {
+    // Calculate parallax offset based on scroll position
+    final scrollOffset =
+        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final parallaxOffset = scrollOffset * 0.2; // 20% parallax speed
 
     return AnimatedPadding(
       padding: EdgeInsets.only(bottom: keyboardHeight),
-      duration: const Duration(milliseconds: 250), // Smooth animation
+      duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.black, Colors.indigo],
-            stops: [0.0, 1.0],
+      child: Stack(
+        children: [
+          // Background layer with parallax
+          Positioned.fill(
+            child: Transform.translate(
+              offset: Offset(0, -parallaxOffset),
+              child: _buildBackgroundDecoration(background),
+            ),
           ),
-        ),
-        child: GestureDetector(
-          onTap: () => FocusScope.of(context).unfocus(),
-          child: Column(
-            children: [
-              _uiManager
-                  .buildChatHeader(
-                    context: context,
-                    chatGroupId: widget.chatGroupId,
-                    onBackPressed: () => Navigator.pop(context),
-                    onToggleNotifications: _toggleNotifications,
-                    onViewGroupInfo: () => _viewGroupInfo(squadStateData),
-                    onReportBug: _reportBug,
-                    onLeaveGroup: _leaveGroup,
-                    onInviteMembers: _inviteMembers,
-                    onChangeChatName: () async {
-                      ChatSettingsMenu.showChangeChatNameDialog(
-                        context: context,
-                        currentName: _chatName,
-                        onSave: (newName) async {
-                          if (widget.chatGroupId != null) {
-                            try {
-                              // User group: update in users/{uid}/chat_groups/{groupId}
-                              final currentUser =
-                                  FirebaseAuth.instance.currentUser;
-                              if (currentUser == null) return;
-
-                              final groupRef = FirebaseFirestore.instance
-                                  .collection('users')
-                                  .doc(currentUser.uid)
-                                  .collection('chat_groups')
-                                  .doc(widget.chatGroupId!);
-
-                              // Update the chat group name in Firestore
-                              await groupRef.set({
-                                'name': newName,
-                                'timestamp': FieldValue.serverTimestamp(),
-                              }, SetOptions(merge: true));
-
-                              // Update local state
-                              if (mounted) {
-                                setState(() => _chatName = newName);
-                              }
-                              // Update UI manager
-                              _uiManager.chatName = newName;
-
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content:
-                                        Text('Chat name updated successfully'),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              debugPrint('Error updating chat name: $e');
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content:
-                                        Text('Failed to update chat name: $e'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            }
-                          }
+          // Chat content with new neon header
+          GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: Column(
+              children: [
+                Expanded(
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    slivers: [
+                      // New NeonChatAppBar
+                      NeonChatAppBar(
+                        squadId: widget.chatGroupId ?? 'unknown',
+                        squadName: _chatName,
+                        avatarUrl: _chatImageUrl,
+                        onBackPressed: () => Navigator.pop(context),
+                        onGamepadPressed: isUserGroup ? _handleLobbyCreation : null,
+                        onCenterTapped: () {
+                          // Open ChatInfoScreen with hero animation
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ChatInfoScreen(
+                                squadId: widget.chatGroupId ?? 'unknown',
+                                squadName: _chatName,
+                                avatarUrl: _chatImageUrl,
+                                members: squadStateData.globalStatuses.entries
+                                    .map((e) => {
+                                          'uid': e.key,
+                                          'name': squadStateData
+                                                  .memberDisplayNames[e.key] ??
+                                              'Unknown',
+                                        })
+                                    .toList(),
+                              ),
+                            ),
+                          );
                         },
-                      );
-                    },
-                    onChangeChatImage: () async {
-                      await _mediaHandler.changeChatImage(
-                        context,
-                        chatGroupId: widget.chatGroupId,
-                        onImageUpdated: (url) => mounted
-                            ? setState(() => _chatImageUrl = url)
-                            : null,
-                      );
-                    },
-                    onClearChat: () async {
-                      // This will be implemented when we integrate with ChatSettingsMenu
-                    },
-                    onQuickReactionPicker: () {
-                      // This will be implemented when we integrate with ChatSettingsMenu
-                    },
-                    onViewMediaGallery: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => MediaHistoryScreen(
-                            chatGroupId: widget.chatGroupId,
-                            chatType: widget.chatType,
-                          ),
-                        ),
-                      );
-                    },
-                  )
-                  .animate()
-                  .fadeIn(),
-              // Active Squad Header Card
-              _uiManager.buildActiveSquadHeader(context,
-                  chatGroupId: widget.chatGroupId),
-              // Messages List
-              Expanded(
-                child: ref.watch(cn.chatNotifierProvider).when(
-                      data: (chatStateData) {
-                        final messages =
-                            chatStateData.chatMessages[widget.chatGroupId] ??
-                                [];
-                        return _uiManager.buildMessagesList(
-                          ref: ref,
-                          chatGroupId: widget.chatGroupId,
-                          chatType: widget.chatType,
-                          scrollController: _scrollControllerService,
-                          messages: messages,
-                          onMessageLongPress: () {}, // Will be implemented
-                          onMessageTap: () {}, // Will be implemented
-                          getSender: _getSender,
-                          getTimestampMs: _getTimestampMs,
-                          cleanText: _cleanText,
-                          markAsDelivered: ref
-                              .read(chatNotifierProvider.notifier)
-                              .markAsDelivered,
-                        );
-                      },
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (error, stack) =>
-                          Center(child: Text('Error loading messages: $error')),
-                    ),
-              ),
-              // Input Bar Area with SingleChildScrollView
-              SingleChildScrollView(
-                physics: const NeverScrollableScrollPhysics(),
-                child: AnimatedOpacity(
+                      ),
+                      // Active Squad Header Card (if needed)
+                      SliverToBoxAdapter(
+                        child: _uiManager.buildActiveSquadHeader(context,
+                            chatGroupId: widget.chatGroupId),
+                      ),
+                      // Messages List as SliverFillRemaining
+                      SliverFillRemaining(
+                        hasScrollBody: true,
+                        child: ref.watch(cn.chatNotifierProvider).when(
+                              data: (chatStateData) {
+                                final messages = chatStateData
+                                        .chatMessages[widget.chatGroupId] ??
+                                    [];
+                                return _uiManager.buildMessagesList(
+                                  ref: ref,
+                                  chatGroupId: widget.chatGroupId,
+                                  chatType: widget.chatType,
+                                  scrollController: _scrollControllerService,
+                                  messages: messages,
+                                  onMessageLongPress:
+                                      () {}, // Will be implemented
+                                  onMessageTap: () {}, // Will be implemented
+                                  getSender: _getSender,
+                                  getTimestampMs: _getTimestampMs,
+                                  cleanText: _cleanText,
+                                  // markAsDelivered removed - Supabase inserts are immediate
+                                );
+                              },
+                              loading: () => const Center(
+                                  child: CircularProgressIndicator()),
+                              error: (error, stack) => Center(
+                                  child:
+                                      Text('Error loading messages: $error')),
+                            ),
+                      ),
+                    ],
+                  ), // End CustomScrollView
+                ), // End Expanded
+                // Input Bar Area - OUTSIDE CustomScrollView
+                AnimatedOpacity(
                   opacity: isKeyboardVisible ? 1.0 : 0.9,
                   duration: const Duration(milliseconds: 200),
                   child: Padding(
@@ -1184,11 +1060,172 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
+              ], // End Column children
+            ), // End Column
+          ), // End GestureDetector
+        ],
       ),
     );
+  }
+
+  Widget _buildBackgroundDecoration(Map<String, dynamic> background) {
+    final type = background['type'] ?? 'none';
+    final value = background['value'] ?? '';
+
+    switch (type) {
+      case 'color':
+      case 'solid':
+        // Solid color background
+        if (value.isEmpty || !value.startsWith('#')) {
+          return Container(color: const Color(0xFF0B0E14)); // Default
+        }
+        try {
+          final color = Color(
+            int.parse(value.substring(1), radix: 16) + 0xFF000000,
+          );
+          return Container(color: color);
+        } catch (e) {
+          return Container(color: const Color(0xFF0B0E14));
+        }
+
+      case 'gradient':
+        // Parse gradient string: gradient:linear:0xFF00F5FF,0xFFFF00FF
+        return _buildGradientBackground(value);
+
+      case 'image':
+        // Network image with opacity
+        if (value.isEmpty) {
+          return Container(color: const Color(0xFF0B0E14));
+        }
+        return Container(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: NetworkImage(value),
+              fit: BoxFit.cover,
+              opacity: 0.3,
+            ),
+          ),
+        );
+
+      case 'preset':
+        // Handle preset backgrounds
+        final presetValue = BackgroundService.presets[value];
+        if (presetValue == null) {
+          return Container(color: const Color(0xFF0B0E14));
+        }
+
+        // Check if preset is a color
+        if (presetValue.startsWith('#')) {
+          try {
+            final color = Color(
+              int.parse(presetValue.substring(1), radix: 16) + 0xFF000000,
+            );
+            return Container(color: color);
+          } catch (e) {
+            return Container(color: const Color(0xFF0B0E14));
+          }
+        }
+
+        // Check if preset is a gradient
+        if (presetValue.startsWith('gradient:')) {
+          return _buildGradientBackground(presetValue);
+        }
+
+        // Check if preset is an asset image
+        if (presetValue.startsWith('assets/')) {
+          return Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage(presetValue),
+                fit: BoxFit.cover,
+                opacity: 0.3,
+              ),
+            ),
+          );
+        }
+
+        // Network image
+        return Container(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: NetworkImage(presetValue),
+              fit: BoxFit.cover,
+              opacity: 0.3,
+            ),
+          ),
+        );
+
+      case 'gameTheme':
+        // Use current game theme colors as gradient
+        // You can integrate with GameThemeController here
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                Theme.of(context).colorScheme.secondary.withOpacity(0.3),
+              ],
+            ),
+          ),
+        );
+
+      default:
+        // Default dark background
+        return Container(color: const Color(0xFF0B0E14));
+    }
+  }
+
+  Widget _buildGradientBackground(String gradientString) {
+    try {
+      // Parse gradient string format: gradient:linear:0xFF00F5FF,0xFFFF00FF
+      // or gradient:radial:0xFFFF4500,0xFF8B0000
+      final parts = gradientString.split(':');
+      if (parts.length < 3) {
+        return Container(color: const Color(0xFF0B0E14));
+      }
+
+      final gradientType = parts[1]; // linear or radial
+      final colorStrings = parts[2].split(',');
+
+      if (colorStrings.length < 2) {
+        return Container(color: const Color(0xFF0B0E14));
+      }
+
+      final colors = colorStrings.map((colorStr) {
+        try {
+          return Color(int.parse(colorStr.replaceAll('0x', ''), radix: 16));
+        } catch (e) {
+          return const Color(0xFF0B0E14);
+        }
+      }).toList();
+
+      if (gradientType == 'radial') {
+        return Container(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              colors: colors,
+              center: Alignment.center,
+              radius: 1.0,
+            ),
+          ),
+        );
+      } else {
+        // Default to linear
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: colors,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error parsing gradient: $e');
+      return Container(color: const Color(0xFF0B0E14));
+    }
   }
 }

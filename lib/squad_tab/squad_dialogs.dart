@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'dialogs/block_dialog.dart';
 import 'dialogs/complaint_dialog.dart';
 import 'dialogs/ratings_dialog.dart';
@@ -24,7 +24,7 @@ class SquadDialogs {
   /// Show player rating dialog
   static void showRatingsDialog(BuildContext context,
       ScaffoldMessengerState messenger, WidgetRef ref, String player) {
-    final squadState = ref.read(sn.squadNotifierProvider).maybeWhen(
+    final squadState = ref.read(ln.lobbyNotifierProvider).maybeWhen(
           data: (data) => data,
           orElse: () => null,
         );

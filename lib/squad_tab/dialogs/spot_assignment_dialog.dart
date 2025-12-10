@@ -1,25 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
 class SpotAssignmentDialog {
   static void show(BuildContext context, WidgetRef ref, int index) {
-    final asyncState = ref.read(sn.squadNotifierProvider);
+    final asyncState = ref.read(ln.lobbyNotifierProvider);
     if (asyncState is AsyncData) {
       final squadState = asyncState.value!;
       final gameName = squadState.currentGame?['name'] ?? '';
-      final squadMemberUids = squadState.squadMemberUids;
+      final lobbyMemberUids = squadState.lobbyMemberUids;
       final memberDisplayNames = squadState.memberDisplayNames;
-      final gameSquadSpots = squadState.gameSquadSpots[gameName] ?? [];
+      final gameLobbySpots = squadState.gameLobbySpots[gameName] ?? [];
 
-      final availablePlayers = squadMemberUids
-          .where((uid) => !gameSquadSpots.contains(uid))
+      final availablePlayers = lobbyMemberUids
+          .where((uid) => !gameLobbySpots.contains(uid))
           .map((uid) => memberDisplayNames[uid] ?? 'Unknown')
           .toList();
 
       if (availablePlayers.isEmpty) return;
 
-      final squadId = squadState.selectedSquadId;
+      final squadId = squadState.selectedLobbyId;
       if (squadId == null) return;
 
       showModalBottomSheet(
@@ -46,7 +46,7 @@ class SpotAssignmentDialog {
                           .firstWhere((entry) => entry.value == player)
                           .key;
                       ref
-                          .read(sn.squadNotifierProvider.notifier)
+                          .read(ln.lobbyNotifierProvider.notifier)
                           .assignSpot(squadId, index, uid);
                       Navigator.pop(dialogContext);
                     },

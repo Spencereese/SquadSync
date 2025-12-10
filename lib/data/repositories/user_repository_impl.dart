@@ -1,10 +1,10 @@
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:squad_sync/domain/entities/app_user.dart';
 import 'package:squad_sync/domain/repositories/user_repository.dart';
 import 'package:squad_sync/data/datasources/user_local_datasource.dart';
 import 'package:squad_sync/data/datasources/user_remote_datasource.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserRepositoryImpl implements UserRepository {
   final UserLocalDataSource _localDataSource;
@@ -12,107 +12,106 @@ class UserRepositoryImpl implements UserRepository {
 
   UserRepositoryImpl(this._localDataSource, this._remoteDataSource);
 
-  /// Helper method to convert Timestamp objects to serializable format
-  dynamic _convertTimestamps(dynamic value) {
-    if (value is Timestamp) {
-      return value.toDate().toIso8601String();
-    } else if (value is Map<String, dynamic>) {
-      return value.map((key, val) => MapEntry(key, _convertTimestamps(val)));
-    } else if (value is List) {
-      return value.map(_convertTimestamps).toList();
-    } else {
-      return value;
+  @override
+  Future<AppUser?> getCurrentUser() async {
+    try {
+      final user = AuthServiceSupabase().currentUser;
+      if (user == null) {
+        debugPrint('UserRepository: No authenticated user');
+        return null;
+      }
+
+      debugPrint('UserRepository: Loading profile for user ${user.id}');
+
+      final profile = await _remoteDataSource.getUserProfile(user.id);
+
+      // TODO: Re-enable when complaints/user_ratings tables are created
+      // final ratings = await _remoteDataSource.getUserRatings(user.id);
+      // final complaints = await _remoteDataSource.getUserComplaints(user.id);
+
+      debugPrint('UserRepository: profile = $profile');
+      debugPrint('UserRepository: display_name = ${profile?['display_name']}');
+
+      if (profile == null) {
+        debugPrint(
+            'UserRepository: ❌ Profile not found in database for ${user.id}');
+        return null;
+      }
+
+      debugPrint('UserRepository: ✅ Profile loaded successfully');
+
+      final pinnedGames =
+          List<Map<String, dynamic>>.from(profile['pinned_games'] ?? []);
+
+      debugPrint('UserRepository: Pinned games count: ${pinnedGames.length}');
+
+      // Sync remote pinned games to local storage
+      await _localDataSource.setPinnedGames(pinnedGames);
+      debugPrint('UserRepository: Pinned games synced to local storage');
+
+      // Load user groups from chat_groups table
+      final userGroups = await _remoteDataSource.getUserGroups(user.id);
+      debugPrint('UserRepository: User groups count: ${userGroups.length}');
+
+      return AppUser(
+        uid: user.id,
+        displayName: profile['display_name'],
+        profileImage: profile['profile_image'],
+        preferredModes:
+            Map<String, String?>.from(profile['preferred_modes'] ?? {}),
+        userBlocks:
+            Map<String, Map<String, bool>>.from(profile['user_blocks'] ?? {}),
+        pinnedGames: pinnedGames,
+        notificationSettings:
+            Map<String, bool>.from(profile['notification_settings'] ??
+                {
+                  'pushNotifications': true,
+                  'soundEnabled': true,
+                  'vibrationEnabled': true,
+                  'showPreviews': true,
+                  'quietHoursEnabled': false,
+                  'urgentAlertsOnly': false,
+                  'lobbyInvites': true,
+                  'friendRequests': true,
+                  'gameUpdates': false,
+                  'achievementAlerts': true,
+                }),
+        hasRatedGame: {},
+        dailyRatings: {}, // TODO: Load from user_ratings table when created
+        allTimeRatings: {}, // TODO: Load from user_ratings table when created
+        currentStreaks: {}, // TODO: Load from user_ratings table when created
+        complaints: {}, // TODO: Load from complaints table when created
+        bans: {}, // Need to load bans separately
+        dailyBanVotes: {},
+        blockedUsers: [], // Derived from userBlocks
+        friends: List<String>.from(profile['friends'] ?? []),
+        alerts: List<String>.from(profile['alerts'] ?? []),
+        userGroups: userGroups,
+        alertCircles: List<String>.from(
+            profile['alert_circles'] ?? ['Squad', 'Friends', 'Public']),
+        publicGroups:
+            List<Map<String, dynamic>>.from(profile['public_groups'] ?? []),
+        pinnedMessages: List<String>.from(profile['pinned_messages'] ?? []),
+      );
+    } catch (e, stackTrace) {
+      debugPrint('UserRepository: ❌ ERROR getting current user: $e');
+      debugPrint('UserRepository: Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
   @override
-  Future<AppUser?> getCurrentUser() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-
-    final profile = await _remoteDataSource.getUserProfile(user.uid);
-    final ratings = await _remoteDataSource.getUserRatings(user.uid);
-    final complaints = await _remoteDataSource.getUserComplaints(user.uid);
-
-    debugPrint(
-        'UserRepository: profile loaded, userGroups: ${profile?['userGroups']?.length ?? 0}');
-
-    if (profile == null) return null;
-
-    // Convert any Timestamp objects to serializable format
-    final convertedProfile =
-        _convertTimestamps(profile) as Map<String, dynamic>;
-    final convertedRatings = ratings != null
-        ? _convertTimestamps(ratings) as Map<String, dynamic>
-        : null;
-    final convertedComplaints = complaints != null
-        ? _convertTimestamps(complaints) as Map<String, dynamic>
-        : null;
-
-    final pinnedGames =
-        List<Map<String, dynamic>>.from(convertedProfile['pinnedGames'] ?? []);
-
-    // Sync remote pinned games to local storage
-    await _localDataSource.setPinnedGames(pinnedGames);
-
-    return AppUser(
-      uid: user.uid,
-      displayName: convertedProfile['displayName'],
-      profileImage: convertedProfile['profileImage'],
-      preferredModes:
-          Map<String, String?>.from(convertedProfile['preferredModes'] ?? {}),
-      userBlocks: Map<String, Map<String, bool>>.from(
-          convertedProfile['userBlocks'] ?? {}),
-      pinnedGames: pinnedGames,
-      notificationSettings:
-          Map<String, bool>.from(convertedProfile['notificationSettings'] ??
-              {
-                'pushNotifications': true,
-                'soundEnabled': true,
-                'vibrationEnabled': true,
-                'showPreviews': true,
-                'quietHoursEnabled': false,
-                'urgentAlertsOnly': false,
-                'lobbyInvites': true,
-                'friendRequests': true,
-                'gameUpdates': false,
-                'achievementAlerts': true,
-              }),
-      hasRatedGame: {},
-      dailyRatings: Map<String, Map<String, int>>.from(
-          convertedRatings?['dailyRatings'] ?? {}),
-      allTimeRatings: Map<String, Map<String, int>>.from(
-          convertedRatings?['allTimeRatings'] ?? {}),
-      currentStreaks:
-          Map<String, int>.from(convertedRatings?['currentStreaks'] ?? {}),
-      complaints: Map<String, Map<String, int>>.from(
-          convertedComplaints?['complaints'] ?? {}),
-      bans: {}, // Need to load bans separately
-      dailyBanVotes: {},
-      blockedUsers: [], // Derived from userBlocks
-      friends: List<String>.from(convertedProfile['friends'] ?? []),
-      alerts: List<String>.from(convertedProfile['alerts'] ?? []),
-      userGroups:
-          List<Map<String, dynamic>>.from(convertedProfile['userGroups'] ?? []),
-      alertCircles: List<String>.from(
-          convertedProfile['alertCircles'] ?? ['Squad', 'Friends', 'Public']),
-      publicGroups: List<Map<String, dynamic>>.from(
-          convertedProfile['publicGroups'] ?? []),
-      pinnedMessages:
-          List<String>.from(convertedProfile['pinnedMessages'] ?? []),
-    );
-  }
-
-  @override
   Future<void> updateProfileImage(String url) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
-    // Update Firebase Auth user profile
-    await user.updateProfile(photoURL: url);
+    // Update Supabase user metadata
+    await Supabase.instance.client.auth.updateUser(
+      UserAttributes(data: {'photo_url': url}),
+    );
 
-    // Update Firestore user document
-    await _remoteDataSource.updateUserProfile(user.uid, {'profileImage': url});
+    // Update Supabase user document
+    await _remoteDataSource.updateUserProfile(user.id, {'profile_image': url});
 
     // Update local storage
     await _localDataSource.setProfileImage(url);
@@ -120,14 +119,16 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> updateDisplayName(String name) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
-    // Update Firebase Auth user profile
-    await user.updateProfile(displayName: name);
+    // Update Supabase user metadata
+    await Supabase.instance.client.auth.updateUser(
+      UserAttributes(data: {'display_name': name}),
+    );
 
-    // Update Firestore user document
-    await _remoteDataSource.updateUserProfile(user.uid, {'displayName': name});
+    // Update Supabase user document
+    await _remoteDataSource.updateUserProfile(user.id, {'display_name': name});
 
     // Update local storage
     await _localDataSource.setDisplayName(name);
@@ -135,59 +136,59 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> blockUser(String userName) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
     final currentBlocks = await _getUserBlocks();
-    currentBlocks[user.uid] ??= {};
-    currentBlocks[user.uid]![userName] = true;
+    currentBlocks[user.id] ??= {};
+    currentBlocks[user.id]![userName] = true;
 
     await _remoteDataSource
-        .updateUserProfile(user.uid, {'userBlocks': currentBlocks});
+        .updateUserProfile(user.id, {'userBlocks': currentBlocks});
   }
 
   @override
   Future<void> unblockUser(String userName) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
     final currentBlocks = await _getUserBlocks();
-    currentBlocks[user.uid]?.remove(userName);
+    currentBlocks[user.id]?.remove(userName);
 
     await _remoteDataSource
-        .updateUserProfile(user.uid, {'userBlocks': currentBlocks});
+        .updateUserProfile(user.id, {'userBlocks': currentBlocks});
   }
 
   @override
   Future<bool> isBlocked(String userName) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return false;
 
     final blocks = await _getUserBlocks();
-    return blocks[user.uid]?[userName] ?? false;
+    return blocks[user.id]?[userName] ?? false;
   }
 
   Future<Map<String, Map<String, bool>>> _getUserBlocks() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return {};
 
-    final profile = await _remoteDataSource.getUserProfile(user.uid);
+    final profile = await _remoteDataSource.getUserProfile(user.id);
     return Map<String, Map<String, bool>>.from(profile?['userBlocks'] ?? {});
   }
 
   @override
   Future<void> addBan(String userName, String reason) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
     final banData = {
       'userName': userName,
       'reason': reason,
-      'bannedBy': user.uid,
+      'bannedBy': user.id,
       'timestamp': DateTime.now().toIso8601String(),
     };
 
-    await _remoteDataSource.addBan(user.uid, banData);
+    await _remoteDataSource.addBan(user.id, banData);
   }
 
   @override
@@ -205,7 +206,7 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> addPinnedGame(Map<String, dynamic> game) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
     // Update local storage
@@ -222,16 +223,16 @@ class UserRepositoryImpl implements UserRepository {
       currentPinned.add(game);
       await _localDataSource.setPinnedGames(currentPinned);
 
-      // Update remote storage (Firestore)
-      await _remoteDataSource.updateUserProfile(user.uid, {
-        'pinnedGames': currentPinned,
+      // Update remote storage with correct snake_case column name
+      await _remoteDataSource.updateUserProfile(user.id, {
+        'pinned_games': currentPinned,
       });
     }
   }
 
   @override
   Future<void> removePinnedGame(String gameName) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
     // Update local storage
@@ -239,9 +240,9 @@ class UserRepositoryImpl implements UserRepository {
     currentPinned.removeWhere((g) => g['name'] == gameName);
     await _localDataSource.setPinnedGames(currentPinned);
 
-    // Update remote storage (Firestore)
-    await _remoteDataSource.updateUserProfile(user.uid, {
-      'pinnedGames': currentPinned,
+    // Update remote storage with correct snake_case column name
+    await _remoteDataSource.updateUserProfile(user.id, {
+      'pinned_games': currentPinned,
     });
   }
 

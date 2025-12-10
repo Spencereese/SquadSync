@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/user_notifier.dart';
 import '../../presentation/notifiers/game_notifier.dart';
 
@@ -21,7 +21,7 @@ class GameSelector extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadStateAsync = ref.watch(sn.squadNotifierProvider);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
     final squadState = squadStateAsync.maybeWhen(
       data: (state) => state,
       orElse: () => null,
@@ -144,7 +144,7 @@ class GameSelector extends ConsumerWidget {
                         return GestureDetector(
                           onTap: () {
                             ref
-                                .read(sn.squadNotifierProvider.notifier)
+                                .read(ln.lobbyNotifierProvider.notifier)
                                 .setCurrentGame(game);
                             // Persistence is handled automatically in the notifier
                             Navigator.pop(context);
@@ -285,7 +285,7 @@ class GameSelector extends ConsumerWidget {
               onPressed: selectedGame != null
                   ? () {
                       ref
-                          .read(sn.squadNotifierProvider.notifier)
+                          .read(ln.lobbyNotifierProvider.notifier)
                           .setCurrentGame(selectedGame);
                       // Persistence is handled automatically in the notifier
                       Navigator.pop(context);

@@ -70,7 +70,8 @@ class ThemePreviewCard extends ConsumerWidget {
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
+                    valueColor:
+                        AlwaysStoppedAnimation(theme.colorScheme.primary),
                   ),
                 ),
                 const SizedBox(width: 8),

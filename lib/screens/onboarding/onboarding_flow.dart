@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../services/onboarding_service.dart';
@@ -104,12 +104,12 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
       // Analytics
       final container = ProviderScope.containerOf(context);
       final analytics = container.read(appFlowManagerProvider);
-      final user = FirebaseAuth.instance.currentUser;
+      final user = AuthServiceSupabase().currentUser;
       if (user != null) {
         final pinnedGames =
             ref.read(onboardingServiceProvider).value?.pinnedGames.length ?? 0;
         await analytics.trackOnboardingCompleted(
-          userId: user.uid,
+          userId: user.id,
           gamesPinned: pinnedGames,
           timeSpent: DateTime.now().difference(_onboardingStartTime),
         );

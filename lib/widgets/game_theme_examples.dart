@@ -21,23 +21,24 @@ class GameSelectionExample extends ConsumerWidget {
         // When user selects a game, this will trigger automatic theme update
         // via GameThemeSync.watch(ref) in app_widgets.dart
         // final gameNotifier = ref.read(gameNotifierProvider.notifier);
-        
+
         // Example game data
         // final exampleGame = {
         //   'id': 1020,
         //   'name': 'Call of Duty: Warzone',
         //   'cover': {'url': 'https://images.igdb.com/igdb/image/upload/t_cover_big/co1rbo.jpg'},
         // };
-        
+
         // Setting currentGame will automatically trigger theme update
         // gameNotifier.setCurrentGame(Game.fromIgdb(exampleGame));
-        
+
         // For this example, manually update theme
         await ref.read(gameThemeControllerProvider.notifier).updateGameTheme(
-          gameId: '1020',
-          gameName: 'Call of Duty: Warzone',
-          coverImageUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co1rbo.jpg',
-        );
+              gameId: '1020',
+              gameName: 'Call of Duty: Warzone',
+              coverImageUrl:
+                  'https://images.igdb.com/igdb/image/upload/t_cover_big/co1rbo.jpg',
+            );
       },
       child: const Text('Select Warzone'),
     );
@@ -55,11 +56,14 @@ class DirectThemeUpdateExample extends ConsumerWidget {
         // Update theme with game data
         ElevatedButton(
           onPressed: () async {
-            await ref.read(gameThemeControllerProvider.notifier).updateGameTheme(
-              gameId: '1020',
-              gameName: 'Call of Duty: Warzone',
-              coverImageUrl: 'https://images.igdb.com/igdb/image/upload/t_cover_big/co1rbo.jpg',
-            );
+            await ref
+                .read(gameThemeControllerProvider.notifier)
+                .updateGameTheme(
+                  gameId: '1020',
+                  gameName: 'Call of Duty: Warzone',
+                  coverImageUrl:
+                      'https://images.igdb.com/igdb/image/upload/t_cover_big/co1rbo.jpg',
+                );
           },
           child: const Text('Apply Warzone Theme'),
         ),
@@ -67,11 +71,13 @@ class DirectThemeUpdateExample extends ConsumerWidget {
         // Set custom colors manually
         ElevatedButton(
           onPressed: () async {
-            await ref.read(gameThemeControllerProvider.notifier).setCustomColors(
-              dominant: const Color(0xFF00FF41),
-              vibrant: const Color(0xFF39FF14),
-              accent: const Color(0xFF00CC33),
-            );
+            await ref
+                .read(gameThemeControllerProvider.notifier)
+                .setCustomColors(
+                  dominant: const Color(0xFF00FF41),
+                  vibrant: const Color(0xFF39FF14),
+                  accent: const Color(0xFF00CC33),
+                );
           },
           child: const Text('Set Custom Green Theme'),
         ),
@@ -79,7 +85,9 @@ class DirectThemeUpdateExample extends ConsumerWidget {
         // Reset to default
         ElevatedButton(
           onPressed: () async {
-            await ref.read(gameThemeControllerProvider.notifier).resetToDefault();
+            await ref
+                .read(gameThemeControllerProvider.notifier)
+                .resetToDefault();
           },
           child: const Text('Reset to Default'),
         ),
@@ -145,10 +153,12 @@ class ThemeChangeListenerExample extends ConsumerStatefulWidget {
   const ThemeChangeListenerExample({super.key});
 
   @override
-  ConsumerState<ThemeChangeListenerExample> createState() => _ThemeChangeListenerExampleState();
+  ConsumerState<ThemeChangeListenerExample> createState() =>
+      _ThemeChangeListenerExampleState();
 }
 
-class _ThemeChangeListenerExampleState extends ConsumerState<ThemeChangeListenerExample> {
+class _ThemeChangeListenerExampleState
+    extends ConsumerState<ThemeChangeListenerExample> {
   @override
   void initState() {
     super.initState();
@@ -160,7 +170,7 @@ class _ThemeChangeListenerExampleState extends ConsumerState<ThemeChangeListener
           // Theme changed - you can trigger animations, haptics, etc.
           if (previous?.currentGameId != next.currentGameId) {
             debugPrint('Theme changed to: ${next.currentGameName}');
-            
+
             // Example: Show snackbar when theme changes
             if (mounted && next.currentGameName != null) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -248,11 +258,13 @@ class SquadGameThemeExample extends ConsumerWidget {
         return ElevatedButton(
           onPressed: () async {
             // Update theme when entering squad for this game
-            await ref.read(gameThemeControllerProvider.notifier).updateGameTheme(
-              gameId: game.igdbId?.toString() ?? game.slug,
-              gameName: game.name,
-              coverImageUrl: game.coverUrl,
-            );
+            await ref
+                .read(gameThemeControllerProvider.notifier)
+                .updateGameTheme(
+                  gameId: game.igdbId?.toString() ?? game.slug,
+                  gameName: game.name,
+                  coverImageUrl: game.coverUrl,
+                );
 
             // Then navigate to squad screen
             // Navigator.push(...);
@@ -287,11 +299,13 @@ class PresetColorPickerExample extends ConsumerWidget {
         final color = preset['color'] as Color;
         return InkWell(
           onTap: () async {
-            await ref.read(gameThemeControllerProvider.notifier).updateGameTheme(
-              gameId: preset['name'] as String,
-              gameName: preset['name'] as String,
-              coverImageUrl: null, // Will use preset
-            );
+            await ref
+                .read(gameThemeControllerProvider.notifier)
+                .updateGameTheme(
+                  gameId: preset['name'] as String,
+                  gameName: preset['name'] as String,
+                  coverImageUrl: null, // Will use preset
+                );
           },
           borderRadius: BorderRadius.circular(12),
           child: Container(

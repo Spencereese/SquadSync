@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../presentation/notifiers/squad_notifier.dart' as sn;
+import '../../services/auth_service_supabase.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
 /// Dialog for joining lobbies with other players
 class JoinLobbyDialog extends ConsumerWidget {
@@ -14,7 +14,7 @@ class JoinLobbyDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadState = ref.watch(sn.squadNotifierProvider).valueOrNull;
+    final squadState = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
     if (squadState == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -44,9 +44,9 @@ class JoinLobbyDialog extends ConsumerWidget {
                     Text('${players.length} players: ${players.join(', ')}'),
                 trailing: ElevatedButton(
                   onPressed: () {
-                    final userId = FirebaseAuth.instance.currentUser!.uid;
+                    final userId = AuthServiceSupabase().currentUser!.id;
                     ref
-                        .read(sn.squadNotifierProvider.notifier)
+                        .read(ln.lobbyNotifierProvider.notifier)
                         .joinSquad(lobby['id'], userId);
                     // Defer navigation to avoid _debugLocked assertion
                     WidgetsBinding.instance.addPostFrameCallback((_) {

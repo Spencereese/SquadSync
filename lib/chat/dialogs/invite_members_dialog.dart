@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../services/supabase_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../utils.dart';
@@ -35,27 +35,23 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
 
   Future<void> _generateInviteCode() async {
     try {
-      final currentUser = FirebaseAuth.instance.currentUser;
+      final currentUser = AuthServiceSupabase().currentUser;
       if (currentUser == null) return;
 
       // Generate a unique invite code using group ID
       final code = widget.chatGroupId.substring(0, 8).toUpperCase();
 
-      // Store the invite code in Firestore for tracking
-      await FirebaseFirestore.instance
-          .collection('chat_groups')
-          .doc(widget.chatGroupId)
-          .collection('invites')
-          .doc(code)
-          .set({
-        'code': code,
-        'createdBy': currentUser.uid,
-        'createdAt': FieldValue.serverTimestamp(),
-        'expiresAt':
+      // Store the invite code in Supabase for tracking
+      await SupabaseService.client.from('invites').upsert({
+        'id': code,
+        'chat_group_id': widget.chatGroupId,
+        'created_by': currentUser.id,
+        'created_at': DateTime.now().toIso8601String(),
+        'expires_at':
             DateTime.now().add(const Duration(days: 7)).toIso8601String(),
-        'maxUses': 50,
+        'max_uses': 50,
         'uses': 0,
-      }, SetOptions(merge: true));
+      });
 
       if (mounted) {
         setState(() {

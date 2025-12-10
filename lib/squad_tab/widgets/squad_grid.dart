@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../presentation/notifiers/squad_notifier.dart';
-import '../../domain/entities/squad_state.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../../domain/entities/lobby_state.dart';
 import '../dialogs/spot_assignment_dialog.dart';
 
 /// SquadGrid component - handles the display of spot cards and assignment logic
@@ -12,7 +12,7 @@ class SquadGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadAsync = ref.watch(squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return squadAsync.when(
       data: (squadState) {
@@ -50,7 +50,7 @@ class SpotCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadAsync = ref.watch(squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return squadAsync.when(
       data: (squadState) => _buildSpotCard(context, ref, squadState),
@@ -72,12 +72,12 @@ class SpotCard extends ConsumerWidget {
   }
 
   Widget _buildSpotCard(
-      BuildContext context, WidgetRef ref, SquadState squadState) {
-    final user = FirebaseAuth.instance.currentUser;
-    final yourUid = user?.uid;
+      BuildContext context, WidgetRef ref, LobbyState squadState) {
+    final user = AuthServiceSupabase().currentUser;
+    final yourUid = user?.id;
 
     final gameName = squadState.currentGame?['name'] ?? '';
-    final squadSpots = squadState.gameSquadSpots[gameName] ?? [];
+    final squadSpots = squadState.gameLobbySpots[gameName] ?? [];
     final spotTimers = squadState.gameSpotTimers[gameName] ?? [];
     final globalStatuses = squadState.globalStatuses;
 
@@ -105,7 +105,7 @@ class SpotCard extends ConsumerWidget {
     return GestureDetector(
       onLongPress: () {
         if (hasOccupant) {
-          ref.read(squadNotifierProvider.notifier).removeSpot(gameName, index);
+          ref.read(ln.lobbyNotifierProvider.notifier).removeSpot(gameName, index);
         } else {
           SpotAssignmentDialog.show(context, ref, index);
         }
@@ -116,18 +116,18 @@ class SpotCard extends ConsumerWidget {
               if (!hasOccupant) {
                 // Claim the empty spot
                 ref
-                    .read(squadNotifierProvider.notifier)
+                    .read(ln.lobbyNotifierProvider.notifier)
                     .claimSpot(gameName, index);
               } else if (hasOccupant && spotName == yourUid) {
                 final status = globalStatuses[spotName];
                 if (status == 'Ready') {
                   ref
-                      .read(squadNotifierProvider.notifier)
+                      .read(ln.lobbyNotifierProvider.notifier)
                       .lockSpot(gameName, index);
                 } else if (status != 'Calling') {
                   // Allow leaving spot by tapping when not ready and not calling
                   ref
-                      .read(squadNotifierProvider.notifier)
+                      .read(ln.lobbyNotifierProvider.notifier)
                       .removeSpot(gameName, index);
                 }
                 // Don't remove spot when calling - let the Lock button handle it
@@ -261,7 +261,7 @@ class SpotCard extends ConsumerWidget {
             ),
             child: ElevatedButton.icon(
               onPressed: () => ref
-                  .read(squadNotifierProvider.notifier)
+                  .read(ln.lobbyNotifierProvider.notifier)
                   .claimSpot(gameName, index),
               icon: const Icon(Icons.call, size: 16),
               label: const Text('Call'),
@@ -295,7 +295,7 @@ class SpotCard extends ConsumerWidget {
             ),
             child: ElevatedButton.icon(
               onPressed: () => ref
-                  .read(squadNotifierProvider.notifier)
+                  .read(ln.lobbyNotifierProvider.notifier)
                   .lockSpot(gameName, index),
               icon: const Icon(Icons.lock, size: 16),
               label: const Text('Lock'),
@@ -329,7 +329,7 @@ class SpotCard extends ConsumerWidget {
             ),
             child: ElevatedButton.icon(
               onPressed: () => ref
-                  .read(squadNotifierProvider.notifier)
+                  .read(ln.lobbyNotifierProvider.notifier)
                   .removeSpot(gameName, index),
               icon: const Icon(Icons.directions_walk, size: 16),
               label: const Text('Leave'),

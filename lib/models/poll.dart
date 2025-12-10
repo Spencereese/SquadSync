@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// Represents a poll option with its text and vote count
 class PollOption {
   final String id;
@@ -87,8 +85,8 @@ class Poll {
       'isMultipleChoice': isMultipleChoice,
       'isAnonymous': isAnonymous,
       'isClosed': isClosed,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'closedAt': closedAt != null ? Timestamp.fromDate(closedAt!) : null,
+      'createdAt': createdAt.toIso8601String(),
+      'closedAt': closedAt?.toIso8601String(),
       'duration': duration?.inSeconds,
     };
   }
@@ -106,8 +104,11 @@ class Poll {
       isMultipleChoice: map['isMultipleChoice'] ?? false,
       isAnonymous: map['isAnonymous'] ?? false,
       isClosed: map['isClosed'] ?? false,
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      closedAt: (map['closedAt'] as Timestamp?)?.toDate(),
+      createdAt: map['createdAt'] is String
+          ? DateTime.parse(map['createdAt'])
+          : DateTime.now(),
+      closedAt:
+          map['closedAt'] is String ? DateTime.parse(map['closedAt']) : null,
       duration: map['duration'] != null
           ? Duration(seconds: map['duration'] as int)
           : null,

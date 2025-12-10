@@ -4,7 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../core/app_theme.dart';
-import '../domain/entities/squad.dart';
+import '../domain/entities/lobby.dart';
 
 /// Glassmorphic squad card for discovery screen with Tinder-style swipe support
 ///

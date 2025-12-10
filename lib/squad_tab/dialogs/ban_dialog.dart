@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../presentation/notifiers/squad_notifier.dart';
+import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 
 class BanDialog {
   static void show(BuildContext context, WidgetRef ref) {
@@ -19,7 +19,7 @@ class BanDialog {
               child: DropdownButtonFormField<String>(
                 decoration: const InputDecoration(labelText: 'Select Member'),
                 items: ref
-                    .read(squadNotifierProvider.notifier)
+                    .read(ln.lobbyNotifierProvider.notifier)
                     .getFilteredMembers
                     .map((player) =>
                         DropdownMenuItem(value: player, child: Text(player)))
@@ -36,10 +36,10 @@ class BanDialog {
           TextButton(
             onPressed: () {
               if (selectedPlayer != null) {
-                ref.read(squadNotifierProvider.notifier).addBan(
+                ref.read(ln.lobbyNotifierProvider.notifier).addBan(
                     selectedPlayer!,
                     ref
-                            .read(squadNotifierProvider)
+                            .read(ln.lobbyNotifierProvider)
                             .value
                             ?.memberDisplayNames
                             .values

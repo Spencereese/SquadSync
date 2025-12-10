@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../presentation/notifiers/squad_notifier.dart';
+import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/user_notifier.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service_supabase.dart';
 import 'game_alerts_display.dart';
 
 /// SquadControls component - handles action buttons and controls
@@ -53,22 +53,22 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
   }
 
   Future<void> _checkForActiveAlert() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
-    final squadStateAsync = ref.watch(squadNotifierProvider);
-    final squadNotifier = ref.read(squadNotifierProvider.notifier);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
+    final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
-    final selectedSquadId = squadStateAsync.maybeWhen(
-      data: (squadState) => squadState.selectedSquadId,
+    final selectedLobbyId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedLobbyId,
       orElse: () => null,
     );
 
-    if (selectedSquadId != null) {
-      final alerts = await squadNotifier.getSquadAlerts(selectedSquadId);
+    if (selectedLobbyId != null) {
+      final alerts = await squadNotifier.getSquadAlerts(selectedLobbyId);
       if (mounted) {
         setState(() {
-          _hasActiveAlert = alerts.any((alert) => alert['userUid'] == user.uid);
+          _hasActiveAlert = alerts.any((alert) => alert['userUid'] == user.id);
         });
       }
     }
@@ -76,23 +76,23 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
 
   Future<void> _sendAlert(String alertType,
       {String? specificGame, List<String>? pinnedGames}) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
-    final squadStateAsync = ref.watch(squadNotifierProvider);
-    final squadNotifier = ref.read(squadNotifierProvider.notifier);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
+    final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
-    final selectedSquadId = squadStateAsync.maybeWhen(
-      data: (squadState) => squadState.selectedSquadId,
+    final selectedLobbyId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedLobbyId,
       orElse: () => null,
     );
 
-    if (selectedSquadId == null) return;
+    if (selectedLobbyId == null) return;
 
     try {
       await squadNotifier.sendGameAlert(
-        selectedSquadId,
-        user.uid,
+        selectedLobbyId,
+        user.id,
         alertType,
         specificGame: specificGame,
         pinnedGames: pinnedGames,
@@ -122,21 +122,21 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
   }
 
   Future<void> _clearAlert() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return;
 
-    final squadStateAsync = ref.watch(squadNotifierProvider);
-    final squadNotifier = ref.read(squadNotifierProvider.notifier);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
+    final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
-    final selectedSquadId = squadStateAsync.maybeWhen(
-      data: (squadState) => squadState.selectedSquadId,
+    final selectedLobbyId = squadStateAsync.maybeWhen(
+      data: (squadState) => squadState.selectedLobbyId,
       orElse: () => null,
     );
 
-    if (selectedSquadId == null) return;
+    if (selectedLobbyId == null) return;
 
     try {
-      await squadNotifier.clearGameAlerts(selectedSquadId, user.uid);
+      await squadNotifier.clearGameAlerts(selectedLobbyId, user.id);
 
       if (mounted) {
         setState(() {
@@ -162,7 +162,7 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
   }
 
   void _showAlertDialog() {
-    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
     final userStateAsync = ref.watch(userNotifierProvider);
 
     showDialog(
@@ -296,12 +296,12 @@ class _WinButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
     return squadStateAsync.maybeWhen(
       data: (squadState) => ElevatedButton(
         onPressed: () async {
           try {
-            await ref.read(squadNotifierProvider.notifier).recordWin([]);
+            await ref.read(ln.lobbyNotifierProvider.notifier).recordWin([]);
           } catch (e) {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -342,12 +342,12 @@ class _VoiceRoomButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
 
     return squadStateAsync.maybeWhen(
       data: (squadState) => ElevatedButton.icon(
         onPressed: () {
-          if (squadState.selectedSquadId == null) {
+          if (squadState.selectedLobbyId == null) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('No squad selected')),
             );
@@ -358,7 +358,7 @@ class _VoiceRoomButton extends ConsumerWidget {
           // Navigator.of(context).push(
           //   MaterialPageRoute(
           //     builder: (context) => VoiceRoomScreen(
-          //       roomId: squadState.selectedSquadId!,
+          //       roomId: squadState.selectedLobbyId!,
           //       roomName: squadState.currentSquadData?['name'] ?? 'Voice Room',
           //     ),
           //   ),
@@ -395,12 +395,12 @@ class _LossButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadStateAsync = ref.watch(squadNotifierProvider);
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
     return squadStateAsync.maybeWhen(
       data: (squadState) => ElevatedButton(
         onPressed: () async {
           try {
-            await ref.read(squadNotifierProvider.notifier).recordLoss([]);
+            await ref.read(ln.lobbyNotifierProvider.notifier).recordLoss([]);
           } catch (e) {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(

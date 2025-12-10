@@ -172,7 +172,12 @@ List<String?> get squadSpots {
 - Extensive use of `mounted` checks before setState in async operations
 - Provider listeners disposed in `dispose()` methods
 - Firebase streams properly managed with StreamSubscription cleanup
-- Custom themes in `AppTheme` with dark/light variants
+- **Theme System**: Material 3 with dynamic color seeds in `lib/core/app_theme.dart`
+  - Always use `Theme.of(context).colorScheme` for colors
+  - Semantic helpers: `AppTheme.success()`, `AppTheme.warning()`, `AppTheme.info()`
+  - Glassmorphic widgets with `theme.glassyCard()` extension
+  - Neon glow effects with `color.neonGlow()` extension
+  - **NEVER hardcode colors** - always reference theme
 - UID-to-display-name caching for performance
 - Game-scoped data structures for multi-game support
 - **Async error handling**: Always wrap async operations in try-catch with user feedback
@@ -182,6 +187,9 @@ List<String?> get squadSpots {
 
 ## Key Files to Reference
 - `lib/main.dart`: App initialization with Firebase and deep linking
+- `lib/core/app_theme.dart`: Material 3 theme system with dynamic colors and extensions
+- `lib/presentation/controllers/game_theme_controller.dart`: Dynamic theme from game covers
+- `lib/presentation/widgets/animated_theme_wrapper.dart`: Smooth theme transitions
 - `lib/squad_state.dart`: Core state management coordinator (uses manager classes)
 - `lib/managers/`: Focused manager classes for specific functionality
 - `lib/chat/chat_screen.dart`: Main chat UI with complex StreamBuilder logic

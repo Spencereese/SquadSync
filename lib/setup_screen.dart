@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'squad_tab/squad_queue_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
+import 'dart:math';
+import 'services/supabase_service.dart';
+import 'chat/chat_groups_screen.dart';
 
 class SetupScreen extends ConsumerStatefulWidget {
   const SetupScreen({super.key});
@@ -15,17 +18,12 @@ class SetupScreen extends ConsumerStatefulWidget {
 class SetupScreenState extends ConsumerState<SetupScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  // TODO: Update Google Sign In for v7 API
-  // final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final _supabase = SupabaseService.client;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    // TODO: Update Google Sign In initialization for v7 API
-    // _googleSignIn = GoogleSignIn();
     _checkUser();
   }
 
@@ -38,10 +36,11 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
 
   Future<void> _checkUser() async {
     try {
-      final user = _auth.currentUser;
-      if (user != null && mounted) {
-        // User is already authenticated, navigation handled in main.dart
-        // Squad state initialization is handled by Riverpod
+      final session = _supabase.auth.currentSession;
+      if (session != null && mounted) {
+        debugPrint(
+            '_checkUser: User already authenticated, letting auth state handle navigation');
+        // Don't manually navigate - authStateProvider in main.dart will handle it
       }
     } catch (e) {
       debugPrint('Error checking user: $e');
@@ -58,20 +57,34 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
 
     setState(() => _isLoading = true);
     try {
-      UserCredential userCredential;
+      AuthResponse authResponse;
       try {
-        userCredential = await _auth.signInWithEmailAndPassword(
+        // Try sign in first
+        authResponse = await _supabase.auth.signInWithPassword(
           email: email,
           password: password,
         );
       } catch (signInError) {
-        userCredential = await _auth.createUserWithEmailAndPassword(
+        // If sign in fails, create new account
+        authResponse = await _supabase.auth.signUp(
           email: email,
           password: password,
         );
       }
-      await _handlePostSignIn(userCredential.user!);
-    } on FirebaseAuthException catch (e) {
+
+      if (authResponse.user != null) {
+        debugPrint('_handleEmailAuth: Auth successful');
+        debugPrint('  - User: ${authResponse.user!.id}');
+        debugPrint('  - Session: ${authResponse.session}');
+        debugPrint(
+            '  - Session access token: ${authResponse.session?.accessToken ?? "null"}');
+
+        // Small delay to ensure session is fully synced before checking profile
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        await _handlePostSignIn(authResponse.user!);
+      }
+    } on AuthException catch (e) {
       _showSnackBar('Authentication failed: ${e.message}');
     } catch (e) {
       _showSnackBar('An unexpected error occurred');
@@ -110,35 +123,94 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   Future<void> _handleAppleSignIn() async {
     setState(() => _isLoading = true);
     try {
+      // Generate nonce for security
+      final rawNonce = _generateNonce();
+      final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
+
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName
+          AppleIDAuthorizationScopes.fullName,
         ],
+        nonce: hashedNonce,
       );
-      final oauthCredential = OAuthProvider("apple.com").credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
+
+      // Sign in with Supabase
+      final authResponse = await _supabase.auth.signInWithIdToken(
+        provider: OAuthProvider.apple,
+        idToken: appleCredential.identityToken!,
+        nonce: rawNonce,
       );
-      final userCredential = await _auth.signInWithCredential(oauthCredential);
-      await _handlePostSignIn(userCredential.user!);
+
+      if (authResponse.user != null) {
+        debugPrint(
+            '_handleAppleSignIn: Auth successful, session exists: ${authResponse.session != null}');
+
+        // Small delay to ensure session is fully synced before checking profile
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        await _handlePostSignIn(authResponse.user!);
+      }
     } catch (e) {
       _showSnackBar('Apple Sign-In failed: $e');
+      debugPrint('Apple Sign-In error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  /// Generate a cryptographically secure nonce for Apple Sign-In
+  String _generateNonce([int length = 32]) {
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = Random.secure();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
+        .join();
+  }
+
   Future<void> _handlePostSignIn(User user) async {
-    final userDoc = await _firestore.collection('users').doc(user.uid).get();
-    if (!userDoc.exists || userDoc.data()?['displayName'] == null) {
-      _showNameDialog(user);
-    } else {
-      if (!mounted) return;
-      // Squad state initialization is handled by Riverpod
-      if (mounted) {
-        _navigateToSquadQueue();
+    try {
+      debugPrint('_handlePostSignIn: Checking profile for user ${user.id}');
+
+      // Check current session
+      final session = _supabase.auth.currentSession;
+      debugPrint(
+          '_handlePostSignIn: Current session exists: ${session != null}, user: ${session?.user.id}');
+
+      // Check if user exists in Supabase
+      final response = await _supabase
+          .from('users')
+          .select('display_name')
+          .eq('uid', user.id)
+          .maybeSingle();
+
+      debugPrint('_handlePostSignIn: Response = $response');
+
+      if (response == null || response['display_name'] == null) {
+        debugPrint(
+            '_handlePostSignIn: No display name found, showing name dialog');
+        _showNameDialog(user);
+      } else {
+        debugPrint(
+            '_handlePostSignIn: Display name found: ${response['display_name']}');
+        debugPrint(
+            '⚠️  WARNING: Supabase session is NULL - check dashboard settings:');
+        debugPrint('   Authentication → Settings → Email Auth');
+        debugPrint('   Disable "Confirm email" for development');
+
+        // TEMPORARY WORKAROUND: Navigate manually since session isn't created
+        // TODO: Fix Supabase email confirmation settings
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const ChatGroupsScreen()),
+          );
+        }
       }
+    } catch (e) {
+      debugPrint('Error checking user profile: $e');
+      // If error, show name dialog to be safe
+      _showNameDialog(user);
     }
   }
 
@@ -171,26 +243,32 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
       return;
     }
     try {
-      await _firestore.collection('users').doc(user.uid).set({
-        'displayName': name.trim(),
-      }, SetOptions(merge: true));
+      debugPrint('_saveName: Saving name "$name" for user ${user.id}');
+
+      // Update or insert user in Supabase
+      final now = DateTime.now().toIso8601String();
+      await _supabase.from('users').upsert({
+        'uid': user.id,
+        'display_name': name.trim(),
+        'email': user.email ?? 'unknown@user.com',
+        'created_at': now,
+        'updated_at': now,
+      });
+
+      debugPrint('_saveName: Name saved successfully');
+
       if (mounted) {
-        // Squad state initialization is handled by Riverpod
-        if (mounted) {
-          Navigator.pop(context);
-          _navigateToSquadQueue();
-        }
+        Navigator.pop(context);
+        // Navigate to main app since session won't be created
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const ChatGroupsScreen()),
+        );
       }
     } catch (e) {
+      debugPrint('_saveName: Error saving name: $e');
       _showSnackBar('Error saving name: $e');
     }
-  }
-
-  void _navigateToSquadQueue() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const SquadQueuePage()),
-    );
   }
 
   void _showSnackBar(String message) {

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../app_theme.dart';
 import 'chat_state_notifier.dart';
 
 class ChatSettingsMenu {
@@ -38,7 +37,7 @@ class ChatSettingsMenu {
               height: 4.0,
               width: 40.0,
               decoration: BoxDecoration(
-                color: AppTheme.hintColor.withValues(alpha: 0.3),
+                color: Colors.white60.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2.0),
               ),
             ),
@@ -48,7 +47,7 @@ class ChatSettingsMenu {
                   width: 24, height: 24),
               title: const Text('View Group Info'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 onViewGroupInfo();
@@ -64,7 +63,7 @@ class ChatSettingsMenu {
               title:
                   Text(isMuted ? 'Unmute Notifications' : 'Mute Notifications'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 onToggleNotifications();
@@ -76,7 +75,7 @@ class ChatSettingsMenu {
                   width: 24, height: 24),
               title: const Text('Change Chat Name'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 onChangeChatName();
@@ -87,7 +86,7 @@ class ChatSettingsMenu {
                   width: 24, height: 24),
               title: const Text('Change Chat Image'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 onChangeChatImage();
@@ -98,7 +97,7 @@ class ChatSettingsMenu {
                   width: 24, height: 24),
               title: const Text('Set Quick Reaction'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 onQuickReactionPicker();
@@ -110,7 +109,7 @@ class ChatSettingsMenu {
                   width: 24, height: 24),
               title: const Text('Media Gallery'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 onViewMediaGallery();
@@ -121,7 +120,7 @@ class ChatSettingsMenu {
                   width: 24, height: 24),
               title: const Text('Search Messages'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 onSearchMessages();
@@ -130,10 +129,10 @@ class ChatSettingsMenu {
             ListTile(
               leading: Image.asset('assets/images/delete_sweep_icon.png',
                   width: 24, height: 24),
-              title: const Text('Clear Chat',
-                  style: TextStyle(color: AppTheme.errorColor)),
+              title: Text('Clear Chat',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.errorColor),
+                  size: 16, color: Theme.of(context).colorScheme.error),
               onTap: () {
                 Navigator.pop(context);
                 onClearChat();
@@ -142,10 +141,10 @@ class ChatSettingsMenu {
             ListTile(
               leading: Image.asset('assets/images/exit_icon.png',
                   width: 24, height: 24),
-              title: const Text('Leave Group',
-                  style: TextStyle(color: AppTheme.errorColor)),
+              title: Text('Leave Group',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.errorColor),
+                  size: 16, color: Theme.of(context).colorScheme.error),
               onTap: () {
                 Navigator.pop(context);
                 onLeaveGroup();
@@ -157,7 +156,7 @@ class ChatSettingsMenu {
                   width: 24, height: 24),
               title: const Text('Report Bug'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 onReportBug();
@@ -176,7 +175,7 @@ class ChatSettingsMenu {
       child: Text(
         title,
         style: TextStyle(
-          color: AppTheme.accentColor,
+          color: Theme.of(context).colorScheme.primary,
           fontWeight: FontWeight.bold,
           fontSize: 14.0,
         ),
@@ -210,7 +209,7 @@ class ChatSettingsMenu {
                 height: 4.0,
                 width: 40.0,
                 decoration: BoxDecoration(
-                  color: AppTheme.hintColor.withValues(alpha: 0.3),
+                  color: Colors.white60.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2.0),
                 ),
               ),
@@ -376,7 +375,7 @@ class ChatSettingsMenu {
 
   static void showSearchBar({
     required BuildContext context,
-    required FirebaseFirestore firestore,
+    required String chatGroupId,
     required String searchQuery,
     required Function(String) onSearchQueryChanged,
   }) {
@@ -402,7 +401,7 @@ class ChatSettingsMenu {
                   height: 4.0,
                   width: 40.0,
                   decoration: BoxDecoration(
-                    color: AppTheme.hintColor.withValues(alpha: 0.3),
+                    color: Colors.white60.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(2.0),
                   ),
                 ),
@@ -411,49 +410,53 @@ class ChatSettingsMenu {
                   child: TextField(
                     decoration: InputDecoration(
                       hintText: 'Search messages...',
-                      hintStyle: TextStyle(color: AppTheme.hintColor),
+                      hintStyle: TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12.0),
                       ),
-                      prefixIcon: Icon(Icons.search, color: AppTheme.hintColor),
+                      prefixIcon: Icon(Icons.search, color: Colors.white60),
                     ),
                     onChanged: onSearchQueryChanged,
                   ),
                 ),
                 const SizedBox(height: 16.0),
                 Expanded(
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: () {
+                  child: FutureBuilder<List<Map<String, dynamic>>>(
+                    future: () async {
                       // Check if user is authenticated
-                      final currentUser = FirebaseAuth.instance.currentUser;
-                      if (currentUser == null) {
-                        return Stream<QuerySnapshot>.empty();
+                      final currentUser = AuthServiceSupabase().currentUser;
+                      if (currentUser == null || searchQuery.isEmpty) {
+                        return <Map<String, dynamic>>[];
                       }
-                      return firestore
-                          .collection('chat')
-                          .orderBy('timestamp', descending: true)
-                          .where('text', isGreaterThanOrEqualTo: searchQuery)
-                          .where('text', isLessThan: '$searchQuery\uf8ff')
-                          .snapshots();
+                      // Supabase text search with ilike for case-insensitive matching
+                      final response = await SupabaseService.client
+                          .from('chat_messages')
+                          .select()
+                          .eq('chat_group_id', chatGroupId)
+                          .ilike('content', '%$searchQuery%')
+                          .order('timestamp_ms', ascending: false)
+                          .limit(50);
+                      return List<Map<String, dynamic>>.from(response);
                     }(),
                     builder: (context, snapshot) {
                       if (snapshot.hasError) {
-                        return const Center(
+                        return Center(
                           child: Text(
                             'Error loading search results',
-                            style: TextStyle(color: AppTheme.errorColor),
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.error),
                           ),
                         );
                       }
                       if (!snapshot.hasData) {
                         return const Center(child: CircularProgressIndicator());
                       }
-                      var messages = snapshot.data!.docs;
+                      var messages = snapshot.data!;
                       if (messages.isEmpty) {
                         return const Center(
                           child: Text(
                             'No results found',
-                            style: TextStyle(color: AppTheme.hintColor),
+                            style: TextStyle(color: Colors.white60),
                           ),
                         );
                       }
@@ -461,9 +464,13 @@ class ChatSettingsMenu {
                         controller: scrollController,
                         itemCount: messages.length,
                         itemBuilder: (context, index) {
-                          var message = messages[index];
-                          Map<String, dynamic> data =
-                              message.data() as Map<String, dynamic>;
+                          var data = messages[index];
+                          final timestamp = data['timestamp_ms'] != null
+                              ? DateTime.fromMillisecondsSinceEpoch(
+                                  data['timestamp_ms'])
+                              : (data['timestamp'] != null
+                                  ? DateTime.parse(data['timestamp'])
+                                  : DateTime.now());
                           return Card(
                             color: Theme.of(context).colorScheme.surface,
                             elevation: 0,
@@ -484,8 +491,8 @@ class ChatSettingsMenu {
                                         .onSurface),
                               ),
                               subtitle: Text(
-                                "${message['sender']} • ${DateFormat('MMM d, yyyy, HH:mm').format((message['timestamp'] as Timestamp).toDate())}",
-                                style: TextStyle(color: AppTheme.hintColor),
+                                "${data['sender_name'] ?? data['sender'] ?? 'Unknown'} • ${DateFormat('MMM d, yyyy, HH:mm').format(timestamp)}",
+                                style: TextStyle(color: Colors.white60),
                               ),
                             ),
                           );
@@ -522,7 +529,7 @@ class ChatSettingsMenu {
             controller: nameController,
             decoration: InputDecoration(
               hintText: 'Enter new chat name...',
-              hintStyle: TextStyle(color: AppTheme.hintColor),
+              hintStyle: TextStyle(color: Colors.white60),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12.0),
               ),
@@ -532,8 +539,8 @@ class ChatSettingsMenu {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppTheme.hintColor)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white60)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -543,7 +550,7 @@ class ChatSettingsMenu {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.accentColor,
+              backgroundColor: Theme.of(context).colorScheme.primary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12.0),
               ),
@@ -583,7 +590,7 @@ class ChatSettingsMenu {
                   width: 24, height: 24),
               title: const Text('Edit'),
               trailing: Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppTheme.hintColor),
+                  size: 16, color: Colors.white60),
               onTap: () {
                 Navigator.pop(context);
                 TextEditingController editController =
@@ -601,7 +608,7 @@ class ChatSettingsMenu {
                         controller: editController,
                         decoration: InputDecoration(
                           hintText: 'Edit your message...',
-                          hintStyle: TextStyle(color: AppTheme.hintColor),
+                          hintStyle: TextStyle(color: Colors.white60),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12.0),
                           ),
@@ -612,7 +619,7 @@ class ChatSettingsMenu {
                       TextButton(
                         onPressed: () => Navigator.pop(context),
                         child: const Text('Cancel',
-                            style: TextStyle(color: AppTheme.hintColor)),
+                            style: TextStyle(color: Colors.white60)),
                       ),
                       ElevatedButton(
                         onPressed: () {
@@ -620,7 +627,8 @@ class ChatSettingsMenu {
                           Navigator.pop(context);
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.accentColor,
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primary,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12.0),
                           ),
@@ -644,7 +652,7 @@ class ChatSettingsMenu {
                 height: 4.0,
                 width: 40.0,
                 decoration: BoxDecoration(
-                  color: AppTheme.hintColor.withValues(alpha: 0.3),
+                  color: Colors.white60.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2.0),
                 ),
               ),

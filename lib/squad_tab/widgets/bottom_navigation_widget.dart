@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../app_theme.dart';
-import '../../domain/entities/squad_state.dart';
+import '../../domain/entities/lobby_state.dart';
 
 class BottomNavigationWidget extends StatelessWidget {
   final ValueNotifier<int> selectedIndexNotifier;
   final double navOpacity;
   final double navBottomOffset;
-  final SquadState squadState;
+  final LobbyState squadState;
   final Function(int) onTabTapped;
 
   const BottomNavigationWidget({
@@ -79,7 +78,7 @@ class BottomNavigationWidget extends StatelessWidget {
 class TabItemWidget extends StatelessWidget {
   final int index;
   final int selectedIndex;
-  final SquadState squadState;
+  final LobbyState squadState;
   final Function(int) onTap;
 
   const TabItemWidget({
@@ -119,7 +118,7 @@ class TabItemWidget extends StatelessWidget {
                     width: 28,
                     height: 28,
                     color: isSelected
-                        ? AppTheme.accentColor
+                        ? Theme.of(context).colorScheme.primary
                         : Colors.white.withValues(alpha: 0.7),
                   )
                 else
@@ -127,7 +126,7 @@ class TabItemWidget extends StatelessWidget {
                     tabs[index] as IconData,
                     size: 28,
                     color: isSelected
-                        ? AppTheme.accentColor
+                        ? Theme.of(context).colorScheme.primary
                         : Colors.white.withValues(alpha: 0.7),
                   ),
                 if (index == 2)
@@ -137,7 +136,7 @@ class TabItemWidget extends StatelessWidget {
                       'Menu',
                       style: TextStyle(
                         color: isSelected
-                            ? AppTheme.accentColor
+                            ? Theme.of(context).colorScheme.primary
                             : Colors.white.withValues(alpha: 0.7),
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
@@ -151,7 +150,7 @@ class TabItemWidget extends StatelessWidget {
                       'Chats',
                       style: TextStyle(
                         color: isSelected
-                            ? AppTheme.accentColor
+                            ? Theme.of(context).colorScheme.primary
                             : Colors.white.withValues(alpha: 0.7),
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
@@ -165,7 +164,7 @@ class TabItemWidget extends StatelessWidget {
                       'Alerts',
                       style: TextStyle(
                         color: isSelected
-                            ? AppTheme.accentColor
+                            ? Theme.of(context).colorScheme.primary
                             : Colors.white.withValues(alpha: 0.7),
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
@@ -182,7 +181,7 @@ class TabItemWidget extends StatelessWidget {
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: AppTheme.accentColor,
+                    color: Theme.of(context).colorScheme.primary,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.black, width: 1),
                   ),

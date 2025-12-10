@@ -63,3 +63,4 @@ functions/node_modules/
 *.lock  # package-lock.json, Podfile.lock
 bin/    # If temp scripts
 .DS_Store
+node_modules

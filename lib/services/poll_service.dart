@@ -1,12 +1,11 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'auth_service_supabase.dart';
+import 'supabase_service.dart';
 import 'package:logger/logger.dart';
 import '../models/poll.dart';
 
 class PollService {
   final Logger _logger = Logger();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AuthServiceSupabase _authService = AuthServiceSupabase();
 
   /// Create a new poll and return its ID
   Future<String?> createPoll({
@@ -17,10 +16,10 @@ class PollService {
     String? creatorName,
   }) async {
     try {
-      final user = _auth.currentUser;
+      final user = _authService.currentUser;
       if (user == null) return null;
 
-      final pollId = '${DateTime.now().millisecondsSinceEpoch}_${user.uid}';
+      final pollId = '${DateTime.now().millisecondsSinceEpoch}_${user.id}';
 
       // Create poll options
       final pollOptions = options.asMap().entries.map((entry) {
@@ -30,23 +29,20 @@ class PollService {
         );
       }).toList();
 
-      final poll = Poll(
-        id: pollId,
-        title: title,
-        creatorUid: user.uid,
-        creatorName: creatorName ?? user.displayName ?? 'Anonymous',
-        options: pollOptions,
-        isMultipleChoice: settings.isMultipleChoice,
-        isAnonymous: settings.isAnonymous,
-        createdAt: DateTime.now(),
-        duration: settings.duration,
-      );
-
-      // Determine collection path based on chat type
-      final collectionPath =
-          chatGroupId != null ? 'chat_groups/$chatGroupId/polls' : 'polls';
-
-      await _firestore.collection(collectionPath).doc(pollId).set(poll.toMap());
+      await SupabaseService.client.from('polls').insert({
+        'id': pollId,
+        'title': title,
+        'creator_uid': user.id,
+        'creator_name':
+            creatorName ?? user.userMetadata?['display_name'] ?? 'Anonymous',
+        'options': pollOptions.map((o) => o.toMap()).toList(),
+        'is_multiple_choice': settings.isMultipleChoice,
+        'is_anonymous': settings.isAnonymous,
+        'created_at': DateTime.now().toIso8601String(),
+        'duration': settings.duration?.inMinutes,
+        'chat_group_id': chatGroupId,
+        'is_closed': false,
+      });
 
       return pollId;
     } catch (e) {
@@ -61,84 +57,80 @@ class PollService {
     String? chatGroupId,
   }) async {
     try {
-      final user = _auth.currentUser;
+      final user = _authService.currentUser;
       if (user == null) return false;
 
-      // Determine collection path
-      final collectionPath =
-          chatGroupId != null ? 'chat_groups/$chatGroupId/polls' : 'polls';
+      // Get current poll data
+      final pollData = await SupabaseService.client
+          .from('polls')
+          .select()
+          .eq('id', pollId)
+          .maybeSingle();
 
-      final pollRef = _firestore.collection(collectionPath).doc(pollId);
+      if (pollData == null) return false;
 
-      return await _firestore.runTransaction((transaction) async {
-        final pollDoc = await transaction.get(pollRef);
-        if (!pollDoc.exists) return false;
+      final poll = Poll.fromMap(pollData);
+      if (poll.isClosed) return false;
 
-        final poll = Poll.fromMap(pollDoc.data()!);
-        if (poll.isClosed) return false;
+      // Check if user already voted and handle multiple choice
+      final userCurrentVotes = poll.getUserVotes(user.id);
 
-        // Check if user already voted and handle multiple choice
-        final userCurrentVotes = poll.getUserVotes(user.uid);
+      List<PollOption> updatedOptions;
 
-        if (!poll.isMultipleChoice && userCurrentVotes.isNotEmpty) {
-          // Single choice: remove previous vote
-          final updatedOptions = poll.options.map((option) {
-            if (userCurrentVotes.contains(option.id)) {
-              return option.copyWith(
-                voteCount: option.voteCount - 1,
-                voterUids:
-                    option.voterUids.where((uid) => uid != user.uid).toList(),
-              );
-            }
-            return option;
-          }).toList();
+      if (!poll.isMultipleChoice && userCurrentVotes.isNotEmpty) {
+        // Single choice: remove previous vote
+        updatedOptions = poll.options.map((option) {
+          if (userCurrentVotes.contains(option.id)) {
+            return option.copyWith(
+              voteCount: option.voteCount - 1,
+              voterUids:
+                  option.voterUids.where((uid) => uid != user.id).toList(),
+            );
+          }
+          return option;
+        }).toList();
 
-          // Apply new vote
-          final finalOptions = updatedOptions.map((option) {
-            if (optionIds.contains(option.id)) {
-              return option.copyWith(
-                voteCount: option.voteCount + 1,
-                voterUids: poll.isAnonymous
-                    ? option.voterUids
-                    : [...option.voterUids, user.uid],
-              );
-            }
-            return option;
-          }).toList();
+        // Apply new vote
+        updatedOptions = updatedOptions.map((option) {
+          if (optionIds.contains(option.id)) {
+            return option.copyWith(
+              voteCount: option.voteCount + 1,
+              voterUids: poll.isAnonymous
+                  ? option.voterUids
+                  : [...option.voterUids, user.id],
+            );
+          }
+          return option;
+        }).toList();
+      } else {
+        // Multiple choice or first vote: add votes
+        updatedOptions = poll.options.map((option) {
+          if (optionIds.contains(option.id) &&
+              !userCurrentVotes.contains(option.id)) {
+            return option.copyWith(
+              voteCount: option.voteCount + 1,
+              voterUids: poll.isAnonymous
+                  ? option.voterUids
+                  : [...option.voterUids, user.id],
+            );
+          } else if (!optionIds.contains(option.id) &&
+              userCurrentVotes.contains(option.id)) {
+            // Remove vote for options not selected in multiple choice
+            return option.copyWith(
+              voteCount: option.voteCount - 1,
+              voterUids:
+                  option.voterUids.where((uid) => uid != user.id).toList(),
+            );
+          }
+          return option;
+        }).toList();
+      }
 
-          transaction.update(pollRef, {
-            'options': finalOptions.map((option) => option.toMap()).toList(),
-          });
-        } else {
-          // Multiple choice or first vote: add votes
-          final updatedOptions = poll.options.map((option) {
-            if (optionIds.contains(option.id) &&
-                !userCurrentVotes.contains(option.id)) {
-              return option.copyWith(
-                voteCount: option.voteCount + 1,
-                voterUids: poll.isAnonymous
-                    ? option.voterUids
-                    : [...option.voterUids, user.uid],
-              );
-            } else if (!optionIds.contains(option.id) &&
-                userCurrentVotes.contains(option.id)) {
-              // Remove vote for options not selected in multiple choice
-              return option.copyWith(
-                voteCount: option.voteCount - 1,
-                voterUids:
-                    option.voterUids.where((uid) => uid != user.uid).toList(),
-              );
-            }
-            return option;
-          }).toList();
+      await SupabaseService.client.from('polls').update({
+        'options': updatedOptions.map((o) => o.toMap()).toList()
+      }).eq('id', pollId);
 
-          transaction.update(pollRef, {
-            'options': updatedOptions.map((option) => option.toMap()).toList(),
-          });
-        }
-
-        return true;
-      });
+      return true;
     } catch (e) {
       return false;
     }
@@ -150,28 +142,27 @@ class PollService {
     String? chatGroupId,
   }) async {
     try {
-      final user = _auth.currentUser;
+      final user = _authService.currentUser;
       if (user == null) return false;
 
-      final collectionPath =
-          chatGroupId != null ? 'chat_groups/$chatGroupId/polls' : 'polls';
+      // Get poll to verify creator
+      final pollData = await SupabaseService.client
+          .from('polls')
+          .select()
+          .eq('id', pollId)
+          .maybeSingle();
 
-      final pollRef = _firestore.collection(collectionPath).doc(pollId);
+      if (pollData == null) return false;
 
-      return await _firestore.runTransaction((transaction) async {
-        final pollDoc = await transaction.get(pollRef);
-        if (!pollDoc.exists) return false;
+      final poll = Poll.fromMap(pollData);
+      if (poll.creatorUid != user.id || poll.isClosed) return false;
 
-        final poll = Poll.fromMap(pollDoc.data()!);
-        if (poll.creatorUid != user.uid || poll.isClosed) return false;
+      await SupabaseService.client.from('polls').update({
+        'is_closed': true,
+        'closed_at': DateTime.now().toIso8601String(),
+      }).eq('id', pollId);
 
-        transaction.update(pollRef, {
-          'isClosed': true,
-          'closedAt': Timestamp.fromDate(DateTime.now()),
-        });
-
-        return true;
-      });
+      return true;
     } catch (e) {
       _logger.e('Error closing poll: $e');
       return false;
@@ -180,27 +171,32 @@ class PollService {
 
   /// Get a stream of polls for a chat
   Stream<List<Poll>> getPollsStream({String? chatGroupId}) {
-    final collectionPath =
-        chatGroupId != null ? 'chat_groups/$chatGroupId/polls' : 'polls';
+    final stream = chatGroupId != null
+        ? SupabaseService.client
+            .from('polls')
+            .stream(primaryKey: ['id'])
+            .eq('chat_group_id', chatGroupId)
+            .order('created_at', ascending: false)
+        : SupabaseService.client
+            .from('polls')
+            .stream(primaryKey: ['id']).order('created_at', ascending: false);
 
-    return _firestore
-        .collection(collectionPath)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => Poll.fromMap(doc.data())).toList();
+    return stream.map((data) {
+      return data.map((json) => Poll.fromMap(json)).toList();
     });
   }
 
   /// Get a specific poll
   Future<Poll?> getPoll(String pollId, {String? chatGroupId}) async {
     try {
-      final collectionPath =
-          chatGroupId != null ? 'chat_groups/$chatGroupId/polls' : 'polls';
+      final data = await SupabaseService.client
+          .from('polls')
+          .select()
+          .eq('id', pollId)
+          .maybeSingle();
 
-      final doc = await _firestore.collection(collectionPath).doc(pollId).get();
-      if (doc.exists) {
-        return Poll.fromMap(doc.data()!);
+      if (data != null) {
+        return Poll.fromMap(data);
       }
       return null;
     } catch (e) {
@@ -210,13 +206,10 @@ class PollService {
 
   /// Get a stream for a specific poll
   Stream<Poll?> getPollStream(String pollId, {String? chatGroupId}) {
-    final collectionPath =
-        chatGroupId != null ? 'chat_groups/$chatGroupId/polls' : 'polls';
-
-    return _firestore
-        .collection(collectionPath)
-        .doc(pollId)
-        .snapshots()
-        .map((doc) => doc.exists ? Poll.fromMap(doc.data()!) : null);
+    return SupabaseService.client
+        .from('polls')
+        .stream(primaryKey: ['id'])
+        .eq('id', pollId)
+        .map((data) => data.isNotEmpty ? Poll.fromMap(data.first) : null);
   }
 }

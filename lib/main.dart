@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'firebase_options.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'presentation/controllers/game_theme_controller.dart';
 import 'package:app_links/app_links.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'services/auth_service_supabase.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'presentation/notifiers/user_notifier.dart';
@@ -18,10 +17,11 @@ import 'chat/chat_groups_screen.dart';
 import 'notification_service.dart';
 import 'join_squad_screen.dart';
 import 'chat/dialogs/group_actions_dialog.dart';
-import 'managers/stubs.dart'; // TEMP: Keep for legacy managers
 import 'widgets/app_widgets.dart';
 import 'services/igdb_auth_service.dart';
 import 'core/injection.dart' as di;
+import 'services/supabase_service.dart';
+import 'services/session_debug_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,12 +37,30 @@ void main() async {
   // Ensure Firebase is initialized FIRST
   await _initializeFirebase();
 
+  // Initialize Supabase (dual client architecture)
+  try {
+    await SupabaseService.initialize();
+
+    // Debug: Check session persistence (only in debug mode)
+    if (kDebugMode) {
+      await SessionDebugHelper.checkSessionPersistence();
+      SessionDebugHelper.setupAuthListener();
+    }
+  } catch (e) {
+    debugPrint('Supabase initialization failed: $e');
+    // Continue with Firebase-only mode
+  }
+
   // Setup dependency injection AFTER Firebase is ready
   try {
+    debugPrint('Starting dependency injection setup...');
     await di.setupInjection();
-  } catch (e) {
+    debugPrint('Dependency injection completed successfully');
+  } catch (e, stackTrace) {
     debugPrint('Dependency injection failed: $e');
-    // Continue anyway - some features might work without injection
+    debugPrint('Stack trace: $stackTrace');
+    // Re-throw to prevent app from running with broken dependencies
+    rethrow;
   }
 
   runApp(SquadSyncApp(prefs: prefs));
@@ -71,24 +89,19 @@ Future<void> _initializeFirebase() async {
     await FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(true);
     debugPrint('Firebase Analytics initialized');
 
-    // Firebase Database persistence is not supported on web
-    if (!kIsWeb) {
-      FirebaseDatabase.instance.setPersistenceEnabled(true);
-      debugPrint('Firebase Database persistence enabled');
-    }
-
     try {
       await NotificationService.initialize();
-      await NotificationManager.initialize();
+
       debugPrint('Notification services initialized');
     } catch (e) {
       debugPrint('Notification initialization failed: $e');
       // Notification initialization failed - silently handled
     }
 
-    // Setup dependency injection
-    await di.setupInjection();
-    debugPrint('Dependency injection initialized');
+    // Dependency injection is already done before this function is called
+    // Remove duplicate call to avoid issues
+    // await di.setupInjection();
+    // debugPrint('Dependency injection initialized');
 
     // IGDB credentials setup (uncomment for first run, then comment out)
     try {
@@ -117,7 +130,7 @@ Future<void> _initializeFirebase() async {
 
 class SquadSyncApp extends ConsumerStatefulWidget {
   final SharedPreferences prefs;
-  
+
   const SquadSyncApp({super.key, required this.prefs});
 
   @override
@@ -166,16 +179,17 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   void _handleDeepLink(String link) {
     // Check if user is authenticated and has a squad before navigating
     final userAsync = ref.watch(userNotifierProvider);
-    final squadAsync = ref.watch(squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
+    final authService = AuthServiceSupabase();
     final user = userAsync.maybeWhen(
       data: (userState) => userState != null && userState.displayName != null
-          ? FirebaseAuth.instance.currentUser
+          ? authService.currentUser
           : null,
       orElse: () => null,
     );
     final squadId = squadAsync.maybeWhen(
-      data: (squadState) => squadState.selectedSquadId,
+      data: (squadState) => squadState.selectedLobbyId,
       orElse: () => null,
     );
 
@@ -242,11 +256,12 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
     try {
       platform.setMethodCallHandler((call) async {
         if (call.method == 'sendMessage' && mounted) {
-          final user = FirebaseAuth.instance.currentUser;
-          final squadAsync = ref.watch(squadNotifierProvider);
+          final authService = AuthServiceSupabase();
+          final user = authService.currentUser;
+          final squadAsync = ref.watch(ln.lobbyNotifierProvider);
 
           final squadId = squadAsync.maybeWhen(
-            data: (squadState) => squadState.selectedSquadId,
+            data: (squadState) => squadState.selectedLobbyId,
             orElse: () => null,
           );
 

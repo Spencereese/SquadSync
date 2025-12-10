@@ -1,5 +1,4 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 part 'message.freezed.dart';
 
@@ -11,9 +10,8 @@ class TimestampConverter implements JsonConverter<DateTime, dynamic> {
     if (json == null) {
       return DateTime.now(); // Default to current time for null timestamps
     }
-    if (json is Timestamp) {
-      return json.toDate();
-    } else if (json is DateTime) {
+    // Supabase uses DateTime or ISO8601 strings
+    if (json is DateTime) {
       return json;
     } else if (json is String) {
       return DateTime.parse(json);
@@ -92,6 +90,7 @@ enum MessageType {
   file,
   poll,
   voiceNote,
+  clip,
   aiResponse,
   system,
 }
@@ -115,6 +114,7 @@ class Message with _$Message {
     int? voiceNoteDuration,
     String? aiResponse,
     Map<String, dynamic>? metadata,
+    Map<String, dynamic>? clipData,
     bool? isEdited,
     @TimestampConverter() DateTime? editedAt,
     bool? isDeleted,
@@ -141,6 +141,9 @@ class Message with _$Message {
       metadata: json['metadata'] is Map<String, dynamic>
           ? json['metadata'] as Map<String, dynamic>
           : null,
+      clipData: json['clipData'] is Map<String, dynamic>
+          ? json['clipData'] as Map<String, dynamic>
+          : null,
       isEdited: json['isEdited'] as bool?,
       editedAt: json['editedAt'] != null
           ? const TimestampConverter().fromJson(json['editedAt'])
@@ -163,6 +166,7 @@ class Message with _$Message {
     String? voiceNoteUrl,
     int? voiceNoteDuration,
     Map<String, dynamic>? metadata,
+    Map<String, dynamic>? clipData,
   }) =>
       Message(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -178,6 +182,7 @@ class Message with _$Message {
         voiceNoteUrl: voiceNoteUrl,
         voiceNoteDuration: voiceNoteDuration,
         metadata: metadata,
+        clipData: clipData,
         isEdited: false,
         isDeleted: false,
       );
@@ -198,6 +203,7 @@ class Message with _$Message {
       'voiceNoteDuration': voiceNoteDuration,
       'aiResponse': aiResponse,
       'metadata': metadata,
+      'clipData': clipData,
       'isEdited': isEdited,
       'editedAt': editedAt != null
           ? const TimestampConverter().toJson(editedAt!)

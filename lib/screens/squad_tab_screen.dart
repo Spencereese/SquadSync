@@ -1,14 +1,16 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../presentation/notifiers/squad_notifier.dart' as sn;
-import '../domain/entities/squad_state.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import '../domain/entities/lobby_state.dart';
 import '../squad_tab/squad_tab.dart';
 import '../utils.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import 'add_game_screen.dart';
+import '../core/app_theme.dart';
 
 class SquadTabScreen extends StatelessWidget {
   final String? lobbyId;
@@ -77,7 +79,7 @@ class _SquadTabScreenContentState
 
   @override
   Widget build(BuildContext context) {
-    final squadAsync = ref.watch(sn.squadNotifierProvider);
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
     return squadAsync.when(
       data: (squadState) {
         // If gameName is provided, show full squad management interface
@@ -87,7 +89,7 @@ class _SquadTabScreenContentState
         }
 
         // If no squad selected, show squad selection/dashboard instead of welcome screen
-        if (squadState.selectedSquadId == null) {
+        if (squadState.selectedLobbyId == null) {
           return _buildDashboardInterface(context, squadState, ref);
         }
 
@@ -108,7 +110,7 @@ class _SquadTabScreenContentState
               children: [
                 Text('Error: $error'),
                 ElevatedButton(
-                  onPressed: () => ref.invalidate(sn.squadNotifierProvider),
+                  onPressed: () => ref.invalidate(ln.lobbyNotifierProvider),
                   child: const Text('Retry'),
                 ),
               ],
@@ -120,22 +122,34 @@ class _SquadTabScreenContentState
   }
 
   Widget _buildDashboardInterface(
-      BuildContext context, SquadState squadState, WidgetRef ref) {
+      BuildContext context, LobbyState squadState, WidgetRef ref) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Squad Lobbies'),
-        backgroundColor: Colors.black,
+        title: const Text(
+          'Squad Lobbies',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.cyanAccent),
       ),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.black, Colors.indigo],
+            colors: [
+              const Color(0xFF0B0E14),
+              const Color(0xFF14181F),
+            ],
           ),
         ),
         child: Column(
           children: [
+            // Top padding to account for AppBar
+            const SizedBox(height: 100),
             // Game Select Title
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -166,7 +180,7 @@ class _SquadTabScreenContentState
     );
   }
 
-  Widget _buildFullSquadInterface(BuildContext context, SquadState squadState) {
+  Widget _buildFullSquadInterface(BuildContext context, LobbyState squadState) {
     // Import and use the original SquadTab widget for full squad management
     return SquadTab(
         lobbyId: widget.lobbyId,
@@ -202,6 +216,8 @@ class _SquadTabScreenContentState
 
         final game = pinnedGames[index];
         final isSelected = index == _currentPage.round();
+        final theme = Theme.of(context);
+        final neonColor = theme.colorScheme.primary;
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
@@ -210,70 +226,106 @@ class _SquadTabScreenContentState
             horizontal: 8.0,
             vertical: isSelected ? 0 : 16,
           ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            image: game['coverUrl'] != null
-                ? DecorationImage(
-                    image: NetworkImage(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              children: [
+                // Background image
+                if (game['coverUrl'] != null)
+                  Positioned.fill(
+                    child: Image.network(
                       game['coverUrl'].toString().startsWith('http')
                           ? game['coverUrl']
                           : 'https:${game['coverUrl']}',
+                      fit: BoxFit.cover,
+                      colorBlendMode: BlendMode.dst,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        color: const Color(0xFF14181F),
+                      ),
                     ),
-                    fit: BoxFit.cover,
                   )
-                : null,
-            color: game['coverUrl'] == null ? Colors.grey[800] : null,
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => _selectGame(context, game),
-              borderRadius: BorderRadius.circular(16),
-              child: Stack(
-                children: [
-                  // Game name overlay at the bottom
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            Colors.black.withValues(alpha: 0.8),
-                            Colors.transparent,
-                          ],
-                        ),
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(16),
-                          bottomRight: Radius.circular(16),
-                        ),
+                else
+                  Positioned.fill(
+                    child: Container(color: const Color(0xFF14181F)),
+                  ),
+
+                // Glass border with neon glow
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: neonColor.withOpacity(isSelected ? 0.6 : 0.3),
+                        width: isSelected ? 2.5 : 1.5,
                       ),
-                      child: Text(
-                        game['name'] ?? 'Unknown Game',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black,
-                              offset: Offset(1, 1),
-                              blurRadius: 2,
-                            ),
-                          ],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
+                      boxShadow: isSelected
+                          ? neonColor.neonGlow(
+                              blur: 25,
+                              spread: 2,
+                              opacity: 0.4,
+                            )
+                          : null,
                     ),
                   ),
-                ],
-              ),
+                ),
+
+                // Content
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _selectGame(context, game),
+                    splashColor: Colors.transparent,
+                    highlightColor: Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Stack(
+                      children: [
+                        // Game name overlay at the bottom
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(20),
+                              bottomRight: Radius.circular(20),
+                            ),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.4),
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: neonColor.withOpacity(0.3),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  game['name'] ?? 'Unknown Game',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    shadows: neonColor.neonGlow(
+                                      blur: 10,
+                                      opacity: 0.3,
+                                    ),
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -284,6 +336,8 @@ class _SquadTabScreenContentState
   Widget _buildAddGameCard(
       BuildContext context, List<Map<String, dynamic>> pinnedGames) {
     final isSelected = pinnedGames.length == _currentPage.round();
+    final theme = Theme.of(context);
+    final neonColor = theme.colorScheme.primary;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -291,39 +345,55 @@ class _SquadTabScreenContentState
         horizontal: 8.0,
         vertical: isSelected ? 0 : 16,
       ),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: Colors.grey[800],
-        border: Border.all(
-          color: Colors.cyanAccent.withValues(alpha: 0.5),
-          width: 2,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _addGame(context),
-          borderRadius: BorderRadius.circular(16),
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.add,
-                  size: 48,
-                  color: Colors.cyanAccent,
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Add Game',
-                  style: TextStyle(
-                    color: Colors.cyanAccent,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+      child: GlassmorphicContainer(
+        neonColor: neonColor,
+        blur: 20,
+        borderRadius: 20,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _addGame(context),
+            borderRadius: BorderRadius.circular(20),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: neonColor.withOpacity(0.1),
+                      border: Border.all(
+                        color: neonColor.withOpacity(0.5),
+                        width: 2,
+                      ),
+                      boxShadow: neonColor.neonGlow(
+                        blur: 20,
+                        opacity: 0.3,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.add,
+                      size: 48,
+                      color: neonColor,
+                    ),
                   ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  Text(
+                    'Add Game',
+                    style: TextStyle(
+                      color: neonColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      shadows: neonColor.neonGlow(
+                        blur: 10,
+                        opacity: 0.3,
+                      ),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -372,8 +442,8 @@ class _SquadTabScreenContentState
   }
 
   Widget _buildActiveLobbiesSection(BuildContext context) {
-    final squadAsync = ref.watch(sn.squadNotifierProvider);
-    final user = FirebaseAuth.instance.currentUser;
+    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
+    final user = AuthServiceSupabase().currentUser;
     if (user == null) return const SizedBox.shrink();
 
     return squadAsync.when(
@@ -432,7 +502,7 @@ class _SquadTabScreenContentState
               child: RefreshIndicator(
                 onRefresh: () async {
                   // Trigger a refresh of squad state
-                  ref.invalidate(sn.squadNotifierProvider);
+                  ref.invalidate(ln.lobbyNotifierProvider);
                 },
                 child: activeLobbies.isEmpty
                     ? const Center(

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../presentation/notifiers/current_squad_notifier.dart';
+import '../presentation/notifiers/current_lobby_notifier.dart';
 import '../presentation/notifiers/chat_notifier.dart' as cn;
-import '../models/public_squad.dart';
+import '../domain/entities/lobby.dart';
 import '../chat/chat_input_bar.dart';
 import '../widgets/spots_lobby_bar.dart';
 import '../domain/entities/message.dart' show ChatType, MessageType;
@@ -68,7 +68,7 @@ class _SquadDetailScreenState extends ConsumerState<SquadDetailScreen> {
           body: Column(
             children: [
               // Spots lobby bar (only if game set)
-              if (squad.maxSpots != null) SpotsLobbyBar(squad: squad),
+              if (squad.maxSpots > 0) SpotsLobbyBar(squad: squad),
 
               // Chat messages
               Expanded(
@@ -89,7 +89,7 @@ class _SquadDetailScreenState extends ConsumerState<SquadDetailScreen> {
   }
 
   void _handleMenuAction(
-      BuildContext context, WidgetRef ref, String action, PublicSquad squad) {
+      BuildContext context, WidgetRef ref, String action, Lobby squad) {
     switch (action) {
       case 'set_game':
         // TODO: Navigate to game selection

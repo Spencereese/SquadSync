@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/supabase_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
-import '../presentation/notifiers/current_squad_notifier.dart';
+import '../presentation/notifiers/current_lobby_notifier.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/message.dart';
 import '../core/app_theme.dart';
@@ -29,7 +29,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   Widget build(BuildContext context) {
     final filter = ref.watch(discoveryFilterProvider);
     final popularGamesAsync = ref.watch(popularGamesProvider);
-    final publicSquadsAsync = ref.watch(publicSquadsProvider);
+    final publicSquadsAsync = ref.watch(publicLobbiesProvider);
 
     return Theme(
       data: AppTheme.dark(),
@@ -99,11 +99,11 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
               // Squads list
               publicSquadsAsync.when(
-                data: (squads) => SliverList(
+                data: (lobbys) => SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) =>
-                        _buildSquadCard(context, squads[index], ref),
-                    childCount: squads.length,
+                        _buildSquadCard(context, lobbys[index], ref),
+                    childCount: lobbys.length,
                   ),
                 ),
                 loading: () => const SliverToBoxAdapter(
@@ -116,7 +116,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                   ),
                 ),
                 error: (error, stack) {
-                  print('Firestore error in discovery: $error');
+                  debugPrint('Firestore error in discovery: $error');
                   return SliverToBoxAdapter(
                     child: Center(
                       child: Padding(
@@ -168,8 +168,8 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     );
   }
 
-  Widget _buildSquadCard(BuildContext context, Squad squad, WidgetRef ref) {
-    final availableSpots = _getAvailableSpots(squad);
+  Widget _buildSquadCard(BuildContext context, Lobby lobby, WidgetRef ref) {
+    final availableSpots = _getAvailableSpots(lobby);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -185,7 +185,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    squad.name,
+                    lobby.name,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -193,7 +193,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                     ),
                   ),
                 ),
-                if (squad.isActive)
+                if (lobby.isActive)
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -227,7 +227,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
-                    squad.gameName,
+                    lobby.gameName,
                     style: const TextStyle(
                       color: Colors.cyanAccent,
                       fontSize: 12,
@@ -237,7 +237,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${squad.memberUids.length}/${squad.maxSpots}',
+                  '${lobby.memberUids.length}/${lobby.maxSpots}',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
@@ -263,7 +263,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
             // Member avatars
             Row(
               children: [
-                ...squad.memberUids.take(5).map((uid) => Container(
+                ...lobby.memberUids.take(5).map((uid) => Container(
                       width: 24,
                       height: 24,
                       margin: const EdgeInsets.only(right: 4),
@@ -277,9 +277,9 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                         color: Colors.cyanAccent,
                       ),
                     )),
-                if (squad.memberUids.length > 5)
+                if (lobby.memberUids.length > 5)
                   Text(
-                    '+${squad.memberUids.length - 5}',
+                    '+${lobby.memberUids.length - 5}',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -292,7 +292,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
             // Description
             Text(
-              squad.description ?? 'No description',
+              lobby.description ?? 'No description',
               style: const TextStyle(
                 color: Colors.white70,
                 fontSize: 14,
@@ -307,7 +307,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton(
-                onPressed: () => _joinSquad(context, squad, ref),
+                onPressed: () => _joinSquad(context, lobby, ref),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.cyanAccent,
                   foregroundColor: Colors.black,
@@ -326,9 +326,9 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
   List<String> _getAvailableSpots(Lobby lobby) {
     final availableSpots = <String>[];
-    final maxSpots = squad.maxSpots;
+    final maxSpots = lobby.maxSpots;
     for (int i = 1; i <= maxSpots; i++) {
-      if (squad.spots[i - 1] == null) {
+      if (lobby.spots[i - 1] == null) {
         availableSpots.add(i.toString());
       }
     }
@@ -336,45 +336,35 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   }
 
   Future<void> _onRefresh() async {
-    // Bump current squad if it's public
-    final currentSquadAsync = ref.read(currentLobbyProvider);
-    currentSquadAsync.maybeWhen(
-      data: (squad) {
-        if (squad?.isPublic == true) {
-          ref.read(currentLobbyProvider.notifier).bumpSquad().catchError((_) {
-            // Ignore bump errors during refresh
-          });
-        }
-      },
-      orElse: () {},
-    );
+    // Refresh discovery data
+    ref.invalidate(publicLobbiesProvider);
 
     // Refresh the data
     await Future.delayed(const Duration(seconds: 1));
   }
 
-  void _joinSquad(BuildContext context, Squad squad, WidgetRef ref) async {
+  void _joinSquad(BuildContext context, Lobby lobby, WidgetRef ref) async {
     try {
       final uid = AuthServiceSupabase().currentUser!.id;
 
-      // Get current squad data
-      final squadData = await SupabaseService.client
-          .from('squads')
+      // Get current lobby data
+      final lobbyData = await SupabaseService.client
+          .from('lobbies')
           .select('member_uids, spots')
-          .eq('id', squad.id)
+          .eq('id', lobby.id)
           .maybeSingle();
 
-      if (squadData == null) return;
+      if (lobbyData == null) return;
 
       // Add user to member_uids
-      final memberUids = List<String>.from(squadData['member_uids'] ?? []);
+      final memberUids = List<String>.from(lobbyData['member_uids'] ?? []);
       if (!memberUids.contains(uid)) {
         memberUids.add(uid);
       }
 
       // Auto-claim first available spot
-      final spots = List<String?>.from(squadData['spots'] ?? []);
-      final maxSpots = squad.maxSpots;
+      final spots = List<String?>.from(lobbyData['spots'] ?? []);
+      final maxSpots = lobby.maxSpots;
       for (int i = 0; i < maxSpots && i < spots.length; i++) {
         if (spots[i] == null) {
           spots[i] = uid;
@@ -382,20 +372,20 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
         }
       }
 
-      await SupabaseService.client.from('squads').update({
+      await SupabaseService.client.from('lobbies').update({
         'member_uids': memberUids,
         'spots': spots,
         'last_activity': DateTime.now().toIso8601String(),
-      }).eq('id', squad.id);
+      }).eq('id', lobby.id);
 
-      // Set as current squad
-      ref.read(currentLobbyIdProvider.notifier).state = squad.id;
+      // Set as current lobby
+      ref.read(currentLobbyIdProvider.notifier).state = lobby.id;
 
       // Show success toast
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Joined ${squad.name}!'),
+            content: Text('Joined ${lobby.name}!'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -418,7 +408,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   }
 
   void _showCreatePublicSquadDialog(BuildContext context, WidgetRef ref) {
-    // TODO: Implement create public squad dialog with pre-filled defaults
+    // TODO: Implement create public lobby dialog with pre-filled defaults
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -428,7 +418,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
           style: TextStyle(color: Colors.white),
         ),
         content: const Text(
-          'Public squad creation coming soon!',
+          'Public lobby creation coming soon!',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [

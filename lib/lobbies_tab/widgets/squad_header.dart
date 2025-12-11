@@ -54,50 +54,25 @@ class SquadHeader extends ConsumerWidget {
                           orElse: () => 'Select Game',
                         );
 
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Colors.cyanAccent.withOpacity(0.3),
-                              width: 2,
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              gameName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.cyanAccent.withOpacity(0.2),
-                                blurRadius: 15,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.gamepad,
-                                color: Colors.cyanAccent,
-                                size: 24,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                gameName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(
-                                Icons.arrow_drop_down,
-                                color: Colors.cyanAccent,
-                                size: 24,
-                              ),
-                            ],
-                          ),
+                            const SizedBox(height: 2),
+                            const Icon(
+                              Icons.arrow_drop_down,
+                              color: Colors.cyanAccent,
+                              size: 24,
+                            ),
+                          ],
                         );
                       },
                     ),

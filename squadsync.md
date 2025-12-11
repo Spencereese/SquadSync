@@ -1,28 +1,20 @@
-# SquadSync — App Intelligence Summary
+# SquadSync — App Architecture Reference
 
-**Last Updated**: December 9, 2025  
-**Version**: 2.1 - ChatService Consolidation Complete  
-**Purpose**: Comprehensive AI-readable documentation for SquadSync codebase
+**Last Updated**: December 11, 2025  
+**Purpose**: Current architecture documentation and technical reference for SquadSync codebase
 
 ## Executive Overview
 
-SquadSync is a Flutter-based squad gaming coordination app with **Clean Architecture + Riverpod state management**. Features **hybrid multi-database architecture** (Supabase primary, Firestore backup, SQLite offline cache) for high-performance real-time features. Includes xAI Grok AI integration for smart replies and IGDB game data integration.
+SquadSync is a Flutter-based squad gaming coordination app with **Clean Architecture + Riverpod state management**. Features **hybrid multi-database architecture** (Supabase primary + SQLite offline cache) for high-performance real-time features. Includes xAI Grok AI integration for smart replies and IGDB game data integration.
 
-**Codebase Statistics**:
-- **Total Dart Files**: 283 files
-- **Total Lines of Code**: ~147,600 LOC (includes ~80,000 generated code) | **-391 lines** (Dec 9)
-- **Active Code**: ~42,600 LOC
-- **Architecture**: Clean Architecture with 4 layers (Presentation, Domain, Data, Services)
-- **State Management**: Riverpod (9 primary notifiers, 3,263 lines)
-- **Services**: 43 service classes (primary layer for external APIs) | **-1 service** (ChatService removed)
-- **Test Coverage**: Present (test/ + integration_test/ folders)
-
-**Migration Status**: 75% complete (Supabase primary, Firebase backup being phased out)
-
-**Recent Improvements** (December 8-9, 2025):
-- ✅ Renamed Squad → PublicSquad for semantic clarity
-- ✅ **Consolidated ChatService into MessageService** (-391 lines)
-- **Total Reduction**: -391 lines | **Net Total Since Dec 8**: -1,625 lines
+**Current Statistics**:
+- **Total Dart Files**: 233 files
+- **Total Lines of Code**: ~147,200 LOC (includes ~80,000 generated code)
+- **Active Code**: ~42,200 LOC
+- **Architecture**: Clean Architecture - Presentation → Domain → Data → Services
+- **State Management**: Riverpod (10 notifiers, ~3,930 lines total)
+- **Services**: 28 service classes for external APIs
+- **Test Coverage**: test/ + integration_test/ folders (tests need repository pattern updates)
 
 ## Architecture
 
@@ -91,10 +83,15 @@ SquadSync is a Flutter-based squad gaming coordination app with **Clean Architec
 
 **Total Notifier Lines**: 3,930 lines across 13 notifiers
 
-**Architecture Notes**:
-- ⚠️ **ChatNotifier too large** (927 lines) - violates Single Responsibility
-- ⚠️ **Squad state fragmented** across SquadNotifier, CurrentSquadNotifier, UserSquadsNotifier
-- ✅ **Otherwise well-structured** with clear responsibilities
+**Current Issues**:
+- ⚠️ **ChatNotifier too large** (927 lines) - needs splitting into MessageNotifier + PollNotifier + MediaNotifier
+- ⚠️ **Squad state fragmented** - SquadNotifier + CurrentSquadNotifier + UserSquadsNotifier could be better organized
+- ⚠️ **Direct DB access** - Some notifiers bypass repository layer (CurrentSquadNotifier, UserSquadsNotifier, DiscoveryNotifier)
+
+**Strengths**:
+- ✅ Clean separation of concerns for most notifiers
+- ✅ Proper use of AsyncNotifier patterns
+- ✅ Good error handling with user feedback
 
 ### Data Layer
 
@@ -199,9 +196,12 @@ Supabase Realtime Stream → CurrentSquadNotifier
 
 **Total Entity Lines**: ~2,500 lines (active code) + ~8,000 lines (generated .freezed.dart + .g.dart files)
 
-**⚠️ Issue Identified**: Duplicate Squad model in `lib/models/squad.dart` vs `lib/domain/entities/squad.dart` (see CODE_REDUNDANCY_ANALYSIS.md)
+**Current State**:
+- ✅ All entities use freezed for immutability
+- ✅ JSON serialization via json_serializable
+- ⚠️ Some type inconsistencies (Lobby vs PublicSquad) need standardization
 
-#### Repository Interfaces (4 files)
+#### Repository Interfaces (5 files)
 
 | Interface | File | Methods | Purpose |
 |-----------|------|---------|---------|
@@ -211,93 +211,72 @@ Supabase Realtime Stream → CurrentSquadNotifier
 | **SystemRepository** | `system_repository.dart` | ~8 methods | System operations interface |
 | **GameRepository** | `game_repository.dart` | ~6 methods | Game operations interface |
 
-#### Use Cases (46 files, ~920 total lines)
+**Current Architecture**: Notifiers call repositories directly (Use Case layer removed for simplicity)
 
-**Pattern**: Single Responsibility wrappers around repository methods
+**Call Flow**:
+```
+UI → Notifier → Repository → DataSource → Database/API
+```
 
-**Categories**:
-
-**Squad Management** (10 use cases):
-- `create_squad.dart`, `join_squad.dart`, `leave_squad.dart`, `assign_spot.dart`
-- `start_spot_timer.dart`, `process_timers.dart`, `manage_peacock_queue.dart`
-- `sync_squad_data.dart`, `load_squad_state.dart`, `join_squad_by_code.dart`
-
-**Chat Operations** (13 use cases):
-- `send_message.dart`, `load_messages.dart`, `delta_sync.dart`, `add_reaction.dart`
-- `create_poll.dart`, `vote_poll.dart`, `pin_message.dart`, `create_group.dart`
-- `join_group.dart`, `leave_group.dart`, `update_typing_indicator.dart`
-- `upload_media.dart`, `load_media_history.dart`
-
-**User Management** (8 use cases):
-- `get_current_user.dart`, `update_display_name.dart`, `update_profile_image.dart`
-- `block_user.dart`, `unblock_user.dart`, `add_pinned_game.dart`
-- `remove_pinned_game.dart`, `check_availability.dart`
-
-**Game Integration** (5 use cases):
-- `fetch_games.dart`, `get_game_details.dart`, `get_popular_games.dart`
-- `initialize_games.dart`, `sync_games_to_firestore.dart`
-
-**System Operations** (10 use cases):
-- `load_system_state.dart`, `update_theme_mode.dart`, `track_analytics_event.dart`
-- `send_local_notification.dart`, `update_last_sync.dart`, `purge_old_data.dart`
-- `update_notification_settings.dart`, `ban_user.dart`, `unban_user.dart`
-- `update_member_status.dart`
-
-**Example Use Case** (`create_squad.dart`):
+**Example**:
 ```dart
-class CreateSquad {
-  final SquadRepository _repository;
-  CreateSquad(this._repository);
+// Notifiers now call repositories directly
+class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
+  late final UserRepository _repository;
   
-  Future<void> call(String name, List<String> gameIds) {
-    return _repository.createSquad(name, gameIds);
+  @override
+  Future<AppUser?> build() async {
+    _repository = ref.read(userRepositoryProvider);
+    return await _repository.getCurrentUser();
+  }
+  
+  Future<void> updateDisplayName(String name) async {
+    await _repository.updateDisplayName(name);
+    ref.invalidateSelf();
   }
 }
 ```
 
-**Assessment**: 
-- ✅ Clean Architecture compliance
-- ✅ Testable and Single Responsibility
-- ⚠️ Mostly thin wrappers (10-30 lines each) - minimal business logic
-- **Justification**: Architectural consistency over DRY principle
+**Benefits**:
+- ✅ Simpler architecture with fewer layers
+- ✅ Less boilerplate code
+- ✅ Direct repository calls show intent clearly
+- ✅ Easier to maintain and understand
 
-### Services Layer (44 Services)
+### Services Layer (28 Services)
 
 **Purpose**: External API integration, utilities, cross-cutting concerns
 
 **Total Lines**: ~15,000 lines across all services
 
-#### Primary Services (Top 15 by Size)
+#### Primary Services (Current State)
 
-| Service | File | Lines | Responsibility | Database/API | Status |
-|---------|------|-------|----------------|--------------|--------|
-| **VideoService** | `video_service.dart` | 1,212 | Agora video SDK integration, screen sharing, beauty filters | Supabase + Agora SDK | ⚠️ Firestore refs |
-| **VoiceService** | `voice_service.dart` | 887 | Agora voice SDK, spatial audio, room management | Supabase + Agora SDK | ⚠️ Firestore refs |
-| **ChatUIManager** | `chat_ui_manager.dart` | 767 | Chat UI coordination, scrolling, message selection | N/A (UI state) | ✅ KEEP |
-| **MessageService** | `message_service.dart` | 677 | Message CRUD, AI integration, offline queue, **Realtime subscriptions**, media upload | Supabase + SQLite | ✅ CONSOLIDATED (Dec 9) |
-| **SupabasePersistence** | `supabase_persistence.dart` | 503 | Chat persistence for Supabase | Supabase | 🔴 REDUNDANT |
-| **FriendsService** | `friends_service.dart` | 489 | Friend requests, friend list, DMs, game muting | Supabase | ✅ KEEP |
-| **TimerService** | `timer_service.dart` | 466 | Timer orchestration, spot timers, peacock timers | SQLite + Firestore | ⚠️ Migration incomplete |
-| **BackgroundService** | `background_service.dart` | 461 | Background sync, notifications, WorkManager | N/A | ✅ KEEP |
-| ~~**ChatService**~~ | ~~`chat_service.dart`~~ | ~~391~~ | ~~Chat business logic, real-time subscriptions~~ | ~~Supabase Realtime~~ | ✅ **DELETED** (Dec 9) |
-| **ClipService** | `clip_service.dart` | 370 | Video compression (ffmpeg_kit), Supabase upload | Supabase Storage | ✅ KEEP |
-| **IGDBService** | `igdb_service.dart` | 355 | IGDB API integration for game data | IGDB API | ✅ KEEP |
-| **MediaService** | `media_service.dart` | 276 | Media upload to Supabase Storage | Supabase Storage | ⚠️ TODO migrate |
-| **GrokService** | `grok_service.dart` | 242 | xAI Grok API integration for smart replies | xAI Grok API | ✅ KEEP |
-| **AuthServiceSupabase** | `auth_service_supabase.dart` | 228 | Supabase Auth (email, Google, Apple Sign-In) | Supabase Auth | ✅ KEEP |
-| ~~**AuthService**~~ | ~~`auth_service.dart`~~ | ~~158~~ | ~~Auth wrapper implementing IAuthService~~ | ~~Delegates to above~~ | ✅ **DELETED** (Dec 8) |
+| Service | File | Lines | Responsibility | Database/API |
+|---------|------|-------|----------------|--------------|
+| **VideoService** | `video_service.dart` | 1,212 | Agora video SDK, screen sharing, beauty filters | Supabase + Agora SDK |
+| **VoiceService** | `voice_service.dart` | 887 | Agora voice SDK, spatial audio, room management | Supabase + Agora SDK |
+| **ChatUIManager** | `chat_ui_manager.dart` | 767 | Chat UI coordination, scrolling, message selection | N/A (UI state) |
+| **MessageService** | `message_service.dart` | 677 | Message CRUD, AI integration, realtime subscriptions, typing indicators | Supabase + SQLite |
+| **FriendsService** | `friends_service.dart` | 489 | Friend requests, friend list, DMs, game muting | Supabase |
+| **TimerService** | `timer_service.dart` | 466 | Timer orchestration, spot timers, peacock timers | SQLite + Supabase |
+| **BackgroundService** | `background_service.dart` | 461 | Background sync, notifications, WorkManager | N/A |
+| **ClipService** | `clip_service.dart` | 370 | Video compression (ffmpeg_kit), Supabase upload | Supabase Storage |
+| **IGDBService** | `igdb_service.dart` | 355 | IGDB API integration for game data | IGDB API |
+| **MediaService** | `media_service.dart` | 276 | Media upload to Supabase Storage | Supabase Storage |
+| **GrokService** | `grok_service.dart` | 242 | xAI Grok API integration for smart replies | xAI Grok API |
+| **AuthServiceSupabase** | `auth_service_supabase.dart` | 228 | Supabase Auth (email, Google, Apple Sign-In) | Supabase Auth |
 
-**Recent Consolidation** (December 9, 2025):
-- **ChatService removed** - All functionality merged into MessageService
-- MessageService now includes:
-  - ✅ Realtime subscriptions (Supabase channels for messages and typing)
-  - ✅ Media upload preprocessing
-  - ✅ App lifecycle management (WidgetsBindingObserver)
-  - ✅ Typing indicators
-  - ✅ Message CRUD operations
-  - ✅ AI integration and offline queue
-- **11 files updated** to use MessageService directly
-- **Impact**: -391 lines, single source of truth for messaging
+**Key Services**:
+- **MessageService**: Consolidated messaging with realtime subscriptions, typing indicators, offline queue
+- **FriendsService**: Complete friends system with DMs, requests, and game muting
+- **ClipService**: Gaming clip upload with video compression
+- **GrokService**: AI-powered smart replies using xAI Grok
+- **AuthServiceSupabase**: Primary authentication (Google, Apple, Email)
+
+**Architecture Notes**:
+- Services handle external API integration and complex business logic
+- Most services are focused and single-purpose
+- Large services (VideoService, VoiceService) handle complex SDK integration
 
 **Chat Subsystem Services** (8 files in `lib/chat/services/`):
 - `chat_typing_manager.dart` (~100 lines) - Typing indicators

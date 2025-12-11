@@ -5,6 +5,7 @@ import '../../domain/entities/message.dart';
 import '../../utils.dart';
 import '../chat_screen.dart';
 import '../../presentation/notifiers/user_notifier.dart';
+import '../../presentation/widgets/friend_search_widget.dart';
 
 /// Dialog for adding friends and starting direct messages
 class AddFriendDialog extends ConsumerStatefulWidget {
@@ -16,10 +17,7 @@ class AddFriendDialog extends ConsumerStatefulWidget {
 
 class _AddFriendDialogState extends ConsumerState<AddFriendDialog>
     with TickerProviderStateMixin {
-  final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> _searchResults = [];
   late TabController _tabController;
-  bool _isSearching = false;
 
   @override
   void initState() {
@@ -29,59 +27,8 @@ class _AddFriendDialogState extends ConsumerState<AddFriendDialog>
 
   @override
   void dispose() {
-    _searchController.dispose();
     _tabController.dispose();
     super.dispose();
-  }
-
-  Future<void> _searchUsers(String query) async {
-    if (query.length < 2) {
-      if (mounted) setState(() => _searchResults = []);
-      return;
-    }
-
-    setState(() => _isSearching = true);
-    try {
-      final userNotifier = ref.read(userNotifierProvider.notifier);
-      final results = await userNotifier.searchUsers(query);
-      if (mounted) setState(() => _searchResults = results);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error searching users: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSearching = false);
-    }
-  }
-
-  Future<void> _sendFriendRequest(String userId, String displayName) async {
-    HapticFeedback.lightImpact();
-    try {
-      final userNotifier = ref.read(userNotifierProvider.notifier);
-      await userNotifier.sendFriendRequest(userId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Friend request sent to $displayName'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error sending friend request: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _acceptFriendRequest(String requestId, String fromName) async {
@@ -132,22 +79,6 @@ class _AddFriendDialogState extends ConsumerState<AddFriendDialog>
         );
       }
     }
-  }
-
-  Future<void> _startDM(Map<String, dynamic> user) async {
-    Navigator.pop(context); // Close search
-    await ref.read(userNotifierProvider.notifier).startDMThread(user['uid']);
-    final chatId = 'dm_${user['uid']}'; // Temporary chat ID generation
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          chatGroupId: chatId,
-          chatGroupName: safeDisplayName(user['displayName'] as String?),
-          chatType: ChatType.dm,
-        ),
-      ),
-    );
   }
 
   Future<void> _startDMWithFriend(String? friendId) async {
@@ -257,133 +188,9 @@ class _AddFriendDialogState extends ConsumerState<AddFriendDialog>
   }
 
   Widget _buildSearchTab(ScrollController scrollController) {
-    return Column(
-      children: [
-        // Search
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            controller: _searchController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Search users by name (min 2 chars)...',
-              hintStyle: TextStyle(color: Colors.grey[400]),
-              filled: true,
-              fillColor: Colors.grey[800],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              prefixIcon: const Icon(Icons.search, color: Colors.grey),
-              suffixIcon: _isSearching
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.cyanAccent,
-                        ),
-                      ),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.search, color: Colors.cyanAccent),
-                      onPressed: () =>
-                          _searchUsers(_searchController.text.trim()),
-                    ),
-            ),
-            onChanged: (value) {
-              if (value.length >= 2) {
-                _searchUsers(value);
-              } else if (_searchResults.isNotEmpty) {
-                setState(() => _searchResults = []);
-              }
-            },
-            onSubmitted: _searchUsers,
-          ),
-        ),
-        // Results
-        Expanded(
-          child: _searchResults.isEmpty
-              ? Center(
-                  child: Text(
-                    _searchController.text.length < 2
-                        ? 'Type at least 2 characters to search'
-                        : 'No users found',
-                    style: TextStyle(color: Colors.grey[400]),
-                  ),
-                )
-              : ListView.builder(
-                  controller: scrollController,
-                  itemCount: _searchResults.length,
-                  itemBuilder: (context, index) {
-                    final user = _searchResults[index];
-                    final userId = user['uid'] as String;
-                    final displayName =
-                        safeDisplayName(user['display_name'] as String?);
-                    final photoUrl = user['photo_url'] as String?;
-                    final email = user['email'] as String?;
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      color: Colors.grey[900],
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundImage:
-                              photoUrl != null ? NetworkImage(photoUrl) : null,
-                          backgroundColor: Colors.cyanAccent.withOpacity(0.3),
-                          child: photoUrl == null
-                              ? Text(
-                                  displayName.isNotEmpty
-                                      ? displayName[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold),
-                                )
-                              : null,
-                        ),
-                        title: Text(displayName,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold)),
-                        subtitle: Text(
-                          email ?? 'User',
-                          style:
-                              TextStyle(color: Colors.grey[400], fontSize: 12),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: () =>
-                                  _sendFriendRequest(userId, displayName),
-                              icon: const Icon(Icons.person_add, size: 16),
-                              label: const Text('Add'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.message,
-                                  color: Colors.cyanAccent),
-                              onPressed: () => _startDM(user),
-                              tooltip: 'Start DM',
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+    return const FriendSearchWidget(
+      showDMButton: true,
+      showAddButton: true,
     );
   }
 

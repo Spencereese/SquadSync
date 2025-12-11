@@ -11,7 +11,7 @@ import '../domain/entities/lobby.dart';
 import '../widgets/glass_squad_card.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
 
-/// Tinder-style squad discovery screen with card swiping
+/// Tinder-style lobby discovery screen with card swiping
 ///
 /// Features:
 /// - Top 4 cards visible with parallax scaling
@@ -95,8 +95,8 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
   }
 
   Future<void> _autoSwipeRight() async {
-    final squads = ref.read(publicSquadsProvider).value ?? [];
-    if (squads.isEmpty) return;
+    final lobbies = ref.read(publicLobbiesProvider).value ?? [];
+    if (lobbies.isEmpty) return;
 
     // Get Grok's best suggestion (for now, just use current top card)
     await _swipeRight(animated: true);
@@ -220,21 +220,21 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
   }
 
   Future<void> _joinSquad({bool instant = false}) async {
-    final squads = ref.read(publicSquadsProvider).value ?? [];
+    final lobbies = ref.read(publicLobbiesProvider).value ?? [];
 
-    if (_currentIndex < squads.length) {
-      final squad = squads[_currentIndex];
+    if (_currentIndex < lobbies.length) {
+      final lobby = lobbies[_currentIndex];
 
-      // TODO: Call actual join squad API
-      // await ref.read(discoveryNotifierProvider.notifier).joinSquad(squad.id);
+      // TODO: Call actual join lobby API
+      // await ref.read(discoveryNotifierProvider.notifier).joinSquad(lobby.id);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               instant
-                  ? '⚡ Super Joined ${squad.name}!'
-                  : '✨ Joined ${squad.name}!',
+                  ? '⚡ Super Joined ${lobby.name}!'
+                  : '✨ Joined ${lobby.name}!',
               style: GoogleFonts.orbitron(fontWeight: FontWeight.w600),
             ),
             backgroundColor: Theme.of(context).colorScheme.primary,
@@ -254,7 +254,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final squadsAsync = ref.watch(publicSquadsProvider);
+    final lobbiesAsync = ref.watch(publicLobbiesProvider);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -289,16 +289,16 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
 
           // Main content
           SafeArea(
-            child: squadsAsync.when(
-              data: (squads) {
-                final visibleSquads =
-                    squads.skip(_currentIndex).take(4).toList();
+            child: lobbiesAsync.when(
+              data: (lobbies) {
+                final visibleLobbies =
+                    lobbies.skip(_currentIndex).take(4).toList();
 
-                if (visibleSquads.isEmpty) {
+                if (visibleLobbies.isEmpty) {
                   return _buildEmptyState(theme);
                 }
 
-                return _buildCardStack(visibleSquads, theme);
+                return _buildCardStack(visibleLobbies, theme);
               },
               loading: () => _buildLoadingState(theme),
               error: (error, stack) => _buildErrorState(theme, error),
@@ -339,23 +339,23 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     );
   }
 
-  Widget _buildCardStack(List<Lobby> squads, ThemeData theme) {
+  Widget _buildCardStack(List<Lobby> lobbies, ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: Stack(
         children: [
           // Background cards (4th, 3rd, 2nd) with parallax
           ...List.generate(
-            math.min(3, squads.length - 1),
+            math.min(3, lobbies.length - 1),
             (index) => _buildBackgroundCard(
-              squads[index + 1],
+              lobbies[index + 1],
               index + 1,
               theme,
             ),
           ).reversed,
 
           // Top card (draggable)
-          if (squads.isNotEmpty) _buildTopCard(squads[0], theme),
+          if (lobbies.isNotEmpty) _buildTopCard(lobbies[0], theme),
         ],
       ),
     );
@@ -375,11 +375,11 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
           opacity: opacity,
           child: IgnorePointer(
             child: GlassSquadCard(
-              squad: squad,
+              squad: lobby,
               gameCoverUrl: null, // TODO: Get from IGDB
               gamePrimaryColor: theme.colorScheme.primary,
-              heroTag: 'squad_bg_${squad.id}_$depth',
-              showPeacockTimer: squad.spotTimers.any((timer) => timer != null),
+              heroTag: 'squad_bg_${lobby.id}_$depth',
+              showPeacockTimer: lobby.spotTimers.any((timer) => timer != null),
               peacockProgress: 0.5, // TODO: Calculate actual progress
             ),
           ),
@@ -424,17 +424,17 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
                 child: Stack(
                   children: [
                     GlassSquadCard(
-                      squad: squad,
+                      squad: lobby,
                       gameCoverUrl: null, // TODO: Get from IGDB
                       gamePrimaryColor: neonColor,
-                      heroTag: 'squad_${squad.id}',
+                      heroTag: 'squad_${lobby.id}',
                       showPeacockTimer:
-                          squad.spotTimers.any((timer) => timer != null),
+                          lobby.spotTimers.any((timer) => timer != null),
                       peacockProgress: 0.5, // TODO: Calculate actual progress
                       onTap: () {
                         // Navigate to detail on tap (without swiping)
                         if (!_isDragging && _dragDistance < 10) {
-                          _navigateToDetail(squad);
+                          _navigateToDetail(lobby);
                         }
                       },
                     ),
@@ -736,7 +736,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: () {
-                ref.invalidate(publicSquadsProvider);
+                ref.invalidate(publicLobbiesProvider);
               },
               child: Text(
                 'TRY AGAIN',
@@ -753,10 +753,10 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
   }
 
   void _navigateToDetail(Lobby lobby) {
-    // TODO: Navigate to squad detail screen with hero animation
+    // TODO: Navigate to lobby detail screen with hero animation
     Navigator.of(context).pushNamed(
       '/squad-detail',
-      arguments: squad,
+      arguments: lobby,
     );
   }
 }

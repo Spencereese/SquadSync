@@ -66,8 +66,11 @@ class MessageData {
           ? 'Grok 🤖'
           : data['sender'] ?? data['sender_name'] ?? 'Unknown',
       senderUid: senderUid,
-      text: data['content'] ?? data['text'] ?? '',
-      content: data['content'] ?? data['text'],
+      text: _parseTextField(data, 'content') ??
+          _parseTextField(data, 'text') ??
+          '',
+      content:
+          _parseTextField(data, 'content') ?? _parseTextField(data, 'text'),
       photos: _parsePhotos(data['photos']),
       videoUrl: data['videoUrl'] ?? _parseVideoUrl(data['videos']),
       audioUrl: data['audioUrl'] ?? _parseAudioUrl(data['audio']),
@@ -106,6 +109,28 @@ class MessageData {
 
   /// Check if this is a Grok AI message
   bool get isGrokMessage => isAiResponse && senderUid == 'grok-ai';
+
+  /// Parse text field which might be a String or Map
+  static String? _parseTextField(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value == null) return null;
+
+    // If it's already a String, return it
+    if (value is String) return value;
+
+    // If it's a Map, it might be a rich text object - extract the plain text
+    if (value is Map<String, dynamic>) {
+      // Try common text field names in rich text objects
+      if (value['text'] is String) return value['text'] as String;
+      if (value['plainText'] is String) return value['plainText'] as String;
+      if (value['content'] is String) return value['content'] as String;
+      // If we can't extract text, return empty string to avoid errors
+      return '';
+    }
+
+    // For any other type, convert to string
+    return value.toString();
+  }
 
   /// Parse photos field which can be in different formats
   static List<Map<String, dynamic>> _parsePhotos(dynamic photosData) {

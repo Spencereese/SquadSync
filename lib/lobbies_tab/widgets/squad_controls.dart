@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/user_notifier.dart';
 import '../../services/auth_service_supabase.dart';
+import '../../screens/voice_room_screen.dart';
 import 'game_alerts_display.dart';
 
 /// SquadControls component - handles action buttons and controls
@@ -49,6 +50,12 @@ class _GameAlertSectionState extends ConsumerState<_GameAlertSection> {
   @override
   void initState() {
     super.initState();
+    // _checkForActiveAlert() is called in didChangeDependencies
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     _checkForActiveAlert();
   }
 
@@ -349,22 +356,19 @@ class _VoiceRoomButton extends ConsumerWidget {
         onPressed: () {
           if (squadState.selectedLobbyId == null) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No squad selected')),
+              const SnackBar(content: Text('No lobby selected')),
             );
             return;
           }
 
-          // Navigate to voice room screen
-          // Navigator.of(context).push(
-          //   MaterialPageRoute(
-          //     builder: (context) => VoiceRoomScreen(
-          //       roomId: squadState.selectedLobbyId!,
-          //       roomName: squadState.currentSquadData?['name'] ?? 'Voice Room',
-          //     ),
-          //   ),
-          // );
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Voice room not available')),
+          // Navigate to voice room screen with lobby context
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => VoiceRoomScreen(
+                roomId: squadState.selectedLobbyId!,
+                squadName: squadState.currentGame?['name'] ?? 'Voice Room',
+              ),
+            ),
           );
         },
         icon: const Icon(Icons.mic, color: Colors.white),

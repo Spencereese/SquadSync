@@ -38,18 +38,17 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
 
   @override
   Future<Lobby> createLobby(Lobby lobby) async {
-    final json = squad.toJson();
+    final json = lobby.toJson();
 
     // Convert to snake_case for Supabase
     final data = {
       'id': json['id'],
       'name': json['name'],
       'member_uids': json['memberUids'],
-      'game_name': json['gameName'],
+      'game_focus': json['gameName'],
       'max_spots': json['maxSpots'],
-      'created_by': json['createdBy'],
+      'creator_uid': json['createdBy'],
       'created_at': json['createdAt'],
-      'squad_spots': json['spots'],
       'spot_timers': json['spotTimers'] != null
           ? _convertSpotTimersToMap(json['spotTimers'])
           : {},
@@ -61,7 +60,7 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
     };
 
     await _supabase.from('lobbies').insert(data);
-    return squad;
+    return lobby;
   }
 
   // Helper to convert spotTimers list to map for Supabase
@@ -90,15 +89,15 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
     return list;
   }
 
-  // Helper to convert from snake_case to camelCase for Squad entity
+  // Helper to convert from snake_case to camelCase for Lobby entity
   Map<String, dynamic> _toEntityJson(Map<String, dynamic> data) {
     return {
       'id': data['id'],
       'name': data['name'],
       'memberUids': data['member_uids'] ?? [],
-      'gameName': data['game_name'] ?? '',
+      'gameName': data['game_focus'] ?? '',
       'maxSpots': data['max_spots'] ?? 8,
-      'createdBy': data['created_by'] ?? '',
+      'createdBy': data['creator_uid'] ?? '',
       'createdAt': data['created_at'],
       'spots': data['squad_spots'] ?? [],
       'spotTimers': _convertSpotTimersToList(
@@ -115,11 +114,14 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
 
   @override
   Future<Lobby?> getLobby(String lobbyId) async {
-    final response =
-        await _supabase.from('lobbies').select().eq('id', lobbyId).maybeSingle();
+    final response = await _supabase
+        .from('lobbies')
+        .select()
+        .eq('id', lobbyId)
+        .maybeSingle();
 
     if (response == null) return null;
-    return Squad.fromJson(_toEntityJson(response));
+    return Lobby.fromJson(_toEntityJson(response));
   }
 
   @override
@@ -131,7 +133,7 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
         .maybeSingle();
 
     if (response == null) return null;
-    return Squad.fromJson(_toEntityJson(response));
+    return Lobby.fromJson(_toEntityJson(response));
   }
 
   @override
@@ -144,22 +146,21 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
         .contains('member_uids', [userId]);
 
     return (response as List<dynamic>)
-        .map((data) => Squad.fromJson(_toEntityJson(data)))
+        .map((data) => Lobby.fromJson(_toEntityJson(data)))
         .toList();
   }
 
   @override
   Future<void> updateLobby(Lobby lobby) async {
-    final json = squad.toJson();
+    final json = lobby.toJson();
 
     // Convert to snake_case for Supabase
     final data = {
       'name': json['name'],
       'member_uids': json['memberUids'],
-      'game_name': json['gameName'],
+      'game_focus': json['gameName'],
       'max_spots': json['maxSpots'],
-      'created_by': json['createdBy'],
-      'squad_spots': json['spots'],
+      'creator_uid': json['createdBy'],
       'spot_timers': json['spotTimers'] != null
           ? _convertSpotTimersToMap(json['spotTimers'])
           : {},
@@ -171,7 +172,7 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
       'updated_at': DateTime.now().toIso8601String(),
     };
 
-    await _supabase.from('lobbies').update(data).eq('id', squad.id);
+    await _supabase.from('lobbies').update(data).eq('id', lobby.id);
   }
 
   @override
@@ -233,13 +234,14 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
         .update({'member_uids': memberUids}).eq('id', lobbyId);
 
     // Log the kick event
-    await _supabase.from('squad_events').insert({
-      'squad_id': lobbyId,
-      'type': 'member_kicked',
-      'member_id': memberId,
-      'kicked_by': kickedBy,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
+    // TODO: Create squad_events table in Supabase schema
+    // await _supabase.from('squad_events').insert({
+    //   'squad_id': lobbyId,
+    //   'type': 'member_kicked',
+    //   'member_id': memberId,
+    //   'kicked_by': kickedBy,
+    //   'timestamp': DateTime.now().toIso8601String(),
+    // });
   }
 
   @override
@@ -322,8 +324,8 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
         .stream(primaryKey: ['id'])
         .eq('id', lobbyId)
         .map((data) {
-          if (data.isEmpty) throw Exception('Squad not found');
-          return Squad.fromJson(_toEntityJson(data.first));
+          if (data.isEmpty) throw Exception('Lobby not found');
+          return Lobby.fromJson(_toEntityJson(data.first));
         });
   }
 
@@ -337,7 +339,7 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
             final memberUids = List<String>.from(data['member_uids'] ?? []);
             return memberUids.contains(userId);
           })
-          .map((data) => Squad.fromJson(_toEntityJson(data)))
+          .map((data) => Lobby.fromJson(_toEntityJson(data)))
           .toList();
     });
   }

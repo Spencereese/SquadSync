@@ -23,11 +23,11 @@ class ChatOnlineStatusManager {
           .from('users')
           .update({
             'display_name': finalDisplayName,
-            'profile_image': profileImage,
+            'photo_url': profileImage, // Changed from profile_image
             'last_online': DateTime.now().toIso8601String(),
             'online': isOnline,
           })
-          .eq('id', uid)
+          .eq('uid', uid) // Changed from 'id' to 'uid'
           .then((_) {
             debugPrint('Online status updated successfully');
           })

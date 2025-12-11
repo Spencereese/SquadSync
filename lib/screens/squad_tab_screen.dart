@@ -207,6 +207,7 @@ class _SquadTabScreenContentState
 
     return PageView.builder(
       controller: _pageController,
+      clipBehavior: Clip.none,
       itemCount: pinnedGames.length + 1, // +1 for the add game card
       itemBuilder: (context, index) {
         // Last item is the "Add Game" card
@@ -221,111 +222,109 @@ class _SquadTabScreenContentState
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          height: 450,
+          clipBehavior: Clip.none,
           margin: EdgeInsets.symmetric(
             horizontal: 8.0,
             vertical: isSelected ? 0 : 16,
           ),
-          child: ClipRRect(
+          decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            child: Stack(
-              children: [
-                // Background image
-                if (game['coverUrl'] != null)
-                  Positioned.fill(
-                    child: Image.network(
-                      game['coverUrl'].toString().startsWith('http')
-                          ? game['coverUrl']
-                          : 'https:${game['coverUrl']}',
-                      fit: BoxFit.cover,
-                      colorBlendMode: BlendMode.dst,
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        color: const Color(0xFF14181F),
-                      ),
-                    ),
+            boxShadow: isSelected
+                ? neonColor.neonGlow(
+                    blur: 25,
+                    spread: 2,
+                    opacity: 0.4,
                   )
-                else
-                  Positioned.fill(
-                    child: Container(color: const Color(0xFF14181F)),
-                  ),
-
-                // Glass border with neon glow
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: neonColor.withOpacity(isSelected ? 0.6 : 0.3),
-                        width: isSelected ? 2.5 : 1.5,
+                : null,
+          ),
+          child: GestureDetector(
+            onTap: () => _selectGame(context, game),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  // Background image
+                  if (game['coverUrl'] != null)
+                    Positioned.fill(
+                      child: Image.network(
+                        game['coverUrl'].toString().startsWith('http')
+                            ? game['coverUrl']
+                            : 'https:${game['coverUrl']}',
+                        fit: BoxFit.cover,
+                        color: null,
+                        colorBlendMode: null,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: const Color(0xFF14181F),
+                        ),
                       ),
-                      boxShadow: isSelected
-                          ? neonColor.neonGlow(
-                              blur: 25,
-                              spread: 2,
-                              opacity: 0.4,
-                            )
-                          : null,
+                    )
+                  else
+                    Positioned.fill(
+                      child: Container(color: const Color(0xFF14181F)),
+                    ),
+
+                  // Glass border (no shadow)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color:
+                                neonColor.withOpacity(isSelected ? 0.6 : 0.3),
+                            width: isSelected ? 2.5 : 1.5,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
 
-                // Content
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => _selectGame(context, game),
-                    splashColor: Colors.transparent,
-                    highlightColor: Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Stack(
-                      children: [
-                        // Game name overlay at the bottom
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.only(
-                              bottomLeft: Radius.circular(20),
-                              bottomRight: Radius.circular(20),
-                            ),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                              child: Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.4),
-                                  border: Border(
-                                    top: BorderSide(
-                                      color: neonColor.withOpacity(0.3),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                ),
-                                child: Text(
-                                  game['name'] ?? 'Unknown Game',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    shadows: neonColor.neonGlow(
-                                      blur: 10,
-                                      opacity: 0.3,
-                                    ),
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                ),
+                  // Game name overlay at the bottom
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                      ),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.4),
+                            border: Border(
+                              top: BorderSide(
+                                color: neonColor.withOpacity(0.3),
+                                width: 1.5,
                               ),
                             ),
                           ),
+                          child: Text(
+                            game['name'] ?? 'Unknown Game',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              shadows: neonColor.neonGlow(
+                                blur: 10,
+                                opacity: 0.3,
+                              ),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -422,25 +421,6 @@ class _SquadTabScreenContentState
     );
   }
 
-  void _handleQuickJoin(BuildContext context, WidgetRef ref) async {
-    final userStateAsync = ref.watch(userNotifierProvider);
-    final pinnedGames = userStateAsync.maybeWhen(
-      data: (userState) => userState?.pinnedGames ?? <Map<String, dynamic>>[],
-      orElse: () => <Map<String, dynamic>>[],
-    );
-
-    if (pinnedGames.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No pinned games to quick join')),
-      );
-      return;
-    }
-
-    // For now, just select the first pinned game
-    // TODO: Implement proper quick join logic with lobby suggestions
-    _selectGame(context, pinnedGames.first);
-  }
-
   Widget _buildActiveLobbiesSection(BuildContext context) {
     final squadAsync = ref.watch(ln.lobbyNotifierProvider);
     final user = AuthServiceSupabase().currentUser;
@@ -465,28 +445,6 @@ class _SquadTabScreenContentState
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Quick Play Button - Centered
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: ElevatedButton.icon(
-                  onPressed: () => _handleQuickJoin(context, ref),
-                  icon: const Icon(Icons.electric_bolt, color: Colors.white),
-                  label: const Text(
-                    'Quick Play',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF007AFF),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-              ),
-            ),
             const Padding(
               padding: EdgeInsets.all(16.0),
               child: Text(

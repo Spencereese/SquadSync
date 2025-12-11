@@ -229,7 +229,7 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
     try {
       // First check for manually pinned clip of the day
       final squadData = await SupabaseService.client
-          .from('squads')
+          .from('lobbies')
           .select('clip_of_the_day_id')
           .eq('id', squadId)
           .maybeSingle();
@@ -284,7 +284,7 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
     if (_currentSquadId == null) return;
 
     try {
-      await SupabaseService.client.from('squads').update(
+      await SupabaseService.client.from('lobbies').update(
           {'clip_of_the_day_id': clipMessageId}).eq('id', _currentSquadId!);
 
       // Reload clip of the day
@@ -294,6 +294,39 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
           ));
     } catch (e) {
       debugPrint('Error setting clip of the day: $e');
+    }
+  }
+
+  /// Upload a new clip to the squad or user's personal collection
+  Future<void> uploadClip(String? squadId, dynamic clipData) async {
+    try {
+      final userId = SupabaseService.client.auth.currentUser?.id;
+      // Use squad_id if provided, otherwise use user's personal collection (user_id)
+      // Insert clip into Supabase
+      await SupabaseService.client.from('clips').insert({
+        'squad_id': squadId ?? 'user_$userId',
+        'sender_id': userId,
+        'type': 'clip',
+        'clip_data': {
+          'clipId': clipData.clipId,
+          'videoUrl': clipData.videoUrl,
+          'thumbnailUrl': clipData.thumbUrl,
+          'durationSec': (clipData.duration / 1000).round(),
+          'width': clipData.width,
+          'height': clipData.height,
+          'views': 0,
+          'hypeReactions': <String>[],
+        },
+        'media_url': clipData.videoUrl,
+        'media_type': 'video/mp4',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      // Refresh clips to show the new upload
+      await refreshClips();
+    } catch (e) {
+      debugPrint('Error uploading clip: $e');
+      rethrow;
     }
   }
 }

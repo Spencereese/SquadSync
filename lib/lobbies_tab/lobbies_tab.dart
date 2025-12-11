@@ -285,7 +285,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
               }
             }
           }).catchError((e) {
-            print('Error searching for game ${widget.gameName}: $e');
+            debugPrint('Error searching for game ${widget.gameName}: $e');
           });
         } else {
           // Set the found game
@@ -327,20 +327,10 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     if (widget.chatGroupId == null) return;
 
     try {
-      final squadStateAsync = ref.read(ln.lobbyNotifierProvider);
-      final selectedLobbyId = squadStateAsync.maybeWhen(
-        data: (state) => state.selectedLobbyId,
-        orElse: () => null,
-      );
-      if (selectedLobbyId == null) return;
-
-      // Ensure chatGroupId is not null
-      if (widget.chatGroupId == null) return;
-
+      // Query chat group by ID only (no squad_id filter needed)
       final chatGroupDoc = await SupabaseService.client
           .from('chat_groups')
           .select('member_uids')
-          .eq('squad_id', selectedLobbyId)
           .eq('id', widget.chatGroupId!)
           .maybeSingle();
 
@@ -349,9 +339,12 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
         setState(() {
           _chatGroupMembers = members;
         });
+
+        // Update lobby state with these members reactively
+        ref.read(ln.lobbyNotifierProvider.notifier).updateLobbyMembers(members);
       }
     } catch (e) {
-      print('Error fetching chat group members: $e');
+      debugPrint('Error fetching chat group members: $e');
     }
   }
 
@@ -372,7 +365,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
         });
       }
     } catch (e) {
-      print('Error fetching circle: $e');
+      debugPrint('Error fetching circle: $e');
     }
   }
 
@@ -410,7 +403,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
 
       _lastSuggestionFetch = DateTime.now();
     } catch (e) {
-      print('Error fetching quick join suggestions: $e');
+      debugPrint('Error fetching quick join suggestions: $e');
       _suggestedLobbies = [];
     } finally {
       if (mounted) {
@@ -598,18 +591,18 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
                   ),
                 ),
 
-              // Heavy blur overlay
+              // Light blur overlay for better game cover visibility
               Positioned.fill(
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withOpacity(0.6),
-                          Colors.black.withOpacity(0.8),
+                          Colors.black.withOpacity(0.3),
+                          Colors.black.withOpacity(0.5),
                         ],
                       ),
                     ),

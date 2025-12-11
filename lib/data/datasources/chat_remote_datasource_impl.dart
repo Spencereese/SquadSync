@@ -353,8 +353,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       'created_by': group.createdBy,
       'created_at': group.createdAt.toIso8601String(),
       'is_dm': false,
-      'game_name': null,
-      'member_count': memberUids.length,
+      'game_focus': null,
     };
 
     debugPrint('   Inserting data: $groupData');
@@ -380,11 +379,10 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           'chat_group_id': groupId, // Link to chat group
           'name': group.name,
           'member_uids': memberUids,
-          'game_name': null, // No specific game yet
+          'game_focus': null, // No specific game yet
           'max_spots': 8, // Default max spots
-          'created_by': group.createdBy,
+          'creator_uid': group.createdBy,
           'created_at': DateTime.now().toIso8601String(),
-          'squad_spots': <String?>[], // Empty spots initially
           'spot_timers': <String, dynamic>{}, // Empty timers
           'viewers': memberUids, // All members can view
           'statuses': <String, String>{}, // Empty statuses

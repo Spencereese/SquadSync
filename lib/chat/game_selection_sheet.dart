@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/notifiers/game_notifier.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../domain/entities/game.dart';
-import '../core/app_theme.dart';
 
 /// Game selection bottom sheet for creating lobbies
 ///

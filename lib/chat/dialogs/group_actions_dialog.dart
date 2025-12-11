@@ -162,9 +162,9 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
     if (currentUser == null) return;
 
     try {
-      // Get popular public groups (most members first)
+      // Get popular public groups (most members first) using the view
       final response = await SupabaseService.client
-          .from('chat_groups')
+          .from('chat_groups_with_stats')
           .select()
           .eq('is_public', true)
           .order('member_count', ascending: false)
@@ -337,7 +337,7 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
       // Update the group with new member
       await SupabaseService.client.from('chat_groups').update({
         'member_uids': existingMembers,
-        'member_count': existingMembers.length,
+        'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', groupId);
 
       // Add group to user's user_groups array

@@ -2068,7 +2068,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     }
 
     return SupabaseService.client
-        .from('messages')
+        .from('chat_messages')
         .stream(primaryKey: ['id'])
         .eq('chat_group_id', widget.squadId)
         .order('timestamp_ms', ascending: false)
@@ -2086,10 +2086,10 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     }
 
     return SupabaseService.client
-        .from('messages')
+        .from('chat_messages')
         .stream(primaryKey: ['id'])
-        .eq('chat_group_id', widget.squadId)
-        .order('timestamp_ms', ascending: false)
+        .eq('chat_id', widget.squadId)
+        .order('timestamp', ascending: false)
         .limit(200);
   }
 
@@ -2460,7 +2460,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
                   final currentUser = AuthServiceSupabase().currentUser;
                   if (currentUser != null) {
                     await SupabaseService.client
-                        .from('squads')
+                        .from('lobbies')
                         .update({'name': newName}).eq('id', widget.squadId);
                   }
                   if (!mounted) return;
@@ -2537,7 +2537,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
 
                   // Remove from squad members
                   final squadResponse = await SupabaseService.client
-                      .from('squads')
+                      .from('lobbies')
                       .select('member_uids')
                       .eq('id', widget.squadId)
                       .maybeSingle();
@@ -2547,7 +2547,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
                         List<String>.from(squadResponse['member_uids'] ?? []);
                     memberUids.remove(currentUser.id);
 
-                    await SupabaseService.client.from('squads').update({
+                    await SupabaseService.client.from('lobbies').update({
                       'member_uids': memberUids,
                     }).eq('id', widget.squadId);
                   }
@@ -2983,16 +2983,18 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
                   try {
                     final results = await SupabaseService.client
                         .from('users')
-                        .select('id, display_name, profile_image')
+                        .select(
+                            'uid, display_name, photo_url') // Changed id to uid, profile_image to photo_url
                         .ilike('display_name', '%$value%')
                         .limit(10);
 
                     setState(() {
                       _searchResults = results
                           .map((row) => {
-                                'uid': row['id'],
+                                'uid': row['uid'], // Changed from 'id'
                                 'name': row['display_name'] ?? 'Unknown',
-                                'avatarUrl': row['profile_image'],
+                                'avatarUrl': row[
+                                    'photo_url'], // Changed from profile_image
                               })
                           .toList();
                     });

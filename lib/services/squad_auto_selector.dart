@@ -1,7 +1,7 @@
 import 'auth_service_supabase.dart';
 import 'supabase_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../presentation/notifiers/current_squad_notifier.dart';
+import '../presentation/notifiers/current_lobby_notifier.dart';
 
 /// Service for automatically selecting a squad on app launch
 Future<String?> autoSelectSquad(WidgetRef ref) async {
@@ -28,7 +28,7 @@ Future<String?> autoSelectSquad(WidgetRef ref) async {
   // 2. Most recent by last_activity
   else if (squadIds.isNotEmpty) {
     final squads = await SupabaseService.client
-        .from('squads')
+        .from('lobbies')
         .select('id')
         .contains('member_uids', [user.id])
         .order('last_activity', ascending: false)

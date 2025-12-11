@@ -23,7 +23,7 @@ class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
   @override
   void initState() {
     super.initState();
-    _loadAlerts();
+    // _loadAlerts() is called in didChangeDependencies
   }
 
   @override

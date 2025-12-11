@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import '../chat_screen.dart';
+import '../dialogs/add_friend_dialog.dart';
 import '../../domain/entities/message.dart';
 import '../../utils.dart';
 
-class DirectMessagesTab extends StatelessWidget {
+class DirectMessagesTab extends ConsumerWidget {
   const DirectMessagesTab({super.key});
 
   String _formatTime(DateTime time) {
@@ -39,8 +41,8 @@ class DirectMessagesTab extends StatelessWidget {
   }
 
   void _openDMChat(BuildContext context, String chatId, String displayName) {
-    Navigator.push(
-      context,
+    debugPrint('Opening DM chat: $chatId with $displayName');
+    Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => ChatScreen(
           chatGroupId: chatId,
@@ -52,147 +54,26 @@ class DirectMessagesTab extends StatelessWidget {
   }
 
   void _showAddFriendDialog(BuildContext context) {
-    final searchController = TextEditingController();
-    List<Map<String, dynamic>> searchResults = [];
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.5,
-          maxChildSize: 0.9,
-          builder: (context, scrollController) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: Colors.grey, width: 0.5),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Text(
-                        'Add Friend',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-                // Search
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: TextField(
-                    controller: searchController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Search users...',
-                      hintStyle: const TextStyle(color: Colors.grey),
-                      filled: true,
-                      fillColor: Colors.grey[800],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide.none,
-                      ),
-                      prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                    ),
-                    onChanged: (query) async {
-                      if (query.trim().isEmpty) {
-                        setState(() => searchResults = []);
-                        return;
-                      }
-
-                      try {
-                        // For now, we'll show a simple message
-                        // In a real implementation, this would search users
-                        setState(() => searchResults = []);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content:
-                                  Text('Friend search not implemented yet')),
-                        );
-                      } catch (e) {
-                        debugPrint('Error searching users: $e');
-                      }
-                    },
-                  ),
-                ),
-                // Results
-                Expanded(
-                  child: searchResults.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Start typing to search for friends',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: scrollController,
-                          itemCount: searchResults.length,
-                          itemBuilder: (context, index) {
-                            final user = searchResults[index];
-                            final displayName =
-                                safeDisplayName(user['displayName']);
-
-                            return ListTile(
-                              leading: const CircleAvatar(
-                                backgroundColor: Colors.grey,
-                                child: Icon(Icons.person, color: Colors.white),
-                              ),
-                              title: Text(
-                                displayName,
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                              onTap: () {
-                                // Add friend logic would go here
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content:
-                                          Text('Added $displayName as friend')),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      builder: (context) => const AddFriendDialog(),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final supabase.User currentUser = AuthServiceSupabase().currentUser!;
 
     return FutureBuilder<List<Map<String, dynamic>>>(
       key: ValueKey('dm_list_${currentUser.id}'),
       future: SupabaseService.client
-          .from('chats')
+          .from('chat_groups')
           .select()
-          .contains('participants', [currentUser.id]).order('last_message_time',
-              ascending: false),
+          .contains('member_uids', [currentUser.id])
+          .eq('is_dm', true)
+          .order('updated_at', ascending: false),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Center(
@@ -310,7 +191,8 @@ class DirectMessagesTab extends StatelessWidget {
               builder: (context, userSnapshot) {
                 final userData = userSnapshot.data;
                 final displayName = safeDisplayName(userData?['display_name']);
-                final profileImage = userData?['profile_image'];
+                final profileImage =
+                    userData?['photo_url']; // Changed from profile_image
 
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(

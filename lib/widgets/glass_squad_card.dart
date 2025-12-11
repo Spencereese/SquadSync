@@ -15,7 +15,7 @@ import '../domain/entities/lobby.dart';
 /// - Hover effects with scale and glow
 /// - Hero animation support for transitions
 class GlassSquadCard extends StatelessWidget {
-  final Squad squad;
+  final Lobby squad;
   final String? gameCoverUrl;
   final Color? gamePrimaryColor;
   final VoidCallback? onTap;

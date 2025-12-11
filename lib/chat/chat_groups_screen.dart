@@ -423,16 +423,30 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   }
 
   void _checkLastChatGroup() async {
-    final prefs = await SharedPreferences.getInstance();
-    final lastGroupId = prefs.getString('last_chat_group');
-    if (lastGroupId != null && mounted) {
+    try {
+      // Wait a moment for the screen to be fully mounted and data loaded
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      if (!mounted) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final lastGroupId = prefs.getString('last_chat_group');
+
+      if (lastGroupId == null || lastGroupId.isEmpty) {
+        debugPrint('No last chat group saved');
+        return;
+      }
+
+      debugPrint('Attempting to restore last chat group: $lastGroupId');
+
       // Check if the group still exists and user has access
       final squadState = ref.read(ln.lobbyNotifierProvider).maybeWhen(
             data: (data) => data,
             orElse: () => null,
           );
+
       if (squadState == null || squadState.selectedLobbyId == null) {
-        // User doesn't have a selected squad, can't check squad chat groups
+        debugPrint('No squad selected, cannot restore last chat group');
         return;
       }
 
@@ -446,21 +460,35 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
       if (response != null && mounted) {
         final members = List<String>.from(response['member_uids'] ?? []);
         final isPrivate = response['is_private'] ?? false;
+        final currentUserId = _authService.currentUser?.id;
 
-        if (!isPrivate || members.contains(_authService.currentUser?.id)) {
-          // Navigate to the last chat group
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ChatScreen(
-                chatGroupId: lastGroupId,
-                chatGroupName: response['name'] ?? 'Unknown Group',
-                chatType: ChatType.userGroup,
-              ),
-            ),
-          );
+        if (currentUserId != null &&
+            (!isPrivate || members.contains(currentUserId))) {
+          debugPrint('Navigating to last chat group: ${response['name']}');
+
+          // Use addPostFrameCallback to ensure navigation happens after build
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ChatScreen(
+                    chatGroupId: lastGroupId,
+                    chatGroupName: response['name'] ?? 'Unknown Group',
+                    chatType: ChatType.userGroup,
+                  ),
+                ),
+              );
+            }
+          });
+        } else {
+          debugPrint('User does not have access to last chat group');
         }
+      } else {
+        debugPrint('Last chat group not found or user has no access');
       }
+    } catch (e) {
+      debugPrint('Error restoring last chat group: $e');
     }
   }
 }

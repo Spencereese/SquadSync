@@ -17,18 +17,49 @@ class FriendsService {
   // USER SEARCH
   // ============================================================================
 
-  /// Search users by display name
-  Future<List<Map<String, dynamic>>> searchUsers(String query) async {
+  /// Search users by display name with optional filters
+  Future<List<Map<String, dynamic>>> searchUsers(
+    String query, {
+    String filter = 'all',
+    int limit = 20,
+  }) async {
     try {
       if (query.isEmpty || query.length < 2) return [];
 
-      final response = await _supabase
+      var queryBuilder = _supabase
           .from('users')
-          .select('uid, display_name, photo_url, email')
-          .ilike('display_name', '%$query%')
-          .limit(20);
+          .select(
+              'uid, display_name, photo_url, email, last_seen_at, created_at')
+          .ilike('display_name', '%$query%');
 
-      _logger.d('Found ${response.length} users matching "$query"');
+      // Apply filters based on filter type
+      switch (filter) {
+        case 'online':
+          // Users active in the last 15 minutes
+          final fifteenMinutesAgo = DateTime.now()
+              .subtract(const Duration(minutes: 15))
+              .toIso8601String();
+          queryBuilder = queryBuilder.gte('last_seen_at', fifteenMinutesAgo);
+          break;
+        case 'recent':
+          // Recently joined users (last 30 days)
+          final thirtyDaysAgo = DateTime.now()
+              .subtract(const Duration(days: 30))
+              .toIso8601String();
+          queryBuilder = queryBuilder.gte('created_at', thirtyDaysAgo);
+          break;
+        case 'all':
+        default:
+          // No additional filter
+          break;
+      }
+
+      final response = await queryBuilder
+          .order('display_name', ascending: true)
+          .limit(limit);
+
+      _logger.d(
+          'Found ${response.length} users matching "$query" (filter: $filter)');
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       _logger.e('Error searching users: $e');
@@ -41,7 +72,7 @@ class FriendsService {
     try {
       final response = await _supabase
           .from('users')
-          .select('uid, display_name, photo_url, email')
+          .select('uid, display_name, photo_url, email, last_seen_at')
           .eq('uid', uid)
           .maybeSingle();
 

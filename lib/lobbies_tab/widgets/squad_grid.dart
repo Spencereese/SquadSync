@@ -82,8 +82,10 @@ class SpotCard extends ConsumerWidget {
     final globalStatuses = squadState.globalStatuses;
 
     final spotName = index < squadSpots.length ? squadSpots[index] : null;
-    final spotDisplayName = spotName != null
-        ? squadState.memberDisplayNames[spotName] ?? spotName
+    // Strip _calling suffix before looking up display name
+    final cleanSpotName = spotName?.replaceAll('_calling', '');
+    final spotDisplayName = cleanSpotName != null
+        ? squadState.memberDisplayNames[cleanSpotName] ?? cleanSpotName
         : null;
     final hasOccupant = spotName != null;
     final isReady = globalStatuses[spotName] == 'Ready';
@@ -105,7 +107,9 @@ class SpotCard extends ConsumerWidget {
     return GestureDetector(
       onLongPress: () {
         if (hasOccupant) {
-          ref.read(ln.lobbyNotifierProvider.notifier).removeSpot(gameName, index);
+          ref
+              .read(ln.lobbyNotifierProvider.notifier)
+              .removeSpot(gameName, index);
         } else {
           SpotAssignmentDialog.show(context, ref, index);
         }

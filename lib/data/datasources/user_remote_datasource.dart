@@ -1,5 +1,6 @@
 import '../../services/supabase_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 abstract class UserRemoteDataSource {
   Future<Map<String, dynamic>?> getUserProfile(String uid);
@@ -22,11 +23,23 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
 
   @override
   Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
-    await _supabase.from('users').upsert({
-      'uid': uid,
-      ...data,
-      'updated_at': DateTime.now().toIso8601String(),
-    });
+    try {
+      // RLS enforces: users can only update their own profile (auth.uid() = uid)
+      await _supabase.from('users').update({
+        ...data,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('uid', uid);
+    } on PostgrestException catch (e) {
+      if (e.code == '42501') {
+        // RLS policy violation - user trying to update someone else's profile
+        throw Exception(
+            'Permission denied: Cannot update another user\'s profile');
+      }
+      rethrow;
+    } catch (e) {
+      debugPrint('Error updating user profile: $e');
+      rethrow;
+    }
   }
 
   @override

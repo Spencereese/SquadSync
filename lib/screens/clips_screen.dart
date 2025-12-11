@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../lobbies_tab/widgets/clips_tab.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'clip_upload_dialog.dart';
 
 /// Main clips screen for the navigation bar
 /// Wraps the ClipsTab widget with proper app bar and context
@@ -27,10 +28,12 @@ class ClipsScreen extends ConsumerWidget {
               IconButton(
                 icon: const Icon(Icons.videocam),
                 onPressed: () {
-                  // TODO: Navigate to clip creation/upload
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Clip upload coming soon'),
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => ClipUploadDialog(
+                      squadId: squadId,
+                      gameColor: gameColor,
                     ),
                   );
                 },

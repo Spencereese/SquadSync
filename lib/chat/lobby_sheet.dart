@@ -18,7 +18,7 @@ class LobbySheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
+    final squadStateAsync = ref.watch(lobbyNotifierProvider);
 
     return squadStateAsync.when(
       data: (squadState) => DraggableScrollableSheet(

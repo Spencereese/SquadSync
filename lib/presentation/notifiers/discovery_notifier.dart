@@ -40,7 +40,7 @@ final publicLobbiesProvider = StreamProvider<List<Lobby>>((ref) async* {
 
     query = baseQuery.map((data) => data
         .where((lobby) =>
-            lobby['is_active'] == true && lobby['game_name'] == filter)
+            lobby['is_active'] == true && lobby['game_focus'] == filter)
         .take(50)
         .toList());
   }
@@ -55,12 +55,12 @@ final popularGamesProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final data = await SupabaseService.client
       .from('lobbies')
-      .select('game_name')
+      .select('game_focus')
       .eq('is_public', true);
 
   final Map<String, int> counts = {};
   for (var row in data) {
-    final gameName = row['game_name'] as String?;
+    final gameName = row['game_focus'] as String?;
     final isActive = row['is_active'] as bool? ?? true;
     if (gameName != null && isActive) {
       counts[gameName] = (counts[gameName] ?? 0) + 1;

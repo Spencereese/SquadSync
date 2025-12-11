@@ -41,31 +41,22 @@ class AiService {
 
       // Create Grok's response message
       final grokMsgId = Uuid().v4();
-      final timestampMs = DateTime.now().millisecondsSinceEpoch;
 
       final grokMessageData = {
         'id': grokMsgId,
-        'sender_uid': 'grok-ai', // Special UID for Grok
-        'timestamp_ms': timestampMs,
+        'sender_id': 'grok-ai', // Special UID for Grok
+        'chat_id': chatGroupId,
         'text': grokResponse,
-        'image_url': null,
-        'video_url': null,
-        'audio_url': null,
-        'photos': [],
-        'videos': [],
-        'audio': [],
-        'reactions': [],
-        'reply_to': null,
-        'poll_id': null,
-        'delivered': true,
-        'read': false,
+        'message_type': 'text',
+        'ai_response': grokResponse, // Store AI response
         'timestamp': DateTime.now().toIso8601String(),
-        'is_ai_response': true, // Flag to identify AI responses
-        'chat_group_id': chatGroupId,
+        'created_at': DateTime.now().toIso8601String(),
       };
 
       // Send Grok's response to Supabase
-      await SupabaseService.client.from('messages').insert(grokMessageData);
+      await SupabaseService.client
+          .from('chat_messages')
+          .insert(grokMessageData);
 
       // Cache locally
       await _sqliteHelper.insertMessage(grokMessageData,
@@ -83,15 +74,14 @@ class AiService {
       if (chatGroupId == null) return [];
 
       final response = await SupabaseService.client
-          .from('messages')
-          .select('text, is_ai_response')
-          .eq('chat_group_id', chatGroupId)
-          .order('timestamp_ms', ascending: false)
+          .from('chat_messages')
+          .select('text, ai_response')
+          .eq('chat_id', chatGroupId)
+          .order('timestamp', ascending: false)
           .limit(limit * 2); // Get more to filter out AI responses
 
       final messages = response
-          .where((row) =>
-              !(row['is_ai_response'] ?? false)) // Exclude AI responses
+          .where((row) => row['ai_response'] == null) // Exclude AI responses
           .take(limit)
           .map((row) => row['text'] as String?)
           .where((text) => text != null && text.isNotEmpty)

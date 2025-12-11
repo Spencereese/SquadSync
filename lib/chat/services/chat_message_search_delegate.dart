@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import '../../services/supabase_service.dart';
 
 /// Message search delegate for searching through chat messages
-/// Works with Firestore now, easily adaptable to Supabase:
-/// supabase.from('messages').select().textSearch('content', query)
+/// Uses Supabase for full-text search:
+/// supabase.from('chat_messages').select().textSearch('content', query)
 class ChatMessageSearchDelegate extends SearchDelegate<String> {
   @override
   List<Widget> buildActions(BuildContext context) {
@@ -51,7 +51,7 @@ class ChatMessageSearchDelegate extends SearchDelegate<String> {
     // Supabase implementation with ilike for case-insensitive search
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: SupabaseService.client
-          .from('messages')
+          .from('chat_messages')
           .select()
           .ilike('text', '%$query%')
           .limit(50),

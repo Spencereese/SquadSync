@@ -1,12 +1,10 @@
 import 'package:riverpod/riverpod.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
+import '../../domain/repositories/game_repository.dart';
 import '../../domain/entities/game.dart';
-import '../../domain/usecases/fetch_games.dart';
-import '../../domain/usecases/get_game_details.dart';
-import '../../domain/usecases/get_popular_games.dart';
-import '../../domain/usecases/initialize_games.dart';
 import '../../data/datasources/game_local_datasource.dart';
 import '../../core/injection.dart' as di;
+import '../../core/injection.dart';
 
 part 'game_notifier.freezed.dart';
 
@@ -34,34 +32,24 @@ class GameState with _$GameState {
 }
 
 class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
-  FetchGames? _fetchGames;
-  GetGameDetails? _getGameDetails;
-  GetPopularGames? _getPopularGames;
-  InitializeGames? _initializeGames;
+  late final GameRepository _repository;
   GameLocalDataSource? _localDataSource;
 
-  FetchGames get fetchGames => _fetchGames!;
-  GetGameDetails get getGameDetails => _getGameDetails!;
-  GetPopularGames get getPopularGames => _getPopularGames!;
-  InitializeGames get initializeGames => _initializeGames!;
   GameLocalDataSource get localDataSource => _localDataSource!;
 
   @override
   Future<GameState> build() async {
-    // Initialize dependencies only once
-    _fetchGames ??= di.getIt<FetchGames>();
-    _getGameDetails ??= di.getIt<GetGameDetails>();
-    _getPopularGames ??= di.getIt<GetPopularGames>();
-    _initializeGames ??= di.getIt<InitializeGames>();
+    // Initialize dependencies
+    _repository = ref.read(gameRepositoryProvider);
     _localDataSource ??= di.getIt<GameLocalDataSource>();
 
     // Initialize games and lobbies
-    final result = await _initializeGames!();
+    final availableGames = await _repository.getAvailableGames();
+    final gameLobbies = await _repository.getGameLobbies();
 
     return GameState.initial().copyWith(
-      availableGames:
-          result.availableGames.map((g) => Game.fromCache(g)).toList(),
-      gameLobbies: result.gameLobbies,
+      availableGames: availableGames.map((g) => Game.fromCache(g)).toList(),
+      gameLobbies: gameLobbies,
       isInitialized: true,
     );
   }
@@ -72,7 +60,7 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
     }
 
     try {
-      final games = await fetchGames(query);
+      final games = await _repository.fetchGames(query);
       final dedupedGames = _dedupGamesBySlug(games);
       return AsyncValue.data(dedupedGames);
     } catch (e) {
@@ -106,14 +94,14 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
     state = const AsyncValue.loading();
 
     state = await AsyncValue.guard(() async {
-      final game = await getGameDetails(igdbId);
+      final game = await _repository.getGameDetails(igdbId);
       return state.value!.copyWith(currentGame: game);
     });
   }
 
   Future<AsyncValue<List<Game>>> loadPopularGames() async {
     try {
-      final games = await getPopularGames();
+      final games = await _repository.getPopularGames();
       state = AsyncValue.data(state.value!.copyWith(availableGames: games));
       return AsyncValue.data(games);
     } catch (e) {
@@ -130,7 +118,7 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
   }
 
   Future<List<Map<String, dynamic>>> fetchGamesFromIGDB(String query) async {
-    final games = await fetchGames(query);
+    final games = await _repository.fetchGames(query);
     return games.map((game) => game.toJson()).toList();
   }
 

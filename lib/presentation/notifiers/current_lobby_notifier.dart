@@ -40,9 +40,9 @@ class CurrentLobbyNotifier extends AsyncNotifier<Lobby?> {
       id: data['id'] as String,
       name: data['name'] as String? ?? 'Unnamed Lobby',
       memberUids: (data['member_uids'] as List<dynamic>?)?.cast<String>() ?? [],
-      gameName: data['game_name'] as String,
+      gameName: data['game_focus'] as String,
       maxSpots: data['max_spots'] as int,
-      createdBy: data['created_by'] as String? ?? '',
+      createdBy: data['creator_uid'] as String? ?? '',
       createdAt: _parseTimestamp(data['created_at']) ?? DateTime.now(),
       spots: (data['spots'] as List<dynamic>?)?.cast<String?>() ??
           List.filled(data['max_spots'] as int? ?? 8, null),

@@ -190,11 +190,13 @@ class NotificationService {
         return;
       }
 
-      developer.log('Sending notifications to ${tokens.length} users via Supabase Edge Function');
+      developer.log(
+          'Sending notifications to ${tokens.length} users via Supabase Edge Function');
 
       // Call Supabase Edge Function to send notifications
       // The Edge Function handles FCM v1 API authentication
-      final edgeFunctionResponse = await SupabaseService.client.functions.invoke(
+      final edgeFunctionResponse =
+          await SupabaseService.client.functions.invoke(
         'send-push-notification',
         body: {
           'tokens': tokens,
@@ -207,7 +209,8 @@ class NotificationService {
       if (edgeFunctionResponse.status == 200) {
         developer.log('✅ Notifications sent successfully via Edge Function');
       } else {
-        developer.log('⚠️ Edge Function response: ${edgeFunctionResponse.status} - ${edgeFunctionResponse.data}');
+        developer.log(
+            '⚠️ Edge Function response: ${edgeFunctionResponse.status} - ${edgeFunctionResponse.data}');
       }
     } catch (e) {
       developer.log('❌ Error sending notifications: $e');

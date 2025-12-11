@@ -45,22 +45,25 @@ class LobbyLocalDataSourceImpl implements LobbyLocalDataSource {
   Future<void> saveSquad(Lobby lobby) async {
     final db = await _sqliteHelper.database;
     await db.insert(
-      'squads',
+      'lobbies',
       {
-        'id': squad.id,
-        'name': squad.name,
-        'memberUids': squad.memberUids.join(','),
-        'gameName': squad.gameName,
-        'maxSpots': squad.maxSpots,
-        'createdBy': squad.createdBy,
-        'createdAt': squad.createdAt.toIso8601String(),
-        'spots': squad.spots.map((s) => s ?? '').join(','),
-        'spotTimers': squad.spotTimers.map((t) => t != null ? jsonEncode(t) : '').join(';'),
-        'viewers': squad.viewers.join(','),
-        'statuses': squad.statuses.entries.map((e) => '${e.key}:${e.value}').join(','),
-        'isActive': squad.isActive ? 1 : 0,
-        'description': squad.description,
-        'settings': squad.settings != null ? jsonEncode(squad.settings) : null,
+        'id': lobby.id,
+        'name': lobby.name,
+        'memberUids': lobby.memberUids.join(','),
+        'gameName': lobby.gameName,
+        'maxSpots': lobby.maxSpots,
+        'createdBy': lobby.createdBy,
+        'createdAt': lobby.createdAt.toIso8601String(),
+        'spots': lobby.spots.map((s) => s ?? '').join(','),
+        'spotTimers': lobby.spotTimers
+            .map((t) => t != null ? jsonEncode(t) : '')
+            .join(';'),
+        'viewers': lobby.viewers.join(','),
+        'statuses':
+            lobby.statuses.entries.map((e) => '${e.key}:${e.value}').join(','),
+        'isActive': lobby.isActive ? 1 : 0,
+        'description': lobby.description,
+        'settings': lobby.settings != null ? jsonEncode(lobby.settings) : null,
         'updatedAt': DateTime.now().toIso8601String(),
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
@@ -71,7 +74,7 @@ class LobbyLocalDataSourceImpl implements LobbyLocalDataSource {
   Future<Lobby?> getLobby(String lobbyId) async {
     final db = await _sqliteHelper.database;
     final maps = await db.query(
-      'squads',
+      'lobbies',
       where: 'id = ?',
       whereArgs: [lobbyId],
     );
@@ -79,15 +82,21 @@ class LobbyLocalDataSourceImpl implements LobbyLocalDataSource {
     if (maps.isEmpty) return null;
 
     final map = maps.first;
-    return Squad(
+    return Lobby(
       id: map['id'] as String,
       name: map['name'] as String,
-      memberUids: (map['memberUids'] as String).split(',').where((s) => s.isNotEmpty).toList(),
+      memberUids: (map['memberUids'] as String)
+          .split(',')
+          .where((s) => s.isNotEmpty)
+          .toList(),
       gameName: map['gameName'] as String,
       maxSpots: map['maxSpots'] as int,
       createdBy: map['createdBy'] as String,
       createdAt: DateTime.parse(map['createdAt'] as String),
-      spots: (map['spots'] as String).split(',').map((s) => s.isEmpty ? null : s).toList(),
+      spots: (map['spots'] as String)
+          .split(',')
+          .map((s) => s.isEmpty ? null : s)
+          .toList(),
       spotTimers: (map['spotTimers'] as String).split(';').map((t) {
         if (t.isEmpty) return null;
         try {
@@ -96,16 +105,24 @@ class LobbyLocalDataSourceImpl implements LobbyLocalDataSource {
           return null;
         }
       }).toList(),
-      viewers: (map['viewers'] as String).split(',').where((s) => s.isNotEmpty).toList(),
+      viewers: (map['viewers'] as String)
+          .split(',')
+          .where((s) => s.isNotEmpty)
+          .toList(),
       statuses: Map.fromEntries(
-        (map['statuses'] as String).split(',').where((s) => s.isNotEmpty).map((s) {
+        (map['statuses'] as String)
+            .split(',')
+            .where((s) => s.isNotEmpty)
+            .map((s) {
           final parts = s.split(':');
           return MapEntry(parts[0], parts[1]);
         }),
       ),
       isActive: (map['isActive'] as int) == 1,
       description: map['description'] as String?,
-      settings: map['settings'] != null ? jsonDecode(map['settings'] as String) as Map<String, dynamic> : null,
+      settings: map['settings'] != null
+          ? jsonDecode(map['settings'] as String) as Map<String, dynamic>
+          : null,
     );
   }
 
@@ -113,46 +130,63 @@ class LobbyLocalDataSourceImpl implements LobbyLocalDataSource {
   Future<List<Lobby>> getUserLobbies(String userId) async {
     final db = await _sqliteHelper.database;
     final maps = await db.query(
-      'squads',
+      'lobbies',
       where: 'memberUids LIKE ?',
       whereArgs: ['%$userId%'],
     );
 
-    return maps.map((map) => Squad(
-      id: map['id'] as String,
-      name: map['name'] as String,
-      memberUids: (map['memberUids'] as String).split(',').where((s) => s.isNotEmpty).toList(),
-      gameName: map['gameName'] as String,
-      maxSpots: map['maxSpots'] as int,
-      createdBy: map['createdBy'] as String,
-      createdAt: DateTime.parse(map['createdAt'] as String),
-      spots: (map['spots'] as String).split(',').map((s) => s.isEmpty ? null : s).toList(),
-      spotTimers: (map['spotTimers'] as String).split(';').map((t) {
-        if (t.isEmpty) return null;
-        try {
-          return jsonDecode(t) as Map<String, dynamic>;
-        } catch (e) {
-          return null;
-        }
-      }).toList(),
-      viewers: (map['viewers'] as String).split(',').where((s) => s.isNotEmpty).toList(),
-      statuses: Map.fromEntries(
-        (map['statuses'] as String).split(',').where((s) => s.isNotEmpty).map((s) {
-          final parts = s.split(':');
-          return MapEntry(parts[0], parts[1]);
-        }),
-      ),
-      isActive: (map['isActive'] as int) == 1,
-      description: map['description'] as String?,
-      settings: map['settings'] != null ? jsonDecode(map['settings'] as String) as Map<String, dynamic> : null,
-    )).toList();
+    return maps
+        .map((map) => Lobby(
+              id: map['id'] as String,
+              name: map['name'] as String,
+              memberUids: (map['memberUids'] as String)
+                  .split(',')
+                  .where((s) => s.isNotEmpty)
+                  .toList(),
+              gameName: map['gameName'] as String,
+              maxSpots: map['maxSpots'] as int,
+              createdBy: map['createdBy'] as String,
+              createdAt: DateTime.parse(map['createdAt'] as String),
+              spots: (map['spots'] as String)
+                  .split(',')
+                  .map((s) => s.isEmpty ? null : s)
+                  .toList(),
+              spotTimers: (map['spotTimers'] as String).split(';').map((t) {
+                if (t.isEmpty) return null;
+                try {
+                  return jsonDecode(t) as Map<String, dynamic>;
+                } catch (e) {
+                  return null;
+                }
+              }).toList(),
+              viewers: (map['viewers'] as String)
+                  .split(',')
+                  .where((s) => s.isNotEmpty)
+                  .toList(),
+              statuses: Map.fromEntries(
+                (map['statuses'] as String)
+                    .split(',')
+                    .where((s) => s.isNotEmpty)
+                    .map((s) {
+                  final parts = s.split(':');
+                  return MapEntry(parts[0], parts[1]);
+                }),
+              ),
+              isActive: (map['isActive'] as int) == 1,
+              description: map['description'] as String?,
+              settings: map['settings'] != null
+                  ? jsonDecode(map['settings'] as String)
+                      as Map<String, dynamic>
+                  : null,
+            ))
+        .toList();
   }
 
   @override
   Future<void> deleteLobby(String lobbyId) async {
     final db = await _sqliteHelper.database;
     await db.delete(
-      'squads',
+      'lobbies',
       where: 'id = ?',
       whereArgs: [lobbyId],
     );
@@ -163,9 +197,9 @@ class LobbyLocalDataSourceImpl implements LobbyLocalDataSource {
     final db = await _sqliteHelper.database;
     final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
 
-    // Delete old squads
+    // Delete old lobbies
     await db.delete(
-      'squads',
+      'lobbies',
       where: 'createdAt < ?',
       whereArgs: [thirtyDaysAgo.toIso8601String()],
     );

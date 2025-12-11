@@ -13,9 +13,9 @@ import 'dart:io' show Platform;
 ///
 /// // Query example
 /// final response = await supabase
-///   .from('squads')
+///   .from('lobbies')
 ///   .select()
-///   .eq('id', squadId);
+///   .eq('id', lobbyId);
 ///
 /// // Real-time subscription
 /// supabase

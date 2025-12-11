@@ -1,18 +1,18 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/public_squad.dart';
-import '../presentation/notifiers/current_squad_notifier.dart';
+import '../domain/entities/lobby.dart';
+import '../presentation/notifiers/current_lobby_notifier.dart';
 import '../utils.dart';
 
 class SpotsLobbyBar extends ConsumerWidget {
-  final PublicSquad squad;
+  final Lobby squad;
 
   const SpotsLobbyBar({super.key, required this.squad});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final maxSpots = squad.maxSpots ?? 0;
+    final maxSpots = squad.maxSpots;
     if (maxSpots == 0) return const SizedBox.shrink();
 
     return Container(
@@ -24,30 +24,31 @@ class SpotsLobbyBar extends ConsumerWidget {
         itemCount: maxSpots,
         itemBuilder: (context, index) {
           final spotNumber = (index + 1).toString();
-          final claimedUid = squad.spotClaims[spotNumber];
+          final claimedUid =
+              index < squad.spots.length ? squad.spots[index] : null;
           final isClaimed = claimedUid != null;
-          final peacockTimer = squad.peacockTimers[claimedUid];
-          final hasPeacockTimer = peacockTimer != null && peacockTimer.isActive;
+          final hasTimer = index < squad.spotTimers.length &&
+              squad.spotTimers[index] != null;
 
           return _SpotItem(
             spotNumber: spotNumber,
             isClaimed: isClaimed,
             claimedUid: claimedUid,
-            hasPeacockTimer: hasPeacockTimer,
-            onClaim: () => _claimSpot(ref, spotNumber),
-            onUnclaim: () => _unclaimSpot(ref, spotNumber),
+            hasPeacockTimer: hasTimer,
+            onClaim: () => _claimSpot(ref, index),
+            onUnclaim: () => _unclaimSpot(ref, index),
           );
         },
       ),
     );
   }
 
-  void _claimSpot(WidgetRef ref, String spotNumber) {
-    ref.read(currentLobbyProvider.notifier).claimSpot(spotNumber);
+  void _claimSpot(WidgetRef ref, int spotIndex) {
+    ref.read(currentLobbyProvider.notifier).claimSpot(spotIndex);
   }
 
-  void _unclaimSpot(WidgetRef ref, String spotNumber) {
-    ref.read(currentLobbyProvider.notifier).unclaimSpot(spotNumber);
+  void _unclaimSpot(WidgetRef ref, int spotIndex) {
+    ref.read(currentLobbyProvider.notifier).unclaimSpot(spotIndex);
   }
 }
 

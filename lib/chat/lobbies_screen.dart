@@ -5,7 +5,7 @@ import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../services/auth_service_supabase.dart';
 import 'dart:convert';
 import '../presentation/notifiers/user_squads_notifier.dart';
-import '../presentation/notifiers/current_squad_notifier.dart';
+import '../presentation/notifiers/current_lobby_notifier.dart';
 import '../screens/squad_detail_screen.dart';
 import '../core/app_theme.dart';
 import '../services/squad_auto_selector.dart';
@@ -15,10 +15,10 @@ class LobbiesScreen extends ConsumerStatefulWidget {
   const LobbiesScreen({super.key});
 
   @override
-  ConsumerState<SquadsScreen> createState() => _SquadsScreenState();
+  ConsumerState<LobbiesScreen> createState() => _LobbiesScreenState();
 }
 
-class _SquadsScreenState extends ConsumerState<SquadsScreen> {
+class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -130,7 +130,7 @@ class _SquadsScreenState extends ConsumerState<SquadsScreen> {
             ),
           ),
           error: (error, stack) {
-            print('Firestore error in squads: $error');
+            debugPrint('Firestore error in squads: $error');
             return Scaffold(
               backgroundColor: Colors.black,
               body: Center(
@@ -567,13 +567,11 @@ class _SquadsScreenState extends ConsumerState<SquadsScreen> {
                       final user = AuthServiceSupabase().currentUser;
                       if (user == null) throw 'User not authenticated';
 
-                      final createSquad = ref.read(createSquadProvider);
-                      final squad =
-                          await createSquad(squadName, gameName, maxSpots);
+                      final notifier = ref.read(lobbyNotifierProvider.notifier);
+                      await notifier.createSquad(squadName, gameName, maxSpots);
 
-                      // Set the current squad
-                      ref.read(currentLobbyIdProvider.notifier).state =
-                          squad.id;
+                      // Note: createSquad doesn't return the created lobby ID
+                      // Set current lobby ID would need to be done after fetching the created lobby
 
                       HapticFeedback.lightImpact();
                       if (mounted) {

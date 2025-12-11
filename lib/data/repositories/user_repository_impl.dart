@@ -56,11 +56,10 @@ class UserRepositoryImpl implements UserRepository {
       return AppUser(
         uid: user.id,
         displayName: profile['display_name'],
-        profileImage: profile['profile_image'],
+        profileImage: profile['photo_url'], // Changed from profile_image
         preferredModes:
             Map<String, String?>.from(profile['preferred_modes'] ?? {}),
-        userBlocks:
-            Map<String, Map<String, bool>>.from(profile['user_blocks'] ?? {}),
+        userBlocks: {}, // Migrated to blocked_users array - load separately if needed
         pinnedGames: pinnedGames,
         notificationSettings:
             Map<String, bool>.from(profile['notification_settings'] ??
@@ -83,8 +82,9 @@ class UserRepositoryImpl implements UserRepository {
         complaints: {}, // TODO: Load from complaints table when created
         bans: {}, // Need to load bans separately
         dailyBanVotes: {},
-        blockedUsers: [], // Derived from userBlocks
-        friends: List<String>.from(profile['friends'] ?? []),
+        blockedUsers: List<String>.from(
+            profile['blocked_users'] ?? []), // Now uses blocked_users array
+        friends: [], // Now loaded from friends table via FriendsService
         alerts: List<String>.from(profile['alerts'] ?? []),
         userGroups: userGroups,
         alertCircles: List<String>.from(
@@ -110,8 +110,8 @@ class UserRepositoryImpl implements UserRepository {
       UserAttributes(data: {'photo_url': url}),
     );
 
-    // Update Supabase user document
-    await _remoteDataSource.updateUserProfile(user.id, {'profile_image': url});
+    // Update Supabase users table (uses photo_url now)
+    await _remoteDataSource.updateUserProfile(user.id, {'photo_url': url});
 
     // Update local storage
     await _localDataSource.setProfileImage(url);

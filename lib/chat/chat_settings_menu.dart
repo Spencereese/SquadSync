@@ -432,9 +432,9 @@ class ChatSettingsMenu {
                       final response = await SupabaseService.client
                           .from('chat_messages')
                           .select()
-                          .eq('chat_group_id', chatGroupId)
-                          .ilike('content', '%$searchQuery%')
-                          .order('timestamp_ms', ascending: false)
+                          .eq('chat_id', chatGroupId)
+                          .ilike('text', '%$searchQuery%')
+                          .order('timestamp', ascending: false)
                           .limit(50);
                       return List<Map<String, dynamic>>.from(response);
                     }(),
@@ -465,12 +465,9 @@ class ChatSettingsMenu {
                         itemCount: messages.length,
                         itemBuilder: (context, index) {
                           var data = messages[index];
-                          final timestamp = data['timestamp_ms'] != null
-                              ? DateTime.fromMillisecondsSinceEpoch(
-                                  data['timestamp_ms'])
-                              : (data['timestamp'] != null
-                                  ? DateTime.parse(data['timestamp'])
-                                  : DateTime.now());
+                          final timestamp = data['timestamp'] != null
+                              ? DateTime.parse(data['timestamp'])
+                              : DateTime.now();
                           return Card(
                             color: Theme.of(context).colorScheme.surface,
                             elevation: 0,

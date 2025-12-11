@@ -24,7 +24,8 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   @override
   void initState() {
     super.initState();
-    _checkUser();
+    // Don't auto-check user - let authStateProvider handle navigation
+    // This prevents premature navigation before actual login
   }
 
   @override
@@ -32,19 +33,6 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
-  }
-
-  Future<void> _checkUser() async {
-    try {
-      final session = _supabase.auth.currentSession;
-      if (session != null && mounted) {
-        debugPrint(
-            '_checkUser: User already authenticated, letting auth state handle navigation');
-        // Don't manually navigate - authStateProvider in main.dart will handle it
-      }
-    } catch (e) {
-      debugPrint('Error checking user: $e');
-    }
   }
 
   Future<void> _handleEmailAuth() async {
@@ -123,10 +111,14 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   Future<void> _handleAppleSignIn() async {
     setState(() => _isLoading = true);
     try {
+      debugPrint('_handleAppleSignIn: Starting Apple Sign-In flow');
+
       // Generate nonce for security
       final rawNonce = _generateNonce();
       final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
 
+      debugPrint('_handleAppleSignIn: Requesting Apple ID credential');
+      // This call will show Apple's native UI and wait for user to complete
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
@@ -135,7 +127,15 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
         nonce: hashedNonce,
       );
 
-      // Sign in with Supabase
+      debugPrint(
+          '_handleAppleSignIn: Received credential, signing in to Supabase');
+
+      // Ensure we have the identity token
+      if (appleCredential.identityToken == null) {
+        throw Exception('No identity token received from Apple');
+      }
+
+      // Sign in with Supabase using the Apple credential
       final authResponse = await _supabase.auth.signInWithIdToken(
         provider: OAuthProvider.apple,
         idToken: appleCredential.identityToken!,
@@ -144,12 +144,24 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
 
       if (authResponse.user != null) {
         debugPrint(
-            '_handleAppleSignIn: Auth successful, session exists: ${authResponse.session != null}');
+            '_handleAppleSignIn: Auth successful, user: ${authResponse.user!.id}, session exists: ${authResponse.session != null}');
 
         // Small delay to ensure session is fully synced before checking profile
         await Future.delayed(const Duration(milliseconds: 300));
 
         await _handlePostSignIn(authResponse.user!);
+      } else {
+        throw Exception('Authentication succeeded but no user returned');
+      }
+    } on SignInWithAppleAuthorizationException catch (e) {
+      // User canceled or auth failed
+      if (e.code == AuthorizationErrorCode.canceled) {
+        debugPrint('_handleAppleSignIn: User canceled');
+        // Don't show error for cancellation
+      } else {
+        _showSnackBar('Apple Sign-In failed: ${e.message}');
+        debugPrint(
+            'Apple Sign-In authorization error: ${e.code} - ${e.message}');
       }
     } catch (e) {
       _showSnackBar('Apple Sign-In failed: $e');
@@ -300,85 +312,107 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Welcome to SquadSync',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Welcome to SquadSync',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      border: OutlineInputBorder(),
+                      hintText: 'Enter your email',
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    enabled: !_isLoading,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _passwordController,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      border: OutlineInputBorder(),
+                      hintText: 'Enter your password',
+                    ),
+                    obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _onEmailButtonPressed(),
+                    enabled: !_isLoading,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: _onEmailButtonPressed,
+                    style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16)),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Sign In / Register',
+                            style: TextStyle(fontSize: 16)),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _onGoogleButtonPressed,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset('assets/images/google_logo.png',
+                            height: 24), // Add Google logo asset
+                        const SizedBox(width: 8),
+                        const Text('Sign in with Google',
+                            style: TextStyle(fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SignInWithAppleButton(
+                    onPressed: _onAppleButtonPressed,
+                    style: SignInWithAppleButtonStyle.black,
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                  hintText: 'Enter your email',
-                ),
-                keyboardType: TextInputType.emailAddress,
-                textInputAction: TextInputAction.next,
-                enabled: !_isLoading,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                  hintText: 'Enter your password',
-                ),
-                obscureText: true,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _onEmailButtonPressed(),
-                enabled: !_isLoading,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _onEmailButtonPressed,
-                style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16)),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Sign In / Register',
-                        style: TextStyle(fontSize: 16)),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _onGoogleButtonPressed,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+            ),
+          ),
+          // Loading overlay to prevent interaction during auth
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.5),
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Image.asset('assets/images/google_logo.png',
-                        height: 24), // Add Google logo asset
-                    const SizedBox(width: 8),
-                    const Text('Sign in with Google',
-                        style: TextStyle(fontSize: 16)),
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 16),
+                    Text(
+                      'Signing in...',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              SignInWithAppleButton(
-                onPressed: _onAppleButtonPressed,
-                style: SignInWithAppleButtonStyle.black,
-              ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }

@@ -14,7 +14,7 @@ import 'screens/squad_tab_screen.dart';
 import 'screens/profile_editing_screen.dart';
 import 'screens/availability_settings_screen.dart';
 import 'screens/performance_stats_screen.dart';
-import 'domain/entities/squad_state.dart';
+import 'domain/entities/lobby_state.dart';
 import 'domain/entities/app_user.dart';
 import 'core/app_theme.dart';
 
@@ -102,8 +102,8 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
     return SliverToBoxAdapter(
       child: Container(
-        height: 400, // Increased height to accommodate content
         child: Stack(
+          clipBehavior: Clip.none,
           children: [
             // Animated gradient background
             Builder(
@@ -111,6 +111,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                 final theme = Theme.of(context);
                 final colorScheme = theme.colorScheme;
                 return Container(
+                  height: 340,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -142,158 +143,153 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               data: (user) => squadAsync.maybeWhen(
                 data: (squadState) => SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // Add some top spacing to push content down slightly
-                          const SizedBox(height: 20),
-                          // Avatar with glowing border
-                          AnimatedBuilder(
-                            animation: _glowController,
-                            builder: (context, child) {
-                              final theme = Theme.of(context);
-                              final neonColor = theme.colorScheme.primary;
-                              return SizedBox(
-                                width: 140,
-                                height: 140,
-                                child: Center(
-                                  child: Container(
-                                    width: 120,
-                                    height: 120,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: neonColor.withOpacity(
-                                            _glowController.value * 0.8),
-                                        width: 3,
-                                      ),
-                                      boxShadow: neonColor.neonGlow(
-                                        blur: 30,
-                                        spread: _glowController.value * 5,
-                                        opacity: _glowController.value * 0.6,
-                                      ),
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(4.0),
-                                      child: CircleAvatar(
-                                        radius: 56,
-                                        backgroundImage: user?.profileImage !=
-                                                null
-                                            ? NetworkImage(user!.profileImage!)
-                                            : null,
-                                        backgroundColor: theme.colorScheme
-                                            .surfaceContainerHighest,
-                                        child: user?.profileImage == null
-                                            ? Icon(Icons.person,
-                                                size: 40,
-                                                color: theme
-                                                    .colorScheme.onSurface
-                                                    .withOpacity(0.7))
-                                            : null,
-                                      ),
-                                    ),
-                                  ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20.0, vertical: 24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Avatar with seamless glowing border
+                        AnimatedBuilder(
+                          animation: _glowController,
+                          builder: (context, child) {
+                            final theme = Theme.of(context);
+                            final neonColor = theme.colorScheme.primary;
+                            return Container(
+                              width: 120,
+                              height: 120,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: neonColor
+                                      .withOpacity(_glowController.value * 0.8),
+                                  width: 3,
                                 ),
-                              );
-                            },
-                          ).animate().scale(
-                                duration: 600.ms,
-                                curve: Curves.elasticOut,
+                                boxShadow: neonColor.neonGlow(
+                                  blur: 30,
+                                  spread: _glowController.value * 5,
+                                  opacity: _glowController.value * 0.6,
+                                ),
                               ),
-
-                          const SizedBox(height: 16),
-
-                          // Display name
-                          Text(
-                            user?.displayName ?? 'Gamer',
-                            style: GoogleFonts.robotoMono(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 2),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
+                                child: CircleAvatar(
+                                  radius: 56,
+                                  backgroundImage: user?.profileImage != null
+                                      ? NetworkImage(user!.profileImage!)
+                                      : null,
+                                  backgroundColor:
+                                      theme.colorScheme.surfaceContainerHighest,
+                                  child: user?.profileImage == null
+                                      ? Icon(Icons.person,
+                                          size: 40,
+                                          color: theme.colorScheme.onSurface
+                                              .withOpacity(0.7))
+                                      : null,
                                 ),
-                              ],
+                              ),
+                            );
+                          },
+                        ).animate().scale(
+                              duration: 600.ms,
+                              curve: Curves.elasticOut,
                             ),
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ).animate().fadeIn(duration: 800.ms, delay: 200.ms),
 
-                          const SizedBox(height: 12),
+                        const SizedBox(height: 8),
 
-                          // Live status pill
-                          StreamBuilder(
-                            stream: Stream.periodic(const Duration(seconds: 1)),
-                            builder: (context, snapshot) {
-                              final theme = Theme.of(context);
-                              return Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surface
-                                      .withOpacity(0.7),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: theme.colorScheme.primary
-                                        .withOpacity(0.5),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 8,
-                                      height: 8,
-                                      decoration: BoxDecoration(
-                                        color:
-                                            AppTheme.success(theme.colorScheme),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    )
-                                        .animate(
-                                            onPlay: (controller) =>
-                                                controller.repeat())
-                                        .shimmer(duration: 1000.ms),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _getStatusText(),
-                                      style: GoogleFonts.robotoMono(
-                                        fontSize: 14,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ).animate().slideY(
-                                begin: 0.5,
-                                duration: 600.ms,
-                                delay: 400.ms,
-                                curve: Curves.elasticOut,
+                        // Display name
+                        Text(
+                          user?.displayName ?? 'Gamer',
+                          style: GoogleFonts.robotoMono(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
                               ),
-                        ],
-                      ),
+                            ],
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ).animate().fadeIn(duration: 800.ms, delay: 200.ms),
+
+                        const SizedBox(height: 8),
+
+                        // Live status pill
+                        StreamBuilder(
+                          stream: Stream.periodic(const Duration(seconds: 1)),
+                          builder: (context, snapshot) {
+                            final theme = Theme.of(context);
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color:
+                                    theme.colorScheme.surface.withOpacity(0.7),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: theme.colorScheme.primary
+                                      .withOpacity(0.5),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          AppTheme.success(theme.colorScheme),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  )
+                                      .animate(
+                                          onPlay: (controller) =>
+                                              controller.repeat())
+                                      .shimmer(duration: 1000.ms),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _getStatusText(),
+                                    style: GoogleFonts.robotoMono(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ).animate().slideY(
+                              begin: 0.5,
+                              duration: 600.ms,
+                              delay: 400.ms,
+                              curve: Curves.elasticOut,
+                            ),
+                      ],
                     ),
                   ),
                 ),
-                orElse: () => Center(
+                orElse: () => Container(
+                  height: 340,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                        color: Theme.of(context).colorScheme.primary),
+                  ),
+                ),
+              ),
+              orElse: () => Container(
+                height: 340,
+                child: Center(
                   child: CircularProgressIndicator(
                       color: Theme.of(context).colorScheme.primary),
                 ),
-              ),
-              orElse: () => Center(
-                child: CircularProgressIndicator(
-                    color: Theme.of(context).colorScheme.primary),
               ),
             ),
           ],
@@ -1358,7 +1354,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         });
       }
     } catch (e) {
-      print('Error loading notification settings: $e');
+      debugPrint('Error loading notification settings: $e');
     }
   }
 
@@ -1371,7 +1367,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         await prefs.setString(key, value);
       }
     } catch (e) {
-      print('Error saving setting $key: $e');
+      debugPrint('Error saving setting $key: $e');
     }
   }
 

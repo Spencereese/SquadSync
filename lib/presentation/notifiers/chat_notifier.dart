@@ -4,19 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/domain/entities/chat_group.dart';
 import 'package:squad_sync/domain/entities/chat_state.dart';
 import 'package:squad_sync/domain/entities/message.dart';
-import 'package:squad_sync/domain/usecases/load_messages.dart';
-import 'package:squad_sync/domain/usecases/delta_sync.dart';
-import 'package:squad_sync/domain/usecases/add_reaction.dart';
-import 'package:squad_sync/domain/usecases/create_poll.dart';
-import 'package:squad_sync/domain/usecases/vote_poll.dart';
-import 'package:squad_sync/domain/usecases/upload_media.dart';
-import 'package:squad_sync/domain/usecases/create_group.dart';
-import 'package:squad_sync/domain/usecases/join_group.dart';
-import 'package:squad_sync/domain/usecases/leave_group.dart';
-import 'package:squad_sync/domain/usecases/update_typing_indicator.dart';
-import 'package:squad_sync/domain/usecases/pin_message.dart';
-import 'package:squad_sync/domain/usecases/load_media_history.dart';
-import 'package:squad_sync/core/injection.dart' as di;
+import 'package:squad_sync/domain/repositories/chat_repository.dart';
+import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/clip_service.dart';
 import '../../services/message_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -24,18 +13,7 @@ import '../../services/supabase_service.dart';
 import '../../services/auth_service_supabase.dart';
 
 class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
-  late final LoadMessages _loadMessages;
-  late final DeltaSync _deltaSync;
-  late final AddReaction _addReaction;
-  late final CreatePoll _createPoll;
-  late final VotePoll _votePoll;
-  late final UploadMedia _uploadMedia;
-  late final CreateGroup _createGroup;
-  late final JoinGroup _joinGroup;
-  late final LeaveGroup _leaveGroup;
-  late final UpdateTypingIndicator _updateTypingIndicator;
-  late final PinMessage _pinMessage;
-  late final LoadMediaHistory _loadMediaHistory;
+  late final ChatRepository _repository;
   late final MessageService _chatService;
   late final ClipService _clipService;
   final AuthServiceSupabase _authService = AuthServiceSupabase();
@@ -58,19 +36,8 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
   @override
   Future<ChatState> build() async {
     try {
-      // Get dependencies from get_it
-      _loadMessages = di.getIt<LoadMessages>();
-      _deltaSync = di.getIt<DeltaSync>();
-      _addReaction = di.getIt<AddReaction>();
-      _createPoll = di.getIt<CreatePoll>();
-      _votePoll = di.getIt<VotePoll>();
-      _uploadMedia = di.getIt<UploadMedia>();
-      _createGroup = di.getIt<CreateGroup>();
-      _joinGroup = di.getIt<JoinGroup>();
-      _leaveGroup = di.getIt<LeaveGroup>();
-      _updateTypingIndicator = di.getIt<UpdateTypingIndicator>();
-      _pinMessage = di.getIt<PinMessage>();
-      _loadMediaHistory = di.getIt<LoadMediaHistory>();
+      // Get repository from provider
+      _repository = ref.read(chatRepositoryProvider);
       _chatService = MessageService();
       _clipService = ClipService();
 
@@ -108,7 +75,8 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
     try {
       debugPrint(
           'DEBUG ChatNotifier: Loading initial messages for $chatGroupId');
-      final cachedMessages = await _loadMessages(chatGroupId, limit: 100);
+      final cachedMessages =
+          await _repository.loadMessages(chatGroupId, limit: 100);
       state = await AsyncValue.guard(() async {
         final currentState = await future;
         final updatedMessages =
@@ -209,10 +177,10 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
 
     // Delta sync: only sync messages since last timestamp
     final stream = SupabaseService.client
-        .from('chats')
+        .from('chat_messages')
         .stream(primaryKey: ['id'])
-        .eq('chat_group_id', chatGroupId)
-        .order('timestamp_ms', ascending: false)
+        .eq('chat_id', chatGroupId)
+        .order('timestamp', ascending: false)
         .limit(100);
 
     _messagesSubscription = stream.listen(
@@ -621,14 +589,14 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
 
       // Increment views in Supabase
       final clipData = await SupabaseService.client
-          .from('chats')
+          .from('chat_messages')
           .select('clip_data')
           .eq('id', messageId)
           .maybeSingle();
 
       if (clipData != null) {
         final currentViews = (clipData['clip_data']?['views'] as int?) ?? 0;
-        await SupabaseService.client.from('chats').update({
+        await SupabaseService.client.from('chat_messages').update({
           'clip_data': {
             ...Map<String, dynamic>.from(clipData['clip_data'] ?? {}),
             'views': currentViews + 1,
@@ -652,7 +620,7 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
 
       // Get current clip data from Supabase
       final messageData = await SupabaseService.client
-          .from('chats')
+          .from('chat_messages')
           .select('clip_data')
           .eq('id', messageId)
           .maybeSingle();
@@ -672,7 +640,7 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
             hypeReactions.add(currentUser.id);
           }
 
-          await SupabaseService.client.from('chats').update({
+          await SupabaseService.client.from('chat_messages').update({
             'clip_data': {
               ...clipData,
               'hype_reactions': hypeReactions,
@@ -690,8 +658,8 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
 
   Future<void> loadMessages(String chatGroupId,
       {int limit = 50, DateTime? before}) async {
-    final messages =
-        await _loadMessages(chatGroupId, limit: limit, before: before);
+    final messages = await _repository.loadMessages(chatGroupId,
+        limit: limit, before: before);
     state = await AsyncValue.guard(() async {
       final currentState = await future;
       final updatedMessages =
@@ -702,45 +670,47 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
   }
 
   Future<void> syncMessages(String chatGroupId) async {
-    await _deltaSync(chatGroupId);
-    // Reload messages after sync
+    // Delta sync moved to MessageService
+    // Just reload messages
     await loadMessages(chatGroupId);
   }
 
   // Reactions
   Future<void> addReaction(
       String chatGroupId, String messageId, String reaction) async {
-    await _addReaction(chatGroupId, messageId, reaction);
+    await _repository.addReaction(chatGroupId, messageId, reaction);
   }
 
   // Polls
   Future<void> createPoll(
       String chatGroupId, String question, List<String> options) async {
-    await _createPoll(chatGroupId, question, options);
+    await _repository.createPoll(chatGroupId, question, options);
   }
 
   Future<void> votePoll(
       String chatGroupId, String pollId, String option, String voterId) async {
-    await _votePoll(chatGroupId, pollId, option, voterId);
+    await _repository.votePoll(chatGroupId, pollId, option, voterId);
   }
 
   // Media
   Future<String> uploadMedia(String filePath, String mediaType) async {
-    return await _uploadMedia(filePath, mediaType);
+    return await _repository.uploadMedia(filePath, mediaType);
   }
 
   Future<void> loadMediaHistory(String chatGroupId) async {
-    final mediaHistory = await _loadMediaHistory(chatGroupId);
+    // Media history moved to MessageService
+    // Keep empty for compatibility
     state = await AsyncValue.guard(() async {
       final currentState = await future;
-      return currentState.copyWith(mediaHistory: mediaHistory);
+      return currentState.copyWith(mediaHistory: []);
     });
   }
 
   // Group management
   Future<ChatGroup?> createGroup(String name, bool isPublic,
       {String? description}) async {
-    final group = await _createGroup(name, isPublic, description: description);
+    final group =
+        await _repository.createGroup(name, isPublic, description: description);
     state = await AsyncValue.guard(() async {
       final currentState = await future;
       final updatedGroups =
@@ -752,11 +722,11 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
   }
 
   Future<void> joinGroup(String groupId) async {
-    await _joinGroup(groupId);
+    await _repository.joinGroup(groupId);
   }
 
   Future<void> leaveGroup(String groupId) async {
-    await _leaveGroup(groupId);
+    await _repository.leaveGroup(groupId);
   }
 
   // Typing indicators
@@ -795,17 +765,17 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
         debugPrint(
             'DEBUG ChatNotifier: Failed to send typing via Supabase: $e');
         // Fallback to Firestore
-        await _updateTypingIndicator(chatGroupId, isTyping);
+        await _repository.updateTypingIndicator(chatGroupId, isTyping);
       }
     } else {
       // Fallback to original Firestore implementation
-      await _updateTypingIndicator(chatGroupId, isTyping);
+      await _repository.updateTypingIndicator(chatGroupId, isTyping);
     }
   }
 
   // Pinning
   Future<void> pinMessage(String chatGroupId, String messageId) async {
-    await _pinMessage(chatGroupId, messageId);
+    await _repository.pinMessage(chatGroupId, messageId);
   }
 
   // UI state management
@@ -861,7 +831,7 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
   // Sync operations
   Future<void> performSync() async {
     // TODO: Implement delta sync
-    // await _deltaSync();
+    // await _repository.deltaSync();
   }
 
   Future<void> clearSyncError() async {

@@ -4,16 +4,21 @@ import 'package:squad_sync/data/datasources/lobby_remote_datasource.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
+import 'package:squad_sync/services/auth_service_supabase.dart';
 
 class LobbyRepositoryImpl implements LobbyRepository {
   final LobbyLocalDataSource _localDataSource;
   final LobbyRemoteDataSource _remoteDataSource;
+  final AuthServiceSupabase _authService = AuthServiceSupabase();
 
   LobbyRepositoryImpl(this._localDataSource, this._remoteDataSource);
 
   @override
   Future<Lobby> createLobby(String name, String gameName, int maxSpots) async {
-    final userId = 'current_user_id'; // This would come from auth service
+    final userId = _authService.currentUser?.id ?? '';
+    if (userId.isEmpty) {
+      throw Exception('User must be authenticated to create a lobby');
+    }
     final lobby = Lobby.create(
       name: name,
       gameName: gameName,
@@ -22,10 +27,10 @@ class LobbyRepositoryImpl implements LobbyRepository {
     );
 
     // Save to remote first
-    final createdLobby = await _remoteDataSource.createLobby(squad);
+    final createdLobby = await _remoteDataSource.createLobby(lobby);
 
     // Cache locally
-    await _localDataSource.saveSquad(createdSquad);
+    await _localDataSource.saveSquad(createdLobby);
 
     return createdLobby;
   }
@@ -33,18 +38,18 @@ class LobbyRepositoryImpl implements LobbyRepository {
   @override
   Future<Lobby?> getLobby(String lobbyId) async {
     // Try local cache first
-    final localSquad = await _localDataSource.getLobby(lobbyId);
-    if (localSquad != null) {
-      return localSquad;
+    final localLobby = await _localDataSource.getLobby(lobbyId);
+    if (localLobby != null) {
+      return localLobby;
     }
 
     // Fetch from remote
-    final remoteSquad = await _remoteDataSource.getLobby(lobbyId);
-    if (remoteSquad != null) {
-      await _localDataSource.saveSquad(remoteSquad);
+    final remoteLobby = await _remoteDataSource.getLobby(lobbyId);
+    if (remoteLobby != null) {
+      await _localDataSource.saveSquad(remoteLobby);
     }
 
-    return remoteSquad;
+    return remoteLobby;
   }
 
   @override
@@ -56,20 +61,20 @@ class LobbyRepositoryImpl implements LobbyRepository {
   @override
   Future<List<Lobby>> getUserLobbies(String userId) async {
     // Try local cache first
-    final localSquads = await _localDataSource.getUserLobbies(userId);
-    if (localSquads.isNotEmpty) {
-      return localSquads;
+    final localLobbies = await _localDataSource.getUserLobbies(userId);
+    if (localLobbies.isNotEmpty) {
+      return localLobbies;
     }
 
     // Fetch from remote
-    final remoteSquads = await _remoteDataSource.getUserLobbies(userId);
+    final remoteLobbies = await _remoteDataSource.getUserLobbies(userId);
 
     // Cache locally
-    for (final squad in remoteSquads) {
-      await _localDataSource.saveSquad(squad);
+    for (final lobby in remoteLobbies) {
+      await _localDataSource.saveSquad(lobby);
     }
 
-    return remoteSquads;
+    return remoteLobbies;
   }
 
   @override

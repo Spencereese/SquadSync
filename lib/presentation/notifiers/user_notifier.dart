@@ -1,27 +1,15 @@
 import 'package:riverpod/riverpod.dart';
 import 'package:flutter/foundation.dart';
 import '../../domain/entities/app_user.dart';
+import '../../domain/repositories/user_repository.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
-import '../../domain/usecases/get_current_user.dart';
-import '../../domain/usecases/update_profile_image.dart';
-import '../../domain/usecases/update_display_name.dart';
-import '../../domain/usecases/block_user.dart';
-import '../../domain/usecases/unblock_user.dart';
-import '../../domain/usecases/add_pinned_game.dart';
-import '../../domain/usecases/remove_pinned_game.dart';
-import '../../core/injection.dart' as di;
+import '../../core/injection.dart';
 import '../../services/friends_service.dart';
 
 class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
   final AuthServiceSupabase _authService = AuthServiceSupabase();
-  late final GetCurrentUser _getCurrentUser;
-  late final UpdateProfileImage _updateProfileImage;
-  late final UpdateDisplayName _updateDisplayName;
-  late final BlockUser _blockUser;
-  late final UnblockUser _unblockUser;
-  late final AddPinnedGame _addPinnedGame;
-  late final RemovePinnedGame _removePinnedGame;
+  late final UserRepository _repository;
   late final FriendsService _friendsService;
 
   UserNotifier() {
@@ -35,15 +23,9 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
       debugPrint('UserNotifier: build() called');
       debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-      // Get dependencies from get_it
-      _getCurrentUser = di.getIt<GetCurrentUser>();
-      _updateProfileImage = di.getIt<UpdateProfileImage>();
-      _updateDisplayName = di.getIt<UpdateDisplayName>();
-      _blockUser = di.getIt<BlockUser>();
-      _unblockUser = di.getIt<UnblockUser>();
-      _addPinnedGame = di.getIt<AddPinnedGame>();
-      _removePinnedGame = di.getIt<RemovePinnedGame>();
-      _friendsService = di.getIt<FriendsService>();
+      // Get dependencies from providers
+      _repository = ref.read(userRepositoryProvider);
+      _friendsService = getIt<FriendsService>();
 
       // Return basic user immediately if authenticated
       final supabaseUser = _authService.currentUser;
@@ -89,7 +71,7 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
         Future.microtask(() async {
           try {
             debugPrint('UserNotifier: Loading full user profile...');
-            final fullUser = await _getCurrentUser();
+            final fullUser = await _repository.getCurrentUser();
             debugPrint(
                 'UserNotifier: Full user loaded - displayName: ${fullUser?.displayName}, pinnedGames: ${fullUser?.pinnedGames.length ?? 0}, userGroups: ${fullUser?.userGroups.length ?? 0}');
             if (fullUser != null) {
@@ -118,7 +100,7 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
       // Load user in background for non-authenticated case
       Future.microtask(() async {
         try {
-          final user = await _getCurrentUser();
+          final user = await _repository.getCurrentUser();
           state = AsyncData(user);
         } catch (e) {
           debugPrint('Error loading user: $e');
@@ -135,33 +117,33 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
   }
 
   Future<void> updateProfileImage(String url) async {
-    await _updateProfileImage(url);
-    state = await AsyncValue.guard(() => _getCurrentUser());
+    await _repository.updateProfileImage(url);
+    state = await AsyncValue.guard(() => _repository.getCurrentUser());
   }
 
   Future<void> updateDisplayName(String name) async {
-    await _updateDisplayName(name);
-    state = await AsyncValue.guard(() => _getCurrentUser());
+    await _repository.updateDisplayName(name);
+    state = await AsyncValue.guard(() => _repository.getCurrentUser());
   }
 
   Future<void> blockUser(String userName) async {
-    await _blockUser(userName);
-    state = await AsyncValue.guard(() => _getCurrentUser());
+    await _repository.blockUser(userName);
+    state = await AsyncValue.guard(() => _repository.getCurrentUser());
   }
 
   Future<void> unblockUser(String userName) async {
-    await _unblockUser(userName);
-    state = await AsyncValue.guard(() => _getCurrentUser());
+    await _repository.unblockUser(userName);
+    state = await AsyncValue.guard(() => _repository.getCurrentUser());
   }
 
   Future<void> addPinnedGame(Map<String, dynamic> game) async {
-    await _addPinnedGame(game);
-    state = await AsyncValue.guard(() => _getCurrentUser());
+    await _repository.addPinnedGame(game);
+    state = await AsyncValue.guard(() => _repository.getCurrentUser());
   }
 
   Future<void> removePinnedGame(String gameName) async {
-    await _removePinnedGame(gameName);
-    state = await AsyncValue.guard(() => _getCurrentUser());
+    await _repository.removePinnedGame(gameName);
+    state = await AsyncValue.guard(() => _repository.getCurrentUser());
   }
 
   Future<void> submitFeedback({
@@ -175,11 +157,14 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
   }
 
   // Social features - Supabase friends system
-  Future<List<Map<String, dynamic>>> searchUsers(String query) async {
+  Future<List<Map<String, dynamic>>> searchUsers(
+    String query, {
+    String filter = 'all',
+  }) async {
     final currentState = state.value;
     if (currentState == null) return [];
 
-    return await _friendsService.searchUsers(query);
+    return await _friendsService.searchUsers(query, filter: filter);
   }
 
   Stream<List<Map<String, dynamic>>> streamFriends() {
@@ -327,9 +312,9 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
 
       final supabase = SupabaseService.client;
 
-      // Find the group in chat_groups table
+      // Find the group in chat_groups_with_stats view (includes member_count)
       final groupData = await supabase
-          .from('chat_groups')
+          .from('chat_groups_with_stats')
           .select()
           .eq('id', groupId)
           .maybeSingle();
@@ -358,7 +343,7 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
       members.add(userId);
       await supabase.from('chat_groups').update({
         'member_uids': members,
-        'member_count': (groupData['member_count'] ?? 0) + 1,
+        // member_count is computed in chat_groups_with_stats view
       }).eq('id', groupId);
 
       // Create group info for user's collections

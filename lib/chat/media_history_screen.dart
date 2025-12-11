@@ -51,9 +51,9 @@ class _MediaHistoryScreenState extends ConsumerState<MediaHistoryScreen> {
     }
 
     return SupabaseService.client
-        .from('messages')
+        .from('chat_messages')
         .stream(primaryKey: ['id'])
-        .eq('chat_group_id', chatGroupId)
+        .eq('chat_id', chatGroupId)
         .order('timestamp', ascending: false)
         .map((data) {
           return data

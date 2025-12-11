@@ -182,6 +182,7 @@ class OnboardingWrapper extends ConsumerStatefulWidget {
 
 class _OnboardingWrapperState extends ConsumerState<OnboardingWrapper> {
   bool _dataReady = false;
+  bool _transitionComplete = false;
 
   @override
   Widget build(BuildContext context) {
@@ -201,15 +202,23 @@ class _OnboardingWrapperState extends ConsumerState<OnboardingWrapper> {
       return const SplashScreen();
     }
 
-    // Both are loaded, mark as ready and add small delay for smooth transition
+    // Both are loaded, mark as ready and add delay for smooth transition
     if (!_dataReady && userStateAsync.hasValue && squadStateAsync.hasValue) {
       _dataReady = true;
-      // Small delay to ensure UI is ready
-      Future.delayed(const Duration(milliseconds: 300), () {
+      // Longer delay to ensure smooth transition from AuthWrapper's minimum duration
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
-          setState(() {});
+          setState(() {
+            _transitionComplete = true;
+          });
         }
       });
+      return const SplashScreen();
+    }
+
+    // Keep showing splash until transition is complete
+    if (_dataReady && !_transitionComplete) {
+      debugPrint('🟡 OnboardingWrapper: Waiting for smooth transition');
       return const SplashScreen();
     }
 

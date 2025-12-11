@@ -73,7 +73,7 @@ final userSquadsProvider = StreamProvider<List<SquadSummary>>((ref) {
   }
 
   return SupabaseService.client
-      .from('squads')
+      .from('lobbies')
       .stream(primaryKey: ['id'])
       .order('last_activity', ascending: false)
       .map((data) {
@@ -91,7 +91,7 @@ final userSquadsProvider = StreamProvider<List<SquadSummary>>((ref) {
           return SquadSummary(
             id: row['id'] as String,
             name: row['name'] as String,
-            primaryGameName: row['game_name'] as String?,
+            primaryGameName: row['game_focus'] as String?,
             memberCount: (row['member_uids'] as List<dynamic>).length,
             lastMessage: row['last_message'] as String? ?? '',
             lastActivity: _parseTimestamp(row['last_activity']),

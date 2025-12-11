@@ -100,7 +100,7 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
         setState(() => _isLoadingLobbyData = false);
       }
     } catch (e) {
-      print('Error loading lobby data: $e');
+      debugPrint('Error loading lobby data: $e');
       if (mounted) {
         setState(() => _isLoadingLobbyData = false);
       }
@@ -357,24 +357,85 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
           // Rating nudge (only shown for first-time users)
           _ratingNudge,
 
-          // FAB for claiming spot
+          // FAB for claiming spot or creating lobby
           Container(
             padding: const EdgeInsets.all(16),
-            child: FloatingActionButton.extended(
-              onPressed: _isClaiming ? null : _claimSpot,
-              backgroundColor: Colors.cyanAccent,
-              foregroundColor: Colors.black,
-              icon: _isClaiming
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.black,
-                      ),
-                    )
-                  : const Icon(Icons.add),
-              label: Text(_isClaiming ? 'Claiming...' : 'Claim Spot'),
+            child: ref.watch(currentLobbyProvider).maybeWhen(
+              data: (currentLobby) {
+                final hasLobby = currentLobby != null;
+                debugPrint(
+                    '📊 SpotsSheet FAB: hasLobby=$hasLobby, _isClaiming=$_isClaiming');
+                final buttonText = _isClaiming
+                    ? (hasLobby ? 'Claiming...' : 'Creating...')
+                    : (hasLobby ? 'Claim Spot' : 'Create Lobby');
+
+                return FloatingActionButton.extended(
+                  onPressed: _isClaiming
+                      ? null
+                      : () {
+                          debugPrint('🔘 FAB pressed: hasLobby=$hasLobby');
+                          if (hasLobby) {
+                            _claimSpot();
+                          } else {
+                            _createLobby();
+                          }
+                        },
+                  backgroundColor: Colors.cyanAccent,
+                  foregroundColor: Colors.black,
+                  icon: _isClaiming
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.black,
+                          ),
+                        )
+                      : Icon(hasLobby ? Icons.add : Icons.rocket_launch),
+                  label: Text(buttonText),
+                );
+              },
+              loading: () {
+                debugPrint('🔄 CurrentLobbyProvider loading...');
+                return FloatingActionButton.extended(
+                  onPressed: null,
+                  backgroundColor: Colors.grey,
+                  foregroundColor: Colors.black,
+                  icon: const Icon(Icons.hourglass_empty),
+                  label: const Text('Loading...'),
+                );
+              },
+              error: (error, stack) {
+                debugPrint('❌ CurrentLobbyProvider error: $error');
+                // Even on error, show create button (no lobby exists)
+                return FloatingActionButton.extended(
+                  onPressed: _isClaiming ? null : _createLobby,
+                  backgroundColor: Colors.cyanAccent,
+                  foregroundColor: Colors.black,
+                  icon: _isClaiming
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.black),
+                          ),
+                        )
+                      : const Icon(Icons.rocket_launch),
+                  label: Text(_isClaiming ? 'Creating...' : 'Create Lobby'),
+                );
+              },
+              orElse: () {
+                debugPrint('⚠️ CurrentLobbyProvider orElse state');
+                return FloatingActionButton.extended(
+                  onPressed: null,
+                  backgroundColor: Colors.grey,
+                  foregroundColor: Colors.black,
+                  icon: const Icon(Icons.hourglass_empty),
+                  label: const Text('Loading...'),
+                );
+              },
             ),
           ),
         ],
@@ -469,10 +530,64 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
           SnackBar(
             content: Text('Error claiming spot: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isClaiming = false);
+      }
+    }
+  }
+
+  Future<void> _createLobby() async {
+    debugPrint('🚀 SpotsSheet._createLobby called');
+    final user = AuthServiceSupabase().currentUser;
+    if (user == null) {
+      debugPrint('❌ Cannot create lobby: user is null');
+      return;
+    }
+    debugPrint('✅ User authenticated: ${user.id}, creating lobby...');
+
+    setState(() => _isClaiming = true);
+
+    try {
+      // Create lobby using LobbyNotifier
+      final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+      await lobbyNotifier.createLobby(
+        chatGroupId: widget.chatGroupId,
+        gameName: widget.gameName,
+        maxSpots: widget.maxSpots,
+        isPublic: false,
+      );
+
+      // Reload lobby data to get the new lobby ID
+      await _loadLobbyData();
+
+      if (mounted) {
+        HapticFeedback.lightImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lobby created for ${widget.gameName}!'),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
+        );
+
+        // After creating, automatically claim the first spot
+        await Future.delayed(const Duration(milliseconds: 500));
+        await _claimSpot();
+      }
+    } catch (e) {
+      debugPrint('❌ Error creating lobby: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to create lobby: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
             action: SnackBarAction(
               label: 'Retry',
               textColor: Colors.white,
-              onPressed: () => _claimSpot(),
+              onPressed: _createLobby,
             ),
           ),
         );

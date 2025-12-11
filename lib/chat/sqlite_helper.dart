@@ -17,7 +17,7 @@ class SQLiteHelper {
     String path = join(await getDatabasesPath(), 'squadsync.db');
     return await openDatabase(
       path,
-      version: 8, // Increment version for message schema update
+      version: 9, // Increment version for lobbies table
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE messages (
@@ -72,6 +72,25 @@ class SQLiteHelper {
             room_name TEXT,
             data TEXT,
             cached_at TEXT
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE lobbies (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            memberUids TEXT,
+            gameName TEXT,
+            maxSpots INTEGER,
+            createdBy TEXT,
+            createdAt TEXT,
+            spots TEXT,
+            spotTimers TEXT,
+            viewers TEXT,
+            statuses TEXT,
+            isActive INTEGER,
+            description TEXT,
+            settings TEXT,
+            updatedAt TEXT
           )
         ''');
         // Create indexes for better query performance
@@ -162,6 +181,28 @@ class SQLiteHelper {
           await db.execute('ALTER TABLE messages ADD COLUMN deleted_at TEXT');
           await db.execute(
               'ALTER TABLE messages ADD COLUMN synced INTEGER DEFAULT 1');
+        }
+        if (oldVersion < 9) {
+          // Add lobbies table
+          await db.execute('''
+            CREATE TABLE lobbies (
+              id TEXT PRIMARY KEY,
+              name TEXT,
+              memberUids TEXT,
+              gameName TEXT,
+              maxSpots INTEGER,
+              createdBy TEXT,
+              createdAt TEXT,
+              spots TEXT,
+              spotTimers TEXT,
+              viewers TEXT,
+              statuses TEXT,
+              isActive INTEGER,
+              description TEXT,
+              settings TEXT,
+              updatedAt TEXT
+            )
+          ''');
         }
       },
     );

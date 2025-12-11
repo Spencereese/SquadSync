@@ -834,46 +834,54 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     final squadStateData = ref.watch(ln.lobbyNotifierProvider);
     final chatStateData = ref.watch(cn.chatNotifierProvider);
 
-    return squadStateData.when(
-      data: (squadState) => chatStateData.when(
-        data: (chatState) {
-          // Monitor sync state changes for UI feedback
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _handleSyncStateChanges(chatState);
-          });
+    return PopScope(
+      canPop: true,
+      onPopInvoked: (didPop) {
+        if (didPop) {
+          debugPrint('ChatScreen: Navigation popped successfully');
+        }
+      },
+      child: squadStateData.when(
+        data: (squadState) => chatStateData.when(
+          data: (chatState) {
+            // Monitor sync state changes for UI feedback
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _handleSyncStateChanges(chatState);
+            });
 
-          return SafeArea(
-            top: true,
-            bottom: false,
-            child: Scaffold(
-              resizeToAvoidBottomInset: false,
-              body: _buildChatContent(context, squadState, chatState),
-            ),
-          );
-        },
+            return SafeArea(
+              top: true,
+              bottom: false,
+              child: Scaffold(
+                resizeToAvoidBottomInset: false,
+                body: _buildChatContent(context, squadState, chatState),
+              ),
+            );
+          },
+          loading: () => const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          ),
+          error: (error, stack) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              showErrorSnackBar(context, 'Failed to load chat data: $error');
+            });
+            return Scaffold(
+              body: Center(child: Text('Error: $error')),
+            );
+          },
+        ),
         loading: () => const Scaffold(
           body: Center(child: CircularProgressIndicator()),
         ),
         error: (error, stack) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            showErrorSnackBar(context, 'Failed to load chat data: $error');
+            showErrorSnackBar(context, 'Failed to load squad data: $error');
           });
           return Scaffold(
             body: Center(child: Text('Error: $error')),
           );
         },
       ),
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, stack) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          showErrorSnackBar(context, 'Failed to load squad data: $error');
-        });
-        return Scaffold(
-          body: Center(child: Text('Error: $error')),
-        );
-      },
     );
   }
 
@@ -934,10 +942,16 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                         color: Theme.of(context).colorScheme.onSurface,
                       ),
                   items: lobbies.map((lobby) {
+                    final gameFocus = lobby['game_focus'];
+                    final gameName = gameFocus is String
+                        ? gameFocus
+                        : (gameFocus is Map
+                            ? gameFocus['name'] ?? 'Unknown'
+                            : 'Unknown');
                     return DropdownMenuItem<String>(
                       value: lobby['id'] as String,
                       child: Text(
-                        '${lobby['name']} - ${lobby['game_name']}',
+                        '${lobby['name']} - $gameName',
                         overflow: TextOverflow.ellipsis,
                       ),
                     );
@@ -978,12 +992,20 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     try {
       final response = await SupabaseService.client
           .from('lobbies')
-          .select('id, name, game_name, is_active')
+          .select('id, name, game_focus, is_active')
           .eq('chat_group_id', chatGroupId)
           .eq('is_active', true)
           .order('created_at', ascending: false);
 
-      return List<Map<String, dynamic>>.from(response);
+      final lobbies = List<Map<String, dynamic>>.from(response);
+      debugPrint('📊 Fetched ${lobbies.length} lobbies for group $chatGroupId');
+      if (lobbies.isNotEmpty) {
+        debugPrint(
+            '   First lobby game_focus type: ${lobbies[0]['game_focus'].runtimeType}');
+        debugPrint(
+            '   First lobby game_focus value: ${lobbies[0]['game_focus']}');
+      }
+      return lobbies;
     } catch (e) {
       debugPrint('❌ Error fetching lobbies for chat group: $e');
       if (mounted) {
@@ -1076,7 +1098,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                         squadId: widget.chatGroupId ?? 'unknown',
                         squadName: _chatName,
                         avatarUrl: _chatImageUrl,
-                        onBackPressed: () => Navigator.pop(context),
+                        onBackPressed: () {
+                          if (Navigator.canPop(context)) {
+                            Navigator.of(context).pop();
+                          }
+                        },
                         onGamepadPressed:
                             isUserGroup ? _handleLobbyCreation : null,
                         onCenterTapped: () {

@@ -60,12 +60,21 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   /// Sync messages from MessageNotifier to ChatNotifier state
   void _syncMessagesFromMessageNotifier(MessageState messageState) {
     state.whenData((chatState) {
-      // Only update if messages have changed
-      if (chatState.chatMessages != messageState.messages) {
+      // Check if any relevant state has changed
+      final messagesChanged = chatState.chatMessages != messageState.messages;
+      final replyChanged =
+          chatState.replyToMessage != messageState.replyToMessage;
+      final typingChanged =
+          chatState.typingIndicators != messageState.typingUsers;
+
+      if (messagesChanged || replyChanged || typingChanged) {
         debugPrint(
-            'ChatNotifier: Syncing ${messageState.messages.length} message groups from MessageNotifier');
+            'ChatNotifier: Syncing from MessageNotifier (messages: $messagesChanged, reply: $replyChanged, typing: $typingChanged)');
         state = AsyncValue.data(chatState.copyWith(
           chatMessages: messageState.messages,
+          replyToMessage: messageState.replyToMessage,
+          replyingToMessageId: messageState.replyingToMessageId,
+          typingIndicators: messageState.typingUsers,
         ));
       }
     });
@@ -304,78 +313,51 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   // GROUP MANAGEMENT
   // ============================================================================
 
-  /// Load all groups the current user is a member of
-  /// Populates chatGroups and userChatGroups in state
+  /// Load all groups the current user is a member of (squad, userGroup, dm)
+  /// Queries chat_groups.member_uids directly - no longer uses users.user_groups JSONB
+  /// Populates both chatGroups and userChatGroups in state
   Future<void> loadUserGroups() async {
-    debugPrint('🔵 loadUserGroups() CALLED - START');
+    debugPrint('🔵 loadUserGroups() CALLED - Loading ALL chat groups');
     await future;
-    debugPrint('🔵 loadUserGroups() - future awaited');
 
     try {
       final currentUser = _authService.currentUser;
-      debugPrint('🔵 loadUserGroups() - currentUser: ${currentUser?.id}');
       if (currentUser == null) {
-        debugPrint('⚠️ Cannot load user groups: No authenticated user');
+        debugPrint('⚠️ Cannot load groups: No authenticated user');
         return;
       }
 
-      debugPrint('📚 Loading user groups for: ${currentUser.id}');
+      debugPrint('📚 Loading ALL groups for user: ${currentUser.id}');
 
-      // Query user's groups from users.user_groups JSONB field
-      debugPrint('🔍 Step 1: Querying users table for user_groups...');
-      dynamic userData;
-      try {
-        userData = await SupabaseService.client
-            .from('users')
-            .select('user_groups')
-            .eq('uid', currentUser.id)
-            .maybeSingle();
-        debugPrint('🔍 Step 2: Query successful! userData: $userData');
-      } catch (queryError) {
-        debugPrint('❌ Step 1 FAILED with error: $queryError');
-        debugPrint('❌ Error type: ${queryError.runtimeType}');
-        rethrow;
-      }
-
-      debugPrint('🔍 Step 2: userData received: ${userData != null}');
-      if (userData == null || userData['user_groups'] == null) {
-        debugPrint('📚 No user groups found in userData');
-        return;
-      }
-
-      debugPrint('🔍 Step 3: Parsing user_groups JSONB...');
-      final userGroupsData =
-          List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
-      debugPrint('🔍 Step 4: Found ${userGroupsData.length} group entries');
-
-      final groupIds = userGroupsData
-          .map((g) => g['chat_group_id'] as String?)
-          .where((id) => id != null)
-          .cast<String>()
-          .toList();
-      debugPrint(
-          '🔍 Step 5: Extracted ${groupIds.length} group IDs: $groupIds');
-
-      if (groupIds.isEmpty) {
-        debugPrint('📚 User has no group IDs');
-        return;
-      }
-
-      // Fetch full group details
-      debugPrint('🔍 Step 6: Querying chat_groups table...');
+      // Query ALL groups where user is a member by checking member_uids array
+      // This includes squad chats, user groups, and DMs
+      debugPrint('🔍 Querying chat_groups where user is in member_uids...');
       final groupsData = await SupabaseService.client
           .from('chat_groups')
-          .select()
-          .inFilter('id', groupIds);
-      debugPrint(
-          '🔍 Step 7: Received ${(groupsData as List).length} groups from database');
+          .select('*')
+          .contains('member_uids', [currentUser.id]);
 
-      final groups = <String, ChatGroup>{};
+      debugPrint('🔍 Received ${(groupsData as List).length} total groups');
+
+      if ((groupsData as List).isEmpty) {
+        debugPrint('📚 User is not a member of any groups');
+        // Set empty state
+        final currentState = state.valueOrNull ?? await future;
+        state = AsyncData(currentState.copyWith(
+          chatGroups: {},
+          userChatGroups: {},
+        ));
+        return;
+      }
+
+      final allGroups = <String, ChatGroup>{};
+      final userOnlyGroups = <String, ChatGroup>{};
+
       for (var data in (groupsData as List<dynamic>)) {
         final groupData = data as Map<String, dynamic>;
         final group = ChatGroup(
           id: groupData['id'] as String,
-          name: groupData['name'] as String,
+          name: groupData['name'] as String? ?? 'Unnamed Group',
           isPublic: groupData['is_public'] as bool? ?? false,
           memberUids: List<String>.from(groupData['member_uids'] ?? []),
           memberCount: (groupData['member_uids'] as List?)?.length ?? 0,
@@ -385,31 +367,34 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
               : DateTime.now(),
           description: groupData['description'] as String?,
           avatarUrl: groupData['avatar_url'] as String?,
-          inviteCode: groupData['id'] as String, // Use group ID as invite code
+          inviteCode:
+              groupData['invite_code'] as String? ?? groupData['id'] as String,
           lastActivity: groupData['last_message_time'] != null
               ? DateTime.parse(groupData['last_message_time'] as String)
               : null,
         );
-        groups[group.id] = group;
+
+        allGroups[group.id] = group;
+
+        // Keep backward compatibility: userChatGroups contains same as chatGroups
+        // (Previously filtered out squad chats, but user wants to see ALL)
+        userOnlyGroups[group.id] = group;
       }
 
-      debugPrint('✅ Loaded ${groups.length} user groups');
-      debugPrint('📚 Group IDs: ${groups.keys.toList()}');
+      debugPrint('✅ Loaded ${allGroups.length} total groups');
+      debugPrint('📚 Group IDs: ${allGroups.keys.toList()}');
 
-      // Update state - force rebuild with AsyncData
+      // Update state with all groups
       final currentState = state.valueOrNull ?? await future;
-      debugPrint(
-          '📚 Current state chatGroups: ${currentState.chatGroups.length}');
       final newState = currentState.copyWith(
-        chatGroups: groups,
-        userChatGroups: groups,
+        chatGroups: allGroups,
+        userChatGroups: userOnlyGroups, // Now same as chatGroups
       );
-      debugPrint('📚 New state chatGroups: ${newState.chatGroups.length}');
       state = AsyncData(newState);
       debugPrint(
-          '📚 State set successfully - value check: ${state.valueOrNull?.chatGroups.length}');
+          '📚 State updated - showing ${allGroups.length} groups in chats tab');
     } catch (e, stackTrace) {
-      debugPrint('❌ Error loading user groups: $e');
+      debugPrint('❌ Error loading groups: $e');
       debugPrint('Stack trace: $stackTrace');
       await _errorHandler.handleError(
         error: e,
@@ -546,8 +531,10 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       // Join the group
       await _repository.joinGroup(groupId);
 
-      // Invalidate to force reload from Supabase for realtime update
-      ref.invalidateSelf();
+      // Reload user groups to include the newly joined group
+      // This prevents groups from disappearing after join
+      debugPrint('🔄 Reloading user groups after join...');
+      await loadUserGroups();
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

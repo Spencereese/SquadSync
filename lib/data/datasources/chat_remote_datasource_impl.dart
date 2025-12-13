@@ -64,14 +64,14 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
             .eq('chat_id', chatGroupId)
             .eq('is_deleted', false)
             .filter('timestamp', 'lt', before.toIso8601String())
-            .order('timestamp', ascending: false)
+            .order('timestamp', ascending: true)
             .limit(limit)
         : await _supabase
             .from('chat_messages')
             .select()
             .eq('chat_id', chatGroupId)
             .eq('is_deleted', false)
-            .order('timestamp', ascending: false)
+            .order('timestamp', ascending: true)
             .limit(limit);
 
     final messages = <Message>[];
@@ -155,7 +155,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     return _supabase
         .from('chat_messages')
         .stream(primaryKey: ['id'])
-        .order('timestamp', ascending: false)
+        .order('timestamp', ascending: true)
         .limit(100)
         .map((data) {
           // Filter in Dart since stream builder doesn't support all filters
@@ -524,40 +524,67 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       debugPrint('👥 Joining group: $groupId');
       debugPrint('   User ID: $userId');
 
-      // Use array_append for atomic operation (RLS compliant)
-      await _supabase.rpc(
-        'append_group_member',
-        params: {
-          'group_id': groupId,
-          'user_id': userId,
-        },
-      ).catchError((error) async {
-        // Fallback to manual update if RPC not available
-        debugPrint('⚠️ RPC failed, using fallback update method');
+      // Fetch group details first
+      final groupResponse = await _supabase
+          .from('chat_groups')
+          .select('member_uids, name, is_public')
+          .eq('id', groupId)
+          .maybeSingle();
 
-        final response = await _supabase
-            .from('chat_groups')
-            .select('member_uids, name, is_public')
-            .eq('id', groupId)
+      if (groupResponse == null) {
+        throw Exception('Group not found: $groupId');
+      }
+
+      final currentMembers =
+          List<String>.from(groupResponse['member_uids'] ?? []);
+
+      if (currentMembers.contains(userId)) {
+        debugPrint('   User already in group');
+        return;
+      }
+
+      // Add to chat_groups.member_uids
+      currentMembers.add(userId);
+      await _supabase.from('chat_groups').update({
+        'member_uids': currentMembers,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', groupId);
+
+      // Also update users.user_groups JSONB field for consistency
+      try {
+        final userData = await _supabase
+            .from('users')
+            .select('user_groups')
+            .eq('uid', userId)
             .maybeSingle();
 
-        if (response == null) {
-          throw Exception('Group not found: $groupId');
+        if (userData != null) {
+          final userGroups =
+              List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
+
+          // Check if group already exists in user_groups
+          final existingIndex =
+              userGroups.indexWhere((g) => g['chat_group_id'] == groupId);
+
+          if (existingIndex == -1) {
+            // Add new group entry
+            userGroups.add({
+              'chat_group_id': groupId,
+              'joined_at': DateTime.now().toIso8601String(),
+            });
+
+            await _supabase.from('users').update({
+              'user_groups': userGroups,
+              'updated_at': DateTime.now().toIso8601String(),
+            }).eq('uid', userId);
+
+            debugPrint('✅ Updated users.user_groups JSONB field');
+          }
         }
-
-        final currentMembers = List<String>.from(response['member_uids'] ?? []);
-
-        if (currentMembers.contains(userId)) {
-          debugPrint('   User already in group');
-          return;
-        }
-
-        currentMembers.add(userId);
-        await _supabase.from('chat_groups').update({
-          'member_uids': currentMembers,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', groupId);
-      });
+      } catch (e) {
+        debugPrint('⚠️ Failed to update users.user_groups (non-critical): $e');
+        // Non-critical - group join was successful in chat_groups table
+      }
 
       debugPrint('✅ User joined group successfully');
     } catch (e) {
@@ -602,8 +629,8 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       }
 
       // Fetch results without ordering (will sort in-memory)
-      final response =
-          await supabaseQuery.limit(limit * 2); // Fetch more for sorting
+      final response = await supabaseQuery
+          .limit(limit * 3); // Fetch more for sorting and deduping
 
       // Map and compute member_count in-memory, filtering out invalid groups
       final groups = (response as List<dynamic>)
@@ -632,9 +659,22 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           .whereType<ChatGroup>() // Filter out nulls
           .toList();
 
+      // Remove duplicates by ID (keep first occurrence)
+      final seenIds = <String>{};
+      final uniqueGroups = groups.where((group) {
+        if (seenIds.contains(group.id)) {
+          debugPrint(
+              '⚠️ Skipping duplicate group: ${group.name} (${group.id})');
+          return false;
+        }
+        seenIds.add(group.id);
+        return true;
+      }).toList();
+
       // Sort by member count in descending order and limit results
-      groups.sort((a, b) => b.memberCount.compareTo(a.memberCount));
-      return groups.take(limit).toList();
+      uniqueGroups.sort((a, b) => b.memberCount.compareTo(a.memberCount));
+      debugPrint('✅ Discovered ${uniqueGroups.length} unique public groups');
+      return uniqueGroups.take(limit).toList();
     } catch (e) {
       debugPrint('❌ Error discovering groups: $e');
       rethrow;
@@ -776,7 +816,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         .eq('chat_id', chatGroupId)
         .eq('is_deleted', false)
         .gt('timestamp', since.toIso8601String())
-        .order('timestamp', ascending: false);
+        .order('timestamp', ascending: true);
 
     return (response as List<dynamic>)
         .map((data) => Message.fromJson(data as Map<String, dynamic>))

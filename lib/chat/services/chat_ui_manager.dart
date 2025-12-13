@@ -412,13 +412,15 @@ class ChatUIManager {
                   // Main messages list
                   ListView.builder(
                     controller: scrollController.scrollController,
-                    reverse: true,
+                    reverse:
+                        true, // Reverse so newest messages appear at bottom (above input bar)
+                    shrinkWrap: false, // Let it expand to fill available space
                     padding: const EdgeInsets.only(
                       left: 8.0,
                       right: 8.0,
                       top: 4.0,
                       bottom:
-                          10.0, // Further reduced bottom padding to bring messages closer to input bar
+                          10.0, // Reduced bottom padding to bring messages closer to input bar
                     ),
                     itemCount: _processedMessages.length +
                         (scrollController.isLoadingMore ? 1 : 0),
@@ -667,8 +669,8 @@ class ChatUIManager {
       return messageData;
     }).toList();
 
-    // Sort messages by timestamp (oldest first, newest at bottom for chat UI)
-    messageDataList.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    // Sort messages by timestamp (newest first for reverse list)
+    messageDataList.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     // Mark messages that should show timestamps based on time gaps
     const int timeGapThresholdMinutes =
@@ -676,13 +678,13 @@ class ChatUIManager {
 
     for (int i = 0; i < messageDataList.length; i++) {
       final message = messageDataList[i];
-      if (i == 0) {
-        // First (oldest) message always shows timestamp
+      if (i == messageDataList.length - 1) {
+        // Last message (oldest in reverse list) always shows timestamp
         message.shouldShowTimestamp = true;
       } else {
-        final prevMessage = messageDataList[i - 1];
+        final nextMessage = messageDataList[i + 1];
         final timeDifference =
-            message.timestamp.difference(prevMessage.timestamp).abs();
+            message.timestamp.difference(nextMessage.timestamp).abs();
         if (timeDifference.inMinutes >= timeGapThresholdMinutes) {
           message.shouldShowTimestamp = true;
         } else {

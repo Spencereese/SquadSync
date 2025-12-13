@@ -46,17 +46,10 @@ class NeonChatAppBar extends StatelessWidget {
         bottom: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
+          child: Stack(
             children: [
-              // Left: Back button in glass bubble
-              _GlassCircleButton(
-                icon: Icons.chevron_left,
-                onPressed: onBackPressed,
-                neonColor: neonColor,
-              ),
-
-              // Center: Avatar + Lobby Name (tappable)
-              Expanded(
+              // Center: Avatar + Lobby Name (tappable) - positioned absolutely in center
+              Center(
                 child: GestureDetector(
                   onTap: onCenterTapped,
                   behavior: HitTestBehavior.opaque,
@@ -69,30 +62,48 @@ class NeonChatAppBar extends StatelessWidget {
                 ),
               ),
 
-              // Right: Gamepad button (lobby creation) + Voice chat button
-              if (onGamepadPressed != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: _GlassCircleButton(
-                    icon: Icons.gamepad,
-                    onPressed: onGamepadPressed!,
+              // Left and Right buttons in a Row for proper positioning
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Left: Back button in glass bubble
+                  _GlassCircleButton(
+                    icon: Icons.chevron_left,
+                    onPressed: onBackPressed,
                     neonColor: neonColor,
                   ),
-                ),
-              _GlassCircleButton(
-                icon: Icons.headset,
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => VoiceRoomScreen(
-                        roomId: squadId,
-                        squadName: squadName,
+
+                  // Right: Gamepad button (lobby creation) + Voice chat button
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (onGamepadPressed != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _GlassCircleButton(
+                            icon: Icons.gamepad,
+                            onPressed: onGamepadPressed!,
+                            neonColor: neonColor,
+                          ),
+                        ),
+                      _GlassCircleButton(
+                        icon: Icons.headset,
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VoiceRoomScreen(
+                                roomId: squadId,
+                                squadName: squadName,
+                              ),
+                            ),
+                          );
+                        },
+                        neonColor: neonColor,
                       ),
-                    ),
-                  );
-                },
-                neonColor: neonColor,
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
@@ -165,40 +176,42 @@ class _CenterAvatarStack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      clipBehavior: Clip.none,
-      children: [
-        // Lobby name pill - positioned to touch bottom of avatar
-        Positioned(
-          top: 56, // Position at bottom of 56px avatar circle
-          child: _GlassPill(
-            squadName: squadName,
-            neonColor: neonColor,
-          ),
-        ),
-
-        // Avatar with Hero animation - solid with no glow border
-        Positioned(
-          top: 0,
-          child: Hero(
-            tag: 'squad_avatar_$squadId',
-            child: CircleAvatar(
-              radius: 28,
-              backgroundImage:
-                  avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-              backgroundColor: Colors.white.withOpacity(0.1),
-              child: avatarUrl == null
-                  ? Icon(
-                      Icons.groups,
-                      color: neonColor,
-                      size: 24,
-                    )
-                  : null,
+    return SizedBox(
+      height: 84, // Total height for avatar + name overlap
+      child: Stack(
+        alignment: Alignment.topCenter, // Center horizontally, align to top
+        clipBehavior: Clip.none,
+        children: [
+          // Avatar with Hero animation at top
+          Positioned(
+            top: 0,
+            child: Hero(
+              tag: 'squad_avatar_$squadId',
+              child: CircleAvatar(
+                radius: 28,
+                backgroundImage:
+                    avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+                backgroundColor: Colors.white.withOpacity(0.1),
+                child: avatarUrl == null
+                    ? Icon(
+                        Icons.groups,
+                        color: neonColor,
+                        size: 24,
+                      )
+                    : null,
+              ),
             ),
           ),
-        ),
-      ],
+          // Lobby name pill overlapping bottom of avatar
+          Positioned(
+            top: 48, // Start 8px before avatar bottom for overlap
+            child: _GlassPill(
+              squadName: squadName,
+              neonColor: neonColor,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

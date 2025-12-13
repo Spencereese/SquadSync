@@ -44,9 +44,11 @@ class PollService {
         'is_closed': false,
       });
 
+      _logger.i('Poll created successfully: $pollId');
       return pollId;
-    } catch (e) {
-      return null;
+    } catch (e, stackTrace) {
+      _logger.e('Failed to create poll', error: e, stackTrace: stackTrace);
+      rethrow; // Re-throw to let caller handle the error
     }
   }
 

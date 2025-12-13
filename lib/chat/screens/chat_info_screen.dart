@@ -22,6 +22,9 @@ import 'components/chat_info_settings.dart';
 import 'components/chat_info_backgrounds.dart';
 import 'components/chat_info_media.dart';
 import 'components/chat_info_links_files.dart';
+import '../../domain/entities/message.dart' show ChatType;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../presentation/notifiers/chat_notifier.dart' as cn;
 
 /// Chat/Squad info screen with perfect iMessage layout in glass style
 ///
@@ -31,11 +34,12 @@ import 'components/chat_info_links_files.dart';
 /// - Three large glass circular action buttons
 /// - Segmented control tabs for content sections
 /// - Full screen scrollable TabBarView
-class ChatInfoScreen extends StatefulWidget {
+class ChatInfoScreen extends ConsumerStatefulWidget {
   final String squadId;
   final String squadName;
   final String? avatarUrl;
   final List<Map<String, dynamic>>? members;
+  final ChatType chatType;
 
   const ChatInfoScreen({
     super.key,
@@ -43,13 +47,14 @@ class ChatInfoScreen extends StatefulWidget {
     required this.squadName,
     this.avatarUrl,
     this.members,
+    this.chatType = ChatType.squad,
   });
 
   @override
-  State<ChatInfoScreen> createState() => _ChatInfoScreenState();
+  ConsumerState<ChatInfoScreen> createState() => _ChatInfoScreenState();
 }
 
-class _ChatInfoScreenState extends State<ChatInfoScreen>
+class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _selectedSegment = 0;
@@ -382,7 +387,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
         _buildLobbySpotsCard(context, neonColor),
         const SizedBox(height: 32),
 
-        // Danger zone: Leave Lobby
+        // Danger zone: Leave Group/Lobby
         _buildSectionHeader(
           context,
           Theme.of(context).colorScheme.error,
@@ -392,7 +397,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
         _buildActionCard(
           context,
           Theme.of(context).colorScheme.error,
-          'Leave Lobby',
+          widget.chatType == ChatType.userGroup ? 'Leave Group' : 'Leave Lobby',
           Icons.exit_to_app,
           () => _showLeaveConfirmation(context),
           isDestructive: true,
@@ -2303,7 +2308,9 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Leave Lobby?'),
+        title: Text(widget.chatType == ChatType.userGroup
+            ? 'Leave Group?'
+            : 'Leave Lobby?'),
         content: Text('Are you sure you want to leave "${widget.squadName}"?'),
         actions: [
           TextButton(
@@ -2314,43 +2321,51 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
             onPressed: () async {
               Navigator.pop(context); // Close dialog
 
-              // Leave squad
+              // Leave group or lobby based on chat type
               try {
-                final currentUser = AuthServiceSupabase().currentUser;
-                if (currentUser != null) {
-                  // Remove from user's groups
-                  final response = await SupabaseService.client
-                      .from('users')
-                      .select('user_groups')
-                      .eq('uid', currentUser.id)
-                      .maybeSingle();
+                if (widget.chatType == ChatType.userGroup) {
+                  // Use ChatNotifier for user groups
+                  await ref
+                      .read(cn.chatNotifierProvider.notifier)
+                      .leaveGroup(widget.squadId);
+                } else {
+                  // Direct database call for lobbies (legacy behavior)
+                  final currentUser = AuthServiceSupabase().currentUser;
+                  if (currentUser != null) {
+                    // Remove from user's groups
+                    final response = await SupabaseService.client
+                        .from('users')
+                        .select('user_groups')
+                        .eq('uid', currentUser.id)
+                        .maybeSingle();
 
-                  if (response != null) {
-                    final userGroups = List<Map<String, dynamic>>.from(
-                        response['user_groups'] ?? []);
-                    userGroups.removeWhere(
-                        (g) => g['chat_group_id'] == widget.squadId);
+                    if (response != null) {
+                      final userGroups = List<Map<String, dynamic>>.from(
+                          response['user_groups'] ?? []);
+                      userGroups.removeWhere(
+                          (g) => g['chat_group_id'] == widget.squadId);
 
-                    await SupabaseService.client.from('users').update({
-                      'user_groups': userGroups,
-                    }).eq('uid', currentUser.id);
-                  }
+                      await SupabaseService.client.from('users').update({
+                        'user_groups': userGroups,
+                      }).eq('uid', currentUser.id);
+                    }
 
-                  // Remove from squad members
-                  final squadResponse = await SupabaseService.client
-                      .from('lobbies')
-                      .select('member_uids')
-                      .eq('id', widget.squadId)
-                      .maybeSingle();
+                    // Remove from squad members
+                    final squadResponse = await SupabaseService.client
+                        .from('lobbies')
+                        .select('member_uids')
+                        .eq('id', widget.squadId)
+                        .maybeSingle();
 
-                  if (squadResponse != null) {
-                    final memberUids =
-                        List<String>.from(squadResponse['member_uids'] ?? []);
-                    memberUids.remove(currentUser.id);
+                    if (squadResponse != null) {
+                      final memberUids =
+                          List<String>.from(squadResponse['member_uids'] ?? []);
+                      memberUids.remove(currentUser.id);
 
-                    await SupabaseService.client.from('lobbies').update({
-                      'member_uids': memberUids,
-                    }).eq('id', widget.squadId);
+                      await SupabaseService.client.from('lobbies').update({
+                        'member_uids': memberUids,
+                      }).eq('id', widget.squadId);
+                    }
                   }
                 }
 
@@ -2365,11 +2380,13 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
                   ),
                 );
               } catch (e) {
-                debugPrint('Error leaving squad: $e');
+                debugPrint(
+                    'Error leaving ${widget.chatType == ChatType.userGroup ? "group" : "squad"}: $e');
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: const Text('Failed to leave squad'),
+                    content: Text(
+                        'Failed to leave ${widget.chatType == ChatType.userGroup ? "group" : "squad"}'),
                     backgroundColor: Theme.of(context).colorScheme.error,
                   ),
                 );

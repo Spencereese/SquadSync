@@ -313,7 +313,7 @@ class _PollCreationDialogState extends ConsumerState<PollCreationDialog> {
         creatorName: creatorName,
       );
 
-      if (pollId != null && mounted) {
+      if (pollId != null && pollId.isNotEmpty && mounted) {
         // Send a chat message with the poll
         final chatService = MessageService();
         final currentUser = AuthServiceSupabase().currentUser;

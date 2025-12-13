@@ -14,6 +14,9 @@ class ReactionService {
     String? squadId,
   ) async {
     try {
+      debugPrint(
+          'ReactionService.addReaction called with emoji=$emoji, messageId=$messageId');
+
       final userId = AuthServiceSupabase().currentUser?.id;
       if (userId == null || messageId.isEmpty || emoji.isEmpty) {
         debugPrint(
@@ -28,7 +31,7 @@ class ReactionService {
       }
 
       debugPrint(
-          'Adding reaction: emoji=$emoji, messageId=$messageId, userId=$userId');
+          'Adding reaction: emoji=$emoji, messageId=$messageId, userId=$userId, chatGroupId=$chatGroupId');
 
       // Check if user already reacted with this emoji
       final existingReaction = await SupabaseService.client

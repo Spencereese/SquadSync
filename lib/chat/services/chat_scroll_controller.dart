@@ -34,7 +34,10 @@ class ChatScrollController {
 
   void _handleScroll(
       VoidCallback onScrollChanged, VoidCallback onLoadMoreMessages) {
-    final shouldShow = scrollController.offset > 100;
+    // Show jump to bottom when scrolled up from bottom
+    final distanceFromBottom =
+        scrollController.position.maxScrollExtent - scrollController.offset;
+    final shouldShow = distanceFromBottom > 100;
     if (shouldShow != _showJumpToBottom) {
       // Use Future.microtask to debounce setState calls
       Future.microtask(() {
@@ -90,7 +93,7 @@ class ChatScrollController {
       if (scrollController.hasClients &&
           scrollController.position.hasContentDimensions) {
         scrollController.animateTo(
-          scrollController.position.minScrollExtent,
+          scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );

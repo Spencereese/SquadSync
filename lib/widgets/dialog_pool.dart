@@ -230,7 +230,7 @@ class CommonDialogs {
     return _pool.getConfirmationDialog(
       message:
           'Are you sure you want to leave "$squadName"? You will lose access to all squad features.',
-      confirmText: 'Leave Lobby',
+      confirmText: 'Leave Group',
       isDestructive: true,
       onConfirm: onConfirm,
       key: 'leave_squad',

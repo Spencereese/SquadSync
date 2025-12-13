@@ -16,6 +16,7 @@ class IMessageReactionsBar extends StatefulWidget {
   final Size messageSize;
   final double floatingOffset;
   final String? squadId;
+  final ScaffoldMessengerState? scaffoldMessenger;
 
   const IMessageReactionsBar({
     super.key,
@@ -28,6 +29,7 @@ class IMessageReactionsBar extends StatefulWidget {
     required this.messageSize,
     this.floatingOffset = 0.0,
     this.squadId,
+    this.scaffoldMessenger,
   });
 
   @override
@@ -108,17 +110,42 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
     });
   }
 
-  void _addReaction(String emoji) {
-    HapticFeedback.lightImpact();
-    ReactionService.addReaction(
-      context,
-      emoji,
-      widget.messageId,
-      widget.chatGroupId,
-      widget.chatType,
-      widget.squadId,
-    );
-    _dismiss();
+  void _addReaction(String emoji) async {
+    try {
+      HapticFeedback.lightImpact();
+      debugPrint('👍 Adding reaction: $emoji to message ${widget.messageId}');
+
+      await ReactionService.addReaction(
+        context,
+        emoji,
+        widget.messageId,
+        widget.chatGroupId,
+        widget.chatType,
+        widget.squadId,
+      );
+
+      debugPrint('✅ Reaction added successfully');
+
+      // Show feedback using the passed messenger if available
+      if (widget.scaffoldMessenger != null) {
+        widget.scaffoldMessenger!.showSnackBar(
+          SnackBar(
+            content: Text('Reacted with $emoji'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+
+      _dismiss();
+    } catch (e) {
+      debugPrint('❌ Error adding reaction: $e');
+      if (widget.scaffoldMessenger != null) {
+        widget.scaffoldMessenger!.showSnackBar(
+          SnackBar(content: Text('Failed to add reaction: $e')),
+        );
+      }
+      _dismiss();
+    }
   }
 
   void _openEmojiPicker() {
@@ -276,7 +303,10 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
     bool isGreyedOut = false,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        debugPrint('🔘 Emoji button tapped: $emoji');
+        onTap();
+      },
       child: Container(
         width: 44,
         height: 44,

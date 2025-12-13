@@ -167,7 +167,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           .from('chat_messages')
           .stream(primaryKey: ['id'])
           .eq('chat_id', chatGroupId)
-          .order('timestamp', ascending: false)
+          .order('timestamp', ascending: true)
           .limit(100)
           .listen(
             (data) {
@@ -207,7 +207,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         .from('chat_messages')
         .stream(primaryKey: ['id'])
         .eq('chat_id', chatGroupId)
-        .order('timestamp', ascending: false)
+        .order('timestamp', ascending: true)
         .limit(100)
         .map((messages) =>
             messages.where((msg) => msg['is_deleted'] != true).toList());
@@ -404,7 +404,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         }
       }
 
-      mergedMessages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      mergedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
       debugPrint('MessageNotifier: About to create newState');
       debugPrint(

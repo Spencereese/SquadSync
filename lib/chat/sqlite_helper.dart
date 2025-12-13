@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart' as sqlcipher;
@@ -51,18 +51,31 @@ class SQLiteHelper {
   }
 
   Future<Database> _initDatabase() async {
-    String path = join(await getDatabasesPath(), 'lobbiesync.db');
+    try {
+      // Get database path with proper error handling
+      final databasesPath = await getDatabasesPath();
+      debugPrint('📂 Database path: $databasesPath');
 
-    // Get encryption key
-    final encryptionKey = await _getEncryptionKey();
+      // Ensure directory exists
+      final directory = Directory(databasesPath);
+      if (!await directory.exists()) {
+        debugPrint('📁 Creating database directory...');
+        await directory.create(recursive: true);
+      }
 
-    // Use sqlcipher for encrypted database
-    return await sqlcipher.openDatabase(
-      path,
-      version: 16, // Clear cache again due to metadata corruption
-      password: encryptionKey,
-      onCreate: (db, version) async {
-        await db.execute('''
+      final path = join(databasesPath, 'lobbiesync.db');
+      debugPrint('💾 Opening database at: $path');
+
+      // Get encryption key
+      final encryptionKey = await _getEncryptionKey();
+
+      // Use sqlcipher for encrypted database
+      return await sqlcipher.openDatabase(
+        path,
+        version: 16, // Clear cache again due to metadata corruption
+        password: encryptionKey,
+        onCreate: (db, version) async {
+          await db.execute('''
           CREATE TABLE messages (
             id TEXT PRIMARY KEY,
             sender_id TEXT,
@@ -91,7 +104,7 @@ class SQLiteHelper {
             synced INTEGER DEFAULT 1
           )
         ''');
-        await db.execute('''
+          await db.execute('''
           CREATE TABLE groups_cache (
             id TEXT PRIMARY KEY,
             game_name TEXT,
@@ -100,14 +113,14 @@ class SQLiteHelper {
             cached_at INTEGER
           )
         ''');
-        await db.execute('''
+          await db.execute('''
           CREATE TABLE timers (
             key TEXT PRIMARY KEY,
             data TEXT,
             created_at TEXT
           )
         ''');
-        await db.execute('''
+          await db.execute('''
           CREATE TABLE games_cache (
             id TEXT PRIMARY KEY,
             query TEXT,
@@ -115,13 +128,13 @@ class SQLiteHelper {
             cached_at INTEGER
           )
         ''');
-        await db.execute('''
+          await db.execute('''
           CREATE TABLE cache_metadata (
             cache_key TEXT PRIMARY KEY,
             cached_at INTEGER
           )
         ''');
-        await db.execute('''
+          await db.execute('''
           CREATE TABLE voice_rooms_cache (
             room_id TEXT PRIMARY KEY,
             room_name TEXT,
@@ -129,7 +142,7 @@ class SQLiteHelper {
             cached_at TEXT
           )
         ''');
-        await db.execute('''
+          await db.execute('''
           CREATE TABLE lobbies (
             id TEXT PRIMARY KEY,
             name TEXT,
@@ -148,7 +161,7 @@ class SQLiteHelper {
             updatedAt TEXT
           )
         ''');
-        await db.execute('''
+          await db.execute('''
           CREATE TABLE chat_groups (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -167,7 +180,7 @@ class SQLiteHelper {
             settings TEXT
           )
         ''');
-        await db.execute('''
+          await db.execute('''
           CREATE TABLE polls (
             id TEXT PRIMARY KEY,
             question TEXT NOT NULL,
@@ -180,46 +193,46 @@ class SQLiteHelper {
             is_active INTEGER DEFAULT 1
           )
         ''');
-        // Create indexes for better query performance
-        await db.execute(
-            'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
-        await db.execute(
-            'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
-        await db.execute(
-            'CREATE INDEX idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
-        await db.execute(
-            'CREATE INDEX idx_groups_cache ON groups_cache(game_name, search_term)');
-        await db.execute(
-            'CREATE INDEX idx_polls_chat_group ON polls(chat_group_id)');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          // Add chat_group_id column to existing databases
-          await db
-              .execute('ALTER TABLE messages ADD COLUMN chat_group_id TEXT');
-        }
-        if (oldVersion < 3) {
-          // Add indexes for better performance
+          // Create indexes for better query performance
           await db.execute(
-              'CREATE INDEX IF NOT EXISTS idx_timestamp_ms ON messages(timestamp_ms DESC)');
+              'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
           await db.execute(
-              'CREATE INDEX IF NOT EXISTS idx_chat_group_id ON messages(chat_group_id)');
+              'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
           await db.execute(
-              'CREATE INDEX IF NOT EXISTS idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
-        }
-        if (oldVersion < 4) {
-          // Add timers table
-          await db.execute('''
+              'CREATE INDEX idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
+          await db.execute(
+              'CREATE INDEX idx_groups_cache ON groups_cache(game_name, search_term)');
+          await db.execute(
+              'CREATE INDEX idx_polls_chat_group ON polls(chat_group_id)');
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            // Add chat_group_id column to existing databases
+            await db
+                .execute('ALTER TABLE messages ADD COLUMN chat_group_id TEXT');
+          }
+          if (oldVersion < 3) {
+            // Add indexes for better performance
+            await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_timestamp_ms ON messages(timestamp_ms DESC)');
+            await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_chat_group_id ON messages(chat_group_id)');
+            await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
+          }
+          if (oldVersion < 4) {
+            // Add timers table
+            await db.execute('''
             CREATE TABLE timers (
               key TEXT PRIMARY KEY,
               data TEXT,
               created_at TEXT
             )
           ''');
-        }
-        if (oldVersion < 5) {
-          // Add games cache table
-          await db.execute('''
+          }
+          if (oldVersion < 5) {
+            // Add games cache table
+            await db.execute('''
             CREATE TABLE games_cache (
               id TEXT PRIMARY KEY,
               query TEXT,
@@ -227,19 +240,19 @@ class SQLiteHelper {
               cached_at INTEGER
             )
           ''');
-        }
-        if (oldVersion < 6) {
-          // Add cache metadata table
-          await db.execute('''
+          }
+          if (oldVersion < 6) {
+            // Add cache metadata table
+            await db.execute('''
             CREATE TABLE cache_metadata (
               cache_key TEXT PRIMARY KEY,
               cached_at INTEGER
             )
           ''');
-        }
-        if (oldVersion < 7) {
-          // Add voice rooms cache table
-          await db.execute('''
+          }
+          if (oldVersion < 7) {
+            // Add voice rooms cache table
+            await db.execute('''
             CREATE TABLE voice_rooms_cache (
               room_id TEXT PRIMARY KEY,
               room_name TEXT,
@@ -247,33 +260,35 @@ class SQLiteHelper {
               cached_at TEXT
             )
           ''');
-        }
-        if (oldVersion < 8) {
-          // Update messages table schema to support full Message entity
-          await db.execute('ALTER TABLE messages ADD COLUMN sender_id TEXT');
-          await db.execute('ALTER TABLE messages ADD COLUMN text TEXT');
-          await db.execute('ALTER TABLE messages ADD COLUMN message_type TEXT');
-          await db.execute('ALTER TABLE messages ADD COLUMN media_url TEXT');
-          await db.execute('ALTER TABLE messages ADD COLUMN media_type TEXT');
-          await db.execute('ALTER TABLE messages ADD COLUMN poll TEXT');
-          await db
-              .execute('ALTER TABLE messages ADD COLUMN voice_note_url TEXT');
-          await db.execute(
-              'ALTER TABLE messages ADD COLUMN voice_note_duration INTEGER');
-          await db.execute('ALTER TABLE messages ADD COLUMN ai_response TEXT');
-          await db.execute('ALTER TABLE messages ADD COLUMN metadata TEXT');
-          await db.execute(
-              'ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0');
-          await db.execute('ALTER TABLE messages ADD COLUMN edited_at TEXT');
-          await db.execute(
-              'ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0');
-          await db.execute('ALTER TABLE messages ADD COLUMN deleted_at TEXT');
-          await db.execute(
-              'ALTER TABLE messages ADD COLUMN synced INTEGER DEFAULT 1');
-        }
-        if (oldVersion < 9) {
-          // Add lobbies table
-          await db.execute('''
+          }
+          if (oldVersion < 8) {
+            // Update messages table schema to support full Message entity
+            await db.execute('ALTER TABLE messages ADD COLUMN sender_id TEXT');
+            await db.execute('ALTER TABLE messages ADD COLUMN text TEXT');
+            await db
+                .execute('ALTER TABLE messages ADD COLUMN message_type TEXT');
+            await db.execute('ALTER TABLE messages ADD COLUMN media_url TEXT');
+            await db.execute('ALTER TABLE messages ADD COLUMN media_type TEXT');
+            await db.execute('ALTER TABLE messages ADD COLUMN poll TEXT');
+            await db
+                .execute('ALTER TABLE messages ADD COLUMN voice_note_url TEXT');
+            await db.execute(
+                'ALTER TABLE messages ADD COLUMN voice_note_duration INTEGER');
+            await db
+                .execute('ALTER TABLE messages ADD COLUMN ai_response TEXT');
+            await db.execute('ALTER TABLE messages ADD COLUMN metadata TEXT');
+            await db.execute(
+                'ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0');
+            await db.execute('ALTER TABLE messages ADD COLUMN edited_at TEXT');
+            await db.execute(
+                'ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0');
+            await db.execute('ALTER TABLE messages ADD COLUMN deleted_at TEXT');
+            await db.execute(
+                'ALTER TABLE messages ADD COLUMN synced INTEGER DEFAULT 1');
+          }
+          if (oldVersion < 9) {
+            // Add lobbies table
+            await db.execute('''
             CREATE TABLE lobbies (
               id TEXT PRIMARY KEY,
               name TEXT,
@@ -292,10 +307,10 @@ class SQLiteHelper {
               updatedAt TEXT
             )
           ''');
-        }
-        if (oldVersion < 10) {
-          // Add offline queue table for pending messages/uploads
-          await db.execute('''
+          }
+          if (oldVersion < 10) {
+            // Add offline queue table for pending messages/uploads
+            await db.execute('''
             CREATE TABLE offline_queue (
               id TEXT PRIMARY KEY,
               type TEXT NOT NULL,
@@ -307,8 +322,8 @@ class SQLiteHelper {
             )
           ''');
 
-          // Add clips cache table
-          await db.execute('''
+            // Add clips cache table
+            await db.execute('''
             CREATE TABLE clips (
               id TEXT PRIMARY KEY,
               squad_id TEXT,
@@ -327,8 +342,8 @@ class SQLiteHelper {
             )
           ''');
 
-          // Add chat_groups table for offline caching
-          await db.execute('''
+            // Add chat_groups table for offline caching
+            await db.execute('''
             CREATE TABLE IF NOT EXISTS chat_groups (
               id TEXT PRIMARY KEY,
               name TEXT NOT NULL,
@@ -348,26 +363,26 @@ class SQLiteHelper {
             )
           ''');
 
-          // Create indexes for offline queue
-          await db.execute(
-              'CREATE INDEX idx_offline_queue_type ON offline_queue(type)');
-          await db.execute(
-              'CREATE INDEX idx_offline_queue_created ON offline_queue(created_at)');
+            // Create indexes for offline queue
+            await db.execute(
+                'CREATE INDEX idx_offline_queue_type ON offline_queue(type)');
+            await db.execute(
+                'CREATE INDEX idx_offline_queue_created ON offline_queue(created_at)');
 
-          // Create indexes for clips
-          await db.execute('CREATE INDEX idx_clips_squad ON clips(squad_id)');
-          await db.execute(
-              'CREATE INDEX idx_clips_created ON clips(created_at DESC)');
-          await db.execute('CREATE INDEX idx_clips_synced ON clips(synced)');
+            // Create indexes for clips
+            await db.execute('CREATE INDEX idx_clips_squad ON clips(squad_id)');
+            await db.execute(
+                'CREATE INDEX idx_clips_created ON clips(created_at DESC)');
+            await db.execute('CREATE INDEX idx_clips_synced ON clips(synced)');
 
-          // Create indexes for chat_groups
-          await db.execute(
-              'CREATE INDEX IF NOT EXISTS idx_chat_groups_public ON chat_groups(is_public)');
-        }
-        if (oldVersion < 11) {
-          // Recreate chat_groups table with correct schema
-          await db.execute('DROP TABLE IF EXISTS chat_groups');
-          await db.execute('''
+            // Create indexes for chat_groups
+            await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_chat_groups_public ON chat_groups(is_public)');
+          }
+          if (oldVersion < 11) {
+            // Recreate chat_groups table with correct schema
+            await db.execute('DROP TABLE IF EXISTS chat_groups');
+            await db.execute('''
             CREATE TABLE chat_groups (
               id TEXT PRIMARY KEY,
               name TEXT NOT NULL,
@@ -386,98 +401,103 @@ class SQLiteHelper {
               settings TEXT
             )
           ''');
-          await db.execute(
-              'CREATE INDEX IF NOT EXISTS idx_chat_groups_public ON chat_groups(is_public)');
-        }
-        if (oldVersion < 12) {
-          // Add missing columns to messages table for existing databases
-          // These were in onCreate but missing from older migrations
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN sender_id TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN text TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db
-                .execute('ALTER TABLE messages ADD COLUMN message_type TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN media_url TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN media_type TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN poll TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db
-                .execute('ALTER TABLE messages ADD COLUMN voice_note_url TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
             await db.execute(
-                'ALTER TABLE messages ADD COLUMN voice_note_duration INTEGER');
-          } catch (e) {
-            // Column may already exist
+                'CREATE INDEX IF NOT EXISTS idx_chat_groups_public ON chat_groups(is_public)');
           }
-          try {
-            await db
-                .execute('ALTER TABLE messages ADD COLUMN ai_response TEXT');
-          } catch (e) {
-            // Column may already exist
+          if (oldVersion < 12) {
+            // Add missing columns to messages table for existing databases
+            // These were in onCreate but missing from older migrations
+            try {
+              await db
+                  .execute('ALTER TABLE messages ADD COLUMN sender_id TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db.execute('ALTER TABLE messages ADD COLUMN text TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db
+                  .execute('ALTER TABLE messages ADD COLUMN message_type TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db
+                  .execute('ALTER TABLE messages ADD COLUMN media_url TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db
+                  .execute('ALTER TABLE messages ADD COLUMN media_type TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db.execute('ALTER TABLE messages ADD COLUMN poll TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db.execute(
+                  'ALTER TABLE messages ADD COLUMN voice_note_url TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db.execute(
+                  'ALTER TABLE messages ADD COLUMN voice_note_duration INTEGER');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db
+                  .execute('ALTER TABLE messages ADD COLUMN ai_response TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db.execute('ALTER TABLE messages ADD COLUMN metadata TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db.execute(
+                  'ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db
+                  .execute('ALTER TABLE messages ADD COLUMN edited_at TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db.execute(
+                  'ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db
+                  .execute('ALTER TABLE messages ADD COLUMN deleted_at TEXT');
+            } catch (e) {
+              // Column may already exist
+            }
+            try {
+              await db.execute(
+                  'ALTER TABLE messages ADD COLUMN synced INTEGER DEFAULT 1');
+            } catch (e) {
+              // Column may already exist
+            }
           }
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN metadata TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute(
-                'ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN edited_at TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute(
-                'ALTER TABLE messages ADD COLUMN is_deleted INTEGER DEFAULT 0');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN deleted_at TEXT');
-          } catch (e) {
-            // Column may already exist
-          }
-          try {
-            await db.execute(
-                'ALTER TABLE messages ADD COLUMN synced INTEGER DEFAULT 1');
-          } catch (e) {
-            // Column may already exist
-          }
-        }
-        if (oldVersion < 13) {
-          // Add polls table for existing databases
-          await db.execute('''
+          if (oldVersion < 13) {
+            // Add polls table for existing databases
+            await db.execute('''
             CREATE TABLE IF NOT EXISTS polls (
               id TEXT PRIMARY KEY,
               question TEXT NOT NULL,
@@ -490,29 +510,29 @@ class SQLiteHelper {
               is_active INTEGER DEFAULT 1
             )
           ''');
-          await db.execute(
-              'CREATE INDEX IF NOT EXISTS idx_polls_chat_group ON polls(chat_group_id)');
-        }
-        if (oldVersion < 14) {
-          // Clear old messages with incompatible schema (photos/videos/audio TEXT columns)
-          // These were from Firebase migration and are no longer compatible
-          print(
-              '🔄 SQLite v14: Clearing old cached messages with incompatible schema');
-          await db.execute('DELETE FROM messages');
-
-          // Remove obsolete columns if they exist
-          // SQLite doesn't support DROP COLUMN, so we need to recreate the table
-          try {
-            // Check if old columns exist by trying to select from them
-            await db
-                .rawQuery('SELECT photos, videos, audio FROM messages LIMIT 1');
-
-            // If we got here, old columns exist - recreate table
+            await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_polls_chat_group ON polls(chat_group_id)');
+          }
+          if (oldVersion < 14) {
+            // Clear old messages with incompatible schema (photos/videos/audio TEXT columns)
+            // These were from Firebase migration and are no longer compatible
             print(
-                '🔄 SQLite v14: Recreating messages table without obsolete columns');
+                '🔄 SQLite v14: Clearing old cached messages with incompatible schema');
+            await db.execute('DELETE FROM messages');
 
-            // Create new table with correct schema
-            await db.execute('''
+            // Remove obsolete columns if they exist
+            // SQLite doesn't support DROP COLUMN, so we need to recreate the table
+            try {
+              // Check if old columns exist by trying to select from them
+              await db.rawQuery(
+                  'SELECT photos, videos, audio FROM messages LIMIT 1');
+
+              // If we got here, old columns exist - recreate table
+              print(
+                  '🔄 SQLite v14: Recreating messages table without obsolete columns');
+
+              // Create new table with correct schema
+              await db.execute('''
               CREATE TABLE messages_new (
                 id TEXT PRIMARY KEY,
                 sender_id TEXT,
@@ -542,8 +562,8 @@ class SQLiteHelper {
               )
             ''');
 
-            // Copy data from old table (excluding photos/videos/audio columns)
-            await db.execute('''
+              // Copy data from old table (excluding photos/videos/audio columns)
+              await db.execute('''
               INSERT INTO messages_new 
                 (id, sender_id, sender_name, timestamp_ms, content, text, reactions, 
                  delivered, read, reply_to, created_at, chat_group_id, message_type, 
@@ -557,41 +577,107 @@ class SQLiteHelper {
               FROM messages
             ''');
 
-            // Drop old table and rename new one
-            await db.execute('DROP TABLE messages');
-            await db.execute('ALTER TABLE messages_new RENAME TO messages');
+              // Drop old table and rename new one
+              await db.execute('DROP TABLE messages');
+              await db.execute('ALTER TABLE messages_new RENAME TO messages');
 
-            // Recreate indexes
-            await db.execute(
-                'CREATE INDEX IF NOT EXISTS idx_timestamp_ms ON messages(timestamp_ms DESC)');
-            await db.execute(
-                'CREATE INDEX IF NOT EXISTS idx_chat_group_id ON messages(chat_group_id)');
-            await db.execute(
-                'CREATE INDEX IF NOT EXISTS idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
+              // Recreate indexes
+              await db.execute(
+                  'CREATE INDEX IF NOT EXISTS idx_timestamp_ms ON messages(timestamp_ms DESC)');
+              await db.execute(
+                  'CREATE INDEX IF NOT EXISTS idx_chat_group_id ON messages(chat_group_id)');
+              await db.execute(
+                  'CREATE INDEX IF NOT EXISTS idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
 
-            print(
-                '✅ SQLite v14: Messages table recreated without obsolete columns');
-          } catch (e) {
-            // Old columns don't exist, table is already in new format
-            print('✅ SQLite v14: Messages table already in correct format');
+              print(
+                  '✅ SQLite v14: Messages table recreated without obsolete columns');
+            } catch (e) {
+              // Old columns don't exist, table is already in new format
+              print('✅ SQLite v14: Messages table already in correct format');
+            }
           }
+          if (oldVersion < 15) {
+            // Force clear ALL messages to remove any remaining incompatible data
+            print(
+                '🔄 SQLite v15: Force clearing all cached messages to ensure clean slate');
+            await db.execute('DELETE FROM messages');
+            print(
+                '✅ SQLite v15: All old messages cleared, fresh cache will be built from Supabase');
+          }
+          if (oldVersion < 16) {
+            // Clear cache again due to persistent metadata corruption
+            print(
+                '🔄 SQLite v16: Clearing cache to remove metadata corruption');
+            await db.execute('DELETE FROM messages');
+            print('✅ SQLite v16: Cache cleared');
+          }
+        },
+      );
+    } catch (e, stackTrace) {
+      debugPrint('❌ Failed to initialize database: $e');
+      debugPrint('Stack trace: $stackTrace');
+
+      // Try to delete corrupted database and retry
+      try {
+        final databasesPath = await getDatabasesPath();
+        final path = join(databasesPath, 'lobbiesync.db');
+        final file = File(path);
+
+        if (await file.exists()) {
+          debugPrint('🗑️  Deleting corrupted database...');
+          await file.delete();
+          debugPrint('♻️  Retrying database initialization...');
+
+          // Retry initialization
+          final encryptionKey = await _getEncryptionKey();
+          return await sqlcipher.openDatabase(
+            path,
+            version: 16,
+            password: encryptionKey,
+            onCreate: (db, version) async {
+              // Simplified onCreate for recovery
+              await db.execute('''
+                CREATE TABLE messages (
+                  id TEXT PRIMARY KEY,
+                  sender_id TEXT,
+                  sender_name TEXT,
+                  timestamp_ms INTEGER,
+                  content TEXT,
+                  text TEXT,
+                  reactions TEXT,
+                  delivered INTEGER,
+                  read INTEGER,
+                  reply_to TEXT,
+                  created_at TEXT,
+                  chat_group_id TEXT,
+                  message_type TEXT,
+                  media_url TEXT,
+                  media_type TEXT,
+                  poll TEXT,
+                  voice_note_url TEXT,
+                  voice_note_duration INTEGER,
+                  ai_response TEXT,
+                  metadata TEXT,
+                  is_edited INTEGER DEFAULT 0,
+                  edited_at TEXT,
+                  is_deleted INTEGER DEFAULT 0,
+                  deleted_at TEXT,
+                  synced INTEGER DEFAULT 1
+                )
+              ''');
+              await db.execute(
+                  'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
+              await db.execute(
+                  'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
+            },
+          );
         }
-        if (oldVersion < 15) {
-          // Force clear ALL messages to remove any remaining incompatible data
-          print(
-              '🔄 SQLite v15: Force clearing all cached messages to ensure clean slate');
-          await db.execute('DELETE FROM messages');
-          print(
-              '✅ SQLite v15: All old messages cleared, fresh cache will be built from Supabase');
-        }
-        if (oldVersion < 16) {
-          // Clear cache again due to persistent metadata corruption
-          print('🔄 SQLite v16: Clearing cache to remove metadata corruption');
-          await db.execute('DELETE FROM messages');
-          print('✅ SQLite v16: Cache cleared');
-        }
-      },
-    );
+      } catch (retryError) {
+        debugPrint('❌ Retry failed: $retryError');
+      }
+
+      rethrow;
+    }
   }
 
   Future<void> insertMessage(Map<String, dynamic> message,

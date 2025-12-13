@@ -328,6 +328,13 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
       _messageData =
           models.MessageData.fromMap(widget.message as Map<String, dynamic>);
     }
+
+    // Debug reactions
+    debugPrint(
+        '💬 MessageBubble: Message ${_messageData.id} has ${_messageData.reactions.length} reactions');
+    if (_messageData.reactions.isNotEmpty) {
+      debugPrint('💬 Reactions data: ${_messageData.reactions}');
+    }
   }
 
   void _dismissOverlays() {
@@ -348,16 +355,19 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     final menuSpacing = 4.0;
     final availableHeight = screenSize.height - keyboardHeight - 20;
 
+    // Capture these BEFORE building the overlay to ensure we have proper context
     final squadId = ref.read(ln.lobbyNotifierProvider).maybeWhen(
           data: (data) => data.selectedLobbyId,
           orElse: () => null,
         );
+    final messenger = ScaffoldMessenger.of(context);
+    final widgetContext = context; // Capture the widget's context
 
     late final OverlayEntry reactionsOverlay;
     late final OverlayEntry menuOverlay;
 
     _reactionsOverlay = reactionsOverlay = OverlayEntry(
-      builder: (context) => Stack(
+      builder: (overlayContext) => Stack(
         children: [
           IMessageReactionsBar(
             messageId: _messageData.id,
@@ -369,6 +379,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
             messageSize: messageSize,
             floatingOffset: floatingOffset,
             squadId: squadId,
+            scaffoldMessenger: messenger,
           ),
         ],
       ),
@@ -378,42 +389,55 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
         messagePosition.dy + messageSize.height + menuSpacing + floatingOffset;
 
     _menuOverlay = menuOverlay = OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _dismissOverlays,
-              behavior: HitTestBehavior.translucent,
-            ),
-          ),
-          Positioned(
-            top: finalMenuTop.clamp(10, availableHeight - 220),
-            left: widget.isMe ? null : 16.0,
-            right: widget.isMe ? 16.0 : null,
-            child: Material(
-              color: Colors.transparent,
-              elevation: 20,
-              shadowColor: Colors.black.withValues(alpha: 0.5),
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 150),
-                curve: Curves.easeOut,
-                builder: (context, value, child) => Transform.translate(
-                  offset: Offset(0, 10 * (1 - value)),
-                  child: Opacity(
-                    opacity: value,
-                    child: _buildActionMenu(),
+      builder: (context) => GestureDetector(
+        onTap: () {
+          debugPrint('🔸 Overlay background tapped, dismissing');
+          _dismissOverlays();
+        },
+        behavior: HitTestBehavior.opaque, // Changed from translucent
+        child: Container(
+          color: Colors.transparent,
+          child: Stack(
+            children: [
+              // Menu positioned to receive taps
+              Positioned(
+                top: finalMenuTop.clamp(10, availableHeight - 220),
+                left: widget.isMe ? null : 16.0,
+                right: widget.isMe ? 16.0 : null,
+                child: GestureDetector(
+                  onTap: () {
+                    debugPrint('🔹 Menu area tapped (preventing dismiss)');
+                    // Prevent tap from bubbling to parent
+                  },
+                  child: Material(
+                    color: Colors.transparent,
+                    elevation: 20,
+                    shadowColor: Colors.black.withValues(alpha: 0.5),
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      builder: (context, value, child) => Transform.translate(
+                        offset: Offset(0, 10 * (1 - value)),
+                        child: Opacity(
+                          opacity: value,
+                          child: _buildActionMenu(widgetContext, messenger),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
 
+    debugPrint('📱 Inserting overlays for message ${_messageData.id}');
     Overlay.of(context).insert(reactionsOverlay);
     Overlay.of(context).insert(menuOverlay);
+    debugPrint('✅ Overlays inserted successfully');
   }
 
   @override
@@ -658,7 +682,8 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     );
   }
 
-  Widget _buildActionMenu() {
+  Widget _buildActionMenu(
+      BuildContext widgetContext, ScaffoldMessengerState messenger) {
     return Container(
       constraints: const BoxConstraints(
         minWidth: 200,
@@ -694,48 +719,64 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                       icon: Icons.reply,
                       label: 'Reply',
                       onTap: () {
-                        // Use Riverpod chat notifier instead of legacy ChatState
-                        final chatNotifier =
-                            ref.read(cn.chatNotifierProvider.notifier);
+                        try {
+                          // Use Riverpod chat notifier instead of legacy ChatState
+                          final chatNotifier =
+                              ref.read(cn.chatNotifierProvider.notifier);
 
-                        // Create Message from MessageData
-                        MessageType domainMessageType;
-                        switch (_messageData.type) {
-                          case models.MessageType.text:
-                            domainMessageType = MessageType.text;
-                            break;
-                          case models.MessageType.image:
-                            domainMessageType = MessageType.image;
-                            break;
-                          case models.MessageType.video:
-                            domainMessageType = MessageType.video;
-                            break;
-                          case models.MessageType.audio:
-                            domainMessageType = MessageType.audio;
-                            break;
-                          default:
-                            domainMessageType = MessageType.text;
-                        }
+                          // Create Message from MessageData
+                          MessageType domainMessageType;
+                          switch (_messageData.type) {
+                            case models.MessageType.text:
+                              domainMessageType = MessageType.text;
+                              break;
+                            case models.MessageType.image:
+                              domainMessageType = MessageType.image;
+                              break;
+                            case models.MessageType.video:
+                              domainMessageType = MessageType.video;
+                              break;
+                            case models.MessageType.audio:
+                              domainMessageType = MessageType.audio;
+                              break;
+                            default:
+                              domainMessageType = MessageType.text;
+                          }
 
-                        final message = Message(
-                          id: _messageData.id,
-                          senderId: _messageData.senderUid,
-                          text: _messageData.text,
-                          timestamp: _messageData.timestamp,
-                          messageType: domainMessageType,
-                        );
-
-                        debugPrint(
-                            'MessageBubble: Setting reply to message ${message.id}');
-                        chatNotifier.setReplyingToMessageObject(message);
-                        _dismissOverlays();
-
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Reply mode activated'),
-                                duration: Duration(seconds: 1)),
+                          final message = Message(
+                            id: _messageData.id,
+                            senderId: _messageData.senderUid,
+                            text: _messageData.text,
+                            timestamp: _messageData.timestamp,
+                            messageType: domainMessageType,
                           );
+
+                          debugPrint(
+                              'MessageBubble: Setting reply to message ${message.id}');
+                          chatNotifier.setReplyingToMessageObject(message);
+                          debugPrint('✅ Reply message set in notifier');
+
+                          _dismissOverlays();
+
+                          // Show feedback
+                          try {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                  content: Text('Reply mode activated'),
+                                  duration: Duration(seconds: 1)),
+                            );
+                            debugPrint('✅ Reply SnackBar shown');
+                          } catch (e) {
+                            debugPrint('⚠️ Could not show reply SnackBar: $e');
+                          }
+                        } catch (e) {
+                          debugPrint('Error setting reply: $e');
+                          if (widgetContext.mounted) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                  content: Text('Failed to start reply: $e')),
+                            );
+                          }
                         }
                       },
                     ),
@@ -744,12 +785,23 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                       icon: Icons.copy,
                       label: 'Copy',
                       onTap: () {
-                        Clipboard.setData(
-                            ClipboardData(text: _messageData.text));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Text copied')),
-                        );
-                        _dismissOverlays();
+                        try {
+                          Clipboard.setData(
+                              ClipboardData(text: _messageData.text));
+                          debugPrint('✅ Text copied to clipboard');
+
+                          messenger.showSnackBar(
+                            const SnackBar(
+                                content: Text('Text copied'),
+                                duration: Duration(seconds: 1)),
+                          );
+                          _dismissOverlays();
+                        } catch (e) {
+                          debugPrint('❌ Error copying text: $e');
+                          messenger.showSnackBar(
+                            SnackBar(content: Text('Failed to copy: $e')),
+                          );
+                        }
                       },
                     ),
                   ],
@@ -774,11 +826,17 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                         label: 'Edit',
                         onTap: () async {
                           _dismissOverlays(); // Dismiss menu before showing dialog
+
+                          if (!context.mounted) return;
+
                           final TextEditingController editController =
                               TextEditingController(text: _messageData.text);
+
                           final result = await showDialog<String>(
                             context: context,
-                            builder: (context) => AlertDialog(
+                            builder: (dialogContext) => AlertDialog(
+                              backgroundColor:
+                                  Theme.of(dialogContext).colorScheme.surface,
                               title: const Text('Edit Message'),
                               content: TextField(
                                 controller: editController,
@@ -791,12 +849,14 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                               ),
                               actions: [
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context),
+                                  onPressed: () => Navigator.pop(dialogContext),
                                   child: const Text('Cancel'),
                                 ),
                                 TextButton(
-                                  onPressed: () => Navigator.pop(
-                                      context, editController.text.trim()),
+                                  onPressed: () {
+                                    final text = editController.text.trim();
+                                    Navigator.pop(dialogContext, text);
+                                  },
                                   child: const Text('Save'),
                                 ),
                               ],
@@ -805,9 +865,13 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
 
                           if (result != null &&
                               result.isNotEmpty &&
-                              result != _messageData.text &&
-                              context.mounted) {
+                              result != _messageData.text) {
+                            if (!context.mounted) return;
+
                             try {
+                              debugPrint(
+                                  'Editing message ${_messageData.id} with new text: $result');
+
                               // Use the provided chatService or create a new instance
                               final chatService =
                                   widget.chatService ?? MessageService();
@@ -816,6 +880,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                         data: (data) => data,
                                         orElse: () => null,
                                       );
+
                               if (squadState != null) {
                                 final squadId = squadState.selectedLobbyId;
                                 if (squadId != null) {
@@ -823,21 +888,36 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                       _messageData.id, result, squadId,
                                       chatGroupId: widget.chatGroupId,
                                       chatType: widget.chatType);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
+
+                                  debugPrint('Message edited successfully');
+                                  try {
+                                    messenger.showSnackBar(
                                       const SnackBar(
-                                          content: Text('Message edited')),
+                                          content: Text('Message edited'),
+                                          duration: Duration(seconds: 2)),
                                     );
+                                  } catch (e) {
+                                    debugPrint(
+                                        '⚠️ Could not show SnackBar: $e');
                                   }
+                                } else {
+                                  throw Exception('Squad ID is null');
                                 }
+                              } else {
+                                throw Exception('Squad state is null');
                               }
                             } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                              debugPrint('Error editing message: $e');
+                              try {
+                                messenger.showSnackBar(
                                   SnackBar(
                                       content:
-                                          Text('Failed to edit message: $e')),
+                                          Text('Failed to edit message: $e'),
+                                      duration: const Duration(seconds: 3)),
                                 );
+                              } catch (snackBarError) {
+                                debugPrint(
+                                    '⚠️ Could not show error SnackBar: $snackBarError');
                               }
                             }
                           }
@@ -850,11 +930,14 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                         color: Colors.red,
                         onTap: () async {
                           _dismissOverlays(); // Dismiss menu before showing dialog
+
+                          if (!context.mounted) return;
+
                           final confirm = await showDialog<bool>(
                             context: context,
-                            builder: (context) => AlertDialog(
+                            builder: (dialogContext) => AlertDialog(
                               backgroundColor:
-                                  Theme.of(context).colorScheme.surface,
+                                  Theme.of(dialogContext).colorScheme.surface,
                               elevation: 24,
                               title: const Text('Delete Message'),
                               content: const Text(
@@ -862,18 +945,25 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                               actions: [
                                 TextButton(
                                   onPressed: () =>
-                                      Navigator.pop(context, false),
+                                      Navigator.pop(dialogContext, false),
                                   child: const Text('Cancel'),
                                 ),
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('Delete'),
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  child: const Text('Delete',
+                                      style: TextStyle(color: Colors.red)),
                                 ),
                               ],
                             ),
                           );
-                          if (confirm == true && context.mounted) {
+
+                          if (confirm == true) {
+                            if (!context.mounted) return;
+
                             try {
+                              debugPrint('Deleting message ${_messageData.id}');
+
                               // Use the provided chatService or create a new instance
                               final chatService =
                                   widget.chatService ?? MessageService();
@@ -882,6 +972,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                         data: (data) => data,
                                         orElse: () => null,
                                       );
+
                               if (squadState != null) {
                                 final squadId = squadState.selectedLobbyId;
                                 if (squadId != null) {
@@ -889,21 +980,37 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                       _messageData.id, squadId,
                                       chatGroupId: widget.chatGroupId,
                                       chatType: widget.chatType);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
+
+                                  debugPrint('Message deleted successfully');
+                                  try {
+                                    messenger.showSnackBar(
                                       const SnackBar(
-                                          content: Text('Message deleted')),
+                                          content: Text('Message deleted'),
+                                          duration: Duration(seconds: 2)),
                                     );
+                                    debugPrint('✅ Delete SnackBar shown');
+                                  } catch (e) {
+                                    debugPrint(
+                                        '⚠️ Could not show delete SnackBar: $e');
                                   }
+                                } else {
+                                  throw Exception('Squad ID is null');
                                 }
+                              } else {
+                                throw Exception('Squad state is null');
                               }
                             } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                              debugPrint('Error deleting message: $e');
+                              try {
+                                messenger.showSnackBar(
                                   SnackBar(
                                       content:
-                                          Text('Failed to delete message: $e')),
+                                          Text('Failed to delete message: $e'),
+                                      duration: const Duration(seconds: 3)),
                                 );
+                              } catch (snackBarError) {
+                                debugPrint(
+                                    '⚠️ Could not show error SnackBar: $snackBarError');
                               }
                             }
                           }
@@ -921,19 +1028,47 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                       icon: Icons.notifications,
                       label: 'Bump',
                       onTap: () async {
+                        debugPrint(
+                            '🔔 Bump button tapped for message ${_messageData.id}');
                         try {
                           _dismissOverlays();
-                          // Bump the message by creating a notification or resending
-                          // TODO: Implement actual bump functionality
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Message bumped')),
-                            );
+
+                          // Call MessageService to bump the message
+                          final messageService = MessageService();
+                          final result = await messageService.bumpMessage(
+                            messageId: _messageData.id,
+                            chatGroupId: widget.chatGroupId,
+                            chatType: widget.chatType,
+                          );
+
+                          // Show feedback
+                          if (widgetContext.mounted) {
+                            if (result.success) {
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                    content: Text('💬 Message bumped to top'),
+                                    duration: Duration(seconds: 2)),
+                              );
+                              debugPrint(
+                                  '✅ Message bumped: ${result.messageId}');
+                            } else {
+                              messenger.showSnackBar(
+                                SnackBar(
+                                    content: Text(
+                                        'Failed to bump: ${result.errorMessage}'),
+                                    duration: const Duration(seconds: 2)),
+                              );
+                              debugPrint(
+                                  '❌ Bump failed: ${result.errorMessage}');
+                            }
                           }
                         } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to bump: $e')),
+                          debugPrint('❌ Error bumping message: $e');
+                          if (widgetContext.mounted) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                  content: Text('Failed to bump: $e'),
+                                  duration: const Duration(seconds: 2)),
                             );
                           }
                         }
@@ -1015,7 +1150,10 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     Color? color,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        debugPrint('🔘 Menu item tapped: $label');
+        onTap();
+      },
       child: Container(
         width: 70, // Fixed width for consistent alignment
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),

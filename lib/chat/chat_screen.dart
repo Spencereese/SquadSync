@@ -1112,6 +1112,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                                 squadId: widget.chatGroupId ?? 'unknown',
                                 squadName: _chatName,
                                 avatarUrl: _chatImageUrl,
+                                chatType: widget.chatType,
                                 members: squadStateData.globalStatuses.entries
                                     .map((e) => {
                                           'uid': e.key,

@@ -182,7 +182,8 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
 
   Widget _buildContent(BuildContext context, ChatState chatState) {
     // Convert ChatGroup entities to map format for compatibility
-    final groups = chatState.userChatGroups.values
+    // Now shows ALL groups (squad, userGroup, dm) not just userChatGroups
+    final groups = chatState.chatGroups.values
         .map((group) => {
               'id': group.id,
               'name': group.name,
@@ -238,7 +239,7 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Create a group or join an existing one\nto start chatting!',
+                    'Create a group to start chatting!\n(Join groups from the Discover tab)',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.grey[500],

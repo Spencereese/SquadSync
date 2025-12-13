@@ -630,6 +630,68 @@ class MessageService with WidgetsBindingObserver {
   int get offlineMessageCount => _offlineMessageQueue.length;
   bool get isOnline => _isOnline;
 
+  /// Bump a message (like Facebook Messenger) - resends the message to bring it to the top
+  Future<MessageSendResult> bumpMessage({
+    required String messageId,
+    required String chatGroupId,
+    required ChatType chatType,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return MessageSendResult.failure('User not authenticated');
+      }
+
+      debugPrint('💬 Bumping message: $messageId');
+
+      // 1. Get the original message
+      final originalMessage = await _supabase
+          .from('chat_messages')
+          .select()
+          .eq('id', messageId)
+          .single();
+
+      if (originalMessage == null) {
+        return MessageSendResult.failure('Original message not found');
+      }
+
+      // 2. Create a new message that's a copy of the original (bump)
+      final bumpedMessageId = const Uuid().v4();
+      final now = DateTime.now();
+
+      final bumpedMessageData = {
+        'id': bumpedMessageId,
+        'chat_id': chatGroupId,
+        'sender_id': currentUser.id,
+        'sender_name': currentUser.userMetadata?['display_name'] ?? 'Unknown',
+        'content': originalMessage['content'],
+        'timestamp': now.toIso8601String(),
+        'timestamp_ms': now.millisecondsSinceEpoch,
+        'is_bumped': true,
+        'original_id': messageId,
+        'bumped_by': currentUser.id,
+        'photos': originalMessage['photos'] ?? [],
+        'videos': originalMessage['videos'] ?? [],
+        'audio': originalMessage['audio'],
+        'reactions': {},
+        'delivered': true,
+        'read': false,
+      };
+
+      // 3. Insert the bumped message
+      await _supabase.from('chat_messages').insert(bumpedMessageData);
+
+      // 4. Cache to SQLite for offline access
+      await _sqliteHelper.insertMessage(bumpedMessageData);
+
+      debugPrint('✅ Message bumped successfully: $bumpedMessageId');
+      return MessageSendResult.success(bumpedMessageId);
+    } catch (e) {
+      debugPrint('❌ Failed to bump message: $e');
+      return MessageSendResult.failure('Failed to bump message: $e');
+    }
+  }
+
   // Private helper methods
   Future<bool> _checkConnectivity() async {
     try {

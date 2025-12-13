@@ -1,5 +1,8 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
+import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
+import 'package:dio_cache_interceptor_hive_store/dio_cache_interceptor_hive_store.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:squad_sync/domain/entities/game.dart';
 import 'package:squad_sync/services/igdb_auth_service.dart';
 
@@ -20,8 +23,9 @@ abstract class GameRemoteDataSource {
 }
 
 class GameRemoteDataSourceImpl implements GameRemoteDataSource {
-  final http.Client _httpClient;
+  final Dio _dio;
   final IgdbAuthService _authService;
+  late final CacheOptions _cacheOptions;
 
   static const int _maxRetries = 3;
   static const List<Duration> _retryDelays = [
@@ -30,7 +34,23 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
     Duration(seconds: 4),
   ];
 
-  GameRemoteDataSourceImpl(this._httpClient, this._authService);
+  GameRemoteDataSourceImpl(this._dio, this._authService) {
+    _initializeCache();
+  }
+
+  Future<void> _initializeCache() async {
+    final cacheDir = await getTemporaryDirectory();
+    _cacheOptions = CacheOptions(
+      store: HiveCacheStore(cacheDir.path),
+      policy: CachePolicy.refreshForceCache,
+      maxStale: const Duration(days: 7),
+      hitCacheOnErrorExcept: [401, 403],
+      keyBuilder: (request) =>
+          '${request.uri.path}_${request.data.toString().hashCode}',
+    );
+
+    _dio.interceptors.add(DioCacheInterceptor(options: _cacheOptions));
+  }
 
   @override
   Future<List<Game>> fetchGamesFromIgdb(String query, {int limit = 10}) async {
@@ -55,29 +75,38 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           limit $limit;
         ''';
 
-        final response = await _httpClient.post(
-          Uri.parse('https://api.igdb.com/v4/games'),
-          headers: {
-            'Client-ID': clientId,
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'text/plain',
-          },
-          body: queryBody,
+        final response = await _dio.post<String>(
+          'https://api.igdb.com/v4/games',
+          data: queryBody,
+          options: Options(
+            headers: {
+              'Client-ID': clientId,
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'text/plain',
+            },
+          ),
         );
 
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body) as List<dynamic>;
+        if (response.statusCode == 200 && response.data != null) {
+          final data = json.decode(response.data!) as List<dynamic>;
           return data.map((game) => Game.fromIgdb(game)).toList();
         } else if (response.statusCode == 401) {
           await refreshToken();
           continue;
         } else {
-          lastError = _classifyError(response.statusCode, response.body);
+          lastError =
+              _classifyError(response.statusCode ?? 500, response.data ?? '');
           if (lastError == IgdbErrorType.auth ||
               lastError == IgdbErrorType.server) {
             break;
           }
         }
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 401) {
+          await refreshToken();
+          continue;
+        }
+        lastError = IgdbErrorType.network;
       } catch (e) {
         lastError = IgdbErrorType.network;
       }
@@ -96,24 +125,33 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
     final token = await getAccessToken();
     final clientId = await _authService.getClientId();
 
-    final response = await _httpClient.post(
-      Uri.parse('https://api.igdb.com/v4/games'),
-      headers: {
-        'Client-ID': clientId!,
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'text/plain',
-      },
-      body: '''
-        fields name,slug,cover.url,summary,first_release_date,genres.name,platforms.name;
-        where id = $igdbId;
-        limit 1;
-      ''',
-    );
+    try {
+      final response = await _dio.post<String>(
+        'https://api.igdb.com/v4/games',
+        data: '''
+          fields name,slug,cover.url,summary,first_release_date,genres.name,platforms.name;
+          where id = $igdbId;
+          limit 1;
+        ''',
+        options: Options(
+          headers: {
+            'Client-ID': clientId!,
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'text/plain',
+          },
+        ),
+      );
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body) as List<dynamic>;
-      if (data.isNotEmpty) {
-        return Game.fromIgdb(data.first);
+      if (response.statusCode == 200 && response.data != null) {
+        final data = json.decode(response.data!) as List<dynamic>;
+        if (data.isNotEmpty) {
+          return Game.fromIgdb(data.first);
+        }
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        await refreshToken();
+        return getGameDetails(igdbId);
       }
     }
 
@@ -148,30 +186,39 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           where first_release_date > 1577836800 & game_type = 0 & parent_game = null;
         ''';
 
-        final response = await _httpClient.post(
-          Uri.parse('https://api.igdb.com/v4/games'),
-          headers: {
-            'Client-ID': clientId,
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'text/plain',
-          },
-          body: queryBody,
+        final response = await _dio.post<String>(
+          'https://api.igdb.com/v4/games',
+          data: queryBody,
+          options: Options(
+            headers: {
+              'Client-ID': clientId,
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'text/plain',
+            },
+          ),
         );
 
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body) as List<dynamic>;
+        if (response.statusCode == 200 && response.data != null) {
+          final data = json.decode(response.data!) as List<dynamic>;
           final games = data.map((game) => Game.fromIgdb(game)).toList();
           return _boostTopSquadGames(games);
         } else if (response.statusCode == 401) {
           await refreshToken();
           continue;
         } else {
-          lastError = _classifyError(response.statusCode, response.body);
+          lastError =
+              _classifyError(response.statusCode ?? 500, response.data ?? '');
           if (lastError == IgdbErrorType.auth ||
               lastError == IgdbErrorType.server) {
             break;
           }
         }
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 401) {
+          await refreshToken();
+          continue;
+        }
+        lastError = IgdbErrorType.network;
       } catch (e) {
         lastError = IgdbErrorType.network;
       }

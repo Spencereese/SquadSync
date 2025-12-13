@@ -114,7 +114,7 @@ class LinkPreview {
 /// Service for fetching link previews
 class LinkPreviewService {
   static const String _backendUrl =
-      'https://squadsync-backend-756172684661.us-central1.run.app';
+      'https://lobbiesync-backend-756172684661.us-central1.run.app';
 
   // Cache for link previews to avoid repeated network requests
   static final Map<String, LinkPreview> _cache = {};

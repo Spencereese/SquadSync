@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod/riverpod.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/supabase_service.dart';
 import '../../chat/models/message_data.dart';
 
@@ -49,7 +48,7 @@ class ClipState {
 /// Notifier for managing clips feed
 class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
   StreamSubscription<List<Map<String, dynamic>>>? _clipsSubscription;
-  String? _currentSquadId;
+  String? _currentLobbyId;
   int _currentOffset = 0;
   static const int _pageSize = 10;
 
@@ -63,13 +62,13 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
 
   /// Initialize real-time clips stream for a squad
   Future<void> initializeClipsStream(String squadId) async {
-    if (_currentSquadId == squadId && _clipsSubscription != null) {
+    if (_currentLobbyId == squadId && _clipsSubscription != null) {
       return; // Already initialized for this squad
     }
 
     // Cancel existing subscription
     await _clipsSubscription?.cancel();
-    _currentSquadId = squadId;
+    _currentLobbyId = squadId;
     _currentOffset = 0;
 
     // Load initial clips
@@ -153,7 +152,7 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
 
   /// Load more clips (pagination)
   Future<void> loadMoreClips() async {
-    if (_currentSquadId == null) return;
+    if (_currentLobbyId == null) return;
 
     final currentState = state.value;
     if (currentState == null ||
@@ -168,7 +167,7 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
       final data = await SupabaseService.client
           .from('clips')
           .select()
-          .eq('squad_id', _currentSquadId!)
+          .eq('squad_id', _currentLobbyId!)
           .order('created_at', ascending: false)
           .range(_currentOffset, _currentOffset + _pageSize - 1);
 
@@ -196,15 +195,15 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
 
   /// Refresh clips (pull to refresh)
   Future<void> refreshClips() async {
-    if (_currentSquadId == null) return;
+    if (_currentLobbyId == null) return;
 
     _currentOffset = 0;
-    await _loadInitialClips(_currentSquadId!);
+    await _loadInitialClips(_currentLobbyId!);
   }
 
   /// Mark clip as viewed (increment view count)
   Future<void> markClipAsViewed(String clipMessageId) async {
-    if (_currentSquadId == null) return;
+    if (_currentLobbyId == null) return;
 
     try {
       // Get current view count
@@ -281,14 +280,14 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
 
   /// Set manual clip of the day
   Future<void> setClipOfTheDay(String clipMessageId) async {
-    if (_currentSquadId == null) return;
+    if (_currentLobbyId == null) return;
 
     try {
       await SupabaseService.client.from('lobbies').update(
-          {'clip_of_the_day_id': clipMessageId}).eq('id', _currentSquadId!);
+          {'clip_of_the_day_id': clipMessageId}).eq('id', _currentLobbyId!);
 
       // Reload clip of the day
-      final clipOfTheDay = await _loadClipOfTheDay(_currentSquadId!);
+      final clipOfTheDay = await _loadClipOfTheDay(_currentLobbyId!);
       state = state.whenData((currentState) => currentState.copyWith(
             clipOfTheDay: clipOfTheDay,
           ));
@@ -301,25 +300,21 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
   Future<void> uploadClip(String? squadId, dynamic clipData) async {
     try {
       final userId = SupabaseService.client.auth.currentUser?.id;
-      // Use squad_id if provided, otherwise use user's personal collection (user_id)
-      // Insert clip into Supabase
+      if (userId == null) {
+        throw Exception('User must be authenticated to upload clips');
+      }
+
+      // Insert clip into Supabase clips table
+      // Schema: uploaded_by, lobby_id, video_url, thumbnail_url, duration_seconds, title, is_public
       await SupabaseService.client.from('clips').insert({
-        'squad_id': squadId ?? 'user_$userId',
-        'sender_id': userId,
-        'type': 'clip',
-        'clip_data': {
-          'clipId': clipData.clipId,
-          'videoUrl': clipData.videoUrl,
-          'thumbnailUrl': clipData.thumbUrl,
-          'durationSec': (clipData.duration / 1000).round(),
-          'width': clipData.width,
-          'height': clipData.height,
-          'views': 0,
-          'hypeReactions': <String>[],
-        },
-        'media_url': clipData.videoUrl,
-        'media_type': 'video/mp4',
-        'created_at': DateTime.now().toIso8601String(),
+        'uploaded_by': userId, // RLS policy requires uploaded_by = auth.uid()
+        'lobby_id': squadId, // Optional lobby association
+        'video_url': clipData.videoUrl,
+        'thumbnail_url': clipData.thumbUrl,
+        'duration_seconds': (clipData.duration / 1000).round(),
+        'title': clipData.title ?? 'Untitled Clip',
+        'is_public': true, // Default to public
+        // Note: created_at and updated_at are auto-populated by database
       });
 
       // Refresh clips to show the new upload
@@ -331,8 +326,8 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
   }
 }
 
-/// Provider for clip notifier
+/// Provider for clips notifier
 final clipNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<ClipNotifier, ClipState>(
-  () => ClipNotifier(),
+    AutoDisposeAsyncNotifierProvider<ClipNotifier, ClipState>.new(
+  ClipNotifier.new,
 );

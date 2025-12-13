@@ -58,7 +58,8 @@ class MessageData {
   factory MessageData.fromMap(Map<String, dynamic> data) {
     final id = data['id']?.toString() ?? '';
     final isAiResponse = data['isAiResponse'] ?? false;
-    final senderUid = data['senderId'] ?? data['senderUid'] ?? '';
+    final senderUid =
+        data['senderId'] ?? data['senderUid'] ?? data['sender_id'] ?? '';
 
     return MessageData(
       id: id,

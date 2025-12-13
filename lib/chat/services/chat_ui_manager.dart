@@ -24,7 +24,7 @@ class ChatUIManager {
 
   // UI state
   String _searchQuery = '';
-  String _chatName = 'Squad Chat';
+  String _chatName = 'Lobby Chat';
   String? _chatImageUrl;
   bool _isMuted = false;
 
@@ -203,27 +203,27 @@ class ChatUIManager {
                   ),
                 ),
               ),
-              // Squad button/counter
+              // Lobby button/counter
               r.Consumer(
                 builder: (context, ref, _) {
                   final squadAsync = ref.watch(ln.lobbyNotifierProvider);
                   final squadState = squadAsync.value;
                   if (squadState == null) return const SizedBox.shrink();
 
-                  // Count how many squad members are currently in squad spots
-                  int inSquadCount = 0;
+                  // Count how many lobby members are currently in lobby spots
+                  int inLobbyCount = 0;
                   final squadMembers = squadState.lobbyMemberUids;
 
-                  // Check all games for squad spots occupied by squad members
+                  // Check all games for lobby spots occupied by lobby members
                   for (final gameSpots in squadState.gameLobbySpots.values) {
                     for (final spot in gameSpots) {
                       if (spot != null && squadMembers.contains(spot)) {
-                        inSquadCount++;
+                        inLobbyCount++;
                       }
                     }
                   }
 
-                  final showCounter = inSquadCount > 0;
+                  final showCounter = inLobbyCount > 0;
 
                   return GestureDetector(
                     onTap: () {
@@ -232,7 +232,7 @@ class ChatUIManager {
                     },
                     child: Semantics(
                       label: showCounter
-                          ? '$inSquadCount squad members in game spots, tap to view squad'
+                          ? '$inLobbyCount lobby members in game spots, tap to view squad'
                           : 'View squad, tap to see squad spots',
                       child: Builder(
                         builder: (context) {
@@ -250,8 +250,8 @@ class ChatUIManager {
                               children: [
                                 Text(
                                   showCounter
-                                      ? 'In Squad: $inSquadCount'
-                                      : 'Squad',
+                                      ? 'In Lobby: $inLobbyCount'
+                                      : 'Lobby',
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: showCounter
@@ -289,7 +289,7 @@ class ChatUIManager {
   }
 
   /// Build the active squad header card
-  Widget buildActiveSquadHeader(BuildContext context, {String? chatGroupId}) {
+  Widget buildActiveLobbyHeader(BuildContext context, {String? chatGroupId}) {
     return r.Consumer(
       builder: (context, ref, child) {
         final squadAsync = ref.watch(ln.lobbyNotifierProvider);
@@ -336,7 +336,7 @@ class ChatUIManager {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Your Active Squad: $gameName - $claimed/$maxSpots spots',
+                    'Your Active Lobby: $gameName - $claimed/$maxSpots spots',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w500,
@@ -663,8 +663,8 @@ class ChatUIManager {
       return messageData;
     }).toList();
 
-    // Sort messages by timestamp (newest first) for processing
-    messageDataList.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    // Sort messages by timestamp (oldest first, newest at bottom for chat UI)
+    messageDataList.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     // Mark messages that should show timestamps based on time gaps
     const int timeGapThresholdMinutes =
@@ -673,12 +673,12 @@ class ChatUIManager {
     for (int i = 0; i < messageDataList.length; i++) {
       final message = messageDataList[i];
       if (i == 0) {
-        // Newest message always shows timestamp
+        // First (oldest) message always shows timestamp
         message.shouldShowTimestamp = true;
       } else {
         final prevMessage = messageDataList[i - 1];
         final timeDifference =
-            prevMessage.timestamp.difference(message.timestamp);
+            message.timestamp.difference(prevMessage.timestamp).abs();
         if (timeDifference.inMinutes >= timeGapThresholdMinutes) {
           message.shouldShowTimestamp = true;
         } else {

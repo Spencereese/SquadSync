@@ -38,9 +38,11 @@ abstract class ChatRemoteDataSource {
 
   // Group management
   Future<ChatGroup> createGroup(ChatGroup group);
+  Future<ChatGroup?> getChatGroup(String groupId);
   Future<void> joinGroup(String groupId, String userId);
   Future<void> leaveGroup(String groupId, String userId);
   Future<List<ChatGroup>> discoverGroups({String? query, int limit = 20});
+  Future<ChatGroup?> getGroupByInviteCode(String code);
   Future<void> updateGroupSettings(
       String groupId, Map<String, dynamic> settings);
 

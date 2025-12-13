@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io' show Platform;
 
 /// Supabase service for SquadSync
@@ -24,8 +25,16 @@ import 'dart:io' show Platform;
 ///   .listen((data) => print(data));
 /// ```
 class SupabaseService {
+  static bool _isInitialized = false;
+
   /// Supabase client instance
-  static SupabaseClient get client => Supabase.instance.client;
+  static SupabaseClient get client {
+    if (!_isInitialized) {
+      throw StateError(
+          'Supabase not initialized. Call SupabaseService.initialize() first.');
+    }
+    return Supabase.instance.client;
+  }
 
   /// Initialize Supabase
   ///
@@ -33,11 +42,23 @@ class SupabaseService {
   /// ```dart
   /// await SupabaseService.initialize();
   /// ```
+  ///
+  /// Supabase 2.12.0+ supports idempotent initialization - safe to call multiple times
   static Future<void> initialize() async {
+    // Load credentials from environment variables
+    final supabaseUrl = dotenv.env['SUPABASE_URL'];
+    final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
+
+    if (supabaseUrl == null || supabaseAnonKey == null) {
+      throw Exception(
+          'SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env file');
+    }
+
     // Use anon key for proper authentication with RLS
+    // Idempotent initialization (2.12.0+): Safe to call multiple times, only initializes once
     await Supabase.initialize(
-      url: 'https://sfckxrnoiwetmzdycqaa.supabase.co',
-      anonKey: _anonKey,
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
       authOptions: const FlutterAuthClientOptions(
         authFlowType: AuthFlowType.pkce,
         autoRefreshToken: true,
@@ -56,6 +77,22 @@ class SupabaseService {
     if (kDebugMode) {
       debugPrint('✅ Supabase initialized with authentication');
       debugPrint('   Current session: ${session?.user.id ?? "none"}');
+
+      // NEW in 2.12.0: Get JWT claims for custom claim verification
+      if (session != null) {
+        try {
+          final claimsResponse =
+              await Supabase.instance.client.auth.getClaims();
+          final claims =
+              claimsResponse.claims.claims; // Access claims map via JwtPayload
+          debugPrint('   JWT Claims: ${claims.keys.toList()}');
+          debugPrint('   User role: ${claims['role']}');
+          debugPrint('   App metadata: ${claims['app_metadata']}');
+        } catch (e) {
+          debugPrint('   ⚠️ Failed to get JWT claims: $e');
+        }
+      }
+
       if (!kIsWeb) {
         debugPrint('   Platform: ${Platform.operatingSystem}');
         if (Platform.isIOS) {
@@ -63,6 +100,8 @@ class SupabaseService {
         }
       }
     }
+
+    _isInitialized = true;
   }
 
   /// Check if user is authenticated in Supabase
@@ -124,10 +163,6 @@ class SupabaseService {
     // Clean up any active subscriptions
     client.removeAllChannels();
   }
-
-  // Supabase anon key for client-side authentication with RLS
-  static const String _anonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmY2t4cm5vaXdldG16ZHljcWFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ5MDEzMzUsImV4cCI6MjA4MDQ3NzMzNX0.9SZ_HD8SV_-BAz2uYptHohHmOcS6TaF_4JUD5Sl__qA';
 }
 
 /// Convenience getter for Supabase client

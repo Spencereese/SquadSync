@@ -29,6 +29,7 @@ mixin _$ChatGroup {
   DateTime get createdAt => throw _privateConstructorUsedError;
   String? get description => throw _privateConstructorUsedError;
   String? get avatarUrl => throw _privateConstructorUsedError;
+  String? get inviteCode => throw _privateConstructorUsedError;
   Map<String, dynamic>? get metadata => throw _privateConstructorUsedError;
   List<String>? get admins => throw _privateConstructorUsedError;
   List<String>? get moderators => throw _privateConstructorUsedError;
@@ -61,6 +62,7 @@ abstract class $ChatGroupCopyWith<$Res> {
       DateTime createdAt,
       String? description,
       String? avatarUrl,
+      String? inviteCode,
       Map<String, dynamic>? metadata,
       List<String>? admins,
       List<String>? moderators,
@@ -93,6 +95,7 @@ class _$ChatGroupCopyWithImpl<$Res, $Val extends ChatGroup>
     Object? createdAt = null,
     Object? description = freezed,
     Object? avatarUrl = freezed,
+    Object? inviteCode = freezed,
     Object? metadata = freezed,
     Object? admins = freezed,
     Object? moderators = freezed,
@@ -136,6 +139,10 @@ class _$ChatGroupCopyWithImpl<$Res, $Val extends ChatGroup>
       avatarUrl: freezed == avatarUrl
           ? _value.avatarUrl
           : avatarUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      inviteCode: freezed == inviteCode
+          ? _value.inviteCode
+          : inviteCode // ignore: cast_nullable_to_non_nullable
               as String?,
       metadata: freezed == metadata
           ? _value.metadata
@@ -183,6 +190,7 @@ abstract class _$$ChatGroupImplCopyWith<$Res>
       DateTime createdAt,
       String? description,
       String? avatarUrl,
+      String? inviteCode,
       Map<String, dynamic>? metadata,
       List<String>? admins,
       List<String>? moderators,
@@ -213,6 +221,7 @@ class __$$ChatGroupImplCopyWithImpl<$Res>
     Object? createdAt = null,
     Object? description = freezed,
     Object? avatarUrl = freezed,
+    Object? inviteCode = freezed,
     Object? metadata = freezed,
     Object? admins = freezed,
     Object? moderators = freezed,
@@ -257,6 +266,10 @@ class __$$ChatGroupImplCopyWithImpl<$Res>
           ? _value.avatarUrl
           : avatarUrl // ignore: cast_nullable_to_non_nullable
               as String?,
+      inviteCode: freezed == inviteCode
+          ? _value.inviteCode
+          : inviteCode // ignore: cast_nullable_to_non_nullable
+              as String?,
       metadata: freezed == metadata
           ? _value._metadata
           : metadata // ignore: cast_nullable_to_non_nullable
@@ -298,6 +311,7 @@ class _$ChatGroupImpl implements _ChatGroup {
       required this.createdAt,
       this.description,
       this.avatarUrl,
+      this.inviteCode,
       final Map<String, dynamic>? metadata,
       final List<String>? admins,
       final List<String>? moderators,
@@ -337,6 +351,8 @@ class _$ChatGroupImpl implements _ChatGroup {
   final String? description;
   @override
   final String? avatarUrl;
+  @override
+  final String? inviteCode;
   final Map<String, dynamic>? _metadata;
   @override
   Map<String, dynamic>? get metadata {
@@ -383,7 +399,7 @@ class _$ChatGroupImpl implements _ChatGroup {
 
   @override
   String toString() {
-    return 'ChatGroup(id: $id, name: $name, memberUids: $memberUids, isPublic: $isPublic, memberCount: $memberCount, createdBy: $createdBy, createdAt: $createdAt, description: $description, avatarUrl: $avatarUrl, metadata: $metadata, admins: $admins, moderators: $moderators, isActive: $isActive, lastActivity: $lastActivity, settings: $settings)';
+    return 'ChatGroup(id: $id, name: $name, memberUids: $memberUids, isPublic: $isPublic, memberCount: $memberCount, createdBy: $createdBy, createdAt: $createdAt, description: $description, avatarUrl: $avatarUrl, inviteCode: $inviteCode, metadata: $metadata, admins: $admins, moderators: $moderators, isActive: $isActive, lastActivity: $lastActivity, settings: $settings)';
   }
 
   @override
@@ -407,6 +423,8 @@ class _$ChatGroupImpl implements _ChatGroup {
                 other.description == description) &&
             (identical(other.avatarUrl, avatarUrl) ||
                 other.avatarUrl == avatarUrl) &&
+            (identical(other.inviteCode, inviteCode) ||
+                other.inviteCode == inviteCode) &&
             const DeepCollectionEquality().equals(other._metadata, _metadata) &&
             const DeepCollectionEquality().equals(other._admins, _admins) &&
             const DeepCollectionEquality()
@@ -431,6 +449,7 @@ class _$ChatGroupImpl implements _ChatGroup {
       createdAt,
       description,
       avatarUrl,
+      inviteCode,
       const DeepCollectionEquality().hash(_metadata),
       const DeepCollectionEquality().hash(_admins),
       const DeepCollectionEquality().hash(_moderators),
@@ -465,6 +484,7 @@ abstract class _ChatGroup implements ChatGroup {
       required final DateTime createdAt,
       final String? description,
       final String? avatarUrl,
+      final String? inviteCode,
       final Map<String, dynamic>? metadata,
       final List<String>? admins,
       final List<String>? moderators,
@@ -493,6 +513,8 @@ abstract class _ChatGroup implements ChatGroup {
   String? get description;
   @override
   String? get avatarUrl;
+  @override
+  String? get inviteCode;
   @override
   Map<String, dynamic>? get metadata;
   @override

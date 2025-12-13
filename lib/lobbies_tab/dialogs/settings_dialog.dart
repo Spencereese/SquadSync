@@ -33,13 +33,13 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.redAccent),
               title: const Text('Clear All Spots'),
               onTap: () {
-                final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+                final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
                 final gameName = ref
                         .read(ln.lobbyNotifierProvider)
                         .value
                         ?.currentGame?['name'] ??
                     '';
-                squadNotifier.clearAllSpots(gameName);
+                lobbyNotifier.clearAllSpots(gameName);
                 Navigator.pop(context);
               },
             ),
@@ -48,13 +48,13 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.blueGrey),
               title: const Text('Reset Timers'),
               onTap: () {
-                final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+                final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
                 final gameName = ref
                         .read(ln.lobbyNotifierProvider)
                         .value
                         ?.currentGame?['name'] ??
                     '';
-                squadNotifier.resetTimers(gameName);
+                lobbyNotifier.resetTimers(gameName);
                 Navigator.pop(context);
               },
             ),
@@ -103,7 +103,7 @@ class SettingsDialog {
 
   static Future<void> _closeLobby(
       BuildContext context, WidgetRef ref, String lobbyId) async {
-    final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+    final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
     try {
       // Show confirmation dialog
@@ -128,7 +128,7 @@ class SettingsDialog {
       );
 
       if (confirmed == true) {
-        await squadNotifier.closeLobby(lobbyId);
+        await lobbyNotifier.closeLobby(lobbyId);
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

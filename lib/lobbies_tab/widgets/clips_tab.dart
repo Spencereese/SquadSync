@@ -23,7 +23,11 @@ class ClipsTab extends ConsumerStatefulWidget {
 class _ClipsTabState extends ConsumerState<ClipsTab>
     with AutomaticKeepAliveClientMixin {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
   bool _isLoadingMore = false;
+  String _searchQuery = '';
+  static const double _loadMoreThreshold =
+      300.0; // Increased for earlier loading
 
   @override
   bool get wantKeepAlive => true;
@@ -32,8 +36,9 @@ class _ClipsTabState extends ConsumerState<ClipsTab>
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _searchController.addListener(_onSearchChanged);
 
-    // Initialize clips stream
+    // Initialize clips stream with optimized loading
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final squadId = widget.squadId ??
           ref.read(ln.lobbyNotifierProvider).value?.selectedLobbyId;
@@ -46,12 +51,22 @@ class _ClipsTabState extends ConsumerState<ClipsTab>
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text.toLowerCase();
+    });
+  }
+
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
+    // Lazy load with pagination - trigger earlier for smoother UX
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+
+    if (currentScroll >= maxScroll - _loadMoreThreshold && !_isLoadingMore) {
       _loadMore();
     }
   }
@@ -81,96 +96,183 @@ class _ClipsTabState extends ConsumerState<ClipsTab>
     super.build(context);
 
     final clipStateAsync = ref.watch(clipNotifierProvider);
+    final theme = Theme.of(context);
 
     return clipStateAsync.when(
       data: (clipState) {
-        final clips = clipState.clips;
+        var clips = clipState.clips;
         final clipOfTheDay = clipState.clipOfTheDay;
 
-        if (clips.isEmpty && clipOfTheDay == null) {
-          return _buildEmptyState();
+        // Filter clips based on search query
+        if (_searchQuery.isNotEmpty) {
+          clips = clips.where((clip) {
+            final senderName = clip.sender.toLowerCase();
+            final text = clip.text.toLowerCase();
+            return senderName.contains(_searchQuery) ||
+                text.contains(_searchQuery);
+          }).toList();
         }
 
-        return RefreshIndicator(
-          onRefresh: _refresh,
-          color: widget.gameColor ?? const Color(0xFF00FFFF),
-          child: CustomScrollView(
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              // Clip of the Day section
-              if (clipOfTheDay != null)
-                SliverToBoxAdapter(
-                  child: _buildClipOfTheDay(clipOfTheDay, clips),
-                ),
-
-              // Clips feed
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final clip = clips[index];
-                    final squadId = widget.squadId ??
-                        ref
-                            .read(ln.lobbyNotifierProvider)
-                            .value
-                            ?.selectedLobbyId;
-
-                    return ClipFeedItem(
-                      messageData: clip,
-                      chatGroupId: squadId ?? '',
-                      chatType: ChatType.squad,
-                      gameColor: widget.gameColor,
-                      allClips: clips,
-                      onView: () {
-                        ref
-                            .read(clipNotifierProvider.notifier)
-                            .markClipAsViewed(clip.id);
-                      },
-                    );
-                  },
-                  childCount: clips.length,
-                ),
-              ),
-
-              // Loading indicator at bottom
-              if (clipState.isLoading)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          widget.gameColor ?? const Color(0xFF00FFFF),
-                        ),
-                      ),
-                    ),
+        return Column(
+          children: [
+            // Search bar
+            Container(
+              padding: const EdgeInsets.all(12.0),
+              color: const Color(0xFF14181F),
+              child: TextField(
+                controller: _searchController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Search clips by user or caption...',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: widget.gameColor ?? const Color(0xFF00FFFF),
+                  ),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, color: Colors.white70),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: const Color(0xFF1E2229),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
                 ),
+              ),
+            ),
 
-              // End of list indicator
-              if (!clipState.hasMore && clips.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Center(
-                      child: Text(
-                        'You\'ve reached the end 🎮',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
-                          fontSize: 14,
-                          fontStyle: FontStyle.italic,
-                        ),
+            // Clips feed
+            Expanded(
+              child: clips.isEmpty && clipOfTheDay == null
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                      onRefresh: _refresh,
+                      color: widget.gameColor ?? const Color(0xFF00FFFF),
+                      child: CustomScrollView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          // Clip of the Day section (only if not searching)
+                          if (clipOfTheDay != null && _searchQuery.isEmpty)
+                            SliverToBoxAdapter(
+                              child: _buildClipOfTheDay(
+                                  clipOfTheDay, clipState.clips),
+                            ),
+
+                          // No results message
+                          if (clips.isEmpty && _searchQuery.isNotEmpty)
+                            SliverFillRemaining(
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.search_off,
+                                      size: 64,
+                                      color: Colors.white.withOpacity(0.3),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'No clips found',
+                                      style:
+                                          theme.textTheme.titleMedium?.copyWith(
+                                        color: Colors.white.withOpacity(0.5),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Try a different search term',
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
+                                        color: Colors.white.withOpacity(0.3),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          // Clips feed
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final clip = clips[index];
+                                final squadId = widget.squadId ??
+                                    ref
+                                        .read(ln.lobbyNotifierProvider)
+                                        .value
+                                        ?.selectedLobbyId;
+
+                                return ClipFeedItem(
+                                  messageData: clip,
+                                  chatGroupId: squadId ?? '',
+                                  chatType: ChatType.squad,
+                                  gameColor: widget.gameColor,
+                                  allClips: clips,
+                                  onView: () {
+                                    ref
+                                        .read(clipNotifierProvider.notifier)
+                                        .markClipAsViewed(clip.id);
+                                  },
+                                );
+                              },
+                              childCount: clips.length,
+                            ),
+                          ),
+
+                          // Loading indicator at bottom
+                          if (clipState.isLoading)
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      widget.gameColor ??
+                                          const Color(0xFF00FFFF),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // End of list indicator
+                          if (!clipState.hasMore && clips.isNotEmpty)
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24.0),
+                                child: Center(
+                                  child: Text(
+                                    'You\'ve reached the end 🎮',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.5),
+                                      fontSize: 14,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          // Bottom spacing
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: 80),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ),
-
-              // Bottom spacing
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 80),
-              ),
-            ],
-          ),
+            ),
+          ],
         );
       },
       loading: () => Center(

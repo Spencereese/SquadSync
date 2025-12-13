@@ -40,7 +40,7 @@ class AvailableLobbiesWidget extends ConsumerWidget {
               Icon(Icons.group_add, color: Colors.orangeAccent, size: 20),
               SizedBox(width: 8),
               Text(
-                'Available Squads',
+                'Available Lobbies',
                 style: TextStyle(
                   color: Colors.orangeAccent,
                   fontWeight: FontWeight.bold,
@@ -52,13 +52,13 @@ class AvailableLobbiesWidget extends ConsumerWidget {
           const SizedBox(height: 8),
           ...publicGroups
               .take(5)
-              .map((group) => _buildSquadItem(context, ref, group)),
+              .map((group) => _buildLobbyItem(context, ref, group)),
         ],
       ),
     );
   }
 
-  Widget _buildSquadItem(
+  Widget _buildLobbyItem(
       BuildContext context, WidgetRef ref, Map<String, dynamic> data) {
     final gameName = data['name'] ?? 'Unknown Game';
     final maxSpots = data['maxSpots'] ?? 4;
@@ -80,7 +80,7 @@ class AvailableLobbiesWidget extends ConsumerWidget {
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: () => _joinSquad(context, ref, data),
+            onPressed: () => _joinLobby(context, ref, data),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orangeAccent,
               foregroundColor: Colors.black,
@@ -94,7 +94,7 @@ class AvailableLobbiesWidget extends ConsumerWidget {
     );
   }
 
-  Future<void> _joinSquad(BuildContext context, WidgetRef ref,
+  Future<void> _joinLobby(BuildContext context, WidgetRef ref,
       Map<String, dynamic> squadData) async {
     final currentUser = AuthServiceSupabase().currentUser;
     if (currentUser == null) return;
@@ -105,7 +105,7 @@ class AvailableLobbiesWidget extends ConsumerWidget {
 
       await ref
           .read(ln.lobbyNotifierProvider.notifier)
-          .joinSquad(code, currentUser.id);
+          .joinLobby(code, currentUser.id);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -119,7 +119,7 @@ class AvailableLobbiesWidget extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to join squad: $e'),
+            content: Text('Failed to join lobby: $e'),
             backgroundColor: Colors.red,
           ),
         );

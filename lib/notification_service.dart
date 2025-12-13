@@ -79,7 +79,7 @@ class NotificationService {
       if (currentUser != null) {
         await SupabaseService.client.from('users').update({
           'fcm_token': newToken,
-        }).eq('id', currentUser.id);
+        }).eq('uid', currentUser.id);
       }
     });
   }

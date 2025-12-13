@@ -10,6 +10,6 @@ export 'igdb_auth_service.dart';
 export 'igdb_service.dart';
 export 'message_service.dart';
 export 'timer_service.dart';
-export 'reaction_service.dart';
+// export 'reaction_service.dart'; // File not found
 export 'grok_service.dart';
 export 'voice_service.dart';

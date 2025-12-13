@@ -2,117 +2,129 @@ import 'package:flutter/material.dart';
 import '../../services/supabase_service.dart';
 import '../../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../../utils.dart';
 import '../../domain/entities/message.dart';
-import '../../presentation/notifiers/user_notifier.dart';
-import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
-import '../../presentation/notifiers/game_notifier.dart';
 import '../../presentation/notifiers/chat_notifier.dart';
 import '../chat_screen.dart';
 
-/// Unified dialog for all group-related actions: join, create, and browse public groups
+/// Dialog for creating a new group with enhanced UI
 class GroupActionsDialog extends ConsumerStatefulWidget {
-  final int initialTabIndex;
-  final String? initialCode;
-
-  const GroupActionsDialog({
-    super.key,
-    this.initialTabIndex = 0,
-    this.initialCode,
-  });
+  const GroupActionsDialog({super.key});
 
   @override
   ConsumerState<GroupActionsDialog> createState() => _GroupActionsDialogState();
 }
 
-class _GroupActionsDialogState extends ConsumerState<GroupActionsDialog>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
+class _GroupActionsDialogState extends ConsumerState<GroupActionsDialog> {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: 2,
-      vsync: this,
-      initialIndex: widget.initialTabIndex,
-    );
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: Colors.grey[900],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      backgroundColor: Colors.transparent,
       child: Container(
         width: MediaQuery.of(context).size.width * 0.9,
-        height: MediaQuery.of(context).size.height * 0.8,
-        padding: const EdgeInsets.all(16),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.grey[900]!,
+              Colors.grey[850]!,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.cyanAccent.withValues(alpha: 0.3),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.cyanAccent.withValues(alpha: 0.1),
+              blurRadius: 20,
+              spreadRadius: 5,
+            ),
+          ],
+        ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Header with close button
-            Row(
-              children: [
-                const Text(
-                  'Group Actions',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Tab bar
+            // Header with gradient and close button
             Container(
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                indicator: BoxDecoration(
-                  color: Colors.cyanAccent,
-                  borderRadius: BorderRadius.circular(8),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.cyanAccent.withValues(alpha: 0.15),
+                    Colors.transparent,
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                 ),
-                indicatorSize: TabBarIndicatorSize.tab,
-                labelColor: Colors.black,
-                unselectedLabelColor: Colors.white,
-                labelPadding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                tabs: const [
-                  Tab(text: 'Join'),
-                  Tab(text: 'Create'),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.cyanAccent.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.group_add,
+                      color: Colors.cyanAccent,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Create New Group',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Build your gaming community',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
 
-            // Tab content
+            // Content
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _JoinGroupTab(initialCode: widget.initialCode),
-                  _CreateGroupTab(),
-                ],
-              ),
+              child: _CreateGroupTab(),
             ),
           ],
         ),
@@ -121,40 +133,117 @@ class _GroupActionsDialogState extends ConsumerState<GroupActionsDialog>
   }
 }
 
-/// Tab for joining a group with invite code, browsing, and suggested groups
-class _JoinGroupTab extends ConsumerStatefulWidget {
-  final String? initialCode;
-
-  const _JoinGroupTab({this.initialCode});
-
+/// Tab for creating a new group with optional members and games
+class _CreateGroupTab extends ConsumerStatefulWidget {
   @override
-  ConsumerState<_JoinGroupTab> createState() => _JoinGroupTabState();
+  ConsumerState<_CreateGroupTab> createState() => _CreateGroupTabState();
 }
 
-class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
-  final _codeController = TextEditingController();
+class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
+  final _nameController = TextEditingController();
   final _searchController = TextEditingController();
-  final AuthServiceSupabase _authService = AuthServiceSupabase();
-
-  List<Map<String, dynamic>> _searchResults = [];
-  List<Map<String, dynamic>> _suggestedGroups = [];
+  final _codeController = TextEditingController();
+  final _authService = AuthServiceSupabase();
+  bool _isPublic = false; // Default to private
   bool _isLoading = false;
   bool _isJoining = false;
+  final List<String> _selectedGames = ['Any Game']; // Default to "Any Game"
+  final Set<String> _selectedFriendUids = {};
+  List<Map<String, dynamic>> _searchResults = [];
+  List<Map<String, dynamic>> _suggestedGroups = [];
 
   @override
   void initState() {
     super.initState();
-    if (widget.initialCode != null) {
-      _codeController.text = widget.initialCode!;
-    }
     _loadSuggestedGroups();
   }
 
   @override
   void dispose() {
-    _codeController.dispose();
+    _nameController.dispose();
     _searchController.dispose();
+    _codeController.dispose();
     super.dispose();
+  }
+
+  /// Create group - allows zero members (just yourself)
+  // ignore: unused_element
+  Future<void> _createGroup() async {
+    final groupName = _nameController.text.trim();
+    if (groupName.isEmpty) {
+      showSnackBar(context, 'Please enter a group name');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final currentUser = AuthServiceSupabase().currentUser;
+      if (currentUser == null) return;
+
+      // Use proper repository pattern instead of direct Supabase calls
+      final chatNotifier = ref.read(chatNotifierProvider.notifier);
+
+      // Build description with games (exclude "Any Game")
+      final gamesList = _selectedGames.where((g) => g != 'Any Game').toList();
+      final description =
+          gamesList.isNotEmpty ? 'Games: ${gamesList.join(", ")}' : null;
+
+      // Create group
+      final newGroup = await chatNotifier.createGroup(
+        groupName,
+        _isPublic,
+        description: description,
+      );
+
+      if (mounted && newGroup != null) {
+        // Add selected friends to group (without requiring acceptance)
+        if (_selectedFriendUids.isNotEmpty) {
+          try {
+            // Use joinGroup method for each friend (automatically adds them)
+            for (final friendUid in _selectedFriendUids) {
+              try {
+                await SupabaseService.client.rpc(
+                  'append_group_member',
+                  params: {
+                    'group_id': newGroup.id,
+                    'user_id': friendUid,
+                  },
+                );
+              } catch (e) {
+                debugPrint('Error adding friend $friendUid: $e');
+              }
+            }
+          } catch (e) {
+            debugPrint('Error adding friends to group: $e');
+            // Don't fail group creation if friend-adding fails
+          }
+        }
+
+        Navigator.pop(context);
+        showSnackBar(context, 'Group "$groupName" created successfully!');
+
+        // Navigate to the new chat screen
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatType: ChatType.userGroup,
+              chatGroupId: newGroup.id,
+              chatGroupName: newGroup.name,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorSnackBar(context, 'Error creating group: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   Future<void> _loadSuggestedGroups() async {
@@ -162,24 +251,21 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
     if (currentUser == null) return;
 
     try {
-      // Get popular public groups (most members first) using the view
       final response = await SupabaseService.client
-          .from('chat_groups_with_stats')
+          .from('chat_groups')
           .select()
           .eq('is_public', true)
-          .order('member_count', ascending: false)
-          .limit(10);
+          .order('created_at', ascending: false)
+          .limit(5);
 
-      final groups = <Map<String, dynamic>>[];
-
+      final results = <Map<String, dynamic>>[];
       for (var data in (response as List<dynamic>)) {
         final groupData = data as Map<String, dynamic>;
         final members = List<String>.from(groupData['member_uids'] ?? []);
         final isAlreadyMember = members.contains(currentUser.id);
 
-        // Only show groups the user is not already a member of
         if (!isAlreadyMember) {
-          groups.add({
+          results.add({
             'id': groupData['id'],
             'data': groupData,
             'type': 'user_group',
@@ -188,7 +274,7 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
       }
 
       if (mounted) {
-        setState(() => _suggestedGroups = groups.take(5).toList());
+        setState(() => _suggestedGroups = results);
       }
     } catch (e) {
       debugPrint('Error loading suggested groups: $e');
@@ -197,61 +283,30 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
 
   Future<void> _joinGroup() async {
     final code = _codeController.text.trim();
-    if (code.isEmpty || !mounted) return;
-
-    // Basic validation - group codes should be reasonable length
-    if (code.length < 6 || code.length > 20) {
-      if (mounted) {
-        showSnackBar(context, 'Invalid group code format');
-      }
-      return;
-    }
-
-    // Check for potentially malicious input
-    if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(code)) {
-      if (mounted) {
-        showSnackBar(context, 'Group code contains invalid characters');
-      }
+    if (code.isEmpty) {
+      showSnackBar(context, 'Please enter an invite code');
       return;
     }
 
     setState(() => _isJoining = true);
+
     try {
-      final userNotifier = ref.read(userNotifierProvider.notifier);
+      final response = await SupabaseService.client
+          .from('chat_groups')
+          .select()
+          .eq('invite_code', code)
+          .maybeSingle();
 
-      // Try to join as a chat group first (most common case for invite codes)
-      try {
-        final success = await userNotifier.joinGroup(code);
-        if (success) {
-          if (mounted) {
-            Navigator.pop(context);
-            showSnackBar(context, 'Successfully joined group!');
-          }
-          return;
-        } else {
-          throw Exception(
-              'Failed to join group - group may not exist or you may already be a member');
+      if (response == null) {
+        if (mounted) {
+          showSnackBar(context, 'Invalid invite code');
         }
-      } catch (chatGroupError) {
-        debugPrint('Chat group join failed: $chatGroupError');
-
-        // If chat group join fails, try squad join as fallback
-        try {
-          final currentUser = AuthServiceSupabase().currentUser;
-          if (currentUser == null) throw Exception('User not authenticated');
-
-          final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
-          await squadNotifier.joinSquad(code, currentUser.id);
-          if (mounted) {
-            Navigator.pop(context);
-            showSnackBar(context, 'Successfully joined squad!');
-          }
-        } catch (squadError) {
-          debugPrint('Squad join also failed: $squadError');
-          // Both attempts failed, show the more relevant error
-          throw chatGroupError; // Chat group error is more likely for invite codes
-        }
+        return;
       }
+
+      final groupId = response['id'];
+      final groupData = response;
+      await _joinPublicGroup(groupId, groupData);
     } catch (e) {
       if (mounted) {
         showErrorSnackBar(context, 'Error joining group: $e');
@@ -344,7 +399,7 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
       final userResponse = await SupabaseService.client
           .from('users')
           .select('user_groups')
-          .eq('id', currentUser.id)
+          .eq('uid', currentUser.id)
           .maybeSingle();
 
       final userGroups = userResponse != null
@@ -362,7 +417,7 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
 
         await SupabaseService.client
             .from('users')
-            .update({'user_groups': userGroups}).eq('id', currentUser.id);
+            .update({'user_groups': userGroups}).eq('uid', currentUser.id);
       }
 
       if (mounted) {
@@ -680,393 +735,5 @@ class _JoinGroupTabState extends ConsumerState<_JoinGroupTab> {
   }
 }
 
-/// Tab for creating a new group
-class _CreateGroupTab extends ConsumerStatefulWidget {
-  @override
-  ConsumerState<_CreateGroupTab> createState() => _CreateGroupTabState();
-}
-
-class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
-  final _nameController = TextEditingController();
-  bool _isPublic = true;
-  bool _isLoading = false;
-  final List<String> _selectedGames = [];
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _createGroup() async {
-    final groupName = _nameController.text.trim();
-    if (groupName.isEmpty) {
-      showSnackBar(context, 'Please enter a group name');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final currentUser = AuthServiceSupabase().currentUser;
-      if (currentUser == null) return;
-
-      // Use proper repository pattern instead of direct Supabase calls
-      final chatNotifier = ref.read(chatNotifierProvider.notifier);
-
-      // TODO: Add support for games in group metadata
-      final newGroup = await chatNotifier.createGroup(
-        groupName,
-        _isPublic,
-        description: _selectedGames.isNotEmpty
-            ? 'Games: ${_selectedGames.join(", ")}'
-            : null,
-      );
-
-      if (mounted && newGroup != null) {
-        // Show invite code dialog for private groups
-        if (!_isPublic) {
-          _showInviteCodeDialog(newGroup.id, groupName);
-        } else {
-          Navigator.pop(context);
-          // Use addPostFrameCallback to ensure context is valid for navigation
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              showSnackBar(context, 'Group created successfully!');
-              // Navigate to the new group
-              _openChatGroup(newGroup.id, groupName);
-            }
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        showErrorSnackBar(context, 'Error creating group: $e');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  void _showInviteCodeDialog(String groupId, String groupName) {
-    // For now, we'll use the group ID as the invite code
-    // In a real implementation, you might want to generate shorter codes
-    final inviteCode = groupId.substring(0, 8).toUpperCase();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: Text(
-          'Group Created: $groupName',
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Your private group has been created! Share this invite code with friends to let them join:',
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      inviteCode,
-                      style: const TextStyle(
-                        color: Colors.cyanAccent,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.copy, color: Colors.cyanAccent),
-                    onPressed: () {
-                      // Copy to clipboard functionality would go here
-                      showSnackBar(context, 'Invite code copied to clipboard!');
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'You can also share the invite code later from the group chat.',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Close group actions dialog
-              // Use addPostFrameCallback to ensure context is valid for navigation
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  // Navigate to the new group
-                  _openChatGroup(groupId, groupName);
-                }
-              });
-            },
-            child:
-                const Text('Go to Group', style: TextStyle(color: Colors.cyan)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _openChatGroup(String groupId, String groupName) {
-    // Use MaterialPageRoute instead of named route
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          chatType: ChatType.userGroup,
-          chatGroupId: groupId,
-          chatGroupName: groupName,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final squadAsync = ref.watch(ln.lobbyNotifierProvider);
-    final gameAsync = ref.watch(gameNotifierProvider);
-    final gameState = gameAsync.maybeWhen(
-        data: (state) => state, orElse: () => GameState.initial());
-
-    final availableGames = squadAsync.maybeWhen(
-      data: (squadState) => squadState.availableGames.isNotEmpty
-          ? squadState.availableGames
-          : gameState.availableGames.map((g) => g.toJson()).toList(),
-      orElse: () => gameState.availableGames.map((g) => g.toJson()).toList(),
-    );
-
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Create a Group',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Create a new group for chatting and coordinating.',
-            style: TextStyle(color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
-
-          // Group name
-          TextField(
-            controller: _nameController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Group name',
-              hintStyle: const TextStyle(color: Colors.grey),
-              filled: true,
-              fillColor: Colors.grey[800],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
-              ),
-              prefixIcon: const Icon(Icons.group, color: Colors.cyanAccent),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Game focus selection - Multi-select with chips
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Selected games chips
-              if (_selectedGames.isNotEmpty) ...[
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _selectedGames.map((game) {
-                    return Chip(
-                      label: Text(
-                        game,
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      backgroundColor: Colors.cyanAccent.withValues(alpha: 0.2),
-                      deleteIcon: const Icon(Icons.close,
-                          size: 16, color: Colors.cyanAccent),
-                      onDeleted: () {
-                        setState(() {
-                          _selectedGames.remove(game);
-                        });
-                      },
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: const BorderSide(
-                            color: Colors.cyanAccent, width: 1),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Add game search field
-              TypeAheadField<String>(
-                builder: (context, controller, focusNode) {
-                  return TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: _selectedGames.isEmpty
-                          ? 'Game focus (optional)'
-                          : 'Add another game',
-                      hintStyle: const TextStyle(color: Colors.grey),
-                      filled: true,
-                      fillColor: Colors.grey[800],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                      prefixIcon:
-                          const Icon(Icons.games, color: Colors.cyanAccent),
-                    ),
-                  );
-                },
-                suggestionsCallback: (pattern) async {
-                  // Always include "Any Game" option
-                  List<String> suggestions = ['Any Game'];
-
-                  // Add available games that haven't been selected yet
-                  final unselectedGames = availableGames
-                      .where((game) =>
-                          !_selectedGames.contains(game['name'] as String))
-                      .map((game) => game['name'] as String)
-                      .toList();
-
-                  if (pattern.isEmpty) {
-                    suggestions.addAll(unselectedGames);
-                  } else {
-                    // Filter games based on search pattern
-                    final filteredGames = unselectedGames
-                        .where((game) =>
-                            game.toLowerCase().contains(pattern.toLowerCase()))
-                        .toList();
-                    suggestions.addAll(filteredGames);
-
-                    // If no local matches and pattern is long enough, search IGDB
-                    if (filteredGames.isEmpty && pattern.length >= 2) {
-                      try {
-                        final gameNotifier =
-                            ref.read(gameNotifierProvider.notifier);
-                        final igdbResults =
-                            await gameNotifier.fetchGamesFromIGDB(pattern);
-                        final igdbGameNames = igdbResults
-                            .where((game) =>
-                                !_selectedGames.contains(game['name']))
-                            .map((game) => game['name'] as String)
-                            .toList();
-                        suggestions.addAll(igdbGameNames);
-                      } catch (e) {
-                        // If IGDB fails, just continue with local suggestions
-                      }
-                    }
-                  }
-
-                  return suggestions;
-                },
-                itemBuilder: (context, suggestion) {
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      suggestion,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  );
-                },
-                onSelected: (suggestion) {
-                  if (!_selectedGames.contains(suggestion)) {
-                    setState(() {
-                      _selectedGames.add(suggestion);
-                    });
-                  }
-                },
-                emptyBuilder: (context) => const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    'No games found',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Privacy setting
-          Row(
-            children: [
-              const Text(
-                'Public Group',
-                style: TextStyle(color: Colors.white),
-              ),
-              const Spacer(),
-              Switch(
-                value: _isPublic,
-                onChanged: (value) => setState(() => _isPublic = value),
-                activeThumbColor: Colors.cyanAccent,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _isPublic
-                ? 'Anyone can find and join this group'
-                : 'Only people with the invite code can join',
-            style: const TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _createGroup,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.cyanAccent,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.black)
-                  : const Text('Create Group'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+/// Tab for creating a new group with optional members and games
 /// Tab for browsing public groups

@@ -7,29 +7,20 @@ import '../../services/supabase_service.dart';
 import '../../core/injection.dart';
 import '../../services/friends_service.dart';
 
-class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
+class UserNotifier extends AsyncNotifier<AppUser?> {
   final AuthServiceSupabase _authService = AuthServiceSupabase();
   late final UserRepository _repository;
   late final FriendsService _friendsService;
 
-  UserNotifier() {
-    debugPrint('🔵 UserNotifier: Constructor called - instance created');
-  }
-
   @override
   Future<AppUser?> build() async {
     try {
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      debugPrint('UserNotifier: build() called');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
       // Get dependencies from providers
       _repository = ref.read(userRepositoryProvider);
       _friendsService = getIt<FriendsService>();
 
       // Return basic user immediately if authenticated
       final supabaseUser = _authService.currentUser;
-      debugPrint('UserNotifier: Current user from auth: ${supabaseUser?.id}');
 
       if (supabaseUser != null) {
         final basicUser = AppUser(
@@ -70,25 +61,10 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
         // Load full user data in background
         Future.microtask(() async {
           try {
-            debugPrint('UserNotifier: Loading full user profile...');
             final fullUser = await _repository.getCurrentUser();
-            debugPrint(
-                'UserNotifier: Full user loaded - displayName: ${fullUser?.displayName}, pinnedGames: ${fullUser?.pinnedGames.length ?? 0}, userGroups: ${fullUser?.userGroups.length ?? 0}');
-            if (fullUser != null) {
-              debugPrint('UserNotifier: Full user UID: ${fullUser.uid}');
-              debugPrint(
-                  'UserNotifier: Profile image: ${fullUser.profileImage}');
-              debugPrint('UserNotifier: Friends: ${fullUser.friends.length}');
-            }
-            if (fullUser?.userGroups.isNotEmpty == true) {
-              debugPrint(
-                  'UserNotifier: first group: ${fullUser!.userGroups.first}');
-            }
             state = AsyncData(fullUser ?? basicUser);
-            debugPrint('UserNotifier: State updated with full user data');
-          } catch (e, stackTrace) {
+          } catch (e) {
             debugPrint('UserNotifier: ❌ ERROR loading full user: $e');
-            debugPrint('UserNotifier: Stack trace: $stackTrace');
             // Keep basic user on error
             state = AsyncData(basicUser);
           }
@@ -414,7 +390,7 @@ class UserNotifier extends AutoDisposeAsyncNotifier<AppUser?> {
   }
 }
 
-final userNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<UserNotifier, AppUser?>(
-  () => UserNotifier(),
+// Backward compatibility alias
+final userNotifierProvider = AsyncNotifierProvider<UserNotifier, AppUser?>(
+  UserNotifier.new,
 );

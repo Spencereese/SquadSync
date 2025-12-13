@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/entities/lobby.dart';
-import '../presentation/notifiers/current_lobby_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart';
 import '../utils.dart';
 
 class SpotsLobbyBar extends ConsumerWidget {
@@ -44,11 +44,13 @@ class SpotsLobbyBar extends ConsumerWidget {
   }
 
   void _claimSpot(WidgetRef ref, int spotIndex) {
-    ref.read(currentLobbyProvider.notifier).claimSpot(spotIndex);
+    // Use unified notifier's simple claim method
+    ref.read(lobbyNotifierProvider.notifier).claimSpotSimple(spotIndex);
   }
 
   void _unclaimSpot(WidgetRef ref, int spotIndex) {
-    ref.read(currentLobbyProvider.notifier).unclaimSpot(spotIndex);
+    // Use unified notifier's simple unclaim method
+    ref.read(lobbyNotifierProvider.notifier).unclaimSpotSimple(spotIndex);
   }
 }
 

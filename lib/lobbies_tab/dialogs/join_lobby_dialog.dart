@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../services/auth_service_supabase.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
@@ -47,7 +48,7 @@ class JoinLobbyDialog extends ConsumerWidget {
                     final userId = AuthServiceSupabase().currentUser!.id;
                     ref
                         .read(ln.lobbyNotifierProvider.notifier)
-                        .joinSquad(lobby['id'], userId);
+                        .joinLobby(lobby['id'], userId);
                     // Defer navigation to avoid _debugLocked assertion
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (Navigator.canPop(context)) {

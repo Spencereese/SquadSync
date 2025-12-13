@@ -42,6 +42,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(onboardingProvider);
+    final notifier = ref.read(onboardingProvider.notifier);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0E14),
@@ -54,34 +55,76 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
           SafeArea(
             child: Column(
               children: [
-                // Skip button - only show if authenticated
-                if (state.currentPage > 0)
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: TextButton(
-                        onPressed: () {
-                          if (state.currentPage < 3) {
-                            _pageController.animateToPage(
-                              3,
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
-                          }
-                        },
-                        child: Text(
-                          'SKIP',
-                          style: TextStyle(
-                            color: Colors.cyan.withOpacity(0.5),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 1.2,
-                          ),
+                // Top bar with progress and skip
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      // Progress indicator
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: LinearProgressIndicator(
+                                      value: notifier.progressPercentage,
+                                      backgroundColor:
+                                          Colors.cyan.withOpacity(0.1),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.cyan.withOpacity(0.7),
+                                      ),
+                                      minHeight: 6,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  '${state.currentPage + 1}/${state.totalPages}',
+                                  style: TextStyle(
+                                    color: Colors.cyan.withOpacity(0.6),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
-                    ),
+
+                      // Skip button - only show if not on last page
+                      if (state.currentPage > 0 &&
+                          state.currentPage < state.totalPages - 1)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 16.0),
+                          child: TextButton(
+                            onPressed: () {
+                              notifier.skipToEnd();
+                              _pageController.animateToPage(
+                                state.totalPages - 1,
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                            child: Text(
+                              'SKIP',
+                              style: TextStyle(
+                                color: Colors.cyan.withOpacity(0.5),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+                ),
 
                 // Page view
                 Expanded(

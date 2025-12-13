@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
@@ -12,6 +14,139 @@ import 'package:retry/retry.dart';
 import 'app_flow_manager.dart';
 import 'supabase_voice_room_service.dart';
 import '../chat/sqlite_helper.dart';
+import 'timer_service.dart'; // For sqliteHelperProvider
+
+/// Riverpod provider for VoiceService singleton
+final voiceServiceProvider = Provider<VoiceService>((ref) {
+  final appFlowManager = ref.watch(appFlowManagerProvider);
+  final sqliteHelper = ref.watch(sqliteHelperProvider);
+  return VoiceService(
+    appFlowManager: appFlowManager,
+    sqliteHelper: sqliteHelper,
+  );
+});
+
+/// Riverpod provider for SpeechToText singleton
+final speechToTextProvider = Provider<stt.SpeechToText>((ref) {
+  return stt.SpeechToText();
+});
+
+/// Voice-to-text state
+class VoiceToTextState {
+  final bool isListening;
+  final bool isAvailable;
+  final String recognizedText;
+  final double soundLevel;
+  final String? error;
+
+  const VoiceToTextState({
+    this.isListening = false,
+    this.isAvailable = false,
+    this.recognizedText = '',
+    this.soundLevel = 0.0,
+    this.error,
+  });
+
+  VoiceToTextState copyWith({
+    bool? isListening,
+    bool? isAvailable,
+    String? recognizedText,
+    double? soundLevel,
+    String? error,
+  }) {
+    return VoiceToTextState(
+      isListening: isListening ?? this.isListening,
+      isAvailable: isAvailable ?? this.isAvailable,
+      recognizedText: recognizedText ?? this.recognizedText,
+      soundLevel: soundLevel ?? this.soundLevel,
+      error: error ?? this.error,
+    );
+  }
+}
+
+/// Riverpod StateNotifier for voice-to-text
+class VoiceToTextNotifier extends StateNotifier<VoiceToTextState> {
+  final stt.SpeechToText _speech;
+
+  VoiceToTextNotifier(this._speech) : super(const VoiceToTextState());
+
+  Future<void> initialize() async {
+    try {
+      final available = await _speech.initialize(
+        onError: (error) {
+          state = state.copyWith(error: error.errorMsg, isListening: false);
+        },
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            state = state.copyWith(isListening: false);
+          }
+        },
+      );
+      state = state.copyWith(isAvailable: available);
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
+
+  Future<void> startListening({
+    required Function(String) onResult,
+    String localeId = 'en_US',
+  }) async {
+    if (!state.isAvailable) {
+      await initialize();
+    }
+
+    if (!state.isAvailable) {
+      state = state.copyWith(error: 'Speech recognition not available');
+      return;
+    }
+
+    try {
+      await _speech.listen(
+        onResult: (result) {
+          state = state.copyWith(
+            recognizedText: result.recognizedWords,
+            soundLevel: result.hasConfidenceRating ? result.confidence : 0.0,
+          );
+          onResult(result.recognizedWords);
+        },
+        localeId: localeId,
+        cancelOnError: true,
+        partialResults: true,
+        listenMode: stt.ListenMode.confirmation,
+      );
+      state = state.copyWith(isListening: true, error: null);
+    } catch (e) {
+      state = state.copyWith(error: e.toString(), isListening: false);
+    }
+  }
+
+  Future<void> stopListening() async {
+    try {
+      await _speech.stop();
+      state = state.copyWith(isListening: false);
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
+
+  void reset() {
+    state = state.copyWith(recognizedText: '', soundLevel: 0.0, error: null);
+  }
+
+  @override
+  void dispose() {
+    _speech.cancel();
+    super.dispose();
+  }
+}
+
+/// Provider for VoiceToTextNotifier
+final voiceToTextNotifierProvider =
+    StateNotifierProvider<VoiceToTextNotifier, VoiceToTextState>((ref) {
+  final speech = ref.watch(speechToTextProvider);
+  return VoiceToTextNotifier(speech);
+});
 
 /// Voice service error types
 enum VoiceServiceError {
@@ -609,8 +744,8 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
       state = AsyncValue.data(
           currentState.copyWith(participants: updatedParticipants));
 
-      // Sync to Firestore
-      await _syncParticipantState(uid);
+      // Sync to Supabase
+      await _syncParticipantStateSupabase(uid);
     });
   }
 
@@ -830,8 +965,8 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
         state = AsyncValue.data(
             currentState.copyWith(participants: updatedParticipants));
 
-        // Sync to Firestore
-        await _syncRoomState();
+        // Sync to Supabase
+        await _syncRoomStateSupabase();
       } catch (e, stack) {
         state = AsyncValue.error(e, stack);
       }
@@ -860,19 +995,19 @@ class VoiceRoomNotifier extends StateNotifier<AsyncValue<VoiceRoomState>> {
             currentState.copyWith(participants: updatedParticipants));
 
         // Sync participant state
-        await _syncParticipantState(uid);
+        await _syncParticipantStateSupabase(uid);
       } catch (e, stack) {
         state = AsyncValue.error(e, stack);
       }
     });
   }
 
-  Future<void> _syncRoomState() async {
+  Future<void> _syncRoomStateSupabase() async {
     // Room state now managed via Supabase Realtime
     // No explicit sync needed - happens via presence tracking
   }
 
-  Future<void> _syncParticipantState(String uid) async {
+  Future<void> _syncParticipantStateSupabase(String uid) async {
     // Participant state now managed via Supabase Realtime
     // No explicit sync needed - happens via presence tracking
   }

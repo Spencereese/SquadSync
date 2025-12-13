@@ -335,7 +335,7 @@ class __$$MessageImplCopyWithImpl<$Res>
 
 /// @nodoc
 
-class _$MessageImpl extends _Message {
+class _$MessageImpl extends _Message with DiagnosticableTreeMixin {
   const _$MessageImpl(
       {required this.id,
       required this.senderId,
@@ -430,8 +430,34 @@ class _$MessageImpl extends _Message {
   final DateTime? deletedAt;
 
   @override
-  String toString() {
+  String toString({DiagnosticLevel minLevel = DiagnosticLevel.info}) {
     return 'Message(id: $id, senderId: $senderId, text: $text, timestamp: $timestamp, messageType: $messageType, mediaUrl: $mediaUrl, mediaType: $mediaType, reactions: $reactions, replyTo: $replyTo, poll: $poll, voiceNoteUrl: $voiceNoteUrl, voiceNoteDuration: $voiceNoteDuration, aiResponse: $aiResponse, metadata: $metadata, clipData: $clipData, isEdited: $isEdited, editedAt: $editedAt, isDeleted: $isDeleted, deletedAt: $deletedAt)';
+  }
+
+  @override
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties
+      ..add(DiagnosticsProperty('type', 'Message'))
+      ..add(DiagnosticsProperty('id', id))
+      ..add(DiagnosticsProperty('senderId', senderId))
+      ..add(DiagnosticsProperty('text', text))
+      ..add(DiagnosticsProperty('timestamp', timestamp))
+      ..add(DiagnosticsProperty('messageType', messageType))
+      ..add(DiagnosticsProperty('mediaUrl', mediaUrl))
+      ..add(DiagnosticsProperty('mediaType', mediaType))
+      ..add(DiagnosticsProperty('reactions', reactions))
+      ..add(DiagnosticsProperty('replyTo', replyTo))
+      ..add(DiagnosticsProperty('poll', poll))
+      ..add(DiagnosticsProperty('voiceNoteUrl', voiceNoteUrl))
+      ..add(DiagnosticsProperty('voiceNoteDuration', voiceNoteDuration))
+      ..add(DiagnosticsProperty('aiResponse', aiResponse))
+      ..add(DiagnosticsProperty('metadata', metadata))
+      ..add(DiagnosticsProperty('clipData', clipData))
+      ..add(DiagnosticsProperty('isEdited', isEdited))
+      ..add(DiagnosticsProperty('editedAt', editedAt))
+      ..add(DiagnosticsProperty('isDeleted', isDeleted))
+      ..add(DiagnosticsProperty('deletedAt', deletedAt));
   }
 
   @override

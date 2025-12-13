@@ -74,9 +74,54 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
             .order('timestamp', ascending: false)
             .limit(limit);
 
-    return (response as List<dynamic>)
-        .map((data) => Message.fromJson(data as Map<String, dynamic>))
-        .toList();
+    final messages = <Message>[];
+    for (final item in (response as List)) {
+      try {
+        // Safely cast to Map
+        if (item is! Map) continue;
+
+        final messageData = Map<String, dynamic>.from(item as Map);
+
+        // Clean JSONB fields with incompatible data types using the same logic as stream
+        for (final key in [
+          'metadata',
+          'reactions',
+          'clip_data',
+          'clipData',
+          'poll',
+          'ai_response'
+        ]) {
+          final value = messageData[key];
+          if (value == null) continue;
+
+          // Remove if it's a List when we expect Map
+          if (key == 'reactions') {
+            if (value is List && value.isEmpty)
+              continue; // Empty list is OK for reactions
+            if (value is! Map && value is! List) messageData.remove(key);
+          } else if (key == 'metadata') {
+            if (value is List ||
+                (value is Map &&
+                    (value.containsKey('photos') ||
+                        value.containsKey('videos') ||
+                        value.containsKey('audio')))) {
+              messageData.remove(key);
+            }
+          } else {
+            // For clip_data, poll, ai_response - only Maps allowed
+            if (value is List) messageData.remove(key);
+          }
+        }
+
+        messages.add(Message.fromJson(messageData));
+      } catch (e) {
+        debugPrint('❌ Failed to parse message in fetchMessages: $e');
+        // Skip corrupt message
+        continue;
+      }
+    }
+
+    return messages;
   }
 
   @override
@@ -127,17 +172,19 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   Stream<Map<String, Set<String>>> watchTypingIndicators(String chatGroupId) {
     return _supabase
         .from('typing_indicators')
-        .stream(primaryKey: ['id']).map((data) {
-      final typing = <String, Set<String>>{};
-      for (final item in data) {
-        // Filter for this chat and active typing
-        if (item['chat_id'] == chatGroupId && item['is_typing'] == true) {
-          final userId = item['user_id'] as String;
-          typing[userId] = {chatGroupId};
-        }
-      }
-      return typing;
-    });
+        .stream(primaryKey: ['user_id', 'chat_id'])
+        .eq('chat_id', chatGroupId)
+        .map((data) {
+          final indicators = <String, Set<String>>{chatGroupId: {}};
+          // Filter for is_typing = true in the map since we can't chain eq after stream
+          for (final item in data) {
+            if (item['is_typing'] == true) {
+              final userId = item['user_id'] as String;
+              indicators[chatGroupId]!.add(userId);
+            }
+          }
+          return indicators;
+        });
   }
 
   @override
@@ -332,14 +379,25 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       throw Exception('User not authenticated');
     }
 
+    final userId = currentUser.id;
+    if (userId.isEmpty) {
+      throw Exception('User ID is empty - authentication issue');
+    }
+
     debugPrint('📝 Creating group: ${group.name}');
     debugPrint('   ID: ${group.id}');
     debugPrint('   Member UIDs: ${group.memberUids}');
     debugPrint('   Created by: ${group.createdBy}');
+    debugPrint('   Current user ID: $userId');
 
     // Ensure member_uids is never null or empty
     final memberUids =
         group.memberUids.isNotEmpty ? group.memberUids : [group.createdBy];
+
+    // Verify memberUids contains valid values
+    if (memberUids.isEmpty || memberUids.any((uid) => uid.isEmpty)) {
+      throw Exception('Invalid member UIDs: $memberUids');
+    }
 
     debugPrint('   Final member_uids: $memberUids');
 
@@ -353,7 +411,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       'created_by': group.createdBy,
       'created_at': group.createdAt.toIso8601String(),
       'is_dm': false,
-      'game_focus': null,
+      'game_focus': null, // Column is game_focus, not game_name
     };
 
     debugPrint('   Inserting data: $groupData');
@@ -381,7 +439,8 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           'member_uids': memberUids,
           'game_focus': null, // No specific game yet
           'max_spots': 8, // Default max spots
-          'creator_uid': group.createdBy,
+          'created_by': group
+              .createdBy, // Changed from creator_uid to match actual schema
           'created_at': DateTime.now().toIso8601String(),
           'spot_timers': <String, dynamic>{}, // Empty timers
           'viewers': memberUids, // All members can view
@@ -457,21 +516,53 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
 
   @override
   Future<void> joinGroup(String groupId, String userId) async {
-    // Get current members
-    final response = await _supabase
-        .from('chat_groups')
-        .select('member_uids')
-        .eq('id', groupId)
-        .single();
+    try {
+      if (userId.isEmpty) {
+        throw Exception('User ID is empty - cannot join group');
+      }
 
-    final currentMembers = List<String>.from(response['member_uids'] ?? []);
-    if (!currentMembers.contains(userId)) {
-      currentMembers.add(userId);
+      debugPrint('👥 Joining group: $groupId');
+      debugPrint('   User ID: $userId');
 
-      await _supabase.from('chat_groups').update({
-        'member_uids': currentMembers,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', groupId);
+      // Use array_append for atomic operation (RLS compliant)
+      await _supabase.rpc(
+        'append_group_member',
+        params: {
+          'group_id': groupId,
+          'user_id': userId,
+        },
+      ).catchError((error) async {
+        // Fallback to manual update if RPC not available
+        debugPrint('⚠️ RPC failed, using fallback update method');
+
+        final response = await _supabase
+            .from('chat_groups')
+            .select('member_uids, name, is_public')
+            .eq('id', groupId)
+            .maybeSingle();
+
+        if (response == null) {
+          throw Exception('Group not found: $groupId');
+        }
+
+        final currentMembers = List<String>.from(response['member_uids'] ?? []);
+
+        if (currentMembers.contains(userId)) {
+          debugPrint('   User already in group');
+          return;
+        }
+
+        currentMembers.add(userId);
+        await _supabase.from('chat_groups').update({
+          'member_uids': currentMembers,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', groupId);
+      });
+
+      debugPrint('✅ User joined group successfully');
+    } catch (e) {
+      debugPrint('❌ Error joining group: $e');
+      rethrow;
     }
   }
 
@@ -496,18 +587,118 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   @override
   Future<List<ChatGroup>> discoverGroups(
       {String? query, int limit = 20}) async {
-    var supabaseQuery =
-        _supabase.from('chat_groups').select().eq('is_public', true);
+    try {
+      // Fetch public groups with member count stats and invite_code
+      // Build query with optional name filter
+      // Note: member_count is computed in-memory, not a DB column
+      var supabaseQuery = _supabase
+          .from('chat_groups')
+          .select('*, invite_code')
+          .eq('is_public', true);
 
-    if (query != null && query.isNotEmpty) {
-      supabaseQuery = supabaseQuery.ilike('name', '%$query%');
+      // Filter by game name if provided (must come before order/limit)
+      if (query != null && query.isNotEmpty) {
+        supabaseQuery = supabaseQuery.ilike('name', '%$query%');
+      }
+
+      // Fetch results without ordering (will sort in-memory)
+      final response =
+          await supabaseQuery.limit(limit * 2); // Fetch more for sorting
+
+      // Map and compute member_count in-memory, filtering out invalid groups
+      final groups = (response as List<dynamic>)
+          .map((data) {
+            try {
+              final jsonData =
+                  _convertFromDatabase(data as Map<String, dynamic>);
+              // Calculate member count from array length
+              final memberUids = data['member_uids'] as List?;
+              jsonData['member_count'] = memberUids?.length ?? 0;
+
+              // Validate group has required fields
+              if (jsonData['id'] == null ||
+                  jsonData['name'] == null ||
+                  jsonData['name'].toString().isEmpty) {
+                debugPrint('⚠️ Skipping invalid group: missing id or name');
+                return null;
+              }
+
+              return ChatGroup.fromJson(jsonData);
+            } catch (e) {
+              debugPrint('⚠️ Failed to parse group from discover: $e');
+              return null;
+            }
+          })
+          .whereType<ChatGroup>() // Filter out nulls
+          .toList();
+
+      // Sort by member count in descending order and limit results
+      groups.sort((a, b) => b.memberCount.compareTo(a.memberCount));
+      return groups.take(limit).toList();
+    } catch (e) {
+      debugPrint('❌ Error discovering groups: $e');
+      rethrow;
     }
+  }
 
-    final response = await supabaseQuery.limit(limit);
-    return (response as List<dynamic>)
-        .map((data) => ChatGroup.fromJson(
-            _convertFromDatabase(data as Map<String, dynamic>)))
-        .toList();
+  @override
+  Future<ChatGroup?> getChatGroup(String groupId) async {
+    try {
+      debugPrint('🔍 Fetching group by ID: $groupId');
+
+      final response = await _supabase
+          .from('chat_groups')
+          .select()
+          .eq('id', groupId)
+          .maybeSingle();
+
+      if (response == null) {
+        debugPrint('⚠️ Group not found with ID: $groupId');
+        return null;
+      }
+
+      final jsonData = _convertFromDatabase(response);
+
+      // Calculate member count from array length
+      final memberUids = response['member_uids'] as List?;
+      jsonData['member_count'] = memberUids?.length ?? 0;
+
+      debugPrint('✅ Found group: ${jsonData['name']}');
+      return ChatGroup.fromJson(jsonData);
+    } catch (e) {
+      debugPrint('❌ Error fetching group by ID: $e');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<ChatGroup?> getGroupByInviteCode(String code) async {
+    try {
+      debugPrint('🔑 Fetching group by invite code: $code');
+
+      final response = await _supabase
+          .from('chat_groups')
+          .select('*, invite_code')
+          .eq('invite_code', code)
+          .maybeSingle();
+
+      if (response == null) {
+        debugPrint('⚠️ Group not found with invite code: $code');
+        return null;
+      }
+
+      final jsonData = _convertFromDatabase(response);
+
+      // Calculate member count from array length
+      final memberUids = response['member_uids'] as List?;
+      jsonData['member_count'] = memberUids?.length ?? 0;
+
+      debugPrint('✅ Found group: ${jsonData['name']}');
+      return ChatGroup.fromJson(jsonData);
+    } catch (e) {
+      debugPrint('❌ Error fetching group by invite code: $e');
+      rethrow;
+    }
   }
 
   @override
@@ -523,20 +714,23 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   Future<void> updateTypingIndicator(
       String chatGroupId, String userId, bool isTyping) async {
     if (!isTyping) {
-      // Remove typing indicator
-      await _supabase
-          .from('typing_indicators')
-          .delete()
-          .eq('chat_id', chatGroupId)
-          .eq('user_id', userId);
+      // NOTE: typing_indicators table doesn't exist - should use chat_metadata.typing_users array
+      // Remove typing indicator (commented out - table doesn't exist)
+      // await _supabase
+      //     .from('typing_indicators')
+      //     .delete()
+      //     .eq('chat_id', chatGroupId)
+      //     .eq('user_id', userId);
+      debugPrint('⚠️ Typing indicator removal skipped (table not in schema)');
     } else {
-      // Upsert typing indicator
-      await _supabase.from('typing_indicators').upsert({
-        'chat_id': chatGroupId,
-        'user_id': userId,
-        'is_typing': true,
-        'updated_at': DateTime.now().toIso8601String(),
-      });
+      // Upsert typing indicator (commented out - table doesn't exist)
+      // await _supabase.from('typing_indicators').upsert({
+      //   'chat_id': chatGroupId,
+      //   'user_id': userId,
+      //   'is_typing': true,
+      //   'updated_at': DateTime.now().toIso8601String(),
+      // });
+      debugPrint('⚠️ Typing indicator update skipped (table not in schema)');
     }
   }
 

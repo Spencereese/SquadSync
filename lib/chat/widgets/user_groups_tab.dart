@@ -1,49 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
-import '../../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../chat_screen.dart';
 import '../../presentation/notifiers/chat_notifier.dart' as cn;
 import '../../domain/entities/message.dart';
+import '../../domain/entities/chat_state.dart';
 import '../dialogs/group_actions_dialog.dart';
 
-class UserGroupsTab extends ConsumerWidget {
+class UserGroupsTab extends ConsumerStatefulWidget {
   final VoidCallback onTapDM;
 
   const UserGroupsTab({super.key, required this.onTapDM});
 
-  Future<List<Map<String, dynamic>>> _loadUserGroups(String userId) async {
-    // First get user's group IDs
-    final userData = await supabase.Supabase.instance.client
-        .from('users')
-        .select('user_groups')
-        .eq('uid', userId)
-        .maybeSingle();
+  @override
+  ConsumerState<UserGroupsTab> createState() => _UserGroupsTabState();
+}
 
-    if (userData == null || userData['user_groups'] == null) {
-      return [];
-    }
-
-    final userGroups =
-        List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
-    final groupIds = userGroups
-        .map((g) => g['chat_group_id'] as String?)
-        .where((id) => id != null)
-        .cast<String>()
-        .toList();
-
-    if (groupIds.isEmpty) {
-      return [];
-    }
-
-    // Then fetch full group data
-    final groupsData = await supabase.Supabase.instance.client
-        .from('chat_groups')
-        .select()
-        .inFilter('id', groupIds);
-
-    return List<Map<String, dynamic>>.from(groupsData);
-  }
+class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
+  // No need to call loadUserGroups here - it's already called in ChatGroupsScreen
+  // and we're watching the provider which will rebuild when state changes
 
   String _formatTime(DateTime time) {
     final now = DateTime.now();
@@ -168,234 +142,261 @@ class UserGroupsTab extends ConsumerWidget {
               ),
             )
           : null,
-      onTap: onTapDM,
+      onTap: widget.onTapDM,
     );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final supabase.User currentUser = AuthServiceSupabase().currentUser!;
+  Widget build(BuildContext context) {
+    final chatStateAsync = ref.watch(cn.chatNotifierProvider);
 
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      key: ValueKey('user_groups_${currentUser.id}'),
-      future: _loadUserGroups(currentUser.id),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              'Error: ${snapshot.error}',
-              style: const TextStyle(color: Colors.white),
-            ),
-          );
-        }
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.cyanAccent),
-          );
-        }
-
-        final groups = snapshot.data ?? [];
-        // Reduced logging to avoid clutter - only log on significant changes
-        if (groups.isEmpty || groups.length > 5) {
-          debugPrint(
-              'UserGroupsTab: loaded ${groups.length} groups from Supabase');
-        }
-
-        // Sort groups by last_message_time in memory
-        groups.sort((a, b) {
-          final aTime = a['last_message_time'] as String?;
-          final bTime = b['last_message_time'] as String?;
-          if (aTime == null && bTime == null) return 0;
-          if (aTime == null) return 1;
-          if (bTime == null) return -1;
-          return DateTime.parse(bTime)
-              .compareTo(DateTime.parse(aTime)); // Descending
-        });
-
-        // If no groups, show empty state
-        if (groups.isEmpty) {
-          return ListView(
-            padding: EdgeInsets.zero,
+    return chatStateAsync.when(
+      loading: () {
+        return const Center(
+          child: CircularProgressIndicator(color: Colors.cyanAccent),
+        );
+      },
+      error: (error, stack) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildDMCard(context, 0),
-              const SizedBox(height: 40),
-              Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.group_add,
-                      size: 64,
-                      color: Colors.grey[600],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No groups yet',
-                      style: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Create a group or join an existing one\nto start chatting!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        // Open group actions dialog
-                        showDialog(
-                          context: context,
-                          builder: (context) => const GroupActionsDialog(),
-                        );
-                      },
-                      icon: const Icon(Icons.add, color: Colors.black),
-                      label: const Text(
-                        'Create or Join Group',
-                        style: TextStyle(color: Colors.black),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.cyanAccent,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              Text(
+                'Error: $error',
+                style: const TextStyle(color: Colors.white),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+                },
+                child: const Text('Retry'),
               ),
             ],
-          );
-        }
-
-        return ListView.separated(
-          padding: EdgeInsets.zero,
-          itemCount: groups.length + 1, // +1 for DM card
-          separatorBuilder: (context, index) => const Divider(
-            color: Colors.grey,
-            height: 0.5,
-            indent: 72,
-            thickness: 0.5,
           ),
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              // DM card
-              return _buildDMCard(context, 0);
-            }
+        );
+      },
+      data: (chatState) => _buildContent(context, chatState),
+    );
+  }
 
-            final groupIndex = index - 1;
-            final group = groups[groupIndex];
-            final groupName = group['name'] ?? 'Unnamed Group';
-            final lastMessage = group['last_message'] ?? '';
-            final lastMessageTime = group['last_message_time'] as String?;
-            final memberCount = group['member_count'] ?? 0;
-            final isPublic = group['is_public'] ?? false;
-            final imageUrl = group['image_url'];
+  Widget _buildContent(BuildContext context, ChatState chatState) {
+    // Convert ChatGroup entities to map format for compatibility
+    final groups = chatState.userChatGroups.values
+        .map((group) => {
+              'id': group.id,
+              'name': group.name,
+              'is_public': group.isPublic,
+              'member_uids': group.memberUids,
+              'description': group.description,
+              'avatar_url': group.avatarUrl,
+              'last_message_time': group.lastActivity?.toIso8601String(),
+              'member_count': group.memberCount,
+            })
+        .toList();
 
-            return ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
+    // Sort groups by last_message_time in memory
+    groups.sort((a, b) {
+      final aTime = a['last_message_time'] as String?;
+      final bTime = b['last_message_time'] as String?;
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return DateTime.parse(bTime)
+          .compareTo(DateTime.parse(aTime)); // Descending
+    });
+
+    // If no groups, show empty state
+    if (groups.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () async {
+          await ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+        },
+        color: Colors.cyanAccent,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            _buildDMCard(context, 0),
+            const SizedBox(height: 40),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.group_add,
+                    size: 64,
+                    color: Colors.grey[600],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No groups yet',
+                    style: TextStyle(
+                      color: Colors.grey[400],
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Create a group or join an existing one\nto start chatting!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      // Open create group dialog
+                      showDialog(
+                        context: context,
+                        builder: (context) => const GroupActionsDialog(),
+                      );
+                    },
+                    icon: const Icon(Icons.add, color: Colors.black),
+                    label: const Text(
+                      'Create Group',
+                      style: TextStyle(color: Colors.black),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.cyanAccent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              leading: CircleAvatar(
-                radius: 28,
-                backgroundColor: Colors.grey[800],
-                backgroundImage:
-                    imageUrl != null ? NetworkImage(imageUrl) : null,
-                child: imageUrl == null
-                    ? Icon(
-                        isPublic ? Icons.public : Icons.group,
-                        color: Colors.cyanAccent,
-                        size: 24,
-                      )
-                    : null,
-              ),
-              title: Row(
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+      },
+      color: Colors.cyanAccent,
+      child: ListView.separated(
+        padding: EdgeInsets.zero,
+        itemCount: groups.length + 1, // +1 for DM card
+        separatorBuilder: (context, index) => const Divider(
+          color: Colors.grey,
+          height: 0.5,
+          indent: 72,
+          thickness: 0.5,
+        ),
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            // DM card
+            return _buildDMCard(context, 0);
+          }
+
+          final groupIndex = index - 1;
+          final group = groups[groupIndex];
+          final groupName = (group['name'] as String?) ?? 'Unnamed Group';
+          final lastMessage = (group['last_message'] as String?) ?? '';
+          final lastMessageTime = group['last_message_time'] as String?;
+          final memberCount = (group['member_count'] as int?) ?? 0;
+          final isPublic = (group['is_public'] as bool?) ?? false;
+          final imageUrl = group['image_url'] as String?;
+
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
+            leading: CircleAvatar(
+              radius: 28,
+              backgroundColor: Colors.grey[800],
+              backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+              child: imageUrl == null
+                  ? Icon(
+                      isPublic ? Icons.public : Icons.group,
+                      color: Colors.cyanAccent,
+                      size: 24,
+                    )
+                  : null,
+            ),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    groupName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (lastMessageTime != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
+                      _formatTime(DateTime.parse(lastMessageTime)),
+                      style: const TextStyle(
+                        color: Colors.grey,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      groupName,
+                      lastMessage.isNotEmpty
+                          ? lastMessage
+                          : '$memberCount members',
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
+                        color: Colors.grey,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (lastMessageTime != null) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Text(
-                        _formatTime(DateTime.parse(lastMessageTime)),
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        lastMessage.isNotEmpty
-                            ? lastMessage
-                            : '$memberCount members',
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+            ),
+            onTap: () {
+              // Navigate to chat screen for this group
+              final groupId = group['id'] as String?;
+              debugPrint('DEBUG UserGroupsTab: Tapping on user group $groupId');
+              if (groupId != null && groupId.isNotEmpty) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ChatScreen(
+                      chatType: ChatType.userGroup,
+                      chatGroupId: groupId,
+                      chatGroupName: groupName,
                     ),
-                  ],
-                ),
-              ),
-              onTap: () {
-                // Navigate to chat screen for this group
-                final groupId = group['id'] as String?;
-                debugPrint(
-                    'DEBUG UserGroupsTab: Tapping on user group $groupId');
-                if (groupId != null && groupId.isNotEmpty) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => ChatScreen(
-                        chatType: ChatType.userGroup,
-                        chatGroupId: groupId,
-                        chatGroupName: groupName,
-                      ),
-                    ),
-                  );
-                }
-              },
-              onLongPress: () {
-                final groupId = group['id'] as String?;
-                // Show leave group confirmation dialog
-                if (groupId != null) {
-                  _showLeaveGroupDialog(context, groupId, groupName, ref);
-                }
-              },
-            );
-          },
-        );
-      },
+                  ),
+                );
+              }
+            },
+            onLongPress: () {
+              final groupId = group['id'] as String?;
+              // Show leave group confirmation dialog
+              if (groupId != null) {
+                _showLeaveGroupDialog(context, groupId, groupName, ref);
+              }
+            },
+          );
+        },
+      ),
     );
   }
 }

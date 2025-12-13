@@ -15,14 +15,25 @@ class AppTheme {
   ///
   /// [dynamicSeedColor] - Color extracted from IGDB cover art to generate
   /// the dynamic color scheme. Defaults to cyan neon if not provided.
-  static ThemeData dark({Color? dynamicSeedColor}) {
+  /// [dynamicColorScheme] - Pre-generated ColorScheme from ColorScheme.fromImageProvider
+  /// [neonGlowEnabled] - Enable/disable neon glow effects
+  /// [highContrastMode] - Enable high contrast mode for accessibility
+  static ThemeData dark({
+    Color? dynamicSeedColor,
+    ColorScheme? dynamicColorScheme,
+    bool neonGlowEnabled = true,
+    bool highContrastMode = false,
+  }) {
     final seedColor = dynamicSeedColor ?? _defaultNeon;
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.dark,
-      background: _darkBackground,
-      surface: _darkSurface,
-    );
+
+    // Use pre-generated ColorScheme if available, otherwise create from seed
+    final colorScheme = dynamicColorScheme ??
+        ColorScheme.fromSeed(
+          seedColor: seedColor,
+          brightness: Brightness.dark,
+          background: _darkBackground,
+          surface: _darkSurface,
+        );
 
     return ThemeData(
       useMaterial3: true,
@@ -57,12 +68,25 @@ class AppTheme {
   }
 
   /// Light theme variant (for future use)
-  static ThemeData light({Color? dynamicSeedColor}) {
+  ///
+  /// [dynamicSeedColor] - Color extracted from IGDB cover art
+  /// [dynamicColorScheme] - Pre-generated ColorScheme from ColorScheme.fromImageProvider
+  /// [neonGlowEnabled] - Enable/disable neon glow effects
+  /// [highContrastMode] - Enable high contrast mode for accessibility
+  static ThemeData light({
+    Color? dynamicSeedColor,
+    ColorScheme? dynamicColorScheme,
+    bool neonGlowEnabled = true,
+    bool highContrastMode = false,
+  }) {
     final seedColor = dynamicSeedColor ?? _defaultNeon;
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.light,
-    );
+
+    // Use pre-generated ColorScheme if available, otherwise create from seed
+    final colorScheme = dynamicColorScheme ??
+        ColorScheme.fromSeed(
+          seedColor: seedColor,
+          brightness: Brightness.light,
+        );
 
     return ThemeData(
       useMaterial3: true,
@@ -391,6 +415,47 @@ class AppTheme {
       const Color(0xFF6A4C93); // Purple
   static Color gradient2(ColorScheme scheme) => const Color(0xFF2196F3); // Blue
   static Color gradient3(ColorScheme scheme) => scheme.primary; // Theme cyan
+
+  // Accessibility: High contrast color adjustments
+
+  /// Apply high contrast adjustments to a color for accessibility
+  ///
+  /// Increases color contrast for better visibility in high contrast mode
+  static Color highContrast(Color color, Brightness brightness) {
+    final hslColor = HSLColor.fromColor(color);
+
+    // For high contrast, push lightness to extremes
+    final lightness = brightness == Brightness.dark
+        ? (hslColor.lightness < 0.5 ? 0.9 : hslColor.lightness)
+        : (hslColor.lightness > 0.5 ? 0.1 : hslColor.lightness);
+
+    // Increase saturation for better distinction
+    final saturation = hslColor.saturation < 0.85 ? 0.95 : hslColor.saturation;
+
+    return hslColor
+        .withSaturation(saturation)
+        .withLightness(lightness)
+        .toColor();
+  }
+
+  /// Get text color with appropriate contrast for accessibility
+  static Color accessibleTextColor(Color backgroundColor) {
+    final luminance = backgroundColor.computeLuminance();
+    return luminance > 0.5 ? Colors.black : Colors.white;
+  }
+
+  /// Check if two colors have sufficient contrast ratio (WCAG AA standard)
+  static bool hasSufficientContrast(Color color1, Color color2,
+      {double minRatio = 4.5}) {
+    final luminance1 = color1.computeLuminance();
+    final luminance2 = color2.computeLuminance();
+
+    final lighter = luminance1 > luminance2 ? luminance1 : luminance2;
+    final darker = luminance1 > luminance2 ? luminance2 : luminance1;
+
+    final contrastRatio = (lighter + 0.05) / (darker + 0.05);
+    return contrastRatio >= minRatio;
+  }
 }
 
 /// Extension to add neon glow effect to any Color

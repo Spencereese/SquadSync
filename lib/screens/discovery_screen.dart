@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/supabase_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
-import '../presentation/notifiers/current_lobby_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/message.dart';
 import '../core/app_theme.dart';
@@ -18,6 +18,7 @@ class DiscoveryScreen extends ConsumerStatefulWidget {
 
 class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void dispose() {
@@ -29,14 +30,14 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   Widget build(BuildContext context) {
     final filter = ref.watch(discoveryFilterProvider);
     final popularGamesAsync = ref.watch(popularGamesProvider);
-    final publicSquadsAsync = ref.watch(publicLobbiesProvider);
+    final publicLobbiesAsync = ref.watch(publicLobbiesProvider);
 
     return Theme(
       data: AppTheme.dark(),
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(
-          title: const Text('Discover Squads'),
+          title: const Text('Discover Lobbies'),
           backgroundColor: Colors.black,
           elevation: 0,
         ),
@@ -53,7 +54,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'Search squads...',
+                      hintText: 'Search lobbies...',
                       prefixIcon:
                           const Icon(Icons.search, color: Colors.white70),
                       filled: true,
@@ -66,7 +67,9 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                     ),
                     style: const TextStyle(color: Colors.white),
                     onChanged: (value) {
-                      // TODO: Implement search filtering
+                      setState(() {
+                        _searchQuery = value.toLowerCase();
+                      });
                     },
                   ),
                 ),
@@ -97,15 +100,50 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                 ),
               ),
 
-              // Squads list
-              publicSquadsAsync.when(
-                data: (lobbys) => SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) =>
-                        _buildSquadCard(context, lobbys[index], ref),
-                    childCount: lobbys.length,
-                  ),
-                ),
+              // Lobbies list
+              publicLobbiesAsync.when(
+                data: (lobbys) {
+                  // Apply search filter
+                  final filteredLobbies = _searchQuery.isEmpty
+                      ? lobbys
+                      : lobbys.where((lobby) {
+                          return lobby.name
+                                  .toLowerCase()
+                                  .contains(_searchQuery) ||
+                              lobby.gameName
+                                  .toLowerCase()
+                                  .contains(_searchQuery) ||
+                              (lobby.description
+                                      ?.toLowerCase()
+                                      .contains(_searchQuery) ??
+                                  false);
+                        }).toList();
+
+                  if (filteredLobbies.isEmpty) {
+                    return SliverToBoxAdapter(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32.0),
+                          child: Text(
+                            _searchQuery.isEmpty
+                                ? 'No public lobbies found.\nCreate one to get started!'
+                                : 'No lobbies match "$_searchQuery"',
+                            style: const TextStyle(color: Colors.white70),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  return SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) =>
+                          _buildLobbyCard(context, filteredLobbies[index], ref),
+                      childCount: filteredLobbies.length,
+                    ),
+                  );
+                },
                 loading: () => const SliverToBoxAdapter(
                   child: Center(
                     child: Padding(
@@ -122,7 +160,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                       child: Padding(
                         padding: EdgeInsets.all(32.0),
                         child: Text(
-                          'Error loading squads: $error',
+                          'Error loading lobbies: $error',
                           style: const TextStyle(color: Colors.white70),
                         ),
                       ),
@@ -134,11 +172,11 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
           ),
         ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showCreatePublicSquadDialog(context, ref),
+          onPressed: () => _showCreatePublicLobbyDialog(context, ref),
           backgroundColor: Colors.cyanAccent,
           icon: const Icon(Icons.add, color: Colors.black),
           label: const Text(
-            'Create Public Squad',
+            'Create Public Lobby',
             style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
           ),
         ),
@@ -168,7 +206,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     );
   }
 
-  Widget _buildSquadCard(BuildContext context, Lobby lobby, WidgetRef ref) {
+  Widget _buildLobbyCard(BuildContext context, Lobby lobby, WidgetRef ref) {
     final availableSpots = _getAvailableSpots(lobby);
 
     return Card(
@@ -180,7 +218,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Squad name and LFM badge
+            // Lobby name and LFM badge
             Row(
               children: [
                 Expanded(
@@ -307,7 +345,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton(
-                onPressed: () => _joinSquad(context, lobby, ref),
+                onPressed: () => _joinLobby(context, lobby, ref),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.cyanAccent,
                   foregroundColor: Colors.black,
@@ -343,7 +381,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     await Future.delayed(const Duration(seconds: 1));
   }
 
-  void _joinSquad(BuildContext context, Lobby lobby, WidgetRef ref) async {
+  void _joinLobby(BuildContext context, Lobby lobby, WidgetRef ref) async {
     try {
       final uid = AuthServiceSupabase().currentUser!.id;
 
@@ -379,7 +417,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
       }).eq('id', lobby.id);
 
       // Set as current lobby
-      ref.read(currentLobbyIdProvider.notifier).state = lobby.id;
+      ref.read(lobbyNotifierProvider.notifier).setSelectedLobbyId(lobby.id);
 
       // Show success toast
       if (mounted) {
@@ -401,32 +439,201 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to join squad: $e')),
+          SnackBar(content: Text('Failed to join lobby: $e')),
         );
       }
     }
   }
 
-  void _showCreatePublicSquadDialog(BuildContext context, WidgetRef ref) {
-    // TODO: Implement create public lobby dialog with pre-filled defaults
+  void _showCreatePublicLobbyDialog(BuildContext context, WidgetRef ref) {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    String selectedGame = 'Call of Duty';
+    int maxSpots = 4;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text(
-          'Create Public Squad',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: const Text(
-          'Public lobby creation coming soon!',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text(
+            'Create Public Lobby',
+            style: TextStyle(color: Colors.white),
           ),
-        ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Lobby Name
+                TextField(
+                  controller: nameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Lobby Name',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    hintText: 'e.g. Chill Ranked Matches',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.1),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Game Selection
+                DropdownButtonFormField<String>(
+                  value: selectedGame,
+                  dropdownColor: Colors.grey[800],
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Game',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.1),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  items: [
+                    'Call of Duty',
+                    'Fortnite',
+                    'Apex Legends',
+                    'Valorant',
+                    'League of Legends',
+                    'Rocket League',
+                    'Destiny 2',
+                    'Overwatch 2',
+                  ].map((game) {
+                    return DropdownMenuItem(
+                      value: game,
+                      child: Text(game),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        selectedGame = value;
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Max Spots
+                DropdownButtonFormField<int>(
+                  value: maxSpots,
+                  dropdownColor: Colors.grey[800],
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Max Players',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.1),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  items: [2, 3, 4, 5, 6, 8, 10].map((spots) {
+                    return DropdownMenuItem(
+                      value: spots,
+                      child: Text('$spots players'),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        maxSpots = value;
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Description
+                TextField(
+                  controller: descriptionController,
+                  maxLines: 3,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Description (Optional)',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    hintText:
+                        'Tell others what kind of players you\'re looking for',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.1),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.cyanAccent,
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () async {
+                final lobbyName = nameController.text.trim();
+                if (lobbyName.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a lobby name'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                try {
+                  // Create the public lobby
+                  final lobbyNotifier =
+                      ref.read(lobbyNotifierProvider.notifier);
+                  await lobbyNotifier.createPublicLobby(
+                    name: lobbyName,
+                    gameName: selectedGame,
+                    maxSpots: maxSpots,
+                    description: descriptionController.text.trim(),
+                  );
+
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Public lobby created!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to create lobby: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
       ),
     );
   }

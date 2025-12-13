@@ -64,12 +64,14 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
 
   @override
   Future<List<Map<String, dynamic>>> getAvailabilitySlots(String userId) async {
-    final response = await _supabase
-        .from('availability_slots')
-        .select()
-        .eq('user_id', userId);
-
-    return List<Map<String, dynamic>>.from(response as List);
+    // TODO: Create availability_slots table in Supabase before enabling this feature
+    // final response = await _supabase
+    //     .from('availability_slots')
+    //     .select()
+    //     .eq('user_id', userId);
+    // return List<Map<String, dynamic>>.from(response as List);
+    throw UnimplementedError(
+        'availability_slots table does not exist in schema');
   }
 
   @override
@@ -127,23 +129,32 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
   @override
   Future<void> addAvailabilitySlot(
       String userId, Map<String, dynamic> slot) async {
-    await _supabase.from('availability_slots').insert({
-      ...slot,
-      'id': DateTime.now().millisecondsSinceEpoch.toString(),
-      'user_id': userId,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
+    // TODO: Create availability_slots table in Supabase before enabling this feature
+    // await _supabase.from('availability_slots').insert({
+    //   ...slot,
+    //   'id': DateTime.now().millisecondsSinceEpoch.toString(),
+    //   'user_id': userId,
+    //   'timestamp': DateTime.now().toIso8601String(),
+    // });
+    throw UnimplementedError(
+        'availability_slots table does not exist in schema');
   }
 
   @override
   Future<void> removeAvailabilitySlot(String slotId) async {
-    await _supabase.from('availability_slots').delete().eq('id', slotId);
+    // TODO: Create availability_slots table in Supabase before enabling this feature
+    // await _supabase.from('availability_slots').delete().eq('id', slotId);
+    throw UnimplementedError(
+        'availability_slots table does not exist in schema');
   }
 
   @override
   Future<void> updateAvailabilitySlot(
       String slotId, Map<String, dynamic> updates) async {
-    await _supabase.from('availability_slots').update(updates).eq('id', slotId);
+    // TODO: Create availability_slots table in Supabase before enabling this feature
+    // await _supabase.from('availability_slots').update(updates).eq('id', slotId);
+    throw UnimplementedError(
+        'availability_slots table does not exist in schema');
   }
 
   @override
@@ -151,7 +162,6 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
       String voterId, String targetUserId, bool vote) async {
     final today = DateTime.now().toIso8601String().split('T')[0];
     await _supabase.from('ban_votes').insert({
-      'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'voter_id': voterId,
       'target_id': targetUserId,
       'vote': vote,
@@ -164,15 +174,16 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
   Future<void> sendAnalyticsEvent(
       String event, Map<String, dynamic> data) async {
     if (_analyticsEndpoint == null) {
+      // TODO: Create analytics table in Supabase or use external analytics service
       // If no HTTP endpoint, use Supabase analytics table
-      final userId = _authService.currentUserId;
-      await _supabase.from('analytics').insert({
-        'user_id': userId,
-        'event': event,
-        'data': data,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
-      return;
+      // final userId = _authService.currentUserId;
+      // await _supabase.from('analytics').insert({
+      //   'user_id': userId,
+      //   'event': event,
+      //   'data': data,
+      //   'timestamp': DateTime.now().toIso8601String(),
+      // });
+      throw UnimplementedError('analytics table does not exist in schema');
     }
 
     try {
@@ -282,17 +293,8 @@ class SystemRemoteDataSourceImpl implements SystemRemoteDataSource {
 
   @override
   Future<void> purgeOldData({Duration? olderThan}) async {
-    final cutoff =
-        DateTime.now().subtract(olderThan ?? const Duration(days: 30));
-
     // Purge old notifications
     await clearOldNotifications(olderThan: olderThan);
-
-    // Purge old availability slots
-    await _supabase
-        .from('availability_slots')
-        .delete()
-        .filter('timestamp', 'lt', cutoff.toIso8601String());
 
     // Purge old ban votes
     await resetDailyVotes();

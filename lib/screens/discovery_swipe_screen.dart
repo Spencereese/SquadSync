@@ -8,7 +8,7 @@ import 'package:confetti/confetti.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 import '../domain/entities/lobby.dart';
-import '../widgets/glass_squad_card.dart';
+import '../widgets/glass_lobby_card.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
 
 /// Tinder-style lobby discovery screen with card swiping
@@ -155,7 +155,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     }
 
     await _animateCardAway();
-    await _joinSquad();
+    await _joinLobby();
     _showConfetti();
 
     setState(() {
@@ -193,7 +193,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     });
 
     await _animateCardAway();
-    await _joinSquad(instant: true);
+    await _joinLobby(instant: true);
     _showConfetti();
 
     setState(() {
@@ -219,14 +219,14 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     _neonIntensityController.animateTo(0);
   }
 
-  Future<void> _joinSquad({bool instant = false}) async {
+  Future<void> _joinLobby({bool instant = false}) async {
     final lobbies = ref.read(publicLobbiesProvider).value ?? [];
 
     if (_currentIndex < lobbies.length) {
       final lobby = lobbies[_currentIndex];
 
       // TODO: Call actual join lobby API
-      // await ref.read(discoveryNotifierProvider.notifier).joinSquad(lobby.id);
+      // await ref.read(discoveryNotifierProvider.notifier).joinLobby(lobby.id);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -374,7 +374,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
         child: Opacity(
           opacity: opacity,
           child: IgnorePointer(
-            child: GlassSquadCard(
+            child: GlassLobbyCard(
               squad: lobby,
               gameCoverUrl: null, // TODO: Get from IGDB
               gamePrimaryColor: theme.colorScheme.primary,
@@ -423,7 +423,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
                 ),
                 child: Stack(
                   children: [
-                    GlassSquadCard(
+                    GlassLobbyCard(
                       squad: lobby,
                       gameCoverUrl: null, // TODO: Get from IGDB
                       gamePrimaryColor: neonColor,
@@ -626,7 +626,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
             child: Column(
               children: [
                 Text(
-                  'No squads right now',
+                  'No lobbies right now',
                   style: GoogleFonts.orbitron(
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
@@ -646,7 +646,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
                   onPressed: () {
-                    // Navigate to create squad
+                    // Navigate to create lobby
                   },
                   icon: const Icon(Icons.add_rounded),
                   label: Text(
@@ -690,7 +690,7 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
               .shimmer(duration: 1500.ms, color: theme.colorScheme.primary),
           const SizedBox(height: 24),
           Text(
-            'Finding squads...',
+            'Finding lobbies...',
             style: GoogleFonts.orbitron(
               fontSize: 18,
               fontWeight: FontWeight.w600,

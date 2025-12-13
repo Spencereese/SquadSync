@@ -1,22 +1,81 @@
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:riverpod/riverpod.dart';
 import '../../domain/entities/system_state.dart';
 import '../../domain/repositories/system_repository.dart';
 import '../../core/injection.dart';
 import '../../notification_service.dart';
+import '../controllers/game_theme_controller.dart';
 
-class SystemNotifier extends AutoDisposeAsyncNotifier<SystemState> {
+class SystemNotifier extends AsyncNotifier<SystemState> {
   late final SystemRepository _repository;
 
   @override
   Future<SystemState> build() async {
     // Get repository from provider
     _repository = ref.read(systemRepositoryProvider);
-    return await _repository.loadSystemState();
+
+    // Load system state first
+    final systemState = await _repository.loadSystemState();
+
+    // AFTER initialization, schedule brightness listener setup
+    Future.microtask(() => _setupBrightnessListener());
+
+    return systemState;
+  }
+
+  /// Setup listener for system brightness changes
+  void _setupBrightnessListener() {
+    // Get initial brightness
+    final platformDispatcher = ui.PlatformDispatcher.instance;
+    final initialBrightness = platformDispatcher.platformBrightness;
+
+    // Update game theme controller with current brightness
+    _updateGameThemeBrightness(initialBrightness);
+
+    // Listen for brightness changes
+    platformDispatcher.onPlatformBrightnessChanged = () {
+      final newBrightness = platformDispatcher.platformBrightness;
+      _updateGameThemeBrightness(newBrightness);
+    };
+  }
+
+  /// Update game theme controller with system brightness
+  void _updateGameThemeBrightness(Brightness brightness) {
+    try {
+      // Use read instead of modifying during build
+      final gameThemeController =
+          ref.read(gameThemeControllerProvider.notifier);
+      gameThemeController.updateSystemBrightness(brightness);
+    } catch (e) {
+      // Silently handle if game theme controller not available
+    }
+  }
+
+  /// Get current system brightness
+  Brightness getSystemBrightness() {
+    return ui.PlatformDispatcher.instance.platformBrightness;
   }
 
   Future<void> updateThemeMode(ThemeMode themeMode) async {
     await _repository.updateThemeMode(themeMode);
     state = await AsyncValue.guard(() => _repository.loadSystemState());
+
+    // Update game theme brightness based on theme mode
+    final brightness = _getBrightnessForThemeMode(themeMode);
+    _updateGameThemeBrightness(brightness);
+  }
+
+  /// Convert ThemeMode to Brightness
+  Brightness _getBrightnessForThemeMode(ThemeMode themeMode) {
+    switch (themeMode) {
+      case ThemeMode.light:
+        return Brightness.light;
+      case ThemeMode.dark:
+        return Brightness.dark;
+      case ThemeMode.system:
+        return getSystemBrightness();
+    }
   }
 
   Future<void> trackAnalyticsEvent(
@@ -72,7 +131,8 @@ class SystemNotifier extends AutoDisposeAsyncNotifier<SystemState> {
   }
 }
 
+// Backward compatibility alias
 final systemNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<SystemNotifier, SystemState>(
-  () => SystemNotifier(),
+    AsyncNotifierProvider<SystemNotifier, SystemState>(
+  SystemNotifier.new,
 );

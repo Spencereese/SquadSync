@@ -230,7 +230,7 @@ class CommonDialogs {
     return _pool.getConfirmationDialog(
       message:
           'Are you sure you want to leave "$squadName"? You will lose access to all squad features.',
-      confirmText: 'Leave Squad',
+      confirmText: 'Leave Lobby',
       isDestructive: true,
       onConfirm: onConfirm,
       key: 'leave_squad',
@@ -243,7 +243,7 @@ class CommonDialogs {
     return _pool.getFeedbackDialog(
       message: squadName != null
           ? '"$squadName" created successfully!'
-          : 'Squad created successfully!',
+          : 'Lobby created successfully!',
       isSuccess: true,
       actionText: 'Invite Members',
       onAction: onAction,
@@ -266,24 +266,24 @@ class CommonDialogs {
     );
   }
 
-  /// Input dialog for squad name
+  /// Input dialog for lobby name
   static InputDialog squadNameInput({
     String? initialValue,
     required ValueChanged<String> onConfirm,
   }) {
     return _pool.getInputDialog(
-      label: 'Squad Name',
-      hint: 'Enter a name for your squad',
+      label: 'Lobby Name',
+      hint: 'Enter a name for your lobby',
       initialValue: initialValue,
       validator: (value) {
         if (value == null || value.isEmpty) {
-          return 'Squad name is required';
+          return 'Lobby name is required';
         }
         if (value.length < 3) {
-          return 'Squad name must be at least 3 characters';
+          return 'Lobby name must be at least 3 characters';
         }
         if (value.length > 50) {
-          return 'Squad name must be less than 50 characters';
+          return 'Lobby name must be less than 50 characters';
         }
         return null;
       },

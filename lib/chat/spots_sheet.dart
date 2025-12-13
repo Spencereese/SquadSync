@@ -5,7 +5,7 @@ import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
-import '../presentation/notifiers/current_lobby_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart';
 import '../widgets/rating_widgets.dart';
 import '../services/message_service.dart';
 import '../domain/entities/message.dart';
@@ -87,7 +87,7 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
 
         // Set the current lobby ID in CurrentLobbyNotifier for realtime updates
         if (lobbyId != null) {
-          ref.read(currentLobbyIdProvider.notifier).state = lobbyId;
+          ref.read(lobbyNotifierProvider.notifier).setSelectedLobbyId(lobbyId);
         }
 
         setState(() {
@@ -482,8 +482,10 @@ class _SpotsSheetState extends ConsumerState<SpotsSheet> {
         return;
       }
 
-      // Claim the spot using CurrentLobbyNotifier
-      await ref.read(currentLobbyProvider.notifier).claimSpot(availableIndex);
+      // Claim the spot using unified LobbyNotifier
+      await ref
+          .read(ln.lobbyNotifierProvider.notifier)
+          .claimSpotSimple(availableIndex);
 
       // Send message to chat thread
       final chatService = MessageService();

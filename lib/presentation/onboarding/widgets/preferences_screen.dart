@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../onboarding_notifier.dart';
 
 class PreferencesScreen extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
@@ -55,16 +56,22 @@ class _PreferencesScreenState extends ConsumerState<PreferencesScreen>
     HapticFeedback.heavyImpact();
     _triggerGlitch();
 
-    // Save preferences to state
-    // TODO: Save to UserNotifier when available
-    final preferences = {
-      'voiceReady': _voiceReady,
-      'micAlwaysOn': _micAlwaysOn,
-      'lateNight': _lateNight,
-      'playStyle': _isCompetitive ? 'competitive' : 'chill',
-    };
+    // Save preferences to onboarding state
+    ref
+        .read(onboardingProvider.notifier)
+        .togglePreference('voice_ready', _voiceReady);
+    ref
+        .read(onboardingProvider.notifier)
+        .togglePreference('mic_always_on', _micAlwaysOn);
+    ref
+        .read(onboardingProvider.notifier)
+        .togglePreference('late_night', _lateNight);
+    ref
+        .read(onboardingProvider.notifier)
+        .togglePreference('competitive', _isCompetitive);
 
-    debugPrint('Preferences saved: $preferences');
+    debugPrint(
+        'Preferences saved: voice_ready=$_voiceReady, mic_always_on=$_micAlwaysOn');
 
     // Wait for glitch animation to complete
     await Future.delayed(const Duration(milliseconds: 500));
@@ -96,7 +103,7 @@ class _PreferencesScreenState extends ConsumerState<PreferencesScreen>
               ),
               const SizedBox(height: 12),
               Text(
-                'Configure your squad experience',
+                'Configure your lobby experience',
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.cyan.withOpacity(0.6),

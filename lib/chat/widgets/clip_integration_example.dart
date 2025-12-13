@@ -125,7 +125,7 @@ class ExampleChatMessage extends StatelessWidget {
   }
 
   Color _getGameColor() {
-    // TODO: Get from SquadNotifier or GameNotifier
+    // TODO: Get from LobbyNotifier or GameNotifier
     return const Color(0xFF00FFFF); // Default cyan
   }
 }
@@ -192,7 +192,7 @@ class ExampleChatMessage extends StatelessWidget {
 ///     
 ///     // Fetch clip message from Firestore
 ///     FirebaseFirestore.instance
-///         .collection('squads/$chatGroupId/chat')
+///         .collection('lobbies/$chatGroupId/chat')
 ///         .doc(messageId)
 ///         .get()
 ///         .then((doc) {

@@ -11,6 +11,8 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:sfckxrnoiwetmzdycqaa.supabase.co</string>
+		<string>applinks:lobbiesync.app</string>
+		<string>applinks:www.lobbiesync.app</string>
 	</array>
 </dict>
 </plist>

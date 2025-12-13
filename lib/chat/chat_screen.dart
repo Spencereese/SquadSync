@@ -20,7 +20,6 @@ import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
 import 'game_selection_sheet.dart';
 import 'spots_sheet.dart';
-import '../screens/squad_tab_screen.dart';
 import 'services/chat_initialization_service.dart';
 import 'services/chat_scroll_controller.dart';
 import 'services/chat_media_handler.dart';
@@ -35,7 +34,7 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../domain/entities/lobby_state.dart';
 import 'widgets/neon_chat_app_bar.dart';
 import 'screens/chat_info_screen.dart';
-import '../presentation/notifiers/current_lobby_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
@@ -69,7 +68,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   late AnimationController _animationController;
   late ScrollController _scrollController;
-  String _chatName = 'Squad Chat';
+  String _chatName = 'Lobby Chat';
   String? _chatImageUrl;
 
   bool _isMuted = false;
@@ -235,8 +234,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
           // Set the lobby ID in the notifier
           if (mounted) {
-            final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
-            squadNotifier.setSelectedLobbyId(lobbyId);
+            final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+            lobbyNotifier.setSelectedLobbyId(lobbyId);
             debugPrint('✅ Set lobby ID in didChangeDependencies: $lobbyId');
           }
         } catch (e) {
@@ -244,8 +243,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               '❌ Error querying/setting lobby ID in didChangeDependencies: $e');
           // Fallback: use chat_group_id as lobby ID
           if (mounted) {
-            final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
-            squadNotifier.setSelectedLobbyId(widget.chatGroupId!);
+            final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+            lobbyNotifier.setSelectedLobbyId(widget.chatGroupId!);
             debugPrint(
                 '⚠️ Fallback: Set chat_group_id as lobby ID: ${widget.chatGroupId}');
           }
@@ -282,12 +281,31 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         initialMessage: widget.initialMessage,
       );
 
-      // Load messages using the new ChatNotifier
+      // Initialize chat using the coordinator
       final chatGroupId = effectiveChatGroupId;
       if (chatGroupId != null) {
         ref
             .read(cn.chatNotifierProvider.notifier)
-            .initializeMessagesStream(chatGroupId, widget.chatType);
+            .initializeChat(chatGroupId, widget.chatType)
+            .catchError((error) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to initialize chat: $error'),
+                backgroundColor: Theme.of(context).colorScheme.error,
+                action: SnackBarAction(
+                  label: 'Retry',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    ref
+                        .read(cn.chatNotifierProvider.notifier)
+                        .initializeChat(chatGroupId, widget.chatType);
+                  },
+                ),
+              ),
+            );
+          }
+        });
       }
     });
 
@@ -497,6 +515,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       _messageController.clear();
       // Clear reply after sending
       ref.read(cn.chatNotifierProvider.notifier).clearReplyToMessage();
+
+      // Show success feedback with haptic
+      HapticFeedback.lightImpact();
       // Add haptic feedback for successful send
       HapticFeedback.lightImpact();
       await _typingManager.onMessageSent(
@@ -506,16 +527,22 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       _scrollToBottom();
       await _checkFirstMessage();
     } catch (e) {
+      debugPrint('ChatScreen: Failed to send message: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to send—retrying...'),
+            content: Text('Failed to send message: ${e.toString()}'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: 'Retry',
+              textColor: Colors.white,
               onPressed: () => _sendMessage(replyToMessage, squadState),
             ),
           ),
         );
+        // Haptic feedback for error
+        HapticFeedback.mediumImpact();
       }
     }
   }
@@ -542,62 +569,17 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     try {
       await GameSelectionSheet.show(
         context,
-        onGameSelected: (gameName, maxSpots) async {
-          try {
-            HapticFeedback.mediumImpact();
-
-            // Show loading indicator
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Creating lobby...'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            }
-
-            // Create lobby
-            final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
-            await lobbyNotifier.createLobby(
-              chatGroupId: widget.chatGroupId!,
-              gameName: gameName,
-              maxSpots: maxSpots,
-              isPublic: false, // Private lobby for chat groups
-            );
-
-            if (mounted) {
-              HapticFeedback.lightImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Lobby created for $gameName!')),
-              );
-
-              // Show spots sheet
-              SpotsSheet.show(
-                context,
-                gameName: gameName,
-                maxSpots: maxSpots,
-                chatGroupId: widget.chatGroupId!,
-                chatType: widget.chatType,
-              );
-            }
-          } catch (e) {
-            debugPrint('❌ Error creating lobby: $e');
-            if (mounted) {
-              HapticFeedback.heavyImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Failed to create lobby: $e'),
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                  duration: const Duration(seconds: 5),
-                  action: SnackBarAction(
-                    label: 'Retry',
-                    textColor: Colors.white,
-                    onPressed: () => _handleLobbyCreation(),
-                  ),
-                ),
-              );
-            }
-          }
+        isPrivateLobby: true,
+        chatGroupId: widget.chatGroupId,
+        onLobbyCreated: (gameName, maxSpots) {
+          // Show spots sheet after lobby creation
+          SpotsSheet.show(
+            context,
+            gameName: gameName,
+            maxSpots: maxSpots,
+            chatGroupId: widget.chatGroupId!,
+            chatType: widget.chatType,
+          );
         },
       );
     } catch (e) {
@@ -728,16 +710,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           ListTile(
             leading: const Icon(Icons.flash_on, color: Colors.white),
             title:
-                const Text('Squad Up', style: TextStyle(color: Colors.white)),
+                const Text('Lobby Up', style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      SquadTabScreen(chatGroupId: widget.chatGroupId),
-                ),
-              );
+              _handleLobbyCreation();
             },
           ),
         ],
@@ -768,11 +744,21 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       // Haptic feedback on send
       HapticFeedback.mediumImpact();
     } catch (e) {
-      debugPrint('Failed to send clip: $e');
+      debugPrint('ChatScreen: Failed to send clip: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send clip: $e')),
+          SnackBar(
+            content: Text('Failed to send clip: ${e.toString()}'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Dismiss',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
         );
+        HapticFeedback.mediumImpact();
       }
     }
   }
@@ -959,8 +945,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   onChanged: (newLobbyId) {
                     if (newLobbyId != null && newLobbyId != currentLobbyId) {
                       // Update current lobby ID
-                      ref.read(currentLobbyIdProvider.notifier).state =
-                          newLobbyId;
+                      ref
+                          .read(lobbyNotifierProvider.notifier)
+                          .setSelectedLobbyId(newLobbyId);
 
                       // Show feedback
                       if (mounted) {
@@ -986,9 +973,21 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  /// Fetch all lobbies for the current chat group
+  // Cache for lobby fetches to avoid repeated queries
+  final Map<String, List<Map<String, dynamic>>> _lobbiesCache = {};
+  DateTime? _lastLobbyFetch;
+
+  /// Fetch all lobbies for the current chat group (with caching)
   Future<List<Map<String, dynamic>>> _fetchLobbiesForChatGroup(
       String chatGroupId) async {
+    // Return cached result if fetched within last 30 seconds
+    if (_lobbiesCache.containsKey(chatGroupId) &&
+        _lastLobbyFetch != null &&
+        DateTime.now().difference(_lastLobbyFetch!) <
+            const Duration(seconds: 30)) {
+      return _lobbiesCache[chatGroupId]!;
+    }
+
     try {
       final response = await SupabaseService.client
           .from('lobbies')
@@ -998,13 +997,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           .order('created_at', ascending: false);
 
       final lobbies = List<Map<String, dynamic>>.from(response);
+
+      // Cache the result
+      _lobbiesCache[chatGroupId] = lobbies;
+      _lastLobbyFetch = DateTime.now();
+
       debugPrint('📊 Fetched ${lobbies.length} lobbies for group $chatGroupId');
-      if (lobbies.isNotEmpty) {
-        debugPrint(
-            '   First lobby game_focus type: ${lobbies[0]['game_focus'].runtimeType}');
-        debugPrint(
-            '   First lobby game_focus value: ${lobbies[0]['game_focus']}');
-      }
       return lobbies;
     } catch (e) {
       debugPrint('❌ Error fetching lobbies for chat group: $e');
@@ -1132,9 +1130,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                         SliverToBoxAdapter(
                           child: _buildLobbySelector(),
                         ),
-                      // Active Squad Header Card (if needed)
+                      // Active Lobby Header Card (if needed)
                       SliverToBoxAdapter(
-                        child: _uiManager.buildActiveSquadHeader(context,
+                        child: _uiManager.buildActiveLobbyHeader(context,
                             chatGroupId: widget.chatGroupId),
                       ),
                       // Messages List as SliverFillRemaining
@@ -1217,8 +1215,14 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                                 : 'Message',
                           ),
                         ),
-                        // Add some bottom padding when keyboard is visible
-                        SizedBox(height: isKeyboardVisible ? 8.0 : 8.0),
+                        // Add bottom padding for keyboard and iPhone home indicator
+                        SizedBox(
+                          height: isKeyboardVisible
+                              ? 8.0
+                              : 8.0 +
+                                  (MediaQuery.of(context).viewPadding.bottom /
+                                      2),
+                        ),
                       ],
                     ),
                   ),

@@ -7,38 +7,44 @@
 - Reference `backend/.env.example` for required environment variables
 
 ## Architecture Overview
-SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
+SquadSync is a Flutter-based lobby gaming app with clean architecture:
 - **Frontend**: Flutter app using Riverpod for state management with `AutoDisposeAsyncNotifier` and `AsyncNotifier`
-- **Data Layer**: Firebase Firestore for real-time chat + SQLite for offline caching and message history
+- **Data Layer**: Supabase PostgreSQL for real-time data + SQLite for offline caching
 - **Backend**: Node.js/Express with PostgreSQL for analytics, xAI Grok API integration for smart replies
-- **State Management**: Riverpod notifiers with freezed entities and repository pattern
+- **State Management**: Riverpod notifiers (12 total) with freezed entities and repository pattern
 
 ## Key Patterns & Conventions
 
 ### State Management
 - **Riverpod Notifiers**: All state managed via `AutoDisposeAsyncNotifier<T>` or `AsyncNotifier<T>`
-  - `SquadNotifier`: Squad spots, timers, game-specific statuses, peacock queue
+  - `LobbyNotifier`: Lobby spots, timers, game-specific statuses, peacock queue
   - `GameNotifier`: Game selection, IGDB integration, available games
   - `ChatNotifier`: Chat messages, typing indicators, media handling
   - `UserNotifier`: User profiles, pinned games, blocks, bans
   - `SystemNotifier`: Theme, notifications, app settings
-  - `CurrentSquadNotifier`: Active squad context
-- **State Entities**: Freezed immutable entities (`SquadState`, `ChatState`, `AppUser`, `Squad`, `Game`, `Message`, `SystemState`)
+  - `CurrentLobbyNotifier`: Active lobby context
+- **State Entities**: Freezed immutable entities (`LobbyState`, `ChatState`, `AppUser`, `Squad`, `Game`, `Message`, `SystemState`)
 - **Repository Pattern**: Domain layer with use cases, repositories interface in `lib/domain/`, implementations in `lib/data/`
 - **Reactive UI**: Consumers and providers for reactive updates
 
 ### Data Flow
-- **Real-time chat**: Firestore streams with StreamBuilder for live message updates
-- **Hybrid storage**: SQLite (`lib/chat/sqlite_helper.dart`) caches messages for offline access
+- **Real-time data**: Supabase Realtime streams for live updates (chat, lobbies, presence)
+- **Offline storage**: SQLite (`lib/chat/sqlite_helper.dart`) caches messages for offline access
 - **State persistence**: SharedPreferences for user settings and app state
-- **Media handling**: Firebase Storage with backend-generated signed URLs
+- **Media handling**: Supabase Storage with RLS policies
 
-### Firebase Integration
-- **Auth**: `FirebaseAuth.instance.currentUser` for UID-based user system
-- **Firestore collections**: `chat`, `users`, `chat_metadata`, `squads`
-- **Storage**: Firebase Storage with backend-signed URLs for media
-- **Cloud Functions**: Server-side timer processing in `functions/index.js`
-- **Offline support**: Database persistence enabled on non-web platforms
+### Supabase Integration
+- **Auth**: Supabase Auth with Apple Sign-In, Email/Password (`AuthServiceSupabase`)
+- **Database**: 25 tables with 92 Row Level Security policies
+- **Realtime**: Live subscriptions for chat, lobbies, typing indicators, presence
+- **Storage**: 5 buckets (avatars, clips, media, chat_backgrounds, squadsync-media) with 20 storage policies
+- **Functions**: 15+ PostgreSQL functions for friends, ratings, game data
+- **Triggers**: 15 database triggers for timestamp updates, message handling
+- **pg_cron**: Server-side timer processing every 30 seconds
+
+### Firebase (Analytics Only)
+- **firebase_analytics**: User analytics and event tracking
+- **firebase_messaging**: Push notifications (FCM)
 
 ### External API Integration
 - **IGDB API**: Game data via `GameNotifier`
@@ -47,7 +53,7 @@ SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
 - **App Links**: Deep linking (`codsquadapp://` scheme)
 
 ### UID-Based User System
-- **Always use UIDs internally**: Firebase UIDs are the source of truth for user identification
+- **Always use UIDs internally**: Supabase Auth UIDs are the source of truth for user identification
 - **Display name caching**: Cache display names in `_memberDisplayNames` to avoid repeated lookups
 - **UID conversion**: Use `getDisplayNameForUid(uid)` and `getUidForDisplayName(displayName)` for conversions
 - **Calling UIDs**: Format `uid_calling` for users claiming spots with timers
@@ -61,10 +67,10 @@ SquadSync is a Flutter-based squad gaming app with hybrid data architecture:
 ### File Structure
 - `lib/chat/`: Chat UI components and services
 - `lib/chat/link_preview.dart`: URL detection, link previews, and inline video playback
-- `lib/`: Main app screens (squad_tab, settings_tab, etc.)
+- `lib/`: Main app screens (lobby_tab, settings_tab, etc.)
 - `lib/managers/`: Dedicated manager classes for state management
 - `lib/screens/`: Screen-level widgets and navigation
-- `lib/squad_tab/`: Squad management UI components
+- `lib/lobby_tab/`: Lobby management UI components
 - `backend/`: Node.js server with Express routes
 - `functions/`: Firebase Cloud Functions for server-side timers
 - `assets/`: Extensive icon set (100+ PNG files) referenced in pubspec.yaml
@@ -99,14 +105,12 @@ docker build -t squadsync-backend backend/
 docker run -p 8080:8080 squadsync-backend
 ```
 
-### Firebase Cloud Functions Deployment
-**Critical for server-side timers** - timers only work when functions are deployed:
-```bash
-# Deploy timer functions (required for background timer processing)
-deploy_functions.bat  # Windows
-# OR manually:
-cd functions && npm install && firebase deploy --only functions
-```
+### Database Timer Setup (Supabase pg_cron)
+**Server-side timers run automatically** - no deployment needed:
+- Supabase pg_cron configured in `lib/services/SUPABASE_TIMER_CRON.sql`
+- Runs `process_expired_timers()` and `process_expired_queue()` every 30 seconds
+- Fully automatic - no client-side timer management required
+- See SUPABASE_FUNCTIONS_INVENTORY.md for complete timer documentation
 
 ### Testing
 - Unit tests: `flutter test` (basic test suite available in `test/chat_service_test.dart`)
@@ -130,29 +134,29 @@ cd functions && npm install && firebase deploy --only functions
 
 ### Hybrid Chat Storage Pattern
 ```dart
-// Real-time from Firestore
-Stream<QuerySnapshot> getChatMessages(context, {chatGroupId}) {
-  return _firestore.collection(collectionPath)
-    .orderBy('timestamp', descending: true)
-    .limit(100)
-    .snapshots();
-}
+// Real-time from Supabase
+final stream = supabase
+  .from('chat_messages')
+  .stream(primaryKey: ['id'])
+  .eq('chat_group_id', chatGroupId)
+  .order('created_at', ascending: false)
+  .limit(100);
 
 // Offline caching to SQLite
 Future<void> _cacheMessageToSQLite(Message message) async {
   await _sqliteHelper.insertMessage(message.toMap());
 }
 
-// Sync pattern: Firestore for real-time, SQLite for offline access
-// Always check SQLite cache first, then sync with Firestore
+// Sync pattern: Supabase for real-time, SQLite for offline access
+// Always check SQLite cache first, then sync with Supabase
 ```
 
 ### Server-Side Timer Functions
-- **Critical dependency**: Firebase Cloud Functions must be deployed for timer functionality
-- **Background processing**: Timers run every minute via scheduled functions
-- **Spot expiration**: Automatically frees claimed spots when timers expire
-- **Peacock cleanup**: Removes expired peacock queue entries
-- **Deployment required**: Run `firebase deploy --only functions` after timer logic changes
+- **Primary**: Supabase pg_cron runs every 30 seconds (automatic, server-side)
+- **Background processing**: PostgreSQL functions handle timer expiration
+- **Spot expiration**: `process_expired_timers()` frees claimed spots, assigns to peacock queue
+- **Peacock cleanup**: `process_expired_queue()` removes expired peacock entries
+- **Zero client work**: Fully automatic server-side processing
 
 ### State Caching Optimization
 ```dart
@@ -186,15 +190,19 @@ List<String?> get squadSpots {
 - **StreamBuilder patterns**: Extensive use for real-time Firebase data updates
 
 ## Key Files to Reference
-- `lib/main.dart`: App initialization with Firebase and deep linking
+- `lib/main.dart`: App initialization with Supabase and deep linking
 - `lib/core/app_theme.dart`: Material 3 theme system with dynamic colors and extensions
 - `lib/presentation/controllers/game_theme_controller.dart`: Dynamic theme from game covers
 - `lib/presentation/widgets/animated_theme_wrapper.dart`: Smooth theme transitions
-- `lib/squad_state.dart`: Core state management coordinator (uses manager classes)
-- `lib/managers/`: Focused manager classes for specific functionality
-- `lib/chat/chat_screen.dart`: Main chat UI with complex StreamBuilder logic
-- `lib/chat/chat_service.dart`: Hybrid Firestore/SQLite message handling
-- `backend/server.js`: Express routes for media URLs and data sync
-- `pubspec.yaml`: Extensive asset declarations and dependencies
-- `test/chat_service_test.dart`: Basic test suite (expand for better coverage)</content>
+- `lib/presentation/notifiers/`: 12 Riverpod notifiers for state management
+  - `message_notifier.dart`: Core messaging with real-time Supabase streams
+  - `media_notifier.dart`: Media uploads, polls, clips
+  - `lobby_notifier.dart`: Lobby state, spots, timers
+  - `connectivity_notifier.dart`: Offline-first sync coordination
+- `lib/chat/chat_screen.dart`: Main chat UI with Supabase Realtime
+- `lib/data/repositories/`: Repository implementations
+- `lib/diagnostic/SUPABASE_FUNCTIONS_INVENTORY.md`: Complete database schema reference
+- `backend/server.js`: Express routes for Grok AI and analytics
+- `pubspec.yaml`: Dependencies and asset declarations
+- `test/`: Test suite (needs expansion)</content>
 <parameter name="filePath">c:\Users\PC\cod_squad_app\.github\copilot-instructions.md

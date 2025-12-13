@@ -6,24 +6,26 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
 import 'presentation/controllers/game_theme_controller.dart';
 import 'package:app_links/app_links.dart';
 import 'services/auth_service_supabase.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'presentation/notifiers/user_notifier.dart';
 import 'core/injection.dart' as di;
-import 'chat/chat_groups_screen.dart';
+import 'core/app_router.dart';
 import 'notification_service.dart';
-import 'join_squad_screen.dart';
-import 'chat/dialogs/group_actions_dialog.dart';
 import 'widgets/app_widgets.dart';
 import 'services/igdb_auth_service.dart';
 import 'services/supabase_service.dart';
 import 'services/session_debug_helper.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'services/background_sync_service.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Preserve native splash screen until we're ready
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   try {
     await dotenv.load();
   } catch (e) {
@@ -33,10 +35,24 @@ void main() async {
   // Initialize SharedPreferences for theme persistence
   final prefs = await SharedPreferences.getInstance();
 
-  // Ensure Firebase is initialized FIRST
+  // Initialize background sync service for offline-first operations
+  try {
+    debugPrint('Initializing background sync service...');
+    final syncService = BackgroundSyncService();
+    await syncService.initialize();
+    debugPrint('Background sync service initialized successfully');
+  } catch (e) {
+    debugPrint('Background sync initialization failed: $e');
+    // Continue - app will work but without background sync
+  }
+
+  // Initialize Firebase (ANALYTICS & MESSAGING ONLY - all DB ops on Supabase)
+  // Note: Firebase Core/Firestore removed Dec 2025 - retained only for:
+  //   - firebase_analytics: User analytics and event tracking
+  //   - firebase_messaging: Push notifications (FCM)
   await _initializeFirebase();
 
-  // Initialize Supabase (dual client architecture)
+  // Initialize Supabase (PRIMARY DATABASE - all auth, real-time, storage)
   try {
     await SupabaseService.initialize();
 
@@ -62,12 +78,21 @@ void main() async {
     rethrow;
   }
 
+  // Note: Native splash will be removed by app_widgets.dart after Flutter content is ready
+  // DO NOT call FlutterNativeSplash.remove() here - it removes splash too early
+
+  // Run the app
   runApp(SquadSyncApp(prefs: prefs));
 }
 
+/// Initialize Firebase for Analytics & Messaging ONLY
+/// Note: All database operations use Supabase (PostgreSQL + Realtime)
+/// Firebase retained only for:
+///   - firebase_analytics: User behavior tracking
+///   - firebase_messaging: Push notifications (FCM)
 Future<void> _initializeFirebase() async {
   try {
-    debugPrint('Initializing Firebase...');
+    debugPrint('Initializing Firebase (Analytics & Messaging only)...');
 
     // Check if Firebase is already initialized to avoid duplicate app error
     if (Firebase.apps.isEmpty) {
@@ -84,14 +109,14 @@ Future<void> _initializeFirebase() async {
       assert(Firebase.apps.isNotEmpty, 'Firebase not initialized');
     }
 
-    // Initialize Firebase Analytics
+    // Initialize Firebase Analytics (for user behavior tracking)
     await FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(true);
     debugPrint('Firebase Analytics initialized');
 
+    // Initialize push notifications (Firebase Cloud Messaging)
     try {
       await NotificationService.initialize();
-
-      debugPrint('Notification services initialized');
+      debugPrint('Notification services (FCM) initialized');
     } catch (e) {
       debugPrint('Notification initialization failed: $e');
       // Notification initialization failed - silently handled
@@ -102,16 +127,17 @@ Future<void> _initializeFirebase() async {
     // await di.setupInjection();
     // debugPrint('Dependency injection initialized');
 
-    // IGDB credentials setup (uncomment for first run, then comment out)
-    try {
-      debugPrint('About to call storeCredentials...');
-      final igdbService = IgdbAuthService();
-      await igdbService.storeCredentials();
-      debugPrint(
-          'IGDB credentials stored - comment out this code after first run');
-    } catch (e) {
-      debugPrint('IGDB credentials setup failed: $e');
-    }
+    // IGDB credentials setup - COMMENTED OUT (blocks app initialization)
+    // Uncomment only for first-time setup, then comment out again
+    // try {
+    //   debugPrint('About to call storeCredentials...');
+    //   final igdbService = IgdbAuthService();
+    //   await igdbService.storeCredentials();
+    //   debugPrint(
+    //       'IGDB credentials stored - comment out this code after first run');
+    // } catch (e) {
+    //   debugPrint('IGDB credentials setup failed: $e');
+    // }
 
     // Grok API key setup (uncomment for first run, then comment out)
     // try {
@@ -162,13 +188,13 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   Future<void> _initDeepLinks() async {
     // Handle initial link
     final initialLink = await _appLinks.getInitialLink();
-    if (initialLink != null) {
+    if (initialLink != null && mounted) {
       _handleDeepLink(initialLink.toString());
     }
 
     // Listen for incoming links - initial link handling may be different in v6
     _sub = _appLinks.uriLinkStream.listen((Uri? link) {
-      if (link != null) {
+      if (link != null && mounted) {
         _handleDeepLink(link.toString());
       }
     }, onError: (err) {
@@ -177,71 +203,14 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   }
 
   void _handleDeepLink(String link) {
-    // Check if user is authenticated and has a squad before navigating
-    final userAsync = ref.watch(userNotifierProvider);
-    final squadAsync = ref.watch(di.lobbyNotifierProvider);
+    if (!mounted) return;
 
-    final authService = AuthServiceSupabase();
-    final user = userAsync.maybeWhen(
-      data: (userState) => userState != null && userState.displayName != null
-          ? authService.currentUser
-          : null,
-      orElse: () => null,
-    );
-    final squadId = squadAsync.maybeWhen(
-      data: (squadState) => squadState.selectedLobbyId,
-      orElse: () => null,
-    );
-
-    if (link == 'codsquadapp://chat' &&
-        mounted &&
-        user != null &&
-        squadId != null) {
-      // Defer navigation to avoid _debugLocked assertion
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const ChatGroupsScreen()),
-          );
-        }
-      });
-    } else if (link.startsWith('codsquadapp://join/') && mounted) {
-      final code = link.split('/').last;
-      // Defer navigation to avoid _debugLocked assertion
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => JoinSquadScreen(initialCode: code),
-            ),
-          );
-        }
-      });
-    } else if (link.startsWith('https://squadsync.app/join/') && mounted) {
-      // Handle web deep links for group invites
-      final uri = Uri.parse(link);
-      final code = uri.queryParameters['code'];
-      // Defer navigation to avoid _debugLocked assertion
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (context) => GroupActionsDialog(
-              initialTabIndex: 0, // Join tab
-              initialCode: code,
-            ),
-          );
-        }
-      });
-    } else if (link == 'codsquadapp://chat' && mounted && user == null) {
-      // User not authenticated, show login screen
-      _showSnackBar('Please sign in first');
-    } else if (link == 'codsquadapp://chat' && mounted && squadId == null) {
-      // User authenticated but no squad, show squad selection
-      _showSnackBar('Please join a squad first');
-    }
+    // Use DeepLinkRouter for go_router integration
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        DeepLinkRouter.handleDeepLink(context, ref, link);
+      }
+    });
   }
 
   void _showSnackBar(String message) {
@@ -258,31 +227,17 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
         if (call.method == 'sendMessage' && mounted) {
           final authService = AuthServiceSupabase();
           final user = authService.currentUser;
-          final squadAsync = ref.watch(di.lobbyNotifierProvider);
 
-          final squadId = squadAsync.maybeWhen(
-            data: (squadState) => squadState.selectedLobbyId,
-            orElse: () => null,
-          );
-
-          if (user != null && squadId != null) {
+          if (user != null && mounted) {
             // Defer navigation to avoid _debugLocked assertion
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ChatGroupsScreen(),
-                  ),
-                );
+                context.go('/chat');
               }
             });
             return true;
           } else if (user == null) {
             _showSnackBar('Please sign in first');
-            return false;
-          } else {
-            _showSnackBar('Please join a squad first');
             return false;
           }
         }

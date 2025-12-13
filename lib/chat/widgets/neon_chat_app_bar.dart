@@ -9,7 +9,7 @@ import '../../screens/voice_room_screen.dart';
 /// Features:
 /// - Frosted glass background with blur
 /// - Left: Back button in glass bubble
-/// - Center: Tappable avatar + squad name in overlapping layout
+/// - Center: Tappable avatar + lobby name in overlapping layout
 /// - Right: Gamepad button (lobby creation) + Voice chat button in glass bubbles
 /// - Hero animation support for avatar transitions
 class NeonChatAppBar extends StatelessWidget {
@@ -55,7 +55,7 @@ class NeonChatAppBar extends StatelessWidget {
                 neonColor: neonColor,
               ),
 
-              // Center: Avatar + Squad Name (tappable)
+              // Center: Avatar + Lobby Name (tappable)
               Expanded(
                 child: GestureDetector(
                   onTap: onCenterTapped,
@@ -149,7 +149,7 @@ class _GlassCircleButton extends StatelessWidget {
   }
 }
 
-/// Center stack with overlapping avatar and squad name (iMessage style)
+/// Center stack with overlapping avatar and lobby name (iMessage style)
 class _CenterAvatarStack extends StatelessWidget {
   final String squadId;
   final String squadName;
@@ -169,7 +169,7 @@ class _CenterAvatarStack extends StatelessWidget {
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
-        // Squad name pill - positioned to touch bottom of avatar
+        // Lobby name pill - positioned to touch bottom of avatar
         Positioned(
           top: 56, // Position at bottom of 56px avatar circle
           child: _GlassPill(
@@ -203,7 +203,7 @@ class _CenterAvatarStack extends StatelessWidget {
   }
 }
 
-/// Glass pill container for squad name
+/// Glass pill container for lobby name
 class _GlassPill extends StatelessWidget {
   final String squadName;
   final Color neonColor;
@@ -294,7 +294,7 @@ class NeonChatAppBarPreferred extends StatelessWidget
                 neonColor: neonColor,
               ),
 
-              // Center: Avatar + Squad Name (tappable)
+              // Center: Avatar + Lobby Name (tappable)
               Expanded(
                 child: GestureDetector(
                   onTap: onCenterTapped,

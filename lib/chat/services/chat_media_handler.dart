@@ -7,25 +7,30 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart' as record_package;
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/message.dart';
 import '../chat_state_notifier.dart';
 import '../../services/media_service.dart';
 
 /// Service responsible for handling media operations in chat including
-/// image picking, audio recording, and media uploading
+/// image picking, audio recording, and media uploading with speech-to-text transcription
 class ChatMediaHandler {
   final ImagePicker _picker = ImagePicker();
   final record_package.AudioRecorder _audioRecorder =
       record_package.AudioRecorder();
   final MessageService _chatService = MessageService();
   final AuthServiceSupabase _authService = AuthServiceSupabase();
+  final stt.SpeechToText _speechToText = stt.SpeechToText();
 
   String? _audioPath;
+  String? _transcription;
 
   /// Dispose of resources
   void dispose() {
     _audioRecorder.dispose();
+    _speechToText.cancel();
   }
 
   /// Pick and send media (image or video) from gallery/camera
@@ -81,10 +86,28 @@ class ChatMediaHandler {
     }
   }
 
-  /// Start audio recording
+  /// Start audio recording with real-time speech-to-text transcription
   Future<void> startRecording(WidgetRef ref) async {
+    // Check microphone permission
+    final micStatus = await Permission.microphone.request();
+    if (!micStatus.isGranted) {
+      if (ref.context.mounted) {
+        ScaffoldMessenger.of(ref.context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission denied')));
+      }
+      return;
+    }
+
     if (await _audioRecorder.hasPermission()) {
       try {
+        // Initialize speech-to-text
+        final speechAvailable = await _speechToText.initialize(
+          onError: (error) {
+            debugPrint('Speech-to-text error: ${error.errorMsg}');
+          },
+        );
+
+        // Start audio recording
         final directory = Directory.systemTemp;
         if (!directory.existsSync()) {
           directory.createSync(recursive: true);
@@ -93,6 +116,20 @@ class ChatMediaHandler {
             '${directory.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
         await _audioRecorder.start(const record_package.RecordConfig(),
             path: path);
+
+        // Start speech-to-text transcription
+        if (speechAvailable) {
+          _transcription = '';
+          await _speechToText.listen(
+            onResult: (result) {
+              _transcription = result.recognizedWords;
+              debugPrint('Transcription: $_transcription');
+            },
+            listenMode: stt.ListenMode.confirmation,
+            partialResults: true,
+          );
+        }
+
         ref.read(chatStateProvider.notifier).setRecording(true);
         HapticFeedback.mediumImpact();
       } catch (e) {
@@ -105,24 +142,31 @@ class ChatMediaHandler {
     } else {
       if (ref.context.mounted) {
         ScaffoldMessenger.of(ref.context).showSnackBar(
-            const SnackBar(content: Text('Microphone permission Denied')));
+            const SnackBar(content: Text('Microphone permission denied')));
       }
     }
   }
 
-  /// Stop audio recording and upload
+  /// Stop audio recording, transcription, and upload with transcribed text
   Future<void> stopRecording(
     WidgetRef ref, {
     required String? chatGroupId,
     required ChatType chatType,
   }) async {
     try {
+      // Stop speech-to-text
+      if (_speechToText.isListening) {
+        await _speechToText.stop();
+      }
+
+      // Stop audio recording
       String? path = await _audioRecorder.stop();
       ref.read(chatStateProvider.notifier).setRecording(false);
 
       if (path != null) {
         _audioPath = path;
         await _uploadAudio(ref, chatGroupId: chatGroupId, chatType: chatType);
+        _transcription = null; // Reset transcription
       }
       HapticFeedback.mediumImpact();
     } catch (e) {
@@ -135,7 +179,7 @@ class ChatMediaHandler {
     }
   }
 
-  /// Upload recorded audio file
+  /// Upload recorded audio file with transcription
   Future<void> _uploadAudio(
     WidgetRef ref, {
     required String? chatGroupId,
@@ -154,10 +198,15 @@ class ChatMediaHandler {
       String downloadUrl = await _chatService.uploadAudio(file, fileName);
       final timestampMs = DateTime.now().millisecondsSinceEpoch;
 
+      // Use transcription as message text if available, otherwise empty
+      final messageText = _transcription?.isNotEmpty == true
+          ? '🎤 $_transcription'
+          : '🎤 Voice message';
+
       await _chatService.sendMessage(
         ref,
         senderUid: user.id,
-        text: '',
+        text: messageText,
         audio: [
           {'uri': downloadUrl, 'creation_timestamp': timestampMs}
         ],
@@ -212,7 +261,7 @@ class ChatMediaHandler {
       final response = await SupabaseService.client
           .from('users')
           .select('user_groups')
-          .eq('id', currentUser.id)
+          .eq('uid', currentUser.id)
           .maybeSingle();
 
       if (response != null) {
@@ -231,7 +280,7 @@ class ChatMediaHandler {
           // Update the entire user_groups array
           await SupabaseService.client.from('users').update({
             'user_groups': userGroups,
-          }).eq('id', currentUser.id);
+          }).eq('uid', currentUser.id);
         }
       }
 

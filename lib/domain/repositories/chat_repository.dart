@@ -49,6 +49,7 @@ abstract class ChatRepository {
   Future<void> joinGroup(String groupId);
   Future<void> leaveGroup(String groupId);
   Future<List<ChatGroup>> discoverGroups({String? query, int limit = 20});
+  Future<ChatGroup?> getGroupByInviteCode(String code);
   Future<void> updateGroupSettings(
       String groupId, Map<String, dynamic> settings);
 

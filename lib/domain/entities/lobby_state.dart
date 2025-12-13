@@ -4,28 +4,38 @@ import 'package:squad_sync/domain/entities/lobby.dart';
 part 'lobby_state.freezed.dart';
 part 'lobby_state.g.dart';
 
-@freezed
+/// Unified LobbyState with sub-states for spots/timers/peacock, current lobby, and memberships
+@freezed // Disable DiagnosticableTreeMixin - has bugs in Freezed 3.0
 class LobbyState with _$LobbyState {
   const factory LobbyState({
     required bool isInitialized,
     required bool isInitialDataLoaded,
     required String displayName,
     String? profileImage,
-    Map<String, String?>? memberProfileImages,
 
-    // Game-specific data
+    // Spots, timers, and peacock queue (from LobbyNotifier)
     required Map<String, List<String?>> gameLobbySpots,
     required Map<String, List<Map<String, dynamic>?>> gameSpotTimers,
     required Map<String, Map<String, String>> gameStatuses,
     required Map<String, String> globalStatuses,
+    required List<String> peacockQueue,
+    required Map<String, Map<String, dynamic>?> peacockTimers,
+    required Map<String, Duration> peacockTimerStates,
+    required Set<String> preferredPeacockGames,
+    required Map<String, Duration> spotTimerStates,
 
-    // Lobby data
+    // Current lobby tracking (from CurrentLobbyNotifier)
+    String? selectedLobbyId,
+    Lobby? currentLobby,
+    Map<String, dynamic>? currentLobbyData,
+    Map<String, dynamic>? currentGame,
+
+    // User's lobby memberships (from UserSquadsNotifier concept)
+    required List<String> userLobbyIds,
+    required Map<String, Lobby> userLobbies,
     required List<String> lobbyMemberUids,
     required Map<String, String> memberDisplayNames,
-    required List<String> userLobbyIds,
-    String? selectedLobbyId,
-    required Map<String, Lobby> userLobbies,
-    Map<String, dynamic>? currentLobbyData,
+    Map<String, String?>? memberProfileImages,
 
     // UI state
     required Map<String, bool> typing,
@@ -41,20 +51,10 @@ class LobbyState with _$LobbyState {
     required Map<String, List<Map<String, dynamic>>> bans,
     required List<Map<String, dynamic>> availableGames,
     required Map<String, List<Map<String, dynamic>>> gameLobbies,
-    required Set<String> preferredPeacockGames,
     required Set<String> mutedGames,
     required Set<String> hiddenGames,
-    required Map<String, Map<String, dynamic>?> peacockTimers,
-    required List<String> peacockQueue,
     required List<Map<String, dynamic>> scheduledTimes,
     required bool hasNewAvailability,
-
-    // Current game
-    Map<String, dynamic>? currentGame,
-
-    // Timer states
-    required Map<String, Duration> spotTimerStates,
-    required Map<String, Duration> peacockTimerStates,
 
     // Ratings
     required Map<String, Map<String, int>> dailyRatings,

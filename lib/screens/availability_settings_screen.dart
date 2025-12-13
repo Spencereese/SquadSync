@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../presentation/notifiers/game_notifier.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../presentation/notifiers/user_notifier.dart';
-import '../presentation/notifiers/game_notifier.dart';
 import '../domain/entities/game.dart';
 
 class AvailabilitySettingsScreen extends ConsumerStatefulWidget {

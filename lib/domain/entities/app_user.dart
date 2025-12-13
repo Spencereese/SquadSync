@@ -3,7 +3,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'app_user.freezed.dart';
 part 'app_user.g.dart';
 
-@freezed
+@freezed // Disable DiagnosticableTreeMixin - has bugs in Freezed 3.0
 class AppUser with _$AppUser {
   const factory AppUser({
     required String uid,
@@ -62,7 +62,7 @@ class AppUser with _$AppUser {
         friends: [],
         alerts: [],
         userGroups: [],
-        alertCircles: ['Squad', 'Friends', 'Public'],
+        alertCircles: ['Lobby', 'Friends', 'Public'],
         publicGroups: [],
         pinnedMessages: [],
       );

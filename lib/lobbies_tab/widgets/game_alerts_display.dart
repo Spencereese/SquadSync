@@ -34,7 +34,7 @@ class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
 
   Future<void> _loadAlerts() async {
     final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
-    final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+    final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
     final selectedLobbyId = squadStateAsync.maybeWhen(
       data: (squadState) => squadState.selectedLobbyId,
@@ -42,7 +42,7 @@ class GameAlertsDisplayState extends ConsumerState<GameAlertsDisplay> {
     );
 
     if (selectedLobbyId != null) {
-      final alerts = await squadNotifier.getSquadAlerts(selectedLobbyId);
+      final alerts = await lobbyNotifier.getSquadAlerts(selectedLobbyId);
       if (mounted) {
         setState(() {
           _alerts = alerts;

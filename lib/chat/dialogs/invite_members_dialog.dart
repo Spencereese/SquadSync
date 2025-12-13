@@ -1,29 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/auth_service_supabase.dart';
-import '../../services/supabase_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../utils.dart';
+import '../../core/injection.dart';
 
 /// Simplified dialog for inviting members to group chats
-class InviteMembersDialog extends StatefulWidget {
+class InviteMembersDialog extends ConsumerStatefulWidget {
   final String chatGroupId;
   final String chatGroupName;
-  final bool isSquadGroup;
+  final bool isLobbyGroup;
 
   const InviteMembersDialog({
     super.key,
     required this.chatGroupId,
     required this.chatGroupName,
-    this.isSquadGroup = false,
+    this.isLobbyGroup = false,
   });
 
   @override
-  State<InviteMembersDialog> createState() => _InviteMembersDialogState();
+  ConsumerState<InviteMembersDialog> createState() => _InviteMembersDialogState();
 }
 
-class _InviteMembersDialogState extends State<InviteMembersDialog> {
+class _InviteMembersDialogState extends ConsumerState<InviteMembersDialog> {
   String? _inviteCode;
   bool _isGeneratingCode = true;
 
@@ -41,8 +42,8 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
       // Generate a unique invite code using group ID
       final code = widget.chatGroupId.substring(0, 8).toUpperCase();
 
-      // Store the invite code in Supabase for tracking
-      await SupabaseService.client.from('invites').upsert({
+      // Store the invite code via repository
+      await ref.read(lobbyRepositoryProvider).createInvite({
         'id': code,
         'chat_group_id': widget.chatGroupId,
         'created_by': currentUser.id,
@@ -73,7 +74,7 @@ class _InviteMembersDialogState extends State<InviteMembersDialog> {
 
     // Create a shareable deep link
     final deepLink =
-        'https://squadsync.app/join/${widget.chatGroupId}?code=$_inviteCode';
+        'https://lobbiesync.app/join/${widget.chatGroupId}?code=$_inviteCode';
 
     final inviteMessage = 'Join "${widget.chatGroupName}" on SquadSync!\n\n'
         'Invite Code: $_inviteCode\n'

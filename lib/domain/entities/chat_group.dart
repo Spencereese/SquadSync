@@ -3,7 +3,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'chat_group.freezed.dart';
 part 'chat_group.g.dart';
 
-@freezed
+@freezed // Disable DiagnosticableTreeMixin - has bugs in Freezed 3.0
 class ChatGroup with _$ChatGroup {
   const factory ChatGroup({
     required String id,
@@ -15,6 +15,7 @@ class ChatGroup with _$ChatGroup {
     required DateTime createdAt,
     String? description,
     String? avatarUrl,
+    String? inviteCode,
     Map<String, dynamic>? metadata,
     List<String>? admins,
     List<String>? moderators,

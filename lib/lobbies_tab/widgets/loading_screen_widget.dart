@@ -17,7 +17,7 @@ class LoadingScreenWidget extends StatelessWidget {
               const CircularProgressIndicator(color: Colors.cyanAccent),
               const SizedBox(height: 24),
               Text(
-                'Loading your squad...',
+                'Loading your lobby...',
                 style: TextStyle(
                   color: Colors.cyanAccent,
                   fontSize: 18,

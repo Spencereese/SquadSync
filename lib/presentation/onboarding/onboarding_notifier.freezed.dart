@@ -17,11 +17,17 @@ final _privateConstructorUsedError = UnsupportedError(
 /// @nodoc
 mixin _$OnboardingState {
   int get currentPage => throw _privateConstructorUsedError;
+  int get totalPages => throw _privateConstructorUsedError;
   bool get isLoading => throw _privateConstructorUsedError;
+  bool get hasSkipped => throw _privateConstructorUsedError;
   String? get callsign => throw _privateConstructorUsedError;
   String? get avatarPath => throw _privateConstructorUsedError;
   List<String> get selectedGames => throw _privateConstructorUsedError;
+  List<String> get aiRecommendedGames => throw _privateConstructorUsedError;
+  bool get isLoadingRecommendations => throw _privateConstructorUsedError;
   Map<String, bool> get preferences => throw _privateConstructorUsedError;
+  String get abTestVariant =>
+      throw _privateConstructorUsedError; // A or B for A/B testing
   String? get error => throw _privateConstructorUsedError;
 
   /// Create a copy of OnboardingState
@@ -39,11 +45,16 @@ abstract class $OnboardingStateCopyWith<$Res> {
   @useResult
   $Res call(
       {int currentPage,
+      int totalPages,
       bool isLoading,
+      bool hasSkipped,
       String? callsign,
       String? avatarPath,
       List<String> selectedGames,
+      List<String> aiRecommendedGames,
+      bool isLoadingRecommendations,
       Map<String, bool> preferences,
+      String abTestVariant,
       String? error});
 }
 
@@ -63,11 +74,16 @@ class _$OnboardingStateCopyWithImpl<$Res, $Val extends OnboardingState>
   @override
   $Res call({
     Object? currentPage = null,
+    Object? totalPages = null,
     Object? isLoading = null,
+    Object? hasSkipped = null,
     Object? callsign = freezed,
     Object? avatarPath = freezed,
     Object? selectedGames = null,
+    Object? aiRecommendedGames = null,
+    Object? isLoadingRecommendations = null,
     Object? preferences = null,
+    Object? abTestVariant = null,
     Object? error = freezed,
   }) {
     return _then(_value.copyWith(
@@ -75,9 +91,17 @@ class _$OnboardingStateCopyWithImpl<$Res, $Val extends OnboardingState>
           ? _value.currentPage
           : currentPage // ignore: cast_nullable_to_non_nullable
               as int,
+      totalPages: null == totalPages
+          ? _value.totalPages
+          : totalPages // ignore: cast_nullable_to_non_nullable
+              as int,
       isLoading: null == isLoading
           ? _value.isLoading
           : isLoading // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasSkipped: null == hasSkipped
+          ? _value.hasSkipped
+          : hasSkipped // ignore: cast_nullable_to_non_nullable
               as bool,
       callsign: freezed == callsign
           ? _value.callsign
@@ -91,10 +115,22 @@ class _$OnboardingStateCopyWithImpl<$Res, $Val extends OnboardingState>
           ? _value.selectedGames
           : selectedGames // ignore: cast_nullable_to_non_nullable
               as List<String>,
+      aiRecommendedGames: null == aiRecommendedGames
+          ? _value.aiRecommendedGames
+          : aiRecommendedGames // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      isLoadingRecommendations: null == isLoadingRecommendations
+          ? _value.isLoadingRecommendations
+          : isLoadingRecommendations // ignore: cast_nullable_to_non_nullable
+              as bool,
       preferences: null == preferences
           ? _value.preferences
           : preferences // ignore: cast_nullable_to_non_nullable
               as Map<String, bool>,
+      abTestVariant: null == abTestVariant
+          ? _value.abTestVariant
+          : abTestVariant // ignore: cast_nullable_to_non_nullable
+              as String,
       error: freezed == error
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
@@ -113,11 +149,16 @@ abstract class _$$OnboardingStateImplCopyWith<$Res>
   @useResult
   $Res call(
       {int currentPage,
+      int totalPages,
       bool isLoading,
+      bool hasSkipped,
       String? callsign,
       String? avatarPath,
       List<String> selectedGames,
+      List<String> aiRecommendedGames,
+      bool isLoadingRecommendations,
       Map<String, bool> preferences,
+      String abTestVariant,
       String? error});
 }
 
@@ -135,11 +176,16 @@ class __$$OnboardingStateImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? currentPage = null,
+    Object? totalPages = null,
     Object? isLoading = null,
+    Object? hasSkipped = null,
     Object? callsign = freezed,
     Object? avatarPath = freezed,
     Object? selectedGames = null,
+    Object? aiRecommendedGames = null,
+    Object? isLoadingRecommendations = null,
     Object? preferences = null,
+    Object? abTestVariant = null,
     Object? error = freezed,
   }) {
     return _then(_$OnboardingStateImpl(
@@ -147,9 +193,17 @@ class __$$OnboardingStateImplCopyWithImpl<$Res>
           ? _value.currentPage
           : currentPage // ignore: cast_nullable_to_non_nullable
               as int,
+      totalPages: null == totalPages
+          ? _value.totalPages
+          : totalPages // ignore: cast_nullable_to_non_nullable
+              as int,
       isLoading: null == isLoading
           ? _value.isLoading
           : isLoading // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasSkipped: null == hasSkipped
+          ? _value.hasSkipped
+          : hasSkipped // ignore: cast_nullable_to_non_nullable
               as bool,
       callsign: freezed == callsign
           ? _value.callsign
@@ -163,10 +217,22 @@ class __$$OnboardingStateImplCopyWithImpl<$Res>
           ? _value._selectedGames
           : selectedGames // ignore: cast_nullable_to_non_nullable
               as List<String>,
+      aiRecommendedGames: null == aiRecommendedGames
+          ? _value._aiRecommendedGames
+          : aiRecommendedGames // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      isLoadingRecommendations: null == isLoadingRecommendations
+          ? _value.isLoadingRecommendations
+          : isLoadingRecommendations // ignore: cast_nullable_to_non_nullable
+              as bool,
       preferences: null == preferences
           ? _value._preferences
           : preferences // ignore: cast_nullable_to_non_nullable
               as Map<String, bool>,
+      abTestVariant: null == abTestVariant
+          ? _value.abTestVariant
+          : abTestVariant // ignore: cast_nullable_to_non_nullable
+              as String,
       error: freezed == error
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
@@ -180,13 +246,19 @@ class __$$OnboardingStateImplCopyWithImpl<$Res>
 class _$OnboardingStateImpl implements _OnboardingState {
   const _$OnboardingStateImpl(
       {this.currentPage = 0,
+      this.totalPages = 4,
       this.isLoading = false,
+      this.hasSkipped = false,
       this.callsign,
       this.avatarPath,
       final List<String> selectedGames = const [],
+      final List<String> aiRecommendedGames = const [],
+      this.isLoadingRecommendations = false,
       final Map<String, bool> preferences = const {},
+      this.abTestVariant = 'A',
       this.error})
       : _selectedGames = selectedGames,
+        _aiRecommendedGames = aiRecommendedGames,
         _preferences = preferences;
 
   @override
@@ -194,7 +266,13 @@ class _$OnboardingStateImpl implements _OnboardingState {
   final int currentPage;
   @override
   @JsonKey()
+  final int totalPages;
+  @override
+  @JsonKey()
   final bool isLoading;
+  @override
+  @JsonKey()
+  final bool hasSkipped;
   @override
   final String? callsign;
   @override
@@ -208,6 +286,19 @@ class _$OnboardingStateImpl implements _OnboardingState {
     return EqualUnmodifiableListView(_selectedGames);
   }
 
+  final List<String> _aiRecommendedGames;
+  @override
+  @JsonKey()
+  List<String> get aiRecommendedGames {
+    if (_aiRecommendedGames is EqualUnmodifiableListView)
+      return _aiRecommendedGames;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_aiRecommendedGames);
+  }
+
+  @override
+  @JsonKey()
+  final bool isLoadingRecommendations;
   final Map<String, bool> _preferences;
   @override
   @JsonKey()
@@ -218,11 +309,15 @@ class _$OnboardingStateImpl implements _OnboardingState {
   }
 
   @override
+  @JsonKey()
+  final String abTestVariant;
+// A or B for A/B testing
+  @override
   final String? error;
 
   @override
   String toString() {
-    return 'OnboardingState(currentPage: $currentPage, isLoading: $isLoading, callsign: $callsign, avatarPath: $avatarPath, selectedGames: $selectedGames, preferences: $preferences, error: $error)';
+    return 'OnboardingState(currentPage: $currentPage, totalPages: $totalPages, isLoading: $isLoading, hasSkipped: $hasSkipped, callsign: $callsign, avatarPath: $avatarPath, selectedGames: $selectedGames, aiRecommendedGames: $aiRecommendedGames, isLoadingRecommendations: $isLoadingRecommendations, preferences: $preferences, abTestVariant: $abTestVariant, error: $error)';
   }
 
   @override
@@ -232,8 +327,12 @@ class _$OnboardingStateImpl implements _OnboardingState {
             other is _$OnboardingStateImpl &&
             (identical(other.currentPage, currentPage) ||
                 other.currentPage == currentPage) &&
+            (identical(other.totalPages, totalPages) ||
+                other.totalPages == totalPages) &&
             (identical(other.isLoading, isLoading) ||
                 other.isLoading == isLoading) &&
+            (identical(other.hasSkipped, hasSkipped) ||
+                other.hasSkipped == hasSkipped) &&
             (identical(other.callsign, callsign) ||
                 other.callsign == callsign) &&
             (identical(other.avatarPath, avatarPath) ||
@@ -241,7 +340,14 @@ class _$OnboardingStateImpl implements _OnboardingState {
             const DeepCollectionEquality()
                 .equals(other._selectedGames, _selectedGames) &&
             const DeepCollectionEquality()
+                .equals(other._aiRecommendedGames, _aiRecommendedGames) &&
+            (identical(
+                    other.isLoadingRecommendations, isLoadingRecommendations) ||
+                other.isLoadingRecommendations == isLoadingRecommendations) &&
+            const DeepCollectionEquality()
                 .equals(other._preferences, _preferences) &&
+            (identical(other.abTestVariant, abTestVariant) ||
+                other.abTestVariant == abTestVariant) &&
             (identical(other.error, error) || other.error == error));
   }
 
@@ -249,11 +355,16 @@ class _$OnboardingStateImpl implements _OnboardingState {
   int get hashCode => Object.hash(
       runtimeType,
       currentPage,
+      totalPages,
       isLoading,
+      hasSkipped,
       callsign,
       avatarPath,
       const DeepCollectionEquality().hash(_selectedGames),
+      const DeepCollectionEquality().hash(_aiRecommendedGames),
+      isLoadingRecommendations,
       const DeepCollectionEquality().hash(_preferences),
+      abTestVariant,
       error);
 
   /// Create a copy of OnboardingState
@@ -269,17 +380,26 @@ class _$OnboardingStateImpl implements _OnboardingState {
 abstract class _OnboardingState implements OnboardingState {
   const factory _OnboardingState(
       {final int currentPage,
+      final int totalPages,
       final bool isLoading,
+      final bool hasSkipped,
       final String? callsign,
       final String? avatarPath,
       final List<String> selectedGames,
+      final List<String> aiRecommendedGames,
+      final bool isLoadingRecommendations,
       final Map<String, bool> preferences,
+      final String abTestVariant,
       final String? error}) = _$OnboardingStateImpl;
 
   @override
   int get currentPage;
   @override
+  int get totalPages;
+  @override
   bool get isLoading;
+  @override
+  bool get hasSkipped;
   @override
   String? get callsign;
   @override
@@ -287,7 +407,13 @@ abstract class _OnboardingState implements OnboardingState {
   @override
   List<String> get selectedGames;
   @override
+  List<String> get aiRecommendedGames;
+  @override
+  bool get isLoadingRecommendations;
+  @override
   Map<String, bool> get preferences;
+  @override
+  String get abTestVariant; // A or B for A/B testing
   @override
   String? get error;
 

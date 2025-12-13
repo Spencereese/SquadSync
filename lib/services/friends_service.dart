@@ -10,7 +10,8 @@ import 'supabase_service.dart';
 /// - Direct messages
 /// - User search
 class FriendsService {
-  final SupabaseClient _supabase = SupabaseService.client;
+  // Lazy initialization to avoid accessing Supabase.instance before it's initialized
+  SupabaseClient get _supabase => SupabaseService.client;
   final Logger _logger = Logger();
 
   // ============================================================================

@@ -36,9 +36,16 @@ class SessionDebugHelper {
       debugPrint('  ✅ Active session found');
       debugPrint('  User ID: ${session.user.id}');
       debugPrint('  User Email: ${session.user.email ?? "N/A"}');
-      debugPrint('  Access Token: ${session.accessToken.substring(0, 20)}...');
-      debugPrint(
-          '  Refresh Token: ${session.refreshToken?.substring(0, 20)}...');
+      // Safely substring tokens to avoid RangeError
+      final accessTokenPreview = session.accessToken.length > 20
+          ? session.accessToken.substring(0, 20)
+          : session.accessToken;
+      debugPrint('  Access Token: $accessTokenPreview...');
+      final refreshTokenPreview =
+          session.refreshToken != null && session.refreshToken!.length > 20
+              ? session.refreshToken!.substring(0, 20)
+              : session.refreshToken ?? 'N/A';
+      debugPrint('  Refresh Token: $refreshTokenPreview...');
       debugPrint(
           '  Expires At: ${session.expiresAt != null ? DateTime.fromMillisecondsSinceEpoch(session.expiresAt! * 1000) : "N/A"}');
 

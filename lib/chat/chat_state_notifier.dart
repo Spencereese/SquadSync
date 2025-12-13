@@ -1,5 +1,6 @@
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+
 import 'package:flutter/material.dart';
-import 'package:riverpod/riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Chat UI state model for Riverpod
@@ -56,7 +57,7 @@ class ChatUIState {
   static const initial = ChatUIState();
 }
 
-/// Riverpod StateNotifier for chat UI state
+/// Riverpod StateNotifier for chat UI state (using legacy for Riverpod 3.0)
 class ChatStateNotifier extends StateNotifier<ChatUIState> {
   ChatStateNotifier() : super(ChatUIState.initial) {
     loadQuickReactionEmojis();
@@ -202,7 +203,7 @@ class ChatStateNotifier extends StateNotifier<ChatUIState> {
   }
 }
 
-/// Provider for chat UI state
+/// Provider for chat UI state (using legacy StateNotifierProvider for Riverpod 3.0)
 final chatStateProvider =
     StateNotifierProvider<ChatStateNotifier, ChatUIState>((ref) {
   return ChatStateNotifier();

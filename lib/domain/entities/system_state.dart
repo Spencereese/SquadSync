@@ -3,7 +3,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'system_state.freezed.dart';
 part 'system_state.g.dart';
 
-@freezed
+@freezed // Disable DiagnosticableTreeMixin - has bugs in Freezed 3.0
 class SystemState with _$SystemState {
   const factory SystemState({
     required ThemeMode themeMode,

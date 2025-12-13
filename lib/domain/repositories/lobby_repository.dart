@@ -43,4 +43,22 @@ abstract class LobbyRepository {
 
   // Analytics
   Future<void> trackLobbyEvent(String event, Map<String, dynamic> data);
+
+  // Invite management
+  Future<void> createInvite(Map<String, dynamic> inviteData);
+
+  // Peacock management
+  Future<void> createPeacock(Map<String, dynamic> peacockData);
+  Future<void> updateUserPeacock(String userId, Map<String, dynamic> peacockStatus);
+
+  // Real-time streams
+  Stream<Lobby?> getLobbyStream(String lobbyId);
+  Stream<List<Lobby>> getUserLobbiesStream(String userId);
+  Stream<List<Lobby>> getPublicLobbiesStream({
+    bool? isActive,
+    String? gameFocus,
+    int limit,
+    String orderBy,
+    bool ascending,
+  });
 }

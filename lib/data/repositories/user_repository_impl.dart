@@ -88,7 +88,7 @@ class UserRepositoryImpl implements UserRepository {
         alerts: List<String>.from(profile['alerts'] ?? []),
         userGroups: userGroups,
         alertCircles: List<String>.from(
-            profile['alert_circles'] ?? ['Squad', 'Friends', 'Public']),
+            profile['alert_circles'] ?? ['Lobby', 'Friends', 'Public']),
         publicGroups:
             List<Map<String, dynamic>>.from(profile['public_groups'] ?? []),
         pinnedMessages: List<String>.from(profile['pinned_messages'] ?? []),

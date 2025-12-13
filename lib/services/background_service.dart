@@ -90,22 +90,14 @@ class BackgroundService {
         );
       }
 
-      // TODO: Add background columns to chat_groups table in Supabase:
-      // - background_type (TEXT)
-      // - background_value (TEXT)
-      // - background_updated_at (TIMESTAMPTZ)
-      // - background_updated_by (TEXT FK → users.uid)
-      //
-      // For now, backgrounds are stored locally only
-      debugPrint(
-          '⚠️ Background storage disabled - database columns not yet created');
-
-      // await SupabaseService.client.from('chat_groups').update({
-      //   'background_type': type,
-      //   'background_value': value,
-      //   'background_updated_at': DateTime.now().toIso8601String(),
-      //   'background_updated_by': currentUserId,
-      // }).eq('id', chatGroupId);
+      // Background columns exist in production schema (confirmed Dec 12, 2025)
+      // Columns: background_type, background_value, background_updated_at, background_updated_by
+      await SupabaseService.client.from('chat_groups').update({
+        'background_type': type,
+        'background_value': value,
+        'background_updated_at': DateTime.now().toIso8601String(),
+        'background_updated_by': currentUserId,
+      }).eq('id', chatGroupId);
 
       debugPrint(
         'Background applied: chatGroupId=$chatGroupId, type=$type, value=$value',
@@ -209,77 +201,59 @@ class BackgroundService {
   /// });
   /// ```
   Stream<Map<String, dynamic>> getCurrentBackground(String chatGroupId) {
-    // TODO: Enable when background columns are added to database
-    // For now, always return default (none) background
-    return Stream.value({
-      'type': 'none',
-      'value': '',
-      'updatedAt': null,
-      'updatedBy': null,
-    });
+    // Background columns enabled in production (Dec 12, 2025)
+    return SupabaseService.client
+        .from('chat_groups')
+        .stream(primaryKey: ['id'])
+        .eq('id', chatGroupId)
+        .map((list) {
+          if (list.isEmpty) {
+            return {
+              'type': 'none',
+              'value': '',
+              'updatedAt': null,
+              'updatedBy': null,
+            };
+          }
 
-    // Original implementation (disabled until DB columns exist):
-    // return SupabaseService.client
-    //     .from('chat_groups')
-    //     .stream(primaryKey: ['id'])
-    //     .eq('id', chatGroupId)
-    //     .map((list) {
-    //       if (list.isEmpty) {
-    //         return {
-    //           'type': 'none',
-    //           'value': '',
-    //           'updatedAt': null,
-    //           'updatedBy': null,
-    //         };
-    //       }
-    //
-    //       final data = list.first;
-    //
-    //       return {
-    //         'type': data['background_type'] ?? 'none',
-    //         'value': data['background_value'] ?? '',
-    //         'updatedAt': data['background_updated_at'],
-    //         'updatedBy': data['background_updated_by'],
-    //       };
-    //     });
+          final data = list.first;
+
+          return {
+            'type': data['background_type'] ?? 'none',
+            'value': data['background_value'] ?? '',
+            'updatedAt': data['background_updated_at'],
+            'updatedBy': data['background_updated_by'],
+          };
+        });
   }
 
   /// Get background data as a Future (one-time read)
   ///
   /// Useful when you don't need real-time updates
   Future<Map<String, dynamic>> getBackgroundOnce(String chatGroupId) async {
-    // TODO: Enable when background columns are added to database
-    // For now, always return default (none) background
-    return {
-      'type': 'none',
-      'value': '',
-      'updatedAt': null,
-      'updatedBy': null,
-    };
+    // Background columns enabled in production (Dec 12, 2025)
+    final response = await SupabaseService.client
+        .from('chat_groups')
+        .select(
+            'background_type, background_value, background_updated_at, background_updated_by')
+        .eq('id', chatGroupId)
+        .maybeSingle();
 
-    // Original implementation (disabled until DB columns exist):
-    // final response = await SupabaseService.client
-    //     .from('chat_groups')
-    //     .select(
-    //         'background_type, background_value, background_updated_at, background_updated_by')
-    //     .eq('id', chatGroupId)
-    //     .maybeSingle();
-    //
-    // if (response == null) {
-    //   return {
-    //     'type': 'none',
-    //     'value': '',
-    //     'updatedAt': null,
-    //     'updatedBy': null,
-    //   };
-    // }
-    //
-    // return {
-    //   'type': response['background_type'] ?? 'none',
-    //   'value': response['background_value'] ?? '',
-    //   'updatedAt': response['background_updated_at'],
-    //   'updatedBy': response['background_updated_by'],
-    // };
+    if (response == null) {
+      return {
+        'type': 'none',
+        'value': '',
+        'updatedAt': null,
+        'updatedBy': null,
+      };
+    }
+
+    return {
+      'type': response['background_type'] ?? 'none',
+      'value': response['background_value'] ?? '',
+      'updatedAt': response['background_updated_at'],
+      'updatedBy': response['background_updated_by'],
+    };
   }
 
   /// Remove/clear the background for a chat group

@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:ui' as ui;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:riverpod/riverpod.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:palette_generator/palette_generator.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 
@@ -14,8 +15,12 @@ class GameThemeState {
   final Color dominantColor;
   final Color vibrantColor;
   final Color accentColor;
+  final ColorScheme? dynamicColorScheme;
   final bool isLoading;
   final String? error;
+  final Brightness systemBrightness;
+  final bool neonGlowEnabled;
+  final bool highContrastMode;
 
   const GameThemeState({
     this.currentGameId,
@@ -24,8 +29,12 @@ class GameThemeState {
     this.dominantColor = const Color(0xFF00F5FF),
     this.vibrantColor = const Color(0xFF00F5FF),
     this.accentColor = const Color(0xFF0080FF),
+    this.dynamicColorScheme,
     this.isLoading = false,
     this.error,
+    this.systemBrightness = Brightness.dark,
+    this.neonGlowEnabled = true,
+    this.highContrastMode = false,
   });
 
   GameThemeState copyWith({
@@ -35,8 +44,12 @@ class GameThemeState {
     Color? dominantColor,
     Color? vibrantColor,
     Color? accentColor,
+    ColorScheme? dynamicColorScheme,
     bool? isLoading,
     String? error,
+    Brightness? systemBrightness,
+    bool? neonGlowEnabled,
+    bool? highContrastMode,
   }) {
     return GameThemeState(
       currentGameId: currentGameId ?? this.currentGameId,
@@ -45,8 +58,12 @@ class GameThemeState {
       dominantColor: dominantColor ?? this.dominantColor,
       vibrantColor: vibrantColor ?? this.vibrantColor,
       accentColor: accentColor ?? this.accentColor,
+      dynamicColorScheme: dynamicColorScheme ?? this.dynamicColorScheme,
       isLoading: isLoading ?? this.isLoading,
       error: error ?? this.error,
+      systemBrightness: systemBrightness ?? this.systemBrightness,
+      neonGlowEnabled: neonGlowEnabled ?? this.neonGlowEnabled,
+      highContrastMode: highContrastMode ?? this.highContrastMode,
     );
   }
 }
@@ -197,6 +214,8 @@ class GameThemeController extends StateNotifier<GameThemeState> {
   static const _keyDominantColor = 'theme_dominant_color';
   static const _keyVibrantColor = 'theme_vibrant_color';
   static const _keyAccentColor = 'theme_accent_color';
+  static const _keyNeonGlowEnabled = 'theme_neon_glow_enabled';
+  static const _keyHighContrastMode = 'theme_high_contrast_mode';
 
   /// Load saved theme from SharedPreferences
   Future<void> _loadSavedTheme() async {
@@ -206,6 +225,8 @@ class GameThemeController extends StateNotifier<GameThemeState> {
     final dominantColorValue = _prefs.getInt(_keyDominantColor);
     final vibrantColorValue = _prefs.getInt(_keyVibrantColor);
     final accentColorValue = _prefs.getInt(_keyAccentColor);
+    final neonGlowEnabled = _prefs.getBool(_keyNeonGlowEnabled) ?? true;
+    final highContrastMode = _prefs.getBool(_keyHighContrastMode) ?? false;
 
     if (gameId != null && gameName != null) {
       state = state.copyWith(
@@ -221,6 +242,8 @@ class GameThemeController extends StateNotifier<GameThemeState> {
         accentColor: accentColorValue != null
             ? Color(accentColorValue)
             : state.accentColor,
+        neonGlowEnabled: neonGlowEnabled,
+        highContrastMode: highContrastMode,
       );
     }
   }
@@ -235,6 +258,8 @@ class GameThemeController extends StateNotifier<GameThemeState> {
     await _prefs.setInt(_keyDominantColor, state.dominantColor.value);
     await _prefs.setInt(_keyVibrantColor, state.vibrantColor.value);
     await _prefs.setInt(_keyAccentColor, state.accentColor.value);
+    await _prefs.setBool(_keyNeonGlowEnabled, state.neonGlowEnabled);
+    await _prefs.setBool(_keyHighContrastMode, state.highContrastMode);
   }
 
   /// Update theme based on game change
@@ -281,66 +306,52 @@ class GameThemeController extends StateNotifier<GameThemeState> {
     }
   }
 
-  /// Extract colors from IGDB cover image
+  /// Extract colors from IGDB cover image using Flutter 3.38's ColorScheme.fromImageProvider
   Future<void> _extractColorsFromCover(String imageUrl) async {
     try {
-      // Download image
+      // Download image bytes
       final response = await http.get(Uri.parse(imageUrl));
       if (response.statusCode != 200) {
         throw Exception('Failed to download image');
       }
 
-      // Decode image
-      final codec = await ui.instantiateImageCodec(response.bodyBytes);
-      final frame = await codec.getNextFrame();
-      final image = frame.image;
+      final Uint8List bytes = response.bodyBytes;
 
-      // Generate palette
-      final paletteGenerator = await PaletteGenerator.fromImage(
-        image,
-        maximumColorCount: 16,
+      // Use Flutter 3.38's new ColorScheme.fromImageProvider API
+      // This replaces palette_generator with native Material 3 color extraction
+      final imageProvider = MemoryImage(bytes);
+
+      // Extract color scheme for current brightness
+      final brightness = state.systemBrightness;
+      final colorScheme = await ColorScheme.fromImageProvider(
+        provider: imageProvider,
+        brightness: brightness,
       );
 
-      // Extract colors
-      Color? dominant;
-      Color? vibrant;
-      Color? accent;
+      // Extract key colors from the generated scheme
+      Color vibrant = colorScheme.primary;
+      Color dominant = colorScheme.primaryContainer;
+      Color accent = colorScheme.secondary;
 
-      // Get vibrant color (preferred for UI)
-      if (paletteGenerator.vibrantColor != null) {
-        vibrant = paletteGenerator.vibrantColor!.color;
-      } else if (paletteGenerator.lightVibrantColor != null) {
-        vibrant = paletteGenerator.lightVibrantColor!.color;
-      } else if (paletteGenerator.darkVibrantColor != null) {
-        vibrant = paletteGenerator.darkVibrantColor!.color;
+      // Apply high contrast mode if enabled
+      if (state.highContrastMode) {
+        vibrant = _applyHighContrast(vibrant, brightness);
+        dominant = _applyHighContrast(dominant, brightness);
+        accent = _applyHighContrast(accent, brightness);
       }
 
-      // Get dominant color
-      if (paletteGenerator.dominantColor != null) {
-        dominant = paletteGenerator.dominantColor!.color;
+      // Ensure colors are vibrant enough for neon effects if enabled
+      if (state.neonGlowEnabled) {
+        vibrant = _ensureVibrant(vibrant);
+        dominant = _ensureVibrant(dominant);
       }
 
-      // Get accent/muted color
-      if (paletteGenerator.mutedColor != null) {
-        accent = paletteGenerator.mutedColor!.color;
-      } else if (paletteGenerator.lightMutedColor != null) {
-        accent = paletteGenerator.lightMutedColor!.color;
-      }
-
-      // Fallback to current colors if extraction failed
-      dominant ??= state.dominantColor;
-      vibrant ??= state.vibrantColor;
-      accent ??= state.accentColor;
-
-      // Ensure colors are bright enough for neon effects
-      vibrant = _ensureVibrant(vibrant);
-      dominant = _ensureVibrant(dominant);
-
-      // Update state with extracted colors
+      // Update state with extracted colors and dynamic color scheme
       state = state.copyWith(
         dominantColor: dominant,
         vibrantColor: vibrant,
         accentColor: accent,
+        dynamicColorScheme: colorScheme,
         isLoading: false,
         error: null,
       );
@@ -376,6 +387,24 @@ class GameThemeController extends StateNotifier<GameThemeState> {
         .toColor();
   }
 
+  /// Apply high contrast mode adjustments for accessibility
+  Color _applyHighContrast(Color color, Brightness brightness) {
+    final hslColor = HSLColor.fromColor(color);
+
+    // For high contrast, push lightness to extremes
+    final lightness = brightness == Brightness.dark
+        ? (hslColor.lightness < 0.5 ? 0.85 : hslColor.lightness)
+        : (hslColor.lightness > 0.5 ? 0.15 : hslColor.lightness);
+
+    // Increase saturation for better distinction
+    final saturation = hslColor.saturation < 0.8 ? 0.9 : hslColor.saturation;
+
+    return hslColor
+        .withSaturation(saturation)
+        .withLightness(lightness)
+        .toColor();
+  }
+
   /// Reset to default theme
   Future<void> resetToDefault() async {
     final defaultColors = GameColorPresets.presets['default']!;
@@ -404,6 +433,40 @@ class GameThemeController extends StateNotifier<GameThemeState> {
     await _saveTheme();
   }
 
+  /// Update system brightness (detects dark/light mode changes)
+  Future<void> updateSystemBrightness(Brightness brightness) async {
+    if (state.systemBrightness == brightness) return;
+
+    state = state.copyWith(systemBrightness: brightness);
+
+    // Re-extract colors if we have a cover image to get proper brightness scheme
+    if (state.coverImageUrl != null && state.coverImageUrl!.isNotEmpty) {
+      await _extractColorsFromCover(state.coverImageUrl!);
+    }
+  }
+
+  /// Toggle neon glow effects
+  Future<void> toggleNeonGlow(bool enabled) async {
+    state = state.copyWith(neonGlowEnabled: enabled);
+    await _saveTheme();
+
+    // Re-apply color adjustments
+    if (state.coverImageUrl != null && state.coverImageUrl!.isNotEmpty) {
+      await _extractColorsFromCover(state.coverImageUrl!);
+    }
+  }
+
+  /// Toggle high contrast mode for accessibility
+  Future<void> toggleHighContrast(bool enabled) async {
+    state = state.copyWith(highContrastMode: enabled);
+    await _saveTheme();
+
+    // Re-apply color adjustments
+    if (state.coverImageUrl != null && state.coverImageUrl!.isNotEmpty) {
+      await _extractColorsFromCover(state.coverImageUrl!);
+    }
+  }
+
   @override
   void dispose() {
     _debounceTimer?.cancel();
@@ -416,7 +479,7 @@ final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
   throw UnimplementedError('SharedPreferences not initialized');
 });
 
-/// Provider for GameThemeController
+/// Provider for GameThemeController using legacy StateNotifier
 final gameThemeControllerProvider =
     StateNotifierProvider<GameThemeController, GameThemeState>((ref) {
   final prefs = ref.watch(sharedPreferencesProvider);

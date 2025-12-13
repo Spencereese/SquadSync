@@ -24,6 +24,8 @@ mixin _$GameState {
   Map<String, dynamic>? get onboardingFlow =>
       throw _privateConstructorUsedError;
   bool get isInitialized => throw _privateConstructorUsedError;
+  List<Map<String, dynamic>> get twitchClips =>
+      throw _privateConstructorUsedError;
   String? get errorMessage => throw _privateConstructorUsedError;
 
   /// Create a copy of GameState
@@ -45,6 +47,7 @@ abstract class $GameStateCopyWith<$Res> {
       Game? currentGame,
       Map<String, dynamic>? onboardingFlow,
       bool isInitialized,
+      List<Map<String, dynamic>> twitchClips,
       String? errorMessage});
 
   $GameCopyWith<$Res>? get currentGame;
@@ -71,6 +74,7 @@ class _$GameStateCopyWithImpl<$Res, $Val extends GameState>
     Object? currentGame = freezed,
     Object? onboardingFlow = freezed,
     Object? isInitialized = null,
+    Object? twitchClips = null,
     Object? errorMessage = freezed,
   }) {
     return _then(_value.copyWith(
@@ -98,6 +102,10 @@ class _$GameStateCopyWithImpl<$Res, $Val extends GameState>
           ? _value.isInitialized
           : isInitialized // ignore: cast_nullable_to_non_nullable
               as bool,
+      twitchClips: null == twitchClips
+          ? _value.twitchClips
+          : twitchClips // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
       errorMessage: freezed == errorMessage
           ? _value.errorMessage
           : errorMessage // ignore: cast_nullable_to_non_nullable
@@ -135,6 +143,7 @@ abstract class _$$GameStateImplCopyWith<$Res>
       Game? currentGame,
       Map<String, dynamic>? onboardingFlow,
       bool isInitialized,
+      List<Map<String, dynamic>> twitchClips,
       String? errorMessage});
 
   @override
@@ -160,6 +169,7 @@ class __$$GameStateImplCopyWithImpl<$Res>
     Object? currentGame = freezed,
     Object? onboardingFlow = freezed,
     Object? isInitialized = null,
+    Object? twitchClips = null,
     Object? errorMessage = freezed,
   }) {
     return _then(_$GameStateImpl(
@@ -187,6 +197,10 @@ class __$$GameStateImplCopyWithImpl<$Res>
           ? _value.isInitialized
           : isInitialized // ignore: cast_nullable_to_non_nullable
               as bool,
+      twitchClips: null == twitchClips
+          ? _value._twitchClips
+          : twitchClips // ignore: cast_nullable_to_non_nullable
+              as List<Map<String, dynamic>>,
       errorMessage: freezed == errorMessage
           ? _value.errorMessage
           : errorMessage // ignore: cast_nullable_to_non_nullable
@@ -205,11 +219,13 @@ class _$GameStateImpl implements _GameState {
       required this.currentGame,
       required final Map<String, dynamic>? onboardingFlow,
       required this.isInitialized,
+      required final List<Map<String, dynamic>> twitchClips,
       this.errorMessage})
       : _availableGames = availableGames,
         _gameHistory = gameHistory,
         _gameLobbies = gameLobbies,
-        _onboardingFlow = onboardingFlow;
+        _onboardingFlow = onboardingFlow,
+        _twitchClips = twitchClips;
 
   final List<Game> _availableGames;
   @override
@@ -249,12 +265,20 @@ class _$GameStateImpl implements _GameState {
 
   @override
   final bool isInitialized;
+  final List<Map<String, dynamic>> _twitchClips;
+  @override
+  List<Map<String, dynamic>> get twitchClips {
+    if (_twitchClips is EqualUnmodifiableListView) return _twitchClips;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_twitchClips);
+  }
+
   @override
   final String? errorMessage;
 
   @override
   String toString() {
-    return 'GameState(availableGames: $availableGames, gameHistory: $gameHistory, gameLobbies: $gameLobbies, currentGame: $currentGame, onboardingFlow: $onboardingFlow, isInitialized: $isInitialized, errorMessage: $errorMessage)';
+    return 'GameState(availableGames: $availableGames, gameHistory: $gameHistory, gameLobbies: $gameLobbies, currentGame: $currentGame, onboardingFlow: $onboardingFlow, isInitialized: $isInitialized, twitchClips: $twitchClips, errorMessage: $errorMessage)';
   }
 
   @override
@@ -274,6 +298,8 @@ class _$GameStateImpl implements _GameState {
                 .equals(other._onboardingFlow, _onboardingFlow) &&
             (identical(other.isInitialized, isInitialized) ||
                 other.isInitialized == isInitialized) &&
+            const DeepCollectionEquality()
+                .equals(other._twitchClips, _twitchClips) &&
             (identical(other.errorMessage, errorMessage) ||
                 other.errorMessage == errorMessage));
   }
@@ -287,6 +313,7 @@ class _$GameStateImpl implements _GameState {
       currentGame,
       const DeepCollectionEquality().hash(_onboardingFlow),
       isInitialized,
+      const DeepCollectionEquality().hash(_twitchClips),
       errorMessage);
 
   /// Create a copy of GameState
@@ -306,6 +333,7 @@ abstract class _GameState implements GameState {
       required final Game? currentGame,
       required final Map<String, dynamic>? onboardingFlow,
       required final bool isInitialized,
+      required final List<Map<String, dynamic>> twitchClips,
       final String? errorMessage}) = _$GameStateImpl;
 
   @override
@@ -320,6 +348,8 @@ abstract class _GameState implements GameState {
   Map<String, dynamic>? get onboardingFlow;
   @override
   bool get isInitialized;
+  @override
+  List<Map<String, dynamic>> get twitchClips;
   @override
   String? get errorMessage;
 

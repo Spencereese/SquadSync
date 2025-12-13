@@ -8,6 +8,7 @@ import 'package:squad_sync/data/repositories/user_repository_impl.dart';
 import 'package:squad_sync/domain/repositories/user_repository.dart';
 
 // Game imports
+import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:squad_sync/data/datasources/game_local_datasource.dart';
@@ -16,6 +17,7 @@ import 'package:squad_sync/data/repositories/game_repository_impl.dart';
 import 'package:squad_sync/domain/repositories/game_repository.dart';
 import 'package:squad_sync/services/igdb_auth_service.dart';
 import 'package:squad_sync/services/friends_service.dart';
+import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 
 // System imports
@@ -24,7 +26,7 @@ import 'package:squad_sync/data/datasources/system_remote_datasource.dart';
 import 'package:squad_sync/data/repositories/system_repository_impl.dart';
 import 'package:squad_sync/domain/repositories/system_repository.dart';
 
-// Squad imports
+// Lobby imports
 import 'package:squad_sync/data/datasources/lobby_local_datasource.dart';
 import 'package:squad_sync/data/datasources/lobby_remote_datasource.dart';
 import 'package:squad_sync/data/repositories/lobby_repository_impl.dart';
@@ -38,17 +40,8 @@ import 'package:squad_sync/data/datasources/chat_remote_datasource_impl.dart';
 import 'package:squad_sync/data/repositories/chat_repository_impl.dart';
 import 'package:squad_sync/domain/repositories/chat_repository.dart';
 
-import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
-import 'package:squad_sync/presentation/notifiers/user_notifier.dart';
-import 'package:squad_sync/presentation/notifiers/game_notifier.dart';
-import 'package:squad_sync/presentation/notifiers/system_notifier.dart';
-import 'package:squad_sync/presentation/notifiers/chat_notifier.dart';
-
-import 'package:squad_sync/domain/entities/lobby_state.dart';
-import 'package:squad_sync/domain/entities/app_user.dart';
+// Note: Notifier imports removed - providers defined in notifier files (Riverpod 3.0)
 import 'package:squad_sync/domain/entities/game.dart';
-import 'package:squad_sync/domain/entities/system_state.dart';
-import 'package:squad_sync/domain/entities/chat_state.dart';
 
 final getIt = GetIt.instance;
 
@@ -63,6 +56,11 @@ Future<void> setupInjection() async {
   final sharedPreferences = await SharedPreferences.getInstance();
   getIt.registerSingleton<SharedPreferences>(sharedPreferences);
 
+  getIt.registerSingleton<Dio>(Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
+  )));
+
   getIt.registerSingleton<http.Client>(http.Client());
 
   // Local notifications - may not work on all platforms
@@ -75,6 +73,7 @@ Future<void> setupInjection() async {
 
   getIt.registerSingleton<IgdbAuthService>(IgdbAuthService());
   getIt.registerSingleton<FriendsService>(FriendsService());
+  getIt.registerSingleton<ErrorHandlingService>(ErrorHandlingService());
   getIt.registerSingleton<SQLiteHelper>(SQLiteHelper());
 
   // User data sources
@@ -97,7 +96,7 @@ Future<void> setupInjection() async {
     ),
   );
 
-  // Squad data sources
+  // Lobby data sources
   getIt.registerSingleton<LobbyLocalDataSource>(
     LobbyLocalDataSourceImpl(getIt<SharedPreferences>(), getIt<SQLiteHelper>()),
   );
@@ -147,7 +146,7 @@ Future<void> setupInjection() async {
     GameLocalDataSourceImpl(getIt<SQLiteHelper>()),
   );
   getIt.registerSingleton<GameRemoteDataSource>(
-    GameRemoteDataSourceImpl(getIt<http.Client>(), getIt<IgdbAuthService>()),
+    GameRemoteDataSourceImpl(getIt<Dio>(), getIt<IgdbAuthService>()),
   );
 
   // Game repository (no longer depends on Firebase)
@@ -173,31 +172,25 @@ final systemRepositoryProvider =
 final gameRepositoryProvider =
     Provider<GameRepository>((ref) => getIt<GameRepository>());
 
-// Notifier providers
-final lobbyNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<LobbyNotifier, LobbyState>(
-  () => LobbyNotifier(),
-);
+// Data source providers for direct access
+final chatRemoteDataSourceProvider =
+    Provider<ChatRemoteDataSource>((ref) => getIt<ChatRemoteDataSource>());
 
-final userNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<UserNotifier, AppUser?>(
-  () => UserNotifier(),
-);
+// Service providers
+final errorHandlingServiceProvider =
+    Provider<ErrorHandlingService>((ref) => getIt<ErrorHandlingService>());
 
-final gameNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<GameNotifier, GameState>(
-  () => GameNotifier(),
-);
-
-final systemNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<SystemNotifier, SystemState>(
-  () => SystemNotifier(),
-);
-
-final chatNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<ChatNotifier, ChatState>(
-  () => ChatNotifier(),
-);
+// Notifier providers are defined in their respective files (Riverpod 3.0):
+// - lobbyNotifierProvider in lobby_notifier.dart
+// - userNotifierProvider in user_notifier.dart
+// - gameNotifierProvider in game_notifier.dart
+// - systemNotifierProvider in system_notifier.dart
+// - chatNotifierProvider in chat_notifier.dart
+// - messageNotifierProvider in message_notifier.dart
+// - mediaNotifierProvider in media_notifier.dart
+// - clipNotifierProvider in clip_notifier.dart
+// - gameStateNotifierProvider in game_state_notifier.dart
+// - timerManagementNotifierProvider in timer_management_notifier.dart
 
 // Other providers
 final popularGamesProvider = Provider<List<Game>>((ref) {

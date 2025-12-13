@@ -4,12 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import '../services/auth_service_supabase.dart';
 import 'dart:convert';
-import '../presentation/notifiers/user_squads_notifier.dart';
-import '../presentation/notifiers/current_lobby_notifier.dart';
-import '../screens/squad_detail_screen.dart';
+import '../presentation/notifiers/user_lobbies_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../screens/lobby_detail_screen.dart';
 import '../core/app_theme.dart';
-import '../services/squad_auto_selector.dart';
-import '../core/injection.dart';
+import '../services/lobby_auto_selector.dart';
 
 class LobbiesScreen extends ConsumerStatefulWidget {
   const LobbiesScreen({super.key});
@@ -30,11 +29,11 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ref.watch(userSquadsProvider).when(
-          data: (squads) {
-            final filteredSquads = _searchQuery.isEmpty
-                ? squads
-                : squads
+    return ref.watch(userLobbiesProvider).when(
+          data: (lobbies) {
+            final filteredLobbies = _searchQuery.isEmpty
+                ? lobbies
+                : lobbies
                     .where((squad) =>
                         squad.name
                             .toLowerCase()
@@ -50,21 +49,21 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
               child: Scaffold(
                 backgroundColor: Colors.black,
                 appBar: AppBar(
-                  title: const Text('My Squads'),
+                  title: const Text('My Lobbies'),
                   backgroundColor: Colors.black,
                   elevation: 0,
                 ),
                 body: RefreshIndicator(
                   onRefresh: () async {
-                    // Call autoSelectSquad if in a public squad
-                    final currentSquadId = ref.read(currentLobbyIdProvider);
-                    if (currentSquadId != null) {
-                      await autoSelectSquad(ref);
+                    // Call autoSelectLobby if in a public squad
+                    final currentLobbyId = ref.read(ln.currentLobbyIdProvider);
+                    if (currentLobbyId != null) {
+                      await autoSelectLobby(ref);
                     }
                   },
                   color: Colors.cyanAccent,
                   backgroundColor: Colors.black,
-                  child: filteredSquads.isEmpty && _searchQuery.isEmpty
+                  child: filteredLobbies.isEmpty && _searchQuery.isEmpty
                       ? _buildEmptyState()
                       : Column(
                           children: [
@@ -75,7 +74,7 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
                                 controller: _searchController,
                                 style: const TextStyle(color: Colors.white),
                                 decoration: InputDecoration(
-                                  hintText: 'Search squads...',
+                                  hintText: 'Search lobbies...',
                                   hintStyle:
                                       const TextStyle(color: Colors.white70),
                                   prefixIcon: const Icon(Icons.search,
@@ -97,22 +96,22 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
                                 },
                               ),
                             ),
-                            // Squads list
+                            // Lobbies list
                             Expanded(
-                              child: filteredSquads.isEmpty
+                              child: filteredLobbies.isEmpty
                                   ? const Center(
                                       child: Text(
-                                        'No squads found',
+                                        'No lobbies found',
                                         style: TextStyle(color: Colors.white70),
                                       ),
                                     )
                                   : ListView.builder(
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 16),
-                                      itemCount: filteredSquads.length,
+                                      itemCount: filteredLobbies.length,
                                       itemBuilder: (context, index) {
-                                        final squad = filteredSquads[index];
-                                        return _buildSquadCard(
+                                        final squad = filteredLobbies[index];
+                                        return _buildLobbyCard(
                                             context, ref, squad);
                                       },
                                     ),
@@ -130,12 +129,12 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
             ),
           ),
           error: (error, stack) {
-            debugPrint('Firestore error in squads: $error');
+            debugPrint('Firestore error in lobbies: $error');
             return Scaffold(
               backgroundColor: Colors.black,
               body: Center(
                 child: Text(
-                  'Error loading squads: $error',
+                  'Error loading lobbies: $error',
                   style: const TextStyle(color: Colors.white70),
                 ),
               ),
@@ -156,7 +155,7 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
           ),
           const SizedBox(height: 24),
           const Text(
-            'No squads yet',
+            'No lobbies yet',
             style: TextStyle(
               color: Colors.white,
               fontSize: 24,
@@ -177,9 +176,9 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               ElevatedButton.icon(
-                onPressed: () => _showCreateSquadDialog(context, ref),
+                onPressed: () => _showCreateLobbyDialog(context, ref),
                 icon: const Icon(Icons.add),
-                label: const Text('Create Squad'),
+                label: const Text('Create Lobby'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.cyanAccent,
                   foregroundColor: Colors.black,
@@ -189,7 +188,7 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
               ),
               const SizedBox(width: 16),
               OutlinedButton.icon(
-                onPressed: () => _showJoinSquadDialog(context),
+                onPressed: () => _showJoinLobbyDialog(context),
                 icon: const Icon(Icons.login),
                 label: const Text('Join via Code'),
                 style: OutlinedButton.styleFrom(
@@ -206,8 +205,8 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
     );
   }
 
-  Widget _buildSquadCard(
-      BuildContext context, WidgetRef ref, SquadSummary squad) {
+  Widget _buildLobbyCard(
+      BuildContext context, WidgetRef ref, LobbySummary squad) {
     return Card(
       color: Colors.white.withValues(alpha: 0.05),
       margin: const EdgeInsets.only(bottom: 12),
@@ -217,13 +216,15 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
       child: InkWell(
         onTap: () {
           // Set current squad
-          ref.read(currentLobbyIdProvider.notifier).state = squad.id;
+          ref
+              .read(ln.lobbyNotifierProvider.notifier)
+              .setSelectedLobbyId(squad.id);
 
-          // Navigate to SquadDetailScreen
+          // Navigate to LobbyDetailScreen
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const SquadDetailScreen(),
+              builder: (context) => const LobbyDetailScreen(),
             ),
           );
         },
@@ -338,7 +339,7 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
     }
   }
 
-  void _showCreateSquadDialog(BuildContext context, WidgetRef ref) {
+  void _showCreateLobbyDialog(BuildContext context, WidgetRef ref) {
     final TextEditingController nameController = TextEditingController();
     final TextEditingController gameController = TextEditingController();
     Map<String, dynamic>? selectedGame;
@@ -360,7 +361,7 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
             return AlertDialog(
               backgroundColor: Colors.grey[900],
               title: const Text(
-                'Create New Squad',
+                'Create New Lobby',
                 style: TextStyle(color: Colors.white),
               ),
               content: SingleChildScrollView(
@@ -371,7 +372,7 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
                       controller: nameController,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(
-                        labelText: 'Squad Name',
+                        labelText: 'Lobby Name',
                         labelStyle: TextStyle(color: Colors.white70),
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(color: Colors.white70),
@@ -550,7 +551,7 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
                     if (squadName.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                            content: Text('Please enter a squad name')),
+                            content: Text('Please enter a lobby name')),
                       );
                       return;
                     }
@@ -567,23 +568,31 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
                       final user = AuthServiceSupabase().currentUser;
                       if (user == null) throw 'User not authenticated';
 
-                      final notifier = ref.read(lobbyNotifierProvider.notifier);
-                      await notifier.createSquad(squadName, gameName, maxSpots);
+                      final notifier =
+                          ref.read(ln.lobbyNotifierProvider.notifier);
+                      final lobbyId = await notifier.createLobby(
+                        chatGroupId:
+                            '', // Empty chat group for standalone lobby
+                        gameName: gameName,
+                        maxSpots: maxSpots,
+                      );
 
-                      // Note: createSquad doesn't return the created lobby ID
-                      // Set current lobby ID would need to be done after fetching the created lobby
+                      // Set the newly created lobby as current
+                      ref
+                          .read(ln.lobbyNotifierProvider.notifier)
+                          .setSelectedLobbyId(lobbyId);
 
                       HapticFeedback.lightImpact();
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                              content: Text('Squad created successfully!')),
+                              content: Text('Lobby created successfully!')),
                         );
                       }
                     } catch (e) {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed to create squad: $e')),
+                          SnackBar(content: Text('Failed to create lobby: $e')),
                         );
                       }
                     }
@@ -602,8 +611,8 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
     );
   }
 
-  void _showJoinSquadDialog(BuildContext context) {
-    // TODO: Implement join squad via code dialog
+  void _showJoinLobbyDialog(BuildContext context) {
+    // TODO: Implement join lobby via code dialog
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Join via code not yet implemented'),

@@ -7,3 +7,8 @@ targets:
         options:
           provider_name_suffix: 'Provider'
           provider_implementation_suffix: 'Impl'
+      freezed:
+        options:
+          # Disable DiagnosticableTreeMixin to avoid Freezed 3.0 bugs
+          mutable: false
+          make_final: true

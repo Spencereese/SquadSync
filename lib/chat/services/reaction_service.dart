@@ -45,7 +45,15 @@ class ReactionService {
             .from('reactions')
             .delete()
             .eq('id', existingReaction['id']);
-        debugPrint('Removed existing reaction');
+        debugPrint(
+            '✅ Removed existing reaction: $emoji from message $messageId');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Removed $emoji reaction'),
+                duration: const Duration(seconds: 1)),
+          );
+        }
       } else {
         // User hasn't reacted with this emoji, add it
         await SupabaseService.client.from('reactions').insert({
@@ -54,7 +62,14 @@ class ReactionService {
           'emoji': emoji.trim(),
           'created_at': DateTime.now().toIso8601String(),
         });
-        debugPrint('Added new reaction');
+        debugPrint('✅ Added new reaction: $emoji to message $messageId');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Added $emoji reaction'),
+                duration: const Duration(seconds: 1)),
+          );
+        }
       }
 
       HapticFeedback.lightImpact();

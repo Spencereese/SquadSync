@@ -369,7 +369,7 @@ app.post('/grok', async (req, res) => {
   }
 });
 
-// Smart replies endpoint
+// Smart replies endpoint with sentiment analysis and emoji suggestions
 app.post('/smart-replies', async (req, res) => {
   try {
     const { messages } = req.body;
@@ -383,7 +383,11 @@ app.post('/smart-replies', async (req, res) => {
       return res.status(500).json({ error: 'Grok API key not configured' });
     }
 
-    const systemPrompt = `You are a smart reply suggestion system. Based on the last few messages in a chat, suggest 2-3 concise, relevant reply options that the user might want to send. Keep suggestions short (under 50 characters each) and contextually appropriate. Return only the reply suggestions as a JSON array of strings.`;
+    const systemPrompt = `You are a smart reply suggestion system with sentiment analysis. Based on the last few messages in a chat:
+1. Analyze the sentiment (positive, negative, neutral, excited, questioning, etc.)
+2. Suggest 2-3 concise, relevant reply options (under 50 characters each)
+3. Include appropriate emojis that match the sentiment and context
+4. Return as JSON: {"sentiment": "<sentiment>", "replies": ["reply1", "reply2", "reply3"], "emojis": ["😊", "🎮", "🔥"]}`;
 
     const context = messages.slice(-5).join(' | '); // Last 5 messages for context
 
@@ -391,9 +395,9 @@ app.post('/smart-replies', async (req, res) => {
       model: 'grok-4.1-fast-latest',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Recent messages: ${context}\n\nSuggest 2-3 smart reply options:` }
+        { role: 'user', content: `Recent messages: ${context}\n\nAnalyze sentiment and suggest smart replies with emojis:` }
       ],
-      max_tokens: 100,
+      max_tokens: 150,
       temperature: 0.8,
     }, {
       headers: {
@@ -406,22 +410,95 @@ app.post('/smart-replies', async (req, res) => {
       const content = response.data.choices[0].message.content;
       // Parse the response to extract reply suggestions
       try {
-        const replies = JSON.parse(content);
-        if (Array.isArray(replies)) {
-          res.json({ replies: replies.slice(0, 3) }); // Max 3 replies
+        const parsed = JSON.parse(content);
+        if (parsed.replies && Array.isArray(parsed.replies)) {
+          res.json({
+            replies: parsed.replies.slice(0, 3),
+            sentiment: parsed.sentiment || 'neutral',
+            emojis: parsed.emojis || ['😊', '👍', '🎮']
+          });
         } else {
-          res.json({ replies: [] });
+          res.json({ replies: [], sentiment: 'neutral', emojis: ['😊', '👍', '🎮'] });
         }
       } catch (parseError) {
         // If not valid JSON, try to extract strings from the response
         const lines = content.split('\n').filter(line => line.trim().length > 0 && line.trim().length < 50);
-        res.json({ replies: lines.slice(0, 3) });
+        res.json({ replies: lines.slice(0, 3), sentiment: 'neutral', emojis: ['😊', '👍', '🎮'] });
       }
     } else {
       res.status(500).json({ error: 'Failed to get smart replies from Grok API' });
     }
   } catch (error) {
     console.error('Error calling Grok API for smart replies:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// AI Matchmaking endpoint for lobby discovery
+app.post('/ai-matchmaking', async (req, res) => {
+  try {
+    const { pinnedGames, userPreferences, availableLobbies } = req.body;
+
+    if (!pinnedGames || !Array.isArray(pinnedGames) || pinnedGames.length === 0) {
+      return res.status(400).json({ error: 'Pinned games array is required' });
+    }
+
+    const apiKey = process.env.XAI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Grok API key not configured' });
+    }
+
+    const systemPrompt = `You are an AI matchmaking assistant for a gaming lobby app. Analyze user preferences and pinned games to recommend the best lobbies. Consider:
+- Game preferences and pinned games
+- User playstyle (competitive, casual, etc.)
+- Available lobby spots and activity level
+- Skill level matching
+- Time zone compatibility
+Return recommendations as JSON: {"recommendations": [{"lobbyId": "id", "score": 0.95, "reason": "explanation"}], "insights": "overall matchmaking insights"}`;
+
+    const gameNames = pinnedGames.map(g => g.name || g).join(', ');
+    const preferencesStr = userPreferences ? JSON.stringify(userPreferences) : 'No preferences specified';
+    const lobbiesStr = availableLobbies ? JSON.stringify(availableLobbies.slice(0, 20)) : 'No lobbies provided';
+
+    const prompt = `User pinned games: ${gameNames}\nUser preferences: ${preferencesStr}\nAvailable lobbies: ${lobbiesStr}\n\nProvide AI matchmaking recommendations:`;
+
+    const response = await axios.post('https://api.x.ai/v1/chat/completions', {
+      model: 'grok-4.1-fast-latest',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: 500,
+      temperature: 0.7,
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (response.status === 200 && response.data.choices && response.data.choices[0]) {
+      const content = response.data.choices[0].message.content;
+      try {
+        const parsed = JSON.parse(content);
+        res.json({
+          recommendations: parsed.recommendations || [],
+          insights: parsed.insights || 'No specific insights available',
+          success: true
+        });
+      } catch (parseError) {
+        // Fallback if JSON parsing fails
+        res.json({
+          recommendations: [],
+          insights: content,
+          success: true
+        });
+      }
+    } else {
+      res.status(500).json({ error: 'Failed to get AI matchmaking from Grok API' });
+    }
+  } catch (error) {
+    console.error('Error calling Grok API for AI matchmaking:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

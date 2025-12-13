@@ -6,7 +6,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   agora_rtc_engine
   app_links
   audioplayers_windows
-  cloud_firestore
   connectivity_plus
   emoji_picker_flutter
   file_selector_windows
@@ -16,6 +15,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   permission_handler_windows
   record_windows
   share_plus
+  speech_to_text_windows
   url_launcher_windows
 )
 

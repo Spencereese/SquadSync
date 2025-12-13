@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
-import '../screens/squad_tab_screen.dart';
-import '../chat/chat_groups_screen.dart';
 import '../setup_screen.dart';
 import '../presentation/onboarding/onboarding_flow.dart';
 import '../presentation/notifiers/user_notifier.dart';
@@ -13,6 +11,8 @@ import 'splash_screen.dart';
 import '../presentation/widgets/animated_theme_wrapper.dart';
 import '../presentation/hooks/game_theme_sync.dart';
 import '../services/supabase_service.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
+import '../core/app_router.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   debugPrint('authStateProvider: Setting up auth state listener');
@@ -24,7 +24,7 @@ final authStateProvider = StreamProvider<User?>((ref) {
   });
 });
 
-/// ConsumerWidget for the main MaterialApp with theme support
+/// ConsumerWidget for the main MaterialApp with theme support and go_router
 class SquadSyncMaterialApp extends ConsumerWidget {
   const SquadSyncMaterialApp({super.key});
 
@@ -33,29 +33,18 @@ class SquadSyncMaterialApp extends ConsumerWidget {
     // Sync theme with current game selection
     GameThemeSync.watch(ref);
 
+    final router = ref.watch(goRouterProvider);
+
+    // Remove native splash after first frame is rendered
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FlutterNativeSplash.remove();
+      debugPrint('🎨 Native splash removed after first frame');
+    });
+
     return AnimatedThemeWrapper(
-      child: MaterialApp(
+      child: MaterialApp.router(
         title: 'SquadSync',
-        routes: {
-          '/squad': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments;
-            if (args is Map<String, dynamic>) {
-              // New format: Map with gameName, chatGroupId, etc.
-              return SquadTabScreen(
-                gameName: args['gameName'],
-                lobbyId: args['lobbyId'],
-                game: args['game'],
-                chatGroupId: args['chatGroupId'],
-              );
-            } else if (args is String) {
-              // Legacy format: just gameName as string
-              return SquadTabScreen(gameName: args);
-            }
-            return const SquadTabScreen();
-          },
-          '/main': (context) => const ChatGroupsScreen(),
-        },
-        home: const AuthWrapper(),
+        routerConfig: router,
         debugShowCheckedModeBanner: false,
       ),
     );
@@ -183,6 +172,7 @@ class OnboardingWrapper extends ConsumerStatefulWidget {
 class _OnboardingWrapperState extends ConsumerState<OnboardingWrapper> {
   bool _dataReady = false;
   bool _transitionComplete = false;
+  bool _nativeSplashRemoved = false;
 
   @override
   Widget build(BuildContext context) {
@@ -211,6 +201,13 @@ class _OnboardingWrapperState extends ConsumerState<OnboardingWrapper> {
           setState(() {
             _transitionComplete = true;
           });
+
+          // Remove native splash after Flutter content is ready
+          if (!_nativeSplashRemoved) {
+            _nativeSplashRemoved = true;
+            FlutterNativeSplash.remove();
+            debugPrint('🎨 Native splash removed - app ready');
+          }
         }
       });
       return const SplashScreen();
@@ -224,18 +221,32 @@ class _OnboardingWrapperState extends ConsumerState<OnboardingWrapper> {
 
     // If either has an error, proceed to main screen (graceful degradation)
     if (userStateAsync.hasError || squadStateAsync.hasError) {
-      return const ChatGroupsScreen();
+      // Remove native splash on error too
+      if (!_nativeSplashRemoved) {
+        _nativeSplashRemoved = true;
+        FlutterNativeSplash.remove();
+      }
+      // Redirect handled by router
+      return const SizedBox.shrink();
     }
 
     // All data is loaded and ready, check onboarding status
     final userState = userStateAsync.value;
 
+    // Ensure native splash is removed before showing final screen
+    if (!_nativeSplashRemoved) {
+      _nativeSplashRemoved = true;
+      FlutterNativeSplash.remove();
+    }
+
     if (userState == null) {
-      return const ChatGroupsScreen();
+      // Redirect handled by router
+      return const SizedBox.shrink();
     } else if (userState.pinnedGames.isEmpty) {
       return const OnboardingFlow();
     } else {
-      return const ChatGroupsScreen();
+      // Redirect handled by router
+      return const SizedBox.shrink();
     }
   }
 }

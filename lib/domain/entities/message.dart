@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:flutter/foundation.dart';
 
 part 'message.freezed.dart';
 
@@ -54,25 +55,40 @@ class ReactionConverter implements JsonConverter<Map<String, int>?, dynamic> {
   Map<String, int>? fromJson(dynamic json) {
     if (json == null) return null;
 
-    final reactionsMap = <String, int>{};
+    try {
+      final reactionsMap = <String, int>{};
 
-    if (json is Map<String, dynamic>) {
-      // Handle Firestore reactions format (Map<userId, reaction>)
-      for (final reaction in json.values) {
-        if (reaction is String && reaction.isNotEmpty) {
-          reactionsMap[reaction] = (reactionsMap[reaction] ?? 0) + 1;
+      if (json is Map) {
+        final mapData = json as Map<dynamic, dynamic>;
+        if (mapData.isEmpty) return null;
+
+        // Handle Firestore reactions format (Map<userId, reaction>)
+        for (final reaction in mapData.values) {
+          if (reaction is String && reaction.isNotEmpty) {
+            reactionsMap[reaction] = (reactionsMap[reaction] ?? 0) + 1;
+          } else if (reaction is int) {
+            // Handle direct count format (emoji -> count)
+            final key = mapData.keys
+                .firstWhere((k) => mapData[k] == reaction, orElse: () => '');
+            if (key.toString().isNotEmpty) {
+              reactionsMap[key.toString()] = reaction;
+            }
+          }
+        }
+      } else if (json is List<dynamic>) {
+        // Handle reactions stored as a list of strings
+        for (final reaction in json) {
+          if (reaction is String && reaction.isNotEmpty) {
+            reactionsMap[reaction] = (reactionsMap[reaction] ?? 0) + 1;
+          }
         }
       }
-    } else if (json is List<dynamic>) {
-      // Handle reactions stored as a list of strings
-      for (final reaction in json) {
-        if (reaction is String && reaction.isNotEmpty) {
-          reactionsMap[reaction] = (reactionsMap[reaction] ?? 0) + 1;
-        }
-      }
+
+      return reactionsMap.isEmpty ? null : reactionsMap;
+    } catch (e) {
+      // Return null if parsing fails
+      return null;
     }
-
-    return reactionsMap.isEmpty ? null : reactionsMap;
   }
 
   @override
@@ -95,7 +111,7 @@ enum MessageType {
   system,
 }
 
-@freezed
+@freezed // Disable DiagnosticableTreeMixin - has bugs in Freezed 3.0
 class Message with _$Message {
   const Message._();
 
@@ -122,37 +138,74 @@ class Message with _$Message {
   }) = _Message;
 
   factory Message.fromJson(Map<String, dynamic> json) {
-    return Message(
-      id: json['id'] as String? ?? '',
-      senderId: json['senderId'] ?? json['senderUid'] as String? ?? '',
-      text: json['text'] as String? ?? '',
-      timestamp: const TimestampConverter().fromJson(json['timestamp']),
-      messageType: const MessageTypeConverter().fromJson(json['messageType']),
-      mediaUrl: json['mediaUrl'] as String?,
-      mediaType: json['mediaType'] as String?,
-      reactions: const ReactionConverter().fromJson(json['reactions']),
-      replyTo: json['replyTo'] as String?,
-      poll: json['poll'] != null
-          ? Poll.fromJson(json['poll'] as Map<String, dynamic>)
-          : null,
-      voiceNoteUrl: json['voiceNoteUrl'] as String?,
-      voiceNoteDuration: json['voiceNoteDuration'] as int?,
-      aiResponse: json['aiResponse'] as String?,
-      metadata: json['metadata'] is Map<String, dynamic>
-          ? json['metadata'] as Map<String, dynamic>
-          : null,
-      clipData: json['clipData'] is Map<String, dynamic>
-          ? json['clipData'] as Map<String, dynamic>
-          : null,
-      isEdited: json['isEdited'] as bool?,
-      editedAt: json['editedAt'] != null
-          ? const TimestampConverter().fromJson(json['editedAt'])
-          : null,
-      isDeleted: json['isDeleted'] as bool?,
-      deletedAt: json['deletedAt'] != null
-          ? const TimestampConverter().fromJson(json['deletedAt'])
-          : null,
-    );
+    try {
+      // Safe metadata parsing - completely skip if it contains old array fields
+      Map<String, dynamic>? safeMetadata;
+      final metadataRaw = json['metadata'];
+      if (metadataRaw != null && metadataRaw is Map) {
+        // Skip metadata completely if it has old schema fields
+        final hasOldFields = metadataRaw.containsKey('photos') ||
+            metadataRaw.containsKey('videos') ||
+            metadataRaw.containsKey('audio');
+        if (!hasOldFields) {
+          safeMetadata = Map<String, dynamic>.from(metadataRaw);
+        }
+      }
+
+      // Safe clipData parsing - skip if it's a List
+      Map<String, dynamic>? safeClipData;
+      final clipDataRaw = json['clipData'] ?? json['clip_data'];
+      if (clipDataRaw != null && clipDataRaw is! List && clipDataRaw is Map) {
+        safeClipData = Map<String, dynamic>.from(clipDataRaw);
+      }
+
+      return Message(
+        id: json['id'] as String? ?? '',
+        senderId: json['senderId'] ??
+            json['senderUid'] ??
+            json['sender_id'] as String? ??
+            '',
+        text: json['text'] as String? ?? '',
+        timestamp: const TimestampConverter().fromJson(json['timestamp']),
+        messageType: const MessageTypeConverter()
+            .fromJson(json['messageType'] ?? json['message_type']),
+        mediaUrl: json['mediaUrl'] ?? json['media_url'] as String?,
+        mediaType: json['mediaType'] ?? json['media_type'] as String?,
+        reactions: const ReactionConverter().fromJson(json['reactions']),
+        replyTo: json['replyTo'] ?? json['reply_to'] as String?,
+        poll: json['poll'] != null
+            ? (json['poll'] is Map<String, dynamic>
+                ? Poll.fromJson(json['poll'] as Map<String, dynamic>)
+                : null)
+            : null,
+        voiceNoteUrl: json['voiceNoteUrl'] ?? json['voice_note_url'] as String?,
+        voiceNoteDuration:
+            json['voiceNoteDuration'] ?? json['voice_note_duration'] as int?,
+        aiResponse: json['aiResponse'] ?? json['ai_response'] as String?,
+        metadata: safeMetadata,
+        clipData: safeClipData,
+        isEdited: (json['isEdited'] ?? json['is_edited']) as bool?,
+        editedAt: (json['editedAt'] ?? json['edited_at']) != null
+            ? const TimestampConverter()
+                .fromJson(json['editedAt'] ?? json['edited_at'])
+            : null,
+        isDeleted: (json['isDeleted'] ?? json['is_deleted']) as bool?,
+        deletedAt: (json['deletedAt'] ?? json['deleted_at']) != null
+            ? const TimestampConverter()
+                .fromJson(json['deletedAt'] ?? json['deleted_at'])
+            : null,
+      );
+    } catch (e, stackTrace) {
+      // If parsing fails, log and rethrow with context
+      debugPrint('❌ Message.fromJson failed for message ${json['id']}: $e');
+      debugPrint('   Problematic JSON keys: ${json.keys.join(', ')}');
+      debugPrint('   metadata type: ${json['metadata'].runtimeType}');
+      debugPrint('   metadata value: ${json['metadata']}');
+      debugPrint('   clip_data type: ${json['clip_data']?.runtimeType}');
+      debugPrint('   poll type: ${json['poll']?.runtimeType}');
+      debugPrint('   Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 
   factory Message.create({
@@ -188,28 +241,29 @@ class Message with _$Message {
       );
 
   Map<String, dynamic> toJson() {
+    // Use snake_case for Supabase compatibility
     return {
       'id': id,
-      'senderId': senderId,
+      'sender_id': senderId,
       'text': text,
       'timestamp': const TimestampConverter().toJson(timestamp),
-      'messageType': const MessageTypeConverter().toJson(messageType),
-      'mediaUrl': mediaUrl,
-      'mediaType': mediaType,
+      'message_type': const MessageTypeConverter().toJson(messageType),
+      'media_url': mediaUrl,
+      'media_type': mediaType,
       'reactions': const ReactionConverter().toJson(reactions),
-      'replyTo': replyTo,
+      'reply_to': replyTo,
       'poll': poll?.toJson(),
-      'voiceNoteUrl': voiceNoteUrl,
-      'voiceNoteDuration': voiceNoteDuration,
-      'aiResponse': aiResponse,
+      'voice_note_url': voiceNoteUrl,
+      'voice_note_duration': voiceNoteDuration,
+      'ai_response': aiResponse,
       'metadata': metadata,
-      'clipData': clipData,
-      'isEdited': isEdited,
-      'editedAt': editedAt != null
+      'clip_data': clipData,
+      'is_edited': isEdited,
+      'edited_at': editedAt != null
           ? const TimestampConverter().toJson(editedAt!)
           : null,
-      'isDeleted': isDeleted,
-      'deletedAt': deletedAt != null
+      'is_deleted': isDeleted,
+      'deleted_at': deletedAt != null
           ? const TimestampConverter().toJson(deletedAt!)
           : null,
     };
@@ -245,29 +299,45 @@ class Poll {
   final DateTime? closedAt;
 
   factory Poll.fromJson(Map<String, dynamic> json) {
-    // Handle Firestore Timestamp objects
-    final createdAt = json['createdAt'];
-    final closedAt = json['closedAt'];
+    try {
+      // Handle both camelCase and snake_case column names
+      final createdAt = json['createdAt'] ?? json['created_at'];
+      final closedAt = json['closedAt'] ?? json['closed_at'];
+      final createdBy = json['createdBy'] ?? json['created_by'];
+      final isClosed = json['isClosed'] ?? json['is_closed'];
 
-    return Poll(
-      id: json['id'] as String? ?? '',
-      question: json['question'] as String? ?? '',
-      options: (json['options'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          [],
-      votes: (json['votes'] as Map<String, dynamic>?)?.map(
-            (k, e) => MapEntry(k,
-                (e as List<dynamic>?)?.map((e) => e as String).toList() ?? []),
-          ) ??
-          {},
-      createdAt: const TimestampConverter().fromJson(createdAt),
-      createdBy: json['createdBy'] as String? ?? '',
-      isClosed: json['isClosed'] as bool?,
-      closedAt: closedAt != null
-          ? const TimestampConverter().fromJson(closedAt)
-          : null,
-    );
+      // Safe votes parsing
+      Map<String, List<String>> safeVotes = {};
+      final votesRaw = json['votes'];
+      if (votesRaw is Map) {
+        for (final entry in votesRaw.entries) {
+          final key = entry.key.toString();
+          if (entry.value is List) {
+            safeVotes[key] =
+                (entry.value as List).map((e) => e.toString()).toList();
+          }
+        }
+      }
+
+      return Poll(
+        id: json['id'] as String? ?? '',
+        question: json['question'] as String? ?? '',
+        options: (json['options'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            [],
+        votes: safeVotes,
+        createdAt: const TimestampConverter().fromJson(createdAt),
+        createdBy: createdBy as String? ?? '',
+        isClosed: isClosed as bool?,
+        closedAt: closedAt != null
+            ? const TimestampConverter().fromJson(closedAt)
+            : null,
+      );
+    } catch (e) {
+      debugPrint('❌ Poll.fromJson failed: $e');
+      rethrow;
+    }
   }
 
   Map<String, dynamic> toJson() {

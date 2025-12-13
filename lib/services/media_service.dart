@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'auth_service_supabase.dart';
-// TODO: Migrate fully to Supabase Storage
-// import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'supabase_service.dart';
@@ -15,11 +13,11 @@ import 'supabase_service.dart';
 class MediaService {
   final Logger _logger = Logger();
 
-  // TODO: Migrate fully to Supabase Storage buckets
-  // static const String _chatMediaBucket = 'chat-media';
-  // static const String _chatAudioBucket = 'chat-audio';
-  // static const String _chatBackgroundsBucket = 'chat-backgrounds';
-  // static const String _clipsBucket = 'clips';
+  // Supabase Storage buckets
+  static const String chatMediaBucket = 'chat-media';
+  static const String chatAudioBucket = 'chat-audio';
+  static const String chatBackgroundsBucket = 'chat-backgrounds';
+  static const String clipsBucket = 'clips';
 
   /// Upload media to Supabase Storage
   ///
@@ -100,17 +98,14 @@ class MediaService {
     }
   }
 
-  /// Get media URL with read priority: Supabase first → Firebase fallback
+  /// Get media URL from Supabase Storage
   ///
   /// [fileName] - File name/path
   /// [bucket] - Supabase bucket name
-  /// [firebasePath] - Firebase Storage path
   Future<String> getMediaUrl(
     String fileName, {
     String bucket = 'chat-media',
-    String? firebasePath,
   }) async {
-    // Try Supabase first
     try {
       final supabaseUrl = supabase.storage.from(bucket).getPublicUrl(fileName);
 
@@ -121,10 +116,10 @@ class MediaService {
         return supabaseUrl;
       }
     } catch (e) {
-      _logger.w('Supabase URL failed, falling back to Firebase: $e');
+      _logger.w('Supabase URL access failed: $e');
     }
 
-    // TODO: Implement Supabase Storage fallback
+    // Media not found in Supabase Storage
     throw Exception('Media URL not found in Supabase Storage: $fileName');
   }
 

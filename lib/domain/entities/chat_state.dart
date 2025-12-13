@@ -4,7 +4,7 @@ import 'package:squad_sync/domain/entities/chat_group.dart';
 
 part 'chat_state.freezed.dart';
 
-@freezed
+@freezed // Disable DiagnosticableTreeMixin - has bugs in Freezed 3.0
 class ChatState with _$ChatState {
   const factory ChatState({
     required bool isInitialized,

@@ -605,9 +605,9 @@ class _VideoRoomScreenState extends ConsumerState<VideoRoomScreen> {
   }
 }
 
-/// Example: Simple usage in your squad tab
+/// Example: Simple usage in your lobby tab
 /// 
-/// Add a video call button to your squad screen:
+/// Add a video call button to your lobby screen:
 /// 
 /// ```dart
 /// ElevatedButton(

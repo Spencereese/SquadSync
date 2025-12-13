@@ -163,10 +163,10 @@ flutter_native_splash:
   image: assets/images/splash.png
   color: "#000000"
   # Keep splash visible until explicitly removed in code
+  fullscreen: true  # Make splash fullscreen
   android_12:
     image: assets/images/splash.png
     color: "#000000"
   ios: true
   android: true
   web: false
-  # fullscreen: true  # Optional: use for fullscreen splash

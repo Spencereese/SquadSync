@@ -1,384 +1,114 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart';
+import 'package:riverpod/riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
 import 'package:squad_sync/domain/entities/chat_group.dart';
 import 'package:squad_sync/domain/entities/chat_state.dart';
 import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/repositories/chat_repository.dart';
+import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/core/injection.dart';
-import 'package:squad_sync/services/clip_service.dart';
-import '../../services/message_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/supabase_service.dart';
 import '../../services/auth_service_supabase.dart';
+import 'message_notifier.dart';
+import 'media_notifier.dart';
+import 'offline_first_mixin.dart';
+import 'game_notifier.dart';
+import 'lobby_notifier.dart';
 
-class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
-  late final ChatRepository _repository;
-  late final MessageService _chatService;
-  late final ClipService _clipService;
+/// ChatNotifier - Coordinator for chat functionality
+/// Delegates to MessageNotifier and MediaNotifier for specific operations
+/// Handles group management, presence tracking, and UI state coordination
+/// NOW WITH OFFLINE-FIRST SUPPORT via OfflineFirstMixin
+/// Uses AsyncNotifier (not AutoDispose) to persist state across navigation
+class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
+  // Use getters to avoid late initialization errors when build() is called multiple times
+  ChatRepository get _repository => ref.read(chatRepositoryProvider);
+  ErrorHandlingService get _errorHandler =>
+      ref.read(errorHandlingServiceProvider);
   final AuthServiceSupabase _authService = AuthServiceSupabase();
 
-  // Real-time streaming - Dual mode (Supabase + Firestore fallback)
-  StreamSubscription<List<Map<String, dynamic>>>? _messagesSubscription;
-  StreamSubscription<List<Map<String, dynamic>>>? _supabaseMessagesSubscription;
-  RealtimeChannel? _typingChannel;
+  // Presence tracking
   RealtimeChannel? _presenceChannel;
   String? _currentChatGroupId;
   ChatType? _currentChatType;
-  DateTime? _lastSyncTimestamp;
-  int _retryCount = 0;
-  static const int _maxRetries = 3;
-  Timer? _retryTimer;
-  bool _useSupabase = true; // Try Supabase first, fallback to Firestore
-  Timer? _typingDebounceTimer;
-  final Set<String> _currentTypingUsers = {};
 
   @override
   Future<ChatState> build() async {
     try {
-      // Get repository from provider
-      _repository = ref.read(chatRepositoryProvider);
-      _chatService = MessageService();
-      _clipService = ClipService();
+      // Initialize offline-first capabilities
+      await initializeOfflineFirst();
+
+      // Listen to MessageNotifier updates and sync to ChatState
+      ref.listen<AsyncValue<MessageState>>(messageNotifierProvider,
+          (prev, next) {
+        next.whenData((messageState) {
+          _syncMessagesFromMessageNotifier(messageState);
+        });
+      });
 
       return ChatState.initial();
     } catch (e) {
-      // If dependency injection fails, rethrow to make provider unavailable
-      // This ensures the error is properly handled upstream
+      // Note: _errorHandler not yet initialized, use basic logging
+      debugPrint('ChatNotifier build error: $e');
       rethrow;
     }
   }
 
-  // Initialize real-time streaming for a chat group
-  Future<void> initializeMessagesStream(
-      String chatGroupId, ChatType chatType) async {
-    // Wait for the notifier to be fully initialized
-    await future;
-
-    // Dispose existing subscription if chat group changed
-    if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
-      await _disposeMessagesStream();
-      _currentChatGroupId = chatGroupId;
-      _currentChatType = chatType;
-      _retryCount = 0;
-      _lastSyncTimestamp = await _getLastSyncTimestamp(chatGroupId);
-    }
-
-    // Load initial messages from cache
-    await _loadInitialMessages(chatGroupId);
-
-    // Start real-time stream
-    _startMessagesStream(chatGroupId, chatType);
-  }
-
-  Future<void> _loadInitialMessages(String chatGroupId) async {
-    try {
-      debugPrint(
-          'DEBUG ChatNotifier: Loading initial messages for $chatGroupId');
-      final cachedMessages =
-          await _repository.loadMessages(chatGroupId, limit: 100);
-      state = await AsyncValue.guard(() async {
-        final currentState = await future;
-        final updatedMessages =
-            Map<String, List<Message>>.from(currentState.chatMessages);
-        updatedMessages[chatGroupId] = cachedMessages;
-        return currentState.copyWith(chatMessages: updatedMessages);
-      });
-      debugPrint(
-          'DEBUG ChatNotifier: Loaded ${cachedMessages.length} cached messages');
-    } catch (e) {
-      debugPrint('DEBUG ChatNotifier: Error loading initial messages: $e');
-      state = AsyncValue.error(e, StackTrace.current);
-    }
-  }
-
-  void _startMessagesStream(String chatGroupId, ChatType chatType) {
-    if (_useSupabase) {
-      _startSupabaseMessagesStream(chatGroupId, chatType);
-    } else {
-      _startFirestoreMessagesStream(chatGroupId, chatType);
-    }
-  }
-
-  void _startSupabaseMessagesStream(String chatGroupId, ChatType chatType) {
-    try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) {
+  /// Sync messages from MessageNotifier to ChatNotifier state
+  void _syncMessagesFromMessageNotifier(MessageState messageState) {
+    state.whenData((chatState) {
+      // Only update if messages have changed
+      if (chatState.chatMessages != messageState.messages) {
         debugPrint(
-            'DEBUG ChatNotifier: No authenticated user for Supabase stream');
-        return;
+            'ChatNotifier: Syncing ${messageState.messages.length} message groups from MessageNotifier');
+        state = AsyncValue.data(chatState.copyWith(
+          chatMessages: messageState.messages,
+        ));
       }
-
-      // Build Supabase filter based on chat type
-      // Note: All chat types use 'chat_id' column in Supabase
-      Map<String, dynamic> filters = {
-        'chat_id': chatGroupId,
-        'chat_type': chatType.name, // 'squad', 'userGroup', 'dm'
-      };
-
-      // Delta sync: only get messages since last timestamp
-      final lastTimestamp = _lastSyncTimestamp?.millisecondsSinceEpoch ?? 0;
-
-      debugPrint(
-          'DEBUG ChatNotifier: Starting Supabase stream for $chatGroupId (delta from $lastTimestamp)');
-
-      // Create real-time stream with delta sync
-      var query = supabase.from('chat_messages').stream(primaryKey: ['id']);
-
-      // Apply filters
-      filters.forEach((key, value) {
-        query = query.eq(key, value) as dynamic;
-      });
-
-      // Delta sync filter (convert timestamp ms to ISO string for comparison)
-      if (lastTimestamp > 0) {
-        final lastDate = DateTime.fromMillisecondsSinceEpoch(lastTimestamp)
-            .toIso8601String();
-        query = query.gt('timestamp', lastDate) as dynamic;
-      }
-
-      _supabaseMessagesSubscription =
-          query.order('timestamp', ascending: false).limit(100).listen(
-        (data) => _onSupabaseMessagesSnapshot(data, chatGroupId),
-        onError: (error) {
-          debugPrint('DEBUG ChatNotifier: Supabase stream error: $error');
-          // Fallback to Firestore
-          _useSupabase = false;
-          _supabaseMessagesSubscription?.cancel();
-          _supabaseMessagesSubscription = null;
-          _startFirestoreMessagesStream(chatGroupId, chatType);
-        },
-      );
-
-      // Initialize typing channel
-      _initializeTypingChannel(chatGroupId);
-
-      // Initialize presence channel for online status
-      _initializePresenceChannel(chatGroupId);
-
-      debugPrint('DEBUG ChatNotifier: Supabase stream initialized');
-    } catch (e) {
-      debugPrint('DEBUG ChatNotifier: Failed to start Supabase stream: $e');
-      // Fallback to Firestore
-      _useSupabase = false;
-      _startFirestoreMessagesStream(chatGroupId, chatType);
-    }
-  }
-
-  void _startFirestoreMessagesStream(String chatGroupId, ChatType chatType) {
-    final currentUser = _authService.currentUser;
-    if (currentUser == null) {
-      debugPrint('DEBUG ChatNotifier: No authenticated user, skipping stream');
-      return;
-    }
-
-    debugPrint(
-        'DEBUG ChatNotifier: Starting Supabase stream for chat_group_id: $chatGroupId (fallback mode)');
-
-    // Delta sync: only sync messages since last timestamp
-    final stream = SupabaseService.client
-        .from('chat_messages')
-        .stream(primaryKey: ['id'])
-        .eq('chat_id', chatGroupId)
-        .order('timestamp', ascending: false)
-        .limit(100);
-
-    _messagesSubscription = stream.listen(
-      (data) => _onSupabaseMessagesSnapshot(data, chatGroupId),
-      onError: (error) => _onStreamError(error, chatGroupId, chatType),
-      onDone: () => debugPrint('DEBUG ChatNotifier: Messages stream done'),
-    );
-  }
-
-  void _onSupabaseMessagesSnapshot(
-      List<Map<String, dynamic>> data, String chatGroupId) async {
-    try {
-      debugPrint(
-          'DEBUG ChatNotifier: Received ${data.length} messages from Supabase');
-      _retryCount = 0; // Reset retry count on success
-
-      final remoteMessages = data.map((messageData) {
-        return Message.fromJson(messageData);
-      }).toList();
-
-      // Merge with cached messages
-      await _mergeMessages(chatGroupId, remoteMessages);
-
-      // Update last sync timestamp for delta sync
-      if (remoteMessages.isNotEmpty) {
-        _lastSyncTimestamp = DateTime.now();
-        await _updateLastSyncTimestamp(chatGroupId, _lastSyncTimestamp!);
-      }
-    } catch (e) {
-      debugPrint('DEBUG ChatNotifier: Error processing Supabase messages: $e');
-      state = AsyncValue.error(e, StackTrace.current);
-    }
-  }
-
-  Future<void> _mergeMessages(
-      String chatGroupId, List<Message> remoteMessages) async {
-    final currentState = await future;
-    final existingMessages = currentState.chatMessages[chatGroupId] ?? [];
-
-    // Create a map of existing messages by ID for quick lookup
-    final existingMap = {for (var msg in existingMessages) msg.id: msg};
-
-    // Merge remote messages, prioritizing remote on conflicts (by timestamp)
-    final mergedMessages = <Message>[];
-    mergedMessages.addAll(existingMessages);
-
-    for (final remoteMsg in remoteMessages) {
-      final existingMsg = existingMap[remoteMsg.id];
-      if (existingMsg == null) {
-        // New message
-        mergedMessages.add(remoteMsg);
-        debugPrint('DEBUG ChatNotifier: Added new message ${remoteMsg.id}');
-      } else {
-        // Always update existing messages with remote data (for status updates like delivered)
-        final index = mergedMessages.indexWhere((m) => m.id == remoteMsg.id);
-        if (index != -1) {
-          mergedMessages[index] = remoteMsg;
-          debugPrint('DEBUG ChatNotifier: Updated message ${remoteMsg.id}');
-        }
-      }
-    }
-
-    // Sort by timestamp descending
-    mergedMessages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-    state = AsyncValue.data(currentState.copyWith(
-      chatMessages: {
-        ...currentState.chatMessages,
-        chatGroupId: mergedMessages,
-      },
-    ));
-
-    debugPrint(
-        'DEBUG ChatNotifier: Merged messages, total: ${mergedMessages.length}');
-  }
-
-  void _onStreamError(Object error, String chatGroupId, ChatType chatType) {
-    debugPrint(
-        'DEBUG ChatNotifier: Stream error: $error, retry count: $_retryCount');
-
-    if (_retryCount < _maxRetries) {
-      _retryCount++;
-      final delay =
-          Duration(seconds: 1 << (_retryCount - 1)); // Exponential backoff
-      debugPrint('DEBUG ChatNotifier: Retrying in ${delay.inSeconds} seconds');
-
-      _retryTimer?.cancel();
-      _retryTimer = Timer(delay, () {
-        if (_currentChatGroupId == chatGroupId &&
-            _currentChatType == chatType) {
-          _startMessagesStream(chatGroupId, chatType);
-        }
-      });
-    } else {
-      debugPrint('DEBUG ChatNotifier: Max retries reached, giving up');
-      state = AsyncValue.error(error, StackTrace.current);
-    }
-  }
-
-  Future<DateTime?> _getLastSyncTimestamp(String chatGroupId) async {
-    // TODO: Implement getting last sync timestamp from local storage
-    // For now, return null to sync from beginning
-    return null;
-  }
-
-  Future<void> _updateLastSyncTimestamp(
-      String chatGroupId, DateTime timestamp) async {
-    // TODO: Implement updating last sync timestamp in local storage
-  }
-
-  Future<void> _disposeMessagesStream() async {
-    debugPrint('DEBUG ChatNotifier: Disposing messages stream');
-    await _messagesSubscription?.cancel();
-    _messagesSubscription = null;
-    await _supabaseMessagesSubscription?.cancel();
-    _supabaseMessagesSubscription = null;
-
-    // Dispose typing channel
-    if (_typingChannel != null) {
-      await supabase.removeChannel(_typingChannel!);
-      _typingChannel = null;
-    }
-
-    // Dispose presence channel
-    if (_presenceChannel != null) {
-      await supabase.removeChannel(_presenceChannel!);
-      _presenceChannel = null;
-    }
-
-    _retryTimer?.cancel();
-    _retryTimer = null;
-    _typingDebounceTimer?.cancel();
-    _typingDebounceTimer = null;
-    _currentChatGroupId = null;
-    _currentChatType = null;
-    _currentTypingUsers.clear();
-  }
-
-  // ============================================================================
-  // TYPING INDICATORS - Supabase Realtime Channel
-  // ============================================================================
-
-  void _initializeTypingChannel(String chatGroupId) {
-    try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) return;
-
-      // Create channel for typing indicators
-      _typingChannel = supabase.channel('typing:$chatGroupId');
-
-      // Subscribe to typing events
-      _typingChannel!
-          .onBroadcast(
-            event: 'typing',
-            callback: (payload) {
-              final userId = payload['user_id'] as String?;
-              final isTyping = payload['is_typing'] as bool? ?? false;
-              final displayName =
-                  payload['display_name'] as String? ?? userId ?? 'Unknown';
-
-              debugPrint(
-                  'DEBUG ChatNotifier: Typing event - $displayName: $isTyping');
-
-              // Don't show own typing indicator
-              if (userId == currentUser.id) return;
-
-              if (isTyping) {
-                _currentTypingUsers.add(displayName);
-              } else {
-                _currentTypingUsers.remove(displayName);
-              }
-
-              // Update state with typing users
-              _updateTypingIndicators(chatGroupId);
-            },
-          )
-          .subscribe();
-
-      debugPrint(
-          'DEBUG ChatNotifier: Typing channel initialized for $chatGroupId');
-    } catch (e) {
-      debugPrint('DEBUG ChatNotifier: Failed to initialize typing channel: $e');
-      // Non-critical, continue without typing indicators
-    }
-  }
-
-  Future<void> _updateTypingIndicators(String chatGroupId) async {
-    state = await AsyncValue.guard(() async {
-      final currentState = await future;
-      final updatedIndicators =
-          Map<String, Set<String>>.from(currentState.typingIndicators);
-      updatedIndicators[chatGroupId] = Set<String>.from(_currentTypingUsers);
-      return currentState.copyWith(typingIndicators: updatedIndicators);
     });
   }
 
   // ============================================================================
-  // ONLINE STATUS - Supabase Realtime Presence
+  // INITIALIZATION & COORDINATION
+  // ============================================================================
+
+  /// Initialize chat for a specific group
+  /// Delegates message streaming to MessageNotifier
+  Future<void> initializeChat(String chatGroupId, ChatType chatType) async {
+    await future;
+
+    if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
+      await _disposePresenceChannel();
+      _currentChatGroupId = chatGroupId;
+      _currentChatType = chatType;
+    }
+
+    // Initialize presence tracking
+    _initializePresenceChannel(chatGroupId);
+
+    // Initialize message streaming via MessageNotifier
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    await messageNotifier.initializeMessagesStream(chatGroupId, chatType);
+
+    // Load active polls via MediaNotifier (polls are stored in chat_messages.poll JSONB, not separate table)
+    // Skip for now as polls table doesn't exist
+    try {
+      final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+      await mediaNotifier.loadActivePolls(chatGroupId);
+    } catch (e) {
+      debugPrint(
+          '⚠️ Skipping polls loading (polls stored in chat_messages): $e');
+    }
+
+    // Update selected chat group in state
+    await selectChatGroup(chatGroupId);
+  }
+
+  // ============================================================================
+  // PRESENCE TRACKING
   // ============================================================================
 
   void _initializePresenceChannel(String chatGroupId) {
@@ -386,24 +116,19 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
       final currentUser = _authService.currentUser;
       if (currentUser == null) return;
 
-      // Create presence channel for online status
       _presenceChannel = supabase.channel('presence:$chatGroupId');
 
-      // Track presence
       _presenceChannel!.onPresenceSync((_) {
         final presenceState = _presenceChannel!.presenceState();
         debugPrint(
-            'DEBUG ChatNotifier: Presence sync - ${presenceState.length} users online');
-
-        // Update online users in state
+            'ChatNotifier: Presence sync - ${presenceState.length} users online');
         _updateOnlineUsers(chatGroupId, presenceState);
       }).onPresenceJoin((payload) {
-        debugPrint('DEBUG ChatNotifier: User joined - $payload');
+        debugPrint('ChatNotifier: User joined - $payload');
       }).onPresenceLeave((payload) {
-        debugPrint('DEBUG ChatNotifier: User left - $payload');
+        debugPrint('ChatNotifier: User left - $payload');
       }).subscribe((status, error) async {
         if (status == RealtimeSubscribeStatus.subscribed) {
-          // Track own presence
           await _presenceChannel!.track({
             'user_id': currentUser.id,
             'display_name': currentUser.userMetadata?['display_name'] ??
@@ -411,16 +136,13 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
                 'Unknown',
             'online_at': DateTime.now().toIso8601String(),
           });
-          debugPrint('DEBUG ChatNotifier: Presence tracking enabled');
+          debugPrint('ChatNotifier: Presence tracking enabled');
         }
       });
 
-      debugPrint(
-          'DEBUG ChatNotifier: Presence channel initialized for $chatGroupId');
+      debugPrint('ChatNotifier: Presence channel initialized for $chatGroupId');
     } catch (e) {
-      debugPrint(
-          'DEBUG ChatNotifier: Failed to initialize presence channel: $e');
-      // Non-critical, continue without presence
+      debugPrint('ChatNotifier: Failed to initialize presence channel: $e');
     }
   }
 
@@ -430,7 +152,6 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
       final onlineUserIds = <String>{};
 
       for (final state in presenceState) {
-        // Extract user IDs from presence data
         for (final presence in state.presences) {
           final payload = presence.payload;
           final userId = payload['user_id'] as String?;
@@ -440,15 +161,26 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
         }
       }
 
-      // Update state with online users (you may need to add this to ChatState)
       debugPrint(
-          'DEBUG ChatNotifier: ${onlineUserIds.length} users online in $chatGroupId');
+          'ChatNotifier: ${onlineUserIds.length} users online in $chatGroupId');
     } catch (e) {
-      debugPrint('DEBUG ChatNotifier: Error updating online users: $e');
+      debugPrint('ChatNotifier: Error updating online users: $e');
     }
   }
 
-  // Message operations
+  Future<void> _disposePresenceChannel() async {
+    if (_presenceChannel != null) {
+      await supabase.removeChannel(_presenceChannel!);
+      _presenceChannel = null;
+    }
+    _currentChatGroupId = null;
+    _currentChatType = null;
+  }
+
+  // ============================================================================
+  // MESSAGE OPERATIONS (Delegated to MessageNotifier)
+  // ============================================================================
+
   Future<void> sendMessage(WidgetRef ref, String chatGroupId, String text,
       MessageType messageType, ChatType chatType,
       {String? mediaUrl,
@@ -460,255 +192,237 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
       String? mediaFilePath,
       String? clipFilePath}) async {
     try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) throw 'User not authenticated';
-
-      Map<String, dynamic>? clipData;
-
-      // Handle clip processing
+      // Handle clip processing via MediaNotifier
       if (messageType == MessageType.clip && clipFilePath != null) {
-        debugPrint('Processing clip from: $clipFilePath');
+        final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+        final clipData = await mediaNotifier.processClip(clipFilePath);
 
-        final processedClip = await _clipService.processClip(
-          clipFilePath,
-          onProgress: (progress) {
-            debugPrint(
-                'Clip upload progress: ${(progress * 100).toStringAsFixed(0)}%');
-            // TODO: Update UI with progress if needed
-          },
-        );
-
-        clipData = {
-          'clipId': processedClip.clipId,
-          'videoUrl': processedClip.videoUrl,
-          'thumbnailUrl': processedClip.thumbUrl,
-          'durationSec': (processedClip.duration / 1000).round(),
-          'width': processedClip.width,
-          'height': processedClip.height,
-          'views': 0,
-          'hypeReactions': <String>[],
-        };
-
-        // Set mediaUrl to video URL for backward compatibility
-        mediaUrl = processedClip.videoUrl;
+        mediaUrl = clipData['videoUrl'] as String;
         mediaType = 'video/mp4';
-      }
 
-      // Create optimistic message for immediate UI update
-      final optimisticMessage = Message.create(
-        senderId: currentUser.id,
-        text: text,
-        messageType: messageType,
-        mediaUrl: mediaUrl,
-        mediaType: mediaType,
-        replyTo: replyTo,
-        poll: poll,
-        voiceNoteUrl: voiceNoteUrl,
-        voiceNoteDuration: voiceNoteDuration,
-        clipData: clipData,
-      );
-
-      // Add optimistic message to UI immediately (marked as sending)
-      await _addOptimisticMessage(chatGroupId, optimisticMessage);
-
-      // Send via ChatService
-      final result = await _chatService.sendMessage(
-        ref,
-        senderUid: currentUser.id,
-        text: text,
-        chatGroupId: chatGroupId,
-        chatType: chatType,
-        mediaFilePath: mediaFilePath,
-        mediaType: mediaType,
-      );
-
-      if (result.success) {
-        // Replace optimistic message with final message
-        await _replaceOptimisticMessage(
-            chatGroupId, optimisticMessage.id, result.messageId!);
+        // Send message with clip data
+        final messageNotifier = ref.read(messageNotifierProvider.notifier);
+        await messageNotifier.sendMessage(
+          ref,
+          chatGroupId,
+          text,
+          messageType,
+          chatType,
+          mediaUrl: mediaUrl,
+          mediaType: mediaType,
+          replyTo: replyTo,
+          mediaFilePath: mediaFilePath,
+        );
       } else {
-        // Handle failure - show error and remove optimistic message
-        await _removeOptimisticMessage(chatGroupId, optimisticMessage.id);
-        throw result.errorMessage ?? 'Failed to send message';
+        // Regular message - delegate to MessageNotifier
+        final messageNotifier = ref.read(messageNotifierProvider.notifier);
+        await messageNotifier.sendMessage(
+          ref,
+          chatGroupId,
+          text,
+          messageType,
+          chatType,
+          mediaUrl: mediaUrl,
+          mediaType: mediaType,
+          replyTo: replyTo,
+          mediaFilePath: mediaFilePath,
+        );
       }
     } catch (e) {
-      debugPrint('Send message failed: $e');
+      debugPrint('ChatNotifier: Send message failed: $e');
       rethrow;
-    }
-  }
-
-  Future<void> _addOptimisticMessage(
-      String chatGroupId, Message message) async {
-    final currentState = await future;
-    final updatedMessages =
-        Map<String, List<Message>>.from(currentState.chatMessages);
-    final messages = List<Message>.from(updatedMessages[chatGroupId] ?? []);
-    messages.insert(0, message); // Add to top (newest first)
-    updatedMessages[chatGroupId] = messages;
-
-    state =
-        AsyncValue.data(currentState.copyWith(chatMessages: updatedMessages));
-  }
-
-  Future<void> _replaceOptimisticMessage(
-      String chatGroupId, String optimisticId, String finalId) async {
-    final currentState = await future;
-    final updatedMessages =
-        Map<String, List<Message>>.from(currentState.chatMessages);
-    final messages = List<Message>.from(updatedMessages[chatGroupId] ?? []);
-
-    final index = messages.indexWhere((m) => m.id == optimisticId);
-    if (index != -1) {
-      // Replace with final message (will be updated via stream)
-      messages[index] = messages[index].copyWith(id: finalId);
-      updatedMessages[chatGroupId] = messages;
-      state =
-          AsyncValue.data(currentState.copyWith(chatMessages: updatedMessages));
-    }
-  }
-
-  Future<void> _removeOptimisticMessage(
-      String chatGroupId, String messageId) async {
-    final currentState = await future;
-    final updatedMessages =
-        Map<String, List<Message>>.from(currentState.chatMessages);
-    final messages = List<Message>.from(updatedMessages[chatGroupId] ?? []);
-    messages.removeWhere((m) => m.id == messageId);
-    updatedMessages[chatGroupId] = messages;
-
-    state =
-        AsyncValue.data(currentState.copyWith(chatMessages: updatedMessages));
-  }
-
-  /// Increment view count for a clip message
-  Future<void> incrementClipViews(
-      String chatGroupId, String messageId, ChatType chatType) async {
-    try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) return;
-
-      // Increment views in Supabase
-      final clipData = await SupabaseService.client
-          .from('chat_messages')
-          .select('clip_data')
-          .eq('id', messageId)
-          .maybeSingle();
-
-      if (clipData != null) {
-        final currentViews = (clipData['clip_data']?['views'] as int?) ?? 0;
-        await SupabaseService.client.from('chat_messages').update({
-          'clip_data': {
-            ...Map<String, dynamic>.from(clipData['clip_data'] ?? {}),
-            'views': currentViews + 1,
-          }
-        }).eq('id', messageId);
-      }
-
-      debugPrint('Incremented views for clip $messageId');
-    } catch (e) {
-      debugPrint('Failed to increment clip views: $e');
-      // Don't rethrow - view counting is non-critical
-    }
-  }
-
-  /// Add hype reaction to a clip
-  Future<void> toggleClipHype(
-      String chatGroupId, String messageId, ChatType chatType) async {
-    try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) return;
-
-      // Get current clip data from Supabase
-      final messageData = await SupabaseService.client
-          .from('chat_messages')
-          .select('clip_data')
-          .eq('id', messageId)
-          .maybeSingle();
-
-      if (messageData != null) {
-        final clipData = messageData['clip_data'] as Map<String, dynamic>?;
-
-        if (clipData != null) {
-          final hypeReactions =
-              List<String>.from(clipData['hype_reactions'] ?? []);
-
-          if (hypeReactions.contains(currentUser.id)) {
-            // Remove hype
-            hypeReactions.remove(currentUser.id);
-          } else {
-            // Add hype
-            hypeReactions.add(currentUser.id);
-          }
-
-          await SupabaseService.client.from('chat_messages').update({
-            'clip_data': {
-              ...clipData,
-              'hype_reactions': hypeReactions,
-            }
-          }).eq('id', messageId);
-
-          debugPrint('Toggled hype for clip $messageId');
-        }
-      }
-    } catch (e) {
-      debugPrint('Failed to toggle clip hype: $e');
-      // Don't rethrow - hype is non-critical
     }
   }
 
   Future<void> loadMessages(String chatGroupId,
       {int limit = 50, DateTime? before}) async {
-    final messages = await _repository.loadMessages(chatGroupId,
-        limit: limit, before: before);
-    state = await AsyncValue.guard(() async {
-      final currentState = await future;
-      final updatedMessages =
-          Map<String, List<Message>>.from(currentState.chatMessages);
-      updatedMessages[chatGroupId] = messages;
-      return currentState.copyWith(chatMessages: updatedMessages);
-    });
+    // Delegate to MessageNotifier
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    await messageNotifier.initializeMessagesStream(
+        chatGroupId, _currentChatType ?? ChatType.squad);
   }
 
-  Future<void> syncMessages(String chatGroupId) async {
-    // Delta sync moved to MessageService
-    // Just reload messages
-    await loadMessages(chatGroupId);
-  }
+  // ============================================================================
+  // REACTIONS (Delegated to MessageNotifier)
+  // ============================================================================
 
-  // Reactions
   Future<void> addReaction(
       String chatGroupId, String messageId, String reaction) async {
-    await _repository.addReaction(chatGroupId, messageId, reaction);
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    await messageNotifier.addReaction(chatGroupId, messageId, reaction);
   }
 
-  // Polls
+  Future<void> removeReaction(
+      String chatGroupId, String messageId, String reaction) async {
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    await messageNotifier.removeReaction(chatGroupId, messageId, reaction);
+  }
+
+  // ============================================================================
+  // POLLS (Delegated to MediaNotifier)
+  // ============================================================================
+
   Future<void> createPoll(
       String chatGroupId, String question, List<String> options) async {
-    await _repository.createPoll(chatGroupId, question, options);
+    final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+    await mediaNotifier.createPoll(chatGroupId, question, options);
   }
 
   Future<void> votePoll(
       String chatGroupId, String pollId, String option, String voterId) async {
-    await _repository.votePoll(chatGroupId, pollId, option, voterId);
+    final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+    await mediaNotifier.votePoll(chatGroupId, pollId, option, voterId);
   }
 
-  // Media
+  // ============================================================================
+  // MEDIA (Delegated to MediaNotifier)
+  // ============================================================================
+
   Future<String> uploadMedia(String filePath, String mediaType) async {
-    return await _repository.uploadMedia(filePath, mediaType);
+    final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+    return await mediaNotifier.uploadMedia(filePath, mediaType);
   }
 
   Future<void> loadMediaHistory(String chatGroupId) async {
-    // Media history moved to MessageService
-    // Keep empty for compatibility
-    state = await AsyncValue.guard(() async {
-      final currentState = await future;
-      return currentState.copyWith(mediaHistory: []);
-    });
+    final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+    await mediaNotifier.loadMediaHistory(chatGroupId);
   }
 
-  // Group management
+  Future<void> incrementClipViews(
+      String chatGroupId, String messageId, ChatType chatType) async {
+    final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+    await mediaNotifier.incrementClipViews(chatGroupId, messageId, chatType);
+  }
+
+  Future<void> toggleClipHype(
+      String chatGroupId, String messageId, ChatType chatType) async {
+    final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+    await mediaNotifier.toggleClipHype(chatGroupId, messageId, chatType);
+  }
+
+  // ============================================================================
+  // GROUP MANAGEMENT
+  // ============================================================================
+
+  /// Load all groups the current user is a member of
+  /// Populates chatGroups and userChatGroups in state
+  Future<void> loadUserGroups() async {
+    debugPrint('🔵 loadUserGroups() CALLED - START');
+    await future;
+    debugPrint('🔵 loadUserGroups() - future awaited');
+
+    try {
+      final currentUser = _authService.currentUser;
+      debugPrint('🔵 loadUserGroups() - currentUser: ${currentUser?.id}');
+      if (currentUser == null) {
+        debugPrint('⚠️ Cannot load user groups: No authenticated user');
+        return;
+      }
+
+      debugPrint('📚 Loading user groups for: ${currentUser.id}');
+
+      // Query user's groups from users.user_groups JSONB field
+      debugPrint('🔍 Step 1: Querying users table for user_groups...');
+      dynamic userData;
+      try {
+        userData = await SupabaseService.client
+            .from('users')
+            .select('user_groups')
+            .eq('uid', currentUser.id)
+            .maybeSingle();
+        debugPrint('🔍 Step 2: Query successful! userData: $userData');
+      } catch (queryError) {
+        debugPrint('❌ Step 1 FAILED with error: $queryError');
+        debugPrint('❌ Error type: ${queryError.runtimeType}');
+        rethrow;
+      }
+
+      debugPrint('🔍 Step 2: userData received: ${userData != null}');
+      if (userData == null || userData['user_groups'] == null) {
+        debugPrint('📚 No user groups found in userData');
+        return;
+      }
+
+      debugPrint('🔍 Step 3: Parsing user_groups JSONB...');
+      final userGroupsData =
+          List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
+      debugPrint('🔍 Step 4: Found ${userGroupsData.length} group entries');
+
+      final groupIds = userGroupsData
+          .map((g) => g['chat_group_id'] as String?)
+          .where((id) => id != null)
+          .cast<String>()
+          .toList();
+      debugPrint(
+          '🔍 Step 5: Extracted ${groupIds.length} group IDs: $groupIds');
+
+      if (groupIds.isEmpty) {
+        debugPrint('📚 User has no group IDs');
+        return;
+      }
+
+      // Fetch full group details
+      debugPrint('🔍 Step 6: Querying chat_groups table...');
+      final groupsData = await SupabaseService.client
+          .from('chat_groups')
+          .select()
+          .inFilter('id', groupIds);
+      debugPrint(
+          '🔍 Step 7: Received ${(groupsData as List).length} groups from database');
+
+      final groups = <String, ChatGroup>{};
+      for (var data in (groupsData as List<dynamic>)) {
+        final groupData = data as Map<String, dynamic>;
+        final group = ChatGroup(
+          id: groupData['id'] as String,
+          name: groupData['name'] as String,
+          isPublic: groupData['is_public'] as bool? ?? false,
+          memberUids: List<String>.from(groupData['member_uids'] ?? []),
+          memberCount: (groupData['member_uids'] as List?)?.length ?? 0,
+          createdBy: groupData['created_by'] as String? ?? 'unknown',
+          createdAt: groupData['created_at'] != null
+              ? DateTime.parse(groupData['created_at'] as String)
+              : DateTime.now(),
+          description: groupData['description'] as String?,
+          avatarUrl: groupData['avatar_url'] as String?,
+          inviteCode: groupData['id'] as String, // Use group ID as invite code
+          lastActivity: groupData['last_message_time'] != null
+              ? DateTime.parse(groupData['last_message_time'] as String)
+              : null,
+        );
+        groups[group.id] = group;
+      }
+
+      debugPrint('✅ Loaded ${groups.length} user groups');
+      debugPrint('📚 Group IDs: ${groups.keys.toList()}');
+
+      // Update state - force rebuild with AsyncData
+      final currentState = state.valueOrNull ?? await future;
+      debugPrint(
+          '📚 Current state chatGroups: ${currentState.chatGroups.length}');
+      final newState = currentState.copyWith(
+        chatGroups: groups,
+        userChatGroups: groups,
+      );
+      debugPrint('📚 New state chatGroups: ${newState.chatGroups.length}');
+      state = AsyncData(newState);
+      debugPrint(
+          '📚 State set successfully - value check: ${state.valueOrNull?.chatGroups.length}');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error loading user groups: $e');
+      debugPrint('Stack trace: $stackTrace');
+      await _errorHandler.handleError(
+        error: e,
+        stackTrace: stackTrace,
+        operation: 'loadUserGroups',
+        showSnackBar: false,
+      );
+    }
+  }
+
   Future<ChatGroup?> createGroup(String name, bool isPublic,
       {String? description}) async {
+    await future;
     final group =
         await _repository.createGroup(name, isPublic, description: description);
     state = await AsyncValue.guard(() async {
@@ -722,63 +436,309 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
   }
 
   Future<void> joinGroup(String groupId) async {
+    await future;
     await _repository.joinGroup(groupId);
   }
 
   Future<void> leaveGroup(String groupId) async {
+    await future;
     await _repository.leaveGroup(groupId);
   }
 
-  // Typing indicators
-  Future<void> updateTypingIndicator(String chatGroupId, bool isTyping) async {
-    // Cancel existing debounce timer
-    _typingDebounceTimer?.cancel();
+  /// Discover public groups, optionally filtered by game
+  /// Returns list ordered by member count DESC, limited to 20
+  Future<List<ChatGroup>> discoverGroups({String? gameFilter}) async {
+    // Ensure notifier is initialized before accessing dependencies
+    await future;
 
-    if (_useSupabase && _typingChannel != null) {
-      // Use Supabase realtime broadcast for typing indicators
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) return;
+    try {
+      // Call repository to fetch public groups
+      final groups = await _repository.discoverGroups(
+        query: gameFilter,
+        limit: 20,
+      );
 
-      try {
-        await _typingChannel!.sendBroadcastMessage(
-          event: 'typing',
-          payload: {
-            'user_id': currentUser.id,
-            'display_name': currentUser.userMetadata?['display_name'] ??
-                currentUser.email ??
-                'Unknown',
-            'is_typing': isTyping,
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-          },
-        );
+      // Sort by member count descending
+      groups.sort((a, b) => b.memberCount.compareTo(a.memberCount));
 
-        debugPrint(
-            'DEBUG ChatNotifier: Sent typing indicator via Supabase - $isTyping');
-
-        // Auto-clear typing indicator after 3 seconds
-        if (isTyping) {
-          _typingDebounceTimer = Timer(const Duration(seconds: 3), () {
-            updateTypingIndicator(chatGroupId, false);
-          });
-        }
-      } catch (e) {
-        debugPrint(
-            'DEBUG ChatNotifier: Failed to send typing via Supabase: $e');
-        // Fallback to Firestore
-        await _repository.updateTypingIndicator(chatGroupId, isTyping);
-      }
-    } else {
-      // Fallback to original Firestore implementation
-      await _repository.updateTypingIndicator(chatGroupId, isTyping);
+      return groups;
+    } catch (e, stackTrace) {
+      debugPrint('Error discovering groups: $e');
+      debugPrint('Stack trace: $stackTrace');
+      await _errorHandler.handleError(
+        error: e,
+        stackTrace: stackTrace,
+        operation: 'discoverGroups',
+        showSnackBar: false,
+      );
+      return [];
     }
   }
 
-  // Pinning
+  /// Join a group with confirmation dialog
+  /// Shows member count and group name before joining
+  Future<void> joinGroupWithConfirmation(
+    BuildContext context,
+    String groupId,
+  ) async {
+    await future;
+    try {
+      // Fetch group details first - check cache, then fetch from DB if not found
+      final currentState = state.value ?? await future;
+      ChatGroup? group = currentState.chatGroups[groupId];
+
+      // If not in cache (e.g., from discover list), fetch from database
+      if (group == null) {
+        debugPrint(
+            '🔍 Group $groupId not in cache, fetching from remote datasource...');
+        try {
+          // Use remote datasource directly to fetch group by ID
+          final remoteDataSource = ref.read(chatRemoteDataSourceProvider);
+          group = await remoteDataSource.getChatGroup(groupId);
+        } catch (e) {
+          debugPrint('❌ Failed to fetch group from database: $e');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Group not found')),
+            );
+          }
+          return;
+        }
+      }
+
+      if (group == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Group not found')),
+          );
+        }
+        return;
+      }
+
+      // Show confirmation dialog
+      final inviteCodeDisplay =
+          group.inviteCode != null && group.inviteCode!.isNotEmpty
+              ? '\nCode: ${group.inviteCode}'
+              : '';
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Join ${group?.name ?? "Group"}?'),
+          content: Text(
+            '${group?.memberCount ?? 0} ${(group?.memberCount ?? 0) == 1 ? "member" : "members"}$inviteCodeDisplay',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Join'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+
+      // Join the group
+      await _repository.joinGroup(groupId);
+
+      // Invalidate to force reload from Supabase for realtime update
+      ref.invalidateSelf();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Successfully joined ${group.name}!')),
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error joining group: $e');
+      debugPrint('Stack trace: $stackTrace');
+      await _errorHandler.handleError(
+        error: e,
+        stackTrace: stackTrace,
+        operation: 'joinGroup',
+        showSnackBar: false,
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to join group: $e')),
+        );
+      }
+    }
+  }
+
+  /// Join a group by invite code
+  /// Validates UUID format and fetches group before joining
+  Future<void> joinByInviteCode(
+    BuildContext context,
+    String code,
+  ) async {
+    await future;
+    try {
+      // Validate UUID format
+      final uuidRegex = RegExp(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        caseSensitive: false,
+      );
+
+      if (!uuidRegex.hasMatch(code.trim())) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid invite code format')),
+          );
+        }
+        throw Exception('Invalid UUID format');
+      }
+
+      // Fetch group by invite code (using group ID as invite code)
+      final currentState = state.value ?? await future;
+      final group = currentState.chatGroups[code.trim()];
+
+      if (group == null) {
+        // Try to fetch from repository if not in local state
+        try {
+          final groups = await _repository.discoverGroups(
+            query: null,
+            limit: 100,
+          );
+
+          final matchedGroup = groups.firstWhere(
+            (g) => g.id == code.trim() || g.inviteCode == code.trim(),
+            orElse: () => throw Exception('Group not found'),
+          );
+
+          // Join the found group
+          await joinGroupWithConfirmation(context, matchedGroup.id);
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Invalid code - group not found')),
+            );
+          }
+        }
+        return;
+      }
+
+      // Join the group if found in state
+      await joinGroupWithConfirmation(context, group.id);
+    } catch (e, stackTrace) {
+      debugPrint('Error joining by invite code: $e');
+      debugPrint('Stack trace: $stackTrace');
+      await _errorHandler.handleError(
+        error: e,
+        stackTrace: stackTrace,
+        operation: 'joinByInviteCode',
+        showSnackBar: false,
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to join by invite code: $e')),
+        );
+      }
+    }
+  }
+
+  /// Create a preset group (e.g., from lobby members)
+  /// Preset options: 'lobby' - loads members from current lobby
+  Future<ChatGroup?> createPresetGroup({
+    String preset = 'lobby',
+    BuildContext? context,
+  }) async {
+    await future;
+    try {
+      List<String> memberUids = [];
+      String groupName = 'Squad Chat';
+
+      if (preset == 'lobby') {
+        // Load members from current lobby
+        final lobbyState = ref.read(lobbyNotifierProvider).value;
+        memberUids = lobbyState?.lobbyMemberUids ?? [];
+
+        if (memberUids.isEmpty) {
+          if (context != null && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No lobby members found')),
+            );
+          }
+          return null;
+        }
+
+        // Get current game name for auto-naming
+        final gameState = ref.read(gameNotifierProvider).value;
+        final gameName = gameState?.currentGame?.name;
+        groupName = '${gameName ?? 'Squad'} Chat';
+      }
+
+      // Create the group
+      final group = await _repository.createGroup(
+        groupName,
+        false, // isPublic = false for preset groups
+        description: 'Created from $preset preset',
+      );
+
+      // Update state with new group
+      state = await AsyncValue.guard(() async {
+        final currentState = state.value ?? await future;
+        final updatedGroups =
+            Map<String, ChatGroup>.from(currentState.chatGroups);
+        updatedGroups[group.id] = group;
+        return currentState.copyWith(chatGroups: updatedGroups);
+      });
+
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Group "$groupName" created successfully!')),
+        );
+      }
+
+      return group;
+    } catch (e, stackTrace) {
+      debugPrint('Error creating preset group: $e');
+      debugPrint('Stack trace: $stackTrace');
+      await _errorHandler.handleError(
+        error: e,
+        stackTrace: stackTrace,
+        operation: 'createPresetGroup',
+        showSnackBar: false,
+      );
+
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create group: $e')),
+        );
+      }
+      return null;
+    }
+  }
+
+  // ============================================================================
+  // TYPING INDICATORS (Delegated to MessageNotifier)
+  // ============================================================================
+
+  Future<void> updateTypingIndicator(String chatGroupId, bool isTyping) async {
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    await messageNotifier.updateTypingIndicator(chatGroupId, isTyping);
+  }
+
+  // ============================================================================
+  // PINNING
+  // ============================================================================
+
   Future<void> pinMessage(String chatGroupId, String messageId) async {
+    await future;
     await _repository.pinMessage(chatGroupId, messageId);
   }
 
-  // UI state management
+  // ============================================================================
+  // UI STATE MANAGEMENT
+  // ============================================================================
+
   Future<void> selectChatGroup(String? groupId) async {
     state = await AsyncValue.guard(() async {
       final currentState = await future;
@@ -787,51 +747,26 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
   }
 
   Future<void> setReplyingToMessage(String? messageId) async {
-    state = await AsyncValue.guard(() async {
-      final currentState = await future;
-
-      Message? replyToMessage;
-      if (messageId != null && currentState.selectedChatGroupId != null) {
-        final messages =
-            currentState.chatMessages[currentState.selectedChatGroupId] ?? [];
-        try {
-          replyToMessage = messages.firstWhere(
-            (message) => message.id == messageId,
-          );
-        } catch (e) {
-          replyToMessage = null;
-        }
-      }
-
-      return currentState.copyWith(
-        replyingToMessageId: messageId,
-        replyToMessage: replyToMessage,
-      );
-    });
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    await messageNotifier.setReplyingToMessage(messageId);
   }
 
   Future<void> setReplyingToMessageObject(Message? message) async {
-    state = await AsyncValue.guard(() async {
-      final currentState = await future;
-      return currentState.copyWith(
-        replyingToMessageId: message?.id,
-        replyToMessage: message,
-      );
-    });
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    await messageNotifier.setReplyingToMessageObject(message);
   }
 
   Future<void> clearReplyToMessage() async {
-    state = await AsyncValue.guard(() async {
-      final currentState = await future;
-      return currentState.copyWith(
-          replyingToMessageId: null, replyToMessage: null);
-    });
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    await messageNotifier.clearReplyToMessage();
   }
 
-  // Sync operations
+  // ============================================================================
+  // SYNC OPERATIONS
+  // ============================================================================
+
   Future<void> performSync() async {
-    // TODO: Implement delta sync
-    // await _repository.deltaSync();
+    // TODO: Implement delta sync if needed
   }
 
   Future<void> clearSyncError() async {
@@ -841,25 +776,18 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
     });
   }
 
-  // Dispose method (for compatibility)
-  void dispose() {
-    _disposeMessagesStream();
-    // AsyncNotifier handles disposal automatically
-  }
+  // ============================================================================
+  // HELPER METHODS
+  // ============================================================================
 
-  // Helper methods for computed properties
   List<Message> getMessagesForGroup(String chatGroupId) {
-    return state.maybeWhen(
-      data: (data) => data.chatMessages[chatGroupId] ?? [],
-      orElse: () => [],
-    );
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    return messageNotifier.getMessagesForGroup(chatGroupId);
   }
 
   Set<String> getTypingUsers(String chatGroupId) {
-    return state.maybeWhen(
-      data: (data) => data.typingIndicators[chatGroupId] ?? {},
-      orElse: () => {},
-    );
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    return messageNotifier.getTypingUsers(chatGroupId);
   }
 
   int getUnreadCount(String chatGroupId) {
@@ -870,29 +798,29 @@ class ChatNotifier extends AutoDisposeAsyncNotifier<ChatState> {
   }
 
   bool isUserTyping(String chatGroupId, String userId) {
-    return getTypingUsers(chatGroupId).contains(userId);
+    final messageNotifier = ref.read(messageNotifierProvider.notifier);
+    return messageNotifier.isUserTyping(chatGroupId, userId);
   }
 
   List<Map<String, dynamic>> getMediaHistory() {
-    return state.maybeWhen(
-      data: (data) => data.mediaHistory,
-      orElse: () => [],
-    );
+    final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+    return mediaNotifier.getMediaHistory();
   }
 
   Map<String, Poll> getActivePolls(String chatGroupId) {
-    return state.maybeWhen(
-      data: (data) => (data.activePolls[chatGroupId] ?? {}).map(
-        (key, value) => MapEntry(key, value),
-      ),
-      orElse: () => {},
-    );
+    final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
+    return mediaNotifier.getActivePolls(chatGroupId);
   }
 
-  // NOTE: markAsDelivered removed - Supabase inserts are immediate, no delivery tracking needed
+  // Dispose (handled automatically by AutoDisposeAsyncNotifier)
+  void dispose() {
+    _disposePresenceChannel();
+    // Clean up offline-first resources
+    disposeOfflineFirst();
+  }
 }
 
-final chatNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<ChatNotifier, ChatState>(
-  () => ChatNotifier(),
+// ChatNotifier provider - uses AsyncNotifier (not AutoDispose) to persist state
+final chatNotifierProvider = AsyncNotifierProvider<ChatNotifier, ChatState>(
+  ChatNotifier.new,
 );

@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-// TODO: Migrate to Supabase Edge Functions
-// import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'supabase_service.dart';
+import 'auth_service_supabase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import '../chat/sqlite_helper.dart';
@@ -242,7 +243,7 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
       _prefs = await SharedPreferences.getInstance();
       _orchestrator.start();
       await _loadPersistedTimers();
-      await _syncWithFirestore();
+      await _syncWithSupabase();
       state = const AsyncValue.data(null);
     } catch (e) {
       state = AsyncValue.error(e, StackTrace.current);
@@ -326,14 +327,14 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// Spot timer expiration handler
   void _onSpotTimerExpire(String gameName, String userId) {
-    final squadNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
+    final lobbyNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
     final squadAsync = _ref.read(ln.lobbyNotifierProvider);
     if (squadAsync.hasValue) {
       final squadState = squadAsync.value!;
       final gameLobbySpots = squadState.gameLobbySpots[gameName] ?? [];
       final spotIndex = gameLobbySpots.indexOf(userId);
       if (spotIndex != -1) {
-        squadNotifier.removeSpot(gameName, spotIndex);
+        lobbyNotifier.removeSpot(gameName, spotIndex);
       }
     }
     _removePersistedTimer('spot_${gameName}_$userId');
@@ -341,12 +342,12 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
 
   /// Peacock timer expiration handler
   void _onPeacockTimerExpire(String userId) {
-    final squadNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
+    final lobbyNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
     final squadAsync = _ref.read(ln.lobbyNotifierProvider);
     if (squadAsync.hasValue) {
       final squadState = squadAsync.value!;
       final gameName = squadState.currentGame?['name'] ?? '';
-      squadNotifier.removeFromPeacock(gameName, userId);
+      lobbyNotifier.removeFromPeacock(gameName, userId);
     }
     _removePersistedTimer('peacock_$userId');
   }
@@ -425,15 +426,52 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  /// Syncs with Firestore for cross-device consistency
-  Future<void> _syncWithFirestore() async {
-    // TODO: Migrate to Supabase realtime subscriptions
-    debugPrint(
-        '[TimerService] Firestore sync not available - needs Supabase migration');
-    return;
+  /// Syncs with Supabase Realtime for cross-device consistency
+  Future<void> _syncWithSupabase() async {
+    try {
+      final user = AuthServiceSupabase().currentUserId;
+      if (user == null) {
+        debugPrint('[TimerService] No user authenticated for Supabase sync');
+        return;
+      }
+
+      // Get active timers
+      final activeTimers = _orchestrator.getActiveTimerKeys();
+      final timerDataList = <Map<String, dynamic>>[];
+
+      for (final key in activeTimers) {
+        final remaining = _orchestrator.getRemainingTime(key);
+        final timerJson = _prefs?.getString('timer_$key');
+        if (timerJson != null) {
+          try {
+            final timerData = TimerData.fromMap(jsonDecode(timerJson));
+            timerDataList.add({
+              'key': key,
+              'user_id': user,
+              'expiration_time': timerData.expirationTime.toIso8601String(),
+              'type': timerData.type,
+              'game_name': timerData.gameName,
+              'target_user_id': timerData.userId,
+              'remaining_seconds': remaining.inSeconds,
+            });
+          } catch (e) {
+            debugPrint('[TimerService] Error parsing timer $key: $e');
+          }
+        }
+      }
+
+      // Upsert timers to Supabase
+      if (timerDataList.isNotEmpty) {
+        await supabase.from('active_timers').upsert(timerDataList);
+        debugPrint(
+            '[TimerService] Synced ${timerDataList.length} timers to Supabase');
+      }
+    } catch (e) {
+      debugPrint('[TimerService] Supabase sync error: $e');
+    }
   }
 
-  /// Calls Cloud Functions with dev fallback
+  /// Calls Supabase Edge Functions with local fallback
   Future<void> _syncWithCloudFunctions() async {
     if (_isOfflineMode || kDebugMode) {
       // Dev fallback: process timers locally
@@ -442,10 +480,12 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
     }
 
     try {
-      // TODO: Migrate to Supabase Edge Functions
-      // await FirebaseFunctions.instance.httpsCallable('processTimers').call();
-      await _processTimersLocally();
+      // Call Supabase Edge Function for timer processing
+      await supabase.functions.invoke('process-timers');
+      debugPrint('[TimerService] Synced with Supabase Edge Functions');
     } catch (e) {
+      debugPrint(
+          '[TimerService] Edge Function call failed, processing locally: $e');
       // Fallback to local processing
       await _processTimersLocally();
     }

@@ -1,0 +1,204 @@
+/// Example: How to Use Offline-First Features in Notifiers
+///
+/// This file demonstrates how to integrate offline-first capabilities
+/// into existing notifiers using the OfflineFirstMixin.
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:squad_sync/presentation/notifiers/offline_first_mixin.dart';
+import 'package:squad_sync/domain/entities/message.dart';
+import 'package:squad_sync/data/datasources/chat_local_datasource_impl.dart';
+import 'package:squad_sync/services/supabase_service.dart';
+import 'package:uuid/uuid.dart';
+
+/// Example showing how to integrate offline-first into ChatNotifier
+///
+/// Key patterns:
+/// 1. Extend with OfflineFirstMixin
+/// 2. Initialize in build() or async constructor
+/// 3. Use executeWithOfflineFallback() for read operations
+/// 4. Use executeAndQueueIfOffline() for write operations
+/// 5. Check connectivity with isOnline() or isCurrentlyOnline
+class ChatNotifierOfflineExample extends _$ChatNotifierOfflineExample
+    with OfflineFirstMixin {
+  late final ChatLocalDataSourceImpl _localDataSource;
+
+  @override
+  Future<void> build() async {
+    // Initialize offline-first capabilities
+    await initializeOfflineFirst();
+
+    // Initialize local datasource
+    _localDataSource = ChatLocalDataSourceImpl(sqliteHelper);
+  }
+
+  /// Example: Send message with offline support
+  Future<void> sendMessage({
+    required String chatGroupId,
+    required String text,
+    required String senderId,
+  }) async {
+    final messageId = const Uuid().v4();
+    final message = Message(
+      id: messageId,
+      senderId: senderId,
+      text: text,
+      timestamp: DateTime.now(),
+      messageType: MessageType.text,
+    );
+
+    // Execute with offline fallback
+    await executeAndQueueIfOffline(
+      id: messageId,
+      type: 'message',
+      data: {
+        'id': messageId,
+        'chat_group_id': chatGroupId,
+        'sender_id': senderId,
+        'text': text,
+        'timestamp': message.timestamp.toIso8601String(),
+        'message_type': 'text',
+      },
+      onlineOperation: () async {
+        // Send to Supabase
+        await SupabaseService.client.from('messages').insert({
+          'id': messageId,
+          'chat_group_id': chatGroupId,
+          'sender_id': senderId,
+          'text': text,
+          'timestamp': message.timestamp.toIso8601String(),
+          'message_type': 'text',
+        });
+
+        // Cache locally after successful send
+        await _localDataSource.cacheMessages(chatGroupId, [message]);
+      },
+      offlineOperation: () async {
+        // Queue the message for sending when back online
+        await _localDataSource.queueMessageForSync(message, chatGroupId);
+      },
+    );
+  }
+
+  /// Example: Load messages with offline fallback
+  Future<List<Message>> loadMessages({
+    required String chatGroupId,
+    int limit = 50,
+  }) async {
+    return await executeWithOfflineFallback<List<Message>>(
+      onlineOperation: () async {
+        // Fetch from Supabase
+        final response = await SupabaseService.client
+            .from('messages')
+            .select()
+            .eq('chat_group_id', chatGroupId)
+            .order('timestamp', ascending: false)
+            .limit(limit);
+
+        final messages = (response as List)
+            .map((json) => Message.fromJson(json as Map<String, dynamic>))
+            .toList();
+
+        // Cache for offline use
+        await _localDataSource.cacheMessages(chatGroupId, messages);
+
+        return messages;
+      },
+      offlineOperation: () async {
+        // Load from local cache
+        return await _localDataSource.getCachedMessages(chatGroupId,
+            limit: limit);
+      },
+    );
+  }
+
+  /// Example: Update message with connectivity check
+  Future<void> updateMessage({
+    required String chatGroupId,
+    required String messageId,
+    required Message updatedMessage,
+  }) async {
+    // Check connectivity before operation
+    if (!await isOnline()) {
+      // Queue for later sync
+      await queueForSync(
+        id: 'update_$messageId',
+        type: 'message_update',
+        data: {
+          'chat_group_id': chatGroupId,
+          'message_id': messageId,
+          'text': updatedMessage.text,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+      );
+
+      // Update locally immediately
+      await _localDataSource.updateMessage(
+          chatGroupId, messageId, updatedMessage);
+      return;
+    }
+
+    try {
+      // Update in Supabase
+      await SupabaseService.client.from('messages').update({
+        'text': updatedMessage.text,
+        'is_edited': true,
+        'edited_at': DateTime.now().toIso8601String(),
+      }).eq('id', messageId);
+
+      // Update local cache
+      await _localDataSource.updateMessage(
+          chatGroupId, messageId, updatedMessage);
+    } catch (e) {
+      // On error, queue for retry
+      await queueForSync(
+        id: 'update_$messageId',
+        type: 'message_update',
+        data: {
+          'chat_group_id': chatGroupId,
+          'message_id': messageId,
+          'text': updatedMessage.text,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+      );
+
+      // Still update locally
+      await _localDataSource.updateMessage(
+          chatGroupId, messageId, updatedMessage);
+    }
+  }
+
+  /// Example: Simple connectivity check
+  Future<void> checkConnectivityAndSync() async {
+    if (await isOnline()) {
+      // Trigger background sync for pending operations
+      await triggerSync();
+    }
+  }
+
+  /// Example: Cached connectivity check (no async)
+  bool canSendImmediately() {
+    return isCurrentlyOnline;
+  }
+}
+
+/// Usage in UI:
+///
+/// ```dart
+/// // In a Widget
+/// final chatNotifier = ref.watch(chatNotifierOfflineExampleProvider);
+/// 
+/// // Send message (automatically handles offline)
+/// await ref.read(chatNotifierOfflineExampleProvider.notifier).sendMessage(
+///   chatGroupId: 'squad_123',
+///   text: 'Hello!',
+///   senderId: currentUser.uid,
+/// );
+/// 
+/// // Load messages (falls back to cache if offline)
+/// final messages = await ref.read(chatNotifierOfflineExampleProvider.notifier)
+///   .loadMessages(chatGroupId: 'squad_123');
+/// 
+/// // Check connectivity status
+/// final isOnline = ref.read(chatNotifierOfflineExampleProvider.notifier)
+///   .isCurrentlyOnline;
+/// ```

@@ -1,0 +1,48 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Supabase: Export Schema (Quick)",
+      "type": "shell",
+      "command": "cd ${workspaceFolder} && cat lib/diagnostic/quick_schema_export.sql",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      },
+      "group": {
+        "kind": "none",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "Supabase: Inspect Table",
+      "type": "shell",
+      "command": "supabase db dump --schema public --table ${input:tableName}",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Supabase: List Functions",
+      "type": "shell",
+      "command": "supabase db dump --schema public --data-only=false | grep -A 5 'CREATE OR REPLACE FUNCTION'",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "tableName",
+      "type": "promptString",
+      "description": "Enter table name to inspect"
+    }
+  ]
+}

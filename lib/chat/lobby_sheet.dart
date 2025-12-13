@@ -67,7 +67,7 @@ class LobbySheet extends ConsumerWidget {
                     const SizedBox(height: 8),
                     // Title
                     Text(
-                      'Squad Overview',
+                      'Lobby Overview',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -223,7 +223,7 @@ class LobbySheet extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Squad Roster',
+              'Lobby Roster',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 18,

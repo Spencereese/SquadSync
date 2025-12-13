@@ -19,6 +19,8 @@ class SmartReplyBottomSheet extends StatefulWidget {
 class _SmartReplyBottomSheetState extends State<SmartReplyBottomSheet>
     with TickerProviderStateMixin {
   List<String> _replies = [];
+  String _sentiment = 'neutral';
+  List<String> _emojis = ['😊', '👍', '🎮'];
   bool _isLoading = true;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -45,11 +47,13 @@ class _SmartReplyBottomSheetState extends State<SmartReplyBottomSheet>
   Future<void> _loadSmartReplies() async {
     try {
       final grokService = GrokService();
-      final replies =
-          await grokService.getSmartReplies(widget.lastFiveMessages);
+      final response = await grokService
+          .getSmartRepliesWithSentiment(widget.lastFiveMessages);
       if (mounted) {
         setState(() {
-          _replies = replies;
+          _replies = response.replies;
+          _sentiment = response.sentiment;
+          _emojis = response.emojis;
           _isLoading = false;
         });
         _animationController.forward();
@@ -58,10 +62,42 @@ class _SmartReplyBottomSheetState extends State<SmartReplyBottomSheet>
       if (mounted) {
         setState(() {
           _replies = ['Sorry, couldn\'t load replies'];
+          _sentiment = 'neutral';
+          _emojis = ['😊', '👍', '🎮'];
           _isLoading = false;
         });
         _animationController.forward();
       }
+    }
+  }
+
+  Color _getSentimentColor() {
+    switch (_sentiment.toLowerCase()) {
+      case 'positive':
+      case 'excited':
+        return Colors.green;
+      case 'negative':
+        return Colors.red;
+      case 'questioning':
+      case 'curious':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getSentimentIcon() {
+    switch (_sentiment.toLowerCase()) {
+      case 'positive':
+      case 'excited':
+        return Icons.sentiment_satisfied_alt;
+      case 'negative':
+        return Icons.sentiment_dissatisfied;
+      case 'questioning':
+      case 'curious':
+        return Icons.help_outline;
+      default:
+        return Icons.sentiment_neutral;
     }
   }
 
@@ -91,31 +127,75 @@ class _SmartReplyBottomSheetState extends State<SmartReplyBottomSheet>
                   ),
                 ),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  Icon(
-                    Icons.smart_toy,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Smart Replies',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.smart_toy,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Smart Replies',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(
+                          Icons.close,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
                         ),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: Icon(
-                      Icons.close,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.6),
+                  if (!_isLoading) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          _getSentimentIcon(),
+                          color: _getSentimentColor(),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _sentiment.toUpperCase(),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: _getSentimentColor(),
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.5,
+                                  ),
+                        ),
+                        const SizedBox(width: 16),
+                        ...(_emojis.take(3).map((emoji) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: InkWell(
+                                onTap: () {
+                                  if (widget.onReplySelected != null) {
+                                    widget.onReplySelected!(emoji);
+                                  }
+                                  Navigator.pop(context);
+                                },
+                                borderRadius: BorderRadius.circular(4),
+                                child: Text(
+                                  emoji,
+                                  style: const TextStyle(fontSize: 20),
+                                ),
+                              ),
+                            ))),
+                      ],
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

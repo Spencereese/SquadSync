@@ -94,7 +94,7 @@ class TabItemWidget extends StatelessWidget {
     bool isSelected = selectedIndex == index;
     final tabs = [
       'assets/images/chat.png',
-      Icons.notifications,
+      Icons.explore,
       Icons.menu,
     ];
     bool hasNotification =
@@ -161,7 +161,7 @@ class TabItemWidget extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      'Alerts',
+                      'Discovery',
                       style: TextStyle(
                         color: isSelected
                             ? Theme.of(context).colorScheme.primary

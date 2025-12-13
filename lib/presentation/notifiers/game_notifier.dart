@@ -1,14 +1,18 @@
 import 'package:riverpod/riverpod.dart';
+
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:logger/logger.dart';
+import 'package:dio/dio.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../../domain/entities/game.dart';
 import '../../data/datasources/game_local_datasource.dart';
+import '../../services/twitch_service.dart';
 import '../../core/injection.dart' as di;
 import '../../core/injection.dart';
 
 part 'game_notifier.freezed.dart';
 
-@freezed
+@freezed // Disable DiagnosticableTreeMixin - has bugs in Freezed 3.0
 class GameState with _$GameState {
   const factory GameState({
     required List<Game> availableGames,
@@ -17,6 +21,7 @@ class GameState with _$GameState {
     required Game? currentGame,
     required Map<String, dynamic>? onboardingFlow,
     required bool isInitialized,
+    required List<Map<String, dynamic>> twitchClips,
     String? errorMessage,
   }) = _GameState;
 
@@ -27,6 +32,7 @@ class GameState with _$GameState {
         currentGame: null,
         onboardingFlow: null,
         isInitialized: false,
+        twitchClips: [],
         errorMessage: null,
       );
 }
@@ -34,6 +40,8 @@ class GameState with _$GameState {
 class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
   late final GameRepository _repository;
   GameLocalDataSource? _localDataSource;
+  TwitchService? _twitchService;
+  final Logger _logger = Logger();
 
   GameLocalDataSource get localDataSource => _localDataSource!;
 
@@ -42,6 +50,12 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
     // Initialize dependencies
     _repository = ref.read(gameRepositoryProvider);
     _localDataSource ??= di.getIt<GameLocalDataSource>();
+    _twitchService = TwitchService(di.getIt<Dio>());
+
+    // Initialize Twitch service (non-blocking)
+    _twitchService?.initialize().catchError((e) {
+      _logger.w('Twitch service initialization failed: $e');
+    });
 
     // Initialize games and lobbies
     final availableGames = await _repository.getAvailableGames();
@@ -60,25 +74,86 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
     }
 
     try {
+      // Try IGDB first
       final games = await _repository.fetchGames(query);
       final dedupedGames = _dedupGamesBySlug(games);
       return AsyncValue.data(dedupedGames);
     } catch (e) {
-      // Fallback to cached/offline
+      _logger.w('IGDB search failed, falling back to cache/local: $e');
+
+      // Fallback chain: cached -> local JSON
       try {
         final cachedGames = await localDataSource.getCachedGames(query);
         if (cachedGames.isNotEmpty) {
           final dedupedGames = _dedupGamesBySlug(cachedGames);
           return AsyncValue.data(dedupedGames);
         }
-        // Offline: filter popular_games.json
+
+        // Final fallback: filter popular_games.json
         final offlineGames =
             await localDataSource.getOfflineGames(query, limit: 30);
         final dedupedGames = _dedupGamesBySlug(offlineGames);
         return AsyncValue.data(dedupedGames);
       } catch (offlineError) {
+        _logger.e('All search fallbacks failed: $offlineError');
         return AsyncValue.error(e, StackTrace.current);
       }
+    }
+  }
+
+  /// Fetch Twitch clips for current game
+  Future<void> fetchTwitchClips({
+    String? gameName,
+    int limit = 20,
+    String period = 'week',
+  }) async {
+    if (_twitchService == null || !_twitchService!.isInitialized) {
+      _logger.w('Twitch service not available');
+      return;
+    }
+
+    final targetGame = gameName ?? state.value?.currentGame?.name;
+    if (targetGame == null) {
+      _logger.w('No game specified for Twitch clips');
+      return;
+    }
+
+    try {
+      final clips = await _twitchService!.getClipsForGame(
+        targetGame,
+        limit: limit,
+        period: period,
+      );
+
+      state = AsyncValue.data(
+        state.value!.copyWith(twitchClips: clips),
+      );
+    } catch (e) {
+      _logger.e('Error fetching Twitch clips: $e');
+    }
+  }
+
+  /// Fetch trending Twitch clips (not game-specific)
+  Future<void> fetchTrendingClips({
+    int limit = 20,
+    String period = 'day',
+  }) async {
+    if (_twitchService == null || !_twitchService!.isInitialized) {
+      _logger.w('Twitch service not available');
+      return;
+    }
+
+    try {
+      final clips = await _twitchService!.getTrendingClips(
+        limit: limit,
+        period: period,
+      );
+
+      state = AsyncValue.data(
+        state.value!.copyWith(twitchClips: clips),
+      );
+    } catch (e) {
+      _logger.e('Error fetching trending clips: $e');
     }
   }
 
@@ -133,6 +208,6 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
 }
 
 final gameNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<GameNotifier, GameState>(
-  () => GameNotifier(),
+    AutoDisposeAsyncNotifierProvider<GameNotifier, GameState>.new(
+  GameNotifier.new,
 );

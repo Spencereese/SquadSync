@@ -373,5 +373,5 @@ String fixMediaUrl(String? url) {
   if (url == null || url.isEmpty) return '';
   return url.startsWith('http')
       ? url
-      : 'https://storage.googleapis.com/squadsync-media/$url';
+      : 'https://storage.googleapis.com/lobbiesync-media/$url';
 }

@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
+import '../services/voice_service.dart';
 
 /// Voice room screen with spatial audio visualization
 ///
@@ -81,22 +82,106 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
   }
 
   Future<void> _initializeVoiceRoom() async {
-    // TODO: Initialize VoiceService and join channel
-    // final voiceService = ref.read(voiceServiceProvider);
-    // await voiceService.joinChannel(widget.roomId);
+    try {
+      final voiceService = ref.read(voiceServiceProvider);
 
-    // Setup volume change listener
-    // voiceService.onVolumeChanged = (userId, volume) {
-    //   setState(() {
-    //     _userVolumes[userId] = volume;
-    //   });
-    // };
+      // Initialize Agora engine
+      final initResult = await voiceService.initializeEngine();
+      if (initResult.isFailure) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Failed to initialize voice: ${initResult.errorMessage}')),
+          );
+        }
+        return;
+      }
+
+      // Join voice channel
+      final joinResult = await voiceService.joinChannel(widget.roomId);
+      if (joinResult.isFailure) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Failed to join voice room: ${joinResult.errorMessage}')),
+          );
+        }
+        return;
+      }
+
+      // Setup real-time callbacks for spatial audio visualization
+      voiceService.onSpeakingChanged = (userId, isSpeaking) {
+        if (mounted) {
+          setState(() {
+            if (isSpeaking) {
+              _userVolumes[userId] = 0.7; // Active speaking volume
+              _createOrRestartPulseAnimation(userId);
+            } else {
+              _userVolumes[userId] = 0.0;
+            }
+          });
+        }
+      };
+
+      voiceService.onParticipantJoined = (userId) {
+        if (mounted) {
+          setState(() {
+            // Add participant to local list (in real app, fetch from Supabase)
+            debugPrint('Participant joined: $userId');
+          });
+        }
+      };
+
+      voiceService.onParticipantLeft = (userId) {
+        if (mounted) {
+          setState(() {
+            _userVolumes.remove(userId);
+            _orbPulseControllers[userId]?.dispose();
+            _orbPulseControllers.remove(userId);
+            debugPrint('Participant left: $userId');
+          });
+        }
+      };
+
+      voiceService.onError = (error, message) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Voice error: $message')),
+          );
+        }
+      };
+    } catch (e) {
+      debugPrint('Error initializing voice room: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  void _createOrRestartPulseAnimation(String userId) {
+    if (_orbPulseControllers.containsKey(userId)) {
+      _orbPulseControllers[userId]!.forward(from: 0);
+    } else {
+      final controller = AnimationController(
+        duration: const Duration(milliseconds: 800),
+        vsync: this,
+      );
+      _orbPulseControllers[userId] = controller;
+      controller.repeat(reverse: true);
+    }
   }
 
   Future<void> _leaveVoiceRoom() async {
-    // TODO: Leave voice channel
-    // final voiceService = ref.read(voiceServiceProvider);
-    // await voiceService.leaveChannel();
+    try {
+      final voiceService = ref.read(voiceServiceProvider);
+      await voiceService.leaveChannel();
+    } catch (e) {
+      debugPrint('Error leaving voice room: $e');
+    }
   }
 
   void _loadMockParticipants() {

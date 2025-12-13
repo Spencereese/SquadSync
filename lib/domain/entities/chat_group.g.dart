@@ -19,6 +19,7 @@ _$ChatGroupImpl _$$ChatGroupImplFromJson(Map<String, dynamic> json) =>
       createdAt: DateTime.parse(json['createdAt'] as String),
       description: json['description'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
+      inviteCode: json['inviteCode'] as String?,
       metadata: json['metadata'] as Map<String, dynamic>?,
       admins:
           (json['admins'] as List<dynamic>?)?.map((e) => e as String).toList(),
@@ -43,6 +44,7 @@ Map<String, dynamic> _$$ChatGroupImplToJson(_$ChatGroupImpl instance) =>
       'createdAt': instance.createdAt.toIso8601String(),
       'description': instance.description,
       'avatarUrl': instance.avatarUrl,
+      'inviteCode': instance.inviteCode,
       'metadata': instance.metadata,
       'admins': instance.admins,
       'moderators': instance.moderators,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:squad_sync/data/datasources/lobby_local_datasource.dart';
 import 'package:squad_sync/data/datasources/lobby_remote_datasource.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
@@ -30,7 +31,7 @@ class LobbyRepositoryImpl implements LobbyRepository {
     final createdLobby = await _remoteDataSource.createLobby(lobby);
 
     // Cache locally
-    await _localDataSource.saveSquad(createdLobby);
+    await _localDataSource.saveLobby(createdLobby);
 
     return createdLobby;
   }
@@ -46,7 +47,7 @@ class LobbyRepositoryImpl implements LobbyRepository {
     // Fetch from remote
     final remoteLobby = await _remoteDataSource.getLobby(lobbyId);
     if (remoteLobby != null) {
-      await _localDataSource.saveSquad(remoteLobby);
+      await _localDataSource.saveLobby(remoteLobby);
     }
 
     return remoteLobby;
@@ -71,7 +72,7 @@ class LobbyRepositoryImpl implements LobbyRepository {
 
     // Cache locally
     for (final lobby in remoteLobbies) {
-      await _localDataSource.saveSquad(lobby);
+      await _localDataSource.saveLobby(lobby);
     }
 
     return remoteLobbies;
@@ -160,13 +161,7 @@ class LobbyRepositoryImpl implements LobbyRepository {
   @override
   Future<void> updateMemberStatus(
       String lobbyId, String userId, String status) async {
-    // Update in remote (this would be a more complex operation)
-    // For now, just track the event
-    await _remoteDataSource.trackLobbyEvent('status_updated', {
-      'lobbyId': lobbyId,
-      'userId': userId,
-      'status': status,
-    });
+    await _remoteDataSource.updateMemberStatus(lobbyId, userId, status);
   }
 
   @override
@@ -202,5 +197,68 @@ class LobbyRepositoryImpl implements LobbyRepository {
   @override
   Future<void> trackLobbyEvent(String event, Map<String, dynamic> data) async {
     await _remoteDataSource.trackLobbyEvent(event, data);
+  }
+
+  @override
+  Stream<Lobby?> getLobbyStream(String lobbyId) {
+    return _remoteDataSource.getLobbyStream(lobbyId).map((lobby) => lobby);
+  }
+
+  @override
+  Stream<List<Lobby>> getUserLobbiesStream(String userId) {
+    return _remoteDataSource.getUserLobbiesStream(userId);
+  }
+
+  @override
+  Stream<List<Lobby>> getPublicLobbiesStream({
+    bool? isActive,
+    String? gameFocus,
+    int limit = 50,
+    String orderBy = 'created_at',
+    bool ascending = false,
+  }) {
+    return _remoteDataSource.getPublicLobbiesStream(
+      isActive: isActive,
+      gameFocus: gameFocus,
+      limit: limit,
+      orderBy: orderBy,
+      ascending: ascending,
+    );
+  }
+
+  @override
+  Future<void> createInvite(Map<String, dynamic> inviteData) async {
+    try {
+      await _remoteDataSource.createInvite(inviteData);
+      debugPrint('LobbyRepository: ✅ Successfully created invite ${inviteData['id']}');
+    } catch (e, stackTrace) {
+      debugPrint('LobbyRepository: ❌ ERROR creating invite: $e');
+      debugPrint('LobbyRepository: Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> createPeacock(Map<String, dynamic> peacockData) async {
+    try {
+      await _remoteDataSource.createPeacock(peacockData);
+      debugPrint('LobbyRepository: ✅ Successfully created peacock entry for user ${peacockData['user_id']}');
+    } catch (e, stackTrace) {
+      debugPrint('LobbyRepository: ❌ ERROR creating peacock entry: $e');
+      debugPrint('LobbyRepository: Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> updateUserPeacock(String userId, Map<String, dynamic> peacockStatus) async {
+    try {
+      await _remoteDataSource.updateUserPeacock(userId, peacockStatus);
+      debugPrint('LobbyRepository: ✅ Successfully updated peacock status for user $userId');
+    } catch (e, stackTrace) {
+      debugPrint('LobbyRepository: ❌ ERROR updating user peacock status: $e');
+      debugPrint('LobbyRepository: Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 }

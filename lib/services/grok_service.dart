@@ -1,17 +1,82 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
-import 'dart:math';
+import 'package:retry/retry.dart';
 
 /// Custom exception for rate limiting
 class RateLimitException implements Exception {}
+
+/// Smart reply response with sentiment analysis and emoji suggestions
+class SmartReplyResponse {
+  final List<String> replies;
+  final String sentiment;
+  final List<String> emojis;
+
+  SmartReplyResponse({
+    required this.replies,
+    required this.sentiment,
+    required this.emojis,
+  });
+
+  factory SmartReplyResponse.fromJson(Map<String, dynamic> json) {
+    return SmartReplyResponse(
+      replies: List<String>.from(json['replies'] ?? []),
+      sentiment: json['sentiment'] ?? 'neutral',
+      emojis: List<String>.from(json['emojis'] ?? ['😊', '👍', '🎮']),
+    );
+  }
+}
+
+/// AI matchmaking recommendation
+class LobbyRecommendation {
+  final String lobbyId;
+  final double score;
+  final String reason;
+
+  LobbyRecommendation({
+    required this.lobbyId,
+    required this.score,
+    required this.reason,
+  });
+
+  factory LobbyRecommendation.fromJson(Map<String, dynamic> json) {
+    return LobbyRecommendation(
+      lobbyId: json['lobbyId'] ?? '',
+      score: (json['score'] ?? 0.0).toDouble(),
+      reason: json['reason'] ?? '',
+    );
+  }
+}
+
+/// AI matchmaking response with recommendations and insights
+class AiMatchmakingResponse {
+  final List<LobbyRecommendation> recommendations;
+  final String insights;
+
+  AiMatchmakingResponse({
+    required this.recommendations,
+    required this.insights,
+  });
+
+  factory AiMatchmakingResponse.fromJson(Map<String, dynamic> json) {
+    final recList = json['recommendations'] as List<dynamic>?;
+    return AiMatchmakingResponse(
+      recommendations: recList
+              ?.map((e) =>
+                  LobbyRecommendation.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      insights: json['insights'] ?? '',
+    );
+  }
+}
 
 /// Service for integrating xAI's Grok AI into the chat via backend
 class GrokService {
   static final Logger _logger = Logger();
   static const String _backendUrl = String.fromEnvironment('BACKEND_URL',
       defaultValue:
-          'https://squadsync-backend-756172684661.us-central1.run.app');
+          'https://lobbiesync-backend-756172684661.us-central1.run.app');
 
   static const int _maxRetries = 3;
   static const int _baseDelayMs = 1000;
@@ -78,9 +143,16 @@ class GrokService {
     }
   }
 
-  /// Get smart reply suggestions based on last 5 messages
-  Future<List<String>> getSmartReplies(List<String> lastFiveMessages) async {
-    if (lastFiveMessages.isEmpty) return [];
+  /// Get smart reply suggestions with sentiment analysis and emoji suggestions
+  Future<SmartReplyResponse> getSmartRepliesWithSentiment(
+      List<String> lastFiveMessages) async {
+    if (lastFiveMessages.isEmpty) {
+      return SmartReplyResponse(
+        replies: [],
+        sentiment: 'neutral',
+        emojis: ['😊', '👍', '🎮'],
+      );
+    }
 
     // Simple cache with 1 minute TTL
     final cacheKey = lastFiveMessages.join('|');
@@ -88,7 +160,12 @@ class GrokService {
     if (_smartReplyCache.containsKey(cacheKey)) {
       final cached = _smartReplyCache[cacheKey]!;
       if (now.difference(cached.timestamp).inMinutes < 1) {
-        return cached.replies;
+        // Return cached response with sentiment data
+        return SmartReplyResponse(
+          replies: cached.replies,
+          sentiment: cached.sentiment ?? 'neutral',
+          emojis: cached.emojis ?? ['😊', '👍', '🎮'],
+        );
       }
     }
 
@@ -104,28 +181,95 @@ class GrokService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final replies = List<String>.from(data['replies'] ?? []);
-        // Cache the result
-        _smartReplyCache[cacheKey] = _CachedReplies(now, replies);
-        return replies.take(3).toList(); // Return max 3 replies
+        final smartReply = SmartReplyResponse.fromJson(data);
+        // Cache the result with sentiment data
+        _smartReplyCache[cacheKey] = _CachedReplies(
+          now,
+          smartReply.replies,
+          sentiment: smartReply.sentiment,
+          emojis: smartReply.emojis,
+        );
+        return smartReply;
       } else {
         _logger.e(
             'Smart replies API error: ${response.statusCode} - ${response.body}');
-        return _getFallbackSmartReplies(lastFiveMessages);
+        return SmartReplyResponse(
+          replies: _getFallbackSmartReplies(lastFiveMessages),
+          sentiment: 'neutral',
+          emojis: ['😊', '👍', '🎮'],
+        );
       }
     } catch (e) {
       _logger.e('Error getting smart replies: $e');
-      return _getFallbackSmartReplies(lastFiveMessages);
+      return SmartReplyResponse(
+        replies: _getFallbackSmartReplies(lastFiveMessages),
+        sentiment: 'neutral',
+        emojis: ['😊', '👍', '🎮'],
+      );
     }
   }
 
-  /// Suggest squads for pinned games using Grok AI
-  Future<String> suggestSquadsForPinnedGames(
-      List<Map<String, dynamic>> pinnedGames) async {
-    final gameNames = pinnedGames.map((g) => g['name'] as String).join(', ');
-    final prompt = 'Suggest squads for my pinned games: [$gameNames]';
+  /// Get smart reply suggestions (legacy method - returns only replies)
+  Future<List<String>> getSmartReplies(List<String> lastFiveMessages) async {
+    final response = await getSmartRepliesWithSentiment(lastFiveMessages);
+    return response.replies;
+  }
 
-    return getGrokResponse(prompt);
+  /// AI Matchmaking: Get lobby recommendations based on pinned games and preferences
+  Future<AiMatchmakingResponse> getAiMatchmaking({
+    required List<Map<String, dynamic>> pinnedGames,
+    Map<String, dynamic>? userPreferences,
+    List<Map<String, dynamic>>? availableLobbies,
+  }) async {
+    if (pinnedGames.isEmpty) {
+      return AiMatchmakingResponse(
+        recommendations: [],
+        insights:
+            'No pinned games found. Pin some games to get personalized recommendations!',
+      );
+    }
+
+    try {
+      final response = await _callWithBackoff(() async {
+        final result = await http.post(
+          Uri.parse('$_backendUrl/ai-matchmaking'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'pinnedGames': pinnedGames,
+            'userPreferences': userPreferences ?? {},
+            'availableLobbies': availableLobbies ?? [],
+          }),
+        );
+        return result;
+      });
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return AiMatchmakingResponse.fromJson(data);
+      } else {
+        _logger.e(
+            'AI matchmaking API error: ${response.statusCode} - ${response.body}');
+        return AiMatchmakingResponse(
+          recommendations: [],
+          insights:
+              'Unable to get AI recommendations at this time. Try browsing hot lobbies!',
+        );
+      }
+    } catch (e) {
+      _logger.e('Error getting AI matchmaking: $e');
+      return AiMatchmakingResponse(
+        recommendations: [],
+        insights:
+            'Unable to get AI recommendations. Check your connection and try again.',
+      );
+    }
+  }
+
+  /// Suggest lobbies for pinned games using Grok AI (legacy method)
+  Future<String> suggestLobbiesForPinnedGames(
+      List<Map<String, dynamic>> pinnedGames) async {
+    final response = await getAiMatchmaking(pinnedGames: pinnedGames);
+    return response.insights;
   }
 
   /// Get vector embeddings for group data using Grok API
@@ -153,20 +297,22 @@ class GrokService {
     });
   }
 
-  /// Call API with exponential backoff for rate limits
+  /// Call API with exponential backoff for rate limits using retry package
   Future<T> _callWithBackoff<T>(Future<T> Function() call) async {
-    int attempt = 0;
-    while (attempt < _maxRetries) {
-      try {
-        return await call();
-      } on RateLimitException {
-        if (attempt == _maxRetries - 1) rethrow;
-        final delay = _baseDelayMs * pow(2, attempt).toInt();
-        await Future.delayed(Duration(milliseconds: delay));
-        attempt++;
-      }
-    }
-    throw Exception('Max retries exceeded');
+    final retryOptions = RetryOptions(
+      maxAttempts: _maxRetries,
+      delayFactor: Duration(milliseconds: _baseDelayMs),
+      randomizationFactor: 0.25, // Add jitter to avoid thundering herd
+      maxDelay: const Duration(seconds: 10),
+    );
+
+    return retryOptions.retry(
+      call,
+      retryIf: (e) => e is RateLimitException || e is http.ClientException,
+      onRetry: (e) {
+        _logger.w('Retrying API call after error: ${e.toString()}');
+      },
+    );
   }
 
   /// Score relevance of group names to a search term
@@ -233,10 +379,17 @@ class GrokService {
   }
 }
 
-/// Cached smart replies with timestamp
+/// Cached smart replies with timestamp, sentiment, and emojis
 class _CachedReplies {
   final DateTime timestamp;
   final List<String> replies;
+  final String? sentiment;
+  final List<String>? emojis;
 
-  _CachedReplies(this.timestamp, this.replies);
+  _CachedReplies(
+    this.timestamp,
+    this.replies, {
+    this.sentiment,
+    this.emojis,
+  });
 }

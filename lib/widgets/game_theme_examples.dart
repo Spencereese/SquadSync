@@ -238,10 +238,10 @@ class ThemeStateExample extends ConsumerWidget {
 }
 
 // EXAMPLE 7: Integration with squad game selection
-class SquadGameThemeExample extends ConsumerWidget {
+class LobbyGameThemeExample extends ConsumerWidget {
   final String gameName;
 
-  const SquadGameThemeExample({super.key, required this.gameName});
+  const LobbyGameThemeExample({super.key, required this.gameName});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -269,7 +269,7 @@ class SquadGameThemeExample extends ConsumerWidget {
             // Then navigate to squad screen
             // Navigator.push(...);
           },
-          child: Text('Join ${game.name} Squad'),
+          child: Text('Join ${game.name} Lobby'),
         );
       },
       loading: () => const CircularProgressIndicator(),

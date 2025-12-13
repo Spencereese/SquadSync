@@ -7,10 +7,11 @@ import 'package:confetti/confetti.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'presentation/notifiers/user_notifier.dart';
-import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'presentation/notifiers/game_notifier.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'presentation/controllers/game_theme_controller.dart';
 import 'screens/add_game_screen.dart';
-import 'screens/squad_tab_screen.dart';
+import 'screens/lobby_tab_screen.dart';
 import 'screens/profile_editing_screen.dart';
 import 'screens/availability_settings_screen.dart';
 import 'screens/performance_stats_screen.dart';
@@ -29,7 +30,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     with SingleTickerProviderStateMixin {
   late AnimationController _glowController;
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
   late ConfettiController _confettiController;
+  String _gameSearchQuery = '';
 
   // Notification settings
   bool _pushNotifications = true;
@@ -54,13 +57,21 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     )..repeat(reverse: true);
     _confettiController =
         ConfettiController(duration: const Duration(seconds: 2));
+    _searchController.addListener(_onSearchChanged);
     _loadNotificationSettings();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _gameSearchQuery = _searchController.text.toLowerCase();
+    });
   }
 
   @override
   void dispose() {
     _glowController.dispose();
     _scrollController.dispose();
+    _searchController.dispose();
     _confettiController.dispose();
     super.dispose();
   }
@@ -70,7 +81,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
     return squadAsync.maybeWhen(
       data: (squadState) {
-        // Check if in squad and playing a game
+        // Check if in lobby and playing a game
         if (squadState.selectedLobbyId != null &&
             squadState.currentGame != null) {
           final gameName = squadState.currentGame!['name'] ?? 'Game';
@@ -80,7 +91,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         // Check if in peacock queue
         if (squadState.peacockQueue.isNotEmpty) {
           final gameName = squadState.currentGame?['name'] ?? 'Game';
-          return 'Looking for Squad · $gameName';
+          return 'Looking for Lobby · $gameName';
         }
 
         // Check if has active timers
@@ -143,10 +154,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               data: (user) => squadAsync.maybeWhen(
                 data: (squadState) => SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20.0, vertical: 24.0),
+                    padding: const EdgeInsets.fromLTRB(20.0, 40.0, 20.0, 24.0),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         // Avatar with seamless glowing border
@@ -317,8 +327,8 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                   physics: const BouncingScrollPhysics(),
                   children: [
                     _buildStatCard(
-                      title: 'Squads This Week',
-                      value: _calculateSquadsThisWeek(squadState),
+                      title: 'Lobbies This Week',
+                      value: _calculateLobbiesThisWeek(squadState),
                       icon: Icons.group,
                       color: AppTheme.gradient1(colorScheme),
                       delay: 0,
@@ -444,18 +454,18 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     ).animate().fadeIn(duration: 800.ms, delay: delay.ms).slideX(begin: 0.2);
   }
 
-  String _calculateSquadsThisWeek(LobbyState squadState) {
-    // Calculate squads created/joined this week from gameHistory
+  String _calculateLobbiesThisWeek(LobbyState squadState) {
+    // Calculate lobbies created/joined this week from gameHistory
     final now = DateTime.now();
     final weekAgo = now.subtract(const Duration(days: 7));
 
-    final recentSquads = squadState.gameHistory
+    final recentLobbies = squadState.gameHistory
         .where((game) =>
             game['timestamp'] != null &&
             DateTime.parse(game['timestamp']).isAfter(weekAgo))
         .length;
 
-    return recentSquads.toString();
+    return recentLobbies.toString();
   }
 
   String _calculateAverageRating(AppUser? user) {
@@ -507,6 +517,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     final userAsync = ref.watch(userNotifierProvider);
     final gameAsync = ref.watch(gameNotifierProvider);
     final squadAsync = ref.watch(ln.lobbyNotifierProvider);
+    final theme = Theme.of(context);
 
     return SliverToBoxAdapter(
       child: Container(
@@ -556,13 +567,83 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
             const SizedBox(height: 16),
 
+            // Search bar for games
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: TextField(
+                controller: _searchController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Search your games...',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: theme.colorScheme.primary,
+                  ),
+                  suffixIcon: _gameSearchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, color: Colors.white70),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: const Color(0xFF1E2229),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ).animate().fadeIn(duration: 600.ms, delay: 100.ms),
+
+            const SizedBox(height: 16),
+
             // Games list
             userAsync.maybeWhen(
               data: (user) => gameAsync.maybeWhen(
                 data: (gameState) => squadAsync.maybeWhen(
                   data: (squadState) {
-                    final pinnedGames = user?.pinnedGames ?? [];
+                    var pinnedGames = user?.pinnedGames ?? [];
+
+                    // Filter games based on search query
+                    if (_gameSearchQuery.isNotEmpty) {
+                      pinnedGames = pinnedGames.where((game) {
+                        final gameName =
+                            (game['name'] as String? ?? '').toLowerCase();
+                        return gameName.contains(_gameSearchQuery);
+                      }).toList();
+                    }
+
                     if (pinnedGames.isEmpty) {
+                      if (_gameSearchQuery.isNotEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.search_off,
+                                  size: 48,
+                                  color: Colors.white.withOpacity(0.3),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No games found',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: Colors.white.withOpacity(0.5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
                       return _buildEmptyPinnedGames();
                     }
                     return SizedBox(
@@ -618,7 +699,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         // Navigate to squad tab
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (context) => SquadTabScreen(game: gameData),
+            builder: (context) => LobbyTabScreen(game: gameData),
           ),
         );
       },
@@ -818,7 +899,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Add games to quickly access your squads',
+                      'Add games to quickly access your lobbys',
                       style: GoogleFonts.robotoMono(
                         fontSize: 14,
                         color: Colors.white70,
@@ -910,10 +991,10 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         'description': 'Win your first game'
       },
       {
-        'title': 'Squad Leader',
+        'title': 'Lobby Leader',
         'icon': Icons.groups,
         'unlocked': true,
-        'description': 'Lead 10 squads'
+        'description': 'Lead 10 lobbies'
       },
       {
         'title': 'Voice Veteran',
@@ -1116,6 +1197,27 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               ),
             ),
             const SizedBox(height: 16),
+
+            // Appearance Settings Header
+            Text(
+              'Appearance',
+              style: GoogleFonts.robotoMono(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildThemeSettingRow(
+              'Neon Glow Effects',
+              'Enable glowing borders and animations',
+            ),
+            _buildThemeSettingRow(
+              'High Contrast Mode',
+              'Increase color contrast for better visibility',
+            ),
+
+            const Divider(height: 24, color: Colors.white24),
 
             // Notification Settings Header
             Text(
@@ -1320,6 +1422,67 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildThemeSettingRow(String label, String description) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final gameTheme = ref.watch(gameThemeControllerProvider);
+        final isNeonGlow = label == 'Neon Glow Effects';
+        final currentValue =
+            isNeonGlow ? gameTheme.neonGlowEnabled : gameTheme.highContrastMode;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          style: GoogleFonts.robotoMono(
+                            fontSize: 14,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          description,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.white38,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: currentValue,
+                    onChanged: (val) {
+                      final controller =
+                          ref.read(gameThemeControllerProvider.notifier);
+                      if (isNeonGlow) {
+                        controller.toggleNeonGlow(val);
+                      } else {
+                        controller.toggleHighContrast(val);
+                      }
+                    },
+                    activeThumbColor: Theme.of(context).colorScheme.primary,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

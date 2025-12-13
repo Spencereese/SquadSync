@@ -3,6 +3,7 @@ import '../../services/supabase_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+
 import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/message.dart';
 import '../chat_state_notifier.dart';

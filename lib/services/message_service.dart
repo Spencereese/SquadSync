@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import 'package:logger/logger.dart';
 import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../services/media_service.dart';
@@ -64,7 +65,7 @@ class MessageService with WidgetsBindingObserver {
   bool _lastStreamIsUserGroup = false;
   bool _lastStreamIsDM = false;
 
-  // Squad ID caching (from ChatService)
+  // Lobby ID caching (from ChatService)
   String? _cachedSquadId;
   int _cacheTimestamp = 0;
   static const int _cacheValidityMs = 5000; // 5 second cache validity
@@ -384,7 +385,7 @@ class MessageService with WidgetsBindingObserver {
       detectedMediaType = 'audio';
     }
 
-    // Build Supabase message data
+    // Build Supabase message data (removed old metadata with photos/videos/audio arrays)
     final supabaseMessage = {
       'id': msgId,
       'sender_id': senderUid,
@@ -397,32 +398,28 @@ class MessageService with WidgetsBindingObserver {
       'reactions': {},
       'reply_to': replyTo,
       'poll': pollId != null ? {'id': pollId} : null,
-      'metadata': {
-        'photos': photos,
-        'videos': videos,
-        'audio': audio,
-      },
+      // metadata removed - no longer needed, use media_url instead
       'timestamp': timestamp.toIso8601String(),
-      'deleted': false,
+      'is_deleted': false,
     };
 
-    // Legacy format for SQLite cache
+    // SQLite cache format (matches new schema without photos/videos/audio columns)
     final cacheMessageData = {
       'id': msgId,
-      'senderUid': senderUid,
+      'sender_id': senderUid,
       'timestamp_ms': timestamp.millisecondsSinceEpoch,
       'text': text?.trim() ?? '',
-      'imageUrl': finalImageUrl,
-      'videoUrl': finalVideoUrl,
-      'audioUrl': finalAudioUrl,
-      'photos': photos,
-      'videos': videos,
-      'audio': audio,
-      'reactions': reactions,
-      'pollId': pollId,
-      'replyTo': replyTo,
-      'delivered': true,
-      'read': false,
+      'message_type': messageType,
+      'media_url': mediaUrl,
+      'media_type': detectedMediaType,
+      'reactions': jsonEncode(reactions),
+      'poll': pollId != null ? jsonEncode({'id': pollId}) : null,
+      'reply_to': replyTo,
+      'delivered': 1,
+      'read': 0,
+      'created_at': timestamp.toIso8601String(),
+      'chat_group_id': chatGroupId,
+      'synced': 1,
     };
 
     try {
@@ -493,9 +490,10 @@ class MessageService with WidgetsBindingObserver {
   Future<void> deleteMessage(String messageId, String squadId,
       {String? chatGroupId, required ChatType chatType}) async {
     try {
-      await _supabase
-          .from('chat_messages')
-          .update({'deleted': true}).eq('id', messageId);
+      await _supabase.from('chat_messages').update({
+        'is_deleted': true,
+        'deleted_at': DateTime.now().toIso8601String()
+      }).eq('id', messageId);
 
       _logger.d('Message deleted: $messageId');
     } catch (e) {
@@ -510,7 +508,7 @@ class MessageService with WidgetsBindingObserver {
     try {
       await _supabase.from('chat_messages').update({
         'text': newText,
-        'edited': true,
+        'is_edited': true,
         'edited_at': DateTime.now().toIso8601String(),
       }).eq('id', messageId);
 
@@ -531,12 +529,21 @@ class MessageService with WidgetsBindingObserver {
       final squadId = chatGroupId ?? _getCachedSquadId(ref);
       if (squadId == null) return;
 
-      await _supabase.from('typing_indicators').upsert({
-        'user_id': currentUser.id,
-        'chat_id': squadId,
-        'is_typing': isTyping,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
+      if (isTyping) {
+        await _supabase.from('typing_indicators').upsert({
+          'user_id': currentUser.id,
+          'chat_id': squadId,
+          'is_typing': true,
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      } else {
+        await _supabase
+            .from('typing_indicators')
+            .delete()
+            .eq('chat_id', squadId)
+            .eq('user_id', currentUser.id);
+      }
+      _logger.d('Updated typing status: $isTyping for chat $squadId');
     } catch (e) {
       _logger.e('Failed to update typing status: $e');
     }

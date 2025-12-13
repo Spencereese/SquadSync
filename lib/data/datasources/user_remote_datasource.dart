@@ -47,15 +47,18 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
     final response = await _supabase
         .from('user_ratings')
         .select()
-        .eq('id', uid)
+        .eq('uid', uid)
         .maybeSingle();
     return response;
   }
 
   @override
   Future<Map<String, dynamic>?> getUserComplaints(String uid) async {
-    final response =
-        await _supabase.from('complaints').select().eq('id', uid).maybeSingle();
+    final response = await _supabase
+        .from('complaints')
+        .select()
+        .eq('reporter_uid', uid)
+        .maybeSingle();
     return response;
   }
 

@@ -2,14 +2,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/app_theme.dart';
-import '../../screens/voice_room_screen.dart';
-import '../../screens/video_room_screen.dart';
 import '../models/message_data.dart';
 import '../widgets/clip_message_bubble.dart';
 import '../link_preview.dart';
@@ -17,6 +14,14 @@ import '../../domain/entities/message.dart' hide MessageType;
 import '../models/message_data.dart' show MessageType;
 import '../../services/background_service.dart';
 import 'package:image_picker/image_picker.dart';
+import 'components/chat_info_widgets.dart';
+import 'components/chat_info_app_bar.dart';
+import 'components/chat_info_members.dart';
+import 'components/chat_info_actions.dart';
+import 'components/chat_info_settings.dart';
+import 'components/chat_info_backgrounds.dart';
+import 'components/chat_info_media.dart';
+import 'components/chat_info_links_files.dart';
 
 /// Chat/Squad info screen with perfect iMessage layout in glass style
 ///
@@ -80,278 +85,54 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Custom app bar
-            _buildCustomAppBar(context, neonColor),
-
-            // Scrollable content
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 16),
-
-                    // Member avatars horizontal scroll
-                    _buildMemberRow(context, neonColor, members),
-
-                    const SizedBox(height: 24),
-
-                    // Three big glass circular buttons
-                    _buildActionButtons(context, neonColor),
-
-                    const SizedBox(height: 24),
-
-                    // Segmented control tabs
-                    _buildSegmentedControl(context, neonColor),
-
-                    const SizedBox(height: 16),
-
-                    // Tab content
-                    _buildTabContent(context, neonColor),
-
-                    const SizedBox(height: 32),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Custom app bar with back, avatar, and edit buttons
-  Widget _buildCustomAppBar(BuildContext context, Color neonColor) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.12),
-            border: Border(
-              bottom: BorderSide(
-                color: neonColor.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              // Left: Back button
-              _GlassCircleButton(
-                icon: Icons.chevron_left,
-                onPressed: () => Navigator.pop(context),
-                neonColor: neonColor,
-              ),
-
-              // Center: Avatar + Squad Name
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Hero avatar
-                    Hero(
-                      tag: 'squad_avatar_${widget.squadId}',
-                      child: Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: neonColor.withOpacity(0.5),
-                            width: 2.5,
-                          ),
-                          boxShadow: neonColor.neonGlow(
-                            blur: 20,
-                            opacity: 0.5,
-                          ),
-                        ),
-                        child: CircleAvatar(
-                          radius: 38,
-                          backgroundImage: widget.avatarUrl != null
-                              ? NetworkImage(widget.avatarUrl!)
-                              : null,
-                          backgroundColor: Colors.white.withOpacity(0.1),
-                          child: widget.avatarUrl == null
-                              ? Icon(
-                                  Icons.groups,
-                                  color: neonColor,
-                                  size: 40,
-                                )
-                              : null,
-                        ),
-                      ),
-                    ).animate().scale(duration: 500.ms, curve: Curves.easeOut),
-                    const SizedBox(height: 8),
-                    // Squad name
-                    Text(
-                      widget.squadName,
-                      style: GoogleFonts.orbitron(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: neonColor,
-                        letterSpacing: 0.5,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ).animate().fadeIn(delay: 200.ms, duration: 400.ms),
-                  ],
-                ),
-              ),
-
-              // Right: Edit button
-              _GlassCircleButton(
-                icon: Icons.edit,
-                onPressed: () => _showEditSheet(context),
-                neonColor: neonColor,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Horizontal scroll row of member avatars
-  Widget _buildMemberRow(BuildContext context, Color neonColor,
-      List<Map<String, dynamic>> members) {
-    if (members.isEmpty) {
-      members = [
-        {'uid': '1', 'name': 'Player 1', 'isOnline': true, 'role': 'admin'},
-        {'uid': '2', 'name': 'Player 2', 'isOnline': true},
-        {'uid': '3', 'name': 'Player 3', 'isOnline': false},
-        {'uid': '4', 'name': 'Player 4', 'isOnline': true, 'role': 'mod'},
-      ];
-    }
-
-    return SizedBox(
-      height: 100,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: members.length + 1, // +1 for "Add Member" button
-        itemBuilder: (context, index) {
-          if (index == members.length) {
-            return _buildAddMemberButton(context, neonColor);
-          }
-
-          final member = members[index];
-          final isOnline = member['isOnline'] as bool? ?? false;
-          final role = member['role'] as String?;
-
-          return Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: _MemberAvatar(
-              name: member['name'] as String? ?? 'User',
-              avatarUrl: member['avatarUrl'] as String?,
-              isOnline: isOnline,
-              role: role,
-              neonColor: neonColor,
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildAddMemberButton(BuildContext context, Color neonColor) {
-    return Container(
-      width: 70,
-      child: Column(
+      body: Column(
         children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.05),
-              border: Border.all(
-                color: neonColor.withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => _showAddMemberSheet(context),
-                customBorder: const CircleBorder(),
-                child: Icon(
-                  Icons.person_add,
-                  color: neonColor,
-                  size: 28,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Add',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: neonColor.withOpacity(0.8),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Three big glass circular action buttons
-  Widget _buildActionButtons(BuildContext context, Color neonColor) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _BigActionButton(
-            icon: Icons.headset,
-            label: 'Voice Chat',
+          // Custom app bar
+          ChatInfoAppBar(
+            squadId: widget.squadId,
+            squadName: widget.squadName,
+            avatarUrl: widget.avatarUrl,
             neonColor: neonColor,
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => VoiceRoomScreen(
-                    roomId: widget.squadId,
+            onEditPressed: () => _showEditSheet(context),
+          ),
+
+          // Scrollable content
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: 16),
+
+                  // Member avatars horizontal scroll
+                  ChatInfoMembersSection(
+                    squadId: widget.squadId,
+                    members: members,
+                    neonColor: neonColor,
+                    onAddMemberPressed: () => _showAddMemberSheet(context),
+                  ),
+
+                  const SizedBox(
+                      height: 24), // Three big glass circular buttons
+                  ChatInfoActionsSection(
+                    squadId: widget.squadId,
                     squadName: widget.squadName,
+                    neonColor: neonColor,
                   ),
-                ),
-              );
-            },
-          ),
-          _BigActionButton(
-            icon: Icons.video_call,
-            label: 'Video Chat',
-            neonColor: neonColor,
-            badge: 'Beta',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => VideoRoomScreen(
-                    roomId: widget.squadId,
-                    roomName: widget.squadName,
-                  ),
-                ),
-              );
-            },
-          ),
-          _BigActionButton(
-            icon: Icons.search,
-            label: 'Search',
-            neonColor: neonColor,
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Search feature coming soon!'),
-                ),
-              );
-            },
+
+                  const SizedBox(height: 24),
+
+                  // Segmented control tabs
+                  _buildSegmentedControl(context, neonColor),
+
+                  const SizedBox(height: 16),
+
+                  // Tab content
+                  _buildTabContent(context, neonColor),
+
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -427,17 +208,35 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
   Widget _buildTabContent(BuildContext context, Color neonColor) {
     switch (_selectedSegment) {
       case 0:
-        return _buildInfoTab(context, neonColor);
+        return ChatInfoSettingsTab(
+          builder: _buildInfoTab,
+          neonColor: neonColor,
+        );
       case 1:
-        return _buildBackgroundsTab(context, neonColor);
+        return ChatInfoBackgroundsTab(
+          builder: _buildBackgroundsTab,
+          neonColor: neonColor,
+        );
       case 2:
-        return _buildClipsTab(context, neonColor);
+        return ChatInfoMediaTab(
+          builder: _buildClipsTab,
+          neonColor: neonColor,
+        );
       case 3:
-        return _buildPhotosTab(context, neonColor);
+        return ChatInfoMediaTab(
+          builder: _buildPhotosTab,
+          neonColor: neonColor,
+        );
       case 4:
-        return _buildLinksTab(context, neonColor);
+        return ChatInfoLinksFilesTab(
+          builder: _buildLinksTab,
+          neonColor: neonColor,
+        );
       case 5:
-        return _buildFilesTab(context, neonColor);
+        return ChatInfoLinksFilesTab(
+          builder: _buildFilesTab,
+          neonColor: neonColor,
+        );
       default:
         return const SizedBox();
     }
@@ -471,7 +270,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
                 final response = await SupabaseService.client
                     .from('users')
                     .select('user_groups')
-                    .eq('id', currentUser.id)
+                    .eq('uid', currentUser.id)
                     .maybeSingle();
 
                 if (response != null) {
@@ -487,7 +286,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
 
                     await SupabaseService.client.from('users').update({
                       'user_groups': userGroups,
-                    }).eq('id', currentUser.id);
+                    }).eq('uid', currentUser.id);
                   }
                 }
               }
@@ -518,7 +317,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
                 final response = await SupabaseService.client
                     .from('users')
                     .select('user_groups')
-                    .eq('id', currentUser.id)
+                    .eq('uid', currentUser.id)
                     .maybeSingle();
 
                 if (response != null) {
@@ -534,7 +333,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
 
                     await SupabaseService.client.from('users').update({
                       'user_groups': userGroups,
-                    }).eq('id', currentUser.id);
+                    }).eq('uid', currentUser.id);
                   }
                 }
               }
@@ -561,13 +360,13 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
         ),
         const SizedBox(height: 8),
 
-        // Share Squad Link button
+        // Share Lobby Link button
         _buildActionCard(
           context,
           neonColor,
-          'Share Squad Link',
+          'Share Lobby Link',
           Icons.share,
-          () => _generateAndShareSquadLink(context),
+          () => _generateAndShareLobbyLink(context),
         ),
         const SizedBox(height: 24),
 
@@ -577,13 +376,13 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
         _buildPeacockQueueCard(context, neonColor),
         const SizedBox(height: 24),
 
-        // Squad Spots section (if applicable)
-        _buildSectionHeader(context, neonColor, 'Squad Spots'),
+        // Lobby Spots section (if applicable)
+        _buildSectionHeader(context, neonColor, 'Lobby Spots'),
         const SizedBox(height: 12),
-        _buildSquadSpotsCard(context, neonColor),
+        _buildLobbySpotsCard(context, neonColor),
         const SizedBox(height: 32),
 
-        // Danger zone: Leave Squad
+        // Danger zone: Leave Lobby
         _buildSectionHeader(
           context,
           Theme.of(context).colorScheme.error,
@@ -593,7 +392,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
         _buildActionCard(
           context,
           Theme.of(context).colorScheme.error,
-          'Leave Squad',
+          'Leave Lobby',
           Icons.exit_to_app,
           () => _showLeaveConfirmation(context),
           isDestructive: true,
@@ -1245,8 +1044,8 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     );
   }
 
-  /// Squad Spots card
-  Widget _buildSquadSpotsCard(BuildContext context, Color neonColor) {
+  /// Lobby Spots card
+  Widget _buildLobbySpotsCard(BuildContext context, Color neonColor) {
     // Mock squad spots (null means empty spot)
     final squadSpots = [
       'Player 1',
@@ -1386,12 +1185,12 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => _AddMemberSheet(squadId: widget.squadId),
+      builder: (context) => ChatInfoAddMemberSheet(squadId: widget.squadId),
     );
   }
 
-  /// Generate and share squad link
-  void _generateAndShareSquadLink(BuildContext context) async {
+  /// Generate and share lobby link
+  void _generateAndShareLobbyLink(BuildContext context) async {
     final deepLink = 'codsquadapp://join/${widget.squadId}';
 
     // Copy to clipboard
@@ -1400,7 +1199,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Squad link copied to clipboard!'),
+        content: const Text('Lobby link copied to clipboard!'),
         backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.9),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
@@ -2056,7 +1855,8 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => _CustomBackgroundSheet(squadId: widget.squadId),
+      builder: (context) =>
+          ChatInfoCustomBackgroundSheet(squadId: widget.squadId),
     );
   }
 
@@ -2120,7 +1920,8 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => _FullScreenImageViewer(imageUrl: imageUrl),
+            builder: (context) =>
+                ChatInfoFullScreenImageViewer(imageUrl: imageUrl),
           ),
         );
       },
@@ -2439,12 +2240,12 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Change Squad Name'),
+        title: const Text('Change Lobby Name'),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
-            labelText: 'Squad Name',
-            hintText: 'Enter new squad name',
+            labelText: 'Lobby Name',
+            hintText: 'Enter new lobby name',
           ),
         ),
         actions: [
@@ -2466,14 +2267,14 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
                   if (!mounted) return;
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Squad name updated!')),
+                    const SnackBar(content: Text('Lobby name updated!')),
                   );
                 } catch (e) {
-                  debugPrint('Error updating squad name: $e');
+                  debugPrint('Error updating lobby name: $e');
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content: Text('Failed to update squad name')),
+                        content: Text('Failed to update lobby name')),
                   );
                 }
               }
@@ -2489,7 +2290,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => _EditSquadSheet(
+      builder: (context) => ChatInfoEditLobbySheet(
         squadId: widget.squadId,
         squadName: widget.squadName,
         avatarUrl: widget.avatarUrl,
@@ -2502,7 +2303,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Leave Squad?'),
+        title: const Text('Leave Lobby?'),
         content: Text('Are you sure you want to leave "${widget.squadName}"?'),
         actions: [
           TextButton(
@@ -2521,7 +2322,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
                   final response = await SupabaseService.client
                       .from('users')
                       .select('user_groups')
-                      .eq('id', currentUser.id)
+                      .eq('uid', currentUser.id)
                       .maybeSingle();
 
                   if (response != null) {
@@ -2532,7 +2333,7 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
 
                     await SupabaseService.client.from('users').update({
                       'user_groups': userGroups,
-                    }).eq('id', currentUser.id);
+                    }).eq('uid', currentUser.id);
                   }
 
                   // Remove from squad members
@@ -2585,573 +2386,4 @@ class _ChatInfoScreenState extends State<ChatInfoScreen>
   }
 }
 
-// Supporting widgets
-
-class _GlassCircleButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onPressed;
-  final Color neonColor;
-
-  const _GlassCircleButton({
-    required this.icon,
-    required this.onPressed,
-    required this.neonColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.08),
-        border: Border.all(
-          color: neonColor.withOpacity(0.3),
-          width: 1.5,
-        ),
-        boxShadow: neonColor.neonGlow(
-          blur: 12,
-          opacity: 0.3,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          customBorder: const CircleBorder(),
-          child: Center(
-            child: Icon(
-              icon,
-              color: neonColor,
-              size: 22,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MemberAvatar extends StatelessWidget {
-  final String name;
-  final String? avatarUrl;
-  final bool isOnline;
-  final String? role;
-  final Color neonColor;
-
-  const _MemberAvatar({
-    required this.name,
-    this.avatarUrl,
-    required this.isOnline,
-    this.role,
-    required this.neonColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 70,
-      child: Column(
-        children: [
-          Stack(
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isOnline
-                        ? AppTheme.success(Theme.of(context).colorScheme)
-                        : Colors.transparent,
-                    width: 2.5,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 28,
-                  backgroundImage:
-                      avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-                  backgroundColor: Colors.white.withOpacity(0.1),
-                  child: avatarUrl == null
-                      ? Icon(Icons.person, color: neonColor, size: 24)
-                      : null,
-                ),
-              ),
-              // Role badge
-              if (role != null)
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: role == 'admin'
-                          ? AppTheme.warning(Theme.of(context).colorScheme)
-                          : neonColor,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.surface,
-                        width: 2,
-                      ),
-                    ),
-                    child: Icon(
-                      role == 'admin' ? Icons.star : Icons.shield,
-                      size: 12,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            name,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BigActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color neonColor;
-  final VoidCallback onPressed;
-  final String? badge;
-
-  const _BigActionButton({
-    required this.icon,
-    required this.label,
-    required this.neonColor,
-    required this.onPressed,
-    this.badge,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(35),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.08),
-                    border: Border.all(
-                      color: neonColor.withOpacity(0.4),
-                      width: 2,
-                    ),
-                    boxShadow: neonColor.neonGlow(
-                      blur: 20,
-                      opacity: 0.4,
-                    ),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: onPressed,
-                      customBorder: const CircleBorder(),
-                      child: Center(
-                        child: Icon(
-                          icon,
-                          color: neonColor,
-                          size: 32,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (badge != null)
-              Positioned(
-                top: -4,
-                right: -8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.warning(Theme.of(context).colorScheme),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.warning(Theme.of(context).colorScheme)
-                            .withOpacity(0.5),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    badge!,
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: neonColor,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _EditSquadSheet extends StatelessWidget {
-  final String squadId;
-  final String squadName;
-  final String? avatarUrl;
-  final VoidCallback onEditName;
-
-  const _EditSquadSheet({
-    required this.squadId,
-    required this.squadName,
-    this.avatarUrl,
-    required this.onEditName,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final neonColor = Theme.of(context).colorScheme.primary;
-
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
-            border: Border(
-              top: BorderSide(
-                color: neonColor.withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Edit Squad',
-                style: GoogleFonts.orbitron(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: neonColor,
-                ),
-              ),
-              const SizedBox(height: 24),
-              ListTile(
-                leading: Icon(Icons.edit, color: neonColor),
-                title: const Text('Change Squad Name'),
-                trailing: Icon(Icons.chevron_right,
-                    color: neonColor.withOpacity(0.5)),
-                onTap: () {
-                  Navigator.pop(context);
-                  onEditName();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.image, color: neonColor),
-                title: const Text('Change Squad Avatar'),
-                trailing: Icon(Icons.chevron_right,
-                    color: neonColor.withOpacity(0.5)),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                          'Avatar picker coming soon! Add image_picker package.'),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AddMemberSheet extends StatefulWidget {
-  final String squadId;
-
-  const _AddMemberSheet({required this.squadId});
-
-  @override
-  State<_AddMemberSheet> createState() => _AddMemberSheetState();
-}
-
-class _AddMemberSheetState extends State<_AddMemberSheet> {
-  final _searchController = TextEditingController();
-  List<Map<String, dynamic>> _searchResults = [];
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final neonColor = Theme.of(context).colorScheme.primary;
-
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
-            border: Border(
-              top: BorderSide(
-                color: neonColor.withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Add Member',
-                style: GoogleFonts.orbitron(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: neonColor,
-                ),
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search by username...',
-                  prefixIcon: Icon(Icons.search, color: neonColor),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: neonColor.withOpacity(0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: neonColor.withOpacity(0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: neonColor, width: 2),
-                  ),
-                ),
-                onChanged: (value) async {
-                  if (value.trim().isEmpty) {
-                    setState(() {
-                      _searchResults.clear();
-                    });
-                    return;
-                  }
-
-                  // Search users by username
-                  try {
-                    final results = await SupabaseService.client
-                        .from('users')
-                        .select(
-                            'uid, display_name, photo_url') // Changed id to uid, profile_image to photo_url
-                        .ilike('display_name', '%$value%')
-                        .limit(10);
-
-                    setState(() {
-                      _searchResults = results
-                          .map((row) => {
-                                'uid': row['uid'], // Changed from 'id'
-                                'name': row['display_name'] ?? 'Unknown',
-                                'avatarUrl': row[
-                                    'photo_url'], // Changed from profile_image
-                              })
-                          .toList();
-                    });
-                  } catch (e) {
-                    debugPrint('Error searching users: $e');
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-              if (_searchResults.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Text(
-                    'Search for users to add to your squad',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.5),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CustomBackgroundSheet extends StatelessWidget {
-  final String squadId;
-
-  const _CustomBackgroundSheet({required this.squadId});
-
-  @override
-  Widget build(BuildContext context) {
-    final neonColor = Theme.of(context).colorScheme.primary;
-
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
-            border: Border(
-              top: BorderSide(
-                color: neonColor.withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Custom Background',
-                style: GoogleFonts.orbitron(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: neonColor,
-                ),
-              ),
-              const SizedBox(height: 24),
-              ListTile(
-                leading: Icon(Icons.photo_library, color: neonColor),
-                title: const Text('Choose from Gallery'),
-                trailing: Icon(Icons.chevron_right,
-                    color: neonColor.withOpacity(0.5)),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                          'Add image_picker package: flutter pub add image_picker'),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.color_lens, color: neonColor),
-                title: const Text('Solid Color'),
-                trailing: Icon(Icons.chevron_right,
-                    color: neonColor.withOpacity(0.5)),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                          'Add flutter_colorpicker package: flutter pub add flutter_colorpicker'),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.gradient, color: neonColor),
-                title: const Text('Custom Gradient'),
-                trailing: Icon(Icons.chevron_right,
-                    color: neonColor.withOpacity(0.5)),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Gradient builder coming soon!'),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Full screen image viewer
-class _FullScreenImageViewer extends StatelessWidget {
-  final String imageUrl;
-
-  const _FullScreenImageViewer({required this.imageUrl});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          panEnabled: true,
-          minScale: 0.5,
-          maxScale: 4.0,
-          child: CachedNetworkImage(
-            imageUrl: imageUrl,
-            fit: BoxFit.contain,
-            placeholder: (context, url) => const Center(
-              child: CircularProgressIndicator(),
-            ),
-            errorWidget: (context, url, error) => const Icon(
-              Icons.error,
-              color: Colors.white,
-              size: 48,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+// Supporting widgets moved to components/chat_info_widgets.dart

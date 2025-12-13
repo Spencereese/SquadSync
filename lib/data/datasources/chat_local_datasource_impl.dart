@@ -75,43 +75,63 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
 
     return maps
         .where((map) => map['sender_id'] != null && map['text'] != null)
-        .map((map) => Message.fromJson({
-              'id': map['id'],
-              'senderId': map['sender_id'],
-              'text': map['text'],
-              'timestamp': DateTime.fromMillisecondsSinceEpoch(
-                  map['timestamp_ms'] as int),
-              'messageType': MessageType.values.firstWhere(
-                (e) => e.toString() == map['message_type'],
-                orElse: () => MessageType.text,
-              ),
-              'mediaUrl': map['media_url'],
-              'mediaType': map['media_type'],
-              'reactions': map['reactions'] != null
-                  ? jsonDecode(map['reactions'] as String)
-                      as Map<String, dynamic>
-                  : null,
-              'replyTo': map['reply_to'],
-              'poll': map['poll'] != null
-                  ? jsonDecode(map['poll'] as String) as Map<String, dynamic>
-                  : null,
-              'voiceNoteUrl': map['voice_note_url'],
-              'voiceNoteDuration': map['voice_note_duration'],
-              'aiResponse': map['ai_response'],
-              'metadata': map['metadata'] != null
-                  ? jsonDecode(map['metadata'] as String)
-                      as Map<String, dynamic>
-                  : null,
-              'isEdited': map['is_edited'] == 1,
-              'editedAt': map['edited_at'] != null
-                  ? DateTime.parse(map['edited_at'] as String)
-                  : null,
-              'isDeleted': map['is_deleted'] == 1,
-              'deletedAt': map['deleted_at'] != null
-                  ? DateTime.parse(map['deleted_at'] as String)
-                  : null,
-            }))
-        .toList();
+        .map((map) {
+      // Safe JSON parsing for JSONB fields
+      dynamic safeJsonDecode(String? jsonString) {
+        if (jsonString == null) return null;
+        try {
+          return jsonDecode(jsonString);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      return Message.fromJson({
+        'id': map['id'],
+        'senderId': map['sender_id'],
+        'text': map['text'],
+        'timestamp':
+            DateTime.fromMillisecondsSinceEpoch(map['timestamp_ms'] as int),
+        'messageType': MessageType.values.firstWhere(
+          (e) => e.toString() == map['message_type'],
+          orElse: () => MessageType.text,
+        ),
+        'mediaUrl': map['media_url'],
+        'mediaType': map['media_type'],
+        'reactions': (() {
+          final decoded = safeJsonDecode(map['reactions'] as String?);
+          return (decoded is Map || decoded is List) ? decoded : null;
+        })(),
+        'replyTo': map['reply_to'],
+        'poll': (() {
+          final decoded = safeJsonDecode(map['poll'] as String?);
+          return (decoded is Map) ? decoded : null;
+        })(),
+        'voiceNoteUrl': map['voice_note_url'],
+        'voiceNoteDuration': map['voice_note_duration'],
+        'aiResponse': map['ai_response'],
+        'metadata': (() {
+          final decoded = safeJsonDecode(map['metadata'] as String?);
+          if (decoded is! Map) return null;
+          final meta = decoded as Map;
+          // Skip metadata with old schema fields
+          if (meta.containsKey('photos') ||
+              meta.containsKey('videos') ||
+              meta.containsKey('audio')) {
+            return null;
+          }
+          return decoded;
+        })(),
+        'isEdited': map['is_edited'] == 1,
+        'editedAt': map['edited_at'] != null
+            ? DateTime.parse(map['edited_at'] as String)
+            : null,
+        'isDeleted': map['is_deleted'] == 1,
+        'deletedAt': map['deleted_at'] != null
+            ? DateTime.parse(map['deleted_at'] as String)
+            : null,
+      });
+    }).toList();
   }
 
   @override
@@ -222,47 +242,65 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
       whereArgs: [chatGroupId],
     );
 
-    return maps
-        .map((map) => Message.fromJson({
-              'id': map['id'],
-              'senderId': map['sender_id'],
-              'text': map['text'],
-              'timestamp': map['timestamp_ms'] != null
-                  ? DateTime.fromMillisecondsSinceEpoch(
-                      map['timestamp_ms'] as int)
-                  : DateTime.parse(
-                      map['timestamp'] as String), // Fallback for old data
-              'messageType': MessageType.values.firstWhere(
-                (e) => e.toString() == map['message_type'],
-                orElse: () => MessageType.text,
-              ),
-              'mediaUrl': map['media_url'],
-              'mediaType': map['media_type'],
-              'reactions': map['reactions'] != null
-                  ? jsonDecode(map['reactions'] as String)
-                      as Map<String, dynamic>
-                  : null,
-              'replyTo': map['reply_to'],
-              'poll': map['poll'] != null
-                  ? jsonDecode(map['poll'] as String) as Map<String, dynamic>
-                  : null,
-              'voiceNoteUrl': map['voice_note_url'],
-              'voiceNoteDuration': map['voice_note_duration'],
-              'aiResponse': map['ai_response'],
-              'metadata': map['metadata'] != null
-                  ? jsonDecode(map['metadata'] as String)
-                      as Map<String, dynamic>
-                  : null,
-              'isEdited': map['is_edited'] == 1,
-              'editedAt': map['edited_at'] != null
-                  ? DateTime.parse(map['edited_at'] as String)
-                  : null,
-              'isDeleted': map['is_deleted'] == 1,
-              'deletedAt': map['deleted_at'] != null
-                  ? DateTime.parse(map['deleted_at'] as String)
-                  : null,
-            }))
-        .toList();
+    return maps.map((map) {
+      // Safe JSON parsing for JSONB fields
+      dynamic safeJsonDecode(String? jsonString) {
+        if (jsonString == null) return null;
+        try {
+          return jsonDecode(jsonString);
+        } catch (e) {
+          return null;
+        }
+      }
+
+      return Message.fromJson({
+        'id': map['id'],
+        'senderId': map['sender_id'],
+        'text': map['text'],
+        'timestamp': map['timestamp_ms'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(map['timestamp_ms'] as int)
+            : DateTime.parse(
+                map['timestamp'] as String), // Fallback for old data
+        'messageType': MessageType.values.firstWhere(
+          (e) => e.toString() == map['message_type'],
+          orElse: () => MessageType.text,
+        ),
+        'mediaUrl': map['media_url'],
+        'mediaType': map['media_type'],
+        'reactions': (() {
+          final decoded = safeJsonDecode(map['reactions'] as String?);
+          return (decoded is Map || decoded is List) ? decoded : null;
+        })(),
+        'replyTo': map['reply_to'],
+        'poll': (() {
+          final decoded = safeJsonDecode(map['poll'] as String?);
+          return (decoded is Map) ? decoded : null;
+        })(),
+        'voiceNoteUrl': map['voice_note_url'],
+        'voiceNoteDuration': map['voice_note_duration'],
+        'aiResponse': map['ai_response'],
+        'metadata': (() {
+          final decoded = safeJsonDecode(map['metadata'] as String?);
+          if (decoded is! Map) return null;
+          final meta = decoded as Map;
+          // Skip metadata with old schema fields
+          if (meta.containsKey('photos') ||
+              meta.containsKey('videos') ||
+              meta.containsKey('audio')) {
+            return null;
+          }
+          return decoded;
+        })(),
+        'isEdited': map['is_edited'] == 1,
+        'editedAt': map['edited_at'] != null
+            ? DateTime.parse(map['edited_at'] as String)
+            : null,
+        'isDeleted': map['is_deleted'] == 1,
+        'deletedAt': map['deleted_at'] != null
+            ? DateTime.parse(map['deleted_at'] as String)
+            : null,
+      });
+    }).toList();
   }
 
   @override
@@ -551,5 +589,60 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
       return maps.first['analytics'] as Map<String, dynamic>;
     }
     return null;
+  }
+
+  // ============================================================
+  // OFFLINE QUEUE SUPPORT
+  // ============================================================
+
+  /// Queue a message for sending when back online
+  Future<void> queueMessageForSync(Message message, String chatGroupId) async {
+    await _sqliteHelper.enqueueOfflineItem(
+      id: message.id,
+      type: 'message',
+      data: {
+        'id': message.id,
+        'chat_group_id': chatGroupId,
+        'sender_id': message.senderId,
+        'text': message.text,
+        'timestamp': message.timestamp.toIso8601String(),
+        'message_type': message.messageType.toString(),
+        'media_url': message.mediaUrl,
+        'media_type': message.mediaType,
+      },
+    );
+
+    // Also cache the message locally with synced=0
+    await cacheMessages(chatGroupId, [message]);
+  }
+
+  /// Queue a media upload for processing when back online
+  Future<void> queueMediaUpload({
+    required String id,
+    required String filePath,
+    required String mediaType,
+    required String chatGroupId,
+  }) async {
+    await _sqliteHelper.enqueueOfflineItem(
+      id: id,
+      type: 'media_upload',
+      data: {
+        'id': id,
+        'file_path': filePath,
+        'media_type': mediaType,
+        'chat_group_id': chatGroupId,
+        'uploaded_at': DateTime.now().toIso8601String(),
+      },
+    );
+  }
+
+  /// Get all pending offline queue items
+  Future<List<Map<String, dynamic>>> getOfflineQueue() async {
+    return await _sqliteHelper.getOfflineQueue();
+  }
+
+  /// Clear an item from the offline queue
+  Future<void> clearOfflineQueueItem(String id) async {
+    await _sqliteHelper.dequeueOfflineItem(id);
   }
 }

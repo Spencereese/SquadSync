@@ -1,5 +1,6 @@
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/services/supabase_service.dart';
+import 'package:squad_sync/services/jwt_validator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service_supabase.dart';
 
@@ -21,23 +22,53 @@ abstract class LobbyRemoteDataSource {
   Future<void> startSpotTimer(String lobbyId, int spotIndex, Duration duration);
   Future<void> cancelSpotTimer(String lobbyId, int spotIndex);
 
+  // Status and activity
+  Future<void> updateMemberStatus(String lobbyId, String userId, String status);
+  Future<void> updateLastActivity(String lobbyId);
+
   // Timer processing (calls Cloud Functions)
   Future<void> processExpiredTimers();
 
   // Real-time streams
   Stream<Lobby> getLobbyStream(String lobbyId);
   Stream<List<Lobby>> getUserLobbiesStream(String userId);
+  Stream<List<Lobby>> getPublicLobbiesStream({
+    bool? isActive,
+    String? gameFocus,
+    int limit,
+    String orderBy,
+    bool ascending,
+  });
 
   // Analytics
   Future<void> trackLobbyEvent(String event, Map<String, dynamic> data);
+
+  // Invite management
+  Future<void> createInvite(Map<String, dynamic> inviteData);
+
+  // Peacock management
+  Future<void> createPeacock(Map<String, dynamic> peacockData);
+  Future<void> updateUserPeacock(
+      String userId, Map<String, dynamic> peacockStatus);
 }
 
-class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
+class LobbyRemoteDataSourceImpl
+    with JwtValidationMixin
+    implements LobbyRemoteDataSource {
   final AuthServiceSupabase _authService = AuthServiceSupabase();
   final SupabaseClient _supabase = SupabaseService.client;
 
   @override
   Future<Lobby> createLobby(Lobby lobby) async {
+    // Validate JWT before creating lobby
+    validateJwt();
+    final authenticatedUserId = getAuthenticatedUserId();
+
+    // Ensure creator matches authenticated user
+    if (lobby.createdBy != authenticatedUserId) {
+      throw UnauthorizedException('Cannot create lobby for another user');
+    }
+
     final json = lobby.toJson();
 
     // Convert to snake_case for Supabase
@@ -47,7 +78,7 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
       'member_uids': json['memberUids'],
       'game_focus': json['gameName'],
       'max_spots': json['maxSpots'],
-      'creator_uid': json['createdBy'],
+      'created_by': json['createdBy'],
       'created_at': json['createdAt'],
       'spot_timers': json['spotTimers'] != null
           ? _convertSpotTimersToMap(json['spotTimers'])
@@ -97,9 +128,9 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
       'memberUids': data['member_uids'] ?? [],
       'gameName': data['game_focus'] ?? '',
       'maxSpots': data['max_spots'] ?? 8,
-      'createdBy': data['creator_uid'] ?? '',
+      'createdBy': data['created_by'] ?? '',
       'createdAt': data['created_at'],
-      'spots': data['squad_spots'] ?? [],
+      'spots': data['lobby_spots'] ?? [],
       'spotTimers': _convertSpotTimersToList(
         data['spot_timers'],
         data['max_spots'] ?? 8,
@@ -160,7 +191,7 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
       'member_uids': json['memberUids'],
       'game_focus': json['gameName'],
       'max_spots': json['maxSpots'],
-      'creator_uid': json['createdBy'],
+      'created_by': json['createdBy'],
       'spot_timers': json['spotTimers'] != null
           ? _convertSpotTimersToMap(json['spotTimers'])
           : {},
@@ -232,16 +263,6 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
     await _supabase
         .from('lobbies')
         .update({'member_uids': memberUids}).eq('id', lobbyId);
-
-    // Log the kick event
-    // TODO: Create squad_events table in Supabase schema
-    // await _supabase.from('squad_events').insert({
-    //   'squad_id': lobbyId,
-    //   'type': 'member_kicked',
-    //   'member_id': memberId,
-    //   'kicked_by': kickedBy,
-    //   'timestamp': DateTime.now().toIso8601String(),
-    // });
   }
 
   @override
@@ -249,11 +270,11 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
     // Fetch current squad
     final squadData = await _supabase
         .from('lobbies')
-        .select('squad_spots')
+        .select('lobby_spots')
         .eq('id', lobbyId)
         .single();
 
-    final spots = List<String?>.from(squadData['squad_spots'] ?? []);
+    final spots = List<String?>.from(squadData['lobby_spots'] ?? []);
 
     // Ensure the spots array is large enough
     while (spots.length <= spotIndex) {
@@ -263,7 +284,7 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
 
     await _supabase
         .from('lobbies')
-        .update({'squad_spots': spots}).eq('id', lobbyId);
+        .update({'lobby_spots': spots}).eq('id', lobbyId);
   }
 
   @override
@@ -311,6 +332,32 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
   }
 
   @override
+  Future<void> updateMemberStatus(
+      String lobbyId, String userId, String status) async {
+    // Fetch current statuses
+    final lobbyData = await _supabase
+        .from('lobbies')
+        .select('statuses')
+        .eq('id', lobbyId)
+        .single();
+
+    final statuses = Map<String, dynamic>.from(lobbyData['statuses'] ?? {});
+    statuses[userId] = status;
+
+    await _supabase.from('lobbies').update({
+      'statuses': statuses,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', lobbyId);
+  }
+
+  @override
+  Future<void> updateLastActivity(String lobbyId) async {
+    await _supabase.from('lobbies').update({
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', lobbyId);
+  }
+
+  @override
   Future<void> processExpiredTimers() async {
     // This would call a Supabase Edge Function to process expired timers server-side
     // For now, we'll handle this locally in the repository implementation
@@ -345,15 +392,111 @@ class LobbyRemoteDataSourceImpl implements LobbyRemoteDataSource {
   }
 
   @override
+  Stream<List<Lobby>> getPublicLobbiesStream({
+    bool? isActive,
+    String? gameFocus,
+    int limit = 50,
+    String orderBy = 'created_at',
+    bool ascending = false,
+  }) {
+    var query = _supabase
+        .from('lobbies')
+        .stream(primaryKey: ['id'])
+        .eq('is_public', true)
+        .order(orderBy, ascending: ascending)
+        .limit(limit);
+
+    return query.map((dataList) {
+      var filteredData = dataList;
+
+      // Apply isActive filter if specified
+      if (isActive != null) {
+        filteredData = filteredData
+            .where((data) => (data['is_active'] as bool? ?? true) == isActive)
+            .toList();
+      }
+
+      // Apply gameFocus filter if specified
+      if (gameFocus != null) {
+        filteredData = filteredData
+            .where((data) => data['game_focus'] == gameFocus)
+            .toList();
+      }
+
+      return filteredData
+          .map((data) => Lobby.fromJson(_toEntityJson(data)))
+          .toList();
+    });
+  }
+
+  @override
   Future<void> trackLobbyEvent(String event, Map<String, dynamic> data) async {
     final userId = _authService.currentUserId;
     if (userId == null) return;
 
-    await _supabase.from('analytics').insert({
-      'user_id': userId,
-      'event': event,
-      'data': data,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
+    // TODO: Create analytics table in Supabase or use external analytics service
+    // await _supabase.from('analytics').insert({
+    //   'user_id': userId,
+    //   'event': event,
+    //   'data': data,
+    //   'timestamp': DateTime.now().toIso8601String(),
+    // });
+    throw UnimplementedError('analytics table does not exist in schema');
+  }
+
+  @override
+  Future<void> createInvite(Map<String, dynamic> inviteData) async {
+    validateJwt();
+    final authenticatedUserId = getAuthenticatedUserId();
+
+    // Ensure creator matches authenticated user
+    if (inviteData['created_by'] != authenticatedUserId) {
+      throw UnauthorizedException('Cannot create invite for another user');
+    }
+
+    try {
+      await _supabase.from('invites').upsert(inviteData);
+    } catch (e) {
+      throw Exception('Failed to create invite: $e');
+    }
+  }
+
+  @override
+  Future<void> createPeacock(Map<String, dynamic> peacockData) async {
+    validateJwt();
+    final authenticatedUserId = getAuthenticatedUserId();
+
+    // Ensure user_id matches authenticated user
+    if (peacockData['user_id'] != authenticatedUserId) {
+      throw UnauthorizedException(
+          'Cannot create peacock entry for another user');
+    }
+
+    try {
+      await _supabase.from('peacocks').insert(peacockData);
+    } catch (e) {
+      throw Exception('Failed to create peacock entry: $e');
+    }
+  }
+
+  @override
+  Future<void> updateUserPeacock(
+      String userId, Map<String, dynamic> peacockStatus) async {
+    validateJwt();
+    final authenticatedUserId = getAuthenticatedUserId();
+
+    // Ensure userId matches authenticated user
+    if (userId != authenticatedUserId) {
+      throw UnauthorizedException(
+          'Cannot update peacock status for another user');
+    }
+
+    try {
+      await _supabase
+          .from('users')
+          .update({'peacock': peacockStatus}).eq('uid', userId);
+    } catch (e) {
+      throw Exception('Failed to update user peacock status: $e');
+    }
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import '../../services/auth_service_supabase.dart';
 import 'package:squad_sync/data/datasources/chat_local_datasource.dart';
 import 'package:squad_sync/data/datasources/chat_remote_datasource.dart';
@@ -233,18 +234,106 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<void> joinGroup(String groupId) async {
-    await _remoteDataSource.joinGroup(groupId, 'current_user_id');
+    final currentUser = AuthServiceSupabase().currentUser;
+    if (currentUser == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      await _remoteDataSource.joinGroup(groupId, currentUser.id);
+
+      // Cache the updated group membership locally
+      // Note: Realtime subscriptions will handle full sync
+    } catch (e) {
+      // If offline or error, queue for later sync
+      debugPrint('⚠️ Failed to join group remotely: $e');
+      rethrow;
+    }
   }
 
   @override
   Future<void> leaveGroup(String groupId) async {
-    await _remoteDataSource.leaveGroup(groupId, 'current_user_id');
+    final currentUser = AuthServiceSupabase().currentUser;
+    if (currentUser == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      await _remoteDataSource.leaveGroup(groupId, currentUser.id);
+    } catch (e) {
+      debugPrint('⚠️ Failed to join group remotely: $e');
+      rethrow;
+    }
   }
 
   @override
   Future<List<ChatGroup>> discoverGroups(
       {String? query, int limit = 20}) async {
-    return await _remoteDataSource.discoverGroups(query: query, limit: limit);
+    try {
+      // Try remote fetch with stats
+      final groups = await _remoteDataSource.discoverGroups(
+        query: query,
+        limit: limit,
+      );
+
+      // Cache discovered groups locally for offline access
+      for (final group in groups) {
+        try {
+          await _localDataSource.updateChatGroup(group);
+        } catch (e) {
+          debugPrint('⚠️ Failed to cache group ${group.id}: $e');
+          // Continue even if caching fails
+        }
+      }
+
+      return groups;
+    } catch (e) {
+      debugPrint('⚠️ Failed to discover groups remotely: $e');
+
+      // Fallback to local cached public groups if offline
+      try {
+        final localGroups = await _localDataSource.getCachedChatGroups();
+        return localGroups.where((g) => g.isPublic).toList()
+          ..sort((a, b) => b.memberCount.compareTo(a.memberCount));
+      } catch (localError) {
+        debugPrint('⚠️ Failed to load local groups: $localError');
+        return [];
+      }
+    }
+  }
+
+  @override
+  Future<ChatGroup?> getGroupByInviteCode(String code) async {
+    try {
+      // Try remote fetch first
+      final group = await _remoteDataSource.getGroupByInviteCode(code);
+
+      if (group != null) {
+        // Cache the group locally
+        try {
+          await _localDataSource.updateChatGroup(group);
+        } catch (e) {
+          debugPrint('⚠️ Failed to cache group ${group.id}: $e');
+          // Continue even if caching fails
+        }
+      }
+
+      return group;
+    } catch (e) {
+      debugPrint('⚠️ Failed to fetch group by invite code: $e');
+
+      // Fallback to local search if offline
+      try {
+        final localGroups = await _localDataSource.getCachedChatGroups();
+        return localGroups.firstWhere(
+          (g) => g.inviteCode == code || g.id == code,
+          orElse: () => throw Exception('Group not found'),
+        );
+      } catch (localError) {
+        debugPrint('⚠️ Failed to find group locally: $localError');
+        return null;
+      }
+    }
   }
 
   @override

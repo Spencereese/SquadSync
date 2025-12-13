@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service_supabase.dart';
-import '../services/supabase_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../presentation/notifiers/user_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'package:squad_sync/presentation/notifiers/user_notifier.dart';
+import '../core/injection.dart';
 import 'widgets/peacock_modal_header.dart';
-import 'widgets/game_selection_card.dart';
 import 'widgets/group_settings_card.dart';
-import 'widgets/launch_squad_button.dart';
+import 'widgets/launch_lobby_button.dart';
 
 class PeacockModal extends ConsumerStatefulWidget {
   final Map<String, dynamic>? initialGame;
@@ -31,7 +30,7 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
   void initState() {
     super.initState();
     _selectedCircle =
-        'Squad'; // TODO: Implement alert circles in new architecture
+        'Lobby'; // TODO: Implement alert circles in new architecture
 
     // Pre-fill game if provided
     if (widget.initialGame != null) {
@@ -74,9 +73,9 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
 
       // Assign creator to spot 1 as caller with 5-minute countdown
       // Use direct assignment instead of callSpotForGame since creator gets longer timer
-      final currentSquadSpots =
+      final currentLobbySpots =
           Map<String, List<String?>>.from(squadState.gameLobbySpots);
-      currentSquadSpots[gameName] ??=
+      currentLobbySpots[gameName] ??=
           List.of(List.filled(_spots.toInt(), null));
       final currentSpotTimers2 =
           Map<String, List<Map<String, dynamic>?>>.from(currentSpotTimers);
@@ -92,7 +91,7 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
           : 300; // 60 minutes for solo, 5 minutes for groups
 
       // Set creator in spot 1 with calling timer
-      currentSquadSpots[gameName]![0] = '${user.id}_calling';
+      currentLobbySpots[gameName]![0] = '${user.id}_calling';
       currentSpotTimers2[gameName]![0] = {
         'startTime': DateTime.now().millisecondsSinceEpoch,
         'duration': timerDuration, // Dynamic duration based on solo status
@@ -134,19 +133,17 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
         'voice_room_id': voiceRoomId,
       };
 
-      await SupabaseService.client.from('peacocks').insert(peacockData);
+      await ref.read(lobbyRepositoryProvider).createPeacock(peacockData);
 
-      // Update Supabase user doc
-      await SupabaseService.client.from('users').update({
-        'peacock': {
-          'game': gameName,
-          'spots': _spots.toInt(),
-          'timer': DateTime.now()
-              .add(const Duration(minutes: 5))
-              .millisecondsSinceEpoch,
-          'circle': _selectedCircle,
-        }
-      }).eq('uid', user.id);
+      // Update user peacock status via repository
+      await ref.read(lobbyRepositoryProvider).updateUserPeacock(user.id, {
+        'game': gameName,
+        'spots': _spots.toInt(),
+        'timer': DateTime.now()
+            .add(const Duration(minutes: 5))
+            .millisecondsSinceEpoch,
+        'circle': _selectedCircle,
+      });
 
       // Update user status to indicate they're looking for squad
       // Note: Status updates should be handled by notifier methods, but for migration we'll skip for now
@@ -269,20 +266,17 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           curve: Curves.easeOut,
-                          child: GameSelectionCard(
-                            controller: _gameController,
-                            selectedGame: _selectedGame,
-                            onGameSelected: (game) {
-                              setState(() {
-                                _selectedGame = game;
-                                if (game != null && game['maxSpots'] != null) {
-                                  _spots = (game['maxSpots'] as int).toDouble();
-                                } else if (game == null) {
-                                  _spots = 4.0;
-                                }
-                              });
-                              HapticFeedback.lightImpact();
-                            },
+                          child: Card(
+                            child: ListTile(
+                              title:
+                                  Text(_selectedGame?['name'] ?? 'Select Game'),
+                              subtitle: const Text('Tap to select a game'),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () {
+                                // TODO: Show game selection sheet
+                                HapticFeedback.lightImpact();
+                              },
+                            ),
                           ),
                         ),
                         const SizedBox(height: 32),
@@ -313,7 +307,7 @@ class _PeacockModalState extends ConsumerState<PeacockModal> {
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           curve: Curves.easeOut,
-                          child: LaunchSquadButton(
+                          child: LaunchLobbyButton(
                             isLoading: _isLoading,
                             isEnabled: _gameController.text.isNotEmpty &&
                                 _selectedCircle != null,

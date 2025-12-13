@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
-import '../../presentation/notifiers/user_notifier.dart';
-import '../../presentation/notifiers/game_notifier.dart';
+import '../../widgets/game_search_delegate.dart';
 
-/// GameSelector component - handles game selection, display, and switching
-/// Extracted from the monolithic SquadTab to improve maintainability
+/// GameSelector component - handles game display and switching for lobbies
+/// Simplified to delegate search to GameSearchDelegate
 class GameSelector extends ConsumerWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
@@ -27,287 +27,93 @@ class GameSelector extends ConsumerWidget {
       orElse: () => null,
     );
     final currentGame = squadState?.currentGame ?? game;
-    final userStateAsync = ref.watch(userNotifierProvider);
-    final pinnedGames = userStateAsync.maybeWhen(
-      data: (userState) => userState?.pinnedGames ?? <Map<String, dynamic>>[],
-      orElse: () => <Map<String, dynamic>>[],
-    );
 
     return GestureDetector(
-      onTap: onGameTap ??
-          () => _showGameSelectionDialog(context, ref, pinnedGames),
+      onTap: onGameTap ?? () => _showGameSelectionDialog(context, ref),
       child: SizedBox(
         width: 220,
         height: 160,
         child: Stack(
           alignment: Alignment.center,
-          children: [_buildGameLogo(currentGame)],
+          children: [_buildGameLogo(context, currentGame)],
         ),
       ),
     );
   }
 
-  Widget _buildGameLogo(Map<String, dynamic>? currentGame) {
-    Widget logo;
+  Widget _buildGameLogo(
+      BuildContext context, Map<String, dynamic>? currentGame) {
+    final theme = Theme.of(context);
 
     if (currentGame != null && currentGame['coverUrl'] != null) {
-      // Ensure coverUrl has https protocol
+      // Use CachedNetworkImage for better performance
       final coverUrl = currentGame['coverUrl'] as String;
       final fullUrl =
           coverUrl.startsWith('http') ? coverUrl : 'https:$coverUrl';
 
-      logo = Container(
+      return CachedNetworkImage(
+        imageUrl: fullUrl,
         width: 200,
         height: 140,
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: NetworkImage(fullUrl),
-            fit: BoxFit.contain,
-            onError: (exception, stackTrace) {
-              debugPrint('Error loading game cover image: $exception');
-              debugPrint('URL: $fullUrl');
-            },
+        fit: BoxFit.contain,
+        placeholder: (context, url) => Center(
+          child: CircularProgressIndicator(
+            color: theme.colorScheme.primary,
           ),
+        ),
+        errorWidget: (context, url, error) => Icon(
+          Icons.gamepad_rounded,
+          size: 100,
+          color: theme.colorScheme.primary,
         ),
       );
-    } else {
-      final assetName =
-          getAssetName(currentGame?['name']) ?? getAssetName(this.gameName);
-      if (assetName != null) {
-        logo = Image.asset(
-          'assets/images/$assetName',
-          width: 200,
-          height: 140,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) =>
-              const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
-        );
-      } else if (currentGame?['logo'] != null) {
-        // Fallback to old asset logo field
-        logo = Image.asset(
-          currentGame!['logo'],
-          width: 200,
-          height: 140,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) =>
-              const Icon(Icons.gamepad, size: 100, color: Colors.cyanAccent),
-        );
-      } else {
-        logo = const Icon(
-          Icons.gamepad,
-          size: 100,
-          color: Colors.cyanAccent,
-        );
-      }
     }
 
-    return logo;
+    // Fallback to asset or icon
+    final assetName =
+        getAssetName(currentGame?['name']) ?? getAssetName(gameName);
+    if (assetName != null) {
+      return Image.asset(
+        'assets/images/$assetName',
+        width: 200,
+        height: 140,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Icon(
+          Icons.gamepad_rounded,
+          size: 100,
+          color: theme.colorScheme.primary,
+        ),
+      );
+    }
+
+    return Icon(
+      Icons.gamepad_rounded,
+      size: 100,
+      color: theme.colorScheme.primary,
+    );
   }
 
-  void _showGameSelectionDialog(BuildContext context, WidgetRef ref,
-      List<Map<String, dynamic>> pinnedGames) {
-    final TextEditingController gameController = TextEditingController();
-    Map<String, dynamic>? selectedGame;
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          backgroundColor: Colors.black.withValues(alpha: 0.9),
-          title: const Text(
-            'Switch Game',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Pinned Games Section
-                if (pinnedGames.isNotEmpty) ...[
-                  const Text(
-                    'Pinned Games',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 100,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: pinnedGames.length,
-                      itemBuilder: (context, index) {
-                        final game = pinnedGames[index];
-                        return GestureDetector(
-                          onTap: () {
-                            ref
-                                .read(ln.lobbyNotifierProvider.notifier)
-                                .setCurrentGame(game);
-                            // Persistence is handled automatically in the notifier
-                            Navigator.pop(context);
-                            HapticFeedback.lightImpact();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('Switched to ${game['name']}')),
-                            );
-                          },
-                          child: Container(
-                            width: 80,
-                            margin: const EdgeInsets.only(right: 8),
-                            child: Column(
-                              children: [
-                                if (game['coverUrl'] != null)
-                                  Image.network(
-                                    game['coverUrl'],
-                                    width: 60,
-                                    height: 60,
-                                    fit: BoxFit.cover,
-                                    errorBuilder:
-                                        (context, error, stackTrace) =>
-                                            const Icon(Icons.gamepad,
-                                                color: Colors.cyanAccent,
-                                                size: 40),
-                                  )
-                                else
-                                  const Icon(Icons.gamepad,
-                                      color: Colors.cyanAccent, size: 40),
-                                const SizedBox(height: 4),
-                                Text(
-                                  game['name'] ?? 'Unknown',
-                                  style: const TextStyle(
-                                      color: Colors.white, fontSize: 10),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const Divider(color: Colors.grey, height: 24),
-                ],
-                TextField(
-                  controller: gameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'Search for a game...',
-                    hintStyle: TextStyle(color: Colors.grey),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.cyanAccent),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.cyanAccent),
-                    ),
-                  ),
-                  onChanged: (value) async {
-                    if (value.isNotEmpty) {
-                      final results = await ref
-                          .read(gameNotifierProvider.notifier)
-                          .fetchGamesFromIGDB(value);
-                      if (results.isNotEmpty) {
-                        setState(() {
-                          selectedGame = results.first;
-                        });
-                      }
-                    }
-                  },
-                ),
-                if (selectedGame != null) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        if (selectedGame!['coverUrl'] != null)
-                          Image.network(
-                            selectedGame!['coverUrl'],
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.gamepad,
-                                    color: Colors.cyanAccent),
-                          )
-                        else
-                          const Icon(Icons.gamepad, color: Colors.cyanAccent),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                selectedGame!['name'] ?? 'Unknown Game',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (selectedGame!['summary'] != null &&
-                                  selectedGame!['summary']
-                                      .toString()
-                                      .isNotEmpty)
-                                Text(
-                                  selectedGame!['summary'].toString(),
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 12,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child:
-                  const Text('Cancel', style: TextStyle(color: Colors.white)),
-            ),
-            TextButton(
-              onPressed: selectedGame != null
-                  ? () {
-                      ref
-                          .read(ln.lobbyNotifierProvider.notifier)
-                          .setCurrentGame(selectedGame);
-                      // Persistence is handled automatically in the notifier
-                      Navigator.pop(context);
-                      HapticFeedback.lightImpact();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content:
-                                Text('Switched to ${selectedGame!['name']}')),
-                      );
-                    }
-                  : null,
-              child: Text(
-                'Switch',
-                style: TextStyle(
-                  color: selectedGame != null ? Colors.cyanAccent : Colors.grey,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+  Future<void> _showGameSelectionDialog(
+      BuildContext context, WidgetRef ref) async {
+    final selectedGame = await GameSearchDelegate.show(
+      context,
+      ref: ref,
+      multiSelect: false,
     );
+
+    if (selectedGame != null && context.mounted) {
+      // Convert Game entity to Map for compatibility with existing code
+      final gameMap = selectedGame.toJson();
+      ref.read(ln.lobbyNotifierProvider.notifier).setCurrentGame(gameMap);
+
+      HapticFeedback.lightImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Switched to ${selectedGame.name}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   String? getAssetName(String? gameName) {

@@ -1,153 +1,554 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../domain/entities/game.dart';
 import '../presentation/notifiers/game_notifier.dart';
+import '../presentation/notifiers/user_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import 'game_tile.dart';
+import 'game_search_delegate.dart';
 
-class GameSelectionWidget extends ConsumerWidget {
-  const GameSelectionWidget({super.key});
+/// Unified game selection widget - single source of truth for game selection UI
+///
+/// Configurable for different contexts:
+/// - Chat: Simple game picker for creating lobbies
+/// - Lobby: Game switcher with pinned games
+/// - Onboarding: Multi-select with max 6 games + primary selection
+/// - Display: Read-only game showcase
+///
+/// Features:
+/// - Multiple selection modes (single/multi)
+/// - Primary game designation (onboarding)
+/// - Max selection limit
+/// - Popular games from assets/popular_games.json
+/// - IGDB search integration
+/// - Pinned games support
+/// - Material 3 theming
+/// - Haptic feedback
+///
+/// Usage:
+/// ```dart
+/// // Onboarding multi-select
+/// GameSelectionWidget(
+///   isOnboarding: true,
+///   allowMultipleSelect: true,
+///   maxSelections: 6,
+///   onGamesSelected: (games) => ...,
+/// )
+///
+/// // Chat lobby creation
+/// GameSelectionWidget(
+///   onGameSelected: (game) => ...,
+///   showMaxSpotSelector: true,
+/// )
+/// ```
+class GameSelectionWidget extends ConsumerStatefulWidget {
+  // Context configuration
+  final bool isOnboarding;
+  final bool allowMultipleSelect;
+  final bool isDisplayOnly;
+  final bool showSearchButton;
+  final bool showMaxSpotSelector;
+  final bool showPinnedGames;
+  final bool isPrivateLobby;
+  final String? chatGroupId;
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final gameStateAsync = ref.watch(gameNotifierProvider);
+  // Selection configuration
+  final int? maxSelections;
+  final List<Game>? initialSelectedGames;
+  final String? primaryGameSlug;
 
-    return gameStateAsync.maybeWhen(
-      data: (state) {
-        final availableGames = state.availableGames
-            .map((game) => game.toJson())
-            .where((game) => !ref
-                .read(gameNotifierProvider.notifier)
-                .isGameHidden(game['name']))
-            .toList();
-        final currentGame = state.currentGame?.toJson();
+  // Callbacks
+  final Function(Game)? onGameSelected;
+  final Function(List<Game>)? onGamesSelected;
+  final Function(String gameName, int maxSpots)? onGameWithSpotsSelected;
+  final Function(String gameName, int maxSpots)? onLobbyCreated;
+  final Function(String slug)? onPrimaryGameChanged;
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Quick Game Select',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).primaryColor,
-                    ),
-              ),
-              const SizedBox(height: 16),
-              if (availableGames.isEmpty)
-                const Center(
-                  child: Text('No games available'),
-                )
-              else
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: availableGames.map((game) {
-                    final isSelected = currentGame?['name'] == game['name'];
-                    return _GameCard(
-                      game: game,
-                      isSelected: isSelected,
-                      onTap: () => ref
-                          .read(gameNotifierProvider.notifier)
-                          .selectGame(game),
-                    );
-                  }).toList(),
-                ),
-            ],
-          ),
-        );
-      },
-      orElse: () => const SizedBox.shrink(),
-    );
-  }
-}
+  // Display configuration
+  final GameTileStyle tileStyle;
+  final String? title;
+  final String? subtitle;
+  final Widget? header;
+  final Widget? footer;
 
-class _GameCard extends StatelessWidget {
-  final Map<String, dynamic> game;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _GameCard({
-    required this.game,
-    required this.isSelected,
-    required this.onTap,
+  const GameSelectionWidget({
+    super.key,
+    this.isOnboarding = false,
+    this.allowMultipleSelect = false,
+    this.isDisplayOnly = false,
+    this.showSearchButton = true,
+    this.showMaxSpotSelector = false,
+    this.showPinnedGames = true,
+    this.isPrivateLobby = false,
+    this.chatGroupId,
+    this.maxSelections,
+    this.initialSelectedGames,
+    this.primaryGameSlug,
+    this.onGameSelected,
+    this.onGamesSelected,
+    this.onGameWithSpotsSelected,
+    this.onLobbyCreated,
+    this.onPrimaryGameChanged,
+    this.tileStyle = GameTileStyle.grid,
+    this.title,
+    this.subtitle,
+    this.header,
+    this.footer,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 120,
-        height: 120,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).primaryColor
-              : Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? Theme.of(context).primaryColor
-                : Colors.grey.shade300,
-            width: 2,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color:
-                        Theme.of(context).primaryColor.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : null,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _getGameIcon(game['name'] as String? ?? ''),
-              size: 40,
-              color: isSelected ? Colors.white : Theme.of(context).primaryColor,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              game['name'] as String? ?? 'Unknown',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isSelected
-                    ? Colors.white
-                    : Theme.of(context).textTheme.bodyLarge?.color,
+  ConsumerState<GameSelectionWidget> createState() =>
+      _GameSelectionWidgetState();
+}
+
+class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
+  late List<Game> _selectedGames;
+  late String? _primaryGameSlug;
+  List<Game> _popularGames = [];
+  int _maxSpots = 8;
+  bool _isLoadingPopular = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedGames = widget.initialSelectedGames?.toList() ?? [];
+    _primaryGameSlug = widget.primaryGameSlug;
+    _loadPopularGames();
+  }
+
+  Future<void> _loadPopularGames() async {
+    setState(() => _isLoadingPopular = true);
+
+    try {
+      // Load from assets/popular_games.json
+      final jsonString =
+          await rootBundle.loadString('assets/popular_games.json');
+      final List<dynamic> jsonData = json.decode(jsonString);
+
+      final popularFromAssets = jsonData
+          .take(20)
+          .map((json) => Game.fromIgdb(json as Map<String, dynamic>))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _popularGames = popularFromAssets;
+          _isLoadingPopular = false;
+        });
+      }
+
+      // Optionally load trending from IGDB (in background)
+      _loadTrendingGames();
+    } catch (e) {
+      debugPrint('Error loading popular games: $e');
+      if (mounted) {
+        setState(() => _isLoadingPopular = false);
+      }
+    }
+  }
+
+  Future<void> _loadTrendingGames() async {
+    try {
+      final result =
+          await ref.read(gameNotifierProvider.notifier).loadPopularGames();
+      result.whenData((games) {
+        if (mounted && games.isNotEmpty) {
+          setState(() {
+            // Merge with existing popular games, dedupe by slug
+            final allGames = [..._popularGames, ...games];
+            final Map<String, Game> deduped = {};
+            for (final game in allGames) {
+              deduped[game.slug] = game;
+            }
+            _popularGames = deduped.values.take(20).toList();
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('Error loading trending games: $e');
+    }
+  }
+
+  void _toggleGameSelection(Game game) {
+    if (widget.isDisplayOnly) return;
+
+    HapticFeedback.selectionClick();
+
+    setState(() {
+      final index = _selectedGames.indexWhere((g) => g.slug == game.slug);
+
+      if (index != -1) {
+        // Remove game
+        _selectedGames.removeAt(index);
+
+        // If this was the primary game, set a new primary
+        if (_primaryGameSlug == game.slug) {
+          _primaryGameSlug =
+              _selectedGames.isNotEmpty ? _selectedGames.first.slug : null;
+          widget.onPrimaryGameChanged?.call(_primaryGameSlug ?? '');
+        }
+      } else {
+        // Add game
+        if (widget.allowMultipleSelect) {
+          if (widget.maxSelections != null &&
+              _selectedGames.length >= widget.maxSelections!) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Maximum ${widget.maxSelections} games allowed'),
+                backgroundColor: Theme.of(context).colorScheme.error,
               ),
-              textAlign: TextAlign.center,
-            ),
+            );
+            return;
+          }
+          _selectedGames.add(game);
+
+          // First selected game becomes primary in onboarding
+          if (widget.isOnboarding && _selectedGames.length == 1) {
+            _primaryGameSlug = game.slug;
+            widget.onPrimaryGameChanged?.call(_primaryGameSlug!);
+          }
+
+          widget.onGamesSelected?.call(_selectedGames);
+        } else {
+          // Single select
+          _selectedGames = [game];
+
+          if (widget.isPrivateLobby) {
+            // Create private lobby for chat
+            _createPrivateLobby(game);
+          } else if (widget.showMaxSpotSelector) {
+            widget.onGameWithSpotsSelected?.call(game.name, _maxSpots);
+          } else {
+            widget.onGameSelected?.call(game);
+          }
+        }
+      }
+    });
+  }
+
+  void _setPrimaryGame(String slug) {
+    if (widget.isDisplayOnly || !widget.isOnboarding) return;
+
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _primaryGameSlug = slug;
+    });
+    widget.onPrimaryGameChanged?.call(slug);
+  }
+
+  Future<void> _createPrivateLobby(Game game) async {
+    if (widget.chatGroupId == null) return;
+
+    try {
+      await ref.read(ln.lobbyNotifierProvider.notifier).createLobby(
+            chatGroupId: widget.chatGroupId!,
+            gameName: game.name,
+            maxSpots: _maxSpots,
+            isPublic: false,
+          );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Private lobby created for ${game.name}!'),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
+        );
+        widget.onLobbyCreated?.call(game.name, _maxSpots);
+        Navigator.of(context).pop(); // Close the sheet
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to create lobby: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showSearch() async {
+    final selectedGame = await GameSearchDelegate.show(
+      context,
+      ref: ref,
+      multiSelect: widget.allowMultipleSelect,
+      selectedGames: _selectedGames,
+      maxSelections: widget.maxSelections,
+    );
+
+    if (selectedGame != null) {
+      _toggleGameSelection(selectedGame);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final userAsync = ref.watch(userNotifierProvider);
+    final pinnedGames = userAsync.maybeWhen(
+      data: (userState) => (userState?.pinnedGames ?? <String>[])
+          .map((e) => e.toString())
+          .toList(),
+      orElse: () => <String>[],
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          if (widget.header != null)
+            widget.header!
+          else
+            _buildDefaultHeader(theme),
+
+          const SizedBox(height: 16),
+
+          // Max spots selector (for chat lobby creation)
+          if (widget.showMaxSpotSelector) _buildMaxSpotSelector(theme),
+
+          // Search button
+          if (widget.showSearchButton) ...[
+            _buildSearchButton(theme),
+            const SizedBox(height: 16),
           ],
+
+          // Pinned games section
+          if (widget.showPinnedGames && pinnedGames.isNotEmpty) ...[
+            _buildPinnedGamesSection(theme, pinnedGames),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 16),
+          ],
+
+          // Popular games section
+          _buildPopularGamesSection(theme),
+
+          // Footer
+          if (widget.footer != null) ...[
+            const SizedBox(height: 16),
+            widget.footer!,
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultHeader(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.title ?? 'Select Game',
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        if (widget.subtitle != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            widget.subtitle!,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMaxSpotSelector(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          Text(
+            'Max Spots:',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Slider(
+              value: _maxSpots.toDouble(),
+              min: 2,
+              max: 12,
+              divisions: 10,
+              label: _maxSpots.toString(),
+              onChanged: (value) {
+                setState(() => _maxSpots = value.toInt());
+              },
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _maxSpots.toString(),
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchButton(ThemeData theme) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _showSearch,
+        icon: Icon(Icons.search, color: theme.colorScheme.primary),
+        label: Text(
+          'Search IGDB',
+          style: TextStyle(color: theme.colorScheme.primary),
+        ),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          side: BorderSide(color: theme.colorScheme.primary),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
     );
   }
 
-  IconData _getGameIcon(String gameName) {
-    switch (gameName.toLowerCase()) {
-      case 'warzone':
-        return Icons.public;
-      case 'modern warfare':
-        return Icons.gps_fixed;
-      case 'black ops':
-        return Icons.visibility;
-      default:
-        return Icons.games;
+  Widget _buildPinnedGamesSection(ThemeData theme, List<String> pinnedGames) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.push_pin, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              'Pinned Games',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: pinnedGames.map((gameName) {
+            // Convert string to Game object
+            final game = Game(
+              name: gameName,
+              slug: gameName.toLowerCase().replaceAll(' ', '-'),
+              igdbId: null,
+              coverUrl: null,
+              summary: null,
+              firstReleaseDate: null,
+              genres: [],
+              platforms: [],
+              maxSpots: null,
+              isCached: false,
+              cachedAt: null,
+            );
+            final isSelected = _selectedGames.any((g) => g.slug == game.slug);
+            final isPrimary = _primaryGameSlug == game.slug;
+
+            return GameTile(
+              game: game,
+              isSelected: isSelected,
+              isPrimary: isPrimary,
+              style: widget.tileStyle,
+              onTap: () => _toggleGameSelection(game),
+              onLongPress:
+                  widget.isOnboarding ? () => _setPrimaryGame(game.slug) : null,
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPopularGamesSection(ThemeData theme) {
+    if (_isLoadingPopular) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: CircularProgressIndicator(color: theme.colorScheme.primary),
+        ),
+      );
     }
+
+    if (_popularGames.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            'No games available',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.trending_up,
+                size: 18, color: theme.colorScheme.secondary),
+            const SizedBox(width: 8),
+            Text(
+              'Popular Games',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.secondary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: _popularGames.map((game) {
+            final isSelected = _selectedGames.any((g) => g.slug == game.slug);
+            final isPrimary = _primaryGameSlug == game.slug;
+
+            return GameTile(
+              game: game,
+              isSelected: isSelected,
+              isPrimary: isPrimary,
+              style: widget.tileStyle,
+              onTap: () => _toggleGameSelection(game),
+              onLongPress:
+                  widget.isOnboarding ? () => _setPrimaryGame(game.slug) : null,
+            );
+          }).toList(),
+        ),
+      ],
+    );
   }
 }

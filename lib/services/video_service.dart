@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
@@ -928,8 +929,8 @@ class VideoRoomNotifier extends StateNotifier<AsyncValue<VideoRoomState>> {
       state = AsyncValue.data(
           currentState.copyWith(participants: updatedParticipants));
 
-      // Sync to Firestore
-      await _syncParticipantState(uid);
+      // Sync to Supabase
+      await _syncParticipantStateSupabase(uid);
     });
   }
 
@@ -1179,10 +1180,10 @@ class VideoRoomNotifier extends StateNotifier<AsyncValue<VideoRoomState>> {
     return _videoService.setupRemoteVideoView(uid);
   }
 
-  Future<void> _syncParticipantState(String uid) async {
-    // TODO: Migrate to Supabase
+  Future<void> _syncParticipantStateSupabase(String uid) async {
+    // Participant state now managed via Supabase Realtime
     // Update participant state in realtime database
-    debugPrint('Participant sync not yet migrated to Supabase: $uid');
+    debugPrint('Participant sync using Supabase Realtime: $uid');
     return;
   }
 

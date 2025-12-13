@@ -72,8 +72,8 @@ abstract class IGameManager {
 
 /// Interface for squad manager
 abstract class ISquadManager {
-  Future<String> createSquad(String name);
-  Future<bool> joinSquad(String code);
+  Future<String> createLobby(String name);
+  Future<bool> joinLobby(String code);
   Future<void> leaveSquad(String squadId);
   Future<Map<String, dynamic>?> getSquadData(String squadId);
   Future<void> updateSquadData(String squadId, Map<String, dynamic> data);
@@ -180,7 +180,7 @@ abstract class ISquadDataManager {
   List<String> get peacockQueue;
   List<String> get userSquadIds;
   String? get selectedLobbyId;
-  Map<String, Map<String, dynamic>> get userSquads;
+  Map<String, Map<String, dynamic>> get userLobbies;
   Map<String, dynamic>? get currentSquad;
   List<String> get filteredMembers;
   List<String> get blockedUsers;

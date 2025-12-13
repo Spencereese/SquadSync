@@ -59,9 +59,9 @@ class GroupSettingsCard extends ConsumerWidget {
         // Circle selector
         userStateAsync.maybeWhen(
           data: (userState) => _buildCircleSelector(
-              theme, userState?.alertCircles ?? ['Squad', 'Friends', 'Public']),
+              theme, userState?.alertCircles ?? ['Lobby', 'Friends', 'Public']),
           orElse: () =>
-              _buildCircleSelector(theme, ['Squad', 'Friends', 'Public']),
+              _buildCircleSelector(theme, ['Lobby', 'Friends', 'Public']),
         ),
 
         const SizedBox(height: 16),

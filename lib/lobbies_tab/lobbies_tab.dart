@@ -10,10 +10,10 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../chat/game_selection_sheet.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
-import 'squad_dialogs.dart';
-import 'widgets/squad_grid.dart';
-import 'widgets/squad_controls.dart';
-import 'widgets/squad_header.dart';
+import 'lobby_dialogs.dart';
+import 'widgets/lobby_grid.dart';
+import 'widgets/lobby_controls.dart';
+import 'widgets/lobby_header.dart';
 import 'widgets/game_alerts_display.dart';
 
 class MembersSection extends ConsumerWidget {
@@ -146,20 +146,20 @@ class ClaimSpotFAB extends StatelessWidget {
   }
 }
 
-class SquadTab extends ConsumerStatefulWidget {
+class LobbyTab extends ConsumerStatefulWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
 
-  const SquadTab(
+  const LobbyTab(
       {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
-  ConsumerState<SquadTab> createState() => _SquadTabState();
+  ConsumerState<LobbyTab> createState() => _LobbyTabState();
 }
 
-class _SquadTabState extends ConsumerState<SquadTab> {
+class _LobbyTabState extends ConsumerState<LobbyTab> {
   @override
   void initState() {
     super.initState();
@@ -175,7 +175,7 @@ class _SquadTabState extends ConsumerState<SquadTab> {
 
   @override
   Widget build(BuildContext context) {
-    return _SquadTabContent(
+    return _LobbyTabContent(
         lobbyId: widget.lobbyId,
         gameName: widget.gameName,
         game: widget.game,
@@ -183,20 +183,20 @@ class _SquadTabState extends ConsumerState<SquadTab> {
   }
 }
 
-class _SquadTabContent extends ConsumerStatefulWidget {
+class _LobbyTabContent extends ConsumerStatefulWidget {
   final String? lobbyId;
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
 
-  const _SquadTabContent(
+  const _LobbyTabContent(
       {this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
   @override
-  _SquadTabContentState createState() => _SquadTabContentState();
+  _LobbyTabContentState createState() => _LobbyTabContentState();
 }
 
-class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
+class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
   final bool _showPeacockMembers = false;
   late BuildContext _currentContext;
   List<String> _chatGroupMembers = [];
@@ -500,7 +500,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     }
 
     switch (_circle) {
-      case 'Squad':
+      case 'Lobby':
         return _chatGroupMembers.isNotEmpty ? _chatGroupMembers : [];
       case 'Friends':
         return _friends;
@@ -616,12 +616,12 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
                   // Header with navigation and game name
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: SquadHeader(lobbyId: widget.lobbyId),
+                    child: LobbyHeader(lobbyId: widget.lobbyId),
                   ),
 
-                  // Squad content
+                  // Lobby content
                   Expanded(
-                    child: _buildSquadTabContent(squadState),
+                    child: _buildLobbyTabContent(squadState),
                   ),
                 ],
               ),
@@ -644,7 +644,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     );
   }
 
-  Widget _buildSquadTabContent(dynamic squadState) {
+  Widget _buildLobbyTabContent(dynamic squadState) {
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
@@ -687,8 +687,8 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
           ),
         ),
 
-        // Squad spots grid
-        SquadGrid(),
+        // Lobby spots grid
+        LobbyGrid(),
 
         // Peacock members section (conditionally shown)
         SliverToBoxAdapter(
@@ -702,7 +702,7 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
         ),
 
         // Action buttons (Win/Loss)
-        SquadControls(),
+        LobbyControls(),
 
         // Game alerts display
         const GameAlertsDisplay(),
@@ -752,12 +752,12 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
   }
 
   void _showBlockDialog(BuildContext context, String player, WidgetRef ref) {
-    SquadDialogs.showBlockDialog(context, player, ref);
+    LobbyDialogs.showBlockDialog(context, player, ref);
   }
 
   void _showComplaintDialog(BuildContext context,
       ScaffoldMessengerState messenger, WidgetRef ref, String player) {
-    SquadDialogs.showComplaintDialog(context, messenger, ref, player);
+    LobbyDialogs.showComplaintDialog(context, messenger, ref, player);
   }
 
   Future<void> _callSpot(BuildContext context) async {
@@ -787,8 +787,8 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     }
 
     try {
-      final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
-      await squadNotifier.callSpotForGame(availableSpot, widget.gameName!);
+      final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+      await lobbyNotifier.callSpotForGame(availableSpot, widget.gameName!);
 
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -806,8 +806,8 @@ class _SquadTabContentState extends ConsumerState<_SquadTabContent> {
     if (userId == null || widget.lobbyId == null) return;
 
     try {
-      final squadNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
-      await squadNotifier.lockPeacockSpot(
+      final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+      await lobbyNotifier.lockPeacockSpot(
           widget.lobbyId!, userId, widget.gameName!);
 
       HapticFeedback.lightImpact();

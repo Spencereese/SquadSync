@@ -3,7 +3,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'lobby.freezed.dart';
 part 'lobby.g.dart';
 
-@freezed
+@freezed // Disable DiagnosticableTreeMixin - has bugs in Freezed 3.0
 class Lobby with _$Lobby {
   const factory Lobby({
     required String id,

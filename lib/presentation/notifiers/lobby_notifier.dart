@@ -1,56 +1,207 @@
-import 'package:riverpod/riverpod.dart';
+import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
+import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/auth_service_supabase.dart';
 import 'package:squad_sync/services/supabase_service.dart';
-import '../../services/timer_service.dart';
-import '../../notification_service.dart';
+import 'package:squad_sync/services/error_handling_service.dart';
 
-class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
+import '../../notification_service.dart';
+import 'offline_first_mixin.dart';
+import 'timer_management_notifier.dart';
+import 'game_state_notifier.dart';
+
+/// Refactored LobbyNotifier - Core lobby coordination
+/// Handles:
+/// - Lobby spots management and member status tracking
+/// - Peacock queue handling
+/// - Current lobby real-time tracking
+/// - User's lobby memberships
+/// Delegates to:
+/// - TimerManagementNotifier for timer orchestration
+/// - GameStateNotifier for game selection logic
+class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   late final LobbyRepository _repository;
-  late final TimerServiceNotifier _timerService;
+  late final ErrorHandlingService _errorHandler;
+
+  StreamSubscription? _currentLobbySubscription;
+  StreamSubscription? _userLobbiesSubscription;
 
   @override
   Future<LobbyState> build() async {
     try {
-      // Get repository from provider
-      _repository = ref.read(lobbyRepositoryProvider);
-      _timerService = ref.watch(timerServiceProvider.notifier);
+      // Initialize offline-first capabilities
+      await initializeOfflineFirst();
 
-      // Load state synchronously to ensure proper loading state transition
+      // Get dependencies
+      _repository = ref.read(lobbyRepositoryProvider);
+      _errorHandler = ref.read(errorHandlingServiceProvider);
+
+      // Clean up subscriptions on dispose
+      ref.onDispose(() {
+        _currentLobbySubscription?.cancel();
+        _userLobbiesSubscription?.cancel();
+        disposeOfflineFirst();
+      });
+
+      // Load initial state
       return await _loadState();
     } catch (e) {
-      debugPrint('Error initializing squad notifier: $e');
+      debugPrint('Error initializing lobby notifier: $e');
       return LobbyState.initial();
     }
   }
 
   Future<LobbyState> _loadState() async {
     try {
-      debugPrint('SquadNotifier: Loading squad state...');
-      // Add timeout to prevent indefinite hanging
-      final state = await _repository.loadLobbyState().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          debugPrint(
-              'SquadNotifier: Load state timed out, using initial state');
-          return LobbyState.initial();
-        },
+      debugPrint('LobbyNotifier: Loading lobby state...');
+
+      // Load state with performance monitoring and retry logic
+      final initialState = await _errorHandler.withRetryAndMonitoring(
+        operation: () => _repository.loadLobbyState().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            debugPrint(
+                'LobbyNotifier: Load state timed out, using initial state');
+            return LobbyState.initial();
+          },
+        ),
+        operationName: 'loadLobbyState',
+        maxAttempts: 2,
+        slowThreshold: const Duration(milliseconds: 500),
       );
-      debugPrint('SquadNotifier: Squad state loaded successfully');
-      return state;
+
+      debugPrint('LobbyNotifier: Lobby state loaded successfully');
+
+      // Set up real-time subscriptions
+      _setupSubscriptions(initialState);
+
+      return initialState;
     } catch (e, stackTrace) {
-      debugPrint('SquadNotifier: Error loading squad state: $e');
-      debugPrint('SquadNotifier: Stack trace: $stackTrace');
+      await _errorHandler.handleError(
+        error: e,
+        operation: 'loadLobbyState',
+        stackTrace: stackTrace,
+        showSnackBar: false, // Don't show error on initial load
+      );
       return LobbyState.initial();
     }
   }
 
-  Future<void> createSquad(String name, String gameName, int maxSpots) async {
-    await _repository.createLobby(name, gameName, maxSpots);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+  /// Set up Supabase real-time subscriptions for current lobby and user lobbies
+  void _setupSubscriptions(LobbyState initialState) {
+    final currentUser = AuthServiceSupabase().currentUser;
+    if (currentUser == null) return;
+
+    // Subscribe to user's lobbies for membership tracking
+    _userLobbiesSubscription?.cancel();
+    _userLobbiesSubscription =
+        _repository.getUserLobbiesStream(currentUser.id).listen(
+      (lobbies) {
+        final currentState = state.valueOrNull;
+        if (currentState == null) return;
+
+        // Update userLobbies map and userLobbyIds list
+        final lobbiesMap = {for (var lobby in lobbies) lobby.id: lobby};
+        final lobbyIds = lobbies.map((l) => l.id).toList();
+
+        // Collect all member UIDs and display names from user's lobbies
+        final allMemberUids = <String>{};
+        final displayNames =
+            Map<String, String>.from(currentState.memberDisplayNames);
+
+        for (final lobby in lobbies) {
+          allMemberUids.addAll(lobby.memberUids);
+        }
+
+        // Update state with new lobby memberships
+        state = AsyncData(currentState.copyWith(
+          userLobbies: lobbiesMap,
+          userLobbyIds: lobbyIds,
+          lobbyMemberUids: allMemberUids.toList(),
+          memberDisplayNames: displayNames,
+        ));
+
+        debugPrint('📡 User lobbies updated: ${lobbies.length} lobbies');
+      },
+      onError: (error) {
+        debugPrint('❌ Error in user lobbies stream: $error');
+      },
+    );
+
+    // Subscribe to current lobby if one is selected
+    if (initialState.selectedLobbyId != null) {
+      _subscribeToCurrentLobby(initialState.selectedLobbyId!);
+    }
+  }
+
+  /// Subscribe to real-time updates for a specific lobby
+  void _subscribeToCurrentLobby(String lobbyId) {
+    _currentLobbySubscription?.cancel();
+    _currentLobbySubscription = _repository.getLobbyStream(lobbyId).listen(
+      (lobby) {
+        final currentState = state.valueOrNull;
+        if (currentState == null || lobby == null) return;
+
+        // Update current lobby data
+        state = AsyncData(currentState.copyWith(
+          currentLobby: lobby,
+          gameLobbySpots: {lobby.gameName: lobby.spots},
+          gameSpotTimers: {lobby.gameName: lobby.spotTimers},
+          gameStatuses: {lobby.gameName: lobby.statuses},
+        ));
+
+        // Fetch display names for any new members
+        _fetchDisplayNamesForMembers(lobby.memberUids);
+
+        debugPrint(
+            '📡 Current lobby updated: ${lobby.name} (${lobby.memberUids.length} members)');
+      },
+      onError: (error) {
+        debugPrint('❌ Error in current lobby stream: $error');
+      },
+    );
+  }
+
+  /// Fetch display names for members and update state
+  Future<void> _fetchDisplayNamesForMembers(List<String> memberUids) async {
+    final currentState = state.valueOrNull;
+    if (currentState == null) return;
+
+    final displayNames =
+        Map<String, String>.from(currentState.memberDisplayNames);
+    bool hasUpdates = false;
+
+    for (final uid in memberUids) {
+      if (!displayNames.containsKey(uid)) {
+        try {
+          final userResponse = await SupabaseService.client
+              .from('users')
+              .select('display_name')
+              .eq('uid', uid)
+              .maybeSingle();
+
+          if (userResponse != null) {
+            displayNames[uid] =
+                userResponse['display_name'] as String? ?? 'Unknown User';
+            hasUpdates = true;
+          }
+        } catch (e) {
+          debugPrint('Error fetching display name for $uid: $e');
+          displayNames[uid] = 'Unknown User';
+          hasUpdates = true;
+        }
+      }
+    }
+
+    if (hasUpdates) {
+      state =
+          AsyncData(currentState.copyWith(memberDisplayNames: displayNames));
+    }
   }
 
   /// Create a lobby linked to a chat group
@@ -127,13 +278,57 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
       state = await AsyncValue.guard(() => _repository.loadLobbyState());
 
       return lobbyId;
-    } catch (e) {
-      debugPrint('❌ Error creating lobby: $e');
+    } catch (e, stackTrace) {
+      await _errorHandler.handleError(
+        error: e,
+        operation: 'createLobby',
+        stackTrace: stackTrace,
+        showSnackBar: false, // Let caller handle UI feedback
+      );
       rethrow;
     }
   }
 
-  Future<void> joinSquad(String squadId, String userId) async {
+  /// Create a public lobby for Discovery
+  Future<String> createPublicLobby({
+    required String name,
+    required String gameName,
+    required int maxSpots,
+    String? description,
+  }) async {
+    try {
+      debugPrint(
+          '🎮 Creating public lobby: name=$name, game=$gameName, maxSpots=$maxSpots');
+
+      final lobby = await _repository.createLobby(name, gameName, maxSpots);
+      final lobbyId = lobby.id;
+
+      // Update lobby with public flag and description
+      await SupabaseService.client.from('lobbies').update({
+        'is_public': true,
+        'description': description,
+        'is_active': true,
+        'last_activity': DateTime.now().toIso8601String(),
+      }).eq('id', lobbyId);
+
+      debugPrint('✅ Public lobby created: $lobbyId');
+
+      // Reload state to include new lobby
+      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+
+      return lobbyId;
+    } catch (e, stackTrace) {
+      await _errorHandler.handleError(
+        error: e,
+        operation: 'createPublicLobby',
+        stackTrace: stackTrace,
+        showSnackBar: false, // Let caller handle UI feedback
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> joinLobby(String squadId, String userId) async {
     await _repository.joinLobby(squadId, userId);
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
   }
@@ -155,7 +350,9 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
   }
 
   Future<void> processExpiredTimers() async {
-    await _repository.processExpiredTimers();
+    // Delegate to TimerManagementNotifier
+    final timerNotifier = ref.read(timerManagementNotifierProvider.notifier);
+    await timerNotifier.processExpiredTimers();
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
   }
 
@@ -192,6 +389,10 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
           'Setting current game: ${game?['name']}, coverUrl: ${game?['coverUrl']}');
       final updatedState = currentState.value!.copyWith(currentGame: game);
       state = AsyncValue.data(updatedState);
+
+      // Sync with GameStateNotifier
+      final gameStateNotifier = ref.read(gameStateNotifierProvider.notifier);
+      await gameStateNotifier.setCurrentGame(game);
     }
   }
 
@@ -233,7 +434,7 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
                 final userResponse = await SupabaseService.client
                     .from('users')
                     .select('display_name')
-                    .eq('id', cleanUid)
+                    .eq('uid', cleanUid)
                     .maybeSingle();
 
                 if (userResponse != null) {
@@ -452,9 +653,13 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
         // Then make async calls
         try {
           await _repository.assignSpot(squadId, spotIndex, userId);
-          // Start the timer
-          await _timerService.startSpotTimer(
-              gameName, userId, const Duration(minutes: 5));
+
+          // Delegate timer management to TimerManagementNotifier
+          final timerNotifier =
+              ref.read(timerManagementNotifierProvider.notifier);
+          await timerNotifier.startSpotTimer(
+              squadId, gameName, spotIndex, userId, const Duration(minutes: 5));
+
           debugPrint('Spot claimed successfully');
 
           // Send notification to other lobby members
@@ -514,9 +719,11 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
       final authService = AuthServiceSupabase();
       final userId = authService.currentUser?.id;
       if (userId == null) return;
-      // Cancel the timer
-      final timerKey = 'spot_${gameName}_$userId';
-      await _timerService.stopTimer(timerKey);
+
+      // Delegate timer cancellation to TimerManagementNotifier
+      final timerNotifier = ref.read(timerManagementNotifierProvider.notifier);
+      await timerNotifier.stopSpotTimer(gameName, userId);
+
       // Update status to Ready
       await _repository.updateMemberStatus(
           squadState.selectedLobbyId!, userId, 'Ready');
@@ -538,8 +745,9 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
         // Cancel timer if user is removing their own spot
         final spots = squadState.gameLobbySpots[gameName] ?? [];
         if (spotIndex < spots.length && spots[spotIndex] == userId) {
-          final timerKey = 'spot_${gameName}_$userId';
-          await _timerService.stopTimer(timerKey);
+          final timerNotifier =
+              ref.read(timerManagementNotifierProvider.notifier);
+          await timerNotifier.stopSpotTimer(gameName, userId);
         }
         // Reload state
         state = await AsyncValue.guard(() => _repository.loadLobbyState());
@@ -598,16 +806,11 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
       final squadState = currentState.value!;
 
       try {
-        // Stop all active timers for this game
-        final spots = squadState.gameLobbySpots[gameName] ?? [];
-        for (int i = 0; i < spots.length; i++) {
-          final spotUid = spots[i];
-          if (spotUid != null) {
-            final timerKey =
-                'spot_${gameName}_${spotUid.replaceAll('_calling', '')}';
-            await _timerService.stopTimer(timerKey);
-          }
-        }
+        // Delegate timer reset to TimerManagementNotifier
+        final timerNotifier =
+            ref.read(timerManagementNotifierProvider.notifier);
+        await timerNotifier.resetTimersForGame(
+            gameName, squadState.gameLobbySpots);
 
         // Reload state
         state = await AsyncValue.guard(() => _repository.loadLobbyState());
@@ -711,9 +914,13 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
         final userId = authService.currentUser?.id;
         if (userId == null) return;
         await _repository.assignSpot(squadId, spotIndex, userId);
-        // Start the timer
-        await _timerService.startSpotTimer(
-            gameName, userId, const Duration(minutes: 5));
+
+        // Delegate timer management to TimerManagementNotifier
+        final timerNotifier =
+            ref.read(timerManagementNotifierProvider.notifier);
+        await timerNotifier.startSpotTimer(
+            squadId, gameName, spotIndex, userId, const Duration(minutes: 5));
+
         // Reload state
         state = await AsyncValue.guard(() => _repository.loadLobbyState());
       }
@@ -747,13 +954,125 @@ class LobbyNotifier extends AutoDisposeAsyncNotifier<LobbyState> {
     // TODO
   }
 
-  void setSelectedLobbyId(String? squadId) {
+  void setSelectedLobbyId(String? lobbyId) {
     state = state.whenData(
-        (squadState) => squadState.copyWith(selectedLobbyId: squadId));
+        (currentState) => currentState.copyWith(selectedLobbyId: lobbyId));
+
+    // Update current lobby subscription
+    if (lobbyId != null) {
+      _subscribeToCurrentLobby(lobbyId);
+    } else {
+      _currentLobbySubscription?.cancel();
+    }
+  }
+
+  // ========== Methods from CurrentLobbyNotifier ==========
+
+  /// Claim a spot in the current lobby (simplified version for CurrentLobbyNotifier compatibility)
+  Future<void> claimSpotSimple(int spotIndex) async {
+    final currentState = state.valueOrNull;
+    final lobby = currentState?.currentLobby;
+    if (lobby == null) return;
+
+    final uid = AuthServiceSupabase().currentUser?.id;
+    if (uid == null) return;
+
+    final currentClaim =
+        spotIndex < lobby.spots.length ? lobby.spots[spotIndex] : null;
+
+    // Can only claim if spot is null or already claimed by this user
+    if (currentClaim != null && currentClaim != uid) return;
+
+    // Check if within maxSpots
+    if (spotIndex >= lobby.maxSpots) return;
+
+    // Use repository to assign spot
+    await _repository.assignSpot(lobby.id, spotIndex, uid);
+  }
+
+  /// Unclaim a spot in the current lobby (simplified version for CurrentLobbyNotifier compatibility)
+  Future<void> unclaimSpotSimple(int spotIndex) async {
+    final currentState = state.valueOrNull;
+    final lobby = currentState?.currentLobby;
+    if (lobby == null) return;
+
+    final uid = AuthServiceSupabase().currentUser?.id;
+    if (uid == null) return;
+
+    final currentClaim =
+        spotIndex < lobby.spots.length ? lobby.spots[spotIndex] : null;
+
+    // Can only unclaim own spot
+    if (currentClaim != uid) return;
+
+    // Use repository to clear spot
+    await _repository.assignSpot(lobby.id, spotIndex, null);
+  }
+
+  /// Update user status in the current lobby
+  Future<void> updateStatus(String status) async {
+    final currentState = state.valueOrNull;
+    final lobby = currentState?.currentLobby;
+    if (lobby == null) return;
+
+    final uid = AuthServiceSupabase().currentUser?.id;
+    if (uid == null) return;
+
+    // Use repository to update member status
+    await _repository.updateMemberStatus(lobby.id, uid, status);
+  }
+
+  /// Update last activity timestamp for the current lobby
+  Future<void> updateLastActivity() async {
+    final currentState = state.valueOrNull;
+    final lobby = currentState?.currentLobby;
+    if (lobby == null) return;
+
+    // Track lobby activity event
+    await _repository.trackLobbyEvent('activity_update', {
+      'lobbyId': lobby.id,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Leave the current lobby
+  Future<void> leaveLobby() async {
+    final currentState = state.valueOrNull;
+    final lobby = currentState?.currentLobby;
+    if (lobby == null) return;
+
+    final uid = AuthServiceSupabase().currentUser?.id;
+    if (uid == null) return;
+
+    // Use repository to leave lobby
+    await _repository.leaveLobby(lobby.id, uid);
+
+    // Clear current lobby selection
+    setSelectedLobbyId(null);
   }
 }
 
 final lobbyNotifierProvider =
-    AutoDisposeAsyncNotifierProvider<LobbyNotifier, LobbyState>(
-  () => LobbyNotifier(),
+    AsyncNotifierProvider<LobbyNotifier, LobbyState>.new(
+  LobbyNotifier.new,
 );
+
+// ========== Compatibility Providers ==========
+
+/// Provider for current lobby ID (Riverpod 3.0 compatible)
+/// Watches lobbyNotifier's selectedLobbyId
+final currentLobbyIdProvider = Provider<String?>((ref) {
+  return ref.watch(lobbyNotifierProvider.select(
+    (asyncState) => asyncState.valueOrNull?.selectedLobbyId,
+  ));
+});
+
+/// Provider for current lobby (compatibility with old currentLobbyProvider)
+final currentLobbyProvider = Provider<AsyncValue<Lobby?>>((ref) {
+  final lobbyState = ref.watch(lobbyNotifierProvider);
+  return lobbyState.when(
+    data: (state) => AsyncData(state.currentLobby),
+    loading: () => const AsyncLoading(),
+    error: (error, stack) => AsyncError(error, stack),
+  );
+});

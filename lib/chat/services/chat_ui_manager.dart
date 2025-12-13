@@ -652,8 +652,12 @@ class ChatUIManager {
   /// Process messages for display
   void _processMessages(
       List<Message> messages, String Function(String) cleanText) {
+    // Filter out deleted messages before processing
+    final visibleMessages =
+        messages.where((message) => message.isDeleted != true).toList();
+
     // Convert messages to MessageData objects
-    final messageDataList = messages.map((message) {
+    final messageDataList = visibleMessages.map((message) {
       final json = message.toJson();
       debugPrint(
           'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", json keys: ${json.keys.toList()}');

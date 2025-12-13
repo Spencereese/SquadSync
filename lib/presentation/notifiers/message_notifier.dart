@@ -208,7 +208,9 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         .stream(primaryKey: ['id'])
         .eq('chat_id', chatGroupId)
         .order('timestamp', ascending: false)
-        .limit(100);
+        .limit(100)
+        .map((messages) =>
+            messages.where((msg) => msg['is_deleted'] != true).toList());
 
     _messagesSubscription = stream.listen(
       (data) {

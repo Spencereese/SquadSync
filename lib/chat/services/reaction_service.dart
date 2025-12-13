@@ -72,6 +72,10 @@ class ReactionService {
         }
       }
 
+      // Also update the message's reactions JSONB column for real-time UI updates
+      await _updateMessageReactionsColumn(
+          messageId, emoji, userId, existingReaction != null);
+
       HapticFeedback.lightImpact();
     } catch (e) {
       debugPrint('Error updating reaction: $e');
@@ -80,6 +84,52 @@ class ReactionService {
           SnackBar(content: Text('Failed to update reaction: ${e.toString()}')),
         );
       }
+    }
+  }
+
+  /// Update the message's reactions JSONB column
+  static Future<void> _updateMessageReactionsColumn(
+    String messageId,
+    String emoji,
+    String userId,
+    bool isRemoving,
+  ) async {
+    try {
+      // Fetch current message reactions
+      final response = await SupabaseService.client
+          .from('chat_messages')
+          .select('reactions')
+          .eq('id', messageId)
+          .single();
+
+      final Map<String, dynamic> reactions =
+          Map<String, dynamic>.from(response['reactions'] ?? {});
+
+      // Toggle reaction in JSONB
+      if (isRemoving) {
+        final List<dynamic> users = List<dynamic>.from(reactions[emoji] ?? []);
+        users.remove(userId);
+        if (users.isEmpty) {
+          reactions.remove(emoji);
+        } else {
+          reactions[emoji] = users;
+        }
+      } else {
+        final List<dynamic> users = List<dynamic>.from(reactions[emoji] ?? []);
+        if (!users.contains(userId)) {
+          users.add(userId);
+          reactions[emoji] = users;
+        }
+      }
+
+      // Update message with new reactions
+      await SupabaseService.client
+          .from('chat_messages')
+          .update({'reactions': reactions}).eq('id', messageId);
+
+      debugPrint('✅ Updated message reactions JSONB column');
+    } catch (e) {
+      debugPrint('⚠️ Failed to update message reactions column: $e');
     }
   }
 }

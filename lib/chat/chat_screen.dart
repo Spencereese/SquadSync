@@ -1180,18 +1180,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             ),
           ),
           // Chat content with new neon header
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              FocusScope.of(context).unfocus();
-              // Clear reply when tapping on chat
-              if (chatState.replyToMessage != null) {
-                ref
-                    .read(cn.chatNotifierProvider.notifier)
-                    .clearReplyToMessage();
-              }
-            },
-            child: NotificationListener<ScrollNotification>(
+          NotificationListener<ScrollNotification>(
               onNotification: (notification) {
                 // Dismiss keyboard when user starts scrolling
                 if (notification is ScrollStartNotification) {

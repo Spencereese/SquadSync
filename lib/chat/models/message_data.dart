@@ -213,27 +213,45 @@ class MessageData {
   static List<Map<String, dynamic>> _parseReactions(dynamic reactionsData) {
     if (reactionsData == null) return [];
 
-    // If it's a Map (emoji -> count), convert to List<Map<String, dynamic>>
+    // If it's a Map
     if (reactionsData is Map) {
-      return reactionsData.entries
-          .map((entry) => {
-                'emoji': entry.key.toString(),
-                'count': entry.value is int ? entry.value : 1
-              })
-          .toList();
+      final mapData = reactionsData as Map<dynamic, dynamic>;
+      if (mapData.isEmpty) return [];
+
+      // Check format by looking at first value
+      final firstValue = mapData.values.firstOrNull;
+      
+      if (firstValue is List) {
+        // New format: Map<emoji, List<userId>>
+        // Convert to List<Map<String, dynamic>> with individual user reactions
+        final List<Map<String, dynamic>> result = [];
+        for (final entry in mapData.entries) {
+          final emoji = entry.key.toString();
+          final users = entry.value as List;
+          for (final userId in users) {
+            result.add({
+              'emoji': emoji,
+              'userId': userId.toString(),
+              'reaction': emoji, // Legacy field name support
+            });
+          }
+        }
+        return result;
+      } else if (firstValue is int) {
+        // Aggregated format: Map<emoji, count>
+        return mapData.entries
+            .map((entry) => {
+                  'emoji': entry.key.toString(),
+                  'count': entry.value is int ? entry.value : 1,
+                  'reaction': entry.key.toString(), // Legacy field name support
+                })
+            .toList();
+      }
     }
 
     // If it's already a list of maps, filter and cast
     if (reactionsData is List) {
       return reactionsData.whereType<Map<String, dynamic>>().toList();
-    }
-
-    // If it's a list of dynamic, try to cast each item
-    if (reactionsData is List<dynamic>) {
-      return reactionsData
-          .where((item) => item is Map<String, dynamic>)
-          .cast<Map<String, dynamic>>()
-          .toList();
     }
 
     return [];

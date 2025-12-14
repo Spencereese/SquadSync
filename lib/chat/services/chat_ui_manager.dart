@@ -398,8 +398,6 @@ class ChatUIManager {
               onHorizontalDragUpdate: (details) {
                 // Only update if drag is mostly horizontal to avoid interfering with vertical scroll
                 if (details.delta.dx.abs() > details.delta.dy.abs()) {
-                  // Dismiss keyboard on swipe
-                  FocusScope.of(context).unfocus();
                   swipeOffset.value += details.delta.dx;
                   swipeOffset.value = swipeOffset.value.clamp(-40.0, 0.0);
                 }

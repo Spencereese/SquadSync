@@ -296,12 +296,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
                 key == 'ai_response') {
               // Only include these fields if they're the correct type
               if (key == 'reactions') {
-                if (value == null ||
-                    value is Map ||
-                    (value is List && value.isEmpty)) {
-                  // Safe to include
-                  cleanedData[key] = value;
-                }
+                // Always include reactions regardless of type - let Message.fromJson handle it
+                cleanedData[key] = value;
               } else if (key == 'metadata' ||
                   key == 'clip_data' ||
                   key == 'poll') {

@@ -48,52 +48,58 @@ class MessageTypeConverter implements JsonConverter<MessageType, dynamic> {
   dynamic toJson(MessageType object) => object.name;
 }
 
-class ReactionConverter implements JsonConverter<Map<String, int>?, dynamic> {
+class ReactionConverter implements JsonConverter<Map<String, dynamic>?, dynamic> {
   const ReactionConverter();
 
   @override
-  Map<String, int>? fromJson(dynamic json) {
+  Map<String, dynamic>? fromJson(dynamic json) {
     if (json == null) return null;
 
     try {
-      final reactionsMap = <String, int>{};
-
       if (json is Map) {
         final mapData = json as Map<dynamic, dynamic>;
         if (mapData.isEmpty) return null;
 
-        // Handle Firestore reactions format (Map<userId, reaction>)
-        for (final reaction in mapData.values) {
-          if (reaction is String && reaction.isNotEmpty) {
-            reactionsMap[reaction] = (reactionsMap[reaction] ?? 0) + 1;
-          } else if (reaction is int) {
-            // Handle direct count format (emoji -> count)
-            final key = mapData.keys
-                .firstWhere((k) => mapData[k] == reaction, orElse: () => '');
-            if (key.toString().isNotEmpty) {
-              reactionsMap[key.toString()] = reaction;
+        // Check if this is the new format: Map<emoji, List<userId>>
+        final firstValue = mapData.values.firstOrNull;
+        if (firstValue is List) {
+          // New format: emoji -> list of user IDs
+          // Preserve this format for the UI
+          return Map<String, dynamic>.from(mapData);
+        } else if (firstValue is String) {
+          // Old format: userId -> emoji, convert to aggregated counts
+          final reactionsMap = <String, int>{};
+          for (final reaction in mapData.values) {
+            if (reaction is String && reaction.isNotEmpty) {
+              reactionsMap[reaction] = (reactionsMap[reaction] ?? 0) + 1;
             }
           }
+          return reactionsMap.isEmpty ? null : reactionsMap;
+        } else if (firstValue is int) {
+          // Direct count format (emoji -> count)
+          return Map<String, dynamic>.from(mapData);
         }
       } else if (json is List<dynamic>) {
         // Handle reactions stored as a list of strings
+        final reactionsMap = <String, int>{};
         for (final reaction in json) {
           if (reaction is String && reaction.isNotEmpty) {
             reactionsMap[reaction] = (reactionsMap[reaction] ?? 0) + 1;
           }
         }
+        return reactionsMap.isEmpty ? null : reactionsMap;
       }
 
-      return reactionsMap.isEmpty ? null : reactionsMap;
+      return null;
     } catch (e) {
       // Return null if parsing fails
+      debugPrint('ReactionConverter error: $e');
       return null;
     }
   }
 
   @override
-  Map<String, dynamic>? toJson(Map<String, int>? object) {
-    // For toJson, we can just return the Map<String, int> as is, since Firestore can store it
+  Map<String, dynamic>? toJson(Map<String, dynamic>? object) {
     return object;
   }
 }
@@ -123,7 +129,7 @@ class Message with _$Message {
     @MessageTypeConverter() required MessageType messageType,
     String? mediaUrl,
     String? mediaType,
-    @ReactionConverter() Map<String, int>? reactions,
+    @ReactionConverter() Map<String, dynamic>? reactions,
     String? replyTo,
     Poll? poll,
     String? voiceNoteUrl,

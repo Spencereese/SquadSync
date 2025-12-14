@@ -126,6 +126,9 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
           memberDisplayNames: displayNames,
         ));
 
+        // Fetch display names for all collected member UIDs
+        _fetchDisplayNamesForMembers(allMemberUids.toList());
+
         debugPrint('📡 User lobbies updated: ${lobbies.length} lobbies');
       },
       onError: (error) {
@@ -167,7 +170,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     );
   }
 
-  /// Fetch display names for members and update state
+  /// Fetch display names for members and update state (private internal method)
   Future<void> _fetchDisplayNamesForMembers(List<String> memberUids) async {
     final currentState = state.valueOrNull;
     if (currentState == null) return;
@@ -202,6 +205,11 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       state =
           AsyncData(currentState.copyWith(memberDisplayNames: displayNames));
     }
+  }
+
+  /// Public method to fetch display names for a list of UIDs (for external callers like chat screen)
+  Future<void> fetchDisplayNamesForUids(List<String> uids) async {
+    await _fetchDisplayNamesForMembers(uids);
   }
 
   /// Create a lobby linked to a chat group
@@ -409,7 +417,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
             final userResponse = await SupabaseService.client
                 .from('users')
                 .select('display_name')
-                .eq('id', uid)
+                .eq('uid', uid)
                 .maybeSingle();
 
             if (userResponse != null) {

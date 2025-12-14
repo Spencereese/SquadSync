@@ -186,11 +186,11 @@ class UserNotifier extends AsyncNotifier<AppUser?> {
     await _friendsService.unmuteGame(currentState.uid, gameSlug);
   }
 
-  Future<void> startDMThread(String friendId) async {
+  Future<String?> startDMThread(String friendId) async {
     final currentState = state.value;
-    if (currentState == null) return;
+    if (currentState == null) return null;
 
-    await _friendsService.startDMThread(currentState.uid, friendId);
+    return await _friendsService.startDMThread(currentState.uid, friendId);
   }
 
   Future<void> removeFriend(String friendId) async {

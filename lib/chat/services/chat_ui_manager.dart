@@ -369,13 +369,14 @@ class ChatUIManager {
     required String? Function(dynamic) getSender,
     required int? Function(dynamic) getTimestampMs,
     required String Function(String) cleanText,
+    Map<String, String>? uidToDisplayName,
     Future<void> Function(String)?
         markAsDelivered, // Made optional for Supabase migration
   }) {
     // Process messages if needed
     if (_needsMessageProcessing ||
         messages.length != _processedMessages.length) {
-      _processMessages(messages, cleanText);
+      _processMessages(messages, cleanText, uidToDisplayName: uidToDisplayName);
     }
 
     if (_processedMessages.isEmpty) {
@@ -425,8 +426,7 @@ class ChatUIManager {
                     itemCount: _processedMessages.length +
                         (scrollController.isLoadingMore ? 1 : 0),
                     itemBuilder: (context, index) {
-                      debugPrint(
-                          'DEBUG ChatUIManager: Building item $index, processedMessages length: ${_processedMessages.length}');
+                      // Removed excessive debug logging - only log significant events
                       // Show loading indicator at the top (for loading older messages)
                       if (scrollController.isLoadingMore &&
                           index == _processedMessages.length) {
@@ -653,7 +653,8 @@ class ChatUIManager {
 
   /// Process messages for display
   void _processMessages(
-      List<Message> messages, String Function(String) cleanText) {
+      List<Message> messages, String Function(String) cleanText,
+      {Map<String, String>? uidToDisplayName}) {
     // Filter out deleted messages before processing
     final visibleMessages =
         messages.where((message) => message.isDeleted != true).toList();
@@ -663,9 +664,10 @@ class ChatUIManager {
       final json = message.toJson();
       debugPrint(
           'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", json keys: ${json.keys.toList()}');
-      final messageData = MessageData.fromMap(json);
+      final messageData =
+          MessageData.fromMap(json, uidToDisplayName: uidToDisplayName);
       debugPrint(
-          'DEBUG ChatUIManager: Created MessageData with text: "${messageData.text}", hasContent: ${messageData.hasContent}');
+          'DEBUG ChatUIManager: Created MessageData with text: "${messageData.text}", hasContent: ${messageData.hasContent}, sender: "${messageData.sender}"');
       return messageData;
     }).toList();
 

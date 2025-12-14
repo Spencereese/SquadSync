@@ -472,7 +472,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     _supabaseMessagesSubscription = null;
 
     if (_typingChannel != null) {
-      await supabase.removeChannel(_typingChannel!);
+      await SupabaseService.safeRemoveChannel(_typingChannel!);
       _typingChannel = null;
     }
 
@@ -665,12 +665,17 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
 
       // Remove existing channel first to avoid duplicates
       if (_typingChannel != null) {
-        try {
-          await supabase.removeChannel(_typingChannel!);
-        } catch (e) {
-          debugPrint('⚠️ Warning: Failed to remove old typing channel: $e');
-        }
+        await SupabaseService.safeRemoveChannel(_typingChannel!);
         _typingChannel = null;
+      }
+
+      // Clean up any orphaned typing channels for this chat
+      final channels = supabase.getChannels();
+      for (final channel in channels) {
+        if (channel.topic.contains('typing:$chatGroupId')) {
+          await SupabaseService.safeRemoveChannel(channel);
+          debugPrint('🧹 Removed orphaned typing channel: ${channel.topic}');
+        }
       }
 
       _typingChannel = supabase.channel('typing:$chatGroupId');
@@ -697,22 +702,15 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           _updateTypingIndicators(chatGroupId);
         },
       )
-          .subscribe((status, error) {
+          .subscribe((status, error) async {
         if (status == RealtimeSubscribeStatus.subscribed) {
           debugPrint(
               'MessageNotifier: Typing channel subscribed for $chatGroupId');
         } else if (status == RealtimeSubscribeStatus.channelError) {
           debugPrint('❌ MessageNotifier: Typing channel error: $error');
           // Cleanup on error - don't let this block chat functionality
-          try {
-            supabase.removeChannel(_typingChannel!).then((_) {
-              _typingChannel = null;
-            }).catchError((e) {
-              debugPrint('⚠️ Error removing failed typing channel: $e');
-              _typingChannel = null;
-            });
-          } catch (e) {
-            debugPrint('⚠️ Error in typing channel cleanup: $e');
+          if (_typingChannel != null) {
+            await SupabaseService.safeRemoveChannel(_typingChannel!);
             _typingChannel = null;
           }
         }

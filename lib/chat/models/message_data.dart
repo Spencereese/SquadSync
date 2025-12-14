@@ -55,17 +55,28 @@ class MessageData {
   }) : timestamp = timestamp ?? DateTime.now();
 
   /// Factory constructor to create MessageData from Map
-  factory MessageData.fromMap(Map<String, dynamic> data) {
+  factory MessageData.fromMap(Map<String, dynamic> data,
+      {Map<String, String>? uidToDisplayName}) {
     final id = data['id']?.toString() ?? '';
     final isAiResponse = data['isAiResponse'] ?? false;
     final senderUid =
         data['senderId'] ?? data['senderUid'] ?? data['sender_id'] ?? '';
 
+    // Resolve display name from UID using provided map
+    String resolvedSenderName;
+    if (isAiResponse && senderUid == 'grok-ai') {
+      resolvedSenderName = 'Grok 🤖';
+    } else if (uidToDisplayName != null &&
+        uidToDisplayName.containsKey(senderUid)) {
+      resolvedSenderName = uidToDisplayName[senderUid] ?? 'Unknown';
+    } else {
+      // Fallback to data fields or 'Unknown'
+      resolvedSenderName = data['sender'] ?? data['sender_name'] ?? 'Unknown';
+    }
+
     return MessageData(
       id: id,
-      sender: isAiResponse && senderUid == 'grok-ai'
-          ? 'Grok 🤖'
-          : data['sender'] ?? data['sender_name'] ?? 'Unknown',
+      sender: resolvedSenderName,
       senderUid: senderUid,
       text: _parseTextField(data, 'content') ??
           _parseTextField(data, 'text') ??

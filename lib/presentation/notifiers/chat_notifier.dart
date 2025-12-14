@@ -90,16 +90,17 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
     try {
       await future;
 
-      // Monitor channel usage
-      if (SupabaseService.isApproachingChannelLimit) {
-        debugPrint('⚠️ WARNING: Approaching Supabase channel limit');
+      // AGGRESSIVE cleanup if approaching limit
+      if (SupabaseService.activeChannelCount > 80) {
+        debugPrint(
+            '🚨 HIGH CHANNEL COUNT: ${SupabaseService.activeChannelCount}');
         SupabaseService.logChannelUsage();
 
-        // Auto-cleanup old channels if hitting limit
-        if (SupabaseService.activeChannelCount > 90) {
-          debugPrint('🧹 Auto-cleaning channels due to high count');
-          await _disposePresenceChannel();
-        }
+        // Remove ALL channels for this chat group first
+        await _cleanupAllChannelsForChat(chatGroupId);
+
+        // Give Supabase time to process removals
+        await Future.delayed(const Duration(milliseconds: 500));
       }
 
       if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
@@ -180,11 +181,8 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
         } else if (status == RealtimeSubscribeStatus.channelError) {
           debugPrint('❌ ChatNotifier: Presence channel error: $error');
           // Cleanup on error - don't let this block chat functionality
-          try {
+          if (_presenceChannel != null) {
             await SupabaseService.safeRemoveChannel(_presenceChannel!);
-          } catch (e) {
-            debugPrint('⚠️ Error in presence channel cleanup: $e');
-          } finally {
             _presenceChannel = null;
           }
         }
@@ -222,11 +220,33 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
 
   Future<void> _disposePresenceChannel() async {
     if (_presenceChannel != null) {
-      await supabase.removeChannel(_presenceChannel!);
+      await SupabaseService.safeRemoveChannel(_presenceChannel!);
       _presenceChannel = null;
     }
     _currentChatGroupId = null;
     _currentChatType = null;
+  }
+
+  /// Clean up ALL channels for a specific chat (presence, typing, messages)
+  Future<void> _cleanupAllChannelsForChat(String chatGroupId) async {
+    try {
+      final channels = supabase.getChannels();
+      final toRemove = channels.where((channel) {
+        final topic = channel.topic;
+        return topic.contains(chatGroupId) ||
+            topic.contains('presence:$chatGroupId') ||
+            topic.contains('typing:$chatGroupId');
+      }).toList();
+
+      debugPrint(
+          '🧹 Cleaning ${toRemove.length} channels for chat $chatGroupId');
+
+      for (final channel in toRemove) {
+        await SupabaseService.safeRemoveChannel(channel);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error in _cleanupAllChannelsForChat: $e');
+    }
   }
 
   // ============================================================================

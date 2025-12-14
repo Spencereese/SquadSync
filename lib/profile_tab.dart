@@ -6,12 +6,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:confetti/confetti.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'presentation/notifiers/user_notifier.dart';
 import 'presentation/notifiers/game_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
-import 'presentation/controllers/game_theme_controller.dart';
 import 'screens/add_game_screen.dart';
 import 'screens/lobby_tab_screen.dart';
 import 'screens/profile_editing_screen.dart';
@@ -39,20 +37,6 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   late ConfettiController _confettiController;
   String _gameSearchQuery = '';
 
-  // Notification settings
-  bool _pushNotifications = true;
-  bool _soundEnabled = true;
-  bool _vibrationEnabled = true;
-  bool _showPreviews = true;
-  bool _quietHoursEnabled = false;
-  TimeOfDay _quietStartTime = const TimeOfDay(hour: 22, minute: 0);
-  TimeOfDay _quietEndTime = const TimeOfDay(hour: 8, minute: 0);
-  bool _lobbyInvites = true;
-  bool _friendRequests = true;
-  bool _gameUpdates = false;
-  bool _achievementAlerts = true;
-  Set<String> _mutedGames = {};
-
   @override
   void initState() {
     super.initState();
@@ -63,7 +47,6 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     _confettiController =
         ConfettiController(duration: const Duration(seconds: 2));
     _searchController.addListener(_onSearchChanged);
-    _loadNotificationSettings();
   }
 
   void _onSearchChanged() {
@@ -283,8 +266,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
             userAsync.maybeWhen(
               data: (user) => squadAsync.maybeWhen(
                 data: (squadState) => SafeArea(
+                  bottom: false,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 24.0),
+                    padding: const EdgeInsets.fromLTRB(20.0, 0.0, 20.0, 24.0),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1077,655 +1061,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     ).animate().fadeIn(duration: 800.ms).scale(begin: Offset(0.9, 0.9));
   }
 
-  Widget _buildStatsSection() {
-    return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.cyan.withValues(alpha: 0.2),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'GAMER STATS',
-              style: GoogleFonts.robotoMono(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.cyan,
-                letterSpacing: 2,
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Placeholder for stats - will be implemented
-            _buildStatRow('Total Games', '247'),
-            _buildStatRow('Win Rate', '68.4%'),
-            _buildStatRow('Hours Played', '1,234'),
-            _buildStatRow('Current Streak', '12'),
-          ],
-        ),
-      ).animate().fadeIn(duration: 600.ms, delay: 600.ms),
-    );
-  }
-
-  Widget _buildStatRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: GoogleFonts.robotoMono(
-              fontSize: 14,
-              color: Colors.white70,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Text(
-            value,
-            style: GoogleFonts.robotoMono(
-              fontSize: 16,
-              color: Colors.cyan,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAchievementsSection() {
-    // Placeholder achievements data - in real app this would come from AchievementManager
-    final achievements = [
-      {
-        'title': 'First Win',
-        'icon': Icons.emoji_events,
-        'unlocked': true,
-        'description': 'Win your first game'
-      },
-      {
-        'title': 'Lobby Leader',
-        'icon': Icons.groups,
-        'unlocked': true,
-        'description': 'Lead 10 lobbies'
-      },
-      {
-        'title': 'Voice Veteran',
-        'icon': Icons.mic,
-        'unlocked': false,
-        'description': 'Use voice chat for 100 hours'
-      },
-      {
-        'title': 'Game Master',
-        'icon': Icons.videogame_asset,
-        'unlocked': true,
-        'description': 'Play 50 different games'
-      },
-      {
-        'title': 'Streak Master',
-        'icon': Icons.local_fire_department,
-        'unlocked': false,
-        'description': 'Win 10 games in a row'
-      },
-      {
-        'title': 'Social Butterfly',
-        'icon': Icons.people,
-        'unlocked': true,
-        'description': 'Add 20 friends'
-      },
-      {
-        'title': 'Chat Champion',
-        'icon': Icons.chat,
-        'unlocked': false,
-        'description': 'Send 1000 messages'
-      },
-      {
-        'title': 'Loyal Player',
-        'icon': Icons.loyalty,
-        'unlocked': true,
-        'description': 'Play for 30 days'
-      },
-    ];
-
-    return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.purple.withValues(alpha: 0.2),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'ACHIEVEMENTS',
-              style: GoogleFonts.robotoMono(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.purple,
-                letterSpacing: 2,
-              ),
-            ),
-            const SizedBox(height: 16),
-            GridView.count(
-              crossAxisCount: 3,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 0.85,
-              children: achievements.map((achievement) {
-                return _buildAchievementBadge(
-                  achievement['title'] as String,
-                  achievement['icon'] as IconData,
-                  achievement['unlocked'] as bool,
-                  achievement['description'] as String,
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ).animate().fadeIn(duration: 600.ms, delay: 800.ms),
-    );
-  }
-
-  Widget _buildAchievementBadge(
-      String title, IconData icon, bool unlocked, String description) {
-    return GestureDetector(
-      onTap: () => _showAchievementDialog(title, description, unlocked),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: unlocked
-              ? Colors.purple.withValues(alpha: 0.1)
-              : Colors.grey.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: unlocked
-                ? Colors.purple.withValues(alpha: 0.3)
-                : Colors.grey.withValues(alpha: 0.3),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              color: unlocked ? Colors.purple : Colors.grey,
-              size: 24,
-            ).animate(target: unlocked ? 1 : 0).scale(
-                  begin: const Offset(1.2, 1.2),
-                  end: const Offset(1.0, 1.0),
-                  duration: 500.ms,
-                  curve: Curves.elasticOut,
-                ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: GoogleFonts.robotoMono(
-                fontSize: 10,
-                color: unlocked ? Colors.white : Colors.grey,
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ).animate(target: unlocked ? 1 : 0).scale(
-            begin: const Offset(0.8, 0.8),
-            end: const Offset(1.0, 1.0),
-            duration: 500.ms,
-            curve: Curves.elasticOut,
-          ),
-    );
-  }
-
-  void _showAchievementDialog(String title, String description, bool unlocked) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          title,
-          style: GoogleFonts.robotoMono(
-            color: unlocked ? Colors.purple : Colors.grey,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        content: Text(
-          unlocked ? '$description\n\nUnlocked! 🎉' : description,
-          style: GoogleFonts.robotoMono(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'OK',
-              style: GoogleFonts.robotoMono(color: Colors.cyan),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSettingsSection() {
-    final userAsync = ref.watch(userNotifierProvider);
-    final pinnedGames = userAsync.maybeWhen(
-      data: (user) => user?.pinnedGames ?? [],
-      orElse: () => [],
-    );
-
-    return SliverToBoxAdapter(
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.orange.withValues(alpha: 0.2),
-            width: 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'SETTINGS',
-              style: GoogleFonts.robotoMono(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.orange,
-                letterSpacing: 2,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Appearance Settings Header
-            Text(
-              'Appearance',
-              style: GoogleFonts.robotoMono(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _buildThemeSettingRow(
-              'Neon Glow Effects',
-              'Enable glowing borders and animations',
-            ),
-            _buildThemeSettingRow(
-              'High Contrast Mode',
-              'Increase color contrast for better visibility',
-            ),
-
-            const Divider(height: 24, color: Colors.white24),
-
-            // Notification Settings Header
-            Text(
-              'Notifications',
-              style: GoogleFonts.robotoMono(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _buildSettingRow('Push Notifications', _pushNotifications, (val) {
-              setState(() => _pushNotifications = val);
-              _saveSetting('pushNotifications', val);
-            }),
-            _buildSettingRow('Sound', _soundEnabled, (val) {
-              setState(() => _soundEnabled = val);
-              _saveSetting('soundEnabled', val);
-            }, enabled: _pushNotifications),
-            _buildSettingRow('Vibration', _vibrationEnabled, (val) {
-              setState(() => _vibrationEnabled = val);
-              _saveSetting('vibrationEnabled', val);
-            }, enabled: _pushNotifications),
-            _buildSettingRow('Show Previews', _showPreviews, (val) {
-              setState(() => _showPreviews = val);
-              _saveSetting('showPreviews', val);
-            }, enabled: _pushNotifications),
-
-            const Divider(height: 24, color: Colors.white24),
-
-            // Alert Types
-            Text(
-              'Alert Types',
-              style: GoogleFonts.robotoMono(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _buildSettingRow('Lobby Invites', _lobbyInvites, (val) {
-              setState(() => _lobbyInvites = val);
-              _saveSetting('lobbyInvites', val);
-            }),
-            _buildSettingRow('Friend Requests', _friendRequests, (val) {
-              setState(() => _friendRequests = val);
-              _saveSetting('friendRequests', val);
-            }),
-            _buildSettingRow('Game Updates', _gameUpdates, (val) {
-              setState(() => _gameUpdates = val);
-              _saveSetting('gameUpdates', val);
-            }),
-            _buildSettingRow('Achievements', _achievementAlerts, (val) {
-              setState(() => _achievementAlerts = val);
-              _saveSetting('achievementAlerts', val);
-            }),
-
-            const Divider(height: 24, color: Colors.white24),
-
-            // Quiet Hours
-            _buildSettingRow('Quiet Hours', _quietHoursEnabled, (val) {
-              setState(() => _quietHoursEnabled = val);
-              _saveSetting('quietHoursEnabled', val);
-            }),
-            if (_quietHoursEnabled) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(left: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: () => _selectTime(context, true),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.access_time,
-                                  color: Colors.cyan, size: 16),
-                              const SizedBox(width: 8),
-                              Text(
-                                _quietStartTime.format(context),
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child:
-                          Text('to', style: TextStyle(color: Colors.white70)),
-                    ),
-                    Expanded(
-                      child: InkWell(
-                        onTap: () => _selectTime(context, false),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.access_time,
-                                  color: Colors.cyan, size: 16),
-                              const SizedBox(width: 8),
-                              Text(
-                                _quietEndTime.format(context),
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            const Divider(height: 24, color: Colors.white24),
-
-            // Game-specific muting
-            if (pinnedGames.isNotEmpty) ...[
-              Text(
-                'Muted Games',
-                style: GoogleFonts.robotoMono(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ...pinnedGames.take(3).map((game) {
-                final gameSlug = game['slug'] ?? game['name'] ?? '';
-                final isMuted = _mutedGames.contains(gameSlug);
-                return _buildSettingRow(
-                  game['name'] ?? 'Unknown',
-                  !isMuted,
-                  (val) {
-                    setState(() {
-                      if (val) {
-                        _mutedGames.remove(gameSlug);
-                      } else {
-                        _mutedGames.add(gameSlug);
-                      }
-                    });
-                  },
-                );
-              }),
-              if (pinnedGames.length > 3)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    '+ ${pinnedGames.length - 3} more games',
-                    style: GoogleFonts.robotoMono(
-                      fontSize: 12,
-                      color: Colors.white54,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
-            ],
-          ],
-        ),
-      ).animate().fadeIn(duration: 600.ms, delay: 1000.ms),
-    );
-  }
-
-  Widget _buildSettingRow(
-      String label, bool value, ValueChanged<bool>? onChanged,
-      {bool enabled = true}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.robotoMono(
-              fontSize: 14,
-              color: enabled ? Colors.white70 : Colors.white38,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: enabled ? onChanged : null,
-            activeThumbColor: Colors.orange,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildThemeSettingRow(String label, String description) {
-    return Consumer(
-      builder: (context, ref, child) {
-        final gameTheme = ref.watch(gameThemeControllerProvider);
-        final isNeonGlow = label == 'Neon Glow Effects';
-        final currentValue =
-            isNeonGlow ? gameTheme.neonGlowEnabled : gameTheme.highContrastMode;
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          label,
-                          style: GoogleFonts.robotoMono(
-                            fontSize: 14,
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          description,
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: Colors.white38,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: currentValue,
-                    onChanged: (val) {
-                      final controller =
-                          ref.read(gameThemeControllerProvider.notifier);
-                      if (isNeonGlow) {
-                        controller.toggleNeonGlow(val);
-                      } else {
-                        controller.toggleHighContrast(val);
-                      }
-                    },
-                    activeThumbColor: Theme.of(context).colorScheme.primary,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _loadNotificationSettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (mounted) {
-        setState(() {
-          _pushNotifications = prefs.getBool('pushNotifications') ?? true;
-          _soundEnabled = prefs.getBool('soundEnabled') ?? true;
-          _vibrationEnabled = prefs.getBool('vibrationEnabled') ?? true;
-          _showPreviews = prefs.getBool('showPreviews') ?? true;
-          _quietHoursEnabled = prefs.getBool('quietHoursEnabled') ?? false;
-          _lobbyInvites = prefs.getBool('lobbyInvites') ?? true;
-          _friendRequests = prefs.getBool('friendRequests') ?? true;
-          _gameUpdates = prefs.getBool('gameUpdates') ?? false;
-          _achievementAlerts = prefs.getBool('achievementAlerts') ?? true;
-
-          // Load quiet hours times
-          final quietStart = prefs.getString('quietStartTime');
-          final quietEnd = prefs.getString('quietEndTime');
-          if (quietStart != null) {
-            final parts = quietStart.split(':');
-            _quietStartTime = TimeOfDay(
-                hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-          }
-          if (quietEnd != null) {
-            final parts = quietEnd.split(':');
-            _quietEndTime = TimeOfDay(
-                hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-          }
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading notification settings: $e');
-    }
-  }
-
-  Future<void> _saveSetting(String key, dynamic value) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (value is bool) {
-        await prefs.setBool(key, value);
-      } else if (value is String) {
-        await prefs.setString(key, value);
-      }
-    } catch (e) {
-      debugPrint('Error saving setting $key: $e');
-    }
-  }
-
-  Future<void> _selectTime(BuildContext context, bool isStartTime) async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: isStartTime ? _quietStartTime : _quietEndTime,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            timePickerTheme: TimePickerThemeData(
-              backgroundColor: Theme.of(context).cardColor,
-              hourMinuteTextColor: Colors.white,
-              dialHandColor: Colors.cyan,
-              dialBackgroundColor: Colors.black26,
-              entryModeIconColor: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null && mounted) {
-      setState(() {
-        if (isStartTime) {
-          _quietStartTime = picked;
-          _saveSetting('quietStartTime', '${picked.hour}:${picked.minute}');
-        } else {
-          _quietEndTime = picked;
-          _saveSetting('quietEndTime', '${picked.hour}:${picked.minute}');
-        }
-      });
-    }
-  }
+  // Removed unused settings/stats/achievements sections - these are now in dedicated screens
 
   Widget _buildQuickActionsSection() {
     return SliverToBoxAdapter(
@@ -1758,10 +1094,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               children: [
                 Flexible(
                   child: _buildQuickActionButton(
-                    'Edit Profile',
-                    Icons.edit,
+                    'Settings',
+                    Icons.settings,
                     () {
-                      // Navigate to profile editing screen
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) => const ProfileEditingScreen(),
@@ -1773,9 +1108,8 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                 Flexible(
                   child: _buildQuickActionButton(
                     'Availability',
-                    Icons.access_time,
+                    Icons.schedule,
                     () {
-                      // Navigate to availability settings
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) =>
@@ -1787,10 +1121,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                 ),
                 Flexible(
                   child: _buildQuickActionButton(
-                    'Performance',
+                    'Stats',
                     Icons.bar_chart,
                     () {
-                      // Navigate to performance stats
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) => const PerformanceStatsScreen(),
@@ -1804,21 +1137,22 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                     'Share',
                     Icons.share,
                     () async {
-                      // TODO: Implement share functionality
                       try {
                         await Share.share(
                           'Check out my SquadSync profile! Join me for some gaming fun.',
                         );
                       } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Sharing not available on this platform',
-                              style: GoogleFonts.robotoMono(),
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Sharing not available',
+                                style: GoogleFonts.robotoMono(),
+                              ),
+                              backgroundColor: Colors.red,
                             ),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
+                          );
+                        }
                       }
                     },
                   ),
@@ -1917,11 +1251,13 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
+            icon: const Icon(Icons.settings_outlined, color: Colors.white),
+            tooltip: 'Settings',
             onPressed: () {
+              // Navigate to dedicated settings screen
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (context) => const AvailabilitySettingsScreen(),
+                  builder: (context) => const ProfileEditingScreen(),
                 ),
               );
             },
@@ -1941,13 +1277,10 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                 _buildHeroHeader(),
                 _buildStatsCards(),
                 _buildPinnedGamesSection(),
-                _buildStatsSection(),
-                _buildAchievementsSection(),
-                _buildSettingsSection(),
                 _buildQuickActionsSection(),
-                // Add more sections as needed
+                // Bottom padding for comfortable scrolling
                 const SliverToBoxAdapter(
-                  child: SizedBox(height: 100), // Bottom padding
+                  child: SizedBox(height: 100),
                 ),
               ],
             ),

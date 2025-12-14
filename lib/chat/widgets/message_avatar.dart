@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/user_notifier.dart';
 import '../../services/supabase_service.dart';
+import '../../services/voice_service.dart';
+import '../../services/auth_service_supabase.dart';
+import '../../domain/entities/message.dart' show ChatType;
+import '../chat_screen.dart';
 
 /// Message avatar component - displays user profile image or initials
 class MessageAvatar extends ConsumerWidget {
@@ -78,7 +82,6 @@ class _UserMenuSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final squadAsync = ref.watch(ln.lobbyNotifierProvider);
-    final userAsync = ref.watch(userNotifierProvider);
 
     return squadAsync.maybeWhen(
       data: (squadState) {
@@ -116,27 +119,27 @@ class _UserMenuSheet extends ConsumerWidget {
                         context,
                         icon: Icons.videocam,
                         label: 'Video Call',
-                        onTap: () {
-                          // TODO: Implement video call
+                        onTap: () async {
                           Navigator.pop(context);
+                          await _startVideoCall(context, ref, uid, userName);
                         },
                       ),
                       _buildMenuItem(
                         context,
                         icon: Icons.call,
                         label: 'Audio Call',
-                        onTap: () {
-                          // TODO: Implement audio call
+                        onTap: () async {
                           Navigator.pop(context);
+                          await _startAudioCall(context, ref, uid, userName);
                         },
                       ),
                       _buildMenuItem(
                         context,
                         icon: Icons.message,
                         label: 'Message',
-                        onTap: () {
-                          // TODO: Open 1-on-1 message
+                        onTap: () async {
                           Navigator.pop(context);
+                          await _openDirectMessage(context, ref, uid, userName);
                         },
                       ),
                       _buildMenuItem(
@@ -418,5 +421,182 @@ class _UserMenuSheet extends ConsumerWidget {
     return url.startsWith('http')
         ? url
         : 'https://storage.googleapis.com/lobbiesync-media/$url';
+  }
+
+  /// Start a video call with the user
+  Future<void> _startVideoCall(BuildContext context, WidgetRef ref,
+      String targetUid, String targetName) async {
+    try {
+      final voiceService = ref.read(voiceServiceProvider);
+      final currentUser = AuthServiceSupabase().currentUser;
+
+      if (currentUser == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('You must be logged in to make calls')),
+          );
+        }
+        return;
+      }
+
+      // Generate unique channel name for 1-on-1 call
+      final users = [currentUser.id, targetUid]..sort();
+      final channelName = 'video_${users[0]}_${users[1]}';
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Starting video call with $targetName...')),
+        );
+      }
+
+      // Initialize and join voice channel
+      final initResult = await voiceService.initializeEngine(context: context);
+      if (!initResult.isSuccess) {
+        throw Exception(
+            initResult.errorMessage ?? 'Failed to initialize voice service');
+      }
+
+      final joinResult = await voiceService.joinChannel(channelName);
+      if (!joinResult.isSuccess) {
+        throw Exception(joinResult.errorMessage ?? 'Failed to join call');
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Video call with $targetName started'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start video call: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Start an audio call with the user
+  Future<void> _startAudioCall(BuildContext context, WidgetRef ref,
+      String targetUid, String targetName) async {
+    try {
+      final voiceService = ref.read(voiceServiceProvider);
+      final currentUser = AuthServiceSupabase().currentUser;
+
+      if (currentUser == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('You must be logged in to make calls')),
+          );
+        }
+        return;
+      }
+
+      // Generate unique channel name for 1-on-1 call
+      final users = [currentUser.id, targetUid]..sort();
+      final channelName = 'audio_${users[0]}_${users[1]}';
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Starting audio call with $targetName...')),
+        );
+      }
+
+      // Initialize and join voice channel
+      final initResult = await voiceService.initializeEngine(context: context);
+      if (!initResult.isSuccess) {
+        throw Exception(
+            initResult.errorMessage ?? 'Failed to initialize voice service');
+      }
+
+      final joinResult = await voiceService.joinChannel(channelName);
+      if (!joinResult.isSuccess) {
+        throw Exception(joinResult.errorMessage ?? 'Failed to join call');
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Audio call with $targetName started'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start audio call: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Open direct message with the user
+  Future<void> _openDirectMessage(BuildContext context, WidgetRef ref,
+      String targetUid, String targetName) async {
+    try {
+      final currentUser = AuthServiceSupabase().currentUser;
+
+      if (currentUser == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('You must be logged in to send messages')),
+          );
+        }
+        return;
+      }
+
+      // Show loading indicator
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Opening conversation...'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+
+      // Start DM thread (creates chat group if needed)
+      final dmId = await ref
+          .read(userNotifierProvider.notifier)
+          .startDMThread(targetUid);
+
+      if (dmId == null) {
+        throw Exception('Failed to create DM thread');
+      }
+
+      // Navigate to chat screen
+      if (context.mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatGroupId: dmId,
+              chatGroupName: targetName,
+              chatType: ChatType.dm,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to open message: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

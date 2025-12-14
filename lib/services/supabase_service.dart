@@ -177,20 +177,60 @@ class SupabaseService {
   static Future<void> safeRemoveChannel(RealtimeChannel channel) async {
     try {
       await client.removeChannel(channel);
+      debugPrint('✅ Removed channel: ${channel.topic}');
     } catch (e) {
-      debugPrint('⚠️ Error removing channel: $e');
+      debugPrint('⚠️ Error removing channel ${channel.topic}: $e');
       // Don't throw - this is cleanup, failures are acceptable
+    }
+  }
+
+  /// Proactively clean up channels approaching rate limit
+  /// Returns number of channels cleaned
+  static Future<int> cleanupOldChannels() async {
+    try {
+      final channels = client.getChannels();
+
+      if (channels.length < 80) {
+        return 0; // No cleanup needed
+      }
+
+      debugPrint('🧹 Proactive cleanup: ${channels.length} channels detected');
+
+      // Remove channels that look old or duplicate
+      int cleaned = 0;
+      for (final channel in channels) {
+        // Remove if topic suggests it's old (can be refined based on your naming)
+        if (channel.socket.conn == null) {
+          // Disconnected channels
+          await safeRemoveChannel(channel);
+          cleaned++;
+        }
+      }
+
+      if (cleaned > 0) {
+        debugPrint('✅ Cleaned $cleaned old channels');
+      }
+
+      return cleaned;
+    } catch (e) {
+      debugPrint('⚠️ Error during proactive cleanup: $e');
+      return 0;
     }
   }
 
   /// Dispose of real-time subscriptions
   /// Call this when cleaning up
-  static void dispose() {
+  static Future<void> dispose() async {
     try {
       // Clean up any active subscriptions
       final count = activeChannelCount;
       debugPrint('🧹 Cleaning up $count active channels');
-      client.removeAllChannels();
+
+      final channels = client.getChannels();
+      for (final channel in channels) {
+        await safeRemoveChannel(channel);
+      }
+
       debugPrint('✅ Cleaned up all channels');
     } catch (e) {
       debugPrint('⚠️ Error during channel cleanup: $e');

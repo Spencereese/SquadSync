@@ -35,86 +35,75 @@ class NeonChatAppBar extends StatelessWidget {
     final theme = Theme.of(context);
     final neonColor = theme.colorScheme.primary;
 
-    return SliverAppBar(
-      pinned: false,
-      floating: true,
-      elevation: 0,
-      backgroundColor: Colors.transparent,
-      automaticallyImplyLeading: false,
-      expandedHeight: 100,
-      collapsedHeight: 100,
-      shadowColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      forceElevated: false,
-      flexibleSpace: Container(
-        decoration: const BoxDecoration(
-          color: Colors.transparent,
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Stack(
-              children: [
-                // Center: Avatar + Lobby Name (tappable) - positioned absolutely in center
-                Center(
-                  child: GestureDetector(
-                    onTap: onCenterTapped,
-                    behavior: HitTestBehavior.opaque,
-                    child: _CenterAvatarStack(
-                      squadId: squadId,
-                      squadName: squadName,
-                      avatarUrl: avatarUrl,
-                      neonColor: neonColor,
-                    ),
+    return Container(
+      height: 100,
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Stack(
+            children: [
+              // Center: Avatar + Lobby Name (tappable) - positioned absolutely in center
+              Center(
+                child: GestureDetector(
+                  onTap: onCenterTapped,
+                  behavior: HitTestBehavior.opaque,
+                  child: _CenterAvatarStack(
+                    squadId: squadId,
+                    squadName: squadName,
+                    avatarUrl: avatarUrl,
+                    neonColor: neonColor,
                   ),
                 ),
+              ),
 
-                // Left and Right buttons in a Row for proper positioning
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Left: Back button in glass bubble
-                    _GlassCircleButton(
-                      icon: Icons.chevron_left,
-                      onPressed: onBackPressed,
-                      neonColor: neonColor,
-                    ),
+              // Left and Right buttons in a Row for proper positioning
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Left: Back button in glass bubble
+                  _GlassCircleButton(
+                    icon: Icons.chevron_left,
+                    onPressed: onBackPressed,
+                    neonColor: neonColor,
+                  ),
 
-                    // Right: Gamepad button (lobby creation) + Voice chat button
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (onGamepadPressed != null)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: _GlassCircleButton(
-                              icon: Icons.gamepad,
-                              onPressed: onGamepadPressed!,
-                              neonColor: neonColor,
-                            ),
+                  // Right: Gamepad button (lobby creation) + Voice chat button
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (onGamepadPressed != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _GlassCircleButton(
+                            icon: Icons.gamepad,
+                            onPressed: onGamepadPressed!,
+                            neonColor: neonColor,
                           ),
-                        _GlassCircleButton(
-                          icon: Icons.headset,
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => VoiceRoomScreen(
-                                  roomId: squadId,
-                                  squadName: squadName,
-                                ),
-                              ),
-                            );
-                          },
-                          neonColor: neonColor,
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                      _GlassCircleButton(
+                        icon: Icons.headset,
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VoiceRoomScreen(
+                                roomId: squadId,
+                                squadName: squadName,
+                              ),
+                            ),
+                          );
+                        },
+                        neonColor: neonColor,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),

@@ -463,7 +463,8 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
           debugPrint('🔸 Overlay background tapped, dismissing');
           _dismissOverlays();
         },
-        behavior: HitTestBehavior.opaque, // Changed from translucent
+        behavior: HitTestBehavior
+            .translucent, // Allow taps to pass through to reactions bar
         child: Container(
           color: Colors.transparent,
           child: Stack(
@@ -507,8 +508,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     if (floatingOffset != 0.0) {
       Overlay.of(context).insert(messageBubbleOverlay);
     }
-    Overlay.of(context).insert(reactionsOverlay);
+    // Insert menu overlay first, then reactions on top so reactions can capture taps
     Overlay.of(context).insert(menuOverlay);
+    Overlay.of(context).insert(reactionsOverlay);
     debugPrint('✅ Overlays inserted successfully');
   }
 
@@ -1283,109 +1285,111 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
   }
 
   void _showReactionDetails(String tappedEmoji) {
-    final RenderBox? renderBox =
-        _messageKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
+    // Group reactions by emoji with user lists
+    final reactionsByEmoji = <String, List<String>>{};
 
-    final messagePosition = renderBox.localToGlobal(Offset.zero);
-    final messageSize = renderBox.size;
+    for (final reaction in _messageData.reactions) {
+      final emoji = reaction['emoji']?.toString() ??
+          reaction['reaction']?.toString() ??
+          '';
+      final userId = reaction['userId']?.toString() ?? '';
 
-    // Filter reactions to only show those with the tapped emoji
-    final emojiReactions = _messageData.reactions
-        .where((reaction) => reaction['reaction'] == tappedEmoji)
-        .toList();
+      if (emoji.isNotEmpty && userId.isNotEmpty) {
+        reactionsByEmoji.putIfAbsent(emoji, () => []).add(userId);
+      }
+    }
 
-    // Create overlay showing reaction details at top center
-    final detailsOverlay = OverlayEntry(
-      builder: (context) => Positioned(
-        top: MediaQuery.of(context).padding.top + 20,
-        left: 0,
-        right: 0,
-        child: Material(
-          color: Colors.transparent,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.symmetric(horizontal: 32),
+    if (reactionsByEmoji.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.8),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Show the emoji
-                  Text(
-                    tappedEmoji,
-                    style: const TextStyle(fontSize: 32),
-                  ),
-                  const SizedBox(height: 8),
-                  // Show avatars of people who reacted
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: emojiReactions.map((reaction) {
-                      final userId = reaction['userId'];
-                      final displayName = ref.watch(userNotifierProvider.select(
-                          (asyncValue) =>
-                              ref
-                                  .read(userNotifierProvider.notifier)
-                                  .getDisplayNameForUid(userId) ??
-                              userId?.toString() ??
-                              '?'));
-                      return Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[600],
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Center(
-                          child: Text(
-                            displayName.isNotEmpty
-                                ? displayName[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-          ),
+            // Title
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Reactions',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Reactions list
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: reactionsByEmoji.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final emoji = reactionsByEmoji.keys.elementAt(index);
+                  final userIds = reactionsByEmoji[emoji]!;
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Row(
+                      children: [
+                        // Emoji
+                        Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 28),
+                        ),
+                        const SizedBox(width: 16),
+                        // User names
+                        Expanded(
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: userIds.map((userId) {
+                              final displayName = ref
+                                      .read(userNotifierProvider.notifier)
+                                      .getDisplayNameForUid(userId) ??
+                                  userId;
+                              return Chip(
+                                label: Text(
+                                  displayName,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 0,
+                                ),
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
-
-    // Show details overlay
-    Overlay.of(context).insert(detailsOverlay);
-
-    // Auto-dismiss after 2 seconds and show reactions bar
-    Future.delayed(const Duration(seconds: 2), () {
-      detailsOverlay.remove();
-
-      // Reopen reactions bar
-      late final OverlayEntry reactionsOverlay;
-      reactionsOverlay = OverlayEntry(
-        builder: (context) => IMessageReactionsBar(
-          messageId: _messageData.id,
-          chatGroupId: widget.chatGroupId,
-          chatType: widget.chatType,
-          isOutgoing: widget.isMe,
-          onDismiss: () {
-            reactionsOverlay.remove();
-          },
-          messagePosition: messagePosition,
-          messageSize: messageSize,
-        ),
-      );
-      Overlay.of(context).insert(reactionsOverlay);
-    });
   }
 
   void _showSmartReplyBottomSheet() {

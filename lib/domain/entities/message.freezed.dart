@@ -26,7 +26,7 @@ mixin _$Message {
   String? get mediaUrl => throw _privateConstructorUsedError;
   String? get mediaType => throw _privateConstructorUsedError;
   @ReactionConverter()
-  Map<String, int>? get reactions => throw _privateConstructorUsedError;
+  Map<String, dynamic>? get reactions => throw _privateConstructorUsedError;
   String? get replyTo => throw _privateConstructorUsedError;
   Poll? get poll => throw _privateConstructorUsedError;
   String? get voiceNoteUrl => throw _privateConstructorUsedError;
@@ -60,7 +60,7 @@ abstract class $MessageCopyWith<$Res> {
       @MessageTypeConverter() MessageType messageType,
       String? mediaUrl,
       String? mediaType,
-      @ReactionConverter() Map<String, int>? reactions,
+      @ReactionConverter() Map<String, dynamic>? reactions,
       String? replyTo,
       Poll? poll,
       String? voiceNoteUrl,
@@ -141,7 +141,7 @@ class _$MessageCopyWithImpl<$Res, $Val extends Message>
       reactions: freezed == reactions
           ? _value.reactions
           : reactions // ignore: cast_nullable_to_non_nullable
-              as Map<String, int>?,
+              as Map<String, dynamic>?,
       replyTo: freezed == replyTo
           ? _value.replyTo
           : replyTo // ignore: cast_nullable_to_non_nullable
@@ -205,7 +205,7 @@ abstract class _$$MessageImplCopyWith<$Res> implements $MessageCopyWith<$Res> {
       @MessageTypeConverter() MessageType messageType,
       String? mediaUrl,
       String? mediaType,
-      @ReactionConverter() Map<String, int>? reactions,
+      @ReactionConverter() Map<String, dynamic>? reactions,
       String? replyTo,
       Poll? poll,
       String? voiceNoteUrl,
@@ -284,7 +284,7 @@ class __$$MessageImplCopyWithImpl<$Res>
       reactions: freezed == reactions
           ? _value._reactions
           : reactions // ignore: cast_nullable_to_non_nullable
-              as Map<String, int>?,
+              as Map<String, dynamic>?,
       replyTo: freezed == replyTo
           ? _value.replyTo
           : replyTo // ignore: cast_nullable_to_non_nullable
@@ -344,7 +344,7 @@ class _$MessageImpl extends _Message with DiagnosticableTreeMixin {
       @MessageTypeConverter() required this.messageType,
       this.mediaUrl,
       this.mediaType,
-      @ReactionConverter() final Map<String, int>? reactions,
+      @ReactionConverter() final Map<String, dynamic>? reactions,
       this.replyTo,
       this.poll,
       this.voiceNoteUrl,
@@ -377,10 +377,10 @@ class _$MessageImpl extends _Message with DiagnosticableTreeMixin {
   final String? mediaUrl;
   @override
   final String? mediaType;
-  final Map<String, int>? _reactions;
+  final Map<String, dynamic>? _reactions;
   @override
   @ReactionConverter()
-  Map<String, int>? get reactions {
+  Map<String, dynamic>? get reactions {
     final value = _reactions;
     if (value == null) return null;
     if (_reactions is EqualUnmodifiableMapView) return _reactions;
@@ -541,7 +541,7 @@ abstract class _Message extends Message {
       @MessageTypeConverter() required final MessageType messageType,
       final String? mediaUrl,
       final String? mediaType,
-      @ReactionConverter() final Map<String, int>? reactions,
+      @ReactionConverter() final Map<String, dynamic>? reactions,
       final String? replyTo,
       final Poll? poll,
       final String? voiceNoteUrl,
@@ -573,7 +573,7 @@ abstract class _Message extends Message {
   String? get mediaType;
   @override
   @ReactionConverter()
-  Map<String, int>? get reactions;
+  Map<String, dynamic>? get reactions;
   @override
   String? get replyTo;
   @override

@@ -48,7 +48,8 @@ class MessageTypeConverter implements JsonConverter<MessageType, dynamic> {
   dynamic toJson(MessageType object) => object.name;
 }
 
-class ReactionConverter implements JsonConverter<Map<String, dynamic>?, dynamic> {
+class ReactionConverter
+    implements JsonConverter<Map<String, dynamic>?, dynamic> {
   const ReactionConverter();
 
   @override
@@ -248,6 +249,9 @@ class Message with _$Message {
 
   Map<String, dynamic> toJson() {
     // Use snake_case for Supabase compatibility
+    final reactionsJson = const ReactionConverter().toJson(reactions);
+    debugPrint(
+        '💬 Message.toJson for $id: reactions field = $reactions, toJson = $reactionsJson');
     return {
       'id': id,
       'sender_id': senderId,
@@ -256,7 +260,7 @@ class Message with _$Message {
       'message_type': const MessageTypeConverter().toJson(messageType),
       'media_url': mediaUrl,
       'media_type': mediaType,
-      'reactions': const ReactionConverter().toJson(reactions),
+      'reactions': reactionsJson,
       'reply_to': replyTo,
       'poll': poll?.toJson(),
       'voice_note_url': voiceNoteUrl,

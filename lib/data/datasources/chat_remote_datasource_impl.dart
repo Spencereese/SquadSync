@@ -214,12 +214,18 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         .eq('id', messageId)
         .single();
 
-    final currentReactions =
+    final Map<String, dynamic> reactions =
         Map<String, dynamic>.from(response['reactions'] ?? {});
-    currentReactions[userId] = reaction;
+
+    // New format: Map<emoji, List<userId>>
+    final List<dynamic> users = List<dynamic>.from(reactions[reaction] ?? []);
+    if (!users.contains(userId)) {
+      users.add(userId);
+      reactions[reaction] = users;
+    }
 
     await _supabase.from('chat_messages').update({
-      'reactions': currentReactions,
+      'reactions': reactions,
     }).eq('id', messageId);
   }
 
@@ -233,12 +239,20 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         .eq('id', messageId)
         .single();
 
-    final currentReactions =
+    final Map<String, dynamic> reactions =
         Map<String, dynamic>.from(response['reactions'] ?? {});
-    currentReactions.remove(userId);
+
+    // New format: Map<emoji, List<userId>>
+    final List<dynamic> users = List<dynamic>.from(reactions[reaction] ?? []);
+    users.remove(userId);
+    if (users.isEmpty) {
+      reactions.remove(reaction);
+    } else {
+      reactions[reaction] = users;
+    }
 
     await _supabase.from('chat_messages').update({
-      'reactions': currentReactions,
+      'reactions': reactions,
     }).eq('id', messageId);
   }
 

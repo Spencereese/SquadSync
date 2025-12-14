@@ -1179,174 +1179,191 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               ),
             ),
           ),
-          // Chat content with new neon header
-          NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                // Dismiss keyboard when user starts scrolling
-                if (notification is ScrollStartNotification) {
-                  FocusScope.of(context).unfocus();
-                }
-                return false;
-              },
-              child: Column(
-                children: [
-                  // New NeonChatAppBar - PINNED at top
-                  NeonChatAppBar(
-                    squadId: widget.chatGroupId ?? 'unknown',
-                    squadName: _chatName,
-                    avatarUrl: _chatImageUrl,
-                    onBackPressed: () {
-                      if (Navigator.canPop(context)) {
-                        Navigator.of(context).pop();
-                      }
-                    },
-                    onGamepadPressed: isUserGroup ? _handleLobbyCreation : null,
-                    onCenterTapped: () {
-                      // Open ChatInfoScreen with hero animation
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ChatInfoScreen(
-                            squadId: widget.chatGroupId ?? 'unknown',
-                            squadName: _chatName,
-                            avatarUrl: _chatImageUrl,
-                            chatType: widget.chatType,
-                            members: squadStateData.globalStatuses.entries
-                                .map((e) => {
-                                      'uid': e.key,
-                                      'name': squadStateData
-                                              .memberDisplayNames[e.key] ??
-                                          'Unknown',
-                                    })
-                                .toList(),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  // Lobby Selector Dropdown (for multiple lobbies per chat group)
-                  if (isUserGroup && widget.chatGroupId != null)
-                    _buildLobbySelector(),
-                  Expanded(
-                    child: CustomScrollView(
-                      controller: _scrollController,
-                      slivers: [
-                        // Active Lobby Header Card (if needed)
-                        SliverToBoxAdapter(
-                          child: _uiManager.buildActiveLobbyHeader(context,
-                              chatGroupId: widget.chatGroupId),
-                        ),
-                        // Messages List as SliverFillRemaining
-                        SliverFillRemaining(
-                          hasScrollBody: true,
-                          child: ref.watch(cn.chatNotifierProvider).when(
-                                data: (chatStateData) {
-                                  final messages = chatStateData
-                                          .chatMessages[widget.chatGroupId] ??
-                                      [];
-
-                                  // Fetch display names for message senders
-                                  _fetchDisplayNamesForMessages(messages);
-
-                                  return _uiManager.buildMessagesList(
-                                    ref: ref,
-                                    chatGroupId: widget.chatGroupId,
-                                    chatType: widget.chatType,
-                                    scrollController: _scrollControllerService,
-                                    messages: messages,
-                                    onMessageLongPress:
-                                        () {}, // Will be implemented
-                                    onMessageTap: () {}, // Will be implemented
-                                    getSender: _getSender,
-                                    getTimestampMs: _getTimestampMs,
-                                    cleanText: _cleanText,
-                                    uidToDisplayName:
-                                        squadStateData.memberDisplayNames,
-                                    // markAsDelivered removed - Supabase inserts are immediate
-                                  );
-                                },
-                                loading: () => const Center(
-                                    child: CircularProgressIndicator()),
-                                error: (error, stack) => Center(
-                                    child:
-                                        Text('Error loading messages: $error')),
-                              ),
-                        ),
-                      ],
-                    ), // End CustomScrollView
-                  ), // End Expanded
-                  // Input Bar Area - OUTSIDE CustomScrollView
-                  AnimatedOpacity(
-                    opacity: isKeyboardVisible ? 1.0 : 0.9,
-                    duration: const Duration(milliseconds: 200),
-                    child: Container(
-                      color: Colors.transparent,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Reply preview if exists
-                            if (chatState.replyToMessage != null)
-                              _uiManager.buildReplyPreview(
-                                context,
-                                chatState,
-                                squadStateData,
-                                widget.chatType,
-                                () => ref
-                                    .read(cn.chatNotifierProvider.notifier)
-                                    .clearReplyToMessage(),
-                              ),
-                            // Input bar
-                            Semantics(
-                              label: 'Chat input bar',
-                              child: ChatInputBar(
-                                controller: _messageController,
-                                focusNode: _inputFocusNode,
-                                isRecording: chatState.isRecording,
-                                isUploading: chatState.isUploading,
-                                onSend: () => _sendMessage(
-                                    chatState.replyToMessage, squadStateData),
-                                onMedia: _sendMedia,
-                                onRecordStart: _startRecording,
-                                onRecordStop: _stopRecording,
-                                onPlusMenu: () => _showPlusMenu(context),
-                                onTextChanged: (value) {
-                                  _typingManager.onTextChanged(
-                                    value,
-                                    ref,
-                                    chatGroupId: widget.chatGroupId,
-                                  );
-                                },
-                                quickReactionEmoji:
-                                    chatState.quickReactionEmoji,
-                                hintText: chatState.replyToMessage != null
-                                    ? 'Reply'
-                                    : 'Message',
-                              ),
+          // Chat content with app bar positioned above scroll content
+          Stack(
+            children: [
+              // Scrollable content with top padding
+              Padding(
+                padding: const EdgeInsets.only(top: 100),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    // Dismiss keyboard when user starts scrolling
+                    if (notification is ScrollStartNotification) {
+                      FocusScope.of(context).unfocus();
+                    }
+                    return false;
+                  },
+                  child: Column(
+                    children: [
+                      // Lobby Selector Dropdown (for multiple lobbies per chat group)
+                      if (isUserGroup && widget.chatGroupId != null)
+                        _buildLobbySelector(),
+                      Expanded(
+                        child: CustomScrollView(
+                          controller: _scrollController,
+                          slivers: [
+                            // Active Lobby Header Card (if needed)
+                            SliverToBoxAdapter(
+                              child: _uiManager.buildActiveLobbyHeader(context,
+                                  chatGroupId: widget.chatGroupId),
                             ),
-                            // Add bottom padding for keyboard and iPhone home indicator
-                            SizedBox(
-                              height: isKeyboardVisible
-                                  ? 8.0
-                                  : 8.0 +
-                                      (MediaQuery.of(context)
-                                              .viewPadding
-                                              .bottom /
-                                          2),
+                            // Messages List as SliverFillRemaining
+                            SliverFillRemaining(
+                              hasScrollBody: true,
+                              child: ref.watch(cn.chatNotifierProvider).when(
+                                    data: (chatStateData) {
+                                      final messages =
+                                          chatStateData.chatMessages[
+                                                  widget.chatGroupId] ??
+                                              [];
+
+                                      // Fetch display names for message senders
+                                      _fetchDisplayNamesForMessages(messages);
+
+                                      return _uiManager.buildMessagesList(
+                                        ref: ref,
+                                        chatGroupId: widget.chatGroupId,
+                                        chatType: widget.chatType,
+                                        scrollController:
+                                            _scrollControllerService,
+                                        messages: messages,
+                                        onMessageLongPress:
+                                            () {}, // Will be implemented
+                                        onMessageTap:
+                                            () {}, // Will be implemented
+                                        getSender: _getSender,
+                                        getTimestampMs: _getTimestampMs,
+                                        cleanText: _cleanText,
+                                        uidToDisplayName:
+                                            squadStateData.memberDisplayNames,
+                                        // markAsDelivered removed - Supabase inserts are immediate
+                                      );
+                                    },
+                                    loading: () => const Center(
+                                        child: CircularProgressIndicator()),
+                                    error: (error, stack) => Center(
+                                        child: Text(
+                                            'Error loading messages: $error')),
+                                  ),
                             ),
                           ],
+                        ), // End CustomScrollView
+                      ), // End Expanded
+                      // Input Bar Area - OUTSIDE CustomScrollView
+                      AnimatedOpacity(
+                        opacity: isKeyboardVisible ? 1.0 : 0.9,
+                        duration: const Duration(milliseconds: 200),
+                        child: Container(
+                          color: Colors.transparent,
+                          child: Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Reply preview if exists
+                                if (chatState.replyToMessage != null)
+                                  _uiManager.buildReplyPreview(
+                                    context,
+                                    chatState,
+                                    squadStateData,
+                                    widget.chatType,
+                                    () => ref
+                                        .read(cn.chatNotifierProvider.notifier)
+                                        .clearReplyToMessage(),
+                                  ),
+                                // Input bar
+                                Semantics(
+                                  label: 'Chat input bar',
+                                  child: ChatInputBar(
+                                    controller: _messageController,
+                                    focusNode: _inputFocusNode,
+                                    isRecording: chatState.isRecording,
+                                    isUploading: chatState.isUploading,
+                                    onSend: () => _sendMessage(
+                                        chatState.replyToMessage,
+                                        squadStateData),
+                                    onMedia: _sendMedia,
+                                    onRecordStart: _startRecording,
+                                    onRecordStop: _stopRecording,
+                                    onPlusMenu: () => _showPlusMenu(context),
+                                    onTextChanged: (value) {
+                                      _typingManager.onTextChanged(
+                                        value,
+                                        ref,
+                                        chatGroupId: widget.chatGroupId,
+                                      );
+                                    },
+                                    quickReactionEmoji:
+                                        chatState.quickReactionEmoji,
+                                    hintText: chatState.replyToMessage != null
+                                        ? 'Reply'
+                                        : 'Message',
+                                  ),
+                                ),
+                                // Add bottom padding for keyboard and iPhone home indicator
+                                SizedBox(
+                                  height: isKeyboardVisible
+                                      ? 8.0
+                                      : 8.0 +
+                                          (MediaQuery.of(context)
+                                                  .viewPadding
+                                                  .bottom /
+                                              2),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ], // End Column children
-              ), // End Column
-            ), // End NotificationListener
-          ), // End GestureDetector
-        ],
-      ),
-    );
+                    ], // End Column children
+                  ), // End Column
+                ), // End NotificationListener
+              ), // End Padding
+              // App bar positioned at top of Stack
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: NeonChatAppBar(
+                  squadId: widget.chatGroupId ?? 'unknown',
+                  squadName: _chatName,
+                  avatarUrl: _chatImageUrl,
+                  onBackPressed: () {
+                    if (Navigator.canPop(context)) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  onGamepadPressed: isUserGroup ? _handleLobbyCreation : null,
+                  onCenterTapped: () {
+                    // Open ChatInfoScreen with hero animation
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ChatInfoScreen(
+                          squadId: widget.chatGroupId ?? 'unknown',
+                          squadName: _chatName,
+                          avatarUrl: _chatImageUrl,
+                          chatType: widget.chatType,
+                          members: squadStateData.globalStatuses.entries
+                              .map((e) => {
+                                    'uid': e.key,
+                                    'name': squadStateData
+                                            .memberDisplayNames[e.key] ??
+                                        'Unknown',
+                                  })
+                              .toList(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ], // End inner Stack children
+          ), // End inner Stack
+        ], // End outer Stack children
+      ), // End outer Stack
+    ); // End AnimatedPadding
   }
 
   Widget _buildBackgroundDecoration(Map<String, dynamic> background) {

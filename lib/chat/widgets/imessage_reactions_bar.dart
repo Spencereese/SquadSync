@@ -192,32 +192,6 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
 
     return Stack(
       children: [
-        // Background tap to dismiss
-        GestureDetector(
-          onTap: _dismiss,
-          child: Container(
-            color: Colors.transparent,
-            width: screenSize.width,
-            height: screenSize.height,
-          ),
-        ),
-
-        // Reactions bar
-        Positioned(
-          top: finalBarTop,
-          left: barLeft,
-          child: AnimatedBuilder(
-            animation: _animationController,
-            builder: (context, child) => Transform.scale(
-              scale: _scaleAnimation.value,
-              child: Opacity(
-                opacity: _fadeAnimation.value,
-                child: _buildReactionsPill(barWidth),
-              ),
-            ),
-          ),
-        ),
-
         // Visual connector (grey smiley) - positioned closer to message bubble and moved up
         Positioned(
           top: widget.messagePosition.dy +
@@ -233,6 +207,32 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
             builder: (context, child) => Opacity(
               opacity: _fadeAnimation.value,
               child: _buildConnector(),
+            ),
+          ),
+        ),
+
+        // Reactions bar - LAST (top layer) so emoji buttons receive taps
+        Positioned(
+          top: finalBarTop,
+          left: barLeft,
+          child: IgnorePointer(
+            ignoring: false,
+            child: AnimatedBuilder(
+              animation: _animationController,
+              builder: (context, child) => Transform.scale(
+                scale: _scaleAnimation.value,
+                child: Opacity(
+                  opacity: _fadeAnimation.value,
+                  child: GestureDetector(
+                    onTap: () {
+                      debugPrint(
+                          '🔹 Reactions pill background tapped (absorbing to prevent dismiss)');
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: _buildReactionsPill(barWidth),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -284,7 +284,10 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
                       final emoji = _commonEmojis[index];
                       return _buildEmojiButton(
                         emoji,
-                        onTap: () => _addReaction(emoji),
+                        onTap: () {
+                          debugPrint('🎯 Emoji button tapped: $emoji');
+                          _addReaction(emoji);
+                        },
                       );
                     },
                   ),

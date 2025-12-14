@@ -15,7 +15,9 @@ class ReactionService {
   ) async {
     try {
       debugPrint(
-          'ReactionService.addReaction called with emoji=$emoji, messageId=$messageId');
+          '🔥🔥🔥 ReactionService.addReaction CALLED with emoji=$emoji, messageId=$messageId');
+      debugPrint(
+          '🔥 chatGroupId=$chatGroupId, chatType=$chatType, squadId=$squadId');
 
       final userId = AuthServiceSupabase().currentUser?.id;
       if (userId == null || messageId.isEmpty || emoji.isEmpty) {
@@ -125,12 +127,14 @@ class ReactionService {
         }
       }
 
+      debugPrint('💬 Updating message $messageId reactions to: $reactions');
+
       // Update message with new reactions
       await SupabaseService.client
           .from('chat_messages')
           .update({'reactions': reactions}).eq('id', messageId);
 
-      debugPrint('✅ Updated message reactions JSONB column');
+      debugPrint('✅ Updated message reactions JSONB column: $reactions');
     } catch (e) {
       debugPrint('⚠️ Failed to update message reactions column: $e');
     }

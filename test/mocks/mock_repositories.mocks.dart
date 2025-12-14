@@ -2635,6 +2635,37 @@ class MockMessageService extends _i1.Mock implements _i9.MessageService {
       ) as _i11.Future<void>);
 
   @override
+  _i11.Future<_i9.MessageSendResult> bumpMessage({
+    required String? messageId,
+    required String? chatGroupId,
+    required _i4.ChatType? chatType,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #bumpMessage,
+          [],
+          {
+            #messageId: messageId,
+            #chatGroupId: chatGroupId,
+            #chatType: chatType,
+          },
+        ),
+        returnValue:
+            _i11.Future<_i9.MessageSendResult>.value(_FakeMessageSendResult_10(
+          this,
+          Invocation.method(
+            #bumpMessage,
+            [],
+            {
+              #messageId: messageId,
+              #chatGroupId: chatGroupId,
+              #chatType: chatType,
+            },
+          ),
+        )),
+      ) as _i11.Future<_i9.MessageSendResult>);
+
+  @override
   void dispose() => super.noSuchMethod(
         Invocation.method(
           #dispose,

@@ -396,7 +396,7 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
                 final lastMessageTime = group['last_message_time'] as String?;
                 final memberCount = (group['member_count'] as int?) ?? 0;
                 final isPublic = (group['is_public'] as bool?) ?? false;
-                final imageUrl = group['image_url'] as String?;
+                final imageUrl = group['avatar_url'] as String?;
 
                 // Fetch last message details from chat_groups
                 return FutureBuilder<Map<String, dynamic>?>(
@@ -523,11 +523,29 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      onTap: () {
+      onTap: () async {
         // Navigate to chat screen for this group
         debugPrint('DEBUG UserGroupsTab: Tapping on user group $groupId');
-        if (groupId != null && groupId.isNotEmpty) {
-          Navigator.of(context).push(
+        if (groupId == null || groupId.isEmpty) {
+          debugPrint('ERROR: groupId is null or empty, cannot navigate');
+          return;
+        }
+
+        try {
+          // Load messages for this group first
+          debugPrint('Loading messages for group: $groupId');
+          await ref
+              .read(cn.chatNotifierProvider.notifier)
+              .loadMessages(groupId);
+
+          if (!context.mounted) {
+            debugPrint('Context not mounted, aborting navigation');
+            return;
+          }
+
+          debugPrint(
+              'Navigating to ChatScreen for group: $groupName ($groupId)');
+          await Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => ChatScreen(
                 chatType: ChatType.userGroup,
@@ -536,6 +554,17 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
               ),
             ),
           );
+          debugPrint('Returned from ChatScreen');
+        } catch (e) {
+          debugPrint('ERROR navigating to chat: $e');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to open chat: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       },
       onLongPress: () {

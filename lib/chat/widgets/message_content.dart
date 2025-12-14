@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/auth_service_supabase.dart';
+import '../../services/supabase_service.dart';
 import '../link_preview.dart';
 import '../widgets/video_message.dart';
 import '../widgets/audio_message.dart';
 import '../poll_message_bubble.dart';
 import '../../models/poll.dart';
 import '../../services/poll_service.dart';
-import '../models/message_data.dart';
+import '../models/message_data.dart' hide MessageType;
 import '../../domain/entities/message.dart' hide Poll;
 import '../../services/message_service.dart';
-import '../message_bubble.dart';
+import '../../presentation/notifiers/chat_notifier.dart' as cn;
 
 /// Message content renderer - handles text, media, and special formatting
-class MessageContent extends StatelessWidget {
+class MessageContent extends ConsumerWidget {
   final MessageData message;
   final bool isFromCurrentUser;
   final VoidCallback? onMediaTap;
@@ -34,9 +36,9 @@ class MessageContent extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     debugPrint(
-        'DEBUG MessageContent: Building for message "${message.text}", hasContent: ${message.hasContent}, length: ${message.text.length}');
+        'DEBUG MessageContent: Building for message "${message.text}", hasContent: ${message.hasContent}, length: ${message.text.length}, replyTo: ${message.replyTo}');
     if (!message.hasContent) {
       return const Text(
         '[Empty Message]',
@@ -55,87 +57,7 @@ class MessageContent extends StatelessWidget {
           isFromCurrentUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         if (message.replyTo?.isNotEmpty == true)
-          FutureBuilder<MessageData?>(
-            future:
-                Future.value(null), // TODO: Migrate getMessageById to Supabase
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8.0),
-                  padding: const EdgeInsets.all(8.0),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8.0),
-                    border: Border(
-                      left: BorderSide(
-                        color: Colors.grey.withValues(alpha: 0.3),
-                        width: 3.0,
-                      ),
-                    ),
-                  ),
-                  child: const Text(
-                    'Loading reply...',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                );
-              }
-
-              final repliedMessage = snapshot.data;
-              if (repliedMessage == null) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8.0),
-                  padding: const EdgeInsets.all(8.0),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8.0),
-                    border: Border(
-                      left: BorderSide(
-                        color: Colors.red.withValues(alpha: 0.3),
-                        width: 3.0,
-                      ),
-                    ),
-                  ),
-                  child: const Text(
-                    'Original message not found',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.red,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                );
-              }
-
-              // Determine if the replied message is from the current user
-              final authService = AuthServiceSupabase();
-              final currentUserUid = authService.currentUserId ?? '';
-              final isRepliedMessageFromMe =
-                  repliedMessage.senderUid == currentUserUid;
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8.0),
-                child: MessageBubble(
-                  message: repliedMessage,
-                  isMe: isRepliedMessageFromMe,
-                  showSender: false,
-                  showAvatar: !isRepliedMessageFromMe,
-                  showTimestamp: false,
-                  showReadIndicator: false,
-                  isFirstInGroup: true,
-                  isLastInGroup: true,
-                  onTap: () {},
-                  onLongPress: () {},
-                  sendingStatus: const {},
-                  chatType: chatType ?? ChatType.squad,
-                  squadId: squadId,
-                ),
-              );
-            },
-          ),
+          _buildReplyPreview(context, ref),
         if (message.text.isNotEmpty) _buildTextContent(context),
         if (message.photos.isNotEmpty) _buildImageContent(context),
         if (message.videoUrl?.isNotEmpty == true) _buildVideoContent(),
@@ -144,6 +66,242 @@ class MessageContent extends StatelessWidget {
         if (isFromCurrentUser) _buildStatusIndicators(),
       ],
     );
+  }
+
+  /// Build Messenger-style reply preview
+  Widget _buildReplyPreview(BuildContext context, WidgetRef ref) {
+    if (message.replyTo == null || chatGroupId == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Fetch the replied message from the message list
+    final chatState = ref.watch(cn.chatNotifierProvider);
+
+    return chatState.when(
+      data: (state) {
+        final messages = state.chatMessages[chatGroupId] ?? [];
+        final repliedMsg = messages.cast<Message?>().firstWhere(
+              (msg) => msg?.id == message.replyTo,
+              orElse: () => null,
+            );
+
+        if (repliedMsg == null) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8.0),
+              border: Border(
+                left: BorderSide(
+                  color: Colors.grey.withValues(alpha: 0.5),
+                  width: 3.0,
+                ),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.reply_rounded,
+                  size: 14,
+                  color: Colors.grey.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Message not found',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.withValues(alpha: 0.7),
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Messenger-style compact reply preview
+        final authService = AuthServiceSupabase();
+        final currentUserUid = authService.currentUserId ?? '';
+        final isRepliedByCurrentUser = repliedMsg.senderId == currentUserUid;
+
+        // Build the preview UI with FutureBuilder to fetch display name
+        return FutureBuilder<String?>(
+          future: isRepliedByCurrentUser
+              ? Future.value('You')
+              : SupabaseService.client
+                  .from('users')
+                  .select('display_name')
+                  .eq('uid', repliedMsg.senderId)
+                  .maybeSingle()
+                  .then((response) =>
+                      response?['display_name'] as String? ??
+                      repliedMsg.senderId),
+          builder: (context, snapshot) {
+            final resolvedDisplayName = snapshot.data ?? 'Unknown';
+
+            return GestureDetector(
+              onTap: () {
+                // TODO: Scroll to original message
+                debugPrint(
+                    'Tapped reply preview - scroll to message: ${message.replyTo}');
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8.0),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8.0),
+                  border: Border(
+                    left: BorderSide(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.7),
+                      width: 3.0,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.reply_rounded,
+                      size: 14,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.9),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            resolvedDisplayName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            repliedMsg.text.isNotEmpty
+                                ? repliedMsg.text
+                                : _getMediaTypeLabel(repliedMsg),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white.withValues(alpha: 0.8),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (repliedMsg.mediaUrl != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          color: Colors.black.withValues(alpha: 0.3),
+                        ),
+                        child: _getMediaTypeIcon(repliedMsg),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+      loading: () => Container(
+        margin: const EdgeInsets.only(bottom: 8.0),
+        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+        decoration: BoxDecoration(
+          color: Colors.grey.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8.0),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.grey.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Loading reply...',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+        ),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  String _getMediaTypeLabel(Message msg) {
+    switch (msg.messageType) {
+      case MessageType.image:
+        return '📷 Photo';
+      case MessageType.video:
+        return '🎥 Video';
+      case MessageType.audio:
+        return '🎵 Audio';
+      case MessageType.voiceNote:
+        return '🎤 Voice message';
+      case MessageType.file:
+        return '📎 File';
+      case MessageType.poll:
+        return '📊 Poll';
+      default:
+        return '[Media]';
+    }
+  }
+
+  Widget _getMediaTypeIcon(Message msg) {
+    IconData icon;
+    switch (msg.messageType) {
+      case MessageType.image:
+        icon = Icons.image;
+        break;
+      case MessageType.video:
+        icon = Icons.videocam;
+        break;
+      case MessageType.audio:
+        icon = Icons.audiotrack;
+        break;
+      case MessageType.voiceNote:
+        icon = Icons.mic;
+        break;
+      default:
+        icon = Icons.insert_drive_file;
+    }
+    return Icon(icon, color: Colors.white.withValues(alpha: 0.6), size: 20);
   }
 
   Widget _buildPollContent() {

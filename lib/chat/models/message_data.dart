@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Core message data model to replace the Map<String, dynamic> usage
 class MessageData {
   final String id;
@@ -103,7 +105,11 @@ class MessageData {
       edited: data['edited'] ?? false,
       editedAt:
           data['editedAt'] is String ? DateTime.parse(data['editedAt']) : null,
-      replyTo: data['replyTo'],
+      replyTo: (() {
+        final reply = data['replyTo'] ?? data['reply_to'];
+        debugPrint('💬 MessageData.fromMap: id=$id, replyTo field: $reply');
+        return reply;
+      })(),
       clipData: data['clipData'] != null
           ? ClipMessageData.fromJson(data['clipData'] as Map<String, dynamic>)
           : null,
@@ -211,17 +217,53 @@ class MessageData {
 
   /// Parse reactions field which can be in different formats
   static List<Map<String, dynamic>> _parseReactions(dynamic reactionsData) {
-    if (reactionsData == null) return [];
+    debugPrint(
+        '💬 _parseReactions called with: $reactionsData (type: ${reactionsData.runtimeType})');
+    if (reactionsData == null) {
+      debugPrint('💬 _parseReactions: null, returning empty list');
+      return [];
+    }
 
     // If it's a Map
     if (reactionsData is Map) {
       final mapData = reactionsData as Map<dynamic, dynamic>;
-      if (mapData.isEmpty) return [];
+      if (mapData.isEmpty) {
+        debugPrint('💬 _parseReactions: empty map, returning empty list');
+        return [];
+      }
+      debugPrint(
+          '💬 _parseReactions: processing map with ${mapData.length} entries');
 
       // Check format by looking at first value
       final firstValue = mapData.values.firstOrNull;
-      
-      if (firstValue is List) {
+
+      if (firstValue is String) {
+        // OLD format: Map<userId, emoji> - migrate to new format
+        debugPrint(
+            '💬 _parseReactions: detected OLD format (userId -> emoji), converting...');
+        final emojiToUsers = <String, List<String>>{};
+        for (final entry in mapData.entries) {
+          final userId = entry.key.toString();
+          final emoji = entry.value.toString();
+          if (emoji.isNotEmpty) {
+            emojiToUsers.putIfAbsent(emoji, () => []).add(userId);
+          }
+        }
+        // Convert to list format for UI
+        final List<Map<String, dynamic>> result = [];
+        for (final entry in emojiToUsers.entries) {
+          for (final userId in entry.value) {
+            result.add({
+              'emoji': entry.key,
+              'userId': userId,
+              'reaction': entry.key,
+            });
+          }
+        }
+        debugPrint(
+            '💬 _parseReactions: converted ${result.length} reactions from old format');
+        return result;
+      } else if (firstValue is List) {
         // New format: Map<emoji, List<userId>>
         // Convert to List<Map<String, dynamic>> with individual user reactions
         final List<Map<String, dynamic>> result = [];
@@ -236,24 +278,36 @@ class MessageData {
             });
           }
         }
+        debugPrint(
+            '💬 _parseReactions: returning ${result.length} reactions (new format)');
         return result;
       } else if (firstValue is int) {
         // Aggregated format: Map<emoji, count>
-        return mapData.entries
+        final result = mapData.entries
             .map((entry) => {
                   'emoji': entry.key.toString(),
                   'count': entry.value is int ? entry.value : 1,
                   'reaction': entry.key.toString(), // Legacy field name support
                 })
             .toList();
+        debugPrint(
+            '💬 _parseReactions: returning ${result.length} reactions (aggregated format)');
+        return result;
+      } else {
+        debugPrint(
+            '💬 _parseReactions: unknown map value type: ${firstValue.runtimeType}');
       }
     }
 
     // If it's already a list of maps, filter and cast
     if (reactionsData is List) {
-      return reactionsData.whereType<Map<String, dynamic>>().toList();
+      final result = reactionsData.whereType<Map<String, dynamic>>().toList();
+      debugPrint(
+          '💬 _parseReactions: returning ${result.length} reactions (list format)');
+      return result;
     }
 
+    debugPrint('💬 _parseReactions: returning empty list (fallthrough)');
     return [];
   }
 

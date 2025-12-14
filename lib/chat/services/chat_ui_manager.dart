@@ -661,11 +661,11 @@ class ChatUIManager {
     final messageDataList = visibleMessages.map((message) {
       final json = message.toJson();
       debugPrint(
-          'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", json keys: ${json.keys.toList()}');
+          'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", reactions in json: ${json['reactions']}');
       final messageData =
           MessageData.fromMap(json, uidToDisplayName: uidToDisplayName);
       debugPrint(
-          'DEBUG ChatUIManager: Created MessageData with text: "${messageData.text}", hasContent: ${messageData.hasContent}, sender: "${messageData.sender}"');
+          'DEBUG ChatUIManager: Created MessageData with ${messageData.reactions.length} reactions');
       return messageData;
     }).toList();
 

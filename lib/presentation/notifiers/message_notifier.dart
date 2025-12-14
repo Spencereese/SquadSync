@@ -297,6 +297,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
               // Only include these fields if they're the correct type
               if (key == 'reactions') {
                 // Always include reactions regardless of type - let Message.fromJson handle it
+                debugPrint(
+                    '💬 REACTIONS FIELD: $value (type: ${value.runtimeType})');
                 cleanedData[key] = value;
               } else if (key == 'metadata' ||
                   key == 'clip_data' ||
@@ -523,6 +525,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         chatType: chatType,
         mediaFilePath: mediaFilePath,
         mediaType: mediaType,
+        replyTo: replyTo,
       );
 
       if (result.success) {

@@ -669,7 +669,8 @@ class ChatUIManager {
       return messageData;
     }).toList();
 
-    // Sort messages by timestamp (newest first for reverse list)
+    // Sort messages by timestamp (newest first)
+    // ListView.reverse: true displays index 0 at bottom, so newest (index 0) appears at bottom
     messageDataList.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     // Mark messages that should show timestamps based on time gaps
@@ -722,14 +723,15 @@ class ChatUIManager {
       }
     }
 
-    // Sort replies within each group by timestamp
+    // Sort replies within each group by timestamp (oldest first within thread)
     for (final group in messageGroups) {
       group.replies.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     }
 
-    // Sort messages by timestamp (oldest first for display)
+    // Sort message groups by timestamp (newest first)
+    // ListView.reverse: true displays index 0 at bottom, so newest messages appear at bottom
     messageGroups.sort((a, b) =>
-        a.parentMessage.timestamp.compareTo(b.parentMessage.timestamp));
+        b.parentMessage.timestamp.compareTo(a.parentMessage.timestamp));
 
     _processedMessages = messageGroups;
     _needsMessageProcessing = false;

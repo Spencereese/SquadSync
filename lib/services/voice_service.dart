@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
@@ -15,6 +16,7 @@ import 'app_flow_manager.dart';
 import 'supabase_voice_room_service.dart';
 import '../chat/sqlite_helper.dart';
 import 'timer_service.dart'; // For sqliteHelperProvider
+import '../presentation/widgets/permission_dialog.dart';
 
 /// Riverpod provider for VoiceService singleton
 final voiceServiceProvider = Provider<VoiceService>((ref) {
@@ -412,7 +414,10 @@ class VoiceService {
   }
 
   /// Initialize Agora engine with validation
-  Future<VoiceServiceResult<void>> initializeEngine() async {
+  ///
+  /// [context] Optional BuildContext to show permission dialogs
+  Future<VoiceServiceResult<void>> initializeEngine(
+      {BuildContext? context}) async {
     try {
       // Validate Agora configuration
       final appIdResult = AgoraConfigEnhanced.getValidatedAppId();
@@ -423,8 +428,9 @@ class VoiceService {
         );
       }
 
-      // Request microphone permission
-      final permissionResult = await _requestMicrophonePermission();
+      // Request microphone permission (shows dialog if context provided)
+      final permissionResult =
+          await _requestMicrophonePermission(context: context);
       if (permissionResult.isFailure) {
         return permissionResult;
       }
@@ -446,7 +452,8 @@ class VoiceService {
     }
   }
 
-  Future<VoiceServiceResult<void>> _requestMicrophonePermission() async {
+  Future<VoiceServiceResult<void>> _requestMicrophonePermission(
+      {BuildContext? context}) async {
     PermissionStatus status = await Permission.microphone.status;
 
     if (status.isGranted) {
@@ -454,14 +461,61 @@ class VoiceService {
     }
 
     if (status.isPermanentlyDenied) {
-      // TODO: Show notification - Microphone Permission Required
-      await openAppSettings();
+      // Show dialog explaining user needs to enable in settings
+      if (context != null && context.mounted) {
+        await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Microphone Permission Required'),
+            content: const Text(
+              'Microphone access is permanently disabled for SquadSync. '
+              'Please enable it in your device settings to use voice chat.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  openAppSettings();
+                },
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        await openAppSettings();
+      }
       return VoiceServiceResult.failure(
         VoiceServiceError.permissionDenied,
         'Microphone permission permanently denied. Please enable in settings.',
       );
     }
 
+    // Show our custom dialog explaining why we need permission
+    // This shows BEFORE the system permission prompt
+    if (context != null && context.mounted) {
+      final shouldRequest = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => PermissionRationaleDialog.microphone(
+          onAllow: () {}, // Dialog will return true
+          onCancel: () => Navigator.of(context).pop(false),
+        ),
+      );
+
+      if (shouldRequest != true) {
+        return VoiceServiceResult.failure(
+          VoiceServiceError.permissionDenied,
+          'Microphone permission is required for voice chat.',
+        );
+      }
+    }
+
+    // Request permission from system (this shows the system dialog)
     status = await Permission.microphone.request();
 
     if (status.isGranted) {

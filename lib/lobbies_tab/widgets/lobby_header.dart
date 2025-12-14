@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../dialogs/settings_dialog.dart';
+import '../../widgets/unified_game_selection_sheet.dart';
+import '../../domain/entities/game.dart';
 
 /// LobbyHeader component - handles navigation and game info display
 /// Extracted from the monolithic LobbyTab to improve maintainability
@@ -101,70 +104,51 @@ class LobbyHeader extends ConsumerWidget {
     );
   }
 
-  void _showGameSelectionDialog(BuildContext context, WidgetRef ref) {
-    final TextEditingController gameController = TextEditingController();
-    Map<String, dynamic>? selectedGame; // ignore: unused_local_variable
+  void _showGameSelectionDialog(BuildContext context, WidgetRef ref) async {
+    HapticFeedback.lightImpact();
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          backgroundColor: Colors.black.withValues(alpha: 0.9),
-          title: const Text(
-            'Switch Game',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: gameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'Search for a game...',
-                    hintStyle: TextStyle(color: Colors.grey),
-                    enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.cyanAccent),
-                    ),
-                    focusedBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.cyanAccent),
-                    ),
-                  ),
-                  onChanged: (value) async {
-                    if (value.isNotEmpty) {
-                      // final gameManager = Provider.of<GameManager>(context, listen: false);
-                      // final results = await gameManager.searchGames(value);
-                      // if (results.isNotEmpty) {
-                      //   setState(() {
-                      //     selectedGame = results.first;
-                      //   });
-                      // }
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child:
-                  const Text('Cancel', style: TextStyle(color: Colors.white)),
-            ),
-            TextButton(
-              onPressed: null,
-              child: Text(
-                'Switch',
-                style: TextStyle(
-                  color: Colors.grey,
+    await UnifiedGameSelectionSheet.show(
+      context,
+      title: 'Switch Game',
+      subtitle: 'Select a different game for this lobby',
+      showPinnedGames: true,
+      showSearchButton: true,
+      showMaxSpotSelector: false,
+      onGameSelected: (Game game) async {
+        try {
+          // Update the lobby's current game
+          await ref
+              .read(ln.lobbyNotifierProvider.notifier)
+              .setCurrentGame(game.toJson());
+
+          if (context.mounted) {
+            HapticFeedback.mediumImpact();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Switched to ${game.name}'),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to switch game: $e'),
+                backgroundColor: Theme.of(context).colorScheme.error,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            );
+          }
+        }
+      },
     );
   }
 }

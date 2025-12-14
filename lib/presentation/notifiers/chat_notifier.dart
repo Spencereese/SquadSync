@@ -87,20 +87,38 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   /// Initialize chat for a specific group
   /// Delegates message streaming to MessageNotifier
   Future<void> initializeChat(String chatGroupId, ChatType chatType) async {
-    await future;
+    try {
+      await future;
 
-    if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
-      await _disposePresenceChannel();
-      _currentChatGroupId = chatGroupId;
-      _currentChatType = chatType;
+      // Monitor channel usage
+      if (SupabaseService.isApproachingChannelLimit) {
+        debugPrint('⚠️ WARNING: Approaching Supabase channel limit');
+        SupabaseService.logChannelUsage();
+
+        // Auto-cleanup old channels if hitting limit
+        if (SupabaseService.activeChannelCount > 90) {
+          debugPrint('🧹 Auto-cleaning channels due to high count');
+          await _disposePresenceChannel();
+        }
+      }
+
+      if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
+        await _disposePresenceChannel();
+        _currentChatGroupId = chatGroupId;
+        _currentChatType = chatType;
+      }
+
+      // Initialize presence tracking (await to ensure channel cleanup)
+      await _initializePresenceChannel(chatGroupId);
+
+      // Initialize message streaming via MessageNotifier
+      final messageNotifier = ref.read(messageNotifierProvider.notifier);
+      await messageNotifier.initializeMessagesStream(chatGroupId, chatType);
+    } catch (e) {
+      debugPrint('❌ ChatNotifier: Error initializing chat: $e');
+      // Don't throw - allow chat to continue without real-time features
+      // User will see cached messages but real-time updates may be degraded
     }
-
-    // Initialize presence tracking
-    _initializePresenceChannel(chatGroupId);
-
-    // Initialize message streaming via MessageNotifier
-    final messageNotifier = ref.read(messageNotifierProvider.notifier);
-    await messageNotifier.initializeMessagesStream(chatGroupId, chatType);
 
     // Load active polls via MediaNotifier (polls are stored in chat_messages.poll JSONB, not separate table)
     // Skip for now as polls table doesn't exist
@@ -120,10 +138,23 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   // PRESENCE TRACKING
   // ============================================================================
 
-  void _initializePresenceChannel(String chatGroupId) {
+  Future<void> _initializePresenceChannel(String chatGroupId) async {
     try {
       final currentUser = _authService.currentUser;
-      if (currentUser == null) return;
+      if (currentUser == null) {
+        debugPrint('⚠️ ChatNotifier: No user, skipping presence channel');
+        return;
+      }
+
+      // Remove existing channel first to avoid duplicates
+      if (_presenceChannel != null) {
+        try {
+          await supabase.removeChannel(_presenceChannel!);
+        } catch (e) {
+          debugPrint('⚠️ Warning: Failed to remove old presence channel: $e');
+        }
+        _presenceChannel = null;
+      }
 
       _presenceChannel = supabase.channel('presence:$chatGroupId');
 
@@ -146,12 +177,24 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
             'online_at': DateTime.now().toIso8601String(),
           });
           debugPrint('ChatNotifier: Presence tracking enabled');
+        } else if (status == RealtimeSubscribeStatus.channelError) {
+          debugPrint('❌ ChatNotifier: Presence channel error: $error');
+          // Cleanup on error - don't let this block chat functionality
+          try {
+            await SupabaseService.safeRemoveChannel(_presenceChannel!);
+          } catch (e) {
+            debugPrint('⚠️ Error in presence channel cleanup: $e');
+          } finally {
+            _presenceChannel = null;
+          }
         }
       });
 
       debugPrint('ChatNotifier: Presence channel initialized for $chatGroupId');
     } catch (e) {
-      debugPrint('ChatNotifier: Failed to initialize presence channel: $e');
+      debugPrint('⚠️ ChatNotifier: Failed to initialize presence channel: $e');
+      // Don't throw - presence is nice-to-have, not critical
+      _presenceChannel = null;
     }
   }
 
@@ -428,25 +471,44 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   Future<void> leaveGroup(String groupId) async {
     await future;
     await _repository.leaveGroup(groupId);
+    // Invalidate state to trigger reload
+    ref.invalidateSelf();
+    // Reload user groups to update UI
+    await loadUserGroups();
   }
 
   /// Discover public groups, optionally filtered by game
   /// Returns list ordered by member count DESC, limited to 20
+  /// Excludes groups the current user is already a member of
   Future<List<ChatGroup>> discoverGroups({String? gameFilter}) async {
     // Ensure notifier is initialized before accessing dependencies
     await future;
 
     try {
+      // Get current user's groups to filter them out
+      final currentState = state.valueOrNull ?? await future;
+      final userGroupIds = currentState.chatGroups.keys.toSet();
+
+      debugPrint(
+          '🔍 User is member of ${userGroupIds.length} groups, filtering from discovery');
+
       // Call repository to fetch public groups
       final groups = await _repository.discoverGroups(
         query: gameFilter,
         limit: 20,
       );
 
-      // Sort by member count descending
-      groups.sort((a, b) => b.memberCount.compareTo(a.memberCount));
+      // Filter out groups the user is already a member of
+      final filteredGroups =
+          groups.where((group) => !userGroupIds.contains(group.id)).toList();
 
-      return groups;
+      debugPrint(
+          '✅ Discovered ${groups.length} public groups, showing ${filteredGroups.length} after filtering');
+
+      // Sort by member count descending
+      filteredGroups.sort((a, b) => b.memberCount.compareTo(a.memberCount));
+
+      return filteredGroups;
     } catch (e, stackTrace) {
       debugPrint('Error discovering groups: $e');
       debugPrint('Stack trace: $stackTrace');

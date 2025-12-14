@@ -7,7 +7,6 @@ export 'media_service.dart';
 export 'poll_service.dart';
 export 'ai_service.dart';
 export 'igdb_auth_service.dart';
-export 'igdb_service.dart';
 export 'message_service.dart';
 export 'timer_service.dart';
 // export 'reaction_service.dart'; // File not found

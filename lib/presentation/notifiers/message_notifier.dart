@@ -152,7 +152,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     }
   }
 
-  void _startSupabaseMessagesStream(String chatGroupId, ChatType chatType) {
+  Future<void> _startSupabaseMessagesStream(
+      String chatGroupId, ChatType chatType) async {
     try {
       final currentUser = _authService.currentUser;
       if (currentUser == null) {
@@ -184,7 +185,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
             },
           );
 
-      _initializeTypingChannel(chatGroupId);
+      await _initializeTypingChannel(chatGroupId);
       debugPrint('MessageNotifier: Supabase stream initialized');
     } catch (e) {
       debugPrint('MessageNotifier: Failed to start Supabase stream: $e');
@@ -654,42 +655,75 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   // TYPING INDICATORS
   // ============================================================================
 
-  void _initializeTypingChannel(String chatGroupId) {
+  Future<void> _initializeTypingChannel(String chatGroupId) async {
     try {
       final currentUser = _authService.currentUser;
-      if (currentUser == null) return;
+      if (currentUser == null) {
+        debugPrint('⚠️ MessageNotifier: No user, skipping typing channel');
+        return;
+      }
+
+      // Remove existing channel first to avoid duplicates
+      if (_typingChannel != null) {
+        try {
+          await supabase.removeChannel(_typingChannel!);
+        } catch (e) {
+          debugPrint('⚠️ Warning: Failed to remove old typing channel: $e');
+        }
+        _typingChannel = null;
+      }
 
       _typingChannel = supabase.channel('typing:$chatGroupId');
 
       _typingChannel!
           .onBroadcast(
-            event: 'typing',
-            callback: (payload) {
-              final userId = payload['user_id'] as String?;
-              final isTyping = payload['is_typing'] as bool? ?? false;
-              final displayName =
-                  payload['display_name'] as String? ?? userId ?? 'Unknown';
+        event: 'typing',
+        callback: (payload) {
+          final userId = payload['user_id'] as String?;
+          final isTyping = payload['is_typing'] as bool? ?? false;
+          final displayName =
+              payload['display_name'] as String? ?? userId ?? 'Unknown';
 
-              debugPrint(
-                  'MessageNotifier: Typing event - $displayName: $isTyping');
+          debugPrint('MessageNotifier: Typing event - $displayName: $isTyping');
 
-              if (userId == currentUser.id) return;
+          if (userId == currentUser.id) return;
 
-              if (isTyping) {
-                _currentTypingUsers.add(displayName);
-              } else {
-                _currentTypingUsers.remove(displayName);
-              }
+          if (isTyping) {
+            _currentTypingUsers.add(displayName);
+          } else {
+            _currentTypingUsers.remove(displayName);
+          }
 
-              _updateTypingIndicators(chatGroupId);
-            },
-          )
-          .subscribe();
+          _updateTypingIndicators(chatGroupId);
+        },
+      )
+          .subscribe((status, error) {
+        if (status == RealtimeSubscribeStatus.subscribed) {
+          debugPrint(
+              'MessageNotifier: Typing channel subscribed for $chatGroupId');
+        } else if (status == RealtimeSubscribeStatus.channelError) {
+          debugPrint('❌ MessageNotifier: Typing channel error: $error');
+          // Cleanup on error - don't let this block chat functionality
+          try {
+            supabase.removeChannel(_typingChannel!).then((_) {
+              _typingChannel = null;
+            }).catchError((e) {
+              debugPrint('⚠️ Error removing failed typing channel: $e');
+              _typingChannel = null;
+            });
+          } catch (e) {
+            debugPrint('⚠️ Error in typing channel cleanup: $e');
+            _typingChannel = null;
+          }
+        }
+      });
 
       debugPrint(
           'MessageNotifier: Typing channel initialized for $chatGroupId');
     } catch (e) {
-      debugPrint('MessageNotifier: Failed to initialize typing channel: $e');
+      debugPrint('⚠️ MessageNotifier: Failed to initialize typing channel: $e');
+      // Don't throw - typing indicators are nice-to-have, not critical
+      _typingChannel = null;
     }
   }
 

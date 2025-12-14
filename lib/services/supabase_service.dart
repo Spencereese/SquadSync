@@ -157,11 +157,45 @@ class SupabaseService {
     await client.auth.signOut();
   }
 
+  /// Get active channel count
+  static int get activeChannelCount => client.getChannels().length;
+
+  /// Check if approaching channel limit
+  /// Supabase free tier typically limits to 100 channels per client
+  static bool get isApproachingChannelLimit => activeChannelCount > 80;
+
+  /// Log channel usage for debugging
+  static void logChannelUsage() {
+    final channels = client.getChannels();
+    debugPrint('🔔 Active Supabase channels: ${channels.length}');
+    if (channels.length > 50) {
+      debugPrint('⚠️ High channel count detected. Consider cleanup.');
+    }
+  }
+
+  /// Safely remove a single channel with error handling
+  static Future<void> safeRemoveChannel(RealtimeChannel channel) async {
+    try {
+      await client.removeChannel(channel);
+    } catch (e) {
+      debugPrint('⚠️ Error removing channel: $e');
+      // Don't throw - this is cleanup, failures are acceptable
+    }
+  }
+
   /// Dispose of real-time subscriptions
   /// Call this when cleaning up
   static void dispose() {
-    // Clean up any active subscriptions
-    client.removeAllChannels();
+    try {
+      // Clean up any active subscriptions
+      final count = activeChannelCount;
+      debugPrint('🧹 Cleaning up $count active channels');
+      client.removeAllChannels();
+      debugPrint('✅ Cleaned up all channels');
+    } catch (e) {
+      debugPrint('⚠️ Error during channel cleanup: $e');
+      // Don't throw - this is cleanup, failures are acceptable
+    }
   }
 }
 

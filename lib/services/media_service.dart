@@ -138,7 +138,11 @@ class MediaService {
     }
 
     try {
-      final storagePath = 'chat_media/$fileName';
+      // For profile pictures, caller should provide full path including user_uid folder
+      // For chat media, use chat_media/ prefix
+      final storagePath = fileName.startsWith('chat_media/')
+          ? fileName
+          : 'chat_media/$fileName';
       final url = await uploadMediaSupabase(
         file.path,
         storagePath,

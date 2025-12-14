@@ -85,8 +85,8 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     try {
       final voiceService = ref.read(voiceServiceProvider);
 
-      // Initialize Agora engine
-      final initResult = await voiceService.initializeEngine();
+      // Initialize Agora engine with context for permission dialog
+      final initResult = await voiceService.initializeEngine(context: context);
       if (initResult.isFailure) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -311,24 +311,113 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     return AppBar(
       backgroundColor: Colors.transparent,
       elevation: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded),
-        onPressed: _leaveRoom,
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  theme.colorScheme.surface.withOpacity(0.7),
+                  theme.colorScheme.surface.withOpacity(0.5),
+                  Colors.transparent,
+                ],
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: accentColor.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
-      title: Text(
-        'VOICE ROOM',
-        style: GoogleFonts.orbitron(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 2,
+      leading: Container(
+        margin: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withOpacity(0.3),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: accentColor.withOpacity(0.3),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: accentColor.withOpacity(0.2),
+              blurRadius: 8,
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        child: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, size: 20),
+          onPressed: _leaveRoom,
+          color: theme.colorScheme.onSurface,
+          padding: EdgeInsets.zero,
+        ),
+      ),
+      title: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: accentColor.withOpacity(0.3),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: accentColor.withOpacity(0.2),
+              blurRadius: 8,
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        child: Text(
+          'VOICE ROOM',
+          style: GoogleFonts.orbitron(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 2,
+            color: theme.colorScheme.onSurface,
+            shadows: [
+              Shadow(
+                color: accentColor.withOpacity(0.5),
+                blurRadius: 8,
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.more_vert_rounded),
-          onPressed: () {
-            // Show room options
-          },
+        Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface.withOpacity(0.3),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: accentColor.withOpacity(0.3),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accentColor.withOpacity(0.2),
+                blurRadius: 8,
+                spreadRadius: 0,
+              ),
+            ],
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.more_vert_rounded, size: 20),
+            onPressed: () {
+              // Show room options
+            },
+            color: theme.colorScheme.onSurface,
+            padding: EdgeInsets.zero,
+          ),
         ),
       ],
     );

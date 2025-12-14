@@ -145,11 +145,11 @@ class ClipService {
       }
       onProgress?.call(0.6);
 
-      // Upload video
+      // Upload video (RLS requires {user_uid}/{filename} path structure)
       _logger.i('Uploading video...');
       final videoUrl = await _uploadFile(
         compressedFile,
-        'clips/$clipId.mp4',
+        '${user.id}/$clipId.mp4',
         onProgress: (uploadProgress) {
           // Map upload progress from 0.6 to 0.8
           onProgress?.call(0.6 + (uploadProgress * 0.2));
@@ -157,11 +157,11 @@ class ClipService {
       );
       onProgress?.call(0.8);
 
-      // Upload thumbnail
+      // Upload thumbnail (RLS requires {user_uid}/{filename} path structure)
       _logger.i('Uploading thumbnail...');
       final thumbUrl = await _uploadFile(
         thumbnailFile,
-        'clips/${clipId}_thumb.jpg',
+        '${user.id}/${clipId}_thumb.jpg',
         onProgress: (uploadProgress) {
           // Map upload progress from 0.8 to 0.95
           onProgress?.call(0.8 + (uploadProgress * 0.15));
@@ -343,12 +343,20 @@ class ClipService {
   Future<void> deleteClip(String clipId) async {
     try {
       final supabase = SupabaseService.client;
+      final user = AuthServiceSupabase().currentUser;
 
-      // Delete video file
-      await supabase.storage.from('clips').remove(['$clipId.mp4']);
+      if (user == null) {
+        throw ClipProcessingException(
+            'User must be authenticated to delete clips');
+      }
 
-      // Delete thumbnail file
-      await supabase.storage.from('clips').remove(['${clipId}_thumb.jpg']);
+      // Delete video file (RLS requires {user_uid}/{filename} path)
+      await supabase.storage.from('clips').remove(['${user.id}/$clipId.mp4']);
+
+      // Delete thumbnail file (RLS requires {user_uid}/{filename} path)
+      await supabase.storage
+          .from('clips')
+          .remove(['${user.id}/${clipId}_thumb.jpg']);
 
       _logger.i('Deleted clip: $clipId');
     } catch (e) {

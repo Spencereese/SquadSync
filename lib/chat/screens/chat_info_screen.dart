@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -2370,8 +2371,17 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                 }
 
                 if (!mounted) return;
-                Navigator.pop(context); // Close info screen
+                // Navigate back to chat groups screen using GoRouter
+                if (context.mounted) {
+                  // Pop info screen first
+                  Navigator.pop(context);
+                  // Then navigate back to chats (this will also pop the ChatScreen)
+                  if (context.mounted) {
+                    context.go('/chat');
+                  }
+                }
 
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Left ${widget.squadName}'),

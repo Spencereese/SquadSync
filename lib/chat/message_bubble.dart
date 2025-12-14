@@ -304,6 +304,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
   // Overlay references for dismissal
   OverlayEntry? _reactionsOverlay;
   OverlayEntry? _menuOverlay;
+  OverlayEntry? _messageBubbleOverlay;
 
   @override
   void initState() {
@@ -339,12 +340,60 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
 
   void _dismissOverlays() {
     // Remove overlay entries if they exist
+    _messageBubbleOverlay?.remove();
     _reactionsOverlay?.remove();
     _menuOverlay?.remove();
 
     // Clear references
+    _messageBubbleOverlay = null;
     _reactionsOverlay = null;
     _menuOverlay = null;
+  }
+
+  Widget _buildFloatingMessageBubble(Size messageSize) {
+    final color =
+        widget.isMe ? const Color(0xFF007AFF) : const Color(0xFF2C2C2E);
+
+    BorderRadius getBorderRadius() {
+      if (widget.isFirstInGroup && widget.isLastInGroup)
+        return BorderRadius.circular(20);
+      if (widget.isFirstInGroup)
+        return BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+            bottomLeft: widget.isMe ? Radius.circular(20) : Radius.circular(6),
+            bottomRight:
+                widget.isMe ? Radius.circular(6) : Radius.circular(20));
+      if (widget.isLastInGroup)
+        return BorderRadius.only(
+            topLeft: widget.isMe ? Radius.circular(20) : Radius.circular(6),
+            topRight: widget.isMe ? Radius.circular(6) : Radius.circular(20),
+            bottomLeft: Radius.circular(20),
+            bottomRight: Radius.circular(20));
+      return BorderRadius.only(
+          topLeft: widget.isMe ? Radius.circular(20) : Radius.circular(6),
+          topRight: widget.isMe ? Radius.circular(6) : Radius.circular(20),
+          bottomLeft: widget.isMe ? Radius.circular(20) : Radius.circular(6),
+          bottomRight: widget.isMe ? Radius.circular(6) : Radius.circular(20));
+    }
+
+    return Container(
+      width: messageSize.width,
+      margin: const EdgeInsets.symmetric(vertical: 1.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: getBorderRadius(),
+      ),
+      child: MessageContent(
+        message: _messageData,
+        isFromCurrentUser: widget.isMe,
+        chatGroupId: widget.chatGroupId,
+        chatService: widget.chatService,
+        chatType: widget.chatType,
+        squadId: widget.squadId,
+      ),
+    );
   }
 
   void _showOverlays(
@@ -365,6 +414,26 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
 
     late final OverlayEntry reactionsOverlay;
     late final OverlayEntry menuOverlay;
+    late final OverlayEntry messageBubbleOverlay;
+
+    // Add floating message bubble overlay only if floatingOffset is active
+    if (floatingOffset != 0.0) {
+      _messageBubbleOverlay = messageBubbleOverlay = OverlayEntry(
+        builder: (overlayContext) => TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: floatingOffset),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          builder: (context, offset, child) => Positioned(
+            left: messagePosition.dx,
+            top: messagePosition.dy + offset,
+            child: Opacity(
+              opacity: 1.0,
+              child: _buildFloatingMessageBubble(messageSize),
+            ),
+          ),
+        ),
+      );
+    }
 
     _reactionsOverlay = reactionsOverlay = OverlayEntry(
       builder: (overlayContext) => Stack(
@@ -435,6 +504,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     );
 
     debugPrint('📱 Inserting overlays for message ${_messageData.id}');
+    if (floatingOffset != 0.0) {
+      Overlay.of(context).insert(messageBubbleOverlay);
+    }
     Overlay.of(context).insert(reactionsOverlay);
     Overlay.of(context).insert(menuOverlay);
     debugPrint('✅ Overlays inserted successfully');
@@ -1034,10 +1106,24 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                           _dismissOverlays();
 
                           // Call MessageService to bump the message
+                          final chatGroupId = widget.chatGroupId;
+                          if (chatGroupId == null) {
+                            if (widgetContext.mounted) {
+                              ScaffoldMessenger.of(widgetContext).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Cannot bump message: No chat group'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
                           final messageService = MessageService();
                           final result = await messageService.bumpMessage(
                             messageId: _messageData.id,
-                            chatGroupId: widget.chatGroupId,
+                            chatGroupId: chatGroupId,
                             chatType: widget.chatType,
                           );
 

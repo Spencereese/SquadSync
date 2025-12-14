@@ -157,6 +157,12 @@ class MessageService with WidgetsBindingObserver {
     // Load initial messages
     _loadInitialMessages(chatId, chatType.name);
 
+    // Cleanup existing channel first
+    if (_messageChannel != null) {
+      _messageChannel!.unsubscribe();
+      _messageChannel = null;
+    }
+
     // Subscribe to realtime updates
     _messageChannel = _supabase
         .channel('messages_$chatId')
@@ -237,7 +243,10 @@ class MessageService with WidgetsBindingObserver {
     }
 
     // Unsubscribe from previous typing channel
-    _typingChannel?.unsubscribe();
+    if (_typingChannel != null) {
+      _typingChannel!.unsubscribe();
+      _typingChannel = null;
+    }
 
     // Subscribe to realtime typing updates
     _typingChannel = _supabase

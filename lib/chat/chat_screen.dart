@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -18,8 +19,8 @@ import '../services/background_service.dart';
 import 'chat_input_bar.dart';
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
-import 'game_selection_sheet.dart';
 import 'spots_sheet.dart';
+import '../widgets/unified_game_selection_sheet.dart';
 import 'services/chat_initialization_service.dart';
 import 'services/chat_scroll_controller.dart';
 import 'services/chat_media_handler.dart';
@@ -289,17 +290,39 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             .initializeChat(chatGroupId, widget.chatType)
             .catchError((error) {
           if (mounted) {
+            // Extract user-friendly error message
+            String errorMsg = error.toString();
+            if (errorMsg.contains('ChannelRateLimitReached')) {
+              errorMsg = 'Too many connections. Cleaning up...';
+              // Auto-cleanup channels
+              SupabaseService.dispose();
+              // Auto-retry after cleanup
+              Future.delayed(const Duration(seconds: 1), () {
+                if (mounted) {
+                  ref
+                      .read(cn.chatNotifierProvider.notifier)
+                      .initializeChat(chatGroupId, widget.chatType);
+                }
+              });
+            } else if (errorMsg.contains('channelError')) {
+              errorMsg =
+                  'Connection issue. Chat will work with limited features.';
+            } else {
+              errorMsg = 'Connection issue. Retrying...';
+            }
+
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Failed to initialize chat: $error'),
-                backgroundColor: Theme.of(context).colorScheme.error,
+                content: Text(errorMsg),
+                backgroundColor: errorMsg.contains('limited features')
+                    ? Colors.orange
+                    : Theme.of(context).colorScheme.error,
+                duration: const Duration(seconds: 4),
                 action: SnackBarAction(
-                  label: 'Retry',
+                  label: 'Dismiss',
                   textColor: Colors.white,
                   onPressed: () {
-                    ref
-                        .read(cn.chatNotifierProvider.notifier)
-                        .initializeChat(chatGroupId, widget.chatType);
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   },
                 ),
               ),
@@ -567,8 +590,13 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     try {
-      await GameSelectionSheet.show(
+      await UnifiedGameSelectionSheet.show(
         context,
+        title: 'Create Lobby',
+        subtitle: 'Select a game for your private lobby',
+        showMaxSpotSelector: true,
+        showPinnedGames: true,
+        showSearchButton: true,
         isPrivateLobby: true,
         chatGroupId: widget.chatGroupId,
         onLobbyCreated: (gameName, maxSpots) {
@@ -836,10 +864,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             });
 
             return SafeArea(
-              top: true,
+              top: false,
               bottom: false,
               child: Scaffold(
                 resizeToAvoidBottomInset: false,
+                extendBodyBehindAppBar: true,
+                backgroundColor: Colors.transparent,
                 body: _buildChatContent(context, squadState, chatState),
               ),
             );
@@ -1071,8 +1101,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
     return AnimatedPadding(
       padding: EdgeInsets.only(bottom: keyboardHeight),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOutCubic,
       child: Stack(
         children: [
           // Background layer with parallax
@@ -1082,9 +1112,37 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               child: _buildBackgroundDecoration(background),
             ),
           ),
+          // Shadow gradient overlay at top for readability
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 150,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.4),
+                    Colors.black.withOpacity(0.2),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
           // Chat content with new neon header
           GestureDetector(
-            onTap: () => FocusScope.of(context).unfocus(),
+            onTap: () {
+              FocusScope.of(context).unfocus();
+              // Clear reply when tapping on chat
+              if (chatState.replyToMessage != null) {
+                ref
+                    .read(cn.chatNotifierProvider.notifier)
+                    .clearReplyToMessage();
+              }
+            },
             child: Column(
               children: [
                 Expanded(
@@ -1173,58 +1231,61 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                 AnimatedOpacity(
                   opacity: isKeyboardVisible ? 1.0 : 0.9,
                   duration: const Duration(milliseconds: 200),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Reply preview if exists
-                        if (chatState.replyToMessage != null)
-                          _uiManager.buildReplyPreview(
-                            context,
-                            chatState,
-                            squadStateData,
-                            widget.chatType,
-                            () => ref
-                                .read(cn.chatNotifierProvider.notifier)
-                                .clearReplyToMessage(),
+                  child: Container(
+                    color: Colors.transparent,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Reply preview if exists
+                          if (chatState.replyToMessage != null)
+                            _uiManager.buildReplyPreview(
+                              context,
+                              chatState,
+                              squadStateData,
+                              widget.chatType,
+                              () => ref
+                                  .read(cn.chatNotifierProvider.notifier)
+                                  .clearReplyToMessage(),
+                            ),
+                          // Input bar
+                          Semantics(
+                            label: 'Chat input bar',
+                            child: ChatInputBar(
+                              controller: _messageController,
+                              focusNode: _inputFocusNode,
+                              isRecording: chatState.isRecording,
+                              isUploading: chatState.isUploading,
+                              onSend: () => _sendMessage(
+                                  chatState.replyToMessage, squadStateData),
+                              onMedia: _sendMedia,
+                              onRecordStart: _startRecording,
+                              onRecordStop: _stopRecording,
+                              onPlusMenu: () => _showPlusMenu(context),
+                              onTextChanged: (value) {
+                                _typingManager.onTextChanged(
+                                  value,
+                                  ref,
+                                  chatGroupId: widget.chatGroupId,
+                                );
+                              },
+                              quickReactionEmoji: chatState.quickReactionEmoji,
+                              hintText: chatState.replyToMessage != null
+                                  ? 'Reply'
+                                  : 'Message',
+                            ),
                           ),
-                        // Input bar
-                        Semantics(
-                          label: 'Chat input bar',
-                          child: ChatInputBar(
-                            controller: _messageController,
-                            focusNode: _inputFocusNode,
-                            isRecording: chatState.isRecording,
-                            isUploading: chatState.isUploading,
-                            onSend: () => _sendMessage(
-                                chatState.replyToMessage, squadStateData),
-                            onMedia: _sendMedia,
-                            onRecordStart: _startRecording,
-                            onRecordStop: _stopRecording,
-                            onPlusMenu: () => _showPlusMenu(context),
-                            onTextChanged: (value) {
-                              _typingManager.onTextChanged(
-                                value,
-                                ref,
-                                chatGroupId: widget.chatGroupId,
-                              );
-                            },
-                            quickReactionEmoji: chatState.quickReactionEmoji,
-                            hintText: chatState.replyToMessage != null
-                                ? 'Reply'
-                                : 'Message',
+                          // Add bottom padding for keyboard and iPhone home indicator
+                          SizedBox(
+                            height: isKeyboardVisible
+                                ? 8.0
+                                : 8.0 +
+                                    (MediaQuery.of(context).viewPadding.bottom /
+                                        2),
                           ),
-                        ),
-                        // Add bottom padding for keyboard and iPhone home indicator
-                        SizedBox(
-                          height: isKeyboardVisible
-                              ? 8.0
-                              : 8.0 +
-                                  (MediaQuery.of(context).viewPadding.bottom /
-                                      2),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

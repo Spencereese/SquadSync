@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/app_theme.dart';
 import '../../../services/supabase_service.dart';
+import '../../../services/auth_service_supabase.dart';
 
 /// Glassmorphic circular button used throughout chat info screen
 class ChatInfoGlassCircleButton extends StatelessWidget {
@@ -353,10 +354,17 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
       );
 
       try {
+        // Get current user ID for folder structure (RLS requirement)
+        final user = AuthServiceSupabase().currentUser;
+        if (user == null) {
+          throw Exception('User not authenticated');
+        }
+
         // Upload to Supabase Storage (avatars bucket)
+        // Path MUST be {user_uid}/filename for RLS policy compliance
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final fileName = 'lobby_${squadId}_$timestamp.jpg';
-        final storagePath = 'lobby_avatars/$squadId/$fileName';
+        final storagePath = '${user.id}/$fileName';
 
         // Read file as bytes
         final bytes = await image.readAsBytes();
@@ -366,7 +374,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
         await supabase.storage.from('avatars').uploadBinary(
               storagePath,
               bytes,
-              fileOptions: FileOptions(
+              fileOptions: const FileOptions(
                 contentType: 'image/jpeg',
                 upsert: false,
               ),

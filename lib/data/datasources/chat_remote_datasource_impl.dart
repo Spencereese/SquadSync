@@ -605,10 +605,43 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     final currentMembers = List<String>.from(response['member_uids'] ?? []);
     currentMembers.remove(userId);
 
+    // Remove from chat_groups.member_uids
     await _supabase.from('chat_groups').update({
       'member_uids': currentMembers,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', groupId);
+
+    // Remove from users.user_groups JSONB field
+    try {
+      final userResponse = await _supabase
+          .from('users')
+          .select('user_groups')
+          .eq('uid', userId)
+          .maybeSingle();
+
+      if (userResponse != null) {
+        final userGroups =
+            List<Map<String, dynamic>>.from(userResponse['user_groups'] ?? []);
+        userGroups.removeWhere((g) => g['chat_group_id'] == groupId);
+
+        await _supabase.from('users').update({
+          'user_groups': userGroups,
+        }).eq('uid', userId);
+        debugPrint('✅ Removed group from users.user_groups');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to update users.user_groups (non-critical): $e');
+    }
+
+    // Delete group if no members remain
+    if (currentMembers.isEmpty) {
+      try {
+        await _supabase.from('chat_groups').delete().eq('id', groupId);
+        debugPrint('🗑️ Deleted empty group $groupId');
+      } catch (e) {
+        debugPrint('⚠️ Failed to delete empty group: $e');
+      }
+    }
   }
 
   @override

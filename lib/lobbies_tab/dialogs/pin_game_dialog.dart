@@ -2,158 +2,50 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/user_notifier.dart';
-import '../../presentation/notifiers/game_notifier.dart';
+import '../../widgets/unified_game_selection_sheet.dart';
+import '../../domain/entities/game.dart';
 
-class PinGameDialog extends ConsumerStatefulWidget {
-  const PinGameDialog({super.key});
-
-  @override
-  ConsumerState<PinGameDialog> createState() => _PinGameDialogState();
-}
-
-class _PinGameDialogState extends ConsumerState<PinGameDialog> {
-  final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> _searchResults = [];
-
-  @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _searchGames() async {
-    if (_searchController.text.isEmpty) return;
-
-    try {
-      final results = await ref
-          .read(gameNotifierProvider.notifier)
-          .fetchGamesFromIGDB(_searchController.text);
-      if (mounted) {
-        setState(() {
-          _searchResults = results;
-        });
-      }
-    } catch (e) {
-      // Handle error
-    }
-  }
-
-  void _togglePinGame(Map<String, dynamic> game) async {
+/// Pin Game Dialog - now delegates to UnifiedGameSelectionSheet
+/// for consistent UI/UX across the app
+class PinGameDialog {
+  /// Show the unified game selection sheet for pinning games
+  static Future<void> show(BuildContext context, WidgetRef ref) async {
     HapticFeedback.lightImpact();
-    try {
-      await ref.read(userNotifierProvider.notifier).pinGame(game);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${game['name'] ?? 'Game'} pinned successfully'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to pin game: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    final userStateAsync = ref.watch(userNotifierProvider);
-    final pinnedGames = userStateAsync.maybeWhen(
-      data: (userState) => userState?.pinnedGames ?? <Map<String, dynamic>>[],
-      orElse: () => <Map<String, dynamic>>[],
-    );
+    await UnifiedGameSelectionSheet.show(
+      context,
+      title: 'Pin Your Favorite Games',
+      subtitle: 'Add games for quick access in lobbies',
+      showPinnedGames: false, // Don't show already pinned games when adding
+      showSearchButton: true,
+      showMaxSpotSelector: false,
+      onGameSelected: (Game game) async {
+        try {
+          await ref
+              .read(userNotifierProvider.notifier)
+              .addPinnedGame(game.toJson());
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Container(
-        constraints: const BoxConstraints(maxHeight: 600, maxWidth: 400),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Pin Your Favorite Games',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: 'Search games...',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: _searchGames,
-                ),
+          if (context.mounted) {
+            HapticFeedback.mediumImpact();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${game.name} pinned successfully!'),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                duration: const Duration(seconds: 2),
               ),
-              onSubmitted: (_) => _searchGames(),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _buildGameList(_searchResults, pinnedGames),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF007AFF),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Done'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGameList(List<Map<String, dynamic>> games,
-      List<Map<String, dynamic>> pinnedGames) {
-    if (games.isEmpty) {
-      return const Center(
-        child: Text('Search for games to pin them for quick access'),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: games.length,
-      itemBuilder: (context, index) {
-        final game = games[index];
-        final isPinned = pinnedGames.any((g) => g['id'] == game['id']);
-
-        return ListTile(
-          title: Text(game['name'] ?? 'Unknown Game'),
-          trailing: IconButton(
-            icon: Icon(
-              isPinned ? Icons.star : Icons.star_border,
-              color: isPinned ? Colors.amber : null,
-            ),
-            onPressed: () => _togglePinGame(game),
-          ),
-        );
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to pin game: $e'),
+                backgroundColor: Theme.of(context).colorScheme.error,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
       },
     );
   }

@@ -144,10 +144,15 @@ class BackgroundService {
       debugPrint(
           'Uploading background: $filePath (${(fileSize / 1024).toStringAsFixed(2)}KB)');
 
-      // Upload to Supabase Storage
+      // Upload to Supabase Storage (RLS requires {user_uid}/{filename})
+      final user = AuthServiceSupabase().currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = 'custom_${chatGroupId}_$timestamp.jpg';
-      final storagePath = 'chat_backgrounds/$chatGroupId/$fileName';
+      final fileName = 'bg_${chatGroupId}_$timestamp.jpg';
+      final storagePath = '${user.id}/$fileName';
 
       // Read file as bytes
       final bytes = await file.readAsBytes();

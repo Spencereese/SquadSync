@@ -7,7 +7,7 @@ import '../services/supabase_service.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/game_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
-import '../chat/game_selection_sheet.dart';
+import '../widgets/unified_game_selection_sheet.dart';
 import 'peacock_widgets.dart';
 import 'member_widgets.dart';
 import 'lobby_dialogs.dart';
@@ -435,9 +435,15 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
   Future<void> _handleCreatePublicLobby() async {
     HapticFeedback.mediumImpact();
 
-    await GameSelectionSheet.show(
+    await UnifiedGameSelectionSheet.show(
       context,
-      onGameSelected: (gameName, maxSpots) async {
+      title: 'Create Public Lobby',
+      subtitle: 'Select a game for your public lobby',
+      showMaxSpotSelector: true,
+      showPinnedGames: true,
+      showSearchButton: true,
+      isPrivateLobby: false,
+      onGameWithSpotsSelected: (gameName, maxSpots) async {
         try {
           HapticFeedback.mediumImpact();
 

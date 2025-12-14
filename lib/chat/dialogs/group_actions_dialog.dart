@@ -3,7 +3,11 @@ import '../../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../utils.dart';
 import '../../domain/entities/message.dart';
+import '../../domain/entities/game.dart';
 import '../../presentation/notifiers/chat_notifier.dart';
+import '../../presentation/notifiers/game_notifier.dart';
+import '../../widgets/game_tile.dart';
+import '../../widgets/unified_game_selection_sheet.dart';
 import '../chat_screen.dart';
 
 /// Dialog for creating a new group with enhanced UI
@@ -143,20 +147,61 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
   final _descriptionController = TextEditingController();
   bool _isPublic = false; // Default to private
   bool _isCreating = false;
-  String? _selectedGame;
-  final List<String> _popularGames = [
-    'Call of Duty',
-    'Fortnite',
-    'Apex Legends',
-    'Valorant',
-    'League of Legends',
-    'Rocket League',
-    'Overwatch 2',
-    'Counter-Strike 2',
-    'Minecraft',
-    'Among Us',
-    'Any Game',
-  ];
+  Game? _selectedGame;
+  List<Game> _popularGames = [];
+  bool _loadingGames = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPopularGames();
+  }
+
+  Future<void> _loadPopularGames() async {
+    setState(() => _loadingGames = true);
+    try {
+      final result =
+          await ref.read(gameNotifierProvider.notifier).loadPopularGames();
+      result.when(
+        data: (games) {
+          if (mounted) {
+            setState(() {
+              _popularGames = games.take(10).toList(); // Top 10 popular games
+              _loadingGames = false;
+            });
+          }
+        },
+        loading: () {},
+        error: (e, st) {
+          if (mounted) {
+            setState(() => _loadingGames = false);
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingGames = false);
+      }
+    }
+  }
+
+  Future<void> _showGameSearch() async {
+    await UnifiedGameSelectionSheet.show(
+      context,
+      title: 'Select Game Focus',
+      subtitle: 'Choose a game for this group',
+      showPinnedGames: false,
+      showSearchButton: true,
+      showMaxSpotSelector: false,
+      onGameSelected: (game) {
+        if (mounted) {
+          setState(() {
+            _selectedGame = game;
+          });
+        }
+      },
+    );
+  }
 
   @override
   void dispose() {
@@ -187,10 +232,10 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
       if (description.isEmpty) description = null;
 
       // Add game focus to description if selected
-      if (_selectedGame != null && _selectedGame != 'Any Game') {
-        description = description != null
-            ? '$description\n🎮 $_selectedGame'
-            : '🎮 $_selectedGame';
+      if (_selectedGame != null) {
+        final gameName = _selectedGame!.name;
+        description =
+            description != null ? '$description\n🎮 $gameName' : '🎮 $gameName';
       }
 
       // Create group
@@ -293,53 +338,157 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
           const SizedBox(height: 24),
 
           // Game Focus (Optional)
-          const Text(
-            'Game Focus (Optional)',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Game Focus (Optional)',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _showGameSearch,
+                icon: const Icon(Icons.search,
+                    size: 18, color: Colors.cyanAccent),
+                label: const Text(
+                  'Search IGDB',
+                  style: TextStyle(color: Colors.cyanAccent),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[800],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                isExpanded: true,
-                value: _selectedGame,
-                hint: const Text(
-                  'Select a game...',
-                  style: TextStyle(color: Colors.grey),
+          if (_selectedGame != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[800],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.cyanAccent.withValues(alpha: 0.5),
+                  width: 2,
                 ),
-                dropdownColor: Colors.grey[800],
-                icon:
-                    const Icon(Icons.arrow_drop_down, color: Colors.cyanAccent),
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-                items: _popularGames.map((game) {
-                  return DropdownMenuItem(
-                    value: game,
-                    child: Row(
-                      children: [
-                        if (game != 'Any Game')
-                          const Icon(Icons.videogame_asset,
-                              color: Colors.cyanAccent, size: 20),
-                        if (game != 'Any Game') const SizedBox(width: 8),
-                        Text(game),
-                      ],
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() => _selectedGame = value);
-                },
               ),
+              child: Stack(
+                children: [
+                  GameTile(
+                    game: _selectedGame!,
+                    style: GameTileStyle.list,
+                    onTap: () {
+                      setState(() => _selectedGame = null);
+                    },
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Material(
+                      color: Colors.red.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(20),
+                      child: InkWell(
+                        onTap: () {
+                          setState(() => _selectedGame = null);
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[800]?.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey[700]!,
+                  width: 1,
+                ),
+              ),
+              child: _loadingGames
+                  ? const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: Colors.cyanAccent,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    )
+                  : _popularGames.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            children: [
+                              const Icon(Icons.videogame_asset_off,
+                                  color: Colors.grey, size: 32),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'No popular games loaded',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _loadPopularGames,
+                                child: const Text(
+                                  'Retry',
+                                  style: TextStyle(color: Colors.cyanAccent),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Text(
+                                'Popular Games',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              height: 120,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                itemCount: _popularGames.length,
+                                itemBuilder: (context, index) {
+                                  final game = _popularGames[index];
+                                  return Container(
+                                    width: 140,
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 4),
+                                    child: GameTile(
+                                      game: game,
+                                      style: GameTileStyle.grid,
+                                      onTap: () {
+                                        setState(() => _selectedGame = game);
+                                      },
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
             ),
-          ),
 
           const SizedBox(height: 24),
 

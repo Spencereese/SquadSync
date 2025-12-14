@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../presentation/notifiers/user_notifier.dart';
 import '../domain/entities/app_user.dart';
-import '../services/media_service.dart';
+import '../services/supabase_service.dart';
+import '../services/auth_service_supabase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfileEditingScreen extends ConsumerStatefulWidget {
   const ProfileEditingScreen({super.key});
@@ -20,7 +22,6 @@ class _ProfileEditingScreenState extends ConsumerState<ProfileEditingScreen> {
   late TextEditingController _displayNameController;
   bool _isLoading = false;
   File? _selectedImage;
-  final MediaService _mediaService = MediaService();
 
   @override
   void initState() {
@@ -64,11 +65,32 @@ class _ProfileEditingScreenState extends ConsumerState<ProfileEditingScreen> {
 
       // Update profile image if selected
       if (_selectedImage != null) {
+        // Get current user ID for folder structure
+        final user = AuthServiceSupabase().currentUser;
+        if (user == null) {
+          throw Exception('User not authenticated');
+        }
+
         final fileName = 'profile_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final imageUrl = await _mediaService.uploadMediaWithSignedUrl(
-          _selectedImage!,
-          fileName,
-        );
+        final storagePath = '${user.id}/$fileName';
+
+        final bytes = await _selectedImage!.readAsBytes();
+
+        // Upload to avatars bucket
+        await SupabaseService.client.storage.from('avatars').uploadBinary(
+              storagePath,
+              bytes,
+              fileOptions: const FileOptions(
+                contentType: 'image/jpeg',
+                upsert: false,
+              ),
+            );
+
+        // Get public URL
+        final imageUrl = SupabaseService.client.storage
+            .from('avatars')
+            .getPublicUrl(storagePath);
+
         await userNotifier.updateProfileImage(imageUrl);
       }
 

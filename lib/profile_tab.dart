@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:confetti/confetti.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import 'presentation/notifiers/user_notifier.dart';
 import 'presentation/notifiers/game_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
@@ -18,6 +20,9 @@ import 'screens/performance_stats_screen.dart';
 import 'domain/entities/lobby_state.dart';
 import 'domain/entities/app_user.dart';
 import 'core/app_theme.dart';
+import 'services/supabase_service.dart';
+import 'services/auth_service_supabase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
@@ -65,6 +70,131 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     setState(() {
       _gameSearchQuery = _searchController.text.toLowerCase();
     });
+  }
+
+  Future<void> _pickAndUploadProfileImage() async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+
+      if (pickedFile == null) return;
+
+      if (!mounted) return;
+
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Uploading profile picture...',
+                  style: GoogleFonts.robotoMono(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      try {
+        // Get current user ID for folder structure
+        final user = AuthServiceSupabase().currentUser;
+        if (user == null) {
+          throw Exception('User not authenticated');
+        }
+
+        // Upload image to avatars bucket with user_uid folder
+        final fileName = 'profile_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final storagePath = '${user.id}/$fileName';
+
+        final file = File(pickedFile.path);
+        final bytes = await file.readAsBytes();
+
+        // Upload to avatars bucket
+        await SupabaseService.client.storage.from('avatars').uploadBinary(
+              storagePath,
+              bytes,
+              fileOptions: const FileOptions(
+                contentType: 'image/jpeg',
+                upsert: false,
+              ),
+            );
+
+        // Get public URL
+        final imageUrl = SupabaseService.client.storage
+            .from('avatars')
+            .getPublicUrl(storagePath);
+
+        // Update user profile
+        final userNotifier = ref.read(userNotifierProvider.notifier);
+        await userNotifier.updateProfileImage(imageUrl);
+
+        if (!mounted) return;
+
+        // Close loading dialog
+        Navigator.of(context).pop();
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Profile picture updated!',
+              style: GoogleFonts.robotoMono(),
+            ),
+            backgroundColor: AppTheme.success(Theme.of(context).colorScheme),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+
+        // Close loading dialog
+        Navigator.of(context).pop();
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to upload image: $e',
+              style: GoogleFonts.robotoMono(),
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Failed to pick image: $e',
+            style: GoogleFonts.robotoMono(),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 
   @override
@@ -154,52 +284,82 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               data: (user) => squadAsync.maybeWhen(
                 data: (squadState) => SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20.0, 40.0, 20.0, 24.0),
+                    padding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 24.0),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Avatar with seamless glowing border
-                        AnimatedBuilder(
-                          animation: _glowController,
-                          builder: (context, child) {
-                            final theme = Theme.of(context);
-                            final neonColor = theme.colorScheme.primary;
-                            return Container(
-                              width: 120,
-                              height: 120,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: neonColor
-                                      .withOpacity(_glowController.value * 0.8),
-                                  width: 3,
-                                ),
-                                boxShadow: neonColor.neonGlow(
-                                  blur: 30,
-                                  spread: _glowController.value * 5,
-                                  opacity: _glowController.value * 0.6,
-                                ),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(4.0),
-                                child: CircleAvatar(
-                                  radius: 56,
-                                  backgroundImage: user?.profileImage != null
-                                      ? NetworkImage(user!.profileImage!)
-                                      : null,
-                                  backgroundColor:
-                                      theme.colorScheme.surfaceContainerHighest,
-                                  child: user?.profileImage == null
-                                      ? Icon(Icons.person,
-                                          size: 40,
-                                          color: theme.colorScheme.onSurface
-                                              .withOpacity(0.7))
-                                      : null,
-                                ),
-                              ),
-                            );
-                          },
+                        // Avatar with seamless glowing border - now clickable
+                        GestureDetector(
+                          onTap: _pickAndUploadProfileImage,
+                          child: AnimatedBuilder(
+                            animation: _glowController,
+                            builder: (context, child) {
+                              final theme = Theme.of(context);
+                              final neonColor = theme.colorScheme.primary;
+                              return Stack(
+                                children: [
+                                  Container(
+                                    width: 120,
+                                    height: 120,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: neonColor.withOpacity(
+                                            _glowController.value * 0.8),
+                                        width: 3,
+                                      ),
+                                      boxShadow: neonColor.neonGlow(
+                                        blur: 30,
+                                        spread: _glowController.value * 5,
+                                        opacity: _glowController.value * 0.6,
+                                      ),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(4.0),
+                                      child: CircleAvatar(
+                                        radius: 56,
+                                        backgroundImage: user?.profileImage !=
+                                                null
+                                            ? NetworkImage(user!.profileImage!)
+                                            : null,
+                                        backgroundColor: theme.colorScheme
+                                            .surfaceContainerHighest,
+                                        child: user?.profileImage == null
+                                            ? Icon(Icons.person,
+                                                size: 40,
+                                                color: theme
+                                                    .colorScheme.onSurface
+                                                    .withOpacity(0.7))
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                  // Camera icon overlay
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: neonColor,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: theme.colorScheme.surface,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        Icons.camera_alt,
+                                        size: 20,
+                                        color: theme.colorScheme.onPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
                         ).animate().scale(
                               duration: 600.ms,
                               curve: Curves.elasticOut,

@@ -9,8 +9,7 @@ import '../domain/entities/lobby_state.dart';
 import '../lobbies_tab/lobbies_tab.dart';
 import '../utils.dart';
 import '../presentation/notifiers/user_notifier.dart';
-import '../widgets/game_selection_widget.dart';
-import '../widgets/game_tile.dart';
+import '../widgets/unified_game_selection_sheet.dart';
 import '../core/app_theme.dart';
 
 class LobbyTabScreen extends StatelessWidget {
@@ -402,57 +401,47 @@ class _LobbyTabScreenContentState
   }
 
   void _addGame(BuildContext context) async {
-    // Show game selection modal for adding to pinned games
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.85,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            // Drag handle
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Expanded(
-              child: GameSelectionWidget(
-                title: 'Add Game to Pinned',
-                subtitle: 'Choose a game to add to your pinned games',
-                showMaxSpotSelector: false,
-                showSearchButton: true,
-                showPinnedGames: false, // Don't show pinned games when adding
-                tileStyle: GameTileStyle.list,
-                onGameSelected: (game) async {
-                  // Add to pinned games
-                  final userNotifier = ref.read(userNotifierProvider.notifier);
-                  await userNotifier.addPinnedGame(game.toJson());
+    // Use unified game selection sheet for consistency
+    await UnifiedGameSelectionSheet.show(
+      context,
+      title: 'Add Game to Pinned',
+      subtitle: 'Choose a game to add to your pinned games',
+      showPinnedGames: false, // Don't show pinned games when adding
+      showSearchButton: true,
+      showMaxSpotSelector: false,
+      onGameSelected: (game) async {
+        try {
+          final userNotifier = ref.read(userNotifierProvider.notifier);
+          await userNotifier.addPinnedGame(game.toJson());
 
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${game.name} added to pinned games!'),
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                      ),
-                    );
-                    Navigator.of(context).pop(); // Close the modal
-                  }
-                },
+          if (mounted) {
+            HapticFeedback.mediumImpact();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${game.name} added to pinned games!'),
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to add game: $e'),
+                backgroundColor: Theme.of(context).colorScheme.error,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            );
+          }
+        }
+      },
     );
   }
 

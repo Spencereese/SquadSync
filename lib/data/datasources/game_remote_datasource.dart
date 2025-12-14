@@ -64,15 +64,16 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
       try {
         final queryBody = query.isEmpty
             ? '''
-          fields name,slug,cover.url,summary,first_release_date,genres.name,platforms.name;
-          where rating > 70 & cover.url != null;
+          fields name,slug,cover.url,summary,first_release_date,genres.name,platforms.name,category;
+          where rating > 70 & cover.url != null & category = 0 & version_parent = null;
           sort rating desc;
           limit $limit;
         '''
             : '''
           search "$query";
-          fields name,slug,cover.url,summary,first_release_date,genres.name,platforms.name;
-          limit $limit;
+          fields name,slug,cover.url,summary,first_release_date,genres.name,platforms.name,category;
+          where category = (0,8,9,10) & version_parent = null;
+          limit ${limit * 2};
         ''';
 
         final response = await _dio.post<String>(
@@ -89,7 +90,11 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
 
         if (response.statusCode == 200 && response.data != null) {
           final data = json.decode(response.data!) as List<dynamic>;
-          return data.map((game) => Game.fromIgdb(game)).toList();
+          final games = data
+              .where((game) => _isValidGame(game))
+              .map((game) => Game.fromIgdb(game))
+              .toList();
+          return _deduplicateGames(games).take(limit).toList();
         } else if (response.statusCode == 401) {
           await refreshToken();
           continue;
@@ -180,10 +185,10 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
     for (int attempt = 0; attempt < _maxRetries; attempt++) {
       try {
         final queryBody = '''
-          fields name,slug,cover.url,platforms.name,rating,rating_count;
-          limit 20;
-          sort rating_count desc, total_rating desc;
-          where first_release_date > 1577836800 & game_type = 0 & parent_game = null;
+          fields name,slug,cover.url,platforms.name,rating,rating_count,follows,hypes,category,game_modes.name,multiplayer_modes;
+          limit 50;
+          sort follows desc;
+          where category = 0 & version_parent = null & follows > 500 & cover.url != null & (platforms = (6,48,49,130,167,169) | platforms = null) & game_modes != null & (game_modes = (1,2,3,5,6) | multiplayer_modes != null);
         ''';
 
         final response = await _dio.post<String>(
@@ -200,8 +205,12 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
 
         if (response.statusCode == 200 && response.data != null) {
           final data = json.decode(response.data!) as List<dynamic>;
-          final games = data.map((game) => Game.fromIgdb(game)).toList();
-          return _boostTopSquadGames(games);
+          final games = data
+              .where((game) => _isValidGame(game, requireMultiplayer: true))
+              .map((game) => Game.fromIgdb(game))
+              .toList();
+          final deduped = _deduplicateGames(games);
+          return _boostTopSquadGames(deduped).take(20).toList();
         } else if (response.statusCode == 401) {
           await refreshToken();
           continue;
@@ -232,13 +241,109 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
         'Failed to fetch popular games after $_maxRetries attempts. Last error: $lastError');
   }
 
+  /// Filter out DLC, editions, remasters, bundles
+  bool _isValidGame(Map<String, dynamic> game,
+      {bool requireMultiplayer = false}) {
+    final name = (game['name'] as String? ?? '').toLowerCase();
+
+    // Skip common DLC/expansion patterns
+    final invalidPatterns = [
+      'dlc',
+      'season pass',
+      'expansion',
+      'bundle',
+      'edition',
+      'pack',
+      'content',
+      ': episode',
+      'remaster',
+      'remake',
+      'definitive',
+      'ultimate',
+      'deluxe',
+      'gold',
+      'goty',
+      'complete',
+    ];
+
+    // Allow games with these words in title (they're actual games)
+    final allowPatterns = [
+      'black ops',
+      'modern warfare',
+      'world at war',
+    ];
+
+    for (final allow in allowPatterns) {
+      if (name.contains(allow)) return true;
+    }
+
+    for (final pattern in invalidPatterns) {
+      if (name.contains(pattern)) return false;
+    }
+
+    // Require cover image
+    if (game['cover'] == null) return false;
+
+    // If multiplayer required, check for multiplayer modes or specific game modes
+    if (requireMultiplayer) {
+      final hasMpModes = game['multiplayer_modes'] != null &&
+          (game['multiplayer_modes'] as List).isNotEmpty;
+      final gameModes = game['game_modes'] as List<dynamic>?;
+      // Game modes: 1=Multiplayer, 2=Co-op, 3=Split screen, 5=MMO, 6=Battle Royale
+      final hasMultiplayerMode = gameModes?.any((mode) {
+            final modeName = (mode['name'] as String? ?? '').toLowerCase();
+            return modeName.contains('multiplayer') ||
+                modeName.contains('co-op') ||
+                modeName.contains('mmo') ||
+                modeName.contains('battle royale');
+          }) ??
+          false;
+
+      if (!hasMpModes && !hasMultiplayerMode) return false;
+    }
+
+    return true;
+  }
+
+  /// Deduplicate games by slug, keeping the first occurrence
+  List<Game> _deduplicateGames(List<Game> games) {
+    final seen = <String>{};
+    final deduped = <Game>[];
+
+    for (final game in games) {
+      final key = game.slug.toLowerCase();
+      if (!seen.contains(key)) {
+        seen.add(key);
+        deduped.add(game);
+      }
+    }
+
+    return deduped;
+  }
+
   List<Game> _boostTopSquadGames(List<Game> games) {
-    const topSquadGames = ['call-of-duty', 'battlefield'];
+    const topSquadGames = [
+      'call-of-duty',
+      'battlefield',
+      'counter-strike',
+      'valorant',
+      'apex-legends',
+      'fortnite',
+      'overwatch',
+      'rainbow-six-siege',
+      'warzone',
+      'league-of-legends',
+      'dota-2',
+      'destiny',
+      'halo',
+      'pubg',
+    ];
     final boosted = <Game>[];
     final others = <Game>[];
 
     for (final game in games) {
-      if (topSquadGames.contains(game.slug)) {
+      final slug = game.slug.toLowerCase();
+      if (topSquadGames.any((s) => slug.contains(s))) {
         boosted.add(game);
       } else {
         others.add(game);

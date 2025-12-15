@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -150,17 +151,26 @@ class _ChatInputBarState extends State<ChatInputBar> {
           HapticFeedback.lightImpact();
           widget.onPlusMenu();
         },
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: Colors.white, // White background to match input bar
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: const Icon(
-            Icons.add,
-            size: 24,
-            color: Colors.black, // Black icon on white background
+        child: ClipOval(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 0.5,
+                ),
+              ),
+              child: const Icon(
+                Icons.add,
+                size: 22,
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
       ),
@@ -168,119 +178,127 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Widget _buildTextField(BuildContext context, bool hasText) {
-    return Container(
-      constraints: const BoxConstraints(
-        minHeight: 36,
-        maxHeight: 120,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white, // Solid white background - same as TextField
-        borderRadius: BorderRadius.circular(20),
-        border: null, // Remove blue border when focused
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: widget.controller,
-              focusNode: _focusNode,
-              onChanged: widget.onTextChanged,
-              maxLines: null,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              style: const TextStyle(
-                color: Colors.black, // Black text on light background
-                fontSize: 16,
-              ),
-              decoration: InputDecoration(
-                hintText: widget.hintText,
-                hintStyle: TextStyle(
-                  color: Colors.grey[500], // Darker hint text
-                  fontSize: 16,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                border: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                isDense: true,
-                filled: false, // Disable fill to use parent container color
-              ),
-              textCapitalization: TextCapitalization.sentences,
-              autocorrect: true,
-              enableSuggestions: true,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          constraints: const BoxConstraints(
+            minHeight: 36,
+            maxHeight: 120,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 0.5,
             ),
           ),
-          if (hasText)
-            Padding(
-              padding: const EdgeInsets.only(right: 8.0),
-              child: Semantics(
-                label: 'Send message',
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    widget.onSend();
-                  },
-                  onLongPress: () => _showMessageEffects(context),
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF007AFF), // iMessage blue
-                      shape: BoxShape.circle,
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: widget.controller,
+                  focusNode: _focusNode,
+                  onChanged: widget.onTextChanged,
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: widget.hintText,
+                    hintStyle: TextStyle(
+                      color: Colors.white.withOpacity(0.5),
+                      fontSize: 16,
                     ),
-                    child: const Icon(
-                      Icons.send,
-                      size: 16,
-                      color: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    border: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    isDense: true,
+                  ),
+                  textCapitalization: TextCapitalization.sentences,
+                  autocorrect: true,
+                  enableSuggestions: true,
+                ),
+              ),
+              if (hasText)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: Semantics(
+                    label: 'Send message',
+                    child: GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        widget.onSend();
+                      },
+                      onLongPress: () => _showMessageEffects(context),
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF007AFF), // iMessage blue
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.send,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: Semantics(
+                    label: 'Record voice message',
+                    child: GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        if (widget.isRecording) {
+                          widget.onRecordStop();
+                        } else {
+                          widget.onRecordStart();
+                        }
+                      },
+                      onLongPressStart: (_) {
+                        HapticFeedback.lightImpact();
+                        widget.onRecordStart();
+                      },
+                      onLongPressEnd: (_) {
+                        widget.onRecordStop();
+                      },
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: widget.isRecording
+                              ? Colors.red // Red when recording
+                              : Colors.grey[400], // Grey when not recording
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          widget.isRecording ? Icons.stop : Icons.mic,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(right: 8.0),
-              child: Semantics(
-                label: 'Record voice message',
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    if (widget.isRecording) {
-                      widget.onRecordStop();
-                    } else {
-                      widget.onRecordStart();
-                    }
-                  },
-                  onLongPressStart: (_) {
-                    HapticFeedback.lightImpact();
-                    widget.onRecordStart();
-                  },
-                  onLongPressEnd: (_) {
-                    widget.onRecordStop();
-                  },
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: widget.isRecording
-                          ? Colors.red // Red when recording
-                          : Colors.grey[400], // Grey when not recording
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      widget.isRecording ? Icons.stop : Icons.mic,
-                      size: 16,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

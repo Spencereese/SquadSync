@@ -104,8 +104,14 @@ class ImageCropHelper {
     required String title,
   }) async {
     try {
+      // Extract theme data BEFORE async operation to avoid accessing deactivated widget
       final theme = Theme.of(context);
       final colorScheme = theme.colorScheme;
+      final surface = colorScheme.surface;
+      final onSurface = colorScheme.onSurface;
+      final background = colorScheme.background;
+      final primary = colorScheme.primary;
+      final primaryWithOpacity = primary.withOpacity(0.3);
 
       final croppedFile = await ImageCropper().cropImage(
         sourcePath: imagePath,
@@ -114,16 +120,16 @@ class ImageCropHelper {
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: title,
-            toolbarColor: colorScheme.surface,
-            toolbarWidgetColor: colorScheme.onSurface,
-            backgroundColor: colorScheme.background,
-            activeControlsWidgetColor: colorScheme.primary,
+            toolbarColor: surface,
+            toolbarWidgetColor: onSurface,
+            backgroundColor: background,
+            activeControlsWidgetColor: primary,
             initAspectRatio: CropAspectRatioPreset.original,
             lockAspectRatio: true,
             hideBottomControls: false,
             showCropGrid: true,
-            cropFrameColor: colorScheme.primary,
-            cropGridColor: colorScheme.primary.withOpacity(0.3),
+            cropFrameColor: primary,
+            cropGridColor: primaryWithOpacity,
           ),
           IOSUiSettings(
             title: title,

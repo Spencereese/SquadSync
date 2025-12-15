@@ -290,7 +290,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Edit Lobby',
+                'Edit Group',
                 style: GoogleFonts.orbitron(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -300,22 +300,36 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
               const SizedBox(height: 24),
               ListTile(
                 leading: Icon(Icons.edit, color: neonColor),
-                title: const Text('Change Lobby Name'),
+                title: const Text('Change Group Name'),
                 trailing: Icon(Icons.chevron_right,
                     color: neonColor.withOpacity(0.5)),
                 onTap: () {
+                  // Close modal first
                   Navigator.pop(context);
-                  onEditName();
+                  // Use post-frame callback to ensure modal is closed before showing dialog
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    onEditName();
+                  });
                 },
               ),
               ListTile(
                 leading: Icon(Icons.image, color: neonColor),
-                title: const Text('Change Lobby Avatar'),
+                title: const Text('Change Group Avatar'),
                 trailing: Icon(Icons.chevron_right,
                     color: neonColor.withOpacity(0.5)),
                 onTap: () async {
-                  Navigator.pop(context);
-                  await _pickAndUploadLobbyAvatar(context);
+                  // Save reference to navigator before closing modal
+                  final navigator = Navigator.of(context);
+                  // Get a context that will survive the modal being closed
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+                  // Close the modal sheet
+                  navigator.pop();
+
+                  // Use a post-frame callback to ensure the modal is fully closed
+                  WidgetsBinding.instance.addPostFrameCallback((_) async {
+                    await _pickAndUploadLobbyAvatar(context, scaffoldMessenger);
+                  });
                 },
               ),
               const SizedBox(height: 16),
@@ -327,22 +341,33 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
   }
 
   /// Pick and upload lobby avatar
-  Future<void> _pickAndUploadLobbyAvatar(BuildContext context) async {
+  Future<void> _pickAndUploadLobbyAvatar(
+    BuildContext context,
+    ScaffoldMessengerState scaffoldMessenger,
+  ) async {
+    BuildContext? dialogContext;
     try {
       // Use ImageCropHelper for picking and cropping group photo
       final croppedFile = await ImageCropHelper.pickAndCropGroupImage(context);
 
       if (croppedFile == null) return;
 
-      if (!context.mounted) return;
+      // Check if widget is still mounted after async operation
+      if (!context.mounted) {
+        debugPrint('Widget unmounted after image crop, aborting upload');
+        return;
+      }
 
       // Show loading indicator
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(color: Colors.cyanAccent),
-        ),
+        builder: (ctx) {
+          dialogContext = ctx;
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.cyanAccent),
+          );
+        },
       );
 
       try {
@@ -376,32 +401,38 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
         final downloadUrl =
             supabase.storage.from('avatars').getPublicUrl(storagePath);
 
-        // Update lobby avatar in database
-        await supabase.from('lobbies').update({
-          'avatar_url': downloadUrl,
-          'updated_at': DateTime.now().toIso8601String(),
-        }).eq('id', squadId);
-
-        if (!context.mounted) return;
+        // Update both lobbies and chat_groups tables
+        await Future.wait([
+          supabase.from('lobbies').update({
+            'avatar_url': downloadUrl,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', squadId),
+          supabase.from('chat_groups').update({
+            'avatar_url': downloadUrl,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', squadId),
+        ]);
 
         // Close loading dialog
-        Navigator.pop(context);
+        if (dialogContext != null && dialogContext!.mounted) {
+          Navigator.of(dialogContext!).pop();
+        }
 
         // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           const SnackBar(
-            content: Text('Lobby avatar updated successfully!'),
+            content: Text('Group avatar updated successfully!'),
             backgroundColor: Colors.green,
           ),
         );
       } catch (uploadError) {
-        if (!context.mounted) return;
-
         // Close loading dialog
-        Navigator.pop(context);
+        if (dialogContext != null && dialogContext!.mounted) {
+          Navigator.of(dialogContext!).pop();
+        }
 
         // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text('Failed to upload avatar: $uploadError'),
             backgroundColor: Colors.red,
@@ -409,9 +440,8 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
         );
       }
     } catch (e) {
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
+      // Show error message
+      scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text('Failed to pick image: $e'),
           backgroundColor: Colors.red,

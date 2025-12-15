@@ -107,7 +107,7 @@ class MessageData {
           data['editedAt'] is String ? DateTime.parse(data['editedAt']) : null,
       replyTo: (() {
         final reply = data['replyTo'] ?? data['reply_to'];
-        debugPrint('💬 MessageData.fromMap: id=$id, replyTo field: $reply');
+        // debugPrint('💬 MessageData.fromMap: id=$id, replyTo field: $reply');
         return reply;
       })(),
       clipData: data['clipData'] != null

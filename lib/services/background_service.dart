@@ -416,7 +416,7 @@ class BackgroundService {
         final supabase = SupabaseService.client;
         await supabase.storage.createBucket(
           bucketName,
-          const BucketOptions(public: true, fileSizeLimit: 5242880), // 5MB
+          const BucketOptions(public: true, fileSizeLimit: '5242880'), // 5MB
         );
         debugPrint('Created Supabase bucket: $bucketName');
       } catch (createError) {

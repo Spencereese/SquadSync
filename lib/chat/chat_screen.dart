@@ -1182,142 +1182,132 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   }
                   return false;
                 },
-                child: Column(
-                  children: [
-                    // Lobby Selector Dropdown (for multiple lobbies per chat group)
-                    if (isUserGroup && widget.chatGroupId != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 110),
-                        child: _buildLobbySelector(),
-                      ),
-                    Expanded(
-                      child: CustomScrollView(
-                        controller: _scrollController,
-                        slivers: [
-                          // Top padding for app bar - allows content to scroll behind
-                          const SliverPadding(
-                            padding: EdgeInsets.only(top: 110),
-                          ),
-                          // Active Lobby Header Card (if needed)
-                          SliverToBoxAdapter(
-                            child: _uiManager.buildActiveLobbyHeader(context,
-                                chatGroupId: widget.chatGroupId),
-                          ),
-                          // Messages List as SliverFillRemaining
-                          SliverFillRemaining(
-                            hasScrollBody: true,
-                            child: ref.watch(cn.chatNotifierProvider).when(
-                                  data: (chatStateData) {
-                                    final messages = chatStateData
-                                            .chatMessages[widget.chatGroupId] ??
-                                        [];
+                child: ref.watch(cn.chatNotifierProvider).when(
+                      data: (chatStateData) {
+                        final messages =
+                            chatStateData.chatMessages[widget.chatGroupId] ??
+                                [];
 
-                                    // Fetch display names for message senders
-                                    _fetchDisplayNamesForMessages(messages);
+                        // Fetch display names for message senders
+                        _fetchDisplayNamesForMessages(messages);
 
-                                    return _uiManager.buildMessagesList(
-                                      ref: ref,
-                                      chatGroupId: widget.chatGroupId,
-                                      chatType: widget.chatType,
-                                      scrollController:
-                                          _scrollControllerService,
-                                      messages: messages,
-                                      onMessageLongPress:
-                                          () {}, // Will be implemented
-                                      onMessageTap:
-                                          () {}, // Will be implemented
-                                      getSender: _getSender,
-                                      getTimestampMs: _getTimestampMs,
-                                      cleanText: _cleanText,
-                                      uidToDisplayName:
-                                          squadStateData.memberDisplayNames,
-                                      // markAsDelivered removed - Supabase inserts are immediate
-                                    );
-                                  },
-                                  loading: () => const Center(
-                                      child: CircularProgressIndicator()),
-                                  error: (error, stack) => Center(
-                                      child: Text(
-                                          'Error loading messages: $error')),
-                                ),
+                        // Calculate input bar height dynamically
+                        final hasReply = chatState.replyToMessage != null;
+                        final inputBarHeight = hasReply ? 140.0 : 80.0;
+
+                        return _uiManager.buildMessagesList(
+                          ref: ref,
+                          chatGroupId: widget.chatGroupId,
+                          chatType: widget.chatType,
+                          scrollController: _scrollControllerService,
+                          messages: messages,
+                          onMessageLongPress: () {}, // Will be implemented
+                          onMessageTap: () {}, // Will be implemented
+                          getSender: _getSender,
+                          getTimestampMs: _getTimestampMs,
+                          cleanText: _cleanText,
+                          uidToDisplayName: squadStateData.memberDisplayNames,
+                          // markAsDelivered removed - Supabase inserts are immediate
+                          // Add padding to scroll under app bar and input bar
+                          topPadding:
+                              (isUserGroup && widget.chatGroupId != null)
+                                  ? 100 +
+                                      MediaQuery.of(context).padding.top +
+                                      60 // App bar + lobby selector
+                                  : 100 +
+                                      MediaQuery.of(context)
+                                          .padding
+                                          .top, // Just app bar
+                          bottomPadding: inputBarHeight +
+                              (isKeyboardVisible
+                                  ? 0
+                                  : MediaQuery.of(context).viewPadding.bottom /
+                                      2), // Allow scrolling under input bar
+                        );
+                      },
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (error, stack) =>
+                          Center(child: Text('Error loading messages: $error')),
+                    ),
+              ), // End NotificationListener
+              // Input Bar positioned at bottom - no backdrop to allow clean scrolling
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  color: Colors.transparent,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Reply preview if exists
+                        if (chatState.replyToMessage != null)
+                          _uiManager.buildReplyPreview(
+                            context,
+                            chatState,
+                            squadStateData,
+                            widget.chatType,
+                            () => ref
+                                .read(cn.chatNotifierProvider.notifier)
+                                .clearReplyToMessage(),
                           ),
-                        ],
-                      ), // End CustomScrollView
-                    ), // End Expanded
-                    // Input Bar Area - OUTSIDE CustomScrollView
-                    AnimatedOpacity(
-                      opacity: isKeyboardVisible ? 1.0 : 0.9,
-                      duration: const Duration(milliseconds: 200),
-                      child: Container(
-                        color: Colors.transparent,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Reply preview if exists
-                              if (chatState.replyToMessage != null)
-                                _uiManager.buildReplyPreview(
-                                  context,
-                                  chatState,
-                                  squadStateData,
-                                  widget.chatType,
-                                  () => ref
-                                      .read(cn.chatNotifierProvider.notifier)
-                                      .clearReplyToMessage(),
-                                ),
-                              // Input bar
-                              Semantics(
-                                label: 'Chat input bar',
-                                child: ChatInputBar(
-                                  controller: _messageController,
-                                  focusNode: _inputFocusNode,
-                                  isRecording: chatState.isRecording,
-                                  isUploading: chatState.isUploading,
-                                  onSend: () => _sendMessage(
-                                      chatState.replyToMessage, squadStateData),
-                                  onMedia: _sendMedia,
-                                  onRecordStart: _startRecording,
-                                  onRecordStop: _stopRecording,
-                                  onPlusMenu: () => _showPlusMenu(context),
-                                  onTextChanged: (value) {
-                                    _typingManager.onTextChanged(
-                                      value,
-                                      ref,
-                                      chatGroupId: widget.chatGroupId,
-                                    );
-                                  },
-                                  quickReactionEmoji:
-                                      chatState.quickReactionEmoji,
-                                  hintText: chatState.replyToMessage != null
-                                      ? 'Reply'
-                                      : 'Message',
-                                  // Pass actual members for @ mentions
-                                  availableMembers: squadStateData
-                                      .memberDisplayNames.values
-                                      .toList(),
-                                  memberAvatars:
-                                      _buildMemberAvatarMap(squadStateData),
-                                ),
-                              ),
-                              // Add bottom padding for keyboard and iPhone home indicator
-                              SizedBox(
-                                height: isKeyboardVisible
-                                    ? 8.0
-                                    : 8.0 +
-                                        (MediaQuery.of(context)
-                                                .viewPadding
-                                                .bottom /
-                                            2),
-                              ),
-                            ],
+                        // Input bar
+                        Semantics(
+                          label: 'Chat input bar',
+                          child: ChatInputBar(
+                            controller: _messageController,
+                            focusNode: _inputFocusNode,
+                            isRecording: chatState.isRecording,
+                            isUploading: chatState.isUploading,
+                            onSend: () => _sendMessage(
+                                chatState.replyToMessage, squadStateData),
+                            onMedia: _sendMedia,
+                            onRecordStart: _startRecording,
+                            onRecordStop: _stopRecording,
+                            onPlusMenu: () => _showPlusMenu(context),
+                            onTextChanged: (value) {
+                              _typingManager.onTextChanged(
+                                value,
+                                ref,
+                                chatGroupId: widget.chatGroupId,
+                              );
+                            },
+                            quickReactionEmoji: chatState.quickReactionEmoji,
+                            hintText: chatState.replyToMessage != null
+                                ? 'Reply'
+                                : 'Message',
+                            // Pass actual members for @ mentions
+                            availableMembers: squadStateData
+                                .memberDisplayNames.values
+                                .toList(),
+                            memberAvatars:
+                                _buildMemberAvatarMap(squadStateData),
                           ),
                         ),
-                      ),
+                        // Add bottom padding for keyboard and iPhone home indicator
+                        SizedBox(
+                          height: isKeyboardVisible
+                              ? 8.0
+                              : 8.0 +
+                                  (MediaQuery.of(context).viewPadding.bottom /
+                                      2),
+                        ),
+                      ],
                     ),
-                  ], // End Column children
-                ), // End Column
-              ), // End NotificationListener
+                  ),
+                ),
+              ),
+              // Lobby Selector positioned below app bar (for user groups)
+              if (isUserGroup && widget.chatGroupId != null)
+                Positioned(
+                  top: 100 + MediaQuery.of(context).padding.top,
+                  left: 0,
+                  right: 0,
+                  child: _buildLobbySelector(),
+                ),
               // App bar positioned at top of Stack
               Positioned(
                 top: 0,
@@ -1389,7 +1379,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         return _buildGradientBackground(value);
 
       case 'image':
-        // Network image with opacity
+        // Network image - full brightness for custom backgrounds
         if (value.isEmpty) {
           return Container(color: const Color(0xFF0B0E14));
         }
@@ -1398,7 +1388,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             image: DecorationImage(
               image: NetworkImage(value),
               fit: BoxFit.cover,
-              opacity: 0.3,
+              opacity: 1.0,
             ),
           ),
         );

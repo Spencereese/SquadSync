@@ -10,6 +10,7 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../services/media_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
+import '../services/grok_service.dart';
 import '../domain/entities/message.dart';
 import '../chat/sqlite_helper.dart';
 
@@ -49,6 +50,7 @@ class MessageService with WidgetsBindingObserver {
   final SQLiteHelper _sqliteHelper = SQLiteHelper();
   final MediaService _mediaService = MediaService();
   final AuthServiceSupabase _authService = AuthServiceSupabase();
+  final GrokService _grokService = GrokService();
   static const int _maxRetries = 3;
   static const Duration _initialBackoff = Duration(milliseconds: 500);
 
@@ -460,6 +462,11 @@ class MessageService with WidgetsBindingObserver {
       await _sqliteHelper.insertMessage(cacheMessageData,
           chatGroupId: chatGroupId);
 
+      // Check if message is for Grok and trigger AI response
+      if (text != null && text.isNotEmpty) {
+        _handleGrokMessage(text, chatId, chatType, ref);
+      }
+
       _logger.d('Message sent successfully: $msgId');
       return MessageSendResult.success(msgId);
     } catch (e) {
@@ -698,6 +705,77 @@ class MessageService with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('❌ Failed to bump message: $e');
       return MessageSendResult.failure('Failed to bump message: $e');
+    }
+  }
+
+  // Handle Grok AI responses
+  Future<void> _handleGrokMessage(
+      String text, String chatId, ChatType chatType, WidgetRef ref) async {
+    try {
+      // Check if message is directed at Grok
+      if (!_grokService.isMessageForGrok(text)) {
+        return;
+      }
+
+      debugPrint('🤖 Grok message detected: $text');
+
+      // Get recent messages for context (last 5)
+      final recentMessages = <String>[];
+      try {
+        final response = await _supabase
+            .from('chat_messages')
+            .select('text')
+            .eq('chat_id', chatId)
+            .eq('chat_type', chatType.name)
+            .eq('is_deleted', false)
+            .order('timestamp', ascending: false)
+            .limit(5);
+
+        for (final msg in response) {
+          if (msg['text'] != null && msg['text'].toString().isNotEmpty) {
+            recentMessages.add(msg['text'].toString());
+          }
+        }
+      } catch (e) {
+        debugPrint('Failed to fetch recent messages for context: $e');
+      }
+
+      // Clean the message text
+      final cleanedMessage = _grokService.cleanGrokMessage(text);
+
+      // Get Grok's response
+      final grokResponse = await _grokService.getGrokResponse(
+        cleanedMessage,
+        recentMessages: recentMessages.reversed.toList(),
+      );
+
+      debugPrint('🤖 Grok responded: $grokResponse');
+
+      // Send Grok's response as a message from a system user
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) return;
+
+      final grokMsgId = const Uuid().v4();
+      final timestamp = DateTime.now();
+
+      final grokMessage = {
+        'id': grokMsgId,
+        'sender_id': 'grok_ai_bot', // Special sender ID for Grok
+        'chat_id': chatId,
+        'chat_type': chatType.name,
+        'text': grokResponse,
+        'message_type': 'text',
+        'reactions': {},
+        'timestamp': timestamp.toIso8601String(),
+        'is_deleted': false,
+      };
+
+      // Send to Supabase
+      await _supabase.from('chat_messages').insert(grokMessage);
+      debugPrint('🤖 Grok message sent successfully: $grokMsgId');
+    } catch (e) {
+      debugPrint('❌ Grok handler error: $e');
+      // Don't rethrow - Grok errors shouldn't break message sending
     }
   }
 

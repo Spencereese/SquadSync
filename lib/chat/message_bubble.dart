@@ -331,13 +331,13 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     }
 
     // Debug reactions
-    if (kDebugMode) {
-      debugPrint(
-          '💬 MessageBubble: Message ${_messageData.id} has ${_messageData.reactions.length} reactions');
-      if (_messageData.reactions.isNotEmpty) {
-        debugPrint('💬 Reactions data: ${_messageData.reactions}');
-      }
-    }
+    // if (kDebugMode) {
+    //   debugPrint(
+    //       '💬 MessageBubble: Message ${_messageData.id} has ${_messageData.reactions.length} reactions');
+    //   if (_messageData.reactions.isNotEmpty) {
+    //     debugPrint('💬 Reactions data: ${_messageData.reactions}');
+    //   }
+    // }
   }
 
   void _dismissOverlays() {

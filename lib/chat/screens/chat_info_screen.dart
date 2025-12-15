@@ -1738,7 +1738,11 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
 
       if (croppedFile == null) return;
 
-      if (!mounted) return;
+      // Check if widget is still mounted after async operation
+      if (!mounted) {
+        debugPrint('Widget unmounted after image crop, aborting upload');
+        return;
+      }
 
       // Show uploading dialog
       showDialog(
@@ -2253,12 +2257,12 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Change Lobby Name'),
+        title: const Text('Change Group Name'),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
-            labelText: 'Lobby Name',
-            hintText: 'Enter new lobby name',
+            labelText: 'Group Name',
+            hintText: 'Enter new group name',
           ),
         ),
         actions: [
@@ -2273,21 +2277,29 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                 try {
                   final currentUser = AuthServiceSupabase().currentUser;
                   if (currentUser != null) {
-                    await SupabaseService.client
-                        .from('lobbies')
-                        .update({'name': newName}).eq('id', widget.squadId);
+                    // Update both lobbies and chat_groups tables
+                    await Future.wait([
+                      SupabaseService.client.from('lobbies').update({
+                        'name': newName,
+                        'updated_at': DateTime.now().toIso8601String(),
+                      }).eq('id', widget.squadId),
+                      SupabaseService.client.from('chat_groups').update({
+                        'name': newName,
+                        'updated_at': DateTime.now().toIso8601String(),
+                      }).eq('id', widget.squadId),
+                    ]);
                   }
                   if (!mounted) return;
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Lobby name updated!')),
+                    const SnackBar(content: Text('Group name updated!')),
                   );
                 } catch (e) {
-                  debugPrint('Error updating lobby name: $e');
+                  debugPrint('Error updating group name: $e');
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content: Text('Failed to update lobby name')),
+                        content: Text('Failed to update group name')),
                   );
                 }
               }

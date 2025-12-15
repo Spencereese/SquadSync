@@ -171,6 +171,8 @@ class ChatUIManager {
     required String? chatGroupId,
     required ChatType chatType,
     required ChatScrollController scrollController,
+    double topPadding = 0,
+    double bottomPadding = 10,
     required List<Message> messages,
     cn_state.ChatState? chatState,
     required VoidCallback onMessageLongPress,
@@ -217,107 +219,141 @@ class ChatUIManager {
               },
               child: Stack(
                 children: [
-                  // Main messages list
-                  ListView.builder(
-                    controller: scrollController.scrollController,
-                    reverse:
-                        true, // Reverse so newest messages appear at bottom (above input bar)
-                    shrinkWrap: false, // Let it expand to fill available space
-                    padding: const EdgeInsets.only(
-                      left: 8.0,
-                      right: 8.0,
-                      top: 4.0,
-                      bottom:
-                          10.0, // Reduced bottom padding to bring messages closer to input bar
-                    ),
-                    itemCount: _processedMessages.length +
-                        (scrollController.isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      // Removed excessive debug logging - only log significant events
-                      // Show loading indicator at the top (for loading older messages)
-                      if (scrollController.isLoadingMore &&
-                          index == _processedMessages.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.cyanAccent,
+                  // Main messages list with fade effect at top and bottom
+                  ShaderMask(
+                    shaderCallback: (Rect bounds) {
+                      // Calculate fade positions based on padding
+                      // Top fade: start at topPadding (where messages begin below app bar)
+                      final topFadeStart = topPadding / bounds.height;
+                      final topFadeEnd =
+                          (topPadding + 60) / bounds.height; // 60px fade zone
+
+                      // Bottom fade: start at bottomPadding (where input bar begins)
+                      final bottomFadeEnd =
+                          1.0 - (bottomPadding / bounds.height);
+                      final bottomFadeStart = bottomFadeEnd -
+                          (60 / bounds.height); // 60px fade zone
+
+                      return LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: const [
+                          Colors.transparent,
+                          Colors.white,
+                          Colors.white,
+                          Colors.transparent,
+                        ],
+                        stops: [
+                          topFadeStart.clamp(0.0, 1.0),
+                          topFadeEnd.clamp(0.0, 1.0),
+                          bottomFadeStart.clamp(0.0, 1.0),
+                          bottomFadeEnd.clamp(0.0, 1.0),
+                        ],
+                      ).createShader(bounds);
+                    },
+                    blendMode: BlendMode.dstIn,
+                    child: ListView.builder(
+                      controller: scrollController.scrollController,
+                      reverse:
+                          true, // Reverse so newest messages appear at bottom (above input bar)
+                      shrinkWrap:
+                          false, // Let it expand to fill available space
+                      padding: EdgeInsets.only(
+                        left: 8.0,
+                        right: 8.0,
+                        top: topPadding + 4.0,
+                        bottom: bottomPadding,
+                      ),
+                      itemCount: _processedMessages.length +
+                          (scrollController.isLoadingMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        // Removed excessive debug logging - only log significant events
+                        // Show loading indicator at the top (for loading older messages)
+                        if (scrollController.isLoadingMore &&
+                            index == _processedMessages.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Center(
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.cyanAccent,
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      }
+                          );
+                        }
 
-                      // Adjust index for loading indicator
-                      final messageGroupIndex =
-                          scrollController.isLoadingMore ? index - 1 : index;
-                      if (messageGroupIndex < 0 ||
-                          messageGroupIndex >= _processedMessages.length) {
-                        return const SizedBox.shrink();
-                      }
-                      final messageGroup = _processedMessages[messageGroupIndex]
-                          as MessageGroupData;
+                        // Adjust index for loading indicator
+                        final messageGroupIndex =
+                            scrollController.isLoadingMore ? index - 1 : index;
+                        if (messageGroupIndex < 0 ||
+                            messageGroupIndex >= _processedMessages.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final messageGroup =
+                            _processedMessages[messageGroupIndex]
+                                as MessageGroupData;
 
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2.0),
-                        child: Stack(
-                          children: [
-                            Transform.translate(
-                              offset: Offset(offset, 0),
-                              child: MessageGroup(
-                                messages: [
-                                  messageGroup.parentMessage,
-                                  ...messageGroup.replies
-                                ],
-                                showSender: true,
-                                showTimestamp: messageGroup
-                                    .parentMessage.shouldShowTimestamp,
-                                showReadIndicator: false,
-                                onTap: onMessageTap,
-                                onLongPress: () {},
-                                sendingStatus: {},
-                                chatGroupId: chatGroupId,
-                                chatType: chatType,
-                                chatService: _chatService,
-                                squadId: chatType == ChatType.squad
-                                    ? chatGroupId
-                                    : null,
-                              ).animate().fadeIn(duration: 300.ms),
-                            ),
-                            if (offset < -2)
-                              Positioned(
-                                right: 0,
-                                top: messageGroup
-                                        .parentMessage.shouldShowTimestamp
-                                    ? 40
-                                    : 0,
-                                height: 60,
-                                child: Transform.translate(
-                                  offset: Offset(
-                                      (50 + offset * 1.25).clamp(0, 50), 0),
-                                  child: Container(
-                                    width: 50,
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      _formatTimestamp(
-                                          messageGroup.parentMessage.timestamp),
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2.0),
+                          child: Stack(
+                            children: [
+                              Transform.translate(
+                                offset: Offset(offset, 0),
+                                child: MessageGroup(
+                                  messages: [
+                                    messageGroup.parentMessage,
+                                    ...messageGroup.replies
+                                  ],
+                                  showSender: true,
+                                  showTimestamp: messageGroup
+                                      .parentMessage.shouldShowTimestamp,
+                                  showReadIndicator: false,
+                                  onTap: onMessageTap,
+                                  onLongPress: () {},
+                                  sendingStatus: {},
+                                  chatGroupId: chatGroupId,
+                                  chatType: chatType,
+                                  chatService: _chatService,
+                                  squadId: chatType == ChatType.squad
+                                      ? chatGroupId
+                                      : null,
+                                ).animate().fadeIn(duration: 300.ms),
+                              ),
+                              if (offset < -2)
+                                Positioned(
+                                  right: 0,
+                                  top: messageGroup
+                                          .parentMessage.shouldShowTimestamp
+                                      ? 40
+                                      : 0,
+                                  height: 60,
+                                  child: Transform.translate(
+                                    offset: Offset(
+                                        (50 + offset * 1.25).clamp(0, 50), 0),
+                                    child: Container(
+                                      width: 50,
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        _formatTimestamp(messageGroup
+                                            .parentMessage.timestamp),
+                                        style: const TextStyle(
+                                          color: Colors.grey,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -469,16 +505,16 @@ class ChatUIManager {
     // Convert messages to MessageData objects
     final messageDataList = visibleMessages.map((message) {
       final json = message.toJson();
-      if (kDebugMode) {
-        debugPrint(
-            'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", reactions in json: ${json['reactions']}');
-      }
+      // if (kDebugMode) {
+      //   debugPrint(
+      //       'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", reactions in json: ${json['reactions']}');
+      // }
       final messageData =
           MessageData.fromMap(json, uidToDisplayName: uidToDisplayName);
-      if (kDebugMode) {
-        debugPrint(
-            'DEBUG ChatUIManager: Created MessageData with ${messageData.reactions.length} reactions');
-      }
+      // if (kDebugMode) {
+      //   debugPrint(
+      //       'DEBUG ChatUIManager: Created MessageData with ${messageData.reactions.length} reactions');
+      // }
       return messageData;
     }).toList();
 

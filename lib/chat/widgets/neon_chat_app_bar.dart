@@ -148,41 +148,34 @@ class _GlassCircleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        customBorder: const CircleBorder(),
-        splashColor: neonColor.withOpacity(0.3),
-        highlightColor: neonColor.withOpacity(0.1),
-        child: Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black.withOpacity(0.7),
-            border: Border.all(
-              color: neonColor.withOpacity(0.6),
-              width: 2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: neonColor.withOpacity(0.4),
-                blurRadius: 16,
-                spreadRadius: 2,
+    return ClipOval(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onPressed,
+            customBorder: const CircleBorder(),
+            splashColor: Colors.white.withOpacity(0.1),
+            highlightColor: Colors.white.withOpacity(0.05),
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.15),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 0.5,
+                ),
               ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.6),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+              child: Center(
+                child: Icon(
+                  icon,
+                  color: Colors.white,
+                  size: 28,
+                ),
               ),
-            ],
-          ),
-          child: Center(
-            child: Icon(
-              icon,
-              color: neonColor,
-              size: 28,
             ),
           ),
         ),
@@ -298,31 +291,19 @@ class _GlassPill extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.65),
+            color: Colors.white.withOpacity(0.15),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: neonColor.withOpacity(0.5),
+              color: Colors.white.withOpacity(0.2),
               width: 0.5,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: neonColor.withOpacity(0.3),
-                blurRadius: 8,
-                spreadRadius: 0,
-              ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.5),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
           ),
           child: Text(
             squadName,
             style: GoogleFonts.orbitron(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: neonColor,
+              color: Colors.white,
               letterSpacing: 0.5,
             ),
             maxLines: 1,

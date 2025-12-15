@@ -4,6 +4,7 @@ import '../services/supabase_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
 import '../presentation/notifiers/lobby_notifier.dart';
+import '../presentation/notifiers/chat_notifier.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/message.dart';
 import '../core/app_theme.dart';
@@ -388,7 +389,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
       // Get current lobby data
       final lobbyData = await SupabaseService.client
           .from('lobbies')
-          .select('member_uids, spots')
+          .select('member_uids, spots, chat_group_id')
           .eq('id', lobby.id)
           .maybeSingle();
 
@@ -416,6 +417,14 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
         'last_activity': DateTime.now().toIso8601String(),
       }).eq('id', lobby.id);
 
+      // Join the chat group if it exists
+      final chatGroupId = lobbyData['chat_group_id'] as String?;
+      if (chatGroupId != null) {
+        await ref.read(chatNotifierProvider.notifier).joinGroup(chatGroupId);
+        // Reload user groups to show the newly joined group
+        await ref.read(chatNotifierProvider.notifier).loadUserGroups();
+      }
+
       // Set as current lobby
       ref.read(lobbyNotifierProvider.notifier).setSelectedLobbyId(lobby.id);
 
@@ -429,12 +438,14 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
           ),
         );
 
-        // Navigate to chat
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => const ChatScreen(chatType: ChatType.squad),
-          ),
-        );
+        // Navigate to chat if group exists
+        if (chatGroupId != null) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const ChatScreen(chatType: ChatType.squad),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

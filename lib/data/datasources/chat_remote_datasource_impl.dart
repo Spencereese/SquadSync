@@ -75,12 +75,9 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
             .limit(limit);
 
     final messages = <Message>[];
-    for (final item in (response as List)) {
+    for (final item in response) {
       try {
-        // Safely cast to Map
-        if (item is! Map) continue;
-
-        final messageData = Map<String, dynamic>.from(item as Map);
+        final messageData = Map<String, dynamic>.from(item);
 
         // Clean JSONB fields with incompatible data types using the same logic as stream
         for (final key in [

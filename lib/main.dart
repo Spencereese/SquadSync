@@ -16,7 +16,6 @@ import 'core/injection.dart' as di;
 import 'core/app_router.dart';
 import 'notification_service.dart';
 import 'widgets/app_widgets.dart';
-import 'services/igdb_auth_service.dart';
 import 'services/supabase_service.dart';
 import 'services/session_debug_helper.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';

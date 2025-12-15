@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service_supabase.dart';
-import '../services/supabase_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/entities/message.dart';
 import '../domain/entities/lobby_state.dart';
 import 'chat_screen.dart';
@@ -29,7 +27,6 @@ class ChatGroupsScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
-  final AuthServiceSupabase _authService = AuthServiceSupabase();
   late PageController _pageController;
   final ValueNotifier<int> _selectedIndexNotifier = ValueNotifier<int>(0);
   final TextEditingController _codeController = TextEditingController();
@@ -43,19 +40,24 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   @override
   void initState() {
     super.initState();
-    _checkLastChatGroup();
+    // Removed _checkLastChatGroup() - now handled by GoRouter redirect for better UX
     _pageController = PageController(initialPage: _selectedIndexNotifier.value);
     _pageController.addListener(_handlePageChange);
 
-    // Initialize discover groups future
-    _discoverGroupsFuture =
-        ref.read(chatNotifierProvider.notifier).discoverGroups();
-
-    // Load user's groups on initialization
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Load user's groups first, then load discover groups
+    // This ensures discover filtering works correctly
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
         debugPrint('🔴 ChatGroupsScreen: Calling loadUserGroups()');
-        ref.read(chatNotifierProvider.notifier).loadUserGroups();
+        await ref.read(chatNotifierProvider.notifier).loadUserGroups();
+
+        // Now initialize discover groups AFTER user groups are loaded
+        if (mounted) {
+          setState(() {
+            _discoverGroupsFuture =
+                ref.read(chatNotifierProvider.notifier).discoverGroups();
+          });
+        }
       } else {
         debugPrint(
             '🔴 ChatGroupsScreen: NOT calling loadUserGroups (not mounted)');
@@ -835,62 +837,6 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     }
   }
 
-  void _checkLastChatGroup() async {
-    try {
-      // Wait a moment for the screen to be fully mounted and data loaded
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      if (!mounted) return;
-
-      final prefs = await SharedPreferences.getInstance();
-      final lastGroupId = prefs.getString('last_chat_group');
-
-      if (lastGroupId == null || lastGroupId.isEmpty) {
-        debugPrint('No last chat group saved');
-        return;
-      }
-
-      debugPrint('Attempting to restore last chat group: $lastGroupId');
-
-      // Check if the group still exists and user has access
-      final response = await SupabaseService.client
-          .from('chat_groups')
-          .select()
-          .eq('id', lastGroupId)
-          .maybeSingle();
-
-      if (response != null && mounted) {
-        final members = List<String>.from(response['member_uids'] ?? []);
-        final isPrivate = response['is_private'] ?? false;
-        final currentUserId = _authService.currentUser?.id;
-
-        if (currentUserId != null &&
-            (!isPrivate || members.contains(currentUserId))) {
-          debugPrint('Navigating to last chat group: ${response['name']}');
-
-          // Use addPostFrameCallback to ensure navigation happens after build
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(
-                    chatGroupId: lastGroupId,
-                    chatGroupName: response['name'] ?? 'Unknown Group',
-                    chatType: ChatType.userGroup,
-                  ),
-                ),
-              );
-            }
-          });
-        } else {
-          debugPrint('User does not have access to last chat group');
-        }
-      } else {
-        debugPrint('Last chat group not found or user has no access');
-      }
-    } catch (e) {
-      debugPrint('Error restoring last chat group: $e');
-    }
-  }
+  // Removed _checkLastChatGroup() - navigation to last chat now handled by GoRouter
+  // This eliminates the flash of the groups screen on startup
 }

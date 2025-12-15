@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -299,7 +300,6 @@ class MessageBubble extends ConsumerStatefulWidget {
 class _MessageBubbleState extends ConsumerState<MessageBubble> {
   late models.MessageData _messageData;
   bool _isGrokExpanded = false; // Track if Grok message is expanded
-  final GlobalKey _messageKey = GlobalKey();
 
   // Overlay references for dismissal
   OverlayEntry? _reactionsOverlay;
@@ -331,10 +331,12 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
     }
 
     // Debug reactions
-    debugPrint(
-        '💬 MessageBubble: Message ${_messageData.id} has ${_messageData.reactions.length} reactions');
-    if (_messageData.reactions.isNotEmpty) {
-      debugPrint('💬 Reactions data: ${_messageData.reactions}');
+    if (kDebugMode) {
+      debugPrint(
+          '💬 MessageBubble: Message ${_messageData.id} has ${_messageData.reactions.length} reactions');
+      if (_messageData.reactions.isNotEmpty) {
+        debugPrint('💬 Reactions data: ${_messageData.reactions}');
+      }
     }
   }
 
@@ -516,9 +518,7 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
-    // DEBUG: Log message details for troubleshooting
-    debugPrint(
-        'DEBUG MessageBubble.build: senderId=${_messageData.senderUid}, isOwnMessage=${widget.isMe}, messageType=${_messageData.type}, showTimestamp=${widget.showTimestamp}');
+    // Removed excessive debug logging - this method is called on every frame
 
     // Check if this is a Grok AI message for unique styling
     if (_messageData.isGrokMessage) {

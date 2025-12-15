@@ -37,8 +37,7 @@ class MessageContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    debugPrint(
-        'DEBUG MessageContent: Building for message "${message.text}", hasContent: ${message.hasContent}, length: ${message.text.length}, replyTo: ${message.replyTo}');
+    // Removed excessive debug logging that was spamming console on every build
     if (!message.hasContent) {
       return const Text(
         '[Empty Message]',

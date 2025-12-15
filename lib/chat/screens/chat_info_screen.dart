@@ -14,7 +14,7 @@ import '../link_preview.dart';
 import '../../domain/entities/message.dart' hide MessageType;
 import '../models/message_data.dart' show MessageType;
 import '../../services/background_service.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../core/utils/image_crop_helper.dart';
 import 'components/chat_info_widgets.dart';
 import 'components/chat_info_app_bar.dart';
 import 'components/chat_info_members.dart';
@@ -26,6 +26,7 @@ import 'components/chat_info_links_files.dart';
 import '../../domain/entities/message.dart' show ChatType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/chat_notifier.dart' as cn;
+import '../services/chat_message_search_delegate.dart';
 
 /// Chat/Squad info screen with perfect iMessage layout in glass style
 ///
@@ -100,6 +101,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
             avatarUrl: widget.avatarUrl,
             neonColor: neonColor,
             onEditPressed: () => _showEditSheet(context),
+            onSearchPressed: () => _showMessageSearch(context),
           ),
 
           // Scrollable content
@@ -388,11 +390,20 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
         _buildLobbySpotsCard(context, neonColor),
         const SizedBox(height: 32),
 
-        // Danger zone: Leave Group/Lobby
+        // Danger zone: Clear Chat & Leave Group/Lobby
         _buildSectionHeader(
           context,
           Theme.of(context).colorScheme.error,
           'Danger Zone',
+        ),
+        const SizedBox(height: 12),
+        _buildActionCard(
+          context,
+          Theme.of(context).colorScheme.error,
+          'Clear Chat History',
+          Icons.delete_sweep,
+          () => _showClearChatConfirmation(context),
+          isDestructive: true,
         ),
         const SizedBox(height: 12),
         _buildActionCard(
@@ -1721,15 +1732,11 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     Color neonColor,
   ) async {
     try {
-      final picker = ImagePicker();
-      final image = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1080,
-        imageQuality: 85,
-      );
+      // Use ImageCropHelper for picking and cropping background image
+      final croppedFile =
+          await ImageCropHelper.pickAndCropBackgroundImage(context);
 
-      if (image == null) return;
+      if (croppedFile == null) return;
 
       if (!mounted) return;
 
@@ -1753,10 +1760,10 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
         ),
       );
 
-      // Upload using BackgroundService
+      // Upload using BackgroundService with cropped file
       await _backgroundService.uploadCustomBackground(
         widget.squadId,
-        image.path,
+        croppedFile.path,
       );
 
       if (!mounted) return;
@@ -2301,6 +2308,88 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
         squadName: widget.squadName,
         avatarUrl: widget.avatarUrl,
         onEditName: () => _showEditNameDialog(context),
+      ),
+    );
+  }
+
+  void _showMessageSearch(BuildContext context) {
+    showSearch(
+      context: context,
+      delegate: ChatMessageSearchDelegate(),
+    );
+  }
+
+  void _showClearChatConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Chat History?'),
+        content: const Text(
+          'This will permanently delete all messages in this chat. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog
+
+              try {
+                // Show loading indicator
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Deleting messages...'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+
+                // Determine chat group ID based on chat type
+                final chatGroupId = widget.chatType == ChatType.userGroup
+                    ? widget.squadId
+                    : null;
+
+                // Delete all messages for this chat/lobby
+                if (chatGroupId != null) {
+                  // User group: delete by chat_group_id
+                  await SupabaseService.client
+                      .from('chat_messages')
+                      .delete()
+                      .eq('chat_group_id', chatGroupId);
+                } else {
+                  // Lobby: delete by squad_id
+                  await SupabaseService.client
+                      .from('chat_messages')
+                      .delete()
+                      .eq('squad_id', widget.squadId);
+                }
+
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Chat history cleared successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                debugPrint('Error clearing chat: $e');
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to clear chat: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete All'),
+          ),
+        ],
       ),
     );
   }

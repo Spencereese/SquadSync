@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/message_service.dart';
 import 'package:flutter/material.dart';
@@ -13,9 +14,7 @@ import '../message_bubble.dart';
 import '../models/message_data.dart';
 import '../models/message_group_data.dart';
 import '../widgets/message_group.dart';
-import '../chat_settings_menu.dart';
 import 'chat_scroll_controller.dart';
-import 'chat_message_search_delegate.dart';
 
 /// Service responsible for coordinating UI state and building complex UI components
 /// for the chat screen. This extracts the complex build logic from ChatScreen.
@@ -96,196 +95,6 @@ class ChatUIManager {
     // Convert to local time if needed
     final localTime = timestamp.isUtc ? timestamp.toLocal() : timestamp;
     return '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
-  }
-
-  /// Build the chat header with settings menu and online count
-  Widget buildChatHeader({
-    required BuildContext context,
-    required String? chatGroupId,
-    required VoidCallback onBackPressed,
-    required VoidCallback onToggleNotifications,
-    required VoidCallback onViewGroupInfo,
-    required VoidCallback onReportBug,
-    required VoidCallback onLeaveGroup,
-    required Future<void> Function() onChangeChatName,
-    required Future<void> Function() onChangeChatImage,
-    required Future<void> Function() onClearChat,
-    required VoidCallback onQuickReactionPicker,
-    required VoidCallback onInviteMembers,
-    required VoidCallback onViewMediaGallery,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: AnimatedOpacity(
-          opacity: 1.0,
-          duration: const Duration(milliseconds: 300),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Chat settings menu
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _showChatOptionsMenu(
-                    context: context,
-                    chatGroupId: chatGroupId,
-                    onChangeChatName: onChangeChatName,
-                    onChangeChatImage: onChangeChatImage,
-                    onClearChat: onClearChat,
-                    onQuickReactionPicker: onQuickReactionPicker,
-                    onToggleNotifications: onToggleNotifications,
-                    onViewGroupInfo: onViewGroupInfo,
-                    onReportBug: onReportBug,
-                    onLeaveGroup: onLeaveGroup,
-                    onInviteMembers: onInviteMembers,
-                    onViewMediaGallery: onViewMediaGallery,
-                  ),
-                  child: Semantics(
-                    label: 'Chat options',
-                    child: Row(
-                      children: [
-                        // Back button for chat groups
-                        if (chatGroupId != null)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
-                            child: IconButton(
-                              icon: Icon(
-                                Icons.arrow_back,
-                                color: Theme.of(context).colorScheme.primary,
-                                size: 24,
-                              ),
-                              onPressed: onBackPressed,
-                              tooltip: 'Back to groups',
-                            ),
-                          ),
-                        // Chat image/avatar
-                        if (_chatImageUrl != null)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
-                            child: CircleAvatar(
-                              radius: 20,
-                              backgroundImage: NetworkImage(_chatImageUrl!),
-                            ),
-                          )
-                        else
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
-                            child: CircleAvatar(
-                              radius: 20,
-                              child: Icon(Icons.group,
-                                  color: Theme.of(context).colorScheme.primary),
-                            ),
-                          ),
-                        // Chat name
-                        Expanded(
-                          child: Text(
-                            _chatName,
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // Lobby button/counter
-              r.Consumer(
-                builder: (context, ref, _) {
-                  final squadAsync = ref.watch(ln.lobbyNotifierProvider);
-                  final squadState = squadAsync.value;
-                  if (squadState == null) return const SizedBox.shrink();
-
-                  // Count how many lobby members are currently in lobby spots
-                  int inLobbyCount = 0;
-                  final squadMembers = squadState.lobbyMemberUids;
-
-                  // Check all games for lobby spots occupied by lobby members
-                  for (final gameSpots in squadState.gameLobbySpots.values) {
-                    for (final spot in gameSpots) {
-                      if (spot != null && squadMembers.contains(spot)) {
-                        inLobbyCount++;
-                      }
-                    }
-                  }
-
-                  final showCounter = inLobbyCount > 0;
-
-                  return GestureDetector(
-                    onTap: () {
-                      // Navigate to squad tab
-                      Navigator.pushNamed(context, '/squad');
-                    },
-                    child: Semantics(
-                      label: showCounter
-                          ? '$inLobbyCount lobby members in game spots, tap to view squad'
-                          : 'View squad, tap to see squad spots',
-                      child: Builder(
-                        builder: (context) {
-                          final theme = Theme.of(context);
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: showCounter
-                                  ? theme.colorScheme.tertiary.withOpacity(0.2)
-                                  : theme.colorScheme.surface.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Row(
-                              children: [
-                                Text(
-                                  showCounter
-                                      ? 'In Lobby: $inLobbyCount'
-                                      : 'Lobby',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: showCounter
-                                        ? theme.colorScheme.tertiary
-                                        : theme.colorScheme.onSurface,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  showCounter
-                                      ? Icons.group
-                                      : Icons.keyboard_arrow_down,
-                                  color: showCounter
-                                      ? theme.colorScheme.tertiary
-                                          .withOpacity(0.7)
-                                      : theme.colorScheme.onSurface
-                                          .withOpacity(0.7),
-                                  size: 16,
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   /// Build the active squad header card
@@ -373,7 +182,7 @@ class ChatUIManager {
     Future<void> Function(String)?
         markAsDelivered, // Made optional for Supabase migration
   }) {
-    // Process messages if needed
+    // Optimize message processing - only reprocess when message list changes
     if (_needsMessageProcessing ||
         messages.length != _processedMessages.length) {
       _processMessages(messages, cleanText, uidToDisplayName: uidToDisplayName);
@@ -660,12 +469,16 @@ class ChatUIManager {
     // Convert messages to MessageData objects
     final messageDataList = visibleMessages.map((message) {
       final json = message.toJson();
-      debugPrint(
-          'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", reactions in json: ${json['reactions']}');
+      if (kDebugMode) {
+        debugPrint(
+            'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", reactions in json: ${json['reactions']}');
+      }
       final messageData =
           MessageData.fromMap(json, uidToDisplayName: uidToDisplayName);
-      debugPrint(
-          'DEBUG ChatUIManager: Created MessageData with ${messageData.reactions.length} reactions');
+      if (kDebugMode) {
+        debugPrint(
+            'DEBUG ChatUIManager: Created MessageData with ${messageData.reactions.length} reactions');
+      }
       return messageData;
     }).toList();
 
@@ -735,41 +548,5 @@ class ChatUIManager {
 
     _processedMessages = messageGroups;
     _needsMessageProcessing = false;
-  }
-
-  /// Show chat options menu
-  void _showChatOptionsMenu({
-    required BuildContext context,
-    required String? chatGroupId,
-    required Future<void> Function() onChangeChatName,
-    required Future<void> Function() onChangeChatImage,
-    required Future<void> Function() onClearChat,
-    required VoidCallback onQuickReactionPicker,
-    required VoidCallback onToggleNotifications,
-    required VoidCallback onViewGroupInfo,
-    required VoidCallback onReportBug,
-    required VoidCallback onLeaveGroup,
-    required VoidCallback onInviteMembers,
-    required VoidCallback onViewMediaGallery,
-  }) {
-    ChatSettingsMenu.showChatOptions(
-      context: context,
-      onSearchMessages: () {
-        showSearch(
-          context: context,
-          delegate: ChatMessageSearchDelegate(),
-        );
-      },
-      onChangeChatName: onChangeChatName,
-      onChangeChatImage: onChangeChatImage,
-      onClearChat: onClearChat,
-      onQuickReactionPicker: onQuickReactionPicker,
-      onToggleNotifications: onToggleNotifications,
-      isMuted: _isMuted,
-      onViewGroupInfo: onViewGroupInfo,
-      onReportBug: onReportBug,
-      onLeaveGroup: onLeaveGroup,
-      onViewMediaGallery: onViewMediaGallery,
-    );
   }
 }

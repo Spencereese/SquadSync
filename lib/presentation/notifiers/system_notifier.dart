@@ -66,6 +66,11 @@ class SystemNotifier extends AsyncNotifier<SystemState> {
     _updateGameThemeBrightness(brightness);
   }
 
+  /// Alias for updateThemeMode to match settings screen usage
+  Future<void> setThemeMode(ThemeMode themeMode) async {
+    await updateThemeMode(themeMode);
+  }
+
   /// Convert ThemeMode to Brightness
   Brightness _getBrightnessForThemeMode(ThemeMode themeMode) {
     switch (themeMode) {

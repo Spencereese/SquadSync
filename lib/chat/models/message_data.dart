@@ -217,30 +217,27 @@ class MessageData {
 
   /// Parse reactions field which can be in different formats
   static List<Map<String, dynamic>> _parseReactions(dynamic reactionsData) {
-    debugPrint(
-        '💬 _parseReactions called with: $reactionsData (type: ${reactionsData.runtimeType})');
+    // Fast path: Early return for null/empty (most common case)
     if (reactionsData == null) {
-      debugPrint('💬 _parseReactions: null, returning empty list');
       return [];
     }
 
     // If it's a Map
     if (reactionsData is Map) {
-      final mapData = reactionsData as Map<dynamic, dynamic>;
+      final mapData = reactionsData;
       if (mapData.isEmpty) {
-        debugPrint('💬 _parseReactions: empty map, returning empty list');
         return [];
       }
-      debugPrint(
-          '💬 _parseReactions: processing map with ${mapData.length} entries');
 
       // Check format by looking at first value
       final firstValue = mapData.values.firstOrNull;
 
       if (firstValue is String) {
         // OLD format: Map<userId, emoji> - migrate to new format
-        debugPrint(
-            '💬 _parseReactions: detected OLD format (userId -> emoji), converting...');
+        if (kDebugMode) {
+          debugPrint(
+              '💬 _parseReactions: detected OLD format (userId -> emoji), converting...');
+        }
         final emojiToUsers = <String, List<String>>{};
         for (final entry in mapData.entries) {
           final userId = entry.key.toString();
@@ -260,8 +257,6 @@ class MessageData {
             });
           }
         }
-        debugPrint(
-            '💬 _parseReactions: converted ${result.length} reactions from old format');
         return result;
       } else if (firstValue is List) {
         // New format: Map<emoji, List<userId>>
@@ -278,22 +273,17 @@ class MessageData {
             });
           }
         }
-        debugPrint(
-            '💬 _parseReactions: returning ${result.length} reactions (new format)');
         return result;
       } else if (firstValue is int) {
         // Aggregated format: Map<emoji, count>
-        final result = mapData.entries
+        return mapData.entries
             .map((entry) => {
                   'emoji': entry.key.toString(),
                   'count': entry.value is int ? entry.value : 1,
                   'reaction': entry.key.toString(), // Legacy field name support
                 })
             .toList();
-        debugPrint(
-            '💬 _parseReactions: returning ${result.length} reactions (aggregated format)');
-        return result;
-      } else {
+      } else if (kDebugMode) {
         debugPrint(
             '💬 _parseReactions: unknown map value type: ${firstValue.runtimeType}');
       }
@@ -301,13 +291,9 @@ class MessageData {
 
     // If it's already a list of maps, filter and cast
     if (reactionsData is List) {
-      final result = reactionsData.whereType<Map<String, dynamic>>().toList();
-      debugPrint(
-          '💬 _parseReactions: returning ${result.length} reactions (list format)');
-      return result;
+      return reactionsData.whereType<Map<String, dynamic>>().toList();
     }
 
-    debugPrint('💬 _parseReactions: returning empty list (fallthrough)');
     return [];
   }
 

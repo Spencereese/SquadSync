@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../core/utils/image_crop_helper.dart';
 
 class AvatarSelectionWidget extends StatefulWidget {
   final String? initialAvatarPath;
@@ -99,22 +99,17 @@ class _AvatarSelectionWidgetState extends State<AvatarSelectionWidget>
 
   Future<void> _pickImage() async {
     try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 85,
-      );
+      final croppedFile =
+          await ImageCropHelper.pickAndCropProfileImage(context);
 
-      if (pickedFile != null) {
+      if (croppedFile != null) {
         setState(() {
-          _uploadedImage = File(pickedFile.path);
+          _uploadedImage = croppedFile;
           _selectedPresetIndex = null; // Clear preset selection
         });
 
         HapticFeedback.mediumImpact();
-        widget.onAvatarSelected(pickedFile.path, Colors.cyan);
+        widget.onAvatarSelected(croppedFile.path, Colors.cyan);
       }
     } catch (e) {
       debugPrint('Error picking image: $e');

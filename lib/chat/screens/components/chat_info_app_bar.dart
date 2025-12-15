@@ -10,13 +10,14 @@ import 'chat_info_widgets.dart';
 /// - Glassmorphic background with backdrop blur
 /// - Hero animated squad avatar
 /// - Lobby name with Orbitron font
-/// - Back and edit buttons
+/// - Back, search, and edit buttons
 class ChatInfoAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String squadId;
   final String squadName;
   final String? avatarUrl;
   final Color neonColor;
   final VoidCallback onEditPressed;
+  final VoidCallback? onSearchPressed;
 
   const ChatInfoAppBar({
     super.key,
@@ -25,6 +26,7 @@ class ChatInfoAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.avatarUrl,
     required this.neonColor,
     required this.onEditPressed,
+    this.onSearchPressed,
   });
 
   @override
@@ -49,11 +51,17 @@ class ChatInfoAppBar extends StatelessWidget implements PreferredSizeWidget {
           child: SafeArea(
             child: Row(
               children: [
-                // Left: Back button
-                ChatInfoGlassCircleButton(
-                  icon: Icons.chevron_left,
-                  onPressed: () => Navigator.pop(context),
-                  neonColor: neonColor,
+                // Left: Back button (fixed width container for balance)
+                SizedBox(
+                  width: 88, // Match right side width (40 + 8 + 40)
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: ChatInfoGlassCircleButton(
+                      icon: Icons.chevron_left,
+                      onPressed: () => Navigator.pop(context),
+                      neonColor: neonColor,
+                    ),
+                  ),
                 ),
 
                 // Center: Avatar + Lobby Name
@@ -116,11 +124,27 @@ class ChatInfoAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ),
                 ),
 
-                // Right: Edit button
-                ChatInfoGlassCircleButton(
-                  icon: Icons.edit,
-                  onPressed: onEditPressed,
-                  neonColor: neonColor,
+                // Right: Search and Edit buttons (fixed width container)
+                SizedBox(
+                  width: 88, // 40 (button) + 8 (spacing) + 40 (button)
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (onSearchPressed != null) ...[
+                        ChatInfoGlassCircleButton(
+                          icon: Icons.search,
+                          onPressed: onSearchPressed!,
+                          neonColor: neonColor,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      ChatInfoGlassCircleButton(
+                        icon: Icons.edit,
+                        onPressed: onEditPressed,
+                        neonColor: neonColor,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

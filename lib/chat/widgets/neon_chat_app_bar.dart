@@ -39,24 +39,21 @@ class NeonChatAppBar extends StatelessWidget {
       height: 120 + topPadding,
       child: Stack(
         children: [
-          // Background layer with blur - extends full height
+          // Background layer with subtle shadow - NO blur effect
+          // IgnorePointer allows content to scroll behind this layer
           Positioned.fill(
-            child: ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.75),
-                        Colors.black.withOpacity(0.6),
-                        Colors.black.withOpacity(0.3),
-                        Colors.transparent,
-                      ],
-                      stops: const [0.0, 0.4, 0.7, 1.0],
-                    ),
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withOpacity(0.3),
+                      Colors.black.withOpacity(0.15),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.6, 1.0],
                   ),
                 ),
               ),

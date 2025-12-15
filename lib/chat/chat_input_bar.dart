@@ -14,6 +14,9 @@ class ChatInputBar extends StatefulWidget {
   final String quickReactionEmoji;
   final String hintText;
   final FocusNode? focusNode;
+  final List<String>?
+      availableMembers; // List of member display names for mentions
+  final Map<String, String>? memberAvatars; // Map of display name to avatar URL
 
   const ChatInputBar({
     super.key,
@@ -29,6 +32,8 @@ class ChatInputBar extends StatefulWidget {
     required this.quickReactionEmoji,
     this.hintText = 'Message',
     this.focusNode,
+    this.availableMembers,
+    this.memberAvatars,
   });
 
   @override
@@ -68,6 +73,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
     final text = widget.controller.text;
     final cursorPosition = widget.controller.selection.baseOffset;
 
+    // Don't show mentions if no members available
+    if (widget.availableMembers == null || widget.availableMembers!.isEmpty) {
+      setState(() {
+        _showMentions = false;
+      });
+      return;
+    }
+
     if (cursorPosition > 0) {
       final textBeforeCursor = text.substring(0, cursorPosition);
       final lastAtIndex = textBeforeCursor.lastIndexOf('@');
@@ -75,21 +88,29 @@ class _ChatInputBarState extends State<ChatInputBar> {
       if (lastAtIndex != -1) {
         final textAfterAt = textBeforeCursor.substring(lastAtIndex + 1);
         if (!textAfterAt.contains(' ')) {
-          // Show mention suggestions
-          _showMentions = true;
-          // TODO: Get actual user list from squad state
-          _mentionSuggestions = ['Alice', 'Bob', 'Charlie', 'David']
-              .where((user) =>
-                  user.toLowerCase().contains(textAfterAt.toLowerCase()))
+          // Show mention suggestions filtered by actual members
+          final searchQuery = textAfterAt.toLowerCase();
+          _mentionSuggestions = widget.availableMembers!
+              .where((user) => user.toLowerCase().contains(searchQuery))
               .toList();
+
+          setState(() {
+            _showMentions = _mentionSuggestions.isNotEmpty;
+          });
         } else {
-          _showMentions = false;
+          setState(() {
+            _showMentions = false;
+          });
         }
       } else {
-        _showMentions = false;
+        setState(() {
+          _showMentions = false;
+        });
       }
     } else {
-      _showMentions = false;
+      setState(() {
+        _showMentions = false;
+      });
     }
   }
 
@@ -267,38 +288,83 @@ class _ChatInputBarState extends State<ChatInputBar> {
   Widget _buildMentionSuggestions() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8.0),
-      constraints: const BoxConstraints(maxHeight: 120),
+      constraints: const BoxConstraints(maxHeight: 200),
       decoration: BoxDecoration(
-        color: Colors.grey[200],
+        color: Colors.grey[900]?.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 4,
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
       child: ListView.builder(
         shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: _mentionSuggestions.length,
         itemBuilder: (context, index) {
           final user = _mentionSuggestions[index];
-          return ListTile(
-            dense: true,
-            leading: CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.grey[400],
-              child: Text(
-                user[0].toUpperCase(),
-                style: const TextStyle(color: Colors.white, fontSize: 12),
+          final avatarUrl = widget.memberAvatars?[user];
+
+          return Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _selectMention(user),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    // Avatar
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                          ? NetworkImage(avatarUrl)
+                          : null,
+                      child: avatarUrl == null || avatarUrl.isEmpty
+                          ? Text(
+                              user.isNotEmpty ? user[0].toUpperCase() : '?',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    // Username
+                    Expanded(
+                      child: Text(
+                        user,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // @ icon
+                    Icon(
+                      Icons.alternate_email,
+                      size: 16,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.6),
+                    ),
+                  ],
+                ),
               ),
             ),
-            title: Text(
-              user,
-              style: const TextStyle(fontSize: 14, color: Colors.black),
-            ),
-            onTap: () => _selectMention(user),
           );
         },
       ),

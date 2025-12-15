@@ -58,7 +58,7 @@ class ReactionConverter
 
     try {
       if (json is Map) {
-        final mapData = json as Map<dynamic, dynamic>;
+        final mapData = json;
         if (mapData.isEmpty) return null;
 
         // Check if this is the new format: Map<emoji, List<userId>>
@@ -250,8 +250,10 @@ class Message with _$Message {
   Map<String, dynamic> toJson() {
     // Use snake_case for Supabase compatibility
     final reactionsJson = const ReactionConverter().toJson(reactions);
-    debugPrint(
-        '💬 Message.toJson for $id: reactions field = $reactions, toJson = $reactionsJson');
+    if (kDebugMode) {
+      debugPrint(
+          '💬 Message.toJson for $id: reactions field = $reactions, toJson = $reactionsJson');
+    }
     return {
       'id': id,
       'sender_id': senderId,

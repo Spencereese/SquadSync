@@ -128,6 +128,7 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
       final List<dynamic> jsonData = json.decode(jsonString);
 
       final popularFromAssets = jsonData
+          .where((json) => _hasMultiplayer(json as Map<String, dynamic>))
           .take(20)
           .map((json) => Game.fromIgdb(json as Map<String, dynamic>))
           .toList();
@@ -169,6 +170,27 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
     } catch (e) {
       debugPrint('Error loading trending games: $e');
     }
+  }
+
+  /// Check if a game has multiplayer capabilities
+  bool _hasMultiplayer(Map<String, dynamic> game) {
+    // Check for multiplayer_modes field
+    final hasMpModes = game['multiplayer_modes'] != null &&
+        (game['multiplayer_modes'] as List).isNotEmpty;
+
+    // Check game_modes for multiplayer indicators
+    final gameModes = game['game_modes'] as List<dynamic>?;
+    final hasMultiplayerMode = gameModes?.any((mode) {
+          final modeName = (mode['name'] as String? ?? '').toLowerCase();
+          return modeName.contains('multiplayer') ||
+              modeName.contains('co-op') ||
+              modeName.contains('mmo') ||
+              modeName.contains('battle royale') ||
+              modeName.contains('split');
+        }) ??
+        false;
+
+    return hasMpModes || hasMultiplayerMode;
   }
 
   void _toggleGameSelection(Game game) {
@@ -503,7 +525,7 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Text(
-            'No games available',
+            'No multiplayer games available',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -521,7 +543,7 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
                 size: 18, color: theme.colorScheme.secondary),
             const SizedBox(width: 8),
             Text(
-              'Popular Games',
+              'Popular Multiplayer Games',
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: theme.colorScheme.secondary,
@@ -530,23 +552,31 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
           ],
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: _popularGames.map((game) {
-            final isSelected = _selectedGames.any((g) => g.slug == game.slug);
-            final isPrimary = _primaryGameSlug == game.slug;
+        // Make scrollable with max height constraint
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 400),
+          child: SingleChildScrollView(
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: _popularGames.map((game) {
+                final isSelected =
+                    _selectedGames.any((g) => g.slug == game.slug);
+                final isPrimary = _primaryGameSlug == game.slug;
 
-            return GameTile(
-              game: game,
-              isSelected: isSelected,
-              isPrimary: isPrimary,
-              style: widget.tileStyle,
-              onTap: () => _toggleGameSelection(game),
-              onLongPress:
-                  widget.isOnboarding ? () => _setPrimaryGame(game.slug) : null,
-            );
-          }).toList(),
+                return GameTile(
+                  game: game,
+                  isSelected: isSelected,
+                  isPrimary: isPrimary,
+                  style: widget.tileStyle,
+                  onTap: () => _toggleGameSelection(game),
+                  onLongPress: widget.isOnboarding
+                      ? () => _setPrimaryGame(game.slug)
+                      : null,
+                );
+              }).toList(),
+            ),
+          ),
         ),
       ],
     );

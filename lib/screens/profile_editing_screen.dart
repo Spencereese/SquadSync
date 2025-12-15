@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import '../core/utils/image_crop_helper.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../domain/entities/app_user.dart';
 import '../services/supabase_service.dart';
@@ -42,12 +42,11 @@ class _ProfileEditingScreenState extends ConsumerState<ProfileEditingScreen> {
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final croppedFile = await ImageCropHelper.pickAndCropProfileImage(context);
 
-    if (pickedFile != null) {
+    if (croppedFile != null) {
       setState(() {
-        _selectedImage = File(pickedFile.path);
+        _selectedImage = croppedFile;
       });
     }
   }

@@ -660,7 +660,7 @@ class MessageService with WidgetsBindingObserver {
           .eq('id', messageId)
           .single();
 
-      if (originalMessage == null) {
+      if (originalMessage.isEmpty) {
         return MessageSendResult.failure('Original message not found');
       }
 

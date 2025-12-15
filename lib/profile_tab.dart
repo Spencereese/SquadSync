@@ -1,12 +1,11 @@
 import 'dart:ui';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:confetti/confetti.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:image_picker/image_picker.dart';
+import 'core/utils/image_crop_helper.dart';
 import 'presentation/notifiers/user_notifier.dart';
 import 'presentation/notifiers/game_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
@@ -15,6 +14,7 @@ import 'screens/lobby_tab_screen.dart';
 import 'screens/profile_editing_screen.dart';
 import 'screens/availability_settings_screen.dart';
 import 'screens/performance_stats_screen.dart';
+import 'screens/settings_screen.dart';
 import 'domain/entities/lobby_state.dart';
 import 'domain/entities/app_user.dart';
 import 'core/app_theme.dart';
@@ -57,15 +57,11 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
 
   Future<void> _pickAndUploadProfileImage() async {
     try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 85,
-      );
+      // Use ImageCropHelper for picking and cropping
+      final croppedFile =
+          await ImageCropHelper.pickAndCropProfileImage(context);
 
-      if (pickedFile == null) return;
+      if (croppedFile == null) return;
 
       if (!mounted) return;
 
@@ -110,8 +106,8 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         final fileName = 'profile_${DateTime.now().millisecondsSinceEpoch}.jpg';
         final storagePath = '${user.id}/$fileName';
 
-        final file = File(pickedFile.path);
-        final bytes = await file.readAsBytes();
+        // Read the cropped file bytes
+        final bytes = await croppedFile.readAsBytes();
 
         // Upload to avatars bucket
         await SupabaseService.client.storage.from('avatars').uploadBinary(
@@ -1254,10 +1250,10 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
             icon: const Icon(Icons.settings_outlined, color: Colors.white),
             tooltip: 'Settings',
             onPressed: () {
-              // Navigate to dedicated settings screen
+              // Navigate to comprehensive settings screen
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (context) => const ProfileEditingScreen(),
+                  builder: (context) => const SettingsScreen(),
                 ),
               );
             },

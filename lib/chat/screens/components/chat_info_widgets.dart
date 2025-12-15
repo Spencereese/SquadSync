@@ -2,9 +2,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/app_theme.dart';
+import '../../../core/utils/image_crop_helper.dart';
 import '../../../services/supabase_service.dart';
 import '../../../services/auth_service_supabase.dart';
 
@@ -171,22 +171,22 @@ class ChatInfoBigActionButton extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(35),
+              borderRadius: BorderRadius.circular(20),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                 child: Container(
-                  width: 70,
-                  height: 70,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.white.withOpacity(0.08),
                     border: Border.all(
-                      color: neonColor.withOpacity(0.4),
-                      width: 2,
+                      color: neonColor.withOpacity(0.3),
+                      width: 1.5,
                     ),
                     boxShadow: neonColor.neonGlow(
-                      blur: 20,
-                      opacity: 0.4,
+                      blur: 12,
+                      opacity: 0.3,
                     ),
                   ),
                   child: Material(
@@ -198,7 +198,7 @@ class ChatInfoBigActionButton extends StatelessWidget {
                         child: Icon(
                           icon,
                           color: neonColor,
-                          size: 32,
+                          size: 22,
                         ),
                       ),
                     ),
@@ -329,18 +329,10 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
   /// Pick and upload lobby avatar
   Future<void> _pickAndUploadLobbyAvatar(BuildContext context) async {
     try {
-      // Import image_picker dynamically to avoid static import
-      final ImagePicker picker = ImagePicker();
+      // Use ImageCropHelper for picking and cropping group photo
+      final croppedFile = await ImageCropHelper.pickAndCropGroupImage(context);
 
-      // Pick image from gallery
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 85,
-      );
-
-      if (image == null) return;
+      if (croppedFile == null) return;
 
       if (!context.mounted) return;
 
@@ -366,8 +358,8 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
         final fileName = 'lobby_${squadId}_$timestamp.jpg';
         final storagePath = '${user.id}/$fileName';
 
-        // Read file as bytes
-        final bytes = await image.readAsBytes();
+        // Read cropped file as bytes
+        final bytes = await croppedFile.readAsBytes();
 
         // Upload to Supabase Storage
         final supabase = SupabaseService.client;

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/lobby_tab_screen.dart';
 import '../chat/chat_groups_screen.dart';
+import '../chat/chat_screen.dart';
 import '../profile_tab.dart';
 import '../screens/clips_screen.dart';
 import '../join_lobby_screen.dart';
@@ -10,6 +12,8 @@ import '../setup_screen.dart';
 import '../chat/dialogs/group_actions_dialog.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/ab_testing_service.dart';
+import '../services/supabase_service.dart';
+import '../domain/entities/message.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'package:firebase_analytics/firebase_analytics.dart';
 
@@ -51,6 +55,22 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       // If authenticated and on setup, redirect to main
       if (user != null && isLoginRoute) {
         return '/';
+      }
+
+      // OPTIMIZATION: Redirect to last chat on app startup to avoid flash of groups screen
+      // Only do this on the initial '/' route to avoid interfering with manual navigation
+      if (state.matchedLocation == '/' && user != null) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final lastGroupId = prefs.getString('last_chat_group');
+
+          if (lastGroupId != null && lastGroupId.isNotEmpty) {
+            debugPrint('GoRouter: Redirecting to last chat: $lastGroupId');
+            return '/chat/$lastGroupId';
+          }
+        } catch (e) {
+          debugPrint('GoRouter: Error checking last chat: $e');
+        }
       }
 
       return null;
@@ -97,6 +117,40 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/chat',
         name: 'chat',
         builder: (context, state) => const ChatGroupsScreen(),
+      ),
+      GoRoute(
+        path: '/chat/:id',
+        name: 'chatDetail',
+        builder: (context, state) {
+          final chatGroupId = state.pathParameters['id']!;
+
+          // Use a FutureBuilder to handle async loading
+          return FutureBuilder<Map<String, dynamic>?>(
+            future: SupabaseService.client
+                .from('chat_groups')
+                .select()
+                .eq('id', chatGroupId)
+                .maybeSingle(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              if (snapshot.hasError || snapshot.data == null) {
+                return const ChatGroupsScreen();
+              }
+
+              final response = snapshot.data!;
+              return ChatScreen(
+                chatGroupId: chatGroupId,
+                chatGroupName: response['name'] ?? 'Unknown Group',
+                chatType: ChatType.userGroup,
+              );
+            },
+          );
+        },
       ),
       GoRoute(
         path: '/profile',

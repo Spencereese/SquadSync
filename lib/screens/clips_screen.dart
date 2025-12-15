@@ -78,12 +78,15 @@ class _ClipsScreenState extends ConsumerState<ClipsScreen> {
               ),
             ],
           ),
-          body: _showTwitchClips
-              ? _buildTwitchClipsView(gameAsync, gameColor)
-              : ClipsTab(
-                  squadId: squadId,
-                  gameColor: gameColor,
-                ),
+          body: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: _showTwitchClips
+                ? _buildTwitchClipsView(gameAsync, gameColor)
+                : ClipsTab(
+                    squadId: squadId,
+                    gameColor: gameColor,
+                  ),
+          ),
         );
       },
       loading: () => const Scaffold(

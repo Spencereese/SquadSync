@@ -19,29 +19,24 @@ class BackgroundService {
   }) : _auth = auth ?? AuthServiceSupabase();
 
   /// Predefined background presets
-  /// Keys are preset IDs, values are asset paths or URLs
+  /// Keys are preset IDs, values are color hex codes or gradient strings
+  /// Note: Custom image backgrounds are uploaded via uploadCustomBackground()
   static const Map<String, String> presets = {
-    // NEON VOID themed presets
-    'matrix_rain': 'assets/images/backgrounds/matrix_rain.gif',
-    'warzone_green': 'assets/images/backgrounds/warzone_green.jpg',
-    'cyberpunk_city': 'assets/images/backgrounds/cyberpunk_city.jpg',
-    'neon_grid': 'assets/images/backgrounds/neon_grid.jpg',
-    'space_nebula': 'assets/images/backgrounds/space_nebula.jpg',
-    'digital_void': 'assets/images/backgrounds/digital_void.jpg',
-    'glitch_pattern': 'assets/images/backgrounds/glitch_pattern.jpg',
-    'particle_flow': 'assets/images/backgrounds/particle_flow.gif',
-
     // Solid color presets (hex values)
     'dark_void': '#0B0E14',
     'deep_purple': '#1A0B2E',
     'midnight_blue': '#0D1B2A',
     'forest_night': '#0F1E1A',
+    'pure_black': '#000000',
+    'charcoal': '#1C1C1C',
 
     // Gradient presets (encoded as gradient string)
     'neon_horizon': 'gradient:linear:0xFF00F5FF,0xFFFF00FF',
     'sunset_void': 'gradient:linear:0xFFFF6B35,0xFF4A1C8C',
     'emerald_dream': 'gradient:linear:0xFF00F5A0,0xFF00D9F5',
     'fire_storm': 'gradient:radial:0xFFFF4500,0xFF8B0000',
+    'ocean_depths': 'gradient:linear:0xFF001F3F,0xFF0074D9',
+    'purple_haze': 'gradient:linear:0xFF6B0B8C,0xFFB721FF',
   };
 
   /// Apply a background to a chat group
@@ -159,7 +154,12 @@ class BackgroundService {
 
       // Upload to Supabase Storage
       final supabase = SupabaseService.client;
-      await supabase.storage.from('chat-backgrounds').uploadBinary(
+      const bucketName = 'chat_backgrounds';
+
+      // Ensure bucket exists before uploading
+      await _ensureBucketExists(bucketName);
+
+      await supabase.storage.from(bucketName).uploadBinary(
             storagePath,
             bytes,
             fileOptions: FileOptions(
@@ -170,7 +170,7 @@ class BackgroundService {
 
       // Get public URL
       final downloadUrl =
-          supabase.storage.from('chat-backgrounds').getPublicUrl(storagePath);
+          supabase.storage.from(bucketName).getPublicUrl(storagePath);
 
       debugPrint('Upload complete: $downloadUrl');
 
@@ -278,13 +278,16 @@ class BackgroundService {
       final pathSegments = uri.pathSegments;
 
       // Find the bucket and file path
-      if (pathSegments.contains('chat-backgrounds')) {
-        final bucketIndex = pathSegments.indexOf('chat-backgrounds');
+      if (pathSegments.contains('chat_backgrounds') ||
+          pathSegments.contains('chat-backgrounds')) {
+        final bucketIndex = pathSegments.contains('chat_backgrounds')
+            ? pathSegments.indexOf('chat_backgrounds')
+            : pathSegments.indexOf('chat-backgrounds');
         final filePath = pathSegments.skip(bucketIndex + 1).join('/');
 
         // Delete from Supabase Storage
         final supabase = SupabaseService.client;
-        await supabase.storage.from('chat-backgrounds').remove([filePath]);
+        await supabase.storage.from('chat_backgrounds').remove([filePath]);
 
         debugPrint('Deleted custom background: $imageUrl');
       } else {
@@ -304,13 +307,13 @@ class BackgroundService {
       // List files in Supabase Storage for this chat group
       final supabase = SupabaseService.client;
       final files = await supabase.storage
-          .from('chat-backgrounds')
+          .from('chat_backgrounds')
           .list(path: chatGroupId);
 
       // Get public URLs for all files
       final urls = files.map((file) {
         final path = '$chatGroupId/${file.name}';
-        return supabase.storage.from('chat-backgrounds').getPublicUrl(path);
+        return supabase.storage.from('chat_backgrounds').getPublicUrl(path);
       }).toList();
 
       debugPrint('Found ${urls.length} uploaded backgrounds for $chatGroupId');
@@ -399,6 +402,28 @@ class BackgroundService {
     final value = presets[presetId];
     if (value == null) return false;
     return value.startsWith('#');
+  }
+
+  /// Ensure Supabase bucket exists, create if missing
+  Future<void> _ensureBucketExists(String bucketName) async {
+    try {
+      final supabase = SupabaseService.client;
+      // Try to list files to check if bucket exists
+      await supabase.storage.from(bucketName).list();
+    } catch (e) {
+      // Bucket doesn't exist, try to create it
+      try {
+        final supabase = SupabaseService.client;
+        await supabase.storage.createBucket(
+          bucketName,
+          const BucketOptions(public: true, fileSizeLimit: 5242880), // 5MB
+        );
+        debugPrint('Created Supabase bucket: $bucketName');
+      } catch (createError) {
+        debugPrint('Failed to create bucket $bucketName: $createError');
+        // Bucket might already exist or user lacks permissions
+      }
+    }
   }
 
   /// Get content type from file extension

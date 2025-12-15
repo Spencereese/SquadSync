@@ -177,9 +177,9 @@ class SupabaseService {
   static Future<void> safeRemoveChannel(RealtimeChannel channel) async {
     try {
       await client.removeChannel(channel);
-      debugPrint('✅ Removed channel: ${channel.topic}');
+      debugPrint('✅ Removed channel');
     } catch (e) {
-      debugPrint('⚠️ Error removing channel ${channel.topic}: $e');
+      debugPrint('⚠️ Error removing channel: $e');
       // Don't throw - this is cleanup, failures are acceptable
     }
   }
@@ -196,12 +196,12 @@ class SupabaseService {
 
       debugPrint('🧹 Proactive cleanup: ${channels.length} channels detected');
 
-      // Remove channels that look old or duplicate
+      // Remove excess channels to stay under limits
       int cleaned = 0;
-      for (final channel in channels) {
-        // Remove if topic suggests it's old (can be refined based on your naming)
-        if (channel.socket.conn == null) {
-          // Disconnected channels
+      // Keep only recent channels, remove older ones if too many
+      if (channels.length > 80) {
+        final toRemove = channels.take(channels.length - 80).toList();
+        for (final channel in toRemove) {
           await safeRemoveChannel(channel);
           cleaned++;
         }

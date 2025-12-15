@@ -42,6 +42,7 @@ class ClipData {
   final int width;
   final int height;
   final String clipId;
+  final String? title;
 
   ClipData({
     required this.videoUrl,
@@ -50,6 +51,7 @@ class ClipData {
     required this.width,
     required this.height,
     required this.clipId,
+    this.title,
   });
 
   Map<String, dynamic> toJson() => {
@@ -59,6 +61,7 @@ class ClipData {
         'width': width,
         'height': height,
         'clipId': clipId,
+        'title': title,
       };
 
   factory ClipData.fromJson(Map<String, dynamic> json) => ClipData(
@@ -68,6 +71,7 @@ class ClipData {
         width: json['width'] as int,
         height: json['height'] as int,
         clipId: json['clipId'] as String,
+        title: json['title'] as String?,
       );
 }
 

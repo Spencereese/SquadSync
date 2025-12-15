@@ -516,7 +516,7 @@ class SQLiteHelper {
           if (oldVersion < 14) {
             // Clear old messages with incompatible schema (photos/videos/audio TEXT columns)
             // These were from Firebase migration and are no longer compatible
-            print(
+            debugPrint(
                 '🔄 SQLite v14: Clearing old cached messages with incompatible schema');
             await db.execute('DELETE FROM messages');
 
@@ -528,7 +528,7 @@ class SQLiteHelper {
                   'SELECT photos, videos, audio FROM messages LIMIT 1');
 
               // If we got here, old columns exist - recreate table
-              print(
+              debugPrint(
                   '🔄 SQLite v14: Recreating messages table without obsolete columns');
 
               // Create new table with correct schema
@@ -589,27 +589,27 @@ class SQLiteHelper {
               await db.execute(
                   'CREATE INDEX IF NOT EXISTS idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
 
-              print(
+              debugPrint(
                   '✅ SQLite v14: Messages table recreated without obsolete columns');
             } catch (e) {
               // Old columns don't exist, table is already in new format
-              print('✅ SQLite v14: Messages table already in correct format');
+              debugPrint('✅ SQLite v14: Messages table already in correct format');
             }
           }
           if (oldVersion < 15) {
             // Force clear ALL messages to remove any remaining incompatible data
-            print(
+            debugPrint(
                 '🔄 SQLite v15: Force clearing all cached messages to ensure clean slate');
             await db.execute('DELETE FROM messages');
-            print(
+            debugPrint(
                 '✅ SQLite v15: All old messages cleared, fresh cache will be built from Supabase');
           }
           if (oldVersion < 16) {
             // Clear cache again due to persistent metadata corruption
-            print(
+            debugPrint(
                 '🔄 SQLite v16: Clearing cache to remove metadata corruption');
             await db.execute('DELETE FROM messages');
-            print('✅ SQLite v16: Cache cleared');
+            debugPrint('✅ SQLite v16: Cache cleared');
           }
         },
       );

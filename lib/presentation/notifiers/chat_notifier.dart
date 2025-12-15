@@ -230,18 +230,14 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   /// Clean up ALL channels for a specific chat (presence, typing, messages)
   Future<void> _cleanupAllChannelsForChat(String chatGroupId) async {
     try {
+      // Clean up all channels - we can't filter by topic anymore
       final channels = supabase.getChannels();
-      final toRemove = channels.where((channel) {
-        final topic = channel.topic;
-        return topic.contains(chatGroupId) ||
-            topic.contains('presence:$chatGroupId') ||
-            topic.contains('typing:$chatGroupId');
-      }).toList();
 
       debugPrint(
-          '🧹 Cleaning ${toRemove.length} channels for chat $chatGroupId');
+          '🧹 Cleaning ${channels.length} channels for chat $chatGroupId');
 
-      for (final channel in toRemove) {
+      // Remove all channels to ensure clean state
+      for (final channel in channels) {
         await SupabaseService.safeRemoveChannel(channel);
       }
     } catch (e) {
@@ -393,11 +389,12 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       debugPrint('📚 Loading ALL groups for user: ${currentUser.id}');
 
       // Query ALL groups where user is a member by checking member_uids array
+      // LEFT JOIN with chat_metadata to get last_message_time (nullable for new groups)
       // This includes squad chats, user groups, and DMs
       debugPrint('🔍 Querying chat_groups where user is in member_uids...');
       final groupsData = await SupabaseService.client
           .from('chat_groups')
-          .select('*')
+          .select('*, chat_metadata(last_message_time)')
           .contains('member_uids', [currentUser.id]);
 
       debugPrint('🔍 Received ${(groupsData as List).length} total groups');
@@ -418,6 +415,22 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
 
       for (var data in (groupsData as List<dynamic>)) {
         final groupData = data as Map<String, dynamic>;
+
+        // Extract last_message_time from joined chat_metadata
+        String? lastMessageTime;
+        if (groupData['chat_metadata'] is Map) {
+          final metadata = groupData['chat_metadata'] as Map<String, dynamic>;
+          lastMessageTime = metadata['last_message_time'] as String?;
+        } else if (groupData['chat_metadata'] is List &&
+            (groupData['chat_metadata'] as List).isNotEmpty) {
+          final metadata = (groupData['chat_metadata'] as List).first
+              as Map<String, dynamic>;
+          lastMessageTime = metadata['last_message_time'] as String?;
+        }
+
+        // Fallback to chat_groups.last_message_time if available
+        lastMessageTime ??= groupData['last_message_time'] as String?;
+
         final group = ChatGroup(
           id: groupData['id'] as String,
           name: groupData['name'] as String? ?? 'Unnamed Group',
@@ -432,9 +445,8 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
           avatarUrl: groupData['avatar_url'] as String?,
           inviteCode:
               groupData['invite_code'] as String? ?? groupData['id'] as String,
-          lastActivity: groupData['last_message_time'] != null
-              ? DateTime.parse(groupData['last_message_time'] as String)
-              : null,
+          lastActivity:
+              lastMessageTime != null ? DateTime.parse(lastMessageTime) : null,
         );
 
         allGroups[group.id] = group;
@@ -473,6 +485,12 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
     await future;
     final group =
         await _repository.createGroup(name, isPublic, description: description);
+
+    // Auto-friend all members in private groups
+    if (!isPublic) {
+      await _autoFriendGroupMembers(group.id);
+    }
+
     state = await AsyncValue.guard(() async {
       final currentState = await future;
       final updatedGroups =
@@ -483,9 +501,55 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
     return group;
   }
 
+  /// Auto-friend all members when joining a private chat group
+  Future<void> _autoFriendGroupMembers(String chatGroupId) async {
+    try {
+      final user = _authService.currentUser;
+      if (user == null) return;
+
+      // Get all members of the chat group
+      final response = await SupabaseService.client
+          .from('chat_group_members')
+          .select('user_id')
+          .eq('chat_group_id', chatGroupId);
+
+      final memberIds = (response as List)
+          .map((m) => m['user_id'] as String)
+          .where((id) => id != user.id) // Exclude self
+          .toList();
+
+      // Add all members as friends
+      for (final memberId in memberIds) {
+        try {
+          await SupabaseService.client.rpc('add_friend', params: {
+            'user_id_1': user.id,
+            'user_id_2': memberId,
+          });
+        } catch (e) {
+          debugPrint('Failed to auto-friend $memberId: $e');
+          // Continue with other members even if one fails
+        }
+      }
+
+      debugPrint('✅ Auto-friended ${memberIds.length} users from private chat');
+    } catch (e) {
+      debugPrint('Error auto-friending chat members: $e');
+      // Non-critical error, don't throw
+    }
+  }
+
   Future<void> joinGroup(String groupId) async {
     await future;
     await _repository.joinGroup(groupId);
+
+    // Check if group is private and auto-friend members
+    final currentState = state.valueOrNull;
+    if (currentState != null) {
+      final group = currentState.chatGroups[groupId];
+      if (group != null && !group.isPublic) {
+        await _autoFriendGroupMembers(groupId);
+      }
+    }
   }
 
   Future<void> leaveGroup(String groupId) async {

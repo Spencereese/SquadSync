@@ -225,21 +225,17 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   }
 
   void _onSupabaseMessagesSnapshot(dynamic data, String chatGroupId) async {
-    debugPrint('MessageNotifier: 🚀 ENTERED _onSupabaseMessagesSnapshot');
-    debugPrint('MessageNotifier: 🚀 data type = ${data.runtimeType}');
-
     try {
       // CRITICAL: Accept dynamic and safely cast to avoid signature-level cast errors
       if (data is! List) {
-        debugPrint(
-            'MessageNotifier: ❌ Data is not a List: ${data.runtimeType}');
+        if (kDebugMode) {
+          debugPrint(
+              'MessageNotifier: ❌ Data is not a List: ${data.runtimeType}');
+        }
         return;
       }
 
-      debugPrint('MessageNotifier: 🚀 Data is a List, casting...');
-      final dataList = data as List;
-      debugPrint(
-          'MessageNotifier: 🔥 _onSupabaseMessagesSnapshot called with ${dataList.length} messages');
+      final dataList = data;
       _retryCount = 0;
 
       final remoteMessages = <Message>[];
@@ -248,36 +244,23 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         Map<String, dynamic> messageData = {};
 
         try {
-          debugPrint('MessageNotifier: 🔸 Item type: ${item.runtimeType}');
-
           // Safely cast each item to Map without deep validation
           if (item is! Map) {
-            debugPrint(
-                'MessageNotifier: ⚠️ Skipping non-Map item: ${item.runtimeType}');
+            if (kDebugMode) {
+              debugPrint(
+                  'MessageNotifier: ⚠️ Skipping non-Map item: ${item.runtimeType}');
+            }
             continue;
           }
 
-          debugPrint(
-              'MessageNotifier: 🔸 Converting raw map to messageData...');
-
           // Use dynamic map first, then convert manually field by field
-          final rawMap = item as Map;
-
-          debugPrint('MessageNotifier: 🔸 rawMap has ${rawMap.length} keys');
+          final rawMap = item;
 
           // Manually copy each field to avoid any constructor issues
           for (final rawKey in rawMap.keys) {
             final key = rawKey.toString();
             final value = rawMap[rawKey];
             messageData[key] = value;
-
-            // Debug problematic fields
-            if (key == 'reactions' ||
-                key == 'metadata' ||
-                key == 'poll' ||
-                key == 'clip_data') {
-              debugPrint('MessageNotifier: 🔸 $key type: ${value.runtimeType}');
-            }
           }
 
           final cleanedData = <String, dynamic>{};
@@ -297,8 +280,6 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
               // Only include these fields if they're the correct type
               if (key == 'reactions') {
                 // Always include reactions regardless of type - let Message.fromJson handle it
-                debugPrint(
-                    '💬 REACTIONS FIELD: $value (type: ${value.runtimeType})');
                 cleanedData[key] = value;
               } else if (key == 'metadata' ||
                   key == 'clip_data' ||
@@ -306,7 +287,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
                 if (value == null || value is Map) {
                   // Check for old schema in metadata
                   if (key == 'metadata' && value is Map) {
-                    final meta = value as Map;
+                    final meta = value;
                     if (!meta.containsKey('photos') &&
                         !meta.containsKey('videos') &&
                         !meta.containsKey('audio')) {
@@ -557,12 +538,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       for (final entry in currentState.messages.entries) {
         debugPrint(
             'MessageNotifier: Entry key=${entry.key}, value type=${entry.value.runtimeType}');
-        if (entry.value is List<Message>) {
-          cleanMessages[entry.key] = entry.value as List<Message>;
-        } else {
-          debugPrint(
-              'MessageNotifier: WARNING - Skipping corrupted entry ${entry.key}');
-        }
+        // Type is guaranteed by state definition
+        cleanMessages[entry.key] = entry.value;
       }
 
       final messages = List<Message>.from(cleanMessages[chatGroupId] ?? []);
@@ -668,13 +645,15 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         _typingChannel = null;
       }
 
-      // Clean up any orphaned typing channels for this chat
-      final channels = supabase.getChannels();
-      for (final channel in channels) {
-        if (channel.topic.contains('typing:$chatGroupId')) {
-          await SupabaseService.safeRemoveChannel(channel);
-          debugPrint('🧹 Removed orphaned typing channel: ${channel.topic}');
+      // Clean up typing channel if it exists
+      if (_typingChannel != null) {
+        try {
+          await SupabaseService.safeRemoveChannel(_typingChannel!);
+          debugPrint('🧹 Removed previous typing channel');
+        } catch (e) {
+          debugPrint('⚠️ Error removing typing channel: $e');
         }
+        _typingChannel = null;
       }
 
       _typingChannel = supabase.channel('typing:$chatGroupId');

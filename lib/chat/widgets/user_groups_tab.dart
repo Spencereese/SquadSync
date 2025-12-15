@@ -19,8 +19,16 @@ class UserGroupsTab extends ConsumerStatefulWidget {
 }
 
 class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
-  // No need to call loadUserGroups here - it's already called in ChatGroupsScreen
-  // and we're watching the provider which will rebuild when state changes
+  // Cache futures to prevent constant rebuilds during scrolling
+  final Map<String, Future<Map<String, dynamic>?>> _groupDataCache = {};
+  final Map<String, Future<String?>> _userProfileCache = {};
+
+  @override
+  void dispose() {
+    _groupDataCache.clear();
+    _userProfileCache.clear();
+    super.dispose();
+  }
 
   String _formatTime(DateTime time) {
     final now = DateTime.now();
@@ -381,7 +389,9 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
           // Groups list
           Expanded(
             child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.only(
+                  top: 8,
+                  bottom: 100), // Add bottom padding to avoid nav bar overlap
               itemCount: groups.length,
               separatorBuilder: (context, index) => const Divider(
                 color: Colors.grey,
@@ -398,14 +408,18 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
                 final isPublic = (group['is_public'] as bool?) ?? false;
                 final imageUrl = group['avatar_url'] as String?;
 
-                // Fetch last message details from chat_groups
+                // Fetch last message details from chat_groups (cached)
+                if (groupId != null && !_groupDataCache.containsKey(groupId)) {
+                  _groupDataCache[groupId] = SupabaseService.client
+                      .from('chat_groups')
+                      .select('last_message, last_message_sender_id')
+                      .eq('id', groupId)
+                      .maybeSingle();
+                }
+
                 return FutureBuilder<Map<String, dynamic>?>(
                   future: groupId != null
-                      ? SupabaseService.client
-                          .from('chat_groups')
-                          .select('last_message, last_message_sender_id')
-                          .eq('id', groupId)
-                          .maybeSingle()
+                      ? _groupDataCache[groupId]
                       : Future.value(null),
                   builder: (context, msgSnapshot) {
                     final lastMessage =
@@ -413,11 +427,18 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
                     final lastSenderId =
                         msgSnapshot.data?['last_message_sender_id'] as String?;
 
+                    // Cache user profile lookup
+                    if (lastSenderId != null &&
+                        !_userProfileCache.containsKey(lastSenderId)) {
+                      _userProfileCache[lastSenderId] =
+                          _getUserProfile(lastSenderId).then((profile) =>
+                              safeDisplayName(profile?['display_name']));
+                    }
+
                     // Fetch sender display name if we have last message
                     return FutureBuilder<String?>(
                       future: lastSenderId != null
-                          ? _getUserProfile(lastSenderId).then((profile) =>
-                              safeDisplayName(profile?['display_name']))
+                          ? _userProfileCache[lastSenderId]
                           : Future.value(null),
                       builder: (context, senderSnapshot) {
                         final senderName = senderSnapshot.data;
@@ -464,115 +485,120 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
     required String subtitleText,
     required String? lastMessageTime,
   }) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 16, // Increased from 12 to make tiles larger
-      ),
-      leading: CircleAvatar(
-        radius: 32, // Increased from 28 to make groups larger
-        backgroundColor: Colors.grey[800],
-        backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-        child: imageUrl == null
-            ? Icon(
-                isPublic ? Icons.public : Icons.group,
-                color: Colors.cyanAccent,
-                size: 28, // Increased from 24
-              )
-            : null,
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              groupName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 17, // Increased from 16
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (lastMessageTime != null) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Text(
-                _formatTime(DateTime.parse(lastMessageTime)),
-                style: const TextStyle(
-                  color: Colors.grey,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4), // Increased spacing
-        child: Text(
-          subtitleText,
-          style: const TextStyle(
-            color: Colors.grey,
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-          ),
-          maxLines: 2, // Allow 2 lines for longer messages
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-      onTap: () async {
-        // Navigate to chat screen for this group
-        debugPrint('DEBUG UserGroupsTab: Tapping on user group $groupId');
-        if (groupId == null || groupId.isEmpty) {
-          debugPrint('ERROR: groupId is null or empty, cannot navigate');
-          return;
-        }
-
-        try {
-          // Load messages for this group first
-          debugPrint('Loading messages for group: $groupId');
-          await ref
-              .read(cn.chatNotifierProvider.notifier)
-              .loadMessages(groupId);
-
-          if (!context.mounted) {
-            debugPrint('Context not mounted, aborting navigation');
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          // Navigate to chat screen for this group
+          debugPrint('DEBUG UserGroupsTab: Tapping on user group $groupId');
+          if (groupId == null || groupId.isEmpty) {
+            debugPrint('ERROR: groupId is null or empty, cannot navigate');
             return;
           }
 
-          debugPrint(
-              'Navigating to ChatScreen for group: $groupName ($groupId)');
-          await Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => ChatScreen(
-                chatType: ChatType.userGroup,
-                chatGroupId: groupId,
-                chatGroupName: groupName,
-              ),
-            ),
-          );
-          debugPrint('Returned from ChatScreen');
-        } catch (e) {
-          debugPrint('ERROR navigating to chat: $e');
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Failed to open chat: $e'),
-                backgroundColor: Colors.red,
+          try {
+            // Load messages for this group first
+            debugPrint('Loading messages for group: $groupId');
+            await ref
+                .read(cn.chatNotifierProvider.notifier)
+                .loadMessages(groupId);
+
+            if (!context.mounted) {
+              debugPrint('Context not mounted, aborting navigation');
+              return;
+            }
+
+            debugPrint(
+                'Navigating to ChatScreen for group: $groupName ($groupId)');
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => ChatScreen(
+                  chatType: ChatType.userGroup,
+                  chatGroupId: groupId,
+                  chatGroupName: groupName,
+                ),
               ),
             );
+            debugPrint('Returned from ChatScreen');
+          } catch (e) {
+            debugPrint('ERROR navigating to chat: $e');
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to open chat: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
           }
-        }
-      },
-      onLongPress: () {
-        // Show leave group confirmation dialog
-        if (groupId != null) {
-          _showLeaveGroupDialog(context, groupId, groupName, ref);
-        }
-      },
+        },
+        onLongPress: () {
+          // Show leave group confirmation dialog
+          if (groupId != null) {
+            _showLeaveGroupDialog(context, groupId, groupName, ref);
+          }
+        },
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16, // Increased from 12 to make tiles larger
+          ),
+          leading: CircleAvatar(
+            radius: 32, // Increased from 28 to make groups larger
+            backgroundColor: Colors.grey[800],
+            backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+            child: imageUrl == null
+                ? Icon(
+                    isPublic ? Icons.public : Icons.group,
+                    color: Colors.cyanAccent,
+                    size: 28, // Increased from 24
+                  )
+                : null,
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  groupName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 17, // Increased from 16
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (lastMessageTime != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    _formatTime(DateTime.parse(lastMessageTime)),
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4), // Increased spacing
+            child: Text(
+              subtitleText,
+              style: const TextStyle(
+                color: Colors.grey,
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+              ),
+              maxLines: 2, // Allow 2 lines for longer messages
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

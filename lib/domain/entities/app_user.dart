@@ -50,6 +50,7 @@ class AppUser with _$AppUser {
           'friendRequests': true,
           'gameUpdates': false,
           'achievementAlerts': true,
+          'showOnlineStatus': true,
         },
         hasRatedGame: {},
         dailyRatings: {},

@@ -232,7 +232,9 @@ class ChatUIManager {
                       final bottomFadeEnd =
                           1.0 - (bottomPadding / bounds.height);
                       final bottomFadeStart = bottomFadeEnd -
-                          (60 / bounds.height); // 60px fade zone
+                          (20 /
+                              bounds
+                                  .height); // 20px fade zone - starts closer to input bar
 
                       return LinearGradient(
                         begin: Alignment.topCenter,

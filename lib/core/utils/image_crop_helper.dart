@@ -117,6 +117,7 @@ class ImageCropHelper {
         sourcePath: imagePath,
         aspectRatio: aspectRatio,
         compressQuality: 90,
+        cropStyle: cropStyle,
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: title,
@@ -140,14 +141,8 @@ class ImageCropHelper {
             rotateButtonsHidden: false,
             aspectRatioPickerButtonHidden: true,
           ),
-          WebUiSettings(
-            context: context,
-            presentStyle: WebPresentStyle.dialog,
-            size: const CropperSize(
-              width: 520,
-              height: 520,
-            ),
-          ),
+          // WebUiSettings removed - context may be deactivated during async operation
+          // Web will use default cropper UI
         ],
       );
 

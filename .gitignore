@@ -64,3 +64,6 @@ functions/node_modules/
 bin/    # If temp scripts
 .DS_Store
 node_modules
+
+# Build archives (Xcode .xcarchive directories with timestamp)
+Runner*/

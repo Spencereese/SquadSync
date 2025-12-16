@@ -7,6 +7,7 @@ import '../../domain/repositories/game_repository.dart';
 import '../../domain/entities/game.dart';
 import '../../data/datasources/game_local_datasource.dart';
 import '../../services/twitch_service.dart';
+import '../../services/igdb_auth_service.dart';
 import '../../core/injection.dart' as di;
 import '../../core/injection.dart';
 
@@ -48,11 +49,30 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
   @override
   Future<GameState> build() async {
     _logger.i('🎮 GameNotifier: Initializing...');
-    
+
     // Initialize dependencies
     _repository = ref.read(gameRepositoryProvider);
     _localDataSource ??= di.getIt<GameLocalDataSource>();
     _twitchService = TwitchService(di.getIt<Dio>());
+
+    // Verify IGDB credentials are loaded
+    try {
+      final igdbAuth = di.getIt<IgdbAuthService>();
+      final clientId = await igdbAuth.getClientId();
+      final clientSecret = await igdbAuth.getClientSecret();
+      
+      if (clientId == null || clientSecret == null) {
+        _logger.e('❌ IGDB credentials missing!');
+        _logger.e('   Client ID: ${clientId ?? "NOT FOUND"}');
+        _logger.e('   Client Secret: ${clientSecret != null ? "Found" : "NOT FOUND"}');
+        _logger.e('   Check .env file exists and has IGDB_CLIENT_ID and IGDB_CLIENT_SECRET');
+      } else {
+        _logger.i('✅ IGDB credentials loaded');
+        _logger.i('   Client ID: ${clientId.substring(0, 8)}...');
+      }
+    } catch (e) {
+      _logger.e('❌ Error checking IGDB credentials: $e');
+    }
 
     // Initialize Twitch service (non-blocking)
     _twitchService?.initialize().catchError((e) {
@@ -60,12 +80,13 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
     });
 
     _logger.i('📚 GameNotifier: Loading available games and lobbies...');
-    
+
     // Initialize games and lobbies
     final availableGames = await _repository.getAvailableGames();
     final gameLobbies = await _repository.getGameLobbies();
-    
-    _logger.i('✅ GameNotifier: Initialized with ${availableGames.length} games');
+
+    _logger
+        .i('✅ GameNotifier: Initialized with ${availableGames.length} games');
 
     return GameState.initial().copyWith(
       availableGames: availableGames.map((g) => Game.fromCache(g)).toList(),
@@ -79,26 +100,36 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
       return AsyncValue.data([]);
     }
 
+    _logger.i('🔍 Searching games: "$query"');
+    
     try {
       // Try IGDB first
+      _logger.i('   Trying IGDB API...');
       final games = await _repository.fetchGames(query);
       final dedupedGames = _dedupGamesBySlug(games);
+      _logger.i('✅ IGDB returned ${dedupedGames.length} games');
       return AsyncValue.data(dedupedGames);
-    } catch (e) {
-      _logger.w('IGDB search failed, falling back to cache/local: $e');
+    } catch (e, stackTrace) {
+      _logger.e('❌ IGDB search failed: $e');
+      _logger.e('   Stack trace: ${stackTrace.toString().split('\n').take(3).join('\n')}');
+      _logger.w('⚠️ Falling back to cache/local data...');
 
       // Fallback chain: cached -> local JSON
       try {
+        _logger.i('   Trying cached games...');
         final cachedGames = await localDataSource.getCachedGames(query);
         if (cachedGames.isNotEmpty) {
           final dedupedGames = _dedupGamesBySlug(cachedGames);
+          _logger.i('✅ Cache returned ${dedupedGames.length} games');
           return AsyncValue.data(dedupedGames);
         }
 
         // Final fallback: filter popular_games.json
+        _logger.i('   Trying offline games (popular_games.json)...');
         final offlineGames =
             await localDataSource.getOfflineGames(query, limit: 30);
         final dedupedGames = _dedupGamesBySlug(offlineGames);
+        _logger.i('✅ Offline data returned ${dedupedGames.length} games');
         return AsyncValue.data(dedupedGames);
       } catch (offlineError) {
         _logger.e('All search fallbacks failed: $offlineError');

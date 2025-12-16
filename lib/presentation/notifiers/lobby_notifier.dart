@@ -170,13 +170,15 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     );
   }
 
-  /// Fetch display names for members and update state (private internal method)
+  /// Fetch display names and profile images for members and update state (private internal method)
   Future<void> _fetchDisplayNamesForMembers(List<String> memberUids) async {
     final currentState = state.valueOrNull;
     if (currentState == null) return;
 
     final displayNames =
         Map<String, String>.from(currentState.memberDisplayNames);
+    final profileImages =
+        Map<String, String?>.from(currentState.memberProfileImages ?? {});
     bool hasUpdates = false;
 
     for (final uid in memberUids) {
@@ -184,26 +186,30 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         try {
           final userResponse = await SupabaseService.client
               .from('users')
-              .select('display_name')
+              .select('display_name, photo_url')
               .eq('uid', uid)
               .maybeSingle();
 
           if (userResponse != null) {
             displayNames[uid] =
                 userResponse['display_name'] as String? ?? 'Unknown User';
+            profileImages[uid] = userResponse['photo_url'] as String?;
             hasUpdates = true;
           }
         } catch (e) {
           debugPrint('Error fetching display name for $uid: $e');
           displayNames[uid] = 'Unknown User';
+          profileImages[uid] = null;
           hasUpdates = true;
         }
       }
     }
 
     if (hasUpdates) {
-      state =
-          AsyncData(currentState.copyWith(memberDisplayNames: displayNames));
+      state = AsyncData(currentState.copyWith(
+        memberDisplayNames: displayNames,
+        memberProfileImages: profileImages,
+      ));
     }
   }
 
@@ -763,14 +769,82 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
-  // TODO: Implement recordWin method
-  Future<void> recordWin(List<String> playerUids) async {
-    // TODO: Implement win recording
+  /// Records a win for the current lobby
+  Future<void> recordWin(String lobbyId) async {
+    try {
+      final currentState = state.value;
+      if (currentState == null) return;
+
+      final lobby = currentState.userLobbies.values.firstWhere(
+        (l) => l.id == lobbyId,
+        orElse: () => throw Exception('Lobby not found'),
+      );
+
+      await _repository.recordMatchResult(
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'win',
+        playerUids: lobby.memberUids,
+        notes: null,
+      );
+
+      debugPrint('LobbyNotifier: ✅ Win recorded for lobby $lobbyId');
+    } catch (e, stackTrace) {
+      debugPrint('LobbyNotifier: ❌ ERROR recording win: $e');
+      await _errorHandler.handleError(
+        error: e,
+        operation: 'recordWin',
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
   }
 
-  // TODO: Implement recordLoss method
-  Future<void> recordLoss(List<String> playerUids) async {
-    // TODO: Implement loss recording
+  /// Records a loss for the current lobby
+  Future<void> recordLoss(String lobbyId) async {
+    try {
+      final currentState = state.value;
+      if (currentState == null) return;
+
+      final lobby = currentState.userLobbies.values.firstWhere(
+        (l) => l.id == lobbyId,
+        orElse: () => throw Exception('Lobby not found'),
+      );
+
+      await _repository.recordMatchResult(
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'loss',
+        playerUids: lobby.memberUids,
+        notes: null,
+      );
+
+      debugPrint('LobbyNotifier: ✅ Loss recorded for lobby $lobbyId');
+    } catch (e, stackTrace) {
+      debugPrint('LobbyNotifier: ❌ ERROR recording loss: $e');
+      await _errorHandler.handleError(
+        error: e,
+        operation: 'recordLoss',
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+  }
+
+  /// Get lobby statistics (W/L record)
+  Future<Map<String, dynamic>> getLobbyStats(String lobbyId) async {
+    try {
+      return await _repository.getLobbyStats(lobbyId);
+    } catch (e) {
+      debugPrint('LobbyNotifier: ❌ ERROR fetching lobby stats: $e');
+      return {
+        'total_matches': 0,
+        'wins': 0,
+        'losses': 0,
+        'draws': 0,
+        'win_rate': 0.0,
+      };
+    }
   }
 
   // TODO: Implement addBan method
@@ -1057,6 +1131,26 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
     // Clear current lobby selection
     setSelectedLobbyId(null);
+  }
+
+  /// Delete a lobby (only when all spots are empty and user leaves screen)
+  Future<void> deleteLobby(String lobbyId) async {
+    try {
+      await _repository.deleteLobby(lobbyId);
+
+      // Reload state to remove deleted lobby
+      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+
+      debugPrint('✅ Lobby $lobbyId deleted successfully');
+    } catch (e, stackTrace) {
+      await _errorHandler.handleError(
+        error: e,
+        operation: 'deleteLobby',
+        stackTrace: stackTrace,
+        showSnackBar: false,
+      );
+      rethrow;
+    }
   }
 }
 

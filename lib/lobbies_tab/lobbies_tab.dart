@@ -15,6 +15,7 @@ import 'widgets/lobby_grid.dart';
 import 'widgets/lobby_controls.dart';
 import 'widgets/lobby_header.dart';
 import 'widgets/game_alerts_display.dart';
+import 'widgets/peacock_queue_section.dart';
 
 class MembersSection extends ConsumerWidget {
   final String? chatGroupId;
@@ -163,12 +164,11 @@ class _LobbyTabState extends ConsumerState<LobbyTab> {
   @override
   void initState() {
     super.initState();
-    // Set selectedLobbyId if chatGroupId is provided
-    if (widget.chatGroupId != null) {
+    // Set selectedLobbyId - prefer lobbyId over chatGroupId
+    final idToSet = widget.lobbyId ?? widget.chatGroupId;
+    if (idToSet != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref
-            .read(ln.lobbyNotifierProvider.notifier)
-            .setSelectedLobbyId(widget.chatGroupId);
+        ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(idToSet);
       });
     }
   }
@@ -215,16 +215,56 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
   }
 
   @override
+  void dispose() {
+    // Check if lobby should be disbanded when leaving the screen
+    _checkAndDisbandEmptyLobby();
+    super.dispose();
+  }
+
+  Future<void> _checkAndDisbandEmptyLobby() async {
+    try {
+      final squadState = ref.read(ln.lobbyNotifierProvider).valueOrNull;
+      if (squadState == null) return;
+
+      final lobbyId = widget.lobbyId ?? squadState.selectedLobbyId;
+      if (lobbyId == null) return;
+
+      final gameName = widget.gameName ?? squadState.currentGame?['name'];
+      if (gameName == null) return;
+
+      // Get current spots for this game
+      final spots = squadState.gameLobbySpots[gameName] ?? [];
+      
+      // Check if ALL spots are empty (null or empty string)
+      final allSpotsEmpty = spots.every((spot) => spot == null || spot.isEmpty);
+      
+      // Only disband if all spots are empty
+      if (allSpotsEmpty && spots.isNotEmpty) {
+        debugPrint('💥 Disbanding empty lobby: $lobbyId (game: $gameName)');
+        await ref.read(ln.lobbyNotifierProvider.notifier).deleteLobby(lobbyId);
+      }
+    } catch (e) {
+      debugPrint('Error checking empty lobby: $e');
+      // Don't throw - this is cleanup code
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _currentContext = context;
 
     // Set currentGame if gameName is provided but currentGame is not set or doesn't match
     if (widget.game != null) {
-      // If we have the full game object, use it directly
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      // If we have the full game object, use it directly - do this immediately, not in post-frame
+      final currentGame = ref.read(ln.lobbyNotifierProvider).maybeWhen(
+            data: (state) => state.currentGame,
+            orElse: () => null,
+          );
+      // Only set if not already set to avoid unnecessary updates
+      if (currentGame?['name'] != widget.game?['name']) {
         ref.read(ln.lobbyNotifierProvider.notifier).setCurrentGame(widget.game);
-      });
+      }
     } else if (widget.gameName != null) {
       final squadStateAsync = ref.read(ln.lobbyNotifierProvider);
       final currentGame = squadStateAsync.maybeWhen(
@@ -635,18 +675,16 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
           );
         },
       ),
+      // Only show FAB when appropriate:
+      // - ClaimSpotFAB when inside a lobby (lobbyId != null)
+      // - Nothing when inside lobby view (no create button inside lobbies)
       floatingActionButton: widget.lobbyId != null
           ? ClaimSpotFAB(
               lobbyId: widget.lobbyId,
               callSpot: _callSpot,
               lockSpot: _lockSpot,
             )
-          : FloatingActionButton.extended(
-              onPressed: _handleCreatePublicLobby,
-              icon: const Icon(Icons.add),
-              label: const Text('Create Public Lobby'),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-            ),
+          : null, // No FAB in dashboard mode - use discovery screen for creating public lobbies
     );
   }
 
@@ -713,6 +751,31 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
         // Game alerts display
         const GameAlertsDisplay(),
 
+        // Peacock Queue Section
+        Consumer(
+          builder: (context, ref, child) {
+            final squadState = ref.watch(ln.lobbyNotifierProvider);
+            return squadState.when(
+              data: (state) {
+                final gameName = state.currentGame?['name'];
+                if (gameName == null || widget.lobbyId == null) {
+                  return const SliverToBoxAdapter(child: SizedBox.shrink());
+                }
+                return SliverToBoxAdapter(
+                  child: PeacockQueueSection(
+                    lobbyId: widget.lobbyId!,
+                    gameName: gameName,
+                  ),
+                );
+              },
+              loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
+              error: (_, __) =>
+                  const SliverToBoxAdapter(child: SizedBox.shrink()),
+            );
+          },
+        ),
+
+        //
         // Members section header
         SliverToBoxAdapter(
           child: Padding(

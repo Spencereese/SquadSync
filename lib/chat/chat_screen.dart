@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
@@ -19,8 +20,7 @@ import '../services/background_service.dart';
 import 'chat_input_bar.dart';
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
-import 'spots_sheet.dart';
-import '../widgets/unified_game_selection_sheet.dart';
+import 'widgets/chat_lobby_sheet.dart';
 import 'services/chat_initialization_service.dart';
 import 'services/chat_scroll_controller.dart';
 import 'services/chat_media_handler.dart';
@@ -71,6 +71,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   late ScrollController _scrollController;
   String _chatName = 'Lobby Chat';
   String? _chatImageUrl;
+  String? _cachedBackgroundUrl;
+  bool _backgroundImageLoaded = false;
 
   bool _isMuted = false;
 
@@ -525,6 +527,33 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
+  void _precacheBackgroundImage(
+      BuildContext context, Map<String, dynamic> background) {
+    final type = background['type'] ?? 'none';
+    final value = background['value'] ?? '';
+
+    if (type == 'image' && value.isNotEmpty && value != _cachedBackgroundUrl) {
+      _cachedBackgroundUrl = value;
+      _backgroundImageLoaded = false;
+
+      precacheImage(NetworkImage(value), context).then((_) {
+        if (mounted && _cachedBackgroundUrl == value) {
+          setState(() {
+            _backgroundImageLoaded = true;
+          });
+        }
+      }).catchError((error) {
+        debugPrint('Error precaching background image: $error');
+        if (mounted) {
+          setState(() {
+            _backgroundImageLoaded =
+                true; // Show anyway to avoid infinite loading
+          });
+        }
+      });
+    }
+  }
+
   Future<void> _sendMessage(msg.Message? replyToMessage,
       [LobbyState? squadState]) async {
     if (_messageController.text.isEmpty) {
@@ -615,7 +644,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   /// Handle lobby creation from chat
-  /// Shows game selection sheet, then creates lobby and shows spots sheet
+  /// Shows pinned games carousel and active lobbies
   Future<void> _handleLobbyCreation() async {
     if (widget.chatGroupId == null) {
       if (mounted) {
@@ -627,29 +656,49 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     try {
-      await UnifiedGameSelectionSheet.show(
+      await ChatLobbySheet.show(
         context,
-        title: 'Create Lobby',
-        subtitle: 'Select a game for your private lobby',
-        showMaxSpotSelector: true,
-        showPinnedGames: true,
-        showSearchButton: true,
-        isPrivateLobby: true,
-        chatGroupId: widget.chatGroupId,
-        onLobbyCreated: (gameName, maxSpots) {
-          // Show spots sheet after lobby creation
-          SpotsSheet.show(
-            context,
-            gameName: gameName,
-            maxSpots: maxSpots,
-            chatGroupId: widget.chatGroupId!,
-            chatType: widget.chatType,
-          );
-        },
+        chatGroupId: widget.chatGroupId!,
+        chatGroupName: _chatName,
       );
     } catch (e) {
-      debugPrint('❌ Error showing game selection: $e');
+      debugPrint('❌ Error showing lobby sheet: $e');
     }
+  }
+
+  /// Calculate number of active lobbies for badge
+  int _getActiveLobbyCount() {
+    final squadState = ref.read(ln.lobbyNotifierProvider).value;
+    if (squadState == null || widget.chatGroupId == null) return 0;
+
+    int count = 0;
+
+    // Count private lobbies in this chat group
+    squadState.gameLobbies.forEach((gameName, lobbies) {
+      for (final lobby in lobbies) {
+        if (lobby['chatGroupId'] == widget.chatGroupId &&
+            lobby['isActive'] == true) {
+          count++;
+        }
+      }
+    });
+
+    // Count public lobbies with group members
+    squadState.gameLobbies.forEach((gameName, lobbies) {
+      for (final lobby in lobbies) {
+        if (lobby['isActive'] == true &&
+            lobby['chatGroupId'] != widget.chatGroupId) {
+          final spots = lobby['spots'] as List<String?>? ?? [];
+          final hasGroupMember = spots.any(
+              (uid) => uid != null && squadState.lobbyMemberUids.contains(uid));
+          if (hasGroupMember) {
+            count++;
+          }
+        }
+      }
+    });
+
+    return count;
   }
 
   Future<void> _sendMedia() async {
@@ -845,6 +894,19 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             decoration: BoxDecoration(
               color: Colors.grey[800],
               borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6),
+                  spreadRadius: 2,
+                ),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
             child: Icon(
               icon,
@@ -1132,6 +1194,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       builder: (context, snapshot) {
         final background =
             snapshot.data ?? {'type': 'color', 'value': '#0B0E14'};
+
+        // Precache background image if it's a network image
+        _precacheBackgroundImage(context, background);
+
         return _buildChatContentWithBackground(
           context,
           squadStateData,
@@ -1157,201 +1223,303 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         _scrollController.hasClients ? _scrollController.offset : 0.0;
     final parallaxOffset = scrollOffset * 0.2; // 20% parallax speed
 
-    return AnimatedPadding(
-      padding: EdgeInsets.only(bottom: keyboardHeight),
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOutCubic,
-      child: Stack(
-        children: [
-          // Background layer with parallax
-          Positioned.fill(
-            child: Transform.translate(
-              offset: Offset(0, -parallaxOffset),
-              child: _buildBackgroundDecoration(background),
-            ),
+    return Stack(
+      children: [
+        // Background layer with parallax (stays fixed, doesn't move with keyboard)
+        Positioned.fill(
+          child: Transform.translate(
+            offset: Offset(0, -parallaxOffset),
+            child: _buildBackgroundDecoration(background),
           ),
-          // Chat content with app bar positioned above scroll content
-          Stack(
-            children: [
-              // Scrollable content that can scroll behind the app bar
-              NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  // Dismiss keyboard when user starts scrolling
-                  if (notification is ScrollStartNotification) {
-                    FocusScope.of(context).unfocus();
-                  }
-                  return false;
-                },
-                child: ref.watch(cn.chatNotifierProvider).when(
-                      data: (chatStateData) {
-                        final messages =
-                            chatStateData.chatMessages[widget.chatGroupId] ??
-                                [];
+        ),
+        // Chat content with app bar positioned above scroll content
+        Stack(
+          children: [
+            // Scrollable content that can scroll behind the app bar
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                // Dismiss keyboard when user starts scrolling
+                if (notification is ScrollStartNotification) {
+                  FocusScope.of(context).unfocus();
+                }
+                return false;
+              },
+              child: ref.watch(cn.chatNotifierProvider).when(
+                    data: (chatStateData) {
+                      final messages =
+                          chatStateData.chatMessages[widget.chatGroupId] ?? [];
 
-                        // Fetch display names for message senders
-                        _fetchDisplayNamesForMessages(messages);
+                      // Fetch display names for message senders
+                      _fetchDisplayNamesForMessages(messages);
 
-                        // Calculate input bar height dynamically
-                        final hasReply = chatState.replyToMessage != null;
-                        final inputBarHeight = hasReply ? 140.0 : 80.0;
+                      // Calculate input bar height dynamically
+                      final hasReply = chatState.replyToMessage != null;
+                      final inputBarHeight = hasReply ? 140.0 : 80.0;
 
-                        return _uiManager.buildMessagesList(
-                          ref: ref,
-                          chatGroupId: widget.chatGroupId,
-                          chatType: widget.chatType,
-                          scrollController: _scrollControllerService,
-                          messages: messages,
-                          onMessageLongPress: () {}, // Will be implemented
-                          onMessageTap: () {}, // Will be implemented
-                          getSender: _getSender,
-                          getTimestampMs: _getTimestampMs,
-                          cleanText: _cleanText,
-                          uidToDisplayName: squadStateData.memberDisplayNames,
-                          // markAsDelivered removed - Supabase inserts are immediate
-                          // Add padding to scroll under app bar and input bar
-                          topPadding:
-                              (isUserGroup && widget.chatGroupId != null)
-                                  ? 100 +
-                                      MediaQuery.of(context).padding.top +
-                                      60 // App bar + lobby selector
-                                  : 100 +
-                                      MediaQuery.of(context)
-                                          .padding
-                                          .top, // Just app bar
-                          bottomPadding: inputBarHeight +
-                              (isKeyboardVisible
-                                  ? 0
-                                  : MediaQuery.of(context).viewPadding.bottom /
-                                      2), // Allow scrolling under input bar
-                        );
-                      },
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (error, stack) =>
-                          Center(child: Text('Error loading messages: $error')),
-                    ),
-              ), // End NotificationListener
-              // Input Bar positioned at bottom - no backdrop to allow clean scrolling
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  color: Colors.transparent,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Reply preview if exists
-                        if (chatState.replyToMessage != null)
-                          _uiManager.buildReplyPreview(
-                            context,
-                            chatState,
-                            squadStateData,
-                            widget.chatType,
-                            () => ref
-                                .read(cn.chatNotifierProvider.notifier)
-                                .clearReplyToMessage(),
-                          ),
-                        // Input bar
-                        Semantics(
-                          label: 'Chat input bar',
-                          child: ChatInputBar(
-                            controller: _messageController,
-                            focusNode: _inputFocusNode,
-                            isRecording: chatState.isRecording,
-                            isUploading: chatState.isUploading,
-                            onSend: () => _sendMessage(
-                                chatState.replyToMessage, squadStateData),
-                            onMedia: _sendMedia,
-                            onRecordStart: _startRecording,
-                            onRecordStop: _stopRecording,
-                            onPlusMenu: () => _showPlusMenu(context),
-                            onTextChanged: (value) {
-                              _typingManager.onTextChanged(
-                                value,
-                                ref,
-                                chatGroupId: widget.chatGroupId,
-                              );
-                            },
-                            quickReactionEmoji: chatState.quickReactionEmoji,
-                            hintText: chatState.replyToMessage != null
-                                ? 'Reply'
-                                : 'Message',
-                            // Pass actual members for @ mentions
-                            availableMembers: squadStateData
-                                .memberDisplayNames.values
-                                .toList(),
-                            memberAvatars:
-                                _buildMemberAvatarMap(squadStateData),
-                          ),
+                      return _uiManager.buildMessagesList(
+                        ref: ref,
+                        chatGroupId: widget.chatGroupId,
+                        chatType: widget.chatType,
+                        scrollController: _scrollControllerService,
+                        messages: messages,
+                        onMessageLongPress: () {}, // Will be implemented
+                        onMessageTap: () {}, // Will be implemented
+                        getSender: _getSender,
+                        getTimestampMs: _getTimestampMs,
+                        cleanText: _cleanText,
+                        uidToDisplayName: squadStateData.memberDisplayNames,
+                        // markAsDelivered removed - Supabase inserts are immediate
+                        // Add padding to scroll under app bar and input bar
+                        topPadding: (isUserGroup && widget.chatGroupId != null)
+                            ? 100 +
+                                MediaQuery.of(context).padding.top +
+                                60 // App bar + lobby selector
+                            : 100 +
+                                MediaQuery.of(context)
+                                    .padding
+                                    .top, // Just app bar
+                        bottomPadding: inputBarHeight +
+                            (isKeyboardVisible
+                                ? 0
+                                : MediaQuery.of(context).viewPadding.bottom /
+                                    2), // Allow scrolling under input bar
+                      );
+                    },
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, stack) =>
+                        Center(child: Text('Error loading messages: $error')),
+                  ),
+            ), // End NotificationListener
+            // Input Bar positioned at bottom - moves up with keyboard
+            Positioned(
+              bottom: keyboardHeight,
+              left: 0,
+              right: 0,
+              child: Container(
+                color: Colors.transparent,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Reply preview if exists
+                      if (chatState.replyToMessage != null)
+                        _uiManager.buildReplyPreview(
+                          context,
+                          chatState,
+                          squadStateData,
+                          widget.chatType,
+                          () => ref
+                              .read(cn.chatNotifierProvider.notifier)
+                              .clearReplyToMessage(),
                         ),
-                        // Add bottom padding for keyboard and iPhone home indicator
-                        SizedBox(
-                          height: isKeyboardVisible
-                              ? 8.0
-                              : 8.0 +
-                                  (MediaQuery.of(context).viewPadding.bottom /
-                                      2),
+                      // Input bar
+                      Semantics(
+                        label: 'Chat input bar',
+                        child: ChatInputBar(
+                          controller: _messageController,
+                          focusNode: _inputFocusNode,
+                          isRecording: chatState.isRecording,
+                          isUploading: chatState.isUploading,
+                          onSend: () => _sendMessage(
+                              chatState.replyToMessage, squadStateData),
+                          onMedia: _sendMedia,
+                          onRecordStart: _startRecording,
+                          onRecordStop: _stopRecording,
+                          onPlusMenu: () => _showPlusMenu(context),
+                          onTextChanged: (value) {
+                            _typingManager.onTextChanged(
+                              value,
+                              ref,
+                              chatGroupId: widget.chatGroupId,
+                            );
+                          },
+                          quickReactionEmoji: chatState.quickReactionEmoji,
+                          hintText: chatState.replyToMessage != null
+                              ? 'Reply'
+                              : 'Message',
+                          // Pass actual members for @ mentions
+                          availableMembers:
+                              squadStateData.memberDisplayNames.values.toList(),
+                          memberAvatars: _buildMemberAvatarMap(squadStateData),
+                          // Pass background color for adaptive glass UI
+                          backgroundColor: _getBackgroundColor(background),
                         ),
-                      ],
-                    ),
+                      ),
+                      // Add bottom padding for keyboard and iPhone home indicator
+                      SizedBox(
+                        height: isKeyboardVisible
+                            ? 8.0
+                            : 8.0 +
+                                (MediaQuery.of(context).viewPadding.bottom / 2),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              // Lobby Selector positioned below app bar (for user groups)
-              if (isUserGroup && widget.chatGroupId != null)
-                Positioned(
-                  top: 100 + MediaQuery.of(context).padding.top,
-                  left: 0,
-                  right: 0,
-                  child: _buildLobbySelector(),
-                ),
-              // App bar positioned at top of Stack
+            ),
+            // Lobby Selector positioned below app bar (for user groups)
+            if (isUserGroup && widget.chatGroupId != null)
               Positioned(
-                top: 0,
+                top: 100 + MediaQuery.of(context).padding.top,
                 left: 0,
                 right: 0,
-                child: NeonChatAppBar(
-                  squadId: widget.chatGroupId ?? 'unknown',
-                  squadName: _chatName,
-                  avatarUrl: _chatImageUrl,
-                  onBackPressed: () {
-                    if (Navigator.canPop(context)) {
-                      Navigator.of(context).pop();
-                    }
-                  },
-                  onGamepadPressed: isUserGroup ? _handleLobbyCreation : null,
-                  onCenterTapped: () {
-                    // Open ChatInfoScreen with hero animation
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ChatInfoScreen(
-                          squadId: widget.chatGroupId ?? 'unknown',
-                          squadName: _chatName,
-                          avatarUrl: _chatImageUrl,
-                          chatType: widget.chatType,
-                          members: squadStateData.globalStatuses.entries
-                              .map((e) => {
-                                    'uid': e.key,
-                                    'name': squadStateData
-                                            .memberDisplayNames[e.key] ??
-                                        'Unknown',
-                                  })
-                              .toList(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                child: _buildLobbySelector(),
               ),
-            ], // End inner Stack children
-          ), // End inner Stack
-        ], // End outer Stack children
-      ), // End outer Stack
-    ); // End AnimatedPadding
+            // App bar positioned at top of Stack
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: NeonChatAppBar(
+                squadId: widget.chatGroupId ?? 'unknown',
+                squadName: _chatName,
+                avatarUrl: _chatImageUrl,
+                backgroundColor: _getBackgroundColor(background),
+                onBackPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/chat');
+                  }
+                },
+                onGamepadPressed: isUserGroup ? _handleLobbyCreation : null,
+                showGamepadBadge: isUserGroup && _getActiveLobbyCount() > 0,
+                onCenterTapped: () async {
+                  // Fetch actual member list from chat_groups table
+                  List<Map<String, dynamic>> members = [];
+
+                  try {
+                    final chatGroupId = widget.chatGroupId;
+                    if (chatGroupId != null) {
+                      // Fetch chat group to get member UIDs
+                      final groupResponse = await SupabaseService.client
+                          .from('chat_groups')
+                          .select('member_uids')
+                          .eq('id', chatGroupId)
+                          .maybeSingle();
+
+                      if (groupResponse != null) {
+                        final memberUids = List<String>.from(
+                            groupResponse['member_uids'] ?? []);
+
+                        // Fetch user profiles for all members
+                        if (memberUids.isNotEmpty) {
+                          final usersResponse = await SupabaseService.client
+                              .from('users')
+                              .select('uid, display_name, photo_url')
+                              .inFilter('uid', memberUids);
+
+                          members = (usersResponse as List)
+                              .map((user) => {
+                                    'uid': user['uid'] as String,
+                                    'name': user['display_name'] as String? ??
+                                        'Unknown',
+                                    'avatarUrl': user['photo_url'] as String?,
+                                    'isOnline': squadStateData
+                                            .globalStatuses[user['uid']] !=
+                                        null,
+                                  })
+                              .toList();
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    debugPrint('Error fetching members for chat info: $e');
+                    // Fallback to using squadStateData
+                    members = squadStateData.globalStatuses.entries
+                        .map((e) => {
+                              'uid': e.key,
+                              'name':
+                                  squadStateData.memberDisplayNames[e.key] ??
+                                      'Unknown',
+                              'avatarUrl':
+                                  squadStateData.memberProfileImages?[e.key],
+                              'isOnline': true,
+                            })
+                        .toList();
+                  }
+
+                  // Open ChatInfoScreen with ripple overlay animation
+                  if (!mounted) return;
+                  Navigator.push(
+                    context,
+                    _RipplePageRoute(
+                      page: ChatInfoScreen(
+                        squadId: widget.chatGroupId ?? 'unknown',
+                        squadName: _chatName,
+                        avatarUrl: _chatImageUrl,
+                        chatType: widget.chatType,
+                        members: members,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ], // End inner Stack children
+        ), // End inner Stack
+      ], // End outer Stack children
+    ); // End outer Stack
+  }
+
+  /// Helper to extract the dominant background color for adaptive UI
+  Color _getBackgroundColor(Map<String, dynamic> background) {
+    final type = background['type'] ?? 'none';
+    final value = background['value'] ?? '';
+
+    switch (type) {
+      case 'color':
+      case 'solid':
+        if (value.isEmpty || !value.startsWith('#')) {
+          return const Color(0xFF0B0E14); // Default dark
+        }
+        try {
+          return Color(
+            int.parse(value.substring(1), radix: 16) + 0xFF000000,
+          );
+        } catch (e) {
+          return const Color(0xFF0B0E14);
+        }
+
+      case 'gradient':
+        // Extract first color from gradient
+        final parts = value.split(':');
+        if (parts.length >= 3) {
+          final colorStrings = parts[2].split(',');
+          if (colorStrings.isNotEmpty) {
+            try {
+              return Color(
+                  int.parse(colorStrings[0].replaceAll('0x', ''), radix: 16));
+            } catch (e) {
+              return const Color(0xFF0B0E14);
+            }
+          }
+        }
+        return const Color(0xFF0B0E14);
+
+      case 'preset':
+        final presetValue = BackgroundService.presets[value];
+        if (presetValue != null && presetValue.startsWith('#')) {
+          try {
+            return Color(
+              int.parse(presetValue.substring(1), radix: 16) + 0xFF000000,
+            );
+          } catch (e) {
+            return const Color(0xFF0B0E14);
+          }
+        }
+        return const Color(0xFF0B0E14);
+
+      case 'image':
+      case 'gameTheme':
+        // For image/game theme backgrounds, assume mixed content - use semi-dark
+        return const Color(0xFF404040);
+
+      default:
+        return const Color(0xFF0B0E14);
+    }
   }
 
   Widget _buildBackgroundDecoration(Map<String, dynamic> background) {
@@ -1383,14 +1551,24 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         if (value.isEmpty) {
           return Container(color: const Color(0xFF0B0E14));
         }
-        return Container(
-          decoration: BoxDecoration(
-            image: DecorationImage(
-              image: NetworkImage(value),
-              fit: BoxFit.cover,
-              opacity: 1.0,
-            ),
-          ),
+        // Show placeholder while loading, then fade in the image
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: _backgroundImageLoaded && _cachedBackgroundUrl == value
+              ? Container(
+                  key: ValueKey(value),
+                  decoration: BoxDecoration(
+                    image: DecorationImage(
+                      image: NetworkImage(value),
+                      fit: BoxFit.cover,
+                      opacity: 1.0,
+                    ),
+                  ),
+                )
+              : Container(
+                  key: const ValueKey('placeholder'),
+                  color: const Color(0xFF0B0E14),
+                ),
         );
 
       case 'preset':
@@ -1514,4 +1692,44 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       return Container(color: const Color(0xFF0B0E14));
     }
   }
+}
+
+/// Custom page route for ripple overlay animation
+class _RipplePageRoute extends PageRouteBuilder {
+  final Widget page;
+
+  _RipplePageRoute({required this.page})
+      : super(
+          pageBuilder: (context, animation, secondaryAnimation) => page,
+          opaque: false, // Makes the route transparent
+          barrierColor: Colors.transparent,
+          transitionDuration: const Duration(milliseconds: 400),
+          reverseTransitionDuration: const Duration(milliseconds: 300),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            // Ripple scale animation with fade
+            final scaleAnimation = Tween<double>(
+              begin: 0.7,
+              end: 1.0,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ));
+
+            final fadeAnimation = Tween<double>(
+              begin: 0.0,
+              end: 1.0,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+            ));
+
+            return FadeTransition(
+              opacity: fadeAnimation,
+              child: ScaleTransition(
+                scale: scaleAnimation,
+                child: child,
+              ),
+            );
+          },
+        );
 }

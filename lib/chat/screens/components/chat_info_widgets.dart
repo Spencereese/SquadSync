@@ -28,15 +28,18 @@ class ChatInfoGlassCircleButton extends StatelessWidget {
       height: 40,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.08),
+        color: Colors.white.withOpacity(0.15),
         border: Border.all(
-          color: neonColor.withOpacity(0.3),
-          width: 1.5,
+          color: Colors.white.withOpacity(0.2),
+          width: 0.5,
         ),
-        boxShadow: neonColor.neonGlow(
-          blur: 12,
-          opacity: 0.3,
-        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -46,7 +49,7 @@ class ChatInfoGlassCircleButton extends StatelessWidget {
           child: Center(
             child: Icon(
               icon,
-              color: neonColor,
+              color: Colors.white,
               size: 22,
             ),
           ),
@@ -258,6 +261,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
   final String squadName;
   final String? avatarUrl;
   final VoidCallback onEditName;
+  final BuildContext parentContext; // Stable context from parent screen
 
   const ChatInfoEditLobbySheet({
     super.key,
@@ -265,6 +269,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
     required this.squadName,
     this.avatarUrl,
     required this.onEditName,
+    required this.parentContext,
   });
 
   @override
@@ -321,14 +326,15 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
                   // Save reference to navigator before closing modal
                   final navigator = Navigator.of(context);
                   // Get a context that will survive the modal being closed
-                  final scaffoldMessenger = ScaffoldMessenger.of(context);
+                  final scaffoldMessenger = ScaffoldMessenger.of(parentContext);
 
                   // Close the modal sheet
                   navigator.pop();
 
                   // Use a post-frame callback to ensure the modal is fully closed
                   WidgetsBinding.instance.addPostFrameCallback((_) async {
-                    await _pickAndUploadLobbyAvatar(context, scaffoldMessenger);
+                    await _pickAndUploadLobbyAvatar(
+                        parentContext, scaffoldMessenger);
                   });
                 },
               ),
@@ -401,17 +407,37 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
         final downloadUrl =
             supabase.storage.from('avatars').getPublicUrl(storagePath);
 
-        // Update both lobbies and chat_groups tables
-        await Future.wait([
-          supabase.from('lobbies').update({
-            'avatar_url': downloadUrl,
-            'updated_at': DateTime.now().toIso8601String(),
-          }).eq('id', squadId),
-          supabase.from('chat_groups').update({
-            'avatar_url': downloadUrl,
-            'updated_at': DateTime.now().toIso8601String(),
-          }).eq('id', squadId),
-        ]);
+        // Update chat_groups table with image_url (lobbies don't have avatar_url)
+        await supabase.from('chat_groups').update({
+          'image_url': downloadUrl,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', squadId);
+
+        // Also update user_groups JSONB in users table (where ChatScreen reads from)
+        final userData = await supabase
+            .from('users')
+            .select('user_groups')
+            .eq('uid', user.id)
+            .maybeSingle();
+
+        if (userData != null) {
+          final userGroups =
+              List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
+          
+          // Find and update the specific group
+          final groupIndex = userGroups.indexWhere(
+            (group) => group['id'] == squadId || group['chat_group_id'] == squadId,
+          );
+
+          if (groupIndex != -1) {
+            userGroups[groupIndex]['image_url'] = downloadUrl;
+            
+            // Update the entire user_groups array
+            await supabase.from('users').update({
+              'user_groups': userGroups,
+            }).eq('uid', user.id);
+          }
+        }
 
         // Close loading dialog
         if (dialogContext != null && dialogContext!.mounted) {

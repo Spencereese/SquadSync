@@ -183,6 +183,7 @@ class ChatUIManager {
     Map<String, String>? uidToDisplayName,
     Future<void> Function(String)?
         markAsDelivered, // Made optional for Supabase migration
+    bool disableSwipeForTimestamp = false, // Disable swipe in preview mode
   }) {
     // Optimize message processing - only reprocess when message list changes
     if (_needsMessageProcessing ||
@@ -206,50 +207,59 @@ class ChatUIManager {
               onTap: () {
                 // Allow tap events to pass through to parent for keyboard dismissal
               },
-              onHorizontalDragUpdate: (details) {
-                // Only update if drag is mostly horizontal to avoid interfering with vertical scroll
-                if (details.delta.dx.abs() > details.delta.dy.abs()) {
-                  swipeOffset.value += details.delta.dx;
-                  swipeOffset.value = swipeOffset.value.clamp(-40.0, 0.0);
-                }
-              },
-              onHorizontalDragEnd: (details) {
-                // Animate back to 0 with spring effect
-                _animateSwipeBack();
-              },
+              onHorizontalDragUpdate: disableSwipeForTimestamp
+                  ? null
+                  : (details) {
+                      // Only update if drag is mostly horizontal to avoid interfering with vertical scroll
+                      if (details.delta.dx.abs() > details.delta.dy.abs()) {
+                        swipeOffset.value += details.delta.dx;
+                        swipeOffset.value = swipeOffset.value.clamp(-40.0, 0.0);
+                      }
+                    },
+              onHorizontalDragEnd: disableSwipeForTimestamp
+                  ? null
+                  : (details) {
+                      // Animate back to 0 with spring effect
+                      _animateSwipeBack();
+                    },
               child: Stack(
                 children: [
-                  // Main messages list with fade effect at top and bottom
+                  // Main messages list with subtle fade effect at top and bottom
                   ShaderMask(
                     shaderCallback: (Rect bounds) {
                       // Calculate fade positions based on padding
-                      // Top fade: start at topPadding (where messages begin below app bar)
-                      final topFadeStart = topPadding / bounds.height;
-                      final topFadeEnd =
-                          (topPadding + 60) / bounds.height; // 60px fade zone
+                      // Top fade: raised by 15 more pixels, immediate fade to 70%, then gradual to 40%
+                      final topEdge = 0.0; // Very top of screen
+                      final topGradualStart = (topPadding - 75) / bounds.height;
+                      final topGradualEnd = (topPadding - 50) /
+                          bounds.height; // 25px immediate fade zone
 
-                      // Bottom fade: start at bottomPadding (where input bar begins)
-                      final bottomFadeEnd =
-                          1.0 - (bottomPadding / bounds.height);
-                      final bottomFadeStart = bottomFadeEnd -
-                          (20 /
-                              bounds
-                                  .height); // 20px fade zone - starts closer to input bar
+                      // Bottom fade: immediate fade to 70%, then gradual to 40%
+                      final bottomGradualStart = 1.0 -
+                          ((bottomPadding - 10) /
+                              bounds.height); // 10px immediate fade
+                      final bottomGradualEnd =
+                          1.0 - ((bottomPadding - 20) / bounds.height);
+                      final bottomEdge = 1.0; // Very bottom
 
                       return LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: const [
-                          Colors.transparent,
-                          Colors.white,
-                          Colors.white,
-                          Colors.transparent,
+                          Color(0x66FFFFFF), // 40% opacity at very top edge
+                          Color(0xB3FFFFFF), // 70% opacity after gradual fade
+                          Colors.white, // 100% opacity in middle
+                          Colors.white, // 100% opacity in middle
+                          Color(0xB3FFFFFF), // 70% opacity before gradual fade
+                          Color(0x66FFFFFF), // 40% opacity at very bottom edge
                         ],
                         stops: [
-                          topFadeStart.clamp(0.0, 1.0),
-                          topFadeEnd.clamp(0.0, 1.0),
-                          bottomFadeStart.clamp(0.0, 1.0),
-                          bottomFadeEnd.clamp(0.0, 1.0),
+                          topEdge,
+                          topGradualStart.clamp(0.0, 1.0),
+                          topGradualEnd.clamp(0.0, 1.0),
+                          bottomGradualStart.clamp(0.0, 1.0),
+                          bottomGradualEnd.clamp(0.0, 1.0),
+                          bottomEdge,
                         ],
                       ).createShader(bounds);
                     },
@@ -264,7 +274,8 @@ class ChatUIManager {
                         left: 8.0,
                         right: 8.0,
                         top: topPadding + 4.0,
-                        bottom: bottomPadding,
+                        bottom:
+                            (bottomPadding - 15.0).clamp(0.0, double.infinity),
                       ),
                       itemCount: _processedMessages.length +
                           (scrollController.isLoadingMore ? 1 : 0),
@@ -507,16 +518,16 @@ class ChatUIManager {
     // Convert messages to MessageData objects
     final messageDataList = visibleMessages.map((message) {
       final json = message.toJson();
-      // if (kDebugMode) {
-      //   debugPrint(
-      //       'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", reactions in json: ${json['reactions']}');
-      // }
+      if (kDebugMode) {
+        debugPrint(
+            'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", reactions in json: ${json['reactions']}');
+      }
       final messageData =
           MessageData.fromMap(json, uidToDisplayName: uidToDisplayName);
-      // if (kDebugMode) {
-      //   debugPrint(
-      //       'DEBUG ChatUIManager: Created MessageData with ${messageData.reactions.length} reactions');
-      // }
+      if (kDebugMode) {
+        debugPrint(
+            'DEBUG ChatUIManager: Created MessageData with ${messageData.reactions.length} reactions: ${messageData.reactions}');
+      }
       return messageData;
     }).toList();
 

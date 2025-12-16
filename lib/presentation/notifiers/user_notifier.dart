@@ -326,7 +326,7 @@ class UserNotifier extends AsyncNotifier<AppUser?> {
       final groupInfo = {
         'id': groupId,
         'name': groupData['name'] ?? 'Unnamed Group',
-        'image_url': groupData['image_url'],
+        'avatar_url': groupData['avatar_url'], // Use avatar_url consistently
         'is_public': groupData['is_public'] ?? false,
         'member_count': (groupData['member_count'] ?? 0) + 1,
         'created_by': groupData['created_by'],

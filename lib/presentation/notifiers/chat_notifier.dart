@@ -427,8 +427,10 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
               .limit(1)
               .maybeSingle();
 
-          if (lastMessageData != null && lastMessageData['created_at'] != null) {
-            lastActivity = DateTime.parse(lastMessageData['created_at'] as String);
+          if (lastMessageData != null &&
+              lastMessageData['created_at'] != null) {
+            lastActivity =
+                DateTime.parse(lastMessageData['created_at'] as String);
           }
         } catch (e) {
           debugPrint('⚠️ Could not fetch last message for group $groupId: $e');
@@ -445,9 +447,8 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
               ? DateTime.parse(groupData['created_at'] as String)
               : DateTime.now(),
           description: groupData['description'] as String?,
-          avatarUrl: groupData['image_url'] as String?, // Use image_url from chat_groups table
-          inviteCode:
-              groupData['invite_code'] as String? ?? groupId,
+          avatarUrl: groupData['avatar_url'] as String?,
+          inviteCode: groupData['invite_code'] as String? ?? groupId,
           lastActivity: lastActivity,
         );
 

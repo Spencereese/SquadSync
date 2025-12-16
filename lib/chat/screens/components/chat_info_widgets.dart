@@ -261,7 +261,8 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
   final String squadName;
   final String? avatarUrl;
   final VoidCallback onEditName;
-  final VoidCallback? onAvatarUpdated; // Callback to refresh UI after avatar update
+  final VoidCallback?
+      onAvatarUpdated; // Callback to refresh UI after avatar update
   final BuildContext parentContext; // Stable context from parent screen
 
   const ChatInfoEditLobbySheet({
@@ -410,9 +411,9 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
         final downloadUrl =
             supabase.storage.from('avatars').getPublicUrl(storagePath);
 
-        // Update chat_groups table with image_url (lobbies don't have avatar_url)
+        // Update chat_groups table avatar_url
         await supabase.from('chat_groups').update({
-          'image_url': downloadUrl,
+          'avatar_url': downloadUrl,
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', squadId);
 
@@ -434,7 +435,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
           );
 
           if (groupIndex != -1) {
-            userGroups[groupIndex]['image_url'] = downloadUrl;
+            userGroups[groupIndex]['avatar_url'] = downloadUrl;
 
             // Update the entire user_groups array
             await supabase.from('users').update({

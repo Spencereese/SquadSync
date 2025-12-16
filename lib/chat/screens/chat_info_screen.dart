@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +28,7 @@ import '../../domain/entities/message.dart' show ChatType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/chat_notifier.dart' as cn;
 import '../services/chat_message_search_delegate.dart';
+import '../widgets/background_preview_screen.dart';
 
 /// Chat/Squad info screen with perfect iMessage layout in glass style
 ///
@@ -90,60 +92,74 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     final neonColor = theme.colorScheme.primary;
     final members = widget.members ?? [];
 
-    return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
-      body: Column(
-        children: [
-          // Custom app bar
-          ChatInfoAppBar(
-            squadId: widget.squadId,
-            squadName: widget.squadName,
-            avatarUrl: widget.avatarUrl,
-            neonColor: neonColor,
-            onEditPressed: () => _showEditSheet(context),
-            onSearchPressed: () => _showMessageSearch(context),
-          ),
-
-          // Scrollable content
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  const SizedBox(height: 16),
-
-                  // Member avatars horizontal scroll
-                  ChatInfoMembersSection(
-                    squadId: widget.squadId,
-                    members: members,
-                    neonColor: neonColor,
-                    onAddMemberPressed: () => _showAddMemberSheet(context),
-                  ),
-
-                  const SizedBox(
-                      height: 24), // Three big glass circular buttons
-                  ChatInfoActionsSection(
-                    squadId: widget.squadId,
-                    squadName: widget.squadName,
-                    neonColor: neonColor,
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Segmented control tabs
-                  _buildSegmentedControl(context, neonColor),
-
-                  const SizedBox(height: 16),
-
-                  // Tab content
-                  _buildTabContent(context, neonColor),
-
-                  const SizedBox(height: 32),
-                ],
-              ),
+    return Stack(
+      children: [
+        // Full-screen blur for liquid glass effect
+        Positioned.fill(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+            child: Container(
+              color: Colors.black.withOpacity(0.6),
             ),
           ),
-        ],
-      ),
+        ),
+        // Main content
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Column(
+            children: [
+              // Custom app bar
+              ChatInfoAppBar(
+                squadId: widget.squadId,
+                squadName: widget.squadName,
+                avatarUrl: widget.avatarUrl,
+                neonColor: neonColor,
+                onEditPressed: () => _showEditSheet(context),
+                onSearchPressed: () => _showMessageSearch(context),
+              ),
+
+              // Scrollable content
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 16),
+
+                      // Member avatars horizontal scroll
+                      ChatInfoMembersSection(
+                        squadId: widget.squadId,
+                        members: members,
+                        neonColor: neonColor,
+                        onAddMemberPressed: () => _showAddMemberSheet(context),
+                      ),
+
+                      const SizedBox(
+                          height: 24), // Three big glass circular buttons
+                      ChatInfoActionsSection(
+                        squadId: widget.squadId,
+                        squadName: widget.squadName,
+                        neonColor: neonColor,
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Segmented control tabs
+                      _buildSegmentedControl(context, neonColor),
+
+                      const SizedBox(height: 16),
+
+                      // Tab content
+                      _buildTabContent(context, neonColor),
+
+                      const SizedBox(height: 32),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -157,13 +173,13 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
+              color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: neonColor.withOpacity(0.2),
+                color: Colors.white.withOpacity(0.2),
                 width: 1,
               ),
             ),
@@ -184,7 +200,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                     ),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? neonColor.withOpacity(0.2)
+                          ? Colors.white.withOpacity(0.25)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -195,11 +211,8 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                         fontWeight:
                             isSelected ? FontWeight.w600 : FontWeight.w400,
                         color: isSelected
-                            ? neonColor
-                            : Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.6),
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.6),
                       ),
                     ),
                   ),
@@ -435,80 +448,571 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
 
         final presetKeys = BackgroundService.presets.keys.toList();
 
-        return Stack(
-          children: [
-            // Live background preview with opacity 0.5
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.5,
-                child: _buildBackgroundPreview(currentBg),
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Quick access bubbles - 2 rows (4 top, 3 bottom offset)
+              _buildQuickAccessBubbles(context, neonColor, currentBg),
+              const SizedBox(height: 32),
+
+              // Preset backgrounds - 2 column grid with bigger cards
+              Text(
+                'Presets',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
+              const SizedBox(height: 16),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: 0.75,
+                ),
+                itemCount: presetKeys.length,
+                itemBuilder: (context, index) {
+                  final presetId = presetKeys[index];
+                  final isSelected = selectedPresetId == presetId;
+
+                  return _buildPresetCard(
+                    context,
+                    neonColor,
+                    presetId,
+                    isSelected,
+                    () => _applyPresetBackground(context, presetId, neonColor),
+                  );
+                },
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildQuickAccessBubbles(
+    BuildContext context,
+    Color neonColor,
+    Map<String, dynamic> currentBg,
+  ) {
+    final bubbleSize = 70.0;
+    final screenWidth = MediaQuery.of(context).size.width - 32;
+
+    return Column(
+      children: [
+        // Top row - 4 bubbles
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildQuickBubble(
+              context,
+              'None',
+              Icons.block,
+              () => _applyNoneBackground(context, neonColor),
+              bubbleSize,
+              currentBg['type'] == 'none',
             ),
-
-            // Content on top
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Section header
-                  _buildSectionHeader(context, neonColor, 'Chat Backgrounds'),
-                  const SizedBox(height: 16),
-
-                  // Current background info card
-                  _buildCurrentBackgroundInfo(context, neonColor, currentBg),
-                  const SizedBox(height: 24),
-
-                  // Preset backgrounds grid
-                  Text(
-                    'Presets',
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: neonColor,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.85,
-                    ),
-                    itemCount: presetKeys.length,
-                    itemBuilder: (context, index) {
-                      final presetId = presetKeys[index];
-                      final isSelected = selectedPresetId == presetId;
-
-                      return _buildPresetCard(
-                        context,
-                        neonColor,
-                        presetId,
-                        isSelected,
-                        () => _applyPresetBackground(
-                            context, presetId, neonColor),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Upload custom button
-                  _buildUploadCustomButton(context, neonColor),
-                  const SizedBox(height: 16),
-
-                  // Reset to default button
-                  _buildResetDefaultButton(context, neonColor),
-                  const SizedBox(height: 32),
-                ],
+            _buildQuickBubble(
+              context,
+              'Photo',
+              Icons.photo_camera,
+              () => _showPhotoBackgroundPicker(context, neonColor),
+              bubbleSize,
+              currentBg['type'] == 'image',
+            ),
+            _buildQuickBubble(
+              context,
+              'Recent',
+              Icons.history,
+              () => _showRecentBackgrounds(context, neonColor),
+              bubbleSize,
+              false,
+            ),
+            _buildQuickBubble(
+              context,
+              'Sunset',
+              Icons.wb_twilight,
+              () => _showAnimatedBackgroundVariations(
+                  context, neonColor, 'sunset'),
+              bubbleSize,
+              false,
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFF6B35), Color(0xFF4A1C8C)],
               ),
             ),
           ],
-        );
+        ),
+        const SizedBox(height: 16),
+        // Bottom row - 3 bubbles, offset
+        Padding(
+          padding: EdgeInsets.only(left: screenWidth * 0.12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildQuickBubble(
+                context,
+                'Ocean',
+                Icons.waves,
+                () => _showAnimatedBackgroundVariations(
+                    context, neonColor, 'ocean'),
+                bubbleSize,
+                false,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF001F3F), Color(0xFF0074D9)],
+                ),
+              ),
+              _buildQuickBubble(
+                context,
+                'Neon',
+                Icons.auto_awesome,
+                () => _showAnimatedBackgroundVariations(
+                    context, neonColor, 'neon'),
+                bubbleSize,
+                false,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF00F5FF), Color(0xFFFF00FF)],
+                ),
+              ),
+              _buildQuickBubble(
+                context,
+                'Emerald',
+                Icons.nature,
+                () => _showAnimatedBackgroundVariations(
+                    context, neonColor, 'emerald'),
+                bubbleSize,
+                false,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF00F5A0), Color(0xFF00D9F5)],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickBubble(
+    BuildContext context,
+    String label,
+    IconData icon,
+    VoidCallback onTap,
+    double size,
+    bool isSelected, {
+    Gradient? gradient,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
       },
+      child: Column(
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: gradient,
+              color: gradient == null ? Colors.white.withOpacity(0.25) : null,
+              border: Border.all(
+                color:
+                    isSelected ? Colors.white : Colors.white.withOpacity(0.2),
+                width: isSelected ? 3 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 32,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Colors.white.withOpacity(0.8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyNoneBackground(BuildContext context, Color neonColor) async {
+    _showBackgroundPreview(
+      context,
+      neonColor,
+      'None',
+      [
+        {
+          'id': 'none',
+          'name': 'No Background',
+          'color': const Color(0xFF0B0E14),
+        }
+      ],
+    );
+  }
+
+  void _showPhotoBackgroundPicker(BuildContext context, Color neonColor) async {
+    final result = await ImageCropHelper.pickAndCropBackgroundImage(context);
+
+    if (result != null && context.mounted) {
+      try {
+        // Upload to Supabase Storage
+        final imagePath = await _backgroundService.uploadCustomBackground(
+          widget.squadId,
+          result.path,
+        );
+
+        // Show preview with uploaded image
+        if (context.mounted) {
+          _showBackgroundPreview(
+            context,
+            neonColor,
+            'Photo Background',
+            [
+              {
+                'id': 'image_$imagePath',
+                'name': 'Photo',
+                'imageUrl': imagePath,
+              }
+            ],
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  void _showRecentBackgrounds(BuildContext context, Color neonColor) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: 400,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Recent Backgrounds',
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: Center(
+                child: Text(
+                  'Recent backgrounds history\ncoming soon',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAnimatedBackgroundVariations(
+    BuildContext context,
+    Color neonColor,
+    String theme,
+  ) {
+    // Get variations for the theme
+    final variations = _getBackgroundVariations(theme);
+    final themeName =
+        '${theme.substring(0, 1).toUpperCase()}${theme.substring(1)}';
+
+    _showBackgroundPreview(context, neonColor, themeName, variations);
+  }
+
+  /// Unified method to show background preview with ripple transition
+  void _showBackgroundPreview(
+    BuildContext context,
+    Color neonColor,
+    String themeName,
+    List<Map<String, dynamic>> variations,
+  ) {
+    // Navigate with ripple page route for smooth transition
+    Navigator.of(context).push(
+      _RipplePageRoute(
+        page: BackgroundPreviewScreen(
+          themeName: themeName,
+          variations: variations,
+          squadId: widget.squadId,
+          chatName: widget.squadName,
+          chatImageUrl: widget.avatarUrl,
+          chatType: widget.chatType,
+          onApply: (presetId) async {
+            try {
+              // Determine background type from preset ID
+              String type = 'preset';
+              String value = presetId;
+
+              if (presetId == 'none') {
+                type = 'none';
+                value = '';
+              } else if (presetId.startsWith('image_')) {
+                type = 'image';
+                value = presetId.substring(6); // Remove 'image_' prefix
+              }
+
+              await _backgroundService.applyBackground(
+                widget.squadId,
+                type: type,
+                value: value,
+              );
+
+              if (context.mounted) {
+                Navigator.pop(context); // Close preview
+                Navigator.pop(context); // Close background picker
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                );
+              }
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _getBackgroundVariations(String theme) {
+    switch (theme) {
+      case 'sunset':
+        return [
+          {
+            'id': 'sunset_void',
+            'name': 'Sunset Void',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFFFF6B35), Color(0xFF4A1C8C)],
+            ),
+          },
+          {
+            'id': 'sunset_fire',
+            'name': 'Fire Sunset',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFFFF4500), Color(0xFF8B0000)],
+            ),
+          },
+          {
+            'id': 'sunset_warm',
+            'name': 'Warm Sunset',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFFFFAA33), Color(0xFFFF6B6B)],
+            ),
+          },
+        ];
+      case 'ocean':
+        return [
+          {
+            'id': 'ocean_depths',
+            'name': 'Ocean Depths',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFF001F3F), Color(0xFF0074D9)],
+            ),
+          },
+          {
+            'id': 'ocean_teal',
+            'name': 'Teal Ocean',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFF004D5C), Color(0xFF00CED1)],
+            ),
+          },
+          {
+            'id': 'ocean_midnight',
+            'name': 'Midnight Ocean',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFF0D1B2A), Color(0xFF1B4965)],
+            ),
+          },
+        ];
+      case 'neon':
+        return [
+          {
+            'id': 'neon_horizon',
+            'name': 'Neon Horizon',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFF00F5FF), Color(0xFFFF00FF)],
+            ),
+          },
+          {
+            'id': 'neon_pink',
+            'name': 'Pink Neon',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFFFF006E), Color(0xFFFF00FF)],
+            ),
+          },
+          {
+            'id': 'neon_blue',
+            'name': 'Blue Neon',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFF00F5FF), Color(0xFF0066FF)],
+            ),
+          },
+        ];
+      case 'emerald':
+        return [
+          {
+            'id': 'emerald_dream',
+            'name': 'Emerald Dream',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFF00F5A0), Color(0xFF00D9F5)],
+            ),
+          },
+          {
+            'id': 'emerald_forest',
+            'name': 'Forest Emerald',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFF2ECC71), Color(0xFF27AE60)],
+            ),
+          },
+          {
+            'id': 'emerald_mint',
+            'name': 'Mint Emerald',
+            'gradient': const LinearGradient(
+              colors: [Color(0xFF3CFFD2), Color(0xFF56FFA4)],
+            ),
+          },
+        ];
+      default:
+        return [];
+    }
+  }
+
+  Widget _buildBackgroundVariationCard(
+    BuildContext context,
+    Color neonColor,
+    String presetId,
+    String name,
+    LinearGradient gradient,
+  ) {
+    return GestureDetector(
+      onTap: () async {
+        HapticFeedback.mediumImpact();
+        try {
+          await _backgroundService.applyBackground(
+            widget.squadId,
+            type: 'preset',
+            value: presetId,
+          );
+          if (context.mounted) {
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$name applied'),
+                backgroundColor: neonColor,
+              ),
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error: $e'),
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            );
+          }
+        }
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          children: [
+            Container(
+              height: 120,
+              decoration: BoxDecoration(
+                gradient: gradient,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(16),
+                ),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                    ),
+                    child: Text(
+                      name,
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -743,14 +1247,14 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withOpacity(0.25),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: neonColor.withOpacity(0.3),
+              color: Colors.white.withOpacity(0.2),
               width: 1,
             ),
           ),
@@ -807,13 +1311,13 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withOpacity(0.25),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: neonColor.withOpacity(0.3),
+              color: Colors.white.withOpacity(0.2),
               width: 1.5,
             ),
           ),
@@ -985,13 +1489,13 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withOpacity(0.25),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: neonColor.withOpacity(0.3),
+              color: Colors.white.withOpacity(0.2),
               width: 1.5,
             ),
           ),
@@ -1076,14 +1580,14 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withOpacity(0.25),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: neonColor.withOpacity(0.3),
+              color: Colors.white.withOpacity(0.2),
               width: 1.5,
             ),
           ),
@@ -1159,11 +1663,11 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
         child: Container(
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withOpacity(0.25),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: neonColor.withOpacity(0.2),
@@ -1387,7 +1891,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                   bottom: Radius.circular(14),
                 ),
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       vertical: 6,
@@ -1397,7 +1901,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                       color: Colors.black.withOpacity(0.6),
                       border: Border(
                         top: BorderSide(
-                          color: neonColor.withOpacity(0.3),
+                          color: Colors.white.withOpacity(0.2),
                           width: 1,
                         ),
                       ),
@@ -1453,7 +1957,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
             decoration: BoxDecoration(
@@ -1501,14 +2005,6 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
 
       if (!mounted) return;
       HapticFeedback.mediumImpact();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Background "${_formatPresetName(presetId)}" applied!'),
-          backgroundColor: neonColor.withOpacity(0.9),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1635,14 +2131,14 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.black.withOpacity(0.4),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: neonColor.withOpacity(0.3),
+              color: Colors.white.withOpacity(0.2),
               width: 1.5,
             ),
           ),
@@ -1803,7 +2299,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
             decoration: BoxDecoration(
@@ -1951,7 +2447,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
               imageUrl: imageUrl,
               fit: BoxFit.cover,
               placeholder: (context, url) => Container(
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withOpacity(0.25),
                 child: Center(
                   child: CircularProgressIndicator(
                     color: neonColor,
@@ -1960,7 +2456,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                 ),
               ),
               errorWidget: (context, url, error) => Container(
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withOpacity(0.25),
                 child: Icon(
                   Icons.broken_image,
                   color: neonColor.withOpacity(0.5),
@@ -1973,7 +2469,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: neonColor.withOpacity(0.3),
+                    color: Colors.white.withOpacity(0.2),
                     width: 1.5,
                   ),
                 ),
@@ -1991,13 +2487,13 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withOpacity(0.25),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: neonColor.withOpacity(0.3),
+              color: Colors.white.withOpacity(0.2),
               width: 1.5,
             ),
           ),
@@ -2054,7 +2550,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -2085,10 +2581,10 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withOpacity(0.25),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: neonColor.withOpacity(0.3),
+                  color: Colors.white.withOpacity(0.2),
                   width: 1.5,
                 ),
               ),
@@ -2102,7 +2598,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                       color: neonColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: neonColor.withOpacity(0.3),
+                        color: Colors.white.withOpacity(0.2),
                         width: 1,
                       ),
                     ),
@@ -2208,7 +2704,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -2216,13 +2712,11 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: isDestructive
-                    ? color.withOpacity(0.1)
-                    : Colors.white.withOpacity(0.05),
+                color: Colors.white.withOpacity(0.25),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: color.withOpacity(0.3),
-                  width: 1,
+                  color: Colors.white.withOpacity(0.2),
+                  width: 0.5,
                 ),
               ),
               child: Row(
@@ -2291,9 +2785,6 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                   }
                   if (!mounted) return;
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Group name updated!')),
-                  );
                 } catch (e) {
                   debugPrint('Error updating group name: $e');
                   if (!mounted) return;
@@ -2315,11 +2806,16 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => ChatInfoEditLobbySheet(
+      builder: (sheetContext) => ChatInfoEditLobbySheet(
         squadId: widget.squadId,
         squadName: widget.squadName,
         avatarUrl: widget.avatarUrl,
+        parentContext: context,
         onEditName: () => _showEditNameDialog(context),
+        onAvatarUpdated: () async {
+          // Reload user groups to refresh the avatar in UI
+          await ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+        },
       ),
     );
   }
@@ -2512,6 +3008,151 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
       ),
     );
   }
+
+  /// Build background decoration matching chat screen
+  Widget _buildBackgroundDecoration(Map<String, dynamic> background) {
+    final type = background['type'] ?? 'none';
+    final value = background['value'] ?? '';
+
+    switch (type) {
+      case 'color':
+      case 'solid':
+        if (value.isEmpty || !value.startsWith('#')) {
+          return Container(color: const Color(0xFF0B0E14));
+        }
+        try {
+          final color = Color(
+            int.parse(value.substring(1), radix: 16) + 0xFF000000,
+          );
+          return Container(color: color);
+        } catch (e) {
+          return Container(color: const Color(0xFF0B0E14));
+        }
+
+      case 'gradient':
+        return _buildGradientBackground(value);
+
+      case 'image':
+        if (value.isEmpty) {
+          return Container(color: const Color(0xFF0B0E14));
+        }
+        return Container(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: NetworkImage(value),
+              fit: BoxFit.cover,
+              opacity: 1.0,
+            ),
+          ),
+        );
+
+      case 'preset':
+        final presetValue = BackgroundService.presets[value];
+        if (presetValue == null) {
+          return Container(color: const Color(0xFF0B0E14));
+        }
+
+        if (presetValue.startsWith('#')) {
+          try {
+            final color = Color(
+              int.parse(presetValue.substring(1), radix: 16) + 0xFF000000,
+            );
+            return Container(color: color);
+          } catch (e) {
+            return Container(color: const Color(0xFF0B0E14));
+          }
+        }
+
+        if (presetValue.startsWith('gradient:')) {
+          return _buildGradientBackground(presetValue);
+        }
+
+        if (presetValue.startsWith('assets/')) {
+          return Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage(presetValue),
+                fit: BoxFit.cover,
+                opacity: 1.0,
+              ),
+            ),
+          );
+        }
+        return Container(color: const Color(0xFF0B0E14));
+
+      default:
+        return Container(color: const Color(0xFF0B0E14));
+    }
+  }
+
+  /// Build gradient background from string format
+  Widget _buildGradientBackground(String value) {
+    try {
+      final parts = value.split(':');
+      if (parts.length < 3) {
+        return Container(color: const Color(0xFF0B0E14));
+      }
+
+      final colorStrings = parts[2].split(',');
+      final colors = colorStrings.map((colorString) {
+        return Color(int.parse(colorString));
+      }).toList();
+
+      return Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
+          ),
+        ),
+      );
+    } catch (e) {
+      return Container(color: const Color(0xFF0B0E14));
+    }
+  }
+}
+
+/// Custom page route with reversed scale/fade transition
+/// Shrinks and fades to complement the chat menu's grow animation
+class _RipplePageRoute<T> extends PageRouteBuilder<T> {
+  final Widget page;
+
+  _RipplePageRoute({required this.page})
+      : super(
+          pageBuilder: (context, animation, secondaryAnimation) => page,
+          opaque: false,
+          barrierColor: Colors.transparent,
+          transitionDuration: const Duration(milliseconds: 400),
+          reverseTransitionDuration: const Duration(milliseconds: 300),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            // Reverse scale animation - shrink from 1.3 to 1.0
+            // This is the opposite of the chat menu which grows from 0.7 to 1.0
+            final scaleAnimation = Tween<double>(
+              begin: 1.3,
+              end: 1.0,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ));
+
+            final fadeAnimation = Tween<double>(
+              begin: 0.0,
+              end: 1.0,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+            ));
+
+            return FadeTransition(
+              opacity: fadeAnimation,
+              child: ScaleTransition(
+                scale: scaleAnimation,
+                child: child,
+              ),
+            );
+          },
+        );
 }
 
 // Supporting widgets moved to components/chat_info_widgets.dart

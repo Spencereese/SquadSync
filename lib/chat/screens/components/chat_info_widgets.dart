@@ -261,6 +261,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
   final String squadName;
   final String? avatarUrl;
   final VoidCallback onEditName;
+  final VoidCallback? onAvatarUpdated; // Callback to refresh UI after avatar update
   final BuildContext parentContext; // Stable context from parent screen
 
   const ChatInfoEditLobbySheet({
@@ -269,6 +270,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
     required this.squadName,
     this.avatarUrl,
     required this.onEditName,
+    this.onAvatarUpdated,
     required this.parentContext,
   });
 
@@ -334,7 +336,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
                   // Use a post-frame callback to ensure the modal is fully closed
                   WidgetsBinding.instance.addPostFrameCallback((_) async {
                     await _pickAndUploadLobbyAvatar(
-                        parentContext, scaffoldMessenger);
+                        parentContext, scaffoldMessenger, onAvatarUpdated);
                   });
                 },
               ),
@@ -350,6 +352,7 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
   Future<void> _pickAndUploadLobbyAvatar(
     BuildContext context,
     ScaffoldMessengerState scaffoldMessenger,
+    VoidCallback? onAvatarUpdated,
   ) async {
     BuildContext? dialogContext;
     try {
@@ -423,15 +426,16 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
         if (userData != null) {
           final userGroups =
               List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
-          
+
           // Find and update the specific group
           final groupIndex = userGroups.indexWhere(
-            (group) => group['id'] == squadId || group['chat_group_id'] == squadId,
+            (group) =>
+                group['id'] == squadId || group['chat_group_id'] == squadId,
           );
 
           if (groupIndex != -1) {
             userGroups[groupIndex]['image_url'] = downloadUrl;
-            
+
             // Update the entire user_groups array
             await supabase.from('users').update({
               'user_groups': userGroups,
@@ -451,6 +455,9 @@ class ChatInfoEditLobbySheet extends StatelessWidget {
             backgroundColor: Colors.green,
           ),
         );
+
+        // Trigger UI refresh callback
+        onAvatarUpdated?.call();
       } catch (uploadError) {
         // Close loading dialog
         if (dialogContext != null && dialogContext!.mounted) {

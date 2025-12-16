@@ -101,26 +101,16 @@ class ChatInitializationService {
       if (currentUser == null) return;
 
       if (chatType == ChatType.userGroup) {
-        // Query user_groups JSONB field from users table
-        final userData = await SupabaseService.client
-            .from('users')
-            .select('user_groups')
-            .eq('uid', currentUser.id)
+        // Query chat_groups table directly to get current avatar_url
+        final groupData = await SupabaseService.client
+            .from('chat_groups')
+            .select('name, avatar_url')
+            .eq('id', chatGroupId)
             .maybeSingle();
 
-        if (userData != null && context.mounted) {
-          final userGroups =
-              List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
-          // Find the specific group by chatGroupId
-          final groupData = userGroups.firstWhere(
-            (group) => group['id'] == chatGroupId,
-            orElse: () => <String, dynamic>{},
-          );
-
-          if (groupData.isNotEmpty) {
-            setChatName(groupData['name'] ?? 'Group Chat');
-            setChatImageUrl(groupData['avatar_url']);
-          }
+        if (groupData != null && context.mounted) {
+          setChatName(groupData['name'] ?? 'Group Chat');
+          setChatImageUrl(groupData['avatar_url']);
         }
       }
       // For DMs, no additional loading needed

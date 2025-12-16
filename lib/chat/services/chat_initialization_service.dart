@@ -3,6 +3,7 @@ import '../../services/supabase_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'package:squad_sync/presentation/notifiers/chat_notifier.dart' as cn;
 
 import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/message.dart';
@@ -53,6 +54,17 @@ class ChatInitializationService {
 
     // Load user display names for better performance
     await _loadUserDisplayNames(context);
+
+    // Mark group as read when opening
+    if (chatGroupId != null && chatType == ChatType.userGroup) {
+      try {
+        await ref
+            .read(cn.chatNotifierProvider.notifier)
+            .markGroupAsRead(chatGroupId);
+      } catch (e) {
+        debugPrint('Error marking group as read: $e');
+      }
+    }
 
     // Load initial historical messages
     await loadMoreMessages();

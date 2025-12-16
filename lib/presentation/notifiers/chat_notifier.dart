@@ -416,21 +416,40 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
         final groupData = data as Map<String, dynamic>;
         final groupId = groupData['id'] as String;
 
-        // Query the most recent message for this group to get last activity
+        // Query the most recent message for this group to get last activity and details
         DateTime? lastActivity;
+        String? lastMessageText;
+        String? lastMessageSenderName;
         try {
           final lastMessageData = await SupabaseService.client
               .from('chat_messages')
-              .select('created_at')
+              .select('created_at, text, sender_id')
               .eq('chat_id', groupId)
               .order('created_at', ascending: false)
               .limit(1)
               .maybeSingle();
 
-          if (lastMessageData != null &&
-              lastMessageData['created_at'] != null) {
-            lastActivity =
-                DateTime.parse(lastMessageData['created_at'] as String);
+          if (lastMessageData != null) {
+            if (lastMessageData['created_at'] != null) {
+              lastActivity =
+                  DateTime.parse(lastMessageData['created_at'] as String);
+            }
+            lastMessageText = lastMessageData['text'] as String?;
+
+            // Fetch sender's display name
+            final senderId = lastMessageData['sender_id'] as String?;
+            if (senderId != null) {
+              try {
+                final userData = await SupabaseService.client
+                    .from('users')
+                    .select('display_name')
+                    .eq('uid', senderId)
+                    .maybeSingle();
+                lastMessageSenderName = userData?['display_name'] as String?;
+              } catch (e) {
+                debugPrint('⚠️ Could not fetch sender name: $e');
+              }
+            }
           }
         } catch (e) {
           debugPrint('⚠️ Could not fetch last message for group $groupId: $e');
@@ -450,6 +469,12 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
           avatarUrl: groupData['avatar_url'] as String?,
           inviteCode: groupData['invite_code'] as String? ?? groupId,
           lastActivity: lastActivity,
+          metadata: {
+            ...?groupData['metadata'] as Map<String, dynamic>?,
+            if (lastMessageText != null) 'last_message_text': lastMessageText,
+            if (lastMessageSenderName != null)
+              'last_message_sender': lastMessageSenderName,
+          },
         );
 
         allGroups[group.id] = group;
@@ -562,6 +587,142 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
     ref.invalidateSelf();
     // Reload user groups to update UI
     await loadUserGroups();
+  }
+
+  /// Toggle mute status for a group chat
+  Future<void> toggleMuteGroup(String groupId, bool currentlyMuted) async {
+    await _updateGroupMetadata(groupId, {
+      'is_muted': !currentlyMuted,
+      'muted_at': !currentlyMuted ? DateTime.now().toIso8601String() : null,
+    });
+  }
+
+  /// Toggle pin status for a group chat
+  Future<void> togglePinGroup(String groupId, bool currentlyPinned) async {
+    await _updateGroupMetadata(groupId, {
+      'is_pinned': !currentlyPinned,
+      'pinned_at': !currentlyPinned ? DateTime.now().toIso8601String() : null,
+    });
+  }
+
+  /// Mark a group chat as unread
+  Future<void> markGroupAsUnread(String groupId) async {
+    await _updateGroupMetadata(groupId, {
+      'has_unread': true,
+      'unread_count': 1,
+      'last_read_at': null,
+    });
+  }
+
+  /// Mark a group chat as read
+  Future<void> markGroupAsRead(String groupId) async {
+    await _updateGroupMetadata(groupId, {
+      'has_unread': false,
+      'unread_count': 0,
+      'last_read_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Ignore a group chat (mute + hide from main list)
+  Future<void> ignoreGroup(String groupId) async {
+    await _updateGroupMetadata(groupId, {
+      'is_ignored': true,
+      'is_muted': true,
+      'ignored_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Delete a group chat (creator only)
+  Future<void> deleteGroup(String groupId) async {
+    await future;
+    final currentUser = _authService.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      // Verify user is the creator
+      final groupData = await SupabaseService.client
+          .from('chat_groups')
+          .select('created_by')
+          .eq('id', groupId)
+          .maybeSingle();
+
+      if (groupData == null) return;
+      if (groupData['created_by'] != currentUser.id) {
+        throw Exception('Only the group creator can delete this chat');
+      }
+
+      // Delete all messages first
+      await SupabaseService.client
+          .from('chat_messages')
+          .delete()
+          .eq('chat_id', groupId);
+
+      // Delete the group
+      await SupabaseService.client
+          .from('chat_groups')
+          .delete()
+          .eq('id', groupId);
+
+      // Remove from all users' user_groups
+      final usersWithGroup = await SupabaseService.client
+          .from('users')
+          .select('uid, user_groups')
+          .contains('user_groups', [
+        {'id': groupId}
+      ]);
+
+      for (final userData in (usersWithGroup as List)) {
+        final userGroups =
+            List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
+        userGroups.removeWhere((g) => g['id'] == groupId);
+
+        await SupabaseService.client.from('users').update({
+          'user_groups': userGroups,
+        }).eq('uid', userData['uid']);
+      }
+
+      // Reload groups
+      await loadUserGroups();
+    } catch (e) {
+      debugPrint('Error deleting group: $e');
+      rethrow;
+    }
+  }
+
+  /// Update group metadata in users.user_groups JSONB
+  Future<void> _updateGroupMetadata(
+      String groupId, Map<String, dynamic> metadata) async {
+    final currentUser = _authService.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      final userData = await SupabaseService.client
+          .from('users')
+          .select('user_groups')
+          .eq('uid', currentUser.id)
+          .maybeSingle();
+
+      if (userData == null) return;
+
+      final userGroups =
+          List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
+      final groupIndex = userGroups.indexWhere((g) => g['id'] == groupId);
+
+      if (groupIndex != -1) {
+        // Update metadata
+        userGroups[groupIndex] = {...userGroups[groupIndex], ...metadata};
+
+        await SupabaseService.client.from('users').update({
+          'user_groups': userGroups,
+        }).eq('uid', currentUser.id);
+
+        // Reload groups to reflect changes
+        await loadUserGroups();
+      }
+    } catch (e) {
+      debugPrint('Error updating group metadata: $e');
+      rethrow;
+    }
   }
 
   /// Discover public groups, optionally filtered by game

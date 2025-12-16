@@ -8,6 +8,7 @@ import '../dialogs/group_actions_dialog.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import '../../utils.dart';
+import 'group_chat_context_menu.dart';
 
 class UserGroupsTab extends ConsumerStatefulWidget {
   final VoidCallback onTapDM;
@@ -22,12 +23,39 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
   // Cache futures to prevent constant rebuilds during scrolling
   final Map<String, Future<Map<String, dynamic>?>> _groupDataCache = {};
   final Map<String, Future<String?>> _userProfileCache = {};
+  final Map<String, Future<Map<String, dynamic>>> _groupMetadataCache = {};
 
   @override
   void dispose() {
     _groupDataCache.clear();
     _userProfileCache.clear();
+    _groupMetadataCache.clear();
     super.dispose();
+  }
+
+  Future<Map<String, dynamic>> _getGroupMetadata(String groupId) async {
+    final currentUser = AuthServiceSupabase().currentUser;
+    if (currentUser == null) return {};
+
+    try {
+      final userData = await SupabaseService.client
+          .from('users')
+          .select('user_groups')
+          .eq('uid', currentUser.id)
+          .maybeSingle();
+
+      final userGroups =
+          List<Map<String, dynamic>>.from(userData?['user_groups'] ?? []);
+      final groupMeta = userGroups.firstWhere(
+        (g) => g['id'] == groupId,
+        orElse: () => <String, dynamic>{},
+      );
+
+      return groupMeta;
+    } catch (e) {
+      debugPrint('Error fetching group metadata: $e');
+      return {};
+    }
   }
 
   String _formatTime(DateTime time) {
@@ -296,7 +324,17 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
             })
         .toList();
 
-    // Sort groups by last_message_time in memory
+    // Pre-fetch all metadata for sorting (will be cached for later use)
+    for (var group in groups) {
+      final groupId = group['id'] as String?;
+      if (groupId != null && !_groupMetadataCache.containsKey(groupId)) {
+        _groupMetadataCache[groupId] = _getGroupMetadata(groupId);
+      }
+    }
+
+    // Sort groups: pinned first, then by last_message_time
+    // Note: This is a simplified sort that doesn't wait for async metadata
+    // The actual pinned status will be reflected when tiles render
     groups.sort((a, b) {
       final aTime = a['last_message_time'] as String?;
       final bTime = b['last_message_time'] as String?;
@@ -417,6 +455,12 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
                       .maybeSingle();
                 }
 
+                // Fetch group metadata (mute, pin, unread, etc.) (cached)
+                if (groupId != null &&
+                    !_groupMetadataCache.containsKey(groupId)) {
+                  _groupMetadataCache[groupId] = _getGroupMetadata(groupId);
+                }
+
                 return FutureBuilder<Map<String, dynamic>?>(
                   future: groupId != null
                       ? _groupDataCache[groupId]
@@ -455,14 +499,29 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
                           subtitleText = '$memberCount members';
                         }
 
-                        return _buildGroupTile(
-                          context: context,
-                          groupId: groupId,
-                          groupName: groupName,
-                          imageUrl: imageUrl,
-                          isPublic: isPublic,
-                          subtitleText: subtitleText,
-                          lastMessageTime: lastMessageTime,
+                        // Fetch metadata and build tile
+                        return FutureBuilder<Map<String, dynamic>>(
+                          future: groupId != null
+                              ? _groupMetadataCache[groupId]
+                              : Future.value({}),
+                          builder: (context, metaSnapshot) {
+                            final metadata = metaSnapshot.data ?? {};
+                            return _buildGroupTile(
+                              context: context,
+                              groupId: groupId,
+                              groupName: groupName,
+                              imageUrl: imageUrl,
+                              isPublic: isPublic,
+                              subtitleText: subtitleText,
+                              lastMessageTime: lastMessageTime,
+                              isMuted: metadata['is_muted'] as bool? ?? false,
+                              hasUnread:
+                                  metadata['has_unread'] as bool? ?? false,
+                              unreadCount:
+                                  metadata['unread_count'] as int? ?? 0,
+                              isPinned: metadata['is_pinned'] as bool? ?? false,
+                            );
+                          },
                         );
                       },
                     );
@@ -484,6 +543,10 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
     required bool isPublic,
     required String subtitleText,
     required String? lastMessageTime,
+    bool isMuted = false,
+    bool hasUnread = false,
+    int unreadCount = 0,
+    bool isPinned = false,
   }) {
     return Material(
       color: Colors.transparent,
@@ -532,10 +595,111 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
             }
           }
         },
-        onLongPress: () {
-          // Show leave group confirmation dialog
-          if (groupId != null) {
-            _showLeaveGroupDialog(context, groupId, groupName, ref);
+        onLongPress: () async {
+          // Show context menu with all group actions
+          if (groupId == null) return;
+
+          // Fetch group metadata from users.user_groups
+          final currentUser = AuthServiceSupabase().currentUser;
+          if (currentUser == null) return;
+
+          try {
+            final userData = await SupabaseService.client
+                .from('users')
+                .select('user_groups')
+                .eq('uid', currentUser.id)
+                .maybeSingle();
+
+            final userGroups =
+                List<Map<String, dynamic>>.from(userData?['user_groups'] ?? []);
+            final groupMeta = userGroups.firstWhere(
+              (g) => g['id'] == groupId,
+              orElse: () => <String, dynamic>{},
+            );
+
+            final isMuted = groupMeta['is_muted'] as bool? ?? false;
+            final isPinned = groupMeta['is_pinned'] as bool? ?? false;
+
+            // Check if user is creator
+            final groupData = await SupabaseService.client
+                .from('chat_groups')
+                .select('created_by')
+                .eq('id', groupId)
+                .maybeSingle();
+            final createdBy = groupData?['created_by'] as String? ?? '';
+            final isCreator = createdBy == currentUser.id;
+
+            if (!context.mounted) return;
+
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              builder: (context) => GroupChatContextMenu(
+                groupId: groupId,
+                groupName: groupName,
+                createdBy: createdBy,
+                isMuted: isMuted,
+                isPinned: isPinned,
+                onMarkUnread: () async {
+                  await ref
+                      .read(cn.chatNotifierProvider.notifier)
+                      .markGroupAsUnread(groupId);
+                  if (context.mounted) Navigator.pop(context);
+                },
+                onTogglePinned: () async {
+                  await ref
+                      .read(cn.chatNotifierProvider.notifier)
+                      .togglePinGroup(groupId, isPinned);
+                  if (context.mounted) Navigator.pop(context);
+                },
+                onToggleMute: () async {
+                  await ref
+                      .read(cn.chatNotifierProvider.notifier)
+                      .toggleMuteGroup(groupId, isMuted);
+                  if (context.mounted) Navigator.pop(context);
+                },
+                onIgnore: () async {
+                  await ref
+                      .read(cn.chatNotifierProvider.notifier)
+                      .ignoreGroup(groupId);
+                  if (context.mounted) Navigator.pop(context);
+                },
+                onLeave: () async {
+                  Navigator.pop(context);
+                  _showLeaveGroupDialog(context, groupId, groupName, ref);
+                },
+                onDelete: isCreator
+                    ? () async {
+                        try {
+                          await ref
+                              .read(cn.chatNotifierProvider.notifier)
+                              .deleteGroup(groupId);
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Deleted "$groupName"'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to delete: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      }
+                    : null,
+              ),
+            );
+          } catch (e) {
+            debugPrint('Error showing context menu: $e');
           }
         },
         child: ListTile(
@@ -596,6 +760,49 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
               maxLines: 2, // Allow 2 lines for longer messages
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Unread badge
+              if (hasUnread && unreadCount > 0) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.cyanAccent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    unreadCount > 99 ? '99+' : unreadCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              // Pinned indicator
+              if (isPinned) ...[
+                const Icon(
+                  Icons.push_pin,
+                  color: Colors.amber,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+              ],
+              // Muted indicator (on far right as requested)
+              if (isMuted)
+                const Icon(
+                  Icons.notifications_off,
+                  color: Colors.grey,
+                  size: 20,
+                ),
+            ],
           ),
         ),
       ),

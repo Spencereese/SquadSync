@@ -389,12 +389,11 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       debugPrint('📚 Loading ALL groups for user: ${currentUser.id}');
 
       // Query ALL groups where user is a member by checking member_uids array
-      // LEFT JOIN with chat_metadata to get last_message_time (nullable for new groups)
       // This includes squad chats, user groups, and DMs
       debugPrint('🔍 Querying chat_groups where user is in member_uids...');
       final groupsData = await SupabaseService.client
           .from('chat_groups')
-          .select('*, chat_metadata(last_message_time)')
+          .select('*')
           .contains('member_uids', [currentUser.id]);
 
       debugPrint('🔍 Received ${(groupsData as List).length} total groups');
@@ -415,24 +414,28 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
 
       for (var data in (groupsData as List<dynamic>)) {
         final groupData = data as Map<String, dynamic>;
+        final groupId = groupData['id'] as String;
 
-        // Extract last_message_time from joined chat_metadata
-        String? lastMessageTime;
-        if (groupData['chat_metadata'] is Map) {
-          final metadata = groupData['chat_metadata'] as Map<String, dynamic>;
-          lastMessageTime = metadata['last_message_time'] as String?;
-        } else if (groupData['chat_metadata'] is List &&
-            (groupData['chat_metadata'] as List).isNotEmpty) {
-          final metadata = (groupData['chat_metadata'] as List).first
-              as Map<String, dynamic>;
-          lastMessageTime = metadata['last_message_time'] as String?;
+        // Query the most recent message for this group to get last activity
+        DateTime? lastActivity;
+        try {
+          final lastMessageData = await SupabaseService.client
+              .from('chat_messages')
+              .select('created_at')
+              .eq('chat_id', groupId)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+
+          if (lastMessageData != null && lastMessageData['created_at'] != null) {
+            lastActivity = DateTime.parse(lastMessageData['created_at'] as String);
+          }
+        } catch (e) {
+          debugPrint('⚠️ Could not fetch last message for group $groupId: $e');
         }
 
-        // Fallback to chat_groups.last_message_time if available
-        lastMessageTime ??= groupData['last_message_time'] as String?;
-
         final group = ChatGroup(
-          id: groupData['id'] as String,
+          id: groupId,
           name: groupData['name'] as String? ?? 'Unnamed Group',
           isPublic: groupData['is_public'] as bool? ?? false,
           memberUids: List<String>.from(groupData['member_uids'] ?? []),
@@ -442,11 +445,10 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
               ? DateTime.parse(groupData['created_at'] as String)
               : DateTime.now(),
           description: groupData['description'] as String?,
-          avatarUrl: groupData['avatar_url'] as String?,
+          avatarUrl: groupData['image_url'] as String?, // Use image_url from chat_groups table
           inviteCode:
-              groupData['invite_code'] as String? ?? groupData['id'] as String,
-          lastActivity:
-              lastMessageTime != null ? DateTime.parse(lastMessageTime) : null,
+              groupData['invite_code'] as String? ?? groupId,
+          lastActivity: lastActivity,
         );
 
         allGroups[group.id] = group;
@@ -681,12 +683,6 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       // This prevents groups from disappearing after join
       debugPrint('🔄 Reloading user groups after join...');
       await loadUserGroups();
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Successfully joined ${group.name}!')),
-        );
-      }
     } catch (e, stackTrace) {
       debugPrint('Error joining group: $e');
       debugPrint('Stack trace: $stackTrace');
@@ -823,12 +819,6 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
         updatedGroups[group.id] = group;
         return currentState.copyWith(chatGroups: updatedGroups);
       });
-
-      if (context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Group "$groupName" created successfully!')),
-        );
-      }
 
       return group;
     } catch (e, stackTrace) {

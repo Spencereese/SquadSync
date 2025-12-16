@@ -27,6 +27,9 @@ final authStateProvider = StreamProvider<User?>((ref) {
 /// ConsumerWidget for the main MaterialApp with theme support and go_router
 class SquadSyncMaterialApp extends ConsumerWidget {
   const SquadSyncMaterialApp({super.key});
+  
+  // Static flag to ensure splash is only removed once
+  static bool _splashRemoved = false;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -35,11 +38,16 @@ class SquadSyncMaterialApp extends ConsumerWidget {
 
     final router = ref.watch(goRouterProvider);
 
-    // Remove native splash after first frame is rendered
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      FlutterNativeSplash.remove();
-      debugPrint('🎨 Native splash removed after first frame');
-    });
+    // Remove native splash after first frame is rendered (only once)
+    if (!_splashRemoved) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_splashRemoved) {
+          _splashRemoved = true;
+          FlutterNativeSplash.remove();
+          debugPrint('🎨 Native splash removed after first frame');
+        }
+      });
+    }
 
     return AnimatedThemeWrapper(
       child: MaterialApp.router(

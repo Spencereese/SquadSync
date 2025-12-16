@@ -47,6 +47,8 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
 
   @override
   Future<GameState> build() async {
+    _logger.i('🎮 GameNotifier: Initializing...');
+    
     // Initialize dependencies
     _repository = ref.read(gameRepositoryProvider);
     _localDataSource ??= di.getIt<GameLocalDataSource>();
@@ -54,12 +56,16 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
 
     // Initialize Twitch service (non-blocking)
     _twitchService?.initialize().catchError((e) {
-      _logger.w('Twitch service initialization failed: $e');
+      _logger.w('⚠️ Twitch service initialization failed: $e');
     });
 
+    _logger.i('📚 GameNotifier: Loading available games and lobbies...');
+    
     // Initialize games and lobbies
     final availableGames = await _repository.getAvailableGames();
     final gameLobbies = await _repository.getGameLobbies();
+    
+    _logger.i('✅ GameNotifier: Initialized with ${availableGames.length} games');
 
     return GameState.initial().copyWith(
       availableGames: availableGames.map((g) => Game.fromCache(g)).toList(),

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/user_notifier.dart';
-import '../../services/supabase_service.dart';
 import '../../services/voice_service.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../domain/entities/message.dart' show ChatType;
@@ -12,12 +12,14 @@ import '../chat_screen.dart';
 /// Message avatar component - displays user profile image or initials
 class MessageAvatar extends ConsumerWidget {
   final String senderName;
+  final String senderUid;
   final bool isFromCurrentUser;
   final VoidCallback? onTap;
 
   const MessageAvatar({
     super.key,
     required this.senderName,
+    required this.senderUid,
     required this.isFromCurrentUser,
     this.onTap,
   });
@@ -28,10 +30,12 @@ class MessageAvatar extends ConsumerWidget {
 
     return squadAsync.maybeWhen(
       data: (squadState) {
-        final profileImage = squadState.memberProfileImages?[senderName];
+        // Use senderUid to look up profile image (memberProfileImages is keyed by UID)
+        final profileImage = squadState.memberProfileImages?[senderUid];
 
         return GestureDetector(
-          onTap: onTap ?? () => _showUserMenu(context, ref, senderName),
+          onTap:
+              onTap ?? () => _showUserMenu(context, ref, senderName, senderUid),
           child: CircleAvatar(
             radius: 16,
             backgroundImage: profileImage != null && profileImage.isNotEmpty
@@ -56,12 +60,14 @@ class MessageAvatar extends ConsumerWidget {
     );
   }
 
-  void _showUserMenu(BuildContext context, WidgetRef ref, String userName) {
+  void _showUserMenu(
+      BuildContext context, WidgetRef ref, String userName, String userUid) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _UserMenuSheet(
         userName: userName,
+        userUid: userUid,
       ),
     );
   }
@@ -76,8 +82,9 @@ class MessageAvatar extends ConsumerWidget {
 
 class _UserMenuSheet extends ConsumerWidget {
   final String userName;
+  final String userUid;
 
-  const _UserMenuSheet({required this.userName});
+  const _UserMenuSheet({required this.userName, required this.userUid});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -85,10 +92,7 @@ class _UserMenuSheet extends ConsumerWidget {
 
     return squadAsync.maybeWhen(
       data: (squadState) {
-        final uid = squadState.memberDisplayNames.entries
-            .firstWhere((e) => e.value == userName,
-                orElse: () => const MapEntry('', ''))
-            .key;
+        final uid = userUid;
 
         if (uid.isEmpty) {
           return _buildErrorState(context);
@@ -96,287 +100,109 @@ class _UserMenuSheet extends ConsumerWidget {
 
         return Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            color: Colors.grey[900],
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Profile Header
-                _buildProfileHeader(context, ref, uid, squadState),
-
-                const Divider(height: 1),
-
-                // Quick Actions
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Options
-                      _buildMenuItem(
-                        context,
-                        icon: Icons.videocam,
-                        label: 'Video Call',
-                        onTap: () async {
-                          Navigator.pop(context);
-                          await _startVideoCall(context, ref, uid, userName);
-                        },
-                      ),
-                      _buildMenuItem(
-                        context,
-                        icon: Icons.call,
-                        label: 'Audio Call',
-                        onTap: () async {
-                          Navigator.pop(context);
-                          await _startAudioCall(context, ref, uid, userName);
-                        },
-                      ),
-                      _buildMenuItem(
-                        context,
-                        icon: Icons.message,
-                        label: 'Message',
-                        onTap: () async {
-                          Navigator.pop(context);
-                          await _openDirectMessage(context, ref, uid, userName);
-                        },
-                      ),
-                      _buildMenuItem(
-                        context,
-                        icon: Icons.gavel,
-                        label: 'Ban',
-                        onTap: () {
-                          Navigator.pop(context);
-                          ref
-                              .read(ln.lobbyNotifierProvider.notifier)
-                              .addBan(uid, squadState.displayName);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content:
-                                    Text('$userName has been voted for ban')),
-                          );
-                        },
-                      ),
-                      _buildMenuItem(
-                        context,
-                        icon: Icons.person_off,
-                        label: 'Block User',
-                        onTap: () async {
-                          Navigator.pop(context);
-                          await ref
-                              .read(userNotifierProvider.notifier)
-                              .blockUser(uid);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('$userName has been blocked')),
-                            );
-                          }
-                        },
-                      ),
-                    ],
-                  ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[700],
+                  borderRadius: BorderRadius.circular(2),
                 ),
-              ],
-            ),
+              ),
+
+              // User name header
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Text(
+                  userName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+              const Divider(color: Colors.grey, height: 1),
+
+              // Menu options
+              _buildMenuItem(
+                context,
+                icon: Icons.videocam,
+                label: 'Video Call',
+                color: Colors.green,
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _startVideoCall(context, ref, uid, userName);
+                },
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.call,
+                label: 'Audio Call',
+                color: Colors.blue,
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _startAudioCall(context, ref, uid, userName);
+                },
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.message,
+                label: 'Message',
+                color: Colors.cyanAccent,
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _openDirectMessage(context, ref, uid, userName);
+                },
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.sports_martial_arts,
+                label: 'Ban',
+                color: Colors.orange,
+                onTap: () {
+                  Navigator.pop(context);
+                  ref
+                      .read(ln.lobbyNotifierProvider.notifier)
+                      .addBan(uid, squadState.displayName);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$userName has been voted for ban')),
+                  );
+                },
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.person_off,
+                label: 'Block User',
+                color: Colors.red,
+                onTap: () async {
+                  Navigator.pop(context);
+                  await ref.read(userNotifierProvider.notifier).blockUser(uid);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('$userName has been blocked')),
+                    );
+                  }
+                },
+              ),
+
+              const SizedBox(height: 20),
+            ],
           ),
         );
       },
       orElse: () => _buildErrorState(context),
     );
-  }
-
-  Widget _buildProfileHeader(
-    BuildContext context,
-    WidgetRef ref,
-    String uid,
-    dynamic squadState,
-  ) {
-    final theme = Theme.of(context);
-    final profileImage = squadState.memberProfileImages?[userName];
-    final status = squadState.globalStatuses?[uid] ?? 'Offline';
-
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: _fetchUserProfile(uid),
-      builder: (context, snapshot) {
-        final userProfile = snapshot.data;
-        final bio = userProfile?['bio'] as String?;
-        final pinnedGames = userProfile?['pinned_games'] as List<dynamic>?;
-
-        return Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                theme.colorScheme.primary.withOpacity(0.1),
-                theme.cardColor,
-              ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-          ),
-          child: Column(
-            children: [
-              // Avatar with glow
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: theme.colorScheme.primary.withOpacity(0.3),
-                      blurRadius: 20,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundImage: profileImage != null &&
-                          profileImage.isNotEmpty
-                      ? CachedNetworkImageProvider(_fixMediaUrl(profileImage))
-                      : null,
-                  child: profileImage == null || profileImage.isEmpty
-                      ? Text(
-                          userName.isNotEmpty ? userName[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      : null,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // User Name
-              Text(
-                userName,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-
-              // Status Badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: status.toLowerCase().contains('online')
-                      ? Colors.green.withOpacity(0.2)
-                      : Colors.grey.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: status.toLowerCase().contains('online')
-                        ? Colors.green
-                        : Colors.grey,
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: status.toLowerCase().contains('online')
-                            ? Colors.green
-                            : Colors.grey,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      status,
-                      style: TextStyle(
-                        color: status.toLowerCase().contains('online')
-                            ? Colors.green
-                            : Colors.grey,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Bio
-              if (bio != null && bio.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text(
-                  bio,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-
-              // Pinned Games
-              if (pinnedGames != null && pinnedGames.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Favorite Games',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.6),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: pinnedGames.take(3).map((game) {
-                    final gameName = game is Map
-                        ? (game['name'] ?? 'Unknown')
-                        : game.toString();
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: theme.colorScheme.primary.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Text(
-                        gameName,
-                        style: TextStyle(
-                          color: theme.colorScheme.primary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<Map<String, dynamic>?> _fetchUserProfile(String uid) async {
-    try {
-      final response = await SupabaseService.client
-          .from('users')
-          .select('bio, pinned_games')
-          .eq('uid', uid)
-          .maybeSingle();
-      return response;
-    } catch (e) {
-      return null;
-    }
   }
 
   Widget _buildErrorState(BuildContext context) {
@@ -408,19 +234,22 @@ class _UserMenuSheet extends ConsumerWidget {
   Widget _buildMenuItem(BuildContext context,
       {required IconData icon,
       required String label,
+      required Color color,
       required VoidCallback onTap}) {
     return ListTile(
-      leading: Icon(icon, color: Theme.of(context).primaryColor),
-      title: Text(label),
-      onTap: onTap,
+      leading: Icon(icon, color: color),
+      title: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+        ),
+      ),
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
     );
-  }
-
-  String _fixMediaUrl(String? url) {
-    if (url == null || url.isEmpty) return '';
-    return url.startsWith('http')
-        ? url
-        : 'https://storage.googleapis.com/lobbiesync-media/$url';
   }
 
   /// Start a video call with the user

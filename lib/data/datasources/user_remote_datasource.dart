@@ -16,8 +16,12 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
 
   @override
   Future<Map<String, dynamic>?> getUserProfile(String uid) async {
-    final response =
-        await _supabase.from('users').select().eq('uid', uid).maybeSingle();
+    final response = await _supabase
+        .from('users')
+        .select(
+            'uid, email, display_name, photo_url, pinned_games, blocked_users, fcm_token, last_seen_at, online, created_at, updated_at')
+        .eq('uid', uid)
+        .maybeSingle();
     return response;
   }
 

@@ -107,7 +107,7 @@ class ChatInitializationService {
 
           if (groupData.isNotEmpty) {
             setChatName(groupData['name'] ?? 'Group Chat');
-            setChatImageUrl(groupData['image_url']);
+            setChatImageUrl(groupData['avatar_url']);
           }
         }
       }

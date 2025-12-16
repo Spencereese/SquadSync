@@ -1083,7 +1083,9 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
         final photoUrls = photoMessages
             .map((data) {
               // Try different image fields
-              if (data['image_url'] != null) {
+              if (data['avatar_url'] != null) {
+                return data['avatar_url'] as String;
+              } else if (data['image_url'] != null) {
                 return data['image_url'] as String;
               }
               final photos = data['photos'] as List?;

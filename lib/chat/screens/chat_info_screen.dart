@@ -1262,7 +1262,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
           ),
           child: Row(
             children: [
-              Icon(icon, color: neonColor, size: 24),
+              Icon(icon, color: Colors.white, size: 24),
               const SizedBox(width: 16),
               Text(
                 title,
@@ -1625,7 +1625,9 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                   children: [
                     Icon(
                       isEmpty ? Icons.person_add_outlined : Icons.person,
-                      color: isEmpty ? neonColor.withOpacity(0.4) : neonColor,
+                      color: isEmpty
+                          ? Colors.white.withOpacity(0.4)
+                          : Colors.white,
                       size: 32,
                     ),
                     const SizedBox(height: 8),
@@ -1635,11 +1637,8 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                         fontSize: 12,
                         fontWeight: isEmpty ? FontWeight.w400 : FontWeight.w600,
                         color: isEmpty
-                            ? Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.4)
-                            : neonColor,
+                            ? Colors.white.withOpacity(0.4)
+                            : Colors.white,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1681,7 +1680,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
               children: [
                 Icon(
                   icon,
-                  color: neonColor.withOpacity(0.4),
+                  color: Colors.white.withOpacity(0.4),
                   size: 40,
                 ),
                 const SizedBox(height: 12),
@@ -2723,20 +2722,23 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
               ),
               child: Row(
                 children: [
-                  Icon(icon, color: color, size: 24),
+                  Icon(icon,
+                      color: isDestructive ? color : Colors.white, size: 24),
                   const SizedBox(width: 16),
                   Text(
                     title,
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
-                      color: color,
+                      color: isDestructive ? color : Colors.white,
                     ),
                   ),
                   const Spacer(),
                   Icon(
                     Icons.chevron_right,
-                    color: color.withOpacity(0.5),
+                    color: isDestructive
+                        ? color.withOpacity(0.5)
+                        : Colors.white.withOpacity(0.5),
                     size: 24,
                   ),
                 ],

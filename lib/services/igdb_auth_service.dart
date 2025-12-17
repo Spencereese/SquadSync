@@ -206,12 +206,16 @@ class IgdbAuthService {
   }
 
   /// Store IGDB credentials in SharedPreferences (for development/testing)
-  Future<void> storeCredentials() async {
+  Future<void> storeCredentials(
+      {String? clientId, String? clientSecret}) async {
     await _ensureStorage();
-    // Store test credentials (replace with real ones for production)
-    await _storage!.setString(_clientIdKey, 'yq7hidzec8wv7khe9niom9m6znzrxf');
-    await _storage!
-        .setString(_clientSecretKey, '4ycghqkzf2ylgxbilypdxu4ga937u5');
-    _logger.i('IGDB credentials stored');
+    // Use provided credentials or fall back to hardcoded defaults
+    final id = clientId ?? 'yq7hidzec8wv7khe9niom9m6znzrxf';
+    final secret = clientSecret ?? '4ycghqkzf2ylgxbilypdxu4ga937u5';
+
+    await _storage!.setString(_clientIdKey, id);
+    await _storage!.setString(_clientSecretKey, secret);
+    _logger.i('✅ IGDB credentials stored');
+    _logger.i('   Client ID: ${id.substring(0, 8)}...');
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
@@ -170,6 +171,15 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       },
       onError: (error) {
         debugPrint('❌ Error in current lobby stream: $error');
+        // Handle RealtimeSubscribeException gracefully
+        if (error is RealtimeSubscribeException) {
+          debugPrint('❌ RealtimeSubscribeException: ${error.status}');
+          if (error.status == RealtimeSubscribeStatus.channelError ||
+              error.status == RealtimeSubscribeStatus.timedOut) {
+            debugPrint('❌ Channel error/timeout - cleaning up channels');
+            SupabaseService.cleanupOldChannels();
+          }
+        }
       },
     );
   }

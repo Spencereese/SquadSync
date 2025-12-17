@@ -527,16 +527,8 @@ class ChatUIManager {
     // Convert messages to MessageData objects
     final messageDataList = visibleMessages.map((message) {
       final json = message.toJson();
-      if (kDebugMode) {
-        debugPrint(
-            'DEBUG ChatUIManager: Processing message ${message.id}, text: "${message.text}", reactions in json: ${json['reactions']}');
-      }
       final messageData =
           MessageData.fromMap(json, uidToDisplayName: uidToDisplayName);
-      if (kDebugMode) {
-        debugPrint(
-            'DEBUG ChatUIManager: Created MessageData with ${messageData.reactions.length} reactions: ${messageData.reactions}');
-      }
       return messageData;
     }).toList();
 

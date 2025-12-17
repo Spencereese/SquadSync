@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:ui';
 import '../../domain/entities/game.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../../presentation/notifiers/user_notifier.dart';
 import '../../widgets/game_search_delegate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// Glass-themed lobby creation sheet that slides over the chat screen
 /// Matches the animation and styling of the group chat menu
@@ -28,11 +30,12 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
 
   // Form state
   Game? _selectedGame;
-  final List<String> _selectedTags = [];
   String _visibility = 'group_private';
   bool _isAvailableMode = false;
   bool _isLoading = false;
   int _maxSpots = 4;
+  List<Map<String, dynamic>> _pinnedGames = [];
+  bool _isVisibilityExpanded = false;
 
   @override
   void initState() {
@@ -51,6 +54,18 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
 
     // Start animation
     _animationController.forward();
+    
+    // Load pinned games
+    _loadPinnedGames();
+  }
+  
+  Future<void> _loadPinnedGames() async {
+    final userState = ref.read(userNotifierProvider);
+    if (userState.hasValue && userState.value != null) {
+      setState(() {
+        _pinnedGames = userState.value!.pinnedGames;
+      });
+    }
   }
 
   @override
@@ -87,7 +102,7 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
     try {
       final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
-      // Create lobby with tags and visibility
+      // Create lobby with visibility
       final lobbyId = await lobbyNotifier.createLobby(
         chatGroupId: widget.chatGroupId,
         gameName: _selectedGame!.name,
@@ -95,10 +110,9 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
         isPublic: _visibility == 'public',
       );
 
-      // Update lobby metadata (tags, visibility, constitution will be auto-applied)
+      // Update lobby metadata (visibility, constitution will be auto-applied)
       final supabase = Supabase.instance.client;
       await supabase.from('lobbies').update({
-        'tags': _selectedTags,
         'visibility': _visibility,
       }).eq('id', lobbyId);
 
@@ -139,7 +153,6 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
       // Update user availability status
       await supabase.from('users').update({
         'available_status': 'Available for games',
-        'available_tags': _selectedTags,
         'available_since': DateTime.now().toIso8601String(),
       }).eq('uid', user.id);
 
@@ -289,12 +302,8 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
 
           // Visibility Picker
           _buildVisibilityPicker(theme, isDark),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
         ],
-
-        // Tag Input (optional, collapsed by default)
-        _buildTagInput(theme, isDark),
-        const SizedBox(height: 24),
 
         // Start Button
         _buildStartButton(theme, isDark),
@@ -361,11 +370,29 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
         ),
         const SizedBox(height: 12),
 
-        // Selected game or picker button
+        // Selected game card or search + pinned games
         if (_selectedGame != null)
           _buildSelectedGameCard(theme, isDark)
-        else
-          _buildGamePickerButton(theme, isDark),
+        else ..[
+          // Search bar
+          _buildCompactSearchBar(theme, isDark),
+          const SizedBox(height: 12),
+          
+          // Pinned games carousel
+          if (_pinnedGames.isNotEmpty) ..[
+            Text(
+              'Pinned Games',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildPinnedGamesCarousel(theme, isDark),
+          ] else
+            _buildNoPinnedGames(theme, isDark),
+        ],
       ],
     );
   }
@@ -423,7 +450,7 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
     );
   }
 
-  Widget _buildGamePickerButton(ThemeData theme, bool isDark) {
+  Widget _buildCompactSearchBar(ThemeData theme, bool isDark) {
     return InkWell(
       onTap: () async {
         final game = await showSearch<Game?>(
@@ -434,37 +461,156 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
           setState(() => _selectedGame = game);
         }
       },
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
         decoration: BoxDecoration(
           color: isDark ? Colors.grey[850] : Colors.grey[50],
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
-            width: 2,
-            style: BorderStyle.solid,
+            width: 1,
           ),
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               Icons.search,
-              color: isDark ? Colors.white70 : Colors.grey[700],
-              size: 24,
+              color: isDark ? Colors.grey[500] : Colors.grey[500],
+              size: 20,
             ),
             const SizedBox(width: 12),
             Text(
               'Search for a game',
               style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white70 : Colors.grey[700],
+                fontSize: 15,
+                color: isDark ? Colors.grey[500] : Colors.grey[500],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+  
+  Widget _buildPinnedGamesCarousel(ThemeData theme, bool isDark) {
+    return SizedBox(
+      height: 110,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _pinnedGames.length,
+        itemBuilder: (context, index) {
+          final game = _pinnedGames[index];
+          final gameName = game['name'] as String?;
+          final coverUrl = game['cover_url'] as String?;
+          
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedGame = Game(
+                  id: game['id'] as int? ?? 0,
+                  name: gameName ?? 'Unknown',
+                  coverUrl: coverUrl,
+                  slug: game['slug'] as String?,
+                );
+              });
+              HapticFeedback.selectionClick();
+            },
+            child: Container(
+              width: 75,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: isDark ? Colors.grey[800] : Colors.grey[200],
+              ),
+              child: Column(
+                children: [
+                  // Game cover
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                    child: coverUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: coverUrl,
+                            width: 75,
+                            height: 75,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              color: isDark ? Colors.grey[800] : Colors.grey[300],
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              color: isDark ? Colors.grey[800] : Colors.grey[300],
+                              child: const Icon(Icons.gamepad, size: 30),
+                            ),
+                          )
+                        : Container(
+                            width: 75,
+                            height: 75,
+                            color: isDark ? Colors.grey[800] : Colors.grey[300],
+                            child: const Icon(Icons.gamepad, size: 30),
+                          ),
+                  ),
+                  // Game name
+                  Expanded(
+                    child: Container(
+                      width: 75,
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      child: Text(
+                        gameName ?? 'Unknown',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white : Colors.grey[900],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+  
+  Widget _buildNoPinnedGames(ThemeData theme, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[850]?.withOpacity(0.3) : Colors.grey[100],
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.push_pin_outlined,
+            color: isDark ? Colors.grey[500] : Colors.grey[500],
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'No pinned games. Pin games from your profile.',
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.grey[500] : Colors.grey[600],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -526,17 +672,16 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
     );
   }
 
-  Widget _buildTagInput(ThemeData theme, bool isDark) {
-    // Tags feature simplified - can be enhanced later with tag picker
-    return const SizedBox.shrink();
-  }
+
 
   Widget _buildVisibilityPicker(ThemeData theme, bool isDark) {
     const visibilityOptions = {
-      'group_private': {'label': 'Group Only', 'icon': Icons.group},
-      'friends_only': {'label': 'Friends', 'icon': Icons.people},
-      'public': {'label': 'Public', 'icon': Icons.public},
+      'group_private': {'label': 'Group Only', 'icon': Icons.group, 'description': 'Only group members can join'},
+      'friends_only': {'label': 'Friends', 'icon': Icons.people, 'description': 'Your friends can join'},
+      'public': {'label': 'Public', 'icon': Icons.public, 'description': 'Anyone can join'},
     };
+
+    final selectedOption = visibilityOptions[_visibility]!;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -550,48 +695,128 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
           ),
         ),
         const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.grey[850] : Colors.grey[50],
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
-            ),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _visibility,
-              isExpanded: true,
-              icon: Icon(Icons.arrow_drop_down,
-                  color: isDark ? Colors.white70 : Colors.grey[700]),
-              dropdownColor: isDark ? Colors.grey[850] : Colors.white,
-              style: TextStyle(
-                fontSize: 15,
-                color: isDark ? Colors.white : Colors.grey[900],
+        
+        // Dropdown card
+        InkWell(
+          onTap: () {
+            setState(() => _isVisibilityExpanded = !_isVisibilityExpanded);
+            HapticFeedback.selectionClick();
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.grey[850] : Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _isVisibilityExpanded 
+                    ? Colors.cyan.withOpacity(0.5)
+                    : (isDark ? Colors.grey[700]! : Colors.grey[300]!),
+                width: _isVisibilityExpanded ? 2 : 1,
               ),
-              items: visibilityOptions.entries.map((entry) {
-                return DropdownMenuItem<String>(
-                  value: entry.key,
-                  child: Row(
-                    children: [
-                      Icon(
-                        entry.value['icon'] as IconData,
-                        size: 20,
-                        color: isDark ? Colors.white70 : Colors.grey[700],
+            ),
+            child: Column(
+              children: [
+                // Selected option display
+                Row(
+                  children: [
+                    Icon(
+                      selectedOption['icon'] as IconData,
+                      size: 22,
+                      color: Colors.cyan,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selectedOption['label'] as String,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : Colors.grey[900],
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            selectedOption['description'] as String,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.grey[500] : Colors.grey[600],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Text(entry.value['label'] as String),
-                    ],
+                    ),
+                    Icon(
+                      _isVisibilityExpanded 
+                          ? Icons.keyboard_arrow_up 
+                          : Icons.keyboard_arrow_down,
+                      color: isDark ? Colors.grey[500] : Colors.grey[600],
+                    ),
+                  ],
+                ),
+                
+                // Expanded options
+                if (_isVisibilityExpanded) ..[
+                  const SizedBox(height: 12),
+                  Container(
+                    height: 1,
+                    color: isDark ? Colors.grey[700] : Colors.grey[300],
                   ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() => _visibility = value);
-                  HapticFeedback.selectionClick();
-                }
-              },
+                  const SizedBox(height: 8),
+                  
+                  ...visibilityOptions.entries.where((e) => e.key != _visibility).map((entry) {
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _visibility = entry.key;
+                          _isVisibilityExpanded = false;
+                        });
+                        HapticFeedback.selectionClick();
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                        child: Row(
+                          children: [
+                            Icon(
+                              entry.value['icon'] as IconData,
+                              size: 20,
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    entry.value['label'] as String,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark ? Colors.white : Colors.grey[900],
+                                    ),
+                                  ),
+                                  Text(
+                                    entry.value['description'] as String,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark ? Colors.grey[500] : Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ],
             ),
           ),
         ),

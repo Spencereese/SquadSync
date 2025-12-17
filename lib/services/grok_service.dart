@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:retry/retry.dart';
@@ -75,8 +76,9 @@ class AiMatchmakingResponse {
 class GrokService {
   static final Logger _logger = Logger();
   static const String _backendUrl = String.fromEnvironment('BACKEND_URL',
-      defaultValue:
-          'https://lobbiesync-backend-756172684661.us-central1.run.app');
+      defaultValue: kDebugMode
+          ? 'http://localhost:8080'
+          : 'https://lobbiesync-backend-756172684661.us-central1.run.app');
 
   static const int _maxRetries = 3;
   static const int _baseDelayMs = 1000;
@@ -135,7 +137,8 @@ class GrokService {
         return data['response'] ?? _getFallbackResponse(userMessage);
       } else {
         _logger.e('Backend error: ${response.statusCode} - ${response.body}');
-        return _getFallbackResponse(userMessage);
+        // Return more specific error message
+        return "I'm having trouble connecting to my backend. Is the server running on port 8080?";
       }
     } catch (e) {
       _logger.e('Error calling backend Grok API: $e');

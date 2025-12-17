@@ -126,16 +126,6 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
 
       debugPrint('✅ Reaction added successfully');
 
-      // Show feedback using the passed messenger if available
-      if (widget.scaffoldMessenger != null) {
-        widget.scaffoldMessenger!.showSnackBar(
-          SnackBar(
-            content: Text('Reacted with $emoji'),
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      }
-
       _dismiss();
     } catch (e) {
       debugPrint('❌ Error adding reaction: $e');

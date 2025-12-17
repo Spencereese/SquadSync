@@ -72,7 +72,18 @@ Future<void> setupInjection() async {
     debugPrint('Local notifications failed to register: $e');
   }
 
-  getIt.registerSingleton<IgdbAuthService>(IgdbAuthService());
+  // Initialize IGDB auth service and ensure credentials are available
+  final igdbAuth = IgdbAuthService();
+  getIt.registerSingleton<IgdbAuthService>(igdbAuth);
+
+  // Store credentials if not already set (from .env or hardcoded fallback)
+  try {
+    await igdbAuth.storeCredentials();
+    debugPrint('✅ IGDB credentials initialized');
+  } catch (e) {
+    debugPrint('⚠️ IGDB credentials initialization failed: $e');
+  }
+
   getIt.registerSingleton<FriendsService>(FriendsService());
   getIt.registerSingleton<ErrorHandlingService>(ErrorHandlingService());
   getIt.registerSingleton<SQLiteHelper>(SQLiteHelper());

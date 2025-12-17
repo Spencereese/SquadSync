@@ -92,9 +92,11 @@ class MessageData {
       audioUrl: data['audioUrl'] ?? _parseAudioUrl(data['audio']),
       timestamp: data['timestamp_ms'] is int && data['timestamp_ms'] != 0
           ? DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms'])
-          : (data['timestamp'] is String
-              ? DateTime.parse(data['timestamp'])
-              : DateTime.now()),
+          : (data['timestamp'] is DateTime
+              ? data['timestamp'] as DateTime
+              : (data['timestamp'] is String
+                  ? DateTime.parse(data['timestamp'])
+                  : DateTime.now())),
       delivered: data['delivered'] ?? false,
       read: data['read'] ?? false,
       reactions: _parseReactions(data['reactions']),
@@ -221,41 +223,21 @@ class MessageData {
   static List<Map<String, dynamic>> _parseReactions(dynamic reactionsData) {
     // Fast path: Early return for null/empty (most common case)
     if (reactionsData == null) {
-      if (kDebugMode) {
-        debugPrint('💬 _parseReactions: reactionsData is null');
-      }
       return [];
-    }
-
-    if (kDebugMode) {
-      debugPrint(
-          '💬 _parseReactions: reactionsData type: ${reactionsData.runtimeType}');
-      debugPrint('💬 _parseReactions: reactionsData value: $reactionsData');
     }
 
     // If it's a Map
     if (reactionsData is Map) {
       final mapData = reactionsData;
       if (mapData.isEmpty) {
-        if (kDebugMode) {
-          debugPrint('💬 _parseReactions: Map is empty');
-        }
         return [];
       }
 
       // Check format by looking at first value
       final firstValue = mapData.values.firstOrNull;
-      if (kDebugMode) {
-        debugPrint(
-            '💬 _parseReactions: firstValue type: ${firstValue.runtimeType}, value: $firstValue');
-      }
 
       if (firstValue is String) {
         // OLD format: Map<userId, emoji> - migrate to new format
-        if (kDebugMode) {
-          debugPrint(
-              '💬 _parseReactions: detected OLD format (userId -> emoji), converting...');
-        }
         final emojiToUsers = <String, List<String>>{};
         for (final entry in mapData.entries) {
           final userId = entry.key.toString();
@@ -301,9 +283,6 @@ class MessageData {
                   'reaction': entry.key.toString(), // Legacy field name support
                 })
             .toList();
-      } else if (kDebugMode) {
-        debugPrint(
-            '💬 _parseReactions: unknown map value type: ${firstValue.runtimeType}');
       }
     }
 

@@ -121,8 +121,18 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       // Initialize message streaming via MessageNotifier
       final messageNotifier = ref.read(messageNotifierProvider.notifier);
       await messageNotifier.initializeMessagesStream(chatGroupId, chatType);
-    } catch (e) {
+    } on RealtimeSubscribeException catch (e, stackTrace) {
+      debugPrint(
+          '❌ ChatNotifier: RealtimeSubscribeException during init: ${e.status}');
+      debugPrint('❌ Details: ${e.details}');
+      if (e.status == RealtimeSubscribeStatus.channelError) {
+        await SupabaseService.cleanupOldChannels();
+      }
+      // Don't throw - allow chat to continue without real-time features
+    } catch (e, stackTrace) {
       debugPrint('❌ ChatNotifier: Error initializing chat: $e');
+      debugPrint(
+          '❌ Stack trace: ${stackTrace.toString().split('\n').take(5).join('\n')}');
       // Don't throw - allow chat to continue without real-time features
       // User will see cached messages but real-time updates may be degraded
     }
@@ -181,18 +191,36 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       }).onPresenceLeave((payload) {
         debugPrint('ChatNotifier: User left - $payload');
       }).subscribe((status, error) async {
-        if (status == RealtimeSubscribeStatus.subscribed) {
-          await _presenceChannel!.track({
-            'user_id': currentUser.id,
-            'display_name': currentUser.userMetadata?['display_name'] ??
-                currentUser.email ??
-                'Unknown',
-            'online_at': DateTime.now().toIso8601String(),
-          });
-          debugPrint('ChatNotifier: Presence tracking enabled');
-        } else if (status == RealtimeSubscribeStatus.channelError) {
-          debugPrint('❌ ChatNotifier: Presence channel error: $error');
-          // Cleanup on error - don't let this block chat functionality
+        try {
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            // Null safety check before tracking
+            if (_presenceChannel != null) {
+              await _presenceChannel!.track({
+                'user_id': currentUser.id,
+                'display_name': currentUser.userMetadata?['display_name'] ??
+                    currentUser.email ??
+                    'Unknown',
+                'online_at': DateTime.now().toIso8601String(),
+              });
+              debugPrint('ChatNotifier: Presence tracking enabled');
+            }
+          } else if (status == RealtimeSubscribeStatus.channelError ||
+              status == RealtimeSubscribeStatus.timedOut) {
+            debugPrint(
+                '❌ ChatNotifier: Presence channel error/timeout: $status - $error');
+            // Cleanup on error - don't let this block chat functionality
+            if (_presenceChannel != null) {
+              await SupabaseService.safeRemoveChannel(_presenceChannel!);
+              _presenceChannel = null;
+            }
+            // Trigger cleanup if error present
+            if (error != null) {
+              await SupabaseService.cleanupOldChannels();
+            }
+          }
+        } catch (e) {
+          debugPrint('❌ ChatNotifier: Error in subscribe callback: $e');
+          // Cleanup on exception
           if (_presenceChannel != null) {
             await SupabaseService.safeRemoveChannel(_presenceChannel!);
             _presenceChannel = null;

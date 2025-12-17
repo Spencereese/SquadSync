@@ -186,34 +186,41 @@ class SupabaseService {
 
   /// Proactively clean up channels approaching rate limit
   /// Returns number of channels cleaned
+  ///
+  /// Strategy: Remove ALL orphaned channels immediately to prevent buildup
+  /// This is aggressive but necessary for chat-heavy apps
   static Future<int> cleanupOldChannels() async {
     try {
       final channels = client.getChannels();
+      final channelCount = channels.length;
 
-      if (channels.length < 80) {
+      // AGGRESSIVE: Clean up ANY channels found (they shouldn't persist)
+      if (channelCount == 0) {
         return 0; // No cleanup needed
       }
 
-      debugPrint('🧹 Proactive cleanup: ${channels.length} channels detected');
+      debugPrint(
+          '🧹 AGGRESSIVE cleanup: $channelCount orphaned channels detected');
 
-      // Remove excess channels to stay under limits
+      // Remove ALL orphaned channels - they should be tracked by subscriptions only
       int cleaned = 0;
-      // Keep only recent channels, remove older ones if too many
-      if (channels.length > 80) {
-        final toRemove = channels.take(channels.length - 80).toList();
-        for (final channel in toRemove) {
-          await safeRemoveChannel(channel);
+      for (final channel in channels) {
+        try {
+          await client.removeChannel(channel);
           cleaned++;
+        } catch (e) {
+          debugPrint('⚠️ Failed to remove channel: $e');
+          // Continue with other channels
         }
       }
 
       if (cleaned > 0) {
-        debugPrint('✅ Cleaned $cleaned old channels');
+        debugPrint('✅ Aggressively cleaned $cleaned orphaned channels');
       }
 
       return cleaned;
     } catch (e) {
-      debugPrint('⚠️ Error during proactive cleanup: $e');
+      debugPrint('⚠️ Error during aggressive cleanup: $e');
       return 0;
     }
   }

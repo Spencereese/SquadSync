@@ -766,8 +766,7 @@ class MessageService with WidgetsBindingObserver {
         'chat_type': chatType.name,
         'text': grokResponse,
         'message_type': 'text',
-        'ai_response': grokResponse, // Mark as AI-generated
-        'isAiResponse': true, // Flag for UI to use Grok bubble
+        'isAiResponse': true, // PostgreSQL column with quotes - case-sensitive
         'reactions': {},
         'timestamp': timestamp.toIso8601String(),
         'is_deleted': false,

@@ -90,6 +90,10 @@ class _MessageGroupState extends State<MessageGroup> {
                     group[index + 1].senderUid != message.senderUid;
                 final isMe = message.senderUid == _getCurrentUserId();
 
+                // Check if this is the very last message in the entire widget.messages list
+                final isLastMessageOverall =
+                    message.id == widget.messages.last.id;
+
                 // Check if previous message has reactions to add extra spacing
                 final prevHasReactions =
                     index > 0 && group[index - 1].reactions.isNotEmpty;
@@ -103,8 +107,8 @@ class _MessageGroupState extends State<MessageGroup> {
                     message: message,
                     isMe: isMe,
                     showSender: widget.showSender,
-                    showAvatar: isLastInGroup &&
-                        !isMe, // Only show avatar on last message of group for received messages
+                    showAvatar: isLastMessageOverall &&
+                        !isMe, // Only show avatar on the very last message for received messages
                     showTimestamp: widget.showTimestamp,
                     showReadIndicator: widget.showReadIndicator,
                     isFirstInGroup: isFirstInGroup,

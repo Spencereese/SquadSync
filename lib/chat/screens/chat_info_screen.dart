@@ -89,7 +89,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final neonColor = theme.colorScheme.primary;
+    final neonColor = Colors.white;
     final members = widget.members ?? [];
 
     return Stack(
@@ -363,6 +363,12 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
             }
           },
         ),
+        const SizedBox(height: 24),
+
+        // Lobby System section
+        _buildSectionHeader(context, neonColor, 'Lobby System'),
+        const SizedBox(height: 12),
+        _buildLobbyInfoCard(context, neonColor),
         const SizedBox(height: 24),
 
         // Member list section
@@ -1462,6 +1468,112 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                       ],
                     ),
                   ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Lobby Info card - Shows lobby system rules and constitution
+  Widget _buildLobbyInfoCard(BuildContext context, Color neonColor) {
+    final infoItems = [
+      {
+        'icon': Icons.gavel,
+        'title': 'Constitution',
+        'description': 'Rules auto-apply to new lobbies',
+      },
+      {
+        'icon': Icons.timer,
+        'title': 'Spot Timers',
+        'description': 'Claim spots before time expires',
+      },
+      {
+        'icon': Icons.visibility,
+        'title': 'Visibility',
+        'description': 'Private, friends-only, or public',
+      },
+      {
+        'icon': Icons.label,
+        'title': 'Tags',
+        'description': 'Add tags to help others find lobbies',
+      },
+    ];
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.25),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 1.5,
+            ),
+          ),
+          child: ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: infoItems.length,
+            separatorBuilder: (context, index) => Divider(
+              height: 1,
+              color: neonColor.withOpacity(0.1),
+              indent: 68,
+            ),
+            itemBuilder: (context, index) {
+              final item = infoItems[index];
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: neonColor.withOpacity(0.15),
+                        border: Border.all(
+                          color: neonColor.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Icon(
+                        item['icon'] as IconData,
+                        color: neonColor,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['title'] as String,
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item['description'] as String,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: Colors.white.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               );
             },

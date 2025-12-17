@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod/riverpod.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
+import 'package:collection/collection.dart';
 import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/repositories/chat_repository.dart';
 import 'package:squad_sync/core/injection.dart';
@@ -117,15 +118,24 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       String chatGroupId, ChatType chatType) async {
     await future;
 
-    // Log current channel usage
-    SupabaseService.logChannelUsage();
+    // AGGRESSIVE cleanup BEFORE creating new channels
+    final currentChannelCount = SupabaseService.activeChannelCount;
+    debugPrint(
+        'MessageNotifier: 📊 Current channel count: $currentChannelCount');
 
-    // Proactive cleanup if approaching channel limit
-    if (SupabaseService.isApproachingChannelLimit) {
-      debugPrint('MessageNotifier: ⚠️ Approaching channel limit, cleaning up');
-      await SupabaseService.cleanupOldChannels();
-      SupabaseService.logChannelUsage(); // Log after cleanup
+    // Force cleanup if we have ANY orphaned channels
+    if (currentChannelCount > 0) {
+      debugPrint(
+          'MessageNotifier: 🧹 Pre-emptive cleanup of $currentChannelCount channels');
+      await _disposeMessagesStream(); // Clean up our own first
+      await SupabaseService.cleanupOldChannels(); // Then global cleanup
+
+      final afterCleanup = SupabaseService.activeChannelCount;
+      debugPrint('MessageNotifier: ✅ After cleanup: $afterCleanup channels');
     }
+
+    // Wait a moment for cleanup to complete
+    await Future.delayed(const Duration(milliseconds: 100));
 
     if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
       await _disposeMessagesStream();
@@ -194,6 +204,18 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
             },
             onError: (error) {
               debugPrint('MessageNotifier: Supabase stream error: $error');
+
+              // Handle RealtimeSubscribeException specifically
+              if (error is RealtimeSubscribeException) {
+                debugPrint(
+                    'MessageNotifier: Channel error detected - ${error.status}');
+                if (error.status == RealtimeSubscribeStatus.channelError) {
+                  debugPrint(
+                      'MessageNotifier: Channel limit likely exceeded, cleaning up');
+                  SupabaseService.cleanupOldChannels();
+                }
+              }
+
               _useSupabase = false;
               _supabaseMessagesSubscription?.cancel();
               _supabaseMessagesSubscription = null;
@@ -242,6 +264,18 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
 
   void _onSupabaseMessagesSnapshot(dynamic data, String chatGroupId) async {
     try {
+      // Handle RealtimeSubscribeException that may be thrown as data
+      if (data is RealtimeSubscribeException) {
+        debugPrint(
+            'MessageNotifier: RealtimeSubscribeException received: ${data.status}');
+        if (data.status == RealtimeSubscribeStatus.channelError) {
+          debugPrint(
+              'MessageNotifier: Channel error - cleaning up and skipping');
+          await SupabaseService.cleanupOldChannels();
+        }
+        return; // Don't process further, error already logged
+      }
+
       // CRITICAL: Accept dynamic and safely cast to avoid signature-level cast errors
       if (data is! List) {
         if (kDebugMode) {
@@ -322,19 +356,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
             cleanedData[key] = value;
           }
 
-          // Debug cleaned data types before parsing
-          debugPrint('MessageNotifier: Cleaned data for ${cleanedData['id']}:');
-          debugPrint(
-              '  - reactions: ${cleanedData['reactions']?.runtimeType ?? 'null'}');
-          debugPrint(
-              '  - metadata: ${cleanedData['metadata']?.runtimeType ?? 'null'}');
-          debugPrint('  - poll: ${cleanedData['poll']?.runtimeType ?? 'null'}');
-          debugPrint(
-              '  - clip_data: ${cleanedData['clip_data']?.runtimeType ?? 'null'}');
-
           final message = Message.fromJson(cleanedData);
-          debugPrint(
-              'MessageNotifier: ✅ Successfully parsed message ${message.id}');
           remoteMessages.add(message);
         } catch (e, stackTrace) {
           debugPrint(
@@ -364,6 +386,19 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       }
 
       await _mergeMessages(chatGroupId, remoteMessages);
+    } on RealtimeSubscribeException catch (e, stackTrace) {
+      // Handle channel subscription errors gracefully without crashing
+      debugPrint(
+          'MessageNotifier: RealtimeSubscribeException caught: ${e.status}');
+      debugPrint('MessageNotifier: Details: ${e.details}');
+
+      if (e.status == RealtimeSubscribeStatus.channelError) {
+        debugPrint('MessageNotifier: Channel error - attempting cleanup');
+        await SupabaseService.cleanupOldChannels();
+      }
+
+      // Don't set error state for channel errors - just log and continue
+      debugPrint('MessageNotifier: Continuing without throwing exception');
     } catch (e, stackTrace) {
       debugPrint('MessageNotifier: Error processing Supabase messages: $e');
       debugPrint(
@@ -375,45 +410,98 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   Future<void> _mergeMessages(
       String chatGroupId, List<Message> remoteMessages) async {
     try {
-      debugPrint('MessageNotifier: _mergeMessages START');
-      final currentState = await future;
-      debugPrint('MessageNotifier: Got currentState, accessing messages map');
+      // CRITICAL: Don't use await future if state is error - access state directly
+      MessageState currentState;
+      if (state.hasValue) {
+        currentState = state.requireValue;
+      } else if (state.isLoading && state.hasValue) {
+        currentState = state.requireValue;
+      } else {
+        // State is error or null - create fresh state with just these messages
+        debugPrint(
+            'MessageNotifier: State is error/null, creating fresh state');
+        final newState = MessageState(
+          messages: {chatGroupId: remoteMessages},
+          reactions: {},
+          typingUsers: {},
+          lastSyncTimestamps: {},
+        );
+        state = AsyncValue.data(newState);
+        return;
+      }
+
       final existingMessages = currentState.messages[chatGroupId] ?? [];
-      debugPrint(
-          'MessageNotifier: Got ${existingMessages.length} existing messages');
+
+      // CRITICAL: Deduplicate messages to prevent unnecessary rebuilds
+      // Check if remote messages are actually different from existing ones
+      if (existingMessages.length == remoteMessages.length) {
+        final existingIds = existingMessages.map((m) => m.id).toSet();
+        final remoteIds = remoteMessages.map((m) => m.id).toSet();
+
+        if (existingIds.difference(remoteIds).isEmpty &&
+            remoteIds.difference(existingIds).isEmpty) {
+          // Same messages, check if any actually changed
+          bool hasChanges = false;
+          final existingMap = {for (var msg in existingMessages) msg.id: msg};
+
+          const deepEq = DeepCollectionEquality();
+          for (final remoteMsg in remoteMessages) {
+            final existingMsg = existingMap[remoteMsg.id];
+            if (existingMsg != null) {
+              // Compare reactions and other mutable fields using deep equality
+              if (!deepEq.equals(existingMsg.reactions, remoteMsg.reactions) ||
+                  existingMsg.text != remoteMsg.text) {
+                hasChanges = true;
+                break;
+              }
+            }
+          }
+
+          if (!hasChanges) {
+            // No actual changes - skip merge to prevent unnecessary rebuilds
+            return;
+          }
+        }
+      }
 
       final existingMap = {for (var msg in existingMessages) msg.id: msg};
       final mergedMessages = <Message>[];
       mergedMessages.addAll(existingMessages);
 
+      int newCount = 0;
+      int updatedCount = 0;
+
+      const deepEq = DeepCollectionEquality();
       for (final remoteMsg in remoteMessages) {
         final existingMsg = existingMap[remoteMsg.id];
         if (existingMsg == null) {
           mergedMessages.add(remoteMsg);
-          debugPrint('MessageNotifier: Added new message ${remoteMsg.id}');
+          newCount++;
         } else {
-          final index = mergedMessages.indexWhere((m) => m.id == remoteMsg.id);
-          if (index != -1) {
-            mergedMessages[index] = remoteMsg;
-            debugPrint('MessageNotifier: Updated message ${remoteMsg.id}');
+          // Only count as updated if reactions or text actually changed (deep equality)
+          if (!deepEq.equals(existingMsg.reactions, remoteMsg.reactions) ||
+              existingMsg.text != remoteMsg.text) {
+            final index =
+                mergedMessages.indexWhere((m) => m.id == remoteMsg.id);
+            if (index != -1) {
+              mergedMessages[index] = remoteMsg;
+              updatedCount++;
+            }
           }
         }
       }
 
       mergedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-      debugPrint('MessageNotifier: About to create newState');
-      debugPrint(
-          'MessageNotifier: currentState.messages type: ${currentState.messages.runtimeType}');
-      debugPrint(
-          'MessageNotifier: currentState.messages keys: ${currentState.messages.keys}');
+      // CRITICAL: Only update state if there are actual new or updated messages
+      if (newCount == 0 && updatedCount == 0) {
+        // No changes - skip state update to prevent unnecessary rebuilds
+        return;
+      }
 
-      // Check if currentState.messages contains any Lists that should be Maps
-      for (final entry in currentState.messages.entries) {
+      if (newCount > 0 || updatedCount > 0) {
         debugPrint(
-            'MessageNotifier: messages[$chatGroupId] type: ${entry.value.runtimeType}');
-        debugPrint(
-            'MessageNotifier: messages[$chatGroupId] length: ${entry.value.length}');
+            'MessageNotifier: Merging $newCount new, $updatedCount updated messages');
       }
 
       final newState = currentState.copyWith(
@@ -424,16 +512,28 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       );
 
       state = AsyncValue.data(newState);
-
-      debugPrint(
-          'MessageNotifier: Merged messages, total: ${mergedMessages.length}');
-      debugPrint(
-          'MessageNotifier: State updated - messages in state: ${newState.messages[chatGroupId]?.length ?? 0}');
     } catch (e, stackTrace) {
       debugPrint('MessageNotifier: ERROR in _mergeMessages: $e');
       debugPrint(
           'MessageNotifier: _mergeMessages stack trace: ${stackTrace.toString().split('\n').take(15).join('\n')}');
-      rethrow;
+
+      // DON'T rethrow - this causes RealtimeSubscribeException wrapping
+      // Instead, just log and create a fresh state with remote messages
+      debugPrint(
+          'MessageNotifier: Recovering from error by creating fresh state');
+      try {
+        final newState = MessageState(
+          messages: {chatGroupId: remoteMessages},
+          reactions: {},
+          typingUsers: {},
+          lastSyncTimestamps: {},
+        );
+        state = AsyncValue.data(newState);
+      } catch (recoveryError) {
+        debugPrint('MessageNotifier: Failed to recover: $recoveryError');
+        // Only NOW set error state as last resort
+        state = AsyncValue.error(e, stackTrace);
+      }
     }
   }
 

@@ -68,13 +68,6 @@ class ReactionService {
           'created_at': DateTime.now().toIso8601String(),
         });
         debugPrint('✅ Added new reaction: $emoji to message $messageId');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Added $emoji reaction'),
-                duration: const Duration(seconds: 1)),
-          );
-        }
       }
 
       // Also update the message's reactions JSONB column for real-time UI updates

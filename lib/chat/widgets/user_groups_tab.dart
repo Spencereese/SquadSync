@@ -25,6 +25,11 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
   final Map<String, Future<String?>> _userProfileCache = {};
   final Map<String, Future<Map<String, dynamic>>> _groupMetadataCache = {};
 
+  // Debouncing for navigation to prevent rapid taps creating multiple channels
+  String? _lastNavigatedGroupId;
+  DateTime? _lastNavigationTime;
+  static const _navigationDebounceMs = 500;
+
   @override
   void dispose() {
     _groupDataCache.clear();
@@ -556,6 +561,21 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
           debugPrint('ERROR: groupId is null or empty, cannot navigate');
           return;
         }
+
+        // Debounce rapid navigation to prevent channel buildup
+        final now = DateTime.now();
+        if (_lastNavigatedGroupId == groupId && _lastNavigationTime != null) {
+          final timeSinceLastNav =
+              now.difference(_lastNavigationTime!).inMilliseconds;
+          if (timeSinceLastNav < _navigationDebounceMs) {
+            debugPrint(
+                'UserGroupsTab: Debouncing rapid tap (${timeSinceLastNav}ms ago)');
+            return;
+          }
+        }
+
+        _lastNavigatedGroupId = groupId;
+        _lastNavigationTime = now;
 
         try {
           // Load messages for this group first

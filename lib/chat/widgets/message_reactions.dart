@@ -53,9 +53,6 @@ class MessageReactions extends StatelessWidget {
                 ? -2.0
                 : -4.0;
 
-    debugPrint(
-        '🎨 MessageReactions: $reactionCount reactions, baseSpacing=$baseSpacing');
-
     return Container(
       margin: EdgeInsets.only(
         bottom: 2,

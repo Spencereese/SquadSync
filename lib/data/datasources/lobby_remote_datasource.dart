@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/services/supabase_service.dart';
 import 'package:squad_sync/services/jwt_validator.dart';
@@ -381,6 +382,21 @@ class LobbyRemoteDataSourceImpl
         .from('lobbies')
         .stream(primaryKey: ['id'])
         .eq('id', lobbyId)
+        .handleError((error) {
+          // Handle RealtimeSubscribeException gracefully
+          if (error is RealtimeSubscribeException) {
+            debugPrint(
+                '❌ getLobbyStream RealtimeSubscribeException: ${error.status}');
+            if (error.status == RealtimeSubscribeStatus.channelError ||
+                error.status == RealtimeSubscribeStatus.timedOut) {
+              debugPrint('❌ Channel error/timeout - triggering cleanup');
+              // Async cleanup without blocking stream
+              SupabaseService.cleanupOldChannels();
+            }
+          }
+          // Re-throw to allow listener to handle
+          throw error;
+        })
         .map((data) {
           if (data.isEmpty) throw Exception('Lobby not found');
           return Lobby.fromJson(_toEntityJson(data.first));

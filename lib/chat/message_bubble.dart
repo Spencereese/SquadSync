@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/message_service.dart';
+import '../services/auth_service_supabase.dart';
 import '../domain/entities/message.dart';
 import '../presentation/notifiers/chat_notifier.dart' as cn;
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
@@ -17,6 +18,7 @@ import 'widgets/imessage_reactions_bar.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import 'widgets/smart_reply_bottom_sheet.dart';
 import 'widgets/grok_message_bubble.dart';
+import 'services/reaction_service.dart';
 
 /// Enhanced message bubble with iMessage-style tails and animations
 class _AnimatedMessageBubble extends StatefulWidget {
@@ -448,21 +450,30 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
           bottomRight: widget.isMe ? Radius.circular(6) : Radius.circular(20));
     }
 
-    return Container(
-      width: messageSize.width,
-      margin: const EdgeInsets.symmetric(vertical: 1.0),
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: getBorderRadius(),
-      ),
-      child: MessageContent(
-        message: _messageData,
-        isFromCurrentUser: widget.isMe,
-        chatGroupId: widget.chatGroupId,
-        chatService: widget.chatService,
-        chatType: widget.chatType,
-        squadId: widget.squadId,
+    return ClipRect(
+      child: Container(
+        width: messageSize.width,
+        height: messageSize.height,
+        clipBehavior: Clip.hardEdge,
+        margin: const EdgeInsets.symmetric(vertical: 1.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: getBorderRadius(),
+        ),
+        child: OverflowBox(
+          maxHeight: messageSize.height - 20.0, // Account for padding
+          maxWidth: messageSize.width - 32.0,
+          alignment: Alignment.topLeft,
+          child: MessageContent(
+            message: _messageData,
+            isFromCurrentUser: widget.isMe,
+            chatGroupId: widget.chatGroupId,
+            chatService: widget.chatService,
+            chatType: widget.chatType,
+            squadId: widget.squadId,
+          ),
+        ),
       ),
     );
   }
@@ -938,6 +949,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                           if (confirm == true) {
                             if (!context.mounted) return;
 
+                            // Unfocus keyboard to prevent it from popping up with error message
+                            FocusScope.of(context).unfocus();
+
                             try {
                               debugPrint('Deleting message ${_messageData.id}');
 
@@ -959,6 +973,8 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                                       chatType: widget.chatType);
 
                                   debugPrint('Message deleted successfully');
+                                  if (!context.mounted) return;
+
                                   try {
                                     messenger.showSnackBar(
                                       const SnackBar(
@@ -978,12 +994,30 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                               }
                             } catch (e) {
                               debugPrint('Error deleting message: $e');
+                              if (!context.mounted) return;
+
+                              // Ensure keyboard stays dismissed
+                              FocusScope.of(context).unfocus();
+
+                              // Add a small delay to ensure the error message is visible
+                              await Future.delayed(
+                                  const Duration(milliseconds: 100));
+
+                              if (!context.mounted) return;
+
                               try {
                                 messenger.showSnackBar(
                                   SnackBar(
                                       content:
                                           Text('Failed to delete message: $e'),
-                                      duration: const Duration(seconds: 3)),
+                                      duration: const Duration(seconds: 4),
+                                      behavior: SnackBarBehavior.floating,
+                                      margin: const EdgeInsets.only(
+                                        bottom:
+                                            80, // Position above keyboard area
+                                        left: 16,
+                                        right: 16,
+                                      )),
                                 );
                               } catch (snackBarError) {
                                 debugPrint(
@@ -1204,92 +1238,202 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
 
     if (reactionsByEmoji.isEmpty) return;
 
+    final currentUserId = AuthServiceSupabase().currentUser?.id;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Handle bar
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                color: Colors.grey[600],
-                borderRadius: BorderRadius.circular(2),
+      isScrollControlled: true,
+      builder: (context) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 1,
               ),
             ),
-            // Title
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(
-                'Reactions',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Title
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    'Reactions',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Reactions list
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: reactionsByEmoji.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      color: Colors.white.withOpacity(0.1),
                     ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Reactions list
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: reactionsByEmoji.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final emoji = reactionsByEmoji.keys.elementAt(index);
-                  final userIds = reactionsByEmoji[emoji]!;
+                    itemBuilder: (context, index) {
+                      final emoji = reactionsByEmoji.keys.elementAt(index);
+                      final userIds = reactionsByEmoji[emoji]!;
+                      final currentUserReacted = currentUserId != null &&
+                          userIds.contains(currentUserId);
 
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Row(
-                      children: [
-                        // Emoji
-                        Text(
-                          emoji,
-                          style: const TextStyle(fontSize: 28),
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Emoji
+                            Text(
+                              emoji,
+                              style: const TextStyle(fontSize: 28),
+                            ),
+                            const SizedBox(width: 16),
+                            // User names
+                            Expanded(
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: userIds.map((userId) {
+                                  final displayName = ref
+                                          .read(userNotifierProvider.notifier)
+                                          .getDisplayNameForUid(userId) ??
+                                      'Unknown';
+                                  final isCurrentUser = userId == currentUserId;
+
+                                  return GestureDetector(
+                                    onTap: isCurrentUser
+                                        ? () async {
+                                            // Remove reaction
+                                            HapticFeedback.lightImpact();
+                                            try {
+                                              await ReactionService.addReaction(
+                                                context,
+                                                emoji,
+                                                _messageData.id,
+                                                widget.chatGroupId,
+                                                widget.chatType,
+                                                widget.squadId,
+                                              );
+                                              if (context.mounted) {
+                                                Navigator.of(context).pop();
+                                              }
+                                            } catch (e) {
+                                              debugPrint(
+                                                  'Error removing reaction: $e');
+                                            }
+                                          }
+                                        : null,
+                                    child: Chip(
+                                      label: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            displayName,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: isCurrentUser
+                                                  ? Colors.white
+                                                  : Colors.white
+                                                      .withOpacity(0.9),
+                                              fontWeight: isCurrentUser
+                                                  ? FontWeight.w600
+                                                  : FontWeight.normal,
+                                            ),
+                                          ),
+                                          if (isCurrentUser) ...[
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              Icons.close,
+                                              size: 14,
+                                              color:
+                                                  Colors.white.withOpacity(0.8),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      backgroundColor: isCurrentUser
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                              .withOpacity(0.5)
+                                          : Colors.white.withOpacity(0.15),
+                                      side: BorderSide(
+                                        color: isCurrentUser
+                                            ? Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                                .withOpacity(0.7)
+                                            : Colors.white.withOpacity(0.2),
+                                        width: 1,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            // Remove button for current user's reactions
+                            if (currentUserReacted)
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle,
+                                    color: Colors.red, size: 24),
+                                onPressed: () async {
+                                  HapticFeedback.lightImpact();
+                                  try {
+                                    await ReactionService.addReaction(
+                                      context,
+                                      emoji,
+                                      _messageData.id,
+                                      widget.chatGroupId,
+                                      widget.chatType,
+                                      widget.squadId,
+                                    );
+                                    if (context.mounted) {
+                                      Navigator.of(context).pop();
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Error removing reaction: $e');
+                                  }
+                                },
+                                tooltip: 'Remove your reaction',
+                              ),
+                          ],
                         ),
-                        const SizedBox(width: 16),
-                        // User names
-                        Expanded(
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: userIds.map((userId) {
-                              final displayName = ref
-                                      .read(userNotifierProvider.notifier)
-                                      .getDisplayNameForUid(userId) ??
-                                  userId;
-                              return Chip(
-                                label: Text(
-                                  displayName,
-                                  style: const TextStyle(fontSize: 13),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 0,
-                                ),
-                                materialTapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

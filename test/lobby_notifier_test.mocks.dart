@@ -394,6 +394,41 @@ class MockLobbyRepository extends _i1.Mock implements _i4.LobbyRepository {
       ) as _i5.Future<void>);
 
   @override
+  _i5.Future<void> recordMatchResult({
+    required String? lobbyId,
+    required String? gameName,
+    required String? result,
+    required List<String>? playerUids,
+    String? notes,
+  }) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #recordMatchResult,
+          [],
+          {
+            #lobbyId: lobbyId,
+            #gameName: gameName,
+            #result: result,
+            #playerUids: playerUids,
+            #notes: notes,
+          },
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<Map<String, dynamic>> getLobbyStats(String? lobbyId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getLobbyStats,
+          [lobbyId],
+        ),
+        returnValue:
+            _i5.Future<Map<String, dynamic>>.value(<String, dynamic>{}),
+      ) as _i5.Future<Map<String, dynamic>>);
+
+  @override
   _i5.Future<void> createInvite(Map<String, dynamic>? inviteData) =>
       (super.noSuchMethod(
         Invocation.method(

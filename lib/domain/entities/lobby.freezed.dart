@@ -35,6 +35,12 @@ mixin _$Lobby {
   bool get isActive => throw _privateConstructorUsedError;
   String? get description => throw _privateConstructorUsedError;
   Map<String, dynamic>? get settings => throw _privateConstructorUsedError;
+  List<String> get tags => throw _privateConstructorUsedError;
+  String get visibility => throw _privateConstructorUsedError;
+  Map<String, dynamic> get constitutionRules =>
+      throw _privateConstructorUsedError;
+  String? get embeddedMessageId => throw _privateConstructorUsedError;
+  String? get chatGroupId => throw _privateConstructorUsedError;
 
   /// Serializes this Lobby to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -64,7 +70,12 @@ abstract class $LobbyCopyWith<$Res> {
       Map<String, String> statuses,
       bool isActive,
       String? description,
-      Map<String, dynamic>? settings});
+      Map<String, dynamic>? settings,
+      List<String> tags,
+      String visibility,
+      Map<String, dynamic> constitutionRules,
+      String? embeddedMessageId,
+      String? chatGroupId});
 }
 
 /// @nodoc
@@ -96,6 +107,11 @@ class _$LobbyCopyWithImpl<$Res, $Val extends Lobby>
     Object? isActive = null,
     Object? description = freezed,
     Object? settings = freezed,
+    Object? tags = null,
+    Object? visibility = null,
+    Object? constitutionRules = null,
+    Object? embeddedMessageId = freezed,
+    Object? chatGroupId = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -154,6 +170,26 @@ class _$LobbyCopyWithImpl<$Res, $Val extends Lobby>
           ? _value.settings
           : settings // ignore: cast_nullable_to_non_nullable
               as Map<String, dynamic>?,
+      tags: null == tags
+          ? _value.tags
+          : tags // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      visibility: null == visibility
+          ? _value.visibility
+          : visibility // ignore: cast_nullable_to_non_nullable
+              as String,
+      constitutionRules: null == constitutionRules
+          ? _value.constitutionRules
+          : constitutionRules // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>,
+      embeddedMessageId: freezed == embeddedMessageId
+          ? _value.embeddedMessageId
+          : embeddedMessageId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chatGroupId: freezed == chatGroupId
+          ? _value.chatGroupId
+          : chatGroupId // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -179,7 +215,12 @@ abstract class _$$LobbyImplCopyWith<$Res> implements $LobbyCopyWith<$Res> {
       Map<String, String> statuses,
       bool isActive,
       String? description,
-      Map<String, dynamic>? settings});
+      Map<String, dynamic>? settings,
+      List<String> tags,
+      String visibility,
+      Map<String, dynamic> constitutionRules,
+      String? embeddedMessageId,
+      String? chatGroupId});
 }
 
 /// @nodoc
@@ -209,6 +250,11 @@ class __$$LobbyImplCopyWithImpl<$Res>
     Object? isActive = null,
     Object? description = freezed,
     Object? settings = freezed,
+    Object? tags = null,
+    Object? visibility = null,
+    Object? constitutionRules = null,
+    Object? embeddedMessageId = freezed,
+    Object? chatGroupId = freezed,
   }) {
     return _then(_$LobbyImpl(
       id: null == id
@@ -267,6 +313,26 @@ class __$$LobbyImplCopyWithImpl<$Res>
           ? _value._settings
           : settings // ignore: cast_nullable_to_non_nullable
               as Map<String, dynamic>?,
+      tags: null == tags
+          ? _value._tags
+          : tags // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      visibility: null == visibility
+          ? _value.visibility
+          : visibility // ignore: cast_nullable_to_non_nullable
+              as String,
+      constitutionRules: null == constitutionRules
+          ? _value._constitutionRules
+          : constitutionRules // ignore: cast_nullable_to_non_nullable
+              as Map<String, dynamic>,
+      embeddedMessageId: freezed == embeddedMessageId
+          ? _value.embeddedMessageId
+          : embeddedMessageId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      chatGroupId: freezed == chatGroupId
+          ? _value.chatGroupId
+          : chatGroupId // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -288,13 +354,20 @@ class _$LobbyImpl implements _Lobby {
       required final Map<String, String> statuses,
       required this.isActive,
       this.description,
-      final Map<String, dynamic>? settings})
+      final Map<String, dynamic>? settings,
+      final List<String> tags = const [],
+      this.visibility = 'group_private',
+      final Map<String, dynamic> constitutionRules = const {},
+      this.embeddedMessageId,
+      this.chatGroupId})
       : _memberUids = memberUids,
         _spots = spots,
         _spotTimers = spotTimers,
         _viewers = viewers,
         _statuses = statuses,
-        _settings = settings;
+        _settings = settings,
+        _tags = tags,
+        _constitutionRules = constitutionRules;
 
   factory _$LobbyImpl.fromJson(Map<String, dynamic> json) =>
       _$$LobbyImplFromJson(json);
@@ -365,9 +438,36 @@ class _$LobbyImpl implements _Lobby {
     return EqualUnmodifiableMapView(value);
   }
 
+  final List<String> _tags;
+  @override
+  @JsonKey()
+  List<String> get tags {
+    if (_tags is EqualUnmodifiableListView) return _tags;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_tags);
+  }
+
+  @override
+  @JsonKey()
+  final String visibility;
+  final Map<String, dynamic> _constitutionRules;
+  @override
+  @JsonKey()
+  Map<String, dynamic> get constitutionRules {
+    if (_constitutionRules is EqualUnmodifiableMapView)
+      return _constitutionRules;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_constitutionRules);
+  }
+
+  @override
+  final String? embeddedMessageId;
+  @override
+  final String? chatGroupId;
+
   @override
   String toString() {
-    return 'Lobby(id: $id, name: $name, memberUids: $memberUids, gameName: $gameName, maxSpots: $maxSpots, createdBy: $createdBy, createdAt: $createdAt, spots: $spots, spotTimers: $spotTimers, viewers: $viewers, statuses: $statuses, isActive: $isActive, description: $description, settings: $settings)';
+    return 'Lobby(id: $id, name: $name, memberUids: $memberUids, gameName: $gameName, maxSpots: $maxSpots, createdBy: $createdBy, createdAt: $createdAt, spots: $spots, spotTimers: $spotTimers, viewers: $viewers, statuses: $statuses, isActive: $isActive, description: $description, settings: $settings, tags: $tags, visibility: $visibility, constitutionRules: $constitutionRules, embeddedMessageId: $embeddedMessageId, chatGroupId: $chatGroupId)';
   }
 
   @override
@@ -396,27 +496,42 @@ class _$LobbyImpl implements _Lobby {
                 other.isActive == isActive) &&
             (identical(other.description, description) ||
                 other.description == description) &&
-            const DeepCollectionEquality().equals(other._settings, _settings));
+            const DeepCollectionEquality().equals(other._settings, _settings) &&
+            const DeepCollectionEquality().equals(other._tags, _tags) &&
+            (identical(other.visibility, visibility) ||
+                other.visibility == visibility) &&
+            const DeepCollectionEquality()
+                .equals(other._constitutionRules, _constitutionRules) &&
+            (identical(other.embeddedMessageId, embeddedMessageId) ||
+                other.embeddedMessageId == embeddedMessageId) &&
+            (identical(other.chatGroupId, chatGroupId) ||
+                other.chatGroupId == chatGroupId));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      id,
-      name,
-      const DeepCollectionEquality().hash(_memberUids),
-      gameName,
-      maxSpots,
-      createdBy,
-      createdAt,
-      const DeepCollectionEquality().hash(_spots),
-      const DeepCollectionEquality().hash(_spotTimers),
-      const DeepCollectionEquality().hash(_viewers),
-      const DeepCollectionEquality().hash(_statuses),
-      isActive,
-      description,
-      const DeepCollectionEquality().hash(_settings));
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        id,
+        name,
+        const DeepCollectionEquality().hash(_memberUids),
+        gameName,
+        maxSpots,
+        createdBy,
+        createdAt,
+        const DeepCollectionEquality().hash(_spots),
+        const DeepCollectionEquality().hash(_spotTimers),
+        const DeepCollectionEquality().hash(_viewers),
+        const DeepCollectionEquality().hash(_statuses),
+        isActive,
+        description,
+        const DeepCollectionEquality().hash(_settings),
+        const DeepCollectionEquality().hash(_tags),
+        visibility,
+        const DeepCollectionEquality().hash(_constitutionRules),
+        embeddedMessageId,
+        chatGroupId
+      ]);
 
   /// Create a copy of Lobby
   /// with the given fields replaced by the non-null parameter values.
@@ -449,7 +564,12 @@ abstract class _Lobby implements Lobby {
       required final Map<String, String> statuses,
       required final bool isActive,
       final String? description,
-      final Map<String, dynamic>? settings}) = _$LobbyImpl;
+      final Map<String, dynamic>? settings,
+      final List<String> tags,
+      final String visibility,
+      final Map<String, dynamic> constitutionRules,
+      final String? embeddedMessageId,
+      final String? chatGroupId}) = _$LobbyImpl;
 
   factory _Lobby.fromJson(Map<String, dynamic> json) = _$LobbyImpl.fromJson;
 
@@ -481,6 +601,16 @@ abstract class _Lobby implements Lobby {
   String? get description;
   @override
   Map<String, dynamic>? get settings;
+  @override
+  List<String> get tags;
+  @override
+  String get visibility;
+  @override
+  Map<String, dynamic> get constitutionRules;
+  @override
+  String? get embeddedMessageId;
+  @override
+  String? get chatGroupId;
 
   /// Create a copy of Lobby
   /// with the given fields replaced by the non-null parameter values.

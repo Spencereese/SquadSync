@@ -96,6 +96,12 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     try {
       _repository = ref.read(chatRepositoryProvider);
       _messageService = MessageService();
+
+      // Register cleanup callback
+      ref.onDispose(() {
+        _disposeMessagesStream();
+      });
+
       return MessageState.initial();
     } catch (e) {
       rethrow;
@@ -110,6 +116,16 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   Future<void> initializeMessagesStream(
       String chatGroupId, ChatType chatType) async {
     await future;
+
+    // Log current channel usage
+    SupabaseService.logChannelUsage();
+
+    // Proactive cleanup if approaching channel limit
+    if (SupabaseService.isApproachingChannelLimit) {
+      debugPrint('MessageNotifier: ⚠️ Approaching channel limit, cleaning up');
+      await SupabaseService.cleanupOldChannels();
+      SupabaseService.logChannelUsage(); // Log after cleanup
+    }
 
     if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
       await _disposeMessagesStream();
@@ -455,6 +471,19 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       _typingChannel = null;
     }
 
+    // CRITICAL: Clean up orphaned channels created by .stream()
+    // These aren't tracked by subscriptions and cause channelratelimitreached
+    try {
+      final channels = supabase.getChannels();
+      debugPrint(
+          'MessageNotifier: Cleaning up ${channels.length} orphaned channels');
+      for (final channel in channels) {
+        await SupabaseService.safeRemoveChannel(channel);
+      }
+    } catch (e) {
+      debugPrint('MessageNotifier: Error cleaning orphaned channels: $e');
+    }
+
     _retryTimer?.cancel();
     _retryTimer = null;
     _typingDebounceTimer?.cancel();
@@ -639,13 +668,14 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         return;
       }
 
-      // Remove existing channel first to avoid duplicates
-      if (_typingChannel != null) {
-        await SupabaseService.safeRemoveChannel(_typingChannel!);
-        _typingChannel = null;
+      // Proactive cleanup if approaching channel limit
+      if (SupabaseService.isApproachingChannelLimit) {
+        debugPrint(
+            'MessageNotifier: ⚠️ Approaching channel limit, cleaning up');
+        await SupabaseService.cleanupOldChannels();
       }
 
-      // Clean up typing channel if it exists
+      // Remove existing channel first to avoid duplicates
       if (_typingChannel != null) {
         try {
           await SupabaseService.safeRemoveChannel(_typingChannel!);

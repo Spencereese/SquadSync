@@ -29,18 +29,14 @@ class FriendsService {
 
       var queryBuilder = _supabase
           .from('users')
-          .select(
-              'uid, display_name, photo_url, email, last_seen_at, created_at')
+          .select('uid, display_name, photo_url, email, created_at')
           .ilike('display_name', '%$query%');
 
       // Apply filters based on filter type
       switch (filter) {
         case 'online':
-          // Users active in the last 15 minutes
-          final fifteenMinutesAgo = DateTime.now()
-              .subtract(const Duration(minutes: 15))
-              .toIso8601String();
-          queryBuilder = queryBuilder.gte('last_seen_at', fifteenMinutesAgo);
+          // Online status filter not available (no last_seen_at column)
+          // Fall through to 'all' filter
           break;
         case 'recent':
           // Recently joined users (last 30 days)
@@ -73,7 +69,7 @@ class FriendsService {
     try {
       final response = await _supabase
           .from('users')
-          .select('uid, display_name, photo_url, email, last_seen_at')
+          .select('uid, display_name, photo_url, email')
           .eq('uid', uid)
           .maybeSingle();
 

@@ -1012,12 +1012,13 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               },
               borderRadius: BorderRadius.circular(16),
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: primaryColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(50),
@@ -1025,27 +1026,29 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
                       child: Icon(
                         Icons.add,
                         color: primaryColor,
-                        size: 32,
+                        size: 28,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     Text(
                       'Pin Your Games',
                       style: GoogleFonts.robotoMono(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
                       'Add games to quickly access your lobbys',
                       style: GoogleFonts.robotoMono(
-                        fontSize: 14,
+                        fontSize: 12,
                         color: Colors.white70,
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

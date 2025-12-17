@@ -20,6 +20,11 @@ class Lobby with _$Lobby {
     required bool isActive,
     String? description,
     Map<String, dynamic>? settings,
+    @Default([]) List<String> tags,
+    @Default('group_private') String visibility,
+    @Default({}) Map<String, dynamic> constitutionRules,
+    String? embeddedMessageId,
+    String? chatGroupId,
   }) = _Lobby;
 
   factory Lobby.fromJson(Map<String, dynamic> json) => _$LobbyFromJson(json);

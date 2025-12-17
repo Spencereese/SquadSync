@@ -49,6 +49,12 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
         });
       });
 
+      // Register cleanup callback to prevent channel leaks
+      ref.onDispose(() {
+        debugPrint('ChatNotifier: Disposing presence channel');
+        _disposePresenceChannel();
+      });
+
       return ChatState.initial();
     } catch (e) {
       // Note: _errorHandler not yet initialized, use basic logging
@@ -145,6 +151,12 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       if (currentUser == null) {
         debugPrint('⚠️ ChatNotifier: No user, skipping presence channel');
         return;
+      }
+
+      // Proactive cleanup if approaching channel limit
+      if (SupabaseService.isApproachingChannelLimit) {
+        debugPrint('ChatNotifier: ⚠️ Approaching channel limit, cleaning up');
+        await SupabaseService.cleanupOldChannels();
       }
 
       // Remove existing channel first to avoid duplicates

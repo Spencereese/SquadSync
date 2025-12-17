@@ -33,7 +33,8 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.redAccent),
               title: const Text('Clear All Spots'),
               onTap: () {
-                final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+                final lobbyNotifier =
+                    ref.read(ln.lobbyNotifierProvider.notifier);
                 final gameName = ref
                         .read(ln.lobbyNotifierProvider)
                         .value
@@ -48,7 +49,8 @@ class SettingsDialog {
                   width: 24, height: 24, color: Colors.blueGrey),
               title: const Text('Reset Timers'),
               onTap: () {
-                final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+                final lobbyNotifier =
+                    ref.read(ln.lobbyNotifierProvider.notifier);
                 final gameName = ref
                         .read(ln.lobbyNotifierProvider)
                         .value
@@ -131,9 +133,6 @@ class SettingsDialog {
         await lobbyNotifier.closeLobby(lobbyId);
 
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Lobby closed successfully')),
-          );
           // Navigate back to lobby selection
           Navigator.of(context).pop();
         }

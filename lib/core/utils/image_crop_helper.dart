@@ -117,7 +117,6 @@ class ImageCropHelper {
         sourcePath: imagePath,
         aspectRatio: aspectRatio,
         compressQuality: 90,
-        cropStyle: cropStyle,
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: title,

@@ -26,6 +26,14 @@ _$LobbyImpl _$$LobbyImplFromJson(Map<String, dynamic> json) => _$LobbyImpl(
       isActive: json['isActive'] as bool,
       description: json['description'] as String?,
       settings: json['settings'] as Map<String, dynamic>?,
+      tags:
+          (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+              const [],
+      visibility: json['visibility'] as String? ?? 'group_private',
+      constitutionRules:
+          json['constitutionRules'] as Map<String, dynamic>? ?? const {},
+      embeddedMessageId: json['embeddedMessageId'] as String?,
+      chatGroupId: json['chatGroupId'] as String?,
     );
 
 Map<String, dynamic> _$$LobbyImplToJson(_$LobbyImpl instance) =>
@@ -44,4 +52,9 @@ Map<String, dynamic> _$$LobbyImplToJson(_$LobbyImpl instance) =>
       'isActive': instance.isActive,
       'description': instance.description,
       'settings': instance.settings,
+      'tags': instance.tags,
+      'visibility': instance.visibility,
+      'constitutionRules': instance.constitutionRules,
+      'embeddedMessageId': instance.embeddedMessageId,
+      'chatGroupId': instance.chatGroupId,
     };

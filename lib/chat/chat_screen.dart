@@ -21,6 +21,9 @@ import 'chat_input_bar.dart';
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
 import 'widgets/chat_lobby_sheet.dart';
+import 'dialogs/lobby_creation_sheet.dart';
+import 'widgets/lobby_card_widget.dart';
+import 'widgets/lobby_context_menu.dart';
 import 'services/chat_initialization_service.dart';
 import 'services/chat_scroll_controller.dart';
 import 'services/chat_media_handler.dart';
@@ -644,7 +647,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   /// Handle lobby creation from chat
-  /// Shows pinned games carousel and active lobbies
+  /// Shows lobby context menu with options
   Future<void> _handleLobbyCreation() async {
     if (widget.chatGroupId == null) {
       if (mounted) {
@@ -656,13 +659,47 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     try {
-      await ChatLobbySheet.show(
-        context,
-        chatGroupId: widget.chatGroupId!,
-        chatGroupName: _chatName,
+      await showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (context) => LobbyContextMenu(
+          chatGroupId: widget.chatGroupId!,
+          chatGroupName: _chatName,
+          activeLobbyCount: _getActiveLobbyCount(),
+          onCreateLobby: _showLobbyCreationSheet,
+          onViewActiveLobbies: _getActiveLobbyCount() > 0
+              ? () {
+                  // Navigate to active lobbies view
+                  // TODO: Implement active lobbies view
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Active lobbies view coming soon'),
+                    ),
+                  );
+                }
+              : null,
+        ),
       );
     } catch (e) {
-      debugPrint('❌ Error showing lobby sheet: $e');
+      debugPrint('❌ Error showing lobby context menu: $e');
+    }
+  }
+
+  /// Show the lobby creation sheet
+  Future<void> _showLobbyCreationSheet() async {
+    if (widget.chatGroupId == null) return;
+
+    try {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => LobbyCreationSheet(
+          chatGroupId: widget.chatGroupId!,
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ Error showing lobby creation sheet: $e');
     }
   }
 
@@ -764,73 +801,202 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   void _showPlusMenu(BuildContext context) {
     HapticFeedback.lightImpact();
+    final theme = Theme.of(context);
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.black,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Media options row
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFF1A1A1A).withOpacity(0.95),
+                  const Color(0xFF0F0F0F).withOpacity(0.98),
+                ],
+              ),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.1),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.white.withOpacity(0.05),
+                  blurRadius: 24,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _buildPlusMenuItem(
+                // Handle bar
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurface.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+
+                // Title
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  child: Text(
+                    'Attach',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+
+                Divider(
+                  color: theme.colorScheme.onSurface.withOpacity(0.1),
+                  height: 1,
+                ),
+
+                const SizedBox(height: 8),
+
+                // Menu options with glass effect
+                _buildGlassMenuItem(
+                  context: context,
                   icon: Icons.photo_library,
-                  label: 'Photos',
+                  iconColor: Colors.white,
+                  title: 'Photos',
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(context);
                     _sendMedia();
                   },
                 ),
-                _buildPlusMenuItem(
+                _buildGlassMenuItem(
+                  context: context,
                   icon: Icons.camera_alt,
-                  label: 'Camera',
+                  iconColor: Colors.blue,
+                  title: 'Camera',
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(context);
                     _sendMedia();
                   },
                 ),
-                _buildPlusMenuItem(
+                _buildGlassMenuItem(
+                  context: context,
                   icon: Icons.videocam,
-                  label: 'Clip',
+                  iconColor: Colors.red,
+                  title: 'Clip',
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(context);
                     _sendClip();
                   },
                 ),
-                _buildPlusMenuItem(
-                  icon: Icons.location_on,
-                  label: 'Location',
-                  onTap: () => Navigator.pop(context),
+                _buildGlassMenuItem(
+                  context: context,
+                  icon: Icons.poll,
+                  iconColor: Colors.green,
+                  title: 'Create Poll',
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    Navigator.pop(context);
+                    PollCreationDialog.show(context,
+                        chatGroupId: widget.chatGroupId,
+                        chatType: widget.chatType);
+                  },
+                ),
+                _buildGlassMenuItem(
+                  context: context,
+                  icon: Icons.flash_on,
+                  iconColor: Colors.cyanAccent,
+                  title: 'Lobby Up',
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    Navigator.pop(context);
+                    _handleLobbyCreation();
+                  },
+                ),
+
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassMenuItem({
+    required BuildContext context,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: iconColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: theme.colorScheme.onSurface.withOpacity(0.3),
+                  size: 20,
                 ),
               ],
             ),
           ),
-          const Divider(color: Colors.grey, height: 1),
-          ListTile(
-            leading: const Icon(Icons.poll, color: Colors.white),
-            title: const Text('Create Poll',
-                style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              PollCreationDialog.show(context,
-                  chatGroupId: widget.chatGroupId, chatType: widget.chatType);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.flash_on, color: Colors.white),
-            title:
-                const Text('Lobby Up', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              _handleLobbyCreation();
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -875,56 +1041,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         HapticFeedback.mediumImpact();
       }
     }
-  }
-
-  Widget _buildPlusMenuItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    Color? iconColor,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.grey[800],
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.4),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
-                  spreadRadius: 2,
-                ),
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Icon(
-              icon,
-              color: iconColor ?? Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   void _showPeacockModal(BuildContext context) {
@@ -980,14 +1096,18 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               _handleSyncStateChanges(chatState);
             });
 
-            return SafeArea(
-              top: false,
-              bottom: false,
-              child: Scaffold(
-                resizeToAvoidBottomInset: true,
-                extendBodyBehindAppBar: true,
-                backgroundColor: Colors.transparent,
-                body: _buildChatContent(context, squadState, chatState),
+            return MediaQuery.removePadding(
+              context: context,
+              removeBottom: true,
+              child: SafeArea(
+                top: false,
+                bottom: false,
+                child: Scaffold(
+                  resizeToAvoidBottomInset: true,
+                  extendBodyBehindAppBar: true,
+                  backgroundColor: Colors.transparent,
+                  body: _buildChatContent(context, squadState, chatState),
+                ),
               ),
             );
           },
@@ -1047,7 +1167,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                 .withOpacity(0.3),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+              color: Colors.white.withOpacity(0.2),
               width: 1,
             ),
           ),
@@ -1056,7 +1176,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               Icon(
                 Icons.sports_esports,
                 size: 18,
-                color: Theme.of(context).colorScheme.primary,
+                color: Colors.white,
               ),
               const SizedBox(width: 8),
               Text(
@@ -1107,8 +1227,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                             content: Text(
                                 'Switched to lobby: ${lobbies.firstWhere((l) => l['id'] == newLobbyId)['name']}'),
                             duration: const Duration(seconds: 2),
-                            backgroundColor:
-                                Theme.of(context).colorScheme.primary,
+                            backgroundColor: Colors.grey[800],
                           ),
                         );
                       }
@@ -1628,8 +1747,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                Theme.of(context).colorScheme.secondary.withOpacity(0.3),
+                Colors.white.withOpacity(0.05),
+                Colors.grey.withOpacity(0.05),
               ],
             ),
           ),

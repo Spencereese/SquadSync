@@ -1,0 +1,225 @@
+import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../domain/entities/notification_priority.dart';
+import '../services/notification_service.dart';
+
+/// Provider for NotificationNotifier
+final notificationNotifierProvider =
+    AsyncNotifierProvider<NotificationNotifier, BadgeState>(
+  NotificationNotifier.new,
+);
+
+/// Riverpod notifier for managing notifications with Supabase real-time subscriptions
+class NotificationNotifier extends AsyncNotifier<BadgeState> {
+  final _supabase = Supabase.instance.client;
+  final _notificationService = NotificationService();
+
+  // Subscriptions for cleanup
+  RealtimeChannel? _lobbyChannel;
+  RealtimeChannel? _chatChannel;
+  StreamSubscription? _presenceSubscription;
+
+  // Momentum tracking
+  final Map<String, int> _lobbyPlayerCounts = {};
+  final Set<String> _processedMomentumEvents = {};
+
+  @override
+  Future<BadgeState> build() async {
+    // Initialize notification service
+    await _notificationService.initialize();
+
+    // Set up real-time subscriptions for momentum detection
+    _setupLobbyMomentumSubscription();
+    _setupChatBadgeSubscription();
+
+    // Clean up on dispose
+    ref.onDispose(() {
+      _lobbyChannel?.unsubscribe();
+      _chatChannel?.unsubscribe();
+      _presenceSubscription?.cancel();
+    });
+
+    return _notificationService.getBadgeState();
+  }
+
+  /// Set up real-time subscription for lobby momentum detection
+  void _setupLobbyMomentumSubscription() {
+    _lobbyChannel = _supabase
+        .channel('lobby_momentum')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'lobby_spots',
+          callback: (payload) => _handleLobbyChange(payload),
+        )
+        .subscribe();
+  }
+
+  /// Handle lobby spot changes and detect momentum
+  Future<void> _handleLobbyChange(PostgresChangePayload payload) async {
+    try {
+      final newRecord = payload.newRecord;
+      if (newRecord.isEmpty) return;
+
+      final lobbyId = newRecord['lobby_id'] as String?;
+      final userId = newRecord['user_id'] as String?;
+      final spotIndex = newRecord['spot_index'] as int?;
+
+      if (lobbyId == null || userId == null) return;
+
+      // Fetch full lobby state
+      final lobby = await _supabase
+          .from('lobbies')
+          .select('*, game:games(*)')
+          .eq('id', lobbyId)
+          .single();
+
+      // Count current players
+      final spotsResponse = await _supabase
+          .from('lobby_spots')
+          .select('id')
+          .eq('lobby_id', lobbyId)
+          .not('user_id', 'is', null);
+
+      final currentPlayers = (spotsResponse as List).length;
+      final previousPlayers = _lobbyPlayerCounts[lobbyId] ?? 0;
+
+      // Momentum detected: player increase
+      if (currentPlayers > previousPlayers && currentPlayers > 1) {
+        final eventKey = '$lobbyId:$currentPlayers:${DateTime.now().minute}';
+
+        // Cap at one notification per player increase (per minute)
+        if (!_processedMomentumEvents.contains(eventKey)) {
+          _processedMomentumEvents.add(eventKey);
+
+          // Fetch participant names
+          final participants = await _supabase
+              .from('lobby_spots')
+              .select('user_id, users!inner(display_name)')
+              .eq('lobby_id', lobbyId)
+              .not('user_id', 'is', null);
+
+          final participantNames = (participants as List)
+              .map((p) => p['users']['display_name'] as String? ?? 'Unknown')
+              .toList();
+
+          // Get game details
+          final gameName = lobby['game']?['name'] as String? ?? 'Unknown Game';
+          final maxPlayers = lobby['max_players'] as int? ?? 4;
+          final gameImageUrl = lobby['game']?['cover_url'] as String?;
+
+          // Get joiner name
+          final joinerName = await _getDisplayName(userId);
+
+          // Send momentum notification
+          await _notificationService.sendMomentumNotification(
+            lobbyId: lobbyId,
+            gameName: gameName,
+            currentPlayers: currentPlayers,
+            maxPlayers: maxPlayers,
+            joinerName: joinerName,
+            participantNames: participantNames,
+            gameImageUrl: gameImageUrl,
+          );
+
+          // Update state
+          state = AsyncData(_notificationService.getBadgeState());
+        }
+      }
+
+      // Update player count tracker
+      _lobbyPlayerCounts[lobbyId] = currentPlayers;
+    } catch (e) {
+      print('❌ Error handling lobby momentum: $e');
+    }
+  }
+
+  /// Set up chat badge subscription for unread messages
+  void _setupChatBadgeSubscription() {
+    _chatChannel = _supabase
+        .channel('chat_badges')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'chat_messages',
+          callback: (payload) => _handleChatMessage(payload),
+        )
+        .subscribe();
+  }
+
+  /// Handle new chat messages for badge updates
+  void _handleChatMessage(PostgresChangePayload payload) {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    final senderId = payload.newRecord['sender_id'] as String?;
+
+    // Don't badge own messages
+    if (senderId == currentUserId) return;
+
+    // Update badge count (low priority - badge only)
+    _notificationService.clearBadge('chat');
+    state = AsyncData(_notificationService.getBadgeState());
+  }
+
+  /// Send direct invite notification
+  Future<void> sendDirectInvite({
+    required String recipientId,
+    required String inviterName,
+    required String lobbyId,
+    required String gameName,
+    String? gameImageUrl,
+  }) async {
+    await _notificationService.sendDirectInvite(
+      recipientId: recipientId,
+      inviterName: inviterName,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      gameImageUrl: gameImageUrl,
+    );
+
+    state = AsyncData(_notificationService.getBadgeState());
+  }
+
+  /// Send spot available notification
+  Future<void> sendSpotAvailable({
+    required String lobbyId,
+    required String gameName,
+    required int spotsOpen,
+    required List<String> friendsInLobby,
+  }) async {
+    await _notificationService.sendSpotAvailable(
+      lobbyId: lobbyId,
+      gameName: gameName,
+      spotsOpen: spotsOpen,
+      friendsInLobby: friendsInLobby,
+    );
+
+    state = AsyncData(_notificationService.getBadgeState());
+  }
+
+  /// Clear badge for specific type
+  void clearBadge(String type) {
+    _notificationService.clearBadge(type);
+    state = AsyncData(_notificationService.getBadgeState());
+  }
+
+  /// Clear all badges
+  void clearAllBadges() {
+    _notificationService.clearAllBadges();
+    state = AsyncData(_notificationService.getBadgeState());
+  }
+
+  /// Get display name for user ID
+  Future<String> _getDisplayName(String userId) async {
+    try {
+      final user = await _supabase
+          .from('users')
+          .select('display_name')
+          .eq('id', userId)
+          .single();
+      return user['display_name'] as String? ?? 'Unknown';
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+}

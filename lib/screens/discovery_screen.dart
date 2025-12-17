@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/supabase_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
 import '../presentation/notifiers/lobby_notifier.dart';
 import '../presentation/notifiers/chat_notifier.dart';
+import '../presentation/notifiers/game_state_notifier.dart';
+
 import '../domain/entities/lobby.dart';
 import '../domain/entities/message.dart';
+import '../domain/entities/game.dart';
 import '../core/app_theme.dart';
 import '../chat/chat_screen.dart';
+import '../lobbies_tab/widgets/game_selector_modal.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
   const DiscoveryScreen({super.key});
@@ -20,6 +25,7 @@ class DiscoveryScreen extends ConsumerStatefulWidget {
 class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  Game? _selectedGame;
 
   @override
   void dispose() {
@@ -29,8 +35,6 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filter = ref.watch(discoveryFilterProvider);
-    final popularGamesAsync = ref.watch(popularGamesProvider);
     final publicLobbiesAsync = ref.watch(publicLobbiesProvider);
 
     return Theme(
@@ -38,7 +42,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(
-          title: const Text('Discover Lobbies'),
+          title: const Text('Lobbies'),
           backgroundColor: Colors.black,
           elevation: 0,
         ),
@@ -48,55 +52,68 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
           backgroundColor: Colors.black,
           child: CustomScrollView(
             slivers: [
-              // Search bar
+              // Game Selector Button
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search lobbies...',
-                      prefixIcon:
-                          const Icon(Icons.search, color: Colors.white70),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.1),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      hintStyle: const TextStyle(color: Colors.white70),
-                    ),
-                    style: const TextStyle(color: Colors.white),
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value.toLowerCase();
-                      });
-                    },
-                  ),
+                  child: _buildGameSelectorButton(),
                 ),
               ),
 
-              // Filter chips
+              // Quick Start Button (shows when game selected)
+              if (_selectedGame != null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: _buildQuickStartButton(),
+                  ),
+                ),
+
+              // Available Friends Carousel
               SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 50,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: [
-                      _buildFilterChip('Hot', 'hot', filter == 'hot'),
-                      _buildFilterChip('New', 'new', filter == 'new'),
-                      const SizedBox(width: 8),
-                      ...popularGamesAsync.maybeWhen(
-                        data: (games) => games.take(5).map(
-                              (game) => _buildFilterChip(
-                                  game['gameId'] as String,
-                                  game['gameId'] as String,
-                                  filter == game['gameId']),
-                            ),
-                        orElse: () => [],
-                      ),
-                    ],
+                child: _buildAvailableFriendsCarousel(),
+              ),
+
+              // My Lobbies Section
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    'My Lobbies',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.cyanAccent,
+                        ),
+                  ),
+                ),
+              ),
+              _buildMyLobbiesSection(),
+
+              // Friends' Lobbies Section
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    'Friends\' Lobbies',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.cyanAccent,
+                        ),
+                  ),
+                ),
+              ),
+              _buildFriendsLobbiesSection(),
+
+              // Explore Public Lobbies Section
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    'Explore Public Lobbies',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.cyanAccent,
+                        ),
                   ),
                 ),
               ),
@@ -185,27 +202,536 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     );
   }
 
-  Widget _buildFilterChip(String label, String value, bool isSelected) {
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(label),
-        selected: isSelected,
-        onSelected: (selected) {
-          if (selected) {
-            ref.read(discoveryFilterProvider.notifier).state = value;
-          }
-        },
-        backgroundColor: Colors.white.withValues(alpha: 0.1),
-        selectedColor: Colors.cyanAccent.withValues(alpha: 0.3),
-        checkmarkColor: Colors.cyanAccent,
-        labelStyle: TextStyle(
-          color: isSelected ? Colors.cyanAccent : Colors.white70,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+  Widget _buildGameSelectorButton() {
+    final theme = Theme.of(context);
+
+    return GestureDetector(
+      onTap: () async {
+        HapticFeedback.mediumImpact();
+        await GameSelectorModal.show(
+          context,
+          onGameSelected: (game) {
+            setState(() => _selectedGame = game);
+            ref
+                .read(gameStateNotifierProvider.notifier)
+                .setCurrentGame(game.toJson());
+          },
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              theme.colorScheme.primary.withOpacity(0.3),
+              theme.colorScheme.primary.withOpacity(0.1),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: theme.colorScheme.primary,
+            width: 2,
+          ),
+        ),
+        child: Row(
+          children: [
+            if (_selectedGame?.coverUrl != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  _selectedGame!.coverUrl!,
+                  width: 48,
+                  height: 64,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                      Icons.gamepad,
+                      size: 48,
+                      color: theme.colorScheme.primary),
+                ),
+              )
+            else
+              Icon(Icons.gamepad, size: 48, color: theme.colorScheme.primary),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _selectedGame?.name ?? 'Select a Game',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'Tap to filter lobbies by game',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_down,
+              color: theme.colorScheme.primary,
+            ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildQuickStartButton() {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: ElevatedButton.icon(
+        onPressed: _selectedGame == null ? null : _createQuickStartLobby,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: theme.colorScheme.primary,
+          foregroundColor: Colors.black,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: const Icon(Icons.rocket_launch),
+        label: Text(
+          'Quick Start - ${_selectedGame?.name ?? "Select Game"}',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createQuickStartLobby() async {
+    if (_selectedGame == null) return;
+
+    HapticFeedback.mediumImpact();
+
+    try {
+      final lobbyNotifier = ref.read(lobbyNotifierProvider.notifier);
+
+      // Smart max spots detection: cached > IGDB data > default 4
+      final maxSpots = _selectedGame!.maxSpots ?? 4;
+
+      // Create public lobby
+      await lobbyNotifier.createPublicLobby(
+        name: '${_selectedGame!.name} - Quick Match',
+        gameName: _selectedGame!.name,
+        maxSpots: maxSpots,
+        description: 'Quick match created via Discovery',
+      );
+
+      if (!mounted) return;
+
+      // Show success feedback with navigation action
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Lobby created! ${_selectedGame!.name}'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'View',
+            textColor: Colors.white,
+            onPressed: () {
+              // Navigate to Lobbies tab (index 1 in bottom navigation)
+              DefaultTabController.of(context).animateTo(1);
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to create lobby: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Widget _buildAvailableFriendsCarousel() {
+    final user = AuthServiceSupabase().currentUser;
+    if (user == null) {
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _fetchAvailableFriends(user.id),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final availableFriends = snapshot.data!;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.person_pin_circle,
+                      color: Colors.green,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Available Friends (${availableFriends.length})',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 100,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: availableFriends.length,
+                  itemBuilder: (context, index) {
+                    final friend = availableFriends[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: _buildAvailableFriendCard(friend),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAvailableFriends(
+      String userId) async {
+    try {
+      // Get user's friends
+      final friendsResponse = await SupabaseService.client
+          .from('friends')
+          .select('friend_uid')
+          .eq('user_uid', userId)
+          .eq('status', 'accepted');
+
+      final friendUids = (friendsResponse as List)
+          .map((f) => f['friend_uid'] as String)
+          .toList();
+
+      if (friendUids.isEmpty) {
+        return [];
+      }
+
+      // Get friends who have available_status set
+      final usersResponse = await SupabaseService.client
+          .from('users')
+          .select(
+              'uid, display_name, avatar_url, available_status, available_tags, available_since')
+          .inFilter('uid', friendUids)
+          .not('available_status', 'is', null)
+          .order('available_since', ascending: false);
+
+      return (usersResponse as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('Error fetching available friends: $e');
+      return [];
+    }
+  }
+
+  Widget _buildAvailableFriendCard(Map<String, dynamic> friend) {
+    final displayName = friend['display_name'] ?? 'Unknown';
+    final avatarUrl = friend['avatar_url'];
+    final availableTags =
+        (friend['available_tags'] as List?)?.cast<String>() ?? [];
+
+    return GestureDetector(
+      onTap: () {
+        // TODO: Navigate to friend profile or start DM
+        HapticFeedback.lightImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$displayName is available!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+      child: Container(
+        width: 80,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.green.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.green, width: 2),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundImage:
+                      avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                  child: avatarUrl == null
+                      ? Text(displayName[0].toUpperCase())
+                      : null,
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.black, width: 2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              displayName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+            if (availableTags.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                availableTags.first,
+                style: TextStyle(
+                  color: Colors.green.shade300,
+                  fontSize: 9,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMyLobbiesSection() {
+    final user = AuthServiceSupabase().currentUser;
+    if (user == null) {
+      return const SliverToBoxAdapter(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(32.0),
+            child: Text(
+              'Sign in to see your lobbies',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return FutureBuilder<List<Lobby>>(
+      future: _fetchMyLobbies(user.id),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(32.0),
+                child: CircularProgressIndicator(color: Colors.cyanAccent),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Error loading lobbies: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final myLobbies = snapshot.data ?? [];
+
+        if (myLobbies.isEmpty) {
+          return const SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'No active lobbies. Create one!',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _buildLobbyCard(context, myLobbies[index], ref),
+            childCount: myLobbies.length,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<Lobby>> _fetchMyLobbies(String userId) async {
+    try {
+      // Build query with all filters before execution
+      var query = SupabaseService.client
+          .from('lobbies')
+          .select()
+          .contains('member_uids', [userId]).eq('is_active', true);
+
+      // Filter by selected game if set
+      if (_selectedGame != null) {
+        query = query.eq('game_name', _selectedGame!.name);
+      }
+
+      // Apply ordering and execute
+      final response = await query.order('created_at', ascending: false);
+
+      return (response as List).map((json) => Lobby.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('Error fetching my lobbies: $e');
+      return [];
+    }
+  }
+
+  Widget _buildFriendsLobbiesSection() {
+    final user = AuthServiceSupabase().currentUser;
+    if (user == null) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return FutureBuilder<List<Lobby>>(
+      future: _fetchFriendsLobbies(user.id),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(32.0),
+                child: CircularProgressIndicator(color: Colors.cyanAccent),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Error loading friends\' lobbies: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final friendsLobbies = snapshot.data ?? [];
+
+        if (friendsLobbies.isEmpty) {
+          return const SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'No friends\' lobbies found',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) =>
+                _buildLobbyCard(context, friendsLobbies[index], ref),
+            childCount: friendsLobbies.length,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<Lobby>> _fetchFriendsLobbies(String userId) async {
+    try {
+      // First, get user's friends
+      final friendsResponse = await SupabaseService.client
+          .from('friends')
+          .select('friend_uid')
+          .eq('user_uid', userId)
+          .eq('status', 'accepted');
+
+      final friendUids = (friendsResponse as List)
+          .map((f) => f['friend_uid'] as String)
+          .toList();
+
+      if (friendUids.isEmpty) {
+        return [];
+      }
+
+      // Then, get lobbies where any friend is a member
+      var query = SupabaseService.client
+          .from('lobbies')
+          .select()
+          .filter('member_uids', 'cs', '{${friendUids.join(',')}}')
+          .eq('is_active', true);
+
+      // Filter by selected game if set
+      if (_selectedGame != null) {
+        query = query.eq('game_name', _selectedGame!.name);
+      }
+
+      // Apply ordering/limits and execute
+      final response =
+          await query.order('created_at', ascending: false).limit(20);
+
+      return (response as List).map((json) => Lobby.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint('Error fetching friends\' lobbies: $e');
+      return [];
+    }
+  }
+
+  // _buildFilterChip removed - filter chips not currently used in revamped design
 
   Widget _buildLobbyCard(BuildContext context, Lobby lobby, WidgetRef ref) {
     final availableSpots = _getAvailableSpots(lobby);

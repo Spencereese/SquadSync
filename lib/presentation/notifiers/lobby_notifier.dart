@@ -9,6 +9,8 @@ import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/auth_service_supabase.dart';
 import 'package:squad_sync/services/supabase_service.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
+import 'package:squad_sync/services/constitution_manager.dart';
+import 'package:squad_sync/domain/entities/constitution.dart';
 
 import '../../notification_service.dart';
 import 'offline_first_mixin.dart';
@@ -27,6 +29,7 @@ import 'game_state_notifier.dart';
 class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   late final LobbyRepository _repository;
   late final ErrorHandlingService _errorHandler;
+  late final ConstitutionManager _constitutionManager;
 
   StreamSubscription? _currentLobbySubscription;
   StreamSubscription? _userLobbiesSubscription;
@@ -39,6 +42,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
       // Get dependencies
       _repository = ref.read(lobbyRepositoryProvider);
+      _constitutionManager = ConstitutionManager();
       _errorHandler = ref.read(errorHandlingServiceProvider);
 
       // Clean up subscriptions on dispose
@@ -1151,6 +1155,170 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       );
       rethrow;
     }
+  }
+
+  /// Create lobby with constitution rules applied
+  Future<String> createLobbyWithConstitution({
+    required String chatGroupId,
+    required String gameName,
+    required int maxSpots,
+    required List<String> tags,
+    required String visibility,
+    String? embeddedMessageId,
+  }) async {
+    try {
+      debugPrint('🎮 Creating lobby with constitution...');
+
+      // Get active constitution
+      final constitution =
+          await _constitutionManager.getActiveConstitution(chatGroupId);
+
+      // Create base lobby
+      final lobbyId = await createLobby(
+        chatGroupId: chatGroupId,
+        gameName: gameName,
+        maxSpots: maxSpots,
+        isPublic: visibility == 'public',
+      );
+
+      // Update lobby with tags, visibility, and constitution rules
+      await SupabaseService.client.from('lobbies').update({
+        'tags': tags,
+        'visibility': visibility,
+        'constitution_rules': constitution?.rules ?? {},
+        'embedded_message_id': embeddedMessageId,
+        'chat_group_id': chatGroupId,
+      }).eq('id', lobbyId);
+
+      debugPrint('✅ Lobby created with constitution: $lobbyId');
+
+      // Reload state
+      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+
+      return lobbyId;
+    } catch (e, stackTrace) {
+      await _errorHandler.handleError(
+        error: e,
+        operation: 'createLobbyWithConstitution',
+        stackTrace: stackTrace,
+        showSnackBar: false,
+      );
+      rethrow;
+    }
+  }
+
+  /// Send lobby invite as embedded message in chat
+  Future<String> sendLobbyInviteMessage({
+    required String lobbyId,
+    required String chatGroupId,
+  }) async {
+    try {
+      final currentUser = AuthServiceSupabase().currentUser;
+      if (currentUser == null) throw Exception('User not authenticated');
+
+      // Get lobby data
+      final lobbyData = await SupabaseService.client
+          .from('lobbies')
+          .select()
+          .eq('id', lobbyId)
+          .single();
+
+      // Send system message with lobby embed
+      final messageResponse = await SupabaseService.client
+          .from('chat_messages')
+          .insert({
+            'chat_group_id': chatGroupId,
+            'sender_uid': currentUser.id,
+            'message_type': 'system',
+            'content': '🎮 New lobby created',
+            'metadata': {
+              'lobby_id': lobbyId,
+              'game_name': lobbyData['game_name'],
+              'tags': lobbyData['tags'],
+              'visibility': lobbyData['visibility'],
+              'max_spots':
+                  lobbyData['max_spots'] ?? lobbyData['lobby_spots'].length,
+            },
+          })
+          .select()
+          .single();
+
+      final messageId = messageResponse['id'] as String;
+
+      // Update lobby with embedded message ID
+      await SupabaseService.client
+          .from('lobbies')
+          .update({'embedded_message_id': messageId}).eq('id', lobbyId);
+
+      debugPrint('✅ Lobby invite message sent: $messageId');
+      return messageId;
+    } catch (e) {
+      debugPrint('Error sending lobby invite: $e');
+      rethrow;
+    }
+  }
+
+  /// Record a constitution violation (called by timer system)
+  Future<void> recordViolation({
+    required String lobbyId,
+    required String chatGroupId,
+    required String userUid,
+    required String ruleType,
+    Map<String, dynamic>? violationData,
+  }) async {
+    try {
+      await _constitutionManager.recordViolation(
+        lobbyId: lobbyId,
+        chatGroupId: chatGroupId,
+        userUid: userUid,
+        ruleType: ruleType,
+        violationData: violationData,
+      );
+
+      debugPrint('📝 Violation recorded: $ruleType for user $userUid');
+    } catch (e) {
+      debugPrint('Error recording violation: $e');
+    }
+  }
+
+  /// Get constitution templates for group settings
+  Future<List<ConstitutionTemplate>> getConstitutionTemplates() async {
+    return await _constitutionManager.getTemplates();
+  }
+
+  /// Create constitution from template
+  Future<ChatConstitution?> createConstitutionFromTemplate({
+    required String chatGroupId,
+    required String templateId,
+    required String createdBy,
+  }) async {
+    return await _constitutionManager.createFromTemplate(
+      chatGroupId: chatGroupId,
+      templateId: templateId,
+      createdBy: createdBy,
+    );
+  }
+
+  /// Create vote for constitution changes
+  Future<ConstitutionVote?> createConstitutionVote({
+    required String constitutionId,
+    required String chatGroupId,
+    required String proposedBy,
+    required Map<String, dynamic> proposedRules,
+    double voteThreshold = 0.5,
+  }) async {
+    return await _constitutionManager.createVote(
+      constitutionId: constitutionId,
+      chatGroupId: chatGroupId,
+      proposedBy: proposedBy,
+      proposedRules: proposedRules,
+      voteThreshold: voteThreshold,
+    );
+  }
+
+  /// Get active votes for a chat group
+  Future<List<ConstitutionVote>> getActiveVotes(String chatGroupId) async {
+    return await _constitutionManager.getActiveVotes(chatGroupId);
   }
 }
 

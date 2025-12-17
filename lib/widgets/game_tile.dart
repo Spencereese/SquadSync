@@ -66,7 +66,7 @@ class GameTile extends StatelessWidget {
   Widget _buildGridTile(BuildContext context) {
     final theme = Theme.of(context);
     final tileWidth = width ?? 120;
-    final tileHeight = height ?? 160;
+    final tileHeight = height ?? 200;
 
     return GestureDetector(
       onTap: () {

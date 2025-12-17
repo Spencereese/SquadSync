@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/app_theme.dart';
 import '../domain/entities/game.dart';
 import '../presentation/notifiers/game_notifier.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../screens/lobby_tab_screen.dart';
 import 'game_tile.dart';
 import 'game_search_delegate.dart';
 
@@ -264,12 +266,13 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
     if (widget.chatGroupId == null) return;
 
     try {
-      await ref.read(ln.lobbyNotifierProvider.notifier).createLobby(
-            chatGroupId: widget.chatGroupId!,
-            gameName: game.name,
-            maxSpots: _maxSpots,
-            isPublic: false,
-          );
+      final lobbyId =
+          await ref.read(ln.lobbyNotifierProvider.notifier).createLobby(
+                chatGroupId: widget.chatGroupId!,
+                gameName: game.name,
+                maxSpots: _maxSpots,
+                isPublic: false,
+              );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -280,6 +283,18 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
         );
         widget.onLobbyCreated?.call(game.name, _maxSpots);
         Navigator.of(context).pop(); // Close the sheet
+
+        // Navigate to lobby tab screen with the new lobby ID
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => LobbyTabScreen(
+              lobbyId: lobbyId,
+              gameName: game.name,
+              game: game.toJson(),
+              chatGroupId: widget.chatGroupId,
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -321,10 +336,11 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: Colors.black.withOpacity(0.3),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+          color: theme.colorScheme.primary.withOpacity(0.3),
+          width: 1,
         ),
       ),
       child: Column(
@@ -344,6 +360,14 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
           // Search button
           if (widget.showSearchButton) ...[
             _buildSearchButton(theme),
+            const SizedBox(height: 16),
+          ],
+
+          // Active lobbies section (if chat group context)
+          if (widget.chatGroupId != null) ...[
+            _buildActiveLobbiesSection(theme, ref),
+            const SizedBox(height: 16),
+            const Divider(),
             const SizedBox(height: 16),
           ],
 
@@ -419,14 +443,20 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer,
+              color: theme.colorScheme.primary.withOpacity(0.2),
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.colorScheme.primary.withOpacity(0.5),
+                width: 1,
+              ),
             ),
             child: Text(
               _maxSpots.toString(),
               style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onPrimaryContainer,
+                color: theme.colorScheme.primary,
                 fontWeight: FontWeight.bold,
+                shadows:
+                    theme.colorScheme.primary.neonGlow(blur: 8, opacity: 0.3),
               ),
             ),
           ),
@@ -443,16 +473,155 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
         icon: Icon(Icons.search, color: theme.colorScheme.primary),
         label: Text(
           'Search IGDB',
-          style: TextStyle(color: theme.colorScheme.primary),
+          style: TextStyle(
+            color: theme.colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 16),
-          side: BorderSide(color: theme.colorScheme.primary),
+          backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+          side: BorderSide(
+            color: theme.colorScheme.primary.withOpacity(0.5),
+            width: 1.5,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildActiveLobbiesSection(ThemeData theme, WidgetRef ref) {
+    final lobbyStateAsync = ref.watch(ln.lobbyNotifierProvider);
+
+    return lobbyStateAsync.when(
+      data: (lobbyState) {
+        // Get active lobbies for this chat group
+        final activeLobbies = <Map<String, dynamic>>[];
+
+        // Check for private lobbies in this chat group
+        lobbyState.gameLobbies.forEach((gameName, lobbies) {
+          for (final lobby in lobbies) {
+            if (lobby['chatGroupId'] == widget.chatGroupId &&
+                lobby['isActive'] == true) {
+              activeLobbies.add({...lobby, 'gameName': gameName});
+            }
+          }
+        });
+
+        // Check if any group members are in public lobbies
+        lobbyState.gameLobbies.forEach((gameName, lobbies) {
+          for (final lobby in lobbies) {
+            if (lobby['isActive'] == true &&
+                lobby['chatGroupId'] != widget.chatGroupId) {
+              // Check if any member UIDs are in this lobby's spots
+              final spots = lobby['spots'] as List<String?>? ?? [];
+              final hasGroupMember = spots.any((uid) =>
+                  uid != null && lobbyState.lobbyMemberUids.contains(uid));
+              if (hasGroupMember) {
+                activeLobbies
+                    .add({...lobby, 'gameName': gameName, 'isPublic': true});
+              }
+            }
+          }
+        });
+
+        if (activeLobbies.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.gamepad, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Active Lobbies',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...activeLobbies.map((lobby) {
+              final gameName = lobby['gameName'] as String;
+              final isPublic = lobby['isPublic'] == true;
+              final spots = lobby['spots'] as List<String?>? ?? [];
+              final filledSpots = spots.where((s) => s != null).length;
+              final maxSpots = lobby['maxSpots'] as int? ?? 8;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withOpacity(0.3),
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isPublic ? Icons.public : Icons.lock,
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            gameName,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            isPublic ? 'Public Lobby' : 'Private Lobby',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$filledSpots/$maxSpots',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 

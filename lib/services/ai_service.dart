@@ -44,7 +44,8 @@ class AiService {
 
       final grokMessageData = {
         'id': grokMsgId,
-        'sender_id': 'grok-ai', // Special UID for Grok
+        'sender_id':
+            senderUid, // Use the original sender's UID to satisfy FK constraint
         'chat_id': chatGroupId,
         'text': grokResponse,
         'message_type': 'text',

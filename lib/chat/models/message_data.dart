@@ -60,13 +60,15 @@ class MessageData {
   factory MessageData.fromMap(Map<String, dynamic> data,
       {Map<String, String>? uidToDisplayName}) {
     final id = data['id']?.toString() ?? '';
-    final isAiResponse = data['isAiResponse'] ?? false;
+    final isAiResponse = data['isAiResponse'] ??
+        (data['ai_response'] != null &&
+            data['ai_response'].toString().isNotEmpty);
     final senderUid =
         data['senderId'] ?? data['senderUid'] ?? data['sender_id'] ?? '';
 
     // Resolve display name from UID using provided map
     String resolvedSenderName;
-    if (isAiResponse && senderUid == 'grok-ai') {
+    if (isAiResponse) {
       resolvedSenderName = 'Grok 🤖';
     } else if (uidToDisplayName != null &&
         uidToDisplayName.containsKey(senderUid)) {
@@ -126,7 +128,7 @@ class MessageData {
       pollId?.isNotEmpty == true;
 
   /// Check if this is a Grok AI message
-  bool get isGrokMessage => isAiResponse && senderUid == 'grok-ai';
+  bool get isGrokMessage => isAiResponse;
 
   /// Parse text field which might be a String or Map
   static String? _parseTextField(Map<String, dynamic> data, String key) {
@@ -219,18 +221,34 @@ class MessageData {
   static List<Map<String, dynamic>> _parseReactions(dynamic reactionsData) {
     // Fast path: Early return for null/empty (most common case)
     if (reactionsData == null) {
+      if (kDebugMode) {
+        debugPrint('💬 _parseReactions: reactionsData is null');
+      }
       return [];
+    }
+
+    if (kDebugMode) {
+      debugPrint(
+          '💬 _parseReactions: reactionsData type: ${reactionsData.runtimeType}');
+      debugPrint('💬 _parseReactions: reactionsData value: $reactionsData');
     }
 
     // If it's a Map
     if (reactionsData is Map) {
       final mapData = reactionsData;
       if (mapData.isEmpty) {
+        if (kDebugMode) {
+          debugPrint('💬 _parseReactions: Map is empty');
+        }
         return [];
       }
 
       // Check format by looking at first value
       final firstValue = mapData.values.firstOrNull;
+      if (kDebugMode) {
+        debugPrint(
+            '💬 _parseReactions: firstValue type: ${firstValue.runtimeType}, value: $firstValue');
+      }
 
       if (firstValue is String) {
         // OLD format: Map<userId, emoji> - migrate to new format

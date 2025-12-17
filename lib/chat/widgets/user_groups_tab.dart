@@ -548,262 +548,259 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
     int unreadCount = 0,
     bool isPinned = false,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () async {
-          // Navigate to chat screen for this group
-          debugPrint('DEBUG UserGroupsTab: Tapping on user group $groupId');
-          if (groupId == null || groupId.isEmpty) {
-            debugPrint('ERROR: groupId is null or empty, cannot navigate');
+    return InkWell(
+      onTap: () async {
+        // Navigate to chat screen for this group
+        debugPrint('DEBUG UserGroupsTab: Tapping on user group $groupId');
+        if (groupId == null || groupId.isEmpty) {
+          debugPrint('ERROR: groupId is null or empty, cannot navigate');
+          return;
+        }
+
+        try {
+          // Load messages for this group first
+          debugPrint('Loading messages for group: $groupId');
+          await ref
+              .read(cn.chatNotifierProvider.notifier)
+              .loadMessages(groupId);
+
+          if (!context.mounted) {
+            debugPrint('Context not mounted, aborting navigation');
             return;
           }
 
-          try {
-            // Load messages for this group first
-            debugPrint('Loading messages for group: $groupId');
-            await ref
-                .read(cn.chatNotifierProvider.notifier)
-                .loadMessages(groupId);
-
-            if (!context.mounted) {
-              debugPrint('Context not mounted, aborting navigation');
-              return;
-            }
-
-            debugPrint(
-                'Navigating to ChatScreen for group: $groupName ($groupId)');
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => ChatScreen(
-                  chatType: ChatType.userGroup,
-                  chatGroupId: groupId,
-                  chatGroupName: groupName,
-                ),
+          debugPrint(
+              'Navigating to ChatScreen for group: $groupName ($groupId)');
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => ChatScreen(
+                chatType: ChatType.userGroup,
+                chatGroupId: groupId,
+                chatGroupName: groupName,
+              ),
+            ),
+          );
+          debugPrint('Returned from ChatScreen');
+        } catch (e) {
+          debugPrint('ERROR navigating to chat: $e');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to open chat: $e'),
+                backgroundColor: Colors.red,
               ),
             );
-            debugPrint('Returned from ChatScreen');
-          } catch (e) {
-            debugPrint('ERROR navigating to chat: $e');
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Failed to open chat: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
           }
-        },
-        onLongPress: () async {
-          // Show context menu with all group actions
-          if (groupId == null) return;
+        }
+      },
+      onLongPress: () async {
+        // Show context menu with all group actions
+        if (groupId == null) return;
 
-          // Fetch group metadata from users.user_groups
-          final currentUser = AuthServiceSupabase().currentUser;
-          if (currentUser == null) return;
+        // Fetch group metadata from users.user_groups
+        final currentUser = AuthServiceSupabase().currentUser;
+        if (currentUser == null) return;
 
-          try {
-            final userData = await SupabaseService.client
-                .from('users')
-                .select('user_groups')
-                .eq('uid', currentUser.id)
-                .maybeSingle();
+        try {
+          final userData = await SupabaseService.client
+              .from('users')
+              .select('user_groups')
+              .eq('uid', currentUser.id)
+              .maybeSingle();
 
-            final userGroups =
-                List<Map<String, dynamic>>.from(userData?['user_groups'] ?? []);
-            final groupMeta = userGroups.firstWhere(
-              (g) => g['id'] == groupId,
-              orElse: () => <String, dynamic>{},
-            );
+          final userGroups =
+              List<Map<String, dynamic>>.from(userData?['user_groups'] ?? []);
+          final groupMeta = userGroups.firstWhere(
+            (g) => g['id'] == groupId,
+            orElse: () => <String, dynamic>{},
+          );
 
-            final isMuted = groupMeta['is_muted'] as bool? ?? false;
-            final isPinned = groupMeta['is_pinned'] as bool? ?? false;
+          final isMuted = groupMeta['is_muted'] as bool? ?? false;
+          final isPinned = groupMeta['is_pinned'] as bool? ?? false;
 
-            // Check if user is creator
-            final groupData = await SupabaseService.client
-                .from('chat_groups')
-                .select('created_by')
-                .eq('id', groupId)
-                .maybeSingle();
-            final createdBy = groupData?['created_by'] as String? ?? '';
-            final isCreator = createdBy == currentUser.id;
+          // Check if user is creator
+          final groupData = await SupabaseService.client
+              .from('chat_groups')
+              .select('created_by')
+              .eq('id', groupId)
+              .maybeSingle();
+          final createdBy = groupData?['created_by'] as String? ?? '';
+          final isCreator = createdBy == currentUser.id;
 
-            if (!context.mounted) return;
+          if (!context.mounted) return;
 
-            showModalBottomSheet(
-              context: context,
-              backgroundColor: Colors.transparent,
-              builder: (context) => GroupChatContextMenu(
-                groupId: groupId,
-                groupName: groupName,
-                createdBy: createdBy,
-                isMuted: isMuted,
-                isPinned: isPinned,
-                onMarkUnread: () async {
-                  await ref
-                      .read(cn.chatNotifierProvider.notifier)
-                      .markGroupAsUnread(groupId);
-                  if (context.mounted) Navigator.pop(context);
-                },
-                onTogglePinned: () async {
-                  await ref
-                      .read(cn.chatNotifierProvider.notifier)
-                      .togglePinGroup(groupId, isPinned);
-                  if (context.mounted) Navigator.pop(context);
-                },
-                onToggleMute: () async {
-                  await ref
-                      .read(cn.chatNotifierProvider.notifier)
-                      .toggleMuteGroup(groupId, isMuted);
-                  if (context.mounted) Navigator.pop(context);
-                },
-                onIgnore: () async {
-                  await ref
-                      .read(cn.chatNotifierProvider.notifier)
-                      .ignoreGroup(groupId);
-                  if (context.mounted) Navigator.pop(context);
-                },
-                onLeave: () async {
-                  Navigator.pop(context);
-                  _showLeaveGroupDialog(context, groupId, groupName, ref);
-                },
-                onDelete: isCreator
-                    ? () async {
-                        try {
-                          await ref
-                              .read(cn.chatNotifierProvider.notifier)
-                              .deleteGroup(groupId);
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Deleted "$groupName"'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to delete: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            builder: (context) => GroupChatContextMenu(
+              groupId: groupId,
+              groupName: groupName,
+              createdBy: createdBy,
+              isMuted: isMuted,
+              isPinned: isPinned,
+              onMarkUnread: () async {
+                await ref
+                    .read(cn.chatNotifierProvider.notifier)
+                    .markGroupAsUnread(groupId);
+                if (context.mounted) Navigator.pop(context);
+              },
+              onTogglePinned: () async {
+                await ref
+                    .read(cn.chatNotifierProvider.notifier)
+                    .togglePinGroup(groupId, isPinned);
+                if (context.mounted) Navigator.pop(context);
+              },
+              onToggleMute: () async {
+                await ref
+                    .read(cn.chatNotifierProvider.notifier)
+                    .toggleMuteGroup(groupId, isMuted);
+                if (context.mounted) Navigator.pop(context);
+              },
+              onIgnore: () async {
+                await ref
+                    .read(cn.chatNotifierProvider.notifier)
+                    .ignoreGroup(groupId);
+                if (context.mounted) Navigator.pop(context);
+              },
+              onLeave: () async {
+                Navigator.pop(context);
+                _showLeaveGroupDialog(context, groupId, groupName, ref);
+              },
+              onDelete: isCreator
+                  ? () async {
+                      try {
+                        await ref
+                            .read(cn.chatNotifierProvider.notifier)
+                            .deleteGroup(groupId);
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Deleted "$groupName"'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to delete: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
                         }
                       }
-                    : null,
-              ),
-            );
-          } catch (e) {
-            debugPrint('Error showing context menu: $e');
-          }
-        },
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16, // Increased from 12 to make tiles larger
-          ),
-          leading: CircleAvatar(
-            radius: 32, // Increased from 28 to make groups larger
-            backgroundColor: Colors.grey[800],
-            backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-            child: imageUrl == null
-                ? Icon(
-                    isPublic ? Icons.public : Icons.group,
-                    color: Colors.cyanAccent,
-                    size: 28, // Increased from 24
-                  )
-                : null,
-          ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  groupName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 17, // Increased from 16
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (lastMessageTime != null) ...[
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Text(
-                    _formatTime(DateTime.parse(lastMessageTime)),
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4), // Increased spacing
-            child: Text(
-              subtitleText,
-              style: const TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-              ),
-              maxLines: 2, // Allow 2 lines for longer messages
-              overflow: TextOverflow.ellipsis,
+                    }
+                  : null,
             ),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Unread badge
-              if (hasUnread && unreadCount > 0) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.cyanAccent,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    unreadCount > 99 ? '99+' : unreadCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
+          );
+        } catch (e) {
+          debugPrint('Error showing context menu: $e');
+        }
+      },
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16, // Increased from 12 to make tiles larger
+        ),
+        leading: CircleAvatar(
+          radius: 32, // Increased from 28 to make groups larger
+          backgroundColor: Colors.grey[800],
+          backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+          child: imageUrl == null
+              ? Icon(
+                  isPublic ? Icons.public : Icons.group,
+                  color: Colors.cyanAccent,
+                  size: 28, // Increased from 24
+                )
+              : null,
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                groupName,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 17, // Increased from 16
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (lastMessageTime != null) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(
+                  _formatTime(DateTime.parse(lastMessageTime)),
+                  style: const TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
-                const SizedBox(width: 8),
-              ],
-              // Pinned indicator
-              if (isPinned) ...[
-                const Icon(
-                  Icons.push_pin,
-                  color: Colors.amber,
-                  size: 18,
-                ),
-                const SizedBox(width: 8),
-              ],
-              // Muted indicator (on far right as requested)
-              if (isMuted)
-                const Icon(
-                  Icons.notifications_off,
-                  color: Colors.grey,
-                  size: 20,
-                ),
+              ),
             ],
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4), // Increased spacing
+          child: Text(
+            subtitleText,
+            style: const TextStyle(
+              color: Colors.grey,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+            ),
+            maxLines: 2, // Allow 2 lines for longer messages
+            overflow: TextOverflow.ellipsis,
           ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Unread badge
+            if (hasUnread && unreadCount > 0) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.cyanAccent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  unreadCount > 99 ? '99+' : unreadCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            // Pinned indicator
+            if (isPinned) ...[
+              const Icon(
+                Icons.push_pin,
+                color: Colors.amber,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+            ],
+            // Muted indicator (on far right as requested)
+            if (isMuted)
+              const Icon(
+                Icons.notifications_off,
+                color: Colors.grey,
+                size: 20,
+              ),
+          ],
         ),
       ),
     );

@@ -334,10 +334,6 @@ class _PollCreationDialogState extends ConsumerState<PollCreationDialog> {
 
         // ignore: use_build_context_synchronously
         Navigator.of(context).pop();
-        // ignore: use_build_context_synchronously
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Poll created successfully!')),
-        );
 
         // Call the callback with the created poll
         if (createdPoll != null && widget.onPollCreated != null) {

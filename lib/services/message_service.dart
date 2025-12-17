@@ -760,11 +760,14 @@ class MessageService with WidgetsBindingObserver {
 
       final grokMessage = {
         'id': grokMsgId,
-        'sender_id': 'grok_ai_bot', // Special sender ID for Grok
+        'sender_id':
+            currentUser.id, // Use current user's ID to satisfy FK constraint
         'chat_id': chatId,
         'chat_type': chatType.name,
         'text': grokResponse,
         'message_type': 'text',
+        'ai_response': grokResponse, // Mark as AI-generated
+        'isAiResponse': true, // Flag for UI to use Grok bubble
         'reactions': {},
         'timestamp': timestamp.toIso8601String(),
         'is_deleted': false,

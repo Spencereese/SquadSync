@@ -492,26 +492,56 @@ extension GlassyWidgets on ThemeData {
   /// Creates a glassmorphic card decoration with backdrop blur
   ///
   /// [neonColor] - Border and glow color (uses primary if not provided)
-  BoxDecoration glassyCard({Color? neonColor}) {
+  /// [adaptToBackground] - Background color to adapt the glass effect (for better visibility)
+  BoxDecoration glassyCard({Color? neonColor, Color? adaptToBackground}) {
     final borderColor = neonColor ?? colorScheme.primary;
 
+    // Adaptive glass effect based on background luminance
+    final bgLuminance = adaptToBackground?.computeLuminance() ?? 0.0;
+    final isLightBackground = bgLuminance > 0.5;
+
+    // For light backgrounds: use dark semi-transparent overlay
+    // For dark backgrounds: use light semi-transparent overlay
+    final glassColor = isLightBackground
+        ? Colors.black.withOpacity(0.35)
+        : Colors.white.withOpacity(0.08);
+
+    // Adjust border opacity for better visibility
+    final borderOpacity = isLightBackground ? 0.7 : 0.4;
+
+    // Shadow adjustments
+    final shadowColor = isLightBackground
+        ? Colors.black.withOpacity(0.25)
+        : Colors.black.withOpacity(0.2);
+
     return BoxDecoration(
-      color: Colors.white.withOpacity(0.08),
+      color: glassColor,
       borderRadius: BorderRadius.circular(20),
       border: Border.all(
-        color: borderColor.withOpacity(0.4),
+        color: borderColor.withOpacity(borderOpacity),
         width: 1.5,
       ),
       boxShadow: [
-        // Inner shadow effect (simulated with inset-like positioning)
+        // Strong drop shadow for visibility on all backgrounds
         BoxShadow(
-          color: Colors.black.withOpacity(0.2),
-          blurRadius: 10,
-          offset: const Offset(0, 4),
+          color: isLightBackground
+              ? Colors.black.withOpacity(0.3)
+              : Colors.black.withOpacity(0.2),
+          blurRadius: isLightBackground ? 20 : 10,
+          offset: Offset(0, isLightBackground ? 8 : 4),
+          spreadRadius: isLightBackground ? 2 : 0,
         ),
+        // Secondary softer shadow for depth
+        if (isLightBackground)
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 40,
+            offset: const Offset(0, 12),
+            spreadRadius: 0,
+          ),
         // Subtle outer glow
         BoxShadow(
-          color: borderColor.withOpacity(0.1),
+          color: borderColor.withOpacity(isLightBackground ? 0.2 : 0.1),
           blurRadius: 15,
           spreadRadius: 0,
         ),
@@ -522,22 +552,47 @@ extension GlassyWidgets on ThemeData {
   /// Creates a glassmorphic surface decoration (lighter than card)
   ///
   /// [neonColor] - Border and glow color (uses primary if not provided)
-  BoxDecoration glassySurface({Color? neonColor}) {
+  /// [adaptToBackground] - Background color to adapt the glass effect (for better visibility)
+  BoxDecoration glassySurface({Color? neonColor, Color? adaptToBackground}) {
     final borderColor = neonColor ?? colorScheme.primary;
 
+    // Adaptive glass effect based on background luminance
+    final bgLuminance = adaptToBackground?.computeLuminance() ?? 0.0;
+    final isLightBackground = bgLuminance > 0.5;
+
+    // For light backgrounds: use darker overlay
+    // For dark backgrounds: use lighter overlay
+    final glassColor = isLightBackground
+        ? Colors.black.withOpacity(0.25)
+        : Colors.white.withOpacity(0.05);
+
+    final borderOpacity = isLightBackground ? 0.6 : 0.3;
+    final shadowColor = isLightBackground
+        ? Colors.black.withOpacity(0.2)
+        : Colors.black.withOpacity(0.15);
+
     return BoxDecoration(
-      color: Colors.white.withOpacity(0.05),
+      color: glassColor,
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
-        color: borderColor.withOpacity(0.3),
+        color: borderColor.withOpacity(borderOpacity),
         width: 1,
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.15),
-          blurRadius: 8,
-          offset: const Offset(0, 2),
+          color:
+              isLightBackground ? Colors.black.withOpacity(0.25) : shadowColor,
+          blurRadius: isLightBackground ? 16 : 8,
+          offset: Offset(0, isLightBackground ? 6 : 2),
+          spreadRadius: isLightBackground ? 1 : 0,
         ),
+        // Additional shadow for light backgrounds
+        if (isLightBackground)
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+          ),
       ],
     );
   }
@@ -575,6 +630,7 @@ class GlassmorphicContainer extends StatelessWidget {
   final EdgeInsets? padding;
   final double? width;
   final double? height;
+  final Color? adaptToBackground;
 
   const GlassmorphicContainer({
     super.key,
@@ -585,12 +641,28 @@ class GlassmorphicContainer extends StatelessWidget {
     this.padding,
     this.width,
     this.height,
+    this.adaptToBackground,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final borderColor = neonColor ?? theme.colorScheme.primary;
+
+    // Adaptive glass effect based on background luminance
+    final bgLuminance = adaptToBackground?.computeLuminance() ?? 0.0;
+    final isLightBackground = bgLuminance > 0.5;
+
+    // For light backgrounds: use dark semi-transparent overlay
+    // For dark backgrounds: use light semi-transparent overlay
+    final glassColor = isLightBackground
+        ? Colors.black.withOpacity(0.35)
+        : Colors.white.withOpacity(0.08);
+
+    final borderOpacity = isLightBackground ? 0.7 : 0.4;
+    final shadowColor = isLightBackground
+        ? Colors.black.withOpacity(0.25)
+        : Colors.black.withOpacity(0.2);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -601,22 +673,32 @@ class GlassmorphicContainer extends StatelessWidget {
           height: height,
           padding: padding,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: glassColor,
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: borderColor.withOpacity(0.4),
+              color: borderColor.withOpacity(borderOpacity),
               width: 1.5,
             ),
             boxShadow: [
-              // Inner shadow simulation
+              // Strong drop shadow for visibility
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: isLightBackground
+                    ? Colors.black.withOpacity(0.3)
+                    : shadowColor,
+                blurRadius: isLightBackground ? 20 : 10,
+                offset: Offset(0, isLightBackground ? 8 : 4),
+                spreadRadius: isLightBackground ? 2 : 0,
               ),
+              // Secondary softer shadow for depth on light backgrounds
+              if (isLightBackground)
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 40,
+                  offset: const Offset(0, 12),
+                ),
               // Subtle neon glow
               BoxShadow(
-                color: borderColor.withOpacity(0.15),
+                color: borderColor.withOpacity(isLightBackground ? 0.2 : 0.15),
                 blurRadius: 20,
                 spreadRadius: 0,
               ),

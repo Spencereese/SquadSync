@@ -27,7 +27,7 @@ final authStateProvider = StreamProvider<User?>((ref) {
 /// ConsumerWidget for the main MaterialApp with theme support and go_router
 class SquadSyncMaterialApp extends ConsumerWidget {
   const SquadSyncMaterialApp({super.key});
-  
+
   // Static flag to ensure splash is only removed once
   static bool _splashRemoved = false;
 

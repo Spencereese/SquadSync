@@ -11,6 +11,7 @@ import '../utils.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../widgets/unified_game_selection_sheet.dart';
 import '../core/app_theme.dart';
+import 'discovery_screen.dart';
 
 class LobbyTabScreen extends StatelessWidget {
   final String? lobbyId;
@@ -123,61 +124,8 @@ class _LobbyTabScreenContentState
 
   Widget _buildDashboardInterface(
       BuildContext context, LobbyState squadState, WidgetRef ref) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text(
-          'Squad Lobbies',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.cyanAccent),
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFF0B0E14),
-              const Color(0xFF14181F),
-            ],
-          ),
-        ),
-        child: Column(
-          children: [
-            // Top padding to account for AppBar
-            const SizedBox(height: 100),
-            // Game Select Title
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: const Text(
-                  'Game Select',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            // Pinned Games Carousel
-            SizedBox(
-              height: 450,
-              child: _buildPinnedGamesCarousel(context, ref),
-            ),
-            // Active Lobbies Section
-            Expanded(
-              child: _buildActiveLobbiesSection(context),
-            ),
-          ],
-        ),
-      ),
-    );
+    // Use the revamped Discovery screen as the Lobby tab content
+    return const DiscoveryScreen();
   }
 
   Widget _buildFullSquadInterface(BuildContext context, LobbyState squadState) {

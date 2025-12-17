@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../services/supabase_service.dart';
 import '../../services/auth_service_supabase.dart';
 
 /// Bottom sheet menu for group chat context actions
@@ -77,7 +76,7 @@ class GroupChatContextMenu extends StatelessWidget {
             context,
             icon: Icons.mark_chat_unread,
             label: 'Mark as Unread',
-            color: Colors.cyanAccent,
+            color: Colors.white,
             onTap: () {
               Navigator.pop(context);
               onMarkUnread();
@@ -88,7 +87,7 @@ class GroupChatContextMenu extends StatelessWidget {
             context,
             icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
             label: isPinned ? 'Unpin' : 'Pin',
-            color: Colors.orange,
+            color: Colors.white,
             onTap: () {
               Navigator.pop(context);
               onTogglePinned();
@@ -99,7 +98,7 @@ class GroupChatContextMenu extends StatelessWidget {
             context,
             icon: isMuted ? Icons.volume_up : Icons.volume_off,
             label: isMuted ? 'Unmute' : 'Mute',
-            color: Colors.purple,
+            color: Colors.white,
             onTap: () {
               Navigator.pop(context);
               onToggleMute();
@@ -110,7 +109,7 @@ class GroupChatContextMenu extends StatelessWidget {
             context,
             icon: Icons.visibility_off,
             label: 'Ignore',
-            color: Colors.grey,
+            color: Colors.white,
             onTap: () {
               Navigator.pop(context);
               _showConfirmDialog(
@@ -222,7 +221,7 @@ class GroupChatContextMenu extends StatelessWidget {
             child: Text(
               isDestructive ? 'Delete' : 'Confirm',
               style: TextStyle(
-                color: isDestructive ? Colors.red : Colors.cyanAccent,
+                color: isDestructive ? Colors.red : Colors.white,
                 fontWeight: FontWeight.bold,
               ),
             ),

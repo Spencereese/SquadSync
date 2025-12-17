@@ -19,7 +19,7 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
     final response = await _supabase
         .from('users')
         .select(
-            'uid, email, display_name, photo_url, pinned_games, blocked_users, fcm_token, last_seen_at, online, created_at, updated_at')
+            'uid, email, display_name, photo_url, pinned_games, blocked_users, fcm_token, created_at, updated_at')
         .eq('uid', uid)
         .maybeSingle();
     return response;

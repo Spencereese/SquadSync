@@ -53,24 +53,19 @@ class _MessageGroupState extends State<MessageGroup> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  _formatTimestamp(widget.messages.first.timestamp),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
+              child: Text(
+                _formatTimestamp(widget.messages.first.timestamp),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      blurRadius: 2,
+                      offset: const Offset(0, 0),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -95,10 +90,14 @@ class _MessageGroupState extends State<MessageGroup> {
                     group[index + 1].senderUid != message.senderUid;
                 final isMe = message.senderUid == _getCurrentUserId();
 
+                // Check if previous message has reactions to add extra spacing
+                final prevHasReactions =
+                    index > 0 && group[index - 1].reactions.isNotEmpty;
+
                 return Padding(
                   padding: EdgeInsets.only(
-                    // 3px margin between messages in same group
-                    top: index > 0 ? 3.0 : 0.0,
+                    // Extra spacing if previous message has reactions, otherwise 3px
+                    top: index > 0 ? (prevHasReactions ? 20.0 : 3.0) : 0.0,
                   ),
                   child: MessageBubble(
                     message: message,

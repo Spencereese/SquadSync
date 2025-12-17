@@ -36,6 +36,8 @@ class ChatUIManager {
   List<dynamic> _processedMessages = [];
   final Map<String, List<String>> _lastReadByCache = {};
   bool _needsMessageProcessing = true;
+  String _lastMessagesHash =
+      ''; // Track message content changes including reactions
 
   // Getters for UI state
   String get searchQuery => _searchQuery;
@@ -185,9 +187,16 @@ class ChatUIManager {
         markAsDelivered, // Made optional for Supabase migration
     bool disableSwipeForTimestamp = false, // Disable swipe in preview mode
   }) {
-    // Optimize message processing - only reprocess when message list changes
+    // Generate hash of message content including reactions to detect ANY changes
+    final messagesHash = messages
+        .map((m) => '${m.id}:${m.reactions?.toString() ?? ""}:${m.isDeleted}')
+        .join('|');
+
+    // Optimize message processing - only reprocess when message content changes
     if (_needsMessageProcessing ||
-        messages.length != _processedMessages.length) {
+        messages.length != _processedMessages.length ||
+        messagesHash != _lastMessagesHash) {
+      _lastMessagesHash = messagesHash;
       _processMessages(messages, cleanText, uidToDisplayName: uidToDisplayName);
     }
 

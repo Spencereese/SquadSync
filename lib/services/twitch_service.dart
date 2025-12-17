@@ -146,10 +146,22 @@ class TwitchService {
   }
 
   /// Fetch top clips across all games
+  /// Note: Twitch API requires game_id or broadcaster_id - cannot fetch global trending clips
+  /// This method is deprecated and will return empty list
+  @Deprecated(
+      'Use getClipsForGame() instead - Twitch API requires game_id or broadcaster_id')
   Future<List<Map<String, dynamic>>> getTrendingClips({
     int limit = 20,
     String period = 'day',
   }) async {
+    _logger.w(
+        'getTrendingClips() is deprecated - Twitch API requires game_id or broadcaster_id parameter');
+    return [];
+
+    // Original implementation - kept for reference
+    // Twitch Helix API requires either game_id or broadcaster_id
+    // Cannot fetch global trending clips without these parameters
+    /* 
     if (!_initialized || _accessToken == null) {
       _logger.w('Twitch client not initialized');
       return [];
@@ -168,7 +180,7 @@ class TwitchService {
             'Client-ID': _clientId,
             'Authorization': 'Bearer $_accessToken',
           },
-        ),
+        },
       );
 
       if (response.statusCode != 200 || response.data == null) {
@@ -196,6 +208,7 @@ class TwitchService {
       _logger.e('Error fetching trending clips: $e');
       return [];
     }
+    */
   }
 
   DateTime _getStartDate(String period) {

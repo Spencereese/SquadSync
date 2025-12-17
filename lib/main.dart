@@ -20,6 +20,8 @@ import 'services/supabase_service.dart';
 import 'services/session_debug_helper.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'services/background_sync_service.dart';
+import 'services/peacock_notification_service.dart';
+import 'services/auto_merge_service.dart';
 
 void main() async {
   // Preserve native splash screen until we're ready
@@ -121,6 +123,20 @@ Future<void> _initializeFirebase() async {
       // Notification initialization failed - silently handled
     }
 
+    // Initialize peacock queue notifications (after user authentication)
+    // This is called after login in AuthServiceSupabase
+    // PeacockNotificationService.initialize() is called when user signs in
+
+    // Initialize auto-merge service for lobby merge suggestions
+    try {
+      final autoMergeService = di.getIt<AutoMergeService>();
+      autoMergeService.startMergeDetection();
+      debugPrint('Auto-merge service initialized');
+    } catch (e) {
+      debugPrint('Auto-merge service initialization failed: $e');
+      // Continue without auto-merge - not critical
+    }
+
     // Dependency injection is already done before this function is called
     // Remove duplicate call to avoid issues
     // await di.setupInjection();
@@ -175,11 +191,13 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initDeepLinks();
       _initSiriShortcuts();
+      _initPeacockNotifications();
     });
   }
 
   @override
   void dispose() {
+    PeacockNotificationService.dispose();
     _sub?.cancel();
     super.dispose();
   }
@@ -244,6 +262,38 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
       });
     } catch (e) {
       // Error setting up Siri channel - silently handled
+    }
+  }
+
+  Future<void> _initPeacockNotifications() async {
+    try {
+      final authService = AuthServiceSupabase();
+      final user = authService.currentUser;
+
+      if (user != null) {
+        // User already authenticated - initialize peacock notifications
+        await PeacockNotificationService.initialize();
+        await PeacockNotificationService.checkPendingNotifications();
+        debugPrint('✅ Peacock notification service initialized');
+      }
+
+      // Listen for auth state changes to handle login/logout
+      SupabaseService.client.auth.onAuthStateChange.listen((data) {
+        final session = data.session;
+        if (session != null) {
+          // User logged in - initialize peacock notifications
+          PeacockNotificationService.initialize();
+          PeacockNotificationService.checkPendingNotifications();
+          debugPrint(
+              '✅ Peacock notifications active for user: ${session.user.id}');
+        } else {
+          // User logged out - dispose listener
+          PeacockNotificationService.dispose();
+          debugPrint('🦚 Peacock notifications disposed');
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ Peacock notification initialization failed: $e');
     }
   }
 

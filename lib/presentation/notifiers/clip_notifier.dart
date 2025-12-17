@@ -227,23 +227,30 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
   Future<MessageData?> _loadClipOfTheDay(String squadId) async {
     try {
       // First check for manually pinned clip of the day
-      final squadData = await SupabaseService.client
-          .from('lobbies')
-          .select('clip_of_the_day_id')
-          .eq('id', squadId)
-          .maybeSingle();
-
-      final clipOfTheDayId = squadData?['clip_of_the_day_id'];
-      if (clipOfTheDayId != null) {
-        final clipData = await SupabaseService.client
-            .from('clips')
-            .select()
-            .eq('id', clipOfTheDayId)
+      // Note: clip_of_the_day_id column must exist in lobbies table
+      try {
+        final squadData = await SupabaseService.client
+            .from('lobbies')
+            .select('clip_of_the_day_id')
+            .eq('id', squadId)
             .maybeSingle();
 
-        if (clipData != null) {
-          return MessageData.fromMap(clipData);
+        final clipOfTheDayId = squadData?['clip_of_the_day_id'];
+        if (clipOfTheDayId != null) {
+          final clipData = await SupabaseService.client
+              .from('clips')
+              .select()
+              .eq('id', clipOfTheDayId)
+              .maybeSingle();
+
+          if (clipData != null) {
+            return MessageData.fromMap(clipData);
+          }
         }
+      } catch (columnError) {
+        // Column doesn't exist yet - fall through to auto-selection
+        debugPrint(
+            'clip_of_the_day_id column not found (run migration): $columnError');
       }
 
       // Otherwise, get most hyped clip in last 24 hours
@@ -292,7 +299,7 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
             clipOfTheDay: clipOfTheDay,
           ));
     } catch (e) {
-      debugPrint('Error setting clip of the day: $e');
+      debugPrint('Error setting clip of the day (ensure migration is run): $e');
     }
   }
 
@@ -305,10 +312,10 @@ class ClipNotifier extends AutoDisposeAsyncNotifier<ClipState> {
       }
 
       // Insert clip into Supabase clips table
-      // Schema: uploaded_by, lobby_id, video_url, thumbnail_url, duration_seconds, title, is_public
+      // Schema: user_uid, squad_id, video_url, thumbnail_url, duration_seconds, title, is_public
       await SupabaseService.client.from('clips').insert({
-        'uploaded_by': userId, // RLS policy requires uploaded_by = auth.uid()
-        'lobby_id': squadId, // Optional lobby association
+        'user_uid': userId, // RLS policy requires user_uid = auth.uid()
+        'squad_id': squadId, // Optional squad/lobby association
         'video_url': clipData.videoUrl,
         'thumbnail_url': clipData.thumbUrl,
         'duration_seconds': (clipData.duration / 1000).round(),

@@ -5,6 +5,7 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../dialogs/settings_dialog.dart';
 import '../../widgets/unified_game_selection_sheet.dart';
 import '../../domain/entities/game.dart';
+import 'match_history_badge.dart';
 
 /// LobbyHeader component - handles navigation and game info display
 /// Extracted from the monolithic LobbyTab to improve maintainability
@@ -56,25 +57,35 @@ class LobbyHeader extends ConsumerWidget {
                         orElse: () => 'Select Game',
                       );
 
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            gameName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.2,
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Text(
+                                gameName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.cyanAccent,
+                                size: 24,
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 4),
-                          const Icon(
-                            Icons.arrow_drop_down,
-                            color: Colors.cyanAccent,
-                            size: 24,
-                          ),
+                          // Match history stats badge
+                          if (lobbyId != null) ...[
+                            const SizedBox(height: 4),
+                            MatchHistoryBadge(lobbyId: lobbyId!),
+                          ],
                         ],
                       );
                     },

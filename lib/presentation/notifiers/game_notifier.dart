@@ -60,12 +60,14 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
       final igdbAuth = di.getIt<IgdbAuthService>();
       final clientId = await igdbAuth.getClientId();
       final clientSecret = await igdbAuth.getClientSecret();
-      
+
       if (clientId == null || clientSecret == null) {
         _logger.e('❌ IGDB credentials missing!');
         _logger.e('   Client ID: ${clientId ?? "NOT FOUND"}');
-        _logger.e('   Client Secret: ${clientSecret != null ? "Found" : "NOT FOUND"}');
-        _logger.e('   Check .env file exists and has IGDB_CLIENT_ID and IGDB_CLIENT_SECRET');
+        _logger.e(
+            '   Client Secret: ${clientSecret != null ? "Found" : "NOT FOUND"}');
+        _logger.e(
+            '   Check .env file exists and has IGDB_CLIENT_ID and IGDB_CLIENT_SECRET');
       } else {
         _logger.i('✅ IGDB credentials loaded');
         _logger.i('   Client ID: ${clientId.substring(0, 8)}...');
@@ -101,7 +103,7 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
     }
 
     _logger.i('🔍 Searching games: "$query"');
-    
+
     try {
       // Try IGDB first
       _logger.i('   Trying IGDB API...');
@@ -111,7 +113,8 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
       return AsyncValue.data(dedupedGames);
     } catch (e, stackTrace) {
       _logger.e('❌ IGDB search failed: $e');
-      _logger.e('   Stack trace: ${stackTrace.toString().split('\n').take(3).join('\n')}');
+      _logger.e(
+          '   Stack trace: ${stackTrace.toString().split('\n').take(3).join('\n')}');
       _logger.w('⚠️ Falling back to cache/local data...');
 
       // Fallback chain: cached -> local JSON

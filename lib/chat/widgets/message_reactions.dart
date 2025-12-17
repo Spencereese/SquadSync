@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -37,20 +38,52 @@ class MessageReactions extends StatelessWidget {
     final sortedEntries = reactionCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    final reactionCount = sortedEntries.length;
+
+    // Dynamic spacing with overlap after 3 reactions
+    // 1 reaction: no spacing
+    // 2-3 reactions: 3px spacing (comfortable)
+    // 4-5 reactions: -2px spacing (slight overlap)
+    // 6+ reactions: -4px spacing (more overlap for stacked effect)
+    final baseSpacing = reactionCount <= 1
+        ? 0.0
+        : reactionCount <= 3
+            ? 3.0
+            : reactionCount <= 5
+                ? -2.0
+                : -4.0;
+
+    debugPrint(
+        '🎨 MessageReactions: $reactionCount reactions, baseSpacing=$baseSpacing');
+
     return Container(
       margin: EdgeInsets.only(
-        bottom: 8,
-        left: isOutgoing ? 8 : 0,
-        right: isOutgoing ? 0 : 8,
+        bottom: 2,
+        top: 2,
+        left: isOutgoing ? 4 : 0,
+        right: isOutgoing ? 0 : 4,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: sortedEntries.map((entry) {
-          final isFirst = sortedEntries.indexOf(entry) == 0;
-          return Transform.translate(
-            offset: Offset(isFirst ? 0 : -6, 0), // Overlap for stacking
-            child: _buildReactionBadge(entry.key, entry.value, context),
-          );
+        children: sortedEntries.asMap().entries.map((mapEntry) {
+          final index = mapEntry.key;
+          final entry = mapEntry.value;
+          final spacing = index > 0 ? baseSpacing : 0.0;
+
+          final badge = _buildReactionBadge(entry.key, entry.value, context);
+
+          // Use Transform.translate for overlap (negative spacing)
+          if (spacing < 0) {
+            return Transform.translate(
+              offset: Offset(spacing, 0),
+              child: badge,
+            );
+          } else {
+            return Padding(
+              padding: EdgeInsets.only(left: spacing),
+              child: badge,
+            );
+          }
         }).toList(),
       ),
     );
@@ -58,63 +91,71 @@ class MessageReactions extends StatelessWidget {
 
   Widget _buildReactionBadge(String emoji, int count, BuildContext context) {
     final hasMultiple = count > 1;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return GestureDetector(
       onTap: () {
-        HapticFeedback.lightImpact();
-        onReactionTap?.call(emoji);
+        if (onReactionTap != null) {
+          HapticFeedback.lightImpact();
+          onReactionTap!(emoji);
+        }
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.grey[800]!.withValues(alpha: 0.9)
-              : Colors.grey[200]!.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? Colors.grey[600]!.withValues(alpha: 0.3)
-                : Colors.grey[400]!.withValues(alpha: 0.3),
-            width: 0.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 2,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               emoji,
-              style: const TextStyle(fontSize: 14),
+              style: const TextStyle(
+                fontSize: 18,
+                height: 1.0,
+                shadows: [
+                  Shadow(
+                    color: Colors.black26,
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
             ),
             if (hasMultiple) ...[
-              const SizedBox(width: 2),
+              const SizedBox(width: 3),
               Text(
                 count.toString(),
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.8),
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.95)
+                      : Colors.black.withValues(alpha: 0.85),
+                  height: 1.0,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 3,
+                      offset: const Offset(0, 0.5),
+                    ),
+                  ],
                 ),
               ),
             ],
           ],
         ),
       ),
-    ).animate().scale(
-          duration: const Duration(milliseconds: 200),
-          begin: const Offset(0.8, 0.8),
+    )
+        .animate()
+        .fadeIn(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        )
+        .scale(
+          duration: const Duration(milliseconds: 250),
+          begin: const Offset(0.85, 0.85),
           end: const Offset(1.0, 1.0),
-          curve: Curves.elasticOut,
+          curve: Curves.easeOut,
         );
   }
 }

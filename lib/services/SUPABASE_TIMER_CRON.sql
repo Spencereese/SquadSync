@@ -11,14 +11,14 @@ GRANT USAGE ON SCHEMA cron TO postgres;
 -- Create squad_timers table to track active timers
 CREATE TABLE IF NOT EXISTS squad_timers (
     id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    squad_id TEXT NOT NULL REFERENCES squads(id) ON DELETE CASCADE,
+    lobby_id TEXT NOT NULL REFERENCES lobbies(id) ON DELETE CASCADE,
     game_name TEXT NOT NULL,
     spot_index INTEGER NOT NULL,
-    claimed_by_uid TEXT NOT NULL REFERENCES users(id),
+    claimed_by_uid TEXT NOT NULL REFERENCES users(uid),
     timer_duration INTEGER NOT NULL, -- in seconds
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(squad_id, game_name, spot_index)
+    UNIQUE(lobby_id, game_name, spot_index)
 );
 
 -- Index for efficient timer expiration queries
@@ -27,32 +27,32 @@ CREATE INDEX IF NOT EXISTS idx_squad_timers_expires ON squad_timers(expires_at);
 -- Create peacock_queue table for queue management
 CREATE TABLE IF NOT EXISTS peacock_queue (
     id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    squad_id TEXT NOT NULL REFERENCES squads(id) ON DELETE CASCADE,
+    lobby_id TEXT NOT NULL REFERENCES lobbies(id) ON DELETE CASCADE,
     game_name TEXT NOT NULL,
-    user_uid TEXT NOT NULL REFERENCES users(id),
+    user_uid TEXT NOT NULL REFERENCES users(uid),
     position INTEGER NOT NULL,
     joined_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
-    UNIQUE(squad_id, game_name, user_uid)
+    UNIQUE(lobby_id, game_name, user_uid)
 );
 
 -- Index for queue position queries
-CREATE INDEX IF NOT EXISTS idx_peacock_queue_squad ON peacock_queue(squad_id, game_name, position);
+CREATE INDEX IF NOT EXISTS idx_peacock_queue_lobby ON peacock_queue(lobby_id, game_name, position);
 CREATE INDEX IF NOT EXISTS idx_peacock_queue_expires ON peacock_queue(expires_at);
 
 -- Create squad_spots table to track current spot occupancy
 CREATE TABLE IF NOT EXISTS squad_spots (
-    squad_id TEXT NOT NULL REFERENCES squads(id) ON DELETE CASCADE,
+    lobby_id TEXT NOT NULL REFERENCES lobbies(id) ON DELETE CASCADE,
     game_name TEXT NOT NULL,
     spot_index INTEGER NOT NULL,
-    occupied_by_uid TEXT REFERENCES users(id),
+    occupied_by_uid TEXT REFERENCES users(uid),
     status TEXT DEFAULT 'available', -- 'available', 'claimed', 'calling'
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY(squad_id, game_name, spot_index)
+    PRIMARY KEY(lobby_id, game_name, spot_index)
 );
 
 -- Index for spot lookups
-CREATE INDEX IF NOT EXISTS idx_squad_spots_squad ON squad_spots(squad_id, game_name);
+CREATE INDEX IF NOT EXISTS idx_squad_spots_lobby ON squad_spots(lobby_id, game_name);
 
 -- Function to process expired timers
 CREATE OR REPLACE FUNCTION process_expired_timers()
@@ -74,9 +74,9 @@ BEGIN
         SELECT * FROM squad_timers 
         WHERE expires_at <= NOW()
     LOOP
-        RAISE NOTICE 'Freeing spot % in squad % (game: %)', 
+        RAISE NOTICE 'Freeing spot % in lobby % (game: %)', 
             expired_timer.spot_index, 
-            expired_timer.squad_id, 
+            expired_timer.lobby_id, 
             expired_timer.game_name;
 
         -- Free the spot
@@ -86,7 +86,7 @@ BEGIN
             status = 'available',
             updated_at = NOW()
         WHERE 
-            squad_id = expired_timer.squad_id 
+            lobby_id = expired_timer.lobby_id 
             AND game_name = expired_timer.game_name 
             AND spot_index = expired_timer.spot_index;
 
@@ -94,58 +94,61 @@ BEGIN
         SELECT * INTO next_in_queue
         FROM peacock_queue
         WHERE 
-            squad_id = expired_timer.squad_id
+            lobby_id = expired_timer.lobby_id
             AND game_name = expired_timer.game_name
         ORDER BY position ASC
         LIMIT 1;
 
-        -- If queue exists, assign to next person
+        -- If queue exists, auto-assign to next person with 5-minute lock-in timer
         IF FOUND THEN
-            RAISE NOTICE 'Assigning spot to next in queue: %', next_in_queue.user_uid;
+            RAISE NOTICE 'Auto-assigning spot to next in queue: %', next_in_queue.user_uid;
 
-            -- Claim spot for next person
+            -- Auto-assign spot for next person (needs lock-in within 5 minutes)
             UPDATE squad_spots
             SET 
                 occupied_by_uid = next_in_queue.user_uid,
-                status = 'claimed',
+                status = 'claimed', -- Status is 'claimed' until user locks in
                 updated_at = NOW()
             WHERE 
-                squad_id = expired_timer.squad_id
+                lobby_id = expired_timer.lobby_id
                 AND game_name = expired_timer.game_name
                 AND spot_index = expired_timer.spot_index;
 
-            -- Create new timer (30 minutes default)
+            -- Create 5-minute lock-in timer (user must hit lock button or loses spot)
             INSERT INTO squad_timers (
-                squad_id, 
+                lobby_id, 
                 game_name, 
                 spot_index, 
                 claimed_by_uid, 
                 timer_duration, 
                 expires_at
             ) VALUES (
-                expired_timer.squad_id,
+                expired_timer.lobby_id,
                 expired_timer.game_name,
                 expired_timer.spot_index,
                 next_in_queue.user_uid,
-                1800, -- 30 minutes
-                NOW() + INTERVAL '30 minutes'
+                300, -- 5 minutes to lock in
+                NOW() + INTERVAL '5 minutes'
             )
-            ON CONFLICT (squad_id, game_name, spot_index) 
+            ON CONFLICT (lobby_id, game_name, spot_index) 
             DO UPDATE SET
                 claimed_by_uid = EXCLUDED.claimed_by_uid,
                 timer_duration = EXCLUDED.timer_duration,
                 expires_at = EXCLUDED.expires_at;
 
-            -- Remove from queue
+            -- Remove from queue after assignment
             DELETE FROM peacock_queue WHERE id = next_in_queue.id;
 
-            -- Reposition remaining queue
+            -- Reposition remaining queue members
             UPDATE peacock_queue
             SET position = position - 1
             WHERE 
-                squad_id = expired_timer.squad_id
+                lobby_id = expired_timer.lobby_id
                 AND game_name = expired_timer.game_name
                 AND position > next_in_queue.position;
+
+            -- TODO: Send push notification to user about spot assignment
+            -- Notification: "Your spot is ready! Lock in within 5 minutes."
         END IF;
 
         -- Delete expired timer
@@ -173,12 +176,12 @@ BEGIN
     DELETE FROM peacock_queue
     WHERE expires_at <= NOW();
 
-    -- Reposition remaining queue entries per squad/game
+    -- Reposition remaining queue entries per lobby/game
     WITH ranked_queue AS (
         SELECT 
             id,
             ROW_NUMBER() OVER (
-                PARTITION BY squad_id, game_name 
+                PARTITION BY lobby_id, game_name 
                 ORDER BY joined_at
             ) - 1 AS new_position
         FROM peacock_queue
@@ -245,35 +248,35 @@ ALTER TABLE squad_timers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE peacock_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE squad_spots ENABLE ROW LEVEL SECURITY;
 
--- Squad members can view timers
+-- Lobby members can view timers
 CREATE POLICY timers_select ON squad_timers FOR SELECT USING (
     EXISTS (
-        SELECT 1 FROM squads
-        WHERE squads.id = squad_timers.squad_id
-        AND auth.uid()::text = ANY(squads.member_uids)
+        SELECT 1 FROM lobbies
+        WHERE lobbies.id = squad_timers.lobby_id
+        AND auth.uid()::text = ANY(lobbies.member_uids)
     )
 );
 
--- Squad members can view queue
+-- Lobby members can view queue
 CREATE POLICY queue_select ON peacock_queue FOR SELECT USING (
     EXISTS (
-        SELECT 1 FROM squads
-        WHERE squads.id = peacock_queue.squad_id
-        AND auth.uid()::text = ANY(squads.member_uids)
+        SELECT 1 FROM lobbies
+        WHERE lobbies.id = peacock_queue.lobby_id
+        AND auth.uid()::text = ANY(lobbies.member_uids)
     )
 );
 
--- Squad members can join queue
+-- Lobby members can join queue
 CREATE POLICY queue_insert ON peacock_queue FOR INSERT WITH CHECK (
     auth.uid()::text = user_uid
 );
 
--- Squad members can view spots
+-- Lobby members can view spots
 CREATE POLICY spots_select ON squad_spots FOR SELECT USING (
     EXISTS (
-        SELECT 1 FROM squads
-        WHERE squads.id = squad_spots.squad_id
-        AND auth.uid()::text = ANY(squads.member_uids)
+        SELECT 1 FROM lobbies
+        WHERE lobbies.id = squad_spots.lobby_id
+        AND auth.uid()::text = ANY(lobbies.member_uids)
     )
 );
 

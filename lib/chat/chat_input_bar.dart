@@ -18,6 +18,7 @@ class ChatInputBar extends StatefulWidget {
   final List<String>?
       availableMembers; // List of member display names for mentions
   final Map<String, String>? memberAvatars; // Map of display name to avatar URL
+  final Color? backgroundColor; // Background color for adaptive glass UI
 
   const ChatInputBar({
     super.key,
@@ -35,6 +36,7 @@ class ChatInputBar extends StatefulWidget {
     this.focusNode,
     this.availableMembers,
     this.memberAvatars,
+    this.backgroundColor,
   });
 
   @override
@@ -144,6 +146,20 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Widget _buildPlusButton(BuildContext context) {
+    // Adaptive glass effect based on background luminance
+    final bgLuminance = widget.backgroundColor?.computeLuminance() ?? 0.0;
+    final isLightBackground = bgLuminance > 0.5;
+
+    final glassColor = isLightBackground
+        ? Colors.black.withOpacity(0.4)
+        : Colors.white.withOpacity(0.15);
+
+    final borderColor = isLightBackground
+        ? Colors.black.withOpacity(0.5)
+        : Colors.white.withOpacity(0.2);
+
+    final iconColor = isLightBackground ? Colors.black87 : Colors.white;
+
     return Semantics(
       label: 'More options',
       child: GestureDetector(
@@ -158,17 +174,33 @@ class _ChatInputBarState extends State<ChatInputBar> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: glassColor,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.2),
-                  width: 0.5,
+                  color: borderColor,
+                  width: isLightBackground ? 1.0 : 0.5,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: isLightBackground
+                        ? Colors.black.withOpacity(0.3)
+                        : Colors.black.withOpacity(0.15),
+                    blurRadius: isLightBackground ? 12 : 6,
+                    offset: Offset(0, isLightBackground ? 6 : 3),
+                    spreadRadius: isLightBackground ? 2 : 0,
+                  ),
+                  if (isLightBackground)
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                ],
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.add,
                 size: 22,
-                color: Colors.white,
+                color: iconColor,
               ),
             ),
           ),
@@ -178,6 +210,25 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Widget _buildTextField(BuildContext context, bool hasText) {
+    // Adaptive glass effect based on background luminance
+    final bgLuminance = widget.backgroundColor?.computeLuminance() ?? 0.0;
+    final isLightBackground = bgLuminance > 0.5;
+
+    // For light backgrounds: use darker glass
+    // For dark backgrounds: use lighter glass
+    final glassColor = isLightBackground
+        ? Colors.black.withOpacity(0.4)
+        : Colors.white.withOpacity(0.15);
+
+    final borderColor = isLightBackground
+        ? Colors.black.withOpacity(0.5)
+        : Colors.white.withOpacity(0.2);
+
+    final textColor = isLightBackground ? Colors.black87 : Colors.white;
+    final hintColor = isLightBackground
+        ? Colors.black.withOpacity(0.5)
+        : Colors.white.withOpacity(0.5);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
@@ -188,12 +239,31 @@ class _ChatInputBarState extends State<ChatInputBar> {
             maxHeight: 120,
           ),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
+            color: glassColor,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: Colors.white.withOpacity(0.2),
-              width: 0.5,
+              color: borderColor,
+              width: isLightBackground ? 1.5 : 0.5,
             ),
+            boxShadow: [
+              // Strong drop shadow for visibility on all backgrounds
+              BoxShadow(
+                color: isLightBackground
+                    ? Colors.black.withOpacity(0.3)
+                    : Colors.black.withOpacity(0.15),
+                blurRadius: isLightBackground ? 20 : 8,
+                offset: Offset(0, isLightBackground ? 8 : 3),
+                spreadRadius: isLightBackground ? 4 : 0,
+              ),
+              // Secondary softer shadow for light backgrounds
+              if (isLightBackground)
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 40,
+                  offset: const Offset(0, 15),
+                  spreadRadius: 2,
+                ),
+            ],
           ),
           child: Row(
             children: [
@@ -205,14 +275,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   maxLines: null,
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: textColor,
                     fontSize: 16,
                   ),
                   decoration: InputDecoration(
                     hintText: widget.hintText,
                     hintStyle: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
+                      color: hintColor,
                       fontSize: 16,
                     ),
                     contentPadding: const EdgeInsets.symmetric(
@@ -304,22 +374,42 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Widget _buildMentionSuggestions() {
+    // Adaptive glass effect for mention suggestions
+    final bgLuminance = widget.backgroundColor?.computeLuminance() ?? 0.0;
+    final isLightBackground = bgLuminance > 0.5;
+
+    final suggestionBgColor = isLightBackground
+        ? Colors.grey[100]?.withValues(alpha: 0.98)
+        : Colors.grey[900]?.withValues(alpha: 0.95);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8.0),
       constraints: const BoxConstraints(maxHeight: 200),
       decoration: BoxDecoration(
-        color: Colors.grey[900]?.withValues(alpha: 0.95),
+        color: suggestionBgColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+          color: Theme.of(context)
+              .colorScheme
+              .primary
+              .withValues(alpha: isLightBackground ? 0.5 : 0.3),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color:
+                Colors.black.withValues(alpha: isLightBackground ? 0.25 : 0.3),
+            blurRadius: isLightBackground ? 16 : 8,
+            offset: Offset(0, isLightBackground ? 6 : 2),
+            spreadRadius: isLightBackground ? 1 : 0,
           ),
+          // Additional shadow for depth on light backgrounds
+          if (isLightBackground)
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 30,
+              offset: const Offset(0, 10),
+            ),
         ],
       ),
       child: ListView.builder(

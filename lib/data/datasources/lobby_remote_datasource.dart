@@ -50,6 +50,17 @@ abstract class LobbyRemoteDataSource {
   Future<void> createPeacock(Map<String, dynamic> peacockData);
   Future<void> updateUserPeacock(
       String userId, Map<String, dynamic> peacockStatus);
+
+  // Match history
+  Future<void> recordMatchResult({
+    required String lobbyId,
+    required String gameName,
+    required String result,
+    required List<String> playerUids,
+    required String createdBy,
+    String? notes,
+  });
+  Future<Map<String, dynamic>> getLobbyStats(String lobbyId);
 }
 
 class LobbyRemoteDataSourceImpl
@@ -497,6 +508,61 @@ class LobbyRemoteDataSourceImpl
           .update({'peacock': peacockStatus}).eq('uid', userId);
     } catch (e) {
       throw Exception('Failed to update user peacock status: $e');
+    }
+  }
+
+  @override
+  Future<void> recordMatchResult({
+    required String lobbyId,
+    required String gameName,
+    required String result,
+    required List<String> playerUids,
+    required String createdBy,
+    String? notes,
+  }) async {
+    validateJwt();
+    final authenticatedUserId = getAuthenticatedUserId();
+
+    // Ensure createdBy matches authenticated user
+    if (createdBy != authenticatedUserId) {
+      throw UnauthorizedException('Cannot record match for another user');
+    }
+
+    try {
+      await _supabase.from('match_history').insert({
+        'lobby_id': lobbyId,
+        'game_name': gameName,
+        'result': result,
+        'player_uids': playerUids,
+        'created_by': createdBy,
+        'notes': notes,
+      });
+    } catch (e) {
+      throw Exception('Failed to record match result: $e');
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getLobbyStats(String lobbyId) async {
+    validateJwt();
+
+    try {
+      final response = await _supabase
+          .rpc('get_lobby_stats', params: {'p_lobby_id': lobbyId});
+
+      if (response is List && response.isNotEmpty) {
+        return response.first as Map<String, dynamic>;
+      }
+
+      return {
+        'total_matches': 0,
+        'wins': 0,
+        'losses': 0,
+        'draws': 0,
+        'win_rate': 0.0,
+      };
+    } catch (e) {
+      throw Exception('Failed to fetch lobby stats: $e');
     }
   }
 }

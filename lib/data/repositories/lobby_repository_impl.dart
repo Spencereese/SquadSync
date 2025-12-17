@@ -227,10 +227,56 @@ class LobbyRepositoryImpl implements LobbyRepository {
   }
 
   @override
+  Future<void> recordMatchResult({
+    required String lobbyId,
+    required String gameName,
+    required String result,
+    required List<String> playerUids,
+    String? notes,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) throw Exception('User not authenticated');
+
+      await _remoteDataSource.recordMatchResult(
+        lobbyId: lobbyId,
+        gameName: gameName,
+        result: result,
+        playerUids: playerUids,
+        createdBy: currentUser.id,
+        notes: notes,
+      );
+      debugPrint('LobbyRepository: ✅ Recorded $result for lobby $lobbyId');
+    } catch (e, stackTrace) {
+      debugPrint('LobbyRepository: ❌ ERROR recording match result: $e');
+      debugPrint('LobbyRepository: Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getLobbyStats(String lobbyId) async {
+    try {
+      return await _remoteDataSource.getLobbyStats(lobbyId);
+    } catch (e, stackTrace) {
+      debugPrint('LobbyRepository: ❌ ERROR fetching lobby stats: $e');
+      debugPrint('LobbyRepository: Stack trace: $stackTrace');
+      return {
+        'total_matches': 0,
+        'wins': 0,
+        'losses': 0,
+        'draws': 0,
+        'win_rate': 0.0,
+      };
+    }
+  }
+
+  @override
   Future<void> createInvite(Map<String, dynamic> inviteData) async {
     try {
       await _remoteDataSource.createInvite(inviteData);
-      debugPrint('LobbyRepository: ✅ Successfully created invite ${inviteData['id']}');
+      debugPrint(
+          'LobbyRepository: ✅ Successfully created invite ${inviteData['id']}');
     } catch (e, stackTrace) {
       debugPrint('LobbyRepository: ❌ ERROR creating invite: $e');
       debugPrint('LobbyRepository: Stack trace: $stackTrace');
@@ -242,7 +288,8 @@ class LobbyRepositoryImpl implements LobbyRepository {
   Future<void> createPeacock(Map<String, dynamic> peacockData) async {
     try {
       await _remoteDataSource.createPeacock(peacockData);
-      debugPrint('LobbyRepository: ✅ Successfully created peacock entry for user ${peacockData['user_id']}');
+      debugPrint(
+          'LobbyRepository: ✅ Successfully created peacock entry for user ${peacockData['user_id']}');
     } catch (e, stackTrace) {
       debugPrint('LobbyRepository: ❌ ERROR creating peacock entry: $e');
       debugPrint('LobbyRepository: Stack trace: $stackTrace');
@@ -251,10 +298,12 @@ class LobbyRepositoryImpl implements LobbyRepository {
   }
 
   @override
-  Future<void> updateUserPeacock(String userId, Map<String, dynamic> peacockStatus) async {
+  Future<void> updateUserPeacock(
+      String userId, Map<String, dynamic> peacockStatus) async {
     try {
       await _remoteDataSource.updateUserPeacock(userId, peacockStatus);
-      debugPrint('LobbyRepository: ✅ Successfully updated peacock status for user $userId');
+      debugPrint(
+          'LobbyRepository: ✅ Successfully updated peacock status for user $userId');
     } catch (e, stackTrace) {
       debugPrint('LobbyRepository: ❌ ERROR updating user peacock status: $e');
       debugPrint('LobbyRepository: Stack trace: $stackTrace');

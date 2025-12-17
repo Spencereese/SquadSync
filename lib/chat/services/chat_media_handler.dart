@@ -88,61 +88,97 @@ class ChatMediaHandler {
 
   /// Start audio recording with real-time speech-to-text transcription
   Future<void> startRecording(WidgetRef ref) async {
-    // Check microphone permission
-    final micStatus = await Permission.microphone.request();
-    if (!micStatus.isGranted) {
-      if (ref.context.mounted) {
-        ScaffoldMessenger.of(ref.context).showSnackBar(
-            const SnackBar(content: Text('Microphone permission denied')));
-      }
-      return;
-    }
+    debugPrint('🎤 Starting recording process...');
 
-    if (await _audioRecorder.hasPermission()) {
+    try {
+      // On iOS, the record package will trigger the system permission dialog automatically
+      // Check if we have permission using the record package's method
+      final hasPermission = await _audioRecorder.hasPermission();
+      debugPrint('🎤 Audio recorder permission check: $hasPermission');
+
+      if (!hasPermission) {
+        debugPrint('🎤 ❌ Microphone permission denied by audio recorder');
+        if (ref.context.mounted) {
+          // Check if it's permanently denied using permission_handler
+          final status = await Permission.microphone.status;
+          if (status.isPermanentlyDenied) {
+            ScaffoldMessenger.of(ref.context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                    'Microphone access denied. Enable in Settings → SquadSync → Microphone'),
+                duration: const Duration(seconds: 4),
+                action: SnackBarAction(
+                  label: 'Settings',
+                  onPressed: () => openAppSettings(),
+                ),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(ref.context).showSnackBar(
+              const SnackBar(
+                content:
+                    Text('Microphone permission is required for voice notes'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+        return;
+      }
+
+      debugPrint('🎤 ✓ Microphone permission granted, starting recording...');
+
+      // Start audio recording first
+      final directory = Directory.systemTemp;
+      if (!directory.existsSync()) {
+        directory.createSync(recursive: true);
+      }
+      final path =
+          '${directory.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _audioRecorder.start(const record_package.RecordConfig(),
+          path: path);
+      debugPrint('🎤 Audio recorder started at: $path');
+
+      // Initialize speech-to-text (optional feature, may fail on simulator)
       try {
-        // Initialize speech-to-text
         final speechAvailable = await _speechToText.initialize(
           onError: (error) {
-            debugPrint('Speech-to-text error: ${error.errorMsg}');
+            // Only log, don't show to user - simulator doesn't support speech recognition
+            debugPrint('🎤 Speech-to-text error: ${error.errorMsg}');
           },
         );
 
-        // Start audio recording
-        final directory = Directory.systemTemp;
-        if (!directory.existsSync()) {
-          directory.createSync(recursive: true);
-        }
-        final path =
-            '${directory.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(const record_package.RecordConfig(),
-            path: path);
-
-        // Start speech-to-text transcription
+        // Start speech-to-text transcription if available
         if (speechAvailable) {
           _transcription = '';
           await _speechToText.listen(
             onResult: (result) {
               _transcription = result.recognizedWords;
-              debugPrint('Transcription: $_transcription');
+              debugPrint('🎤 Transcription: $_transcription');
             },
             listenMode: stt.ListenMode.confirmation,
             partialResults: true,
           );
+          debugPrint('🎤 Speech-to-text listening started');
+        } else {
+          debugPrint(
+              '⚠️ Speech-to-text not available (requires physical device)');
+          _transcription = null; // Will send voice note without transcription
         }
-
-        ref.read(chatStateProvider.notifier).setRecording(true);
-        HapticFeedback.mediumImpact();
       } catch (e) {
-        debugPrint('Recording start failed: $e');
-        if (ref.context.mounted) {
-          ScaffoldMessenger.of(ref.context)
-              .showSnackBar(SnackBar(content: Text('Recording failed: $e')));
-        }
+        debugPrint(
+            '⚠️ Speech-to-text initialization failed: $e (expected on simulator)');
+        _transcription = null; // Continue without transcription
       }
-    } else {
+
+      ref.read(chatStateProvider.notifier).setRecording(true);
+      HapticFeedback.mediumImpact();
+    } catch (e, stackTrace) {
+      debugPrint('🎤 ❌ Recording start failed: $e');
+      debugPrint('Stack trace: $stackTrace');
       if (ref.context.mounted) {
-        ScaffoldMessenger.of(ref.context).showSnackBar(
-            const SnackBar(content: Text('Microphone permission denied')));
+        ScaffoldMessenger.of(ref.context)
+            .showSnackBar(SnackBar(content: Text('Recording failed: $e')));
       }
     }
   }

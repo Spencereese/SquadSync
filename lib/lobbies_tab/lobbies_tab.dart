@@ -234,10 +234,10 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
 
       // Get current spots for this game
       final spots = squadState.gameLobbySpots[gameName] ?? [];
-      
+
       // Check if ALL spots are empty (null or empty string)
       final allSpotsEmpty = spots.every((spot) => spot == null || spot.isEmpty);
-      
+
       // Only disband if all spots are empty
       if (allSpotsEmpty && spots.isNotEmpty) {
         debugPrint('💥 Disbanding empty lobby: $lobbyId (game: $gameName)');

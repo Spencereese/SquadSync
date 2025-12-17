@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../screens/voice_room_screen.dart';
 
 /// Custom iMessage-style app bar for ChatScreen with NEON VOID glass aesthetics
@@ -18,6 +19,10 @@ class NeonChatAppBar extends StatelessWidget {
   final VoidCallback onBackPressed;
   final VoidCallback? onCenterTapped;
   final VoidCallback? onGamepadPressed;
+  final bool showGamepadBadge;
+  final Color? backgroundColor;
+  final bool hideBackButton;
+  final bool hideVoiceButton;
 
   const NeonChatAppBar({
     super.key,
@@ -27,39 +32,23 @@ class NeonChatAppBar extends StatelessWidget {
     required this.onBackPressed,
     this.onCenterTapped,
     this.onGamepadPressed,
+    this.showGamepadBadge = false,
+    this.backgroundColor,
+    this.hideBackButton = false,
+    this.hideVoiceButton = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final neonColor = theme.colorScheme.primary;
+    final neonColor = Colors.white;
     final topPadding = MediaQuery.of(context).padding.top;
 
     return SizedBox(
       height: 120 + topPadding,
       child: Stack(
         children: [
-          // Background layer with subtle shadow - NO blur effect
-          // IgnorePointer allows content to scroll behind this layer
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withOpacity(0.3),
-                      Colors.black.withOpacity(0.15),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.6, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // UI layer on top (not blurred) - positioned absolutely
+          // UI layer - positioned absolutely
           Positioned(
             top: topPadding + 8,
             left: 12,
@@ -76,19 +65,22 @@ class NeonChatAppBar extends StatelessWidget {
                       avatarUrl: avatarUrl,
                       neonColor: neonColor,
                       onCenterTapped: onCenterTapped,
+                      backgroundColor: backgroundColor,
                     ),
                   ),
 
                   // Left: Back button
-                  Positioned(
-                    left: 0,
-                    top: 4,
-                    child: _GlassCircleButton(
-                      icon: Icons.chevron_left,
-                      onPressed: onBackPressed,
-                      neonColor: neonColor,
+                  if (!hideBackButton)
+                    Positioned(
+                      left: 0,
+                      top: 4,
+                      child: _GlassCircleButton(
+                        icon: Icons.chevron_left,
+                        onPressed: onBackPressed,
+                        neonColor: neonColor,
+                        backgroundColor: backgroundColor,
+                      ),
                     ),
-                  ),
 
                   // Right: Gamepad + Voice buttons
                   Positioned(
@@ -100,27 +92,59 @@ class NeonChatAppBar extends StatelessWidget {
                         if (onGamepadPressed != null)
                           Padding(
                             padding: const EdgeInsets.only(right: 10),
-                            child: _GlassCircleButton(
-                              icon: Icons.gamepad,
-                              onPressed: onGamepadPressed!,
-                              neonColor: neonColor,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                _GlassCircleButton(
+                                  icon: Icons.gamepad,
+                                  onPressed: onGamepadPressed!,
+                                  neonColor: neonColor,
+                                  backgroundColor: backgroundColor,
+                                ),
+                                if (showGamepadBadge)
+                                  Positioned(
+                                    right: -2,
+                                    top: -2,
+                                    child: Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.error,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.black,
+                                          width: 1.5,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: theme.colorScheme.error,
+                                            blurRadius: 8,
+                                            spreadRadius: 1,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                        _GlassCircleButton(
-                          icon: Icons.headset,
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => VoiceRoomScreen(
-                                  roomId: squadId,
-                                  squadName: squadName,
+                        if (!hideVoiceButton)
+                          _GlassCircleButton(
+                            icon: Icons.headset,
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => VoiceRoomScreen(
+                                    roomId: squadId,
+                                    squadName: squadName,
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                          neonColor: neonColor,
-                        ),
+                              );
+                            },
+                            neonColor: neonColor,
+                            backgroundColor: backgroundColor,
+                          ),
                       ],
                     ),
                   ),
@@ -139,11 +163,13 @@ class _GlassCircleButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onPressed;
   final Color neonColor;
+  final Color? backgroundColor;
 
   const _GlassCircleButton({
     required this.icon,
     required this.onPressed,
     required this.neonColor,
+    this.backgroundColor,
   });
 
   @override
@@ -159,21 +185,37 @@ class _GlassCircleButton extends StatelessWidget {
             splashColor: Colors.white.withOpacity(0.1),
             highlightColor: Colors.white.withOpacity(0.05),
             child: Container(
-              width: 52,
-              height: 52,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.15),
+                color: _getGlassColor(),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.2),
-                  width: 0.5,
+                  color: _getBorderColor(),
+                  width: _isLightBackground() ? 1.0 : 0.5,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _isLightBackground()
+                        ? Colors.black.withOpacity(0.3)
+                        : Colors.black.withOpacity(0.15),
+                    blurRadius: _isLightBackground() ? 12 : 6,
+                    offset: Offset(0, _isLightBackground() ? 6 : 3),
+                    spreadRadius: _isLightBackground() ? 2 : 0,
+                  ),
+                  if (_isLightBackground())
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                ],
               ),
               child: Center(
                 child: Icon(
                   icon,
-                  color: Colors.white,
-                  size: 28,
+                  color: _isLightBackground() ? Colors.black87 : Colors.white,
+                  size: 20,
                 ),
               ),
             ),
@@ -181,6 +223,23 @@ class _GlassCircleButton extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  bool _isLightBackground() {
+    final bgLuminance = backgroundColor?.computeLuminance() ?? 0.0;
+    return bgLuminance > 0.5;
+  }
+
+  Color _getGlassColor() {
+    return _isLightBackground()
+        ? Colors.black.withOpacity(0.4)
+        : Colors.white.withOpacity(0.15);
+  }
+
+  Color _getBorderColor() {
+    return _isLightBackground()
+        ? Colors.black.withOpacity(0.5)
+        : Colors.white.withOpacity(0.2);
   }
 }
 
@@ -191,6 +250,7 @@ class _CenterAvatarStack extends StatelessWidget {
   final String? avatarUrl;
   final Color neonColor;
   final VoidCallback? onCenterTapped;
+  final Color? backgroundColor;
 
   const _CenterAvatarStack({
     required this.squadId,
@@ -198,75 +258,83 @@ class _CenterAvatarStack extends StatelessWidget {
     this.avatarUrl,
     required this.neonColor,
     this.onCenterTapped,
+    this.backgroundColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 88, // Total height for avatar + name overlap
-      child: Stack(
-        alignment: Alignment.topCenter, // Center horizontally, align to top
-        clipBehavior: Clip.none,
-        children: [
-          // Avatar with Hero animation at top
-          Positioned(
-            top: 0,
-            child: Hero(
-              tag: 'squad_avatar_$squadId',
-              child: GestureDetector(
-                onTap: onCenterTapped,
+    return GestureDetector(
+      onTap: onCenterTapped,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        height:
+            94, // Total height for avatar + name overlap (increased for larger avatar)
+        child: Stack(
+          alignment: Alignment.topCenter, // Center horizontally, align to top
+          clipBehavior: Clip.none,
+          children: [
+            // Lobby name pill - render first so avatar layers on top
+            Positioned(
+              top:
+                  62, // Start 6px before avatar bottom for overlap (adjusted for larger avatar)
+              child: _GlassPill(
+                squadName: squadName,
+                neonColor: neonColor,
+                backgroundColor: backgroundColor,
+              ),
+            ),
+            // Avatar with Hero animation at top - render second to layer above name
+            Positioned(
+              top: 0,
+              child: Hero(
+                tag: 'squad_avatar_$squadId',
                 child: Container(
-                  width: 56,
-                  height: 56,
+                  width: 68,
+                  height: 68,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: avatarUrl != null
                         ? Colors.transparent
                         : Colors.black.withOpacity(0.85),
                     border: Border.all(
-                      color: neonColor.withOpacity(0.5),
+                      color: Colors.white.withOpacity(0.3),
                       width: 2,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: neonColor.withOpacity(0.3),
+                        color: Colors.white.withOpacity(0.1),
                         blurRadius: 12,
                         spreadRadius: 0,
                       ),
                     ],
                   ),
-                  child: avatarUrl != null
+                  child: avatarUrl != null && avatarUrl!.isNotEmpty
                       ? ClipOval(
-                          child: Image.network(
-                            avatarUrl!,
+                          child: CachedNetworkImage(
+                            imageUrl: avatarUrl!,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(
-                                Icons.groups,
-                                color: neonColor,
-                                size: 28,
-                              );
-                            },
+                            placeholder: (context, url) => Icon(
+                              Icons.groups,
+                              color: neonColor.withOpacity(0.5),
+                              size: 34,
+                            ),
+                            errorWidget: (context, url, error) => Icon(
+                              Icons.groups,
+                              color: neonColor,
+                              size: 34,
+                            ),
                           ),
                         )
                       : Icon(
                           Icons.groups,
                           color: neonColor,
-                          size: 28,
+                          size: 34,
                         ),
                 ),
               ),
             ),
-          ),
-          // Lobby name pill overlapping bottom of avatar
-          Positioned(
-            top: 50, // Start 6px before avatar bottom for overlap
-            child: _GlassPill(
-              squadName: squadName,
-              neonColor: neonColor,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -276,11 +344,34 @@ class _CenterAvatarStack extends StatelessWidget {
 class _GlassPill extends StatelessWidget {
   final String squadName;
   final Color neonColor;
+  final Color? backgroundColor;
 
   const _GlassPill({
     required this.squadName,
     required this.neonColor,
+    this.backgroundColor,
   });
+
+  bool _isLightBackground() {
+    final bgLuminance = backgroundColor?.computeLuminance() ?? 0.0;
+    return bgLuminance > 0.5;
+  }
+
+  Color _getGlassColor() {
+    return _isLightBackground()
+        ? Colors.black.withOpacity(0.4)
+        : Colors.white.withOpacity(0.15);
+  }
+
+  Color _getBorderColor() {
+    return _isLightBackground()
+        ? Colors.black.withOpacity(0.5)
+        : Colors.white.withOpacity(0.2);
+  }
+
+  Color _getTextColor() {
+    return _isLightBackground() ? Colors.black87 : Colors.white;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -291,19 +382,35 @@ class _GlassPill extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
+            color: _getGlassColor(),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: Colors.white.withOpacity(0.2),
-              width: 0.5,
+              color: _getBorderColor(),
+              width: _isLightBackground() ? 1.0 : 0.5,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: _isLightBackground()
+                    ? Colors.black.withOpacity(0.3)
+                    : Colors.black.withOpacity(0.15),
+                blurRadius: _isLightBackground() ? 12 : 6,
+                offset: Offset(0, _isLightBackground() ? 6 : 3),
+                spreadRadius: _isLightBackground() ? 2 : 0,
+              ),
+              if (_isLightBackground())
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+            ],
           ),
           child: Text(
             squadName,
             style: GoogleFonts.orbitron(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: _getTextColor(),
               letterSpacing: 0.5,
             ),
             maxLines: 1,
@@ -338,8 +445,7 @@ class NeonChatAppBarPreferred extends StatelessWidget
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final neonColor = theme.colorScheme.primary;
+    final neonColor = Colors.white;
 
     return Container(
       height: preferredSize.height + MediaQuery.of(context).padding.top,

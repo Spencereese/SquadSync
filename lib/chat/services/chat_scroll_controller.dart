@@ -87,13 +87,13 @@ class ChatScrollController {
     }
   }
 
-  /// Scroll to bottom of chat
+  /// Scroll to bottom of chat (position 0 since ListView is reversed)
   void scrollToBottom() {
     try {
       if (scrollController.hasClients &&
           scrollController.position.hasContentDimensions) {
         scrollController.animateTo(
-          scrollController.position.maxScrollExtent,
+          0.0, // Position 0 is the bottom when reverse: true
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );

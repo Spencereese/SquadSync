@@ -16,6 +16,7 @@ import 'widgets/message_avatar.dart';
 import 'widgets/imessage_reactions_bar.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import 'widgets/smart_reply_bottom_sheet.dart';
+import 'widgets/grok_message_bubble.dart';
 
 /// Enhanced message bubble with iMessage-style tails and animations
 class _AnimatedMessageBubble extends StatefulWidget {
@@ -101,9 +102,6 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        widget.isMe ? const Color(0xFF007AFF) : const Color(0xFF2C2C2E);
-
     return GestureDetector(
       onTap: () {
         FocusScope.of(context).unfocus();
@@ -141,33 +139,105 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Main bubble with pill shape
+          // Main bubble with pill shape and glass effect
           AnimatedBuilder(
             animation: _reactionAnimation,
             builder: (context, child) {
               return Transform.scale(
                 scale: _reactionAnimation.value,
-                child: Container(
-                  key: _messageKey,
-                  margin: const EdgeInsets.symmetric(vertical: 1.0),
-                  padding: _getMessagePadding(),
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _isPressed ? color.withValues(alpha: 0.8) : color,
-                    borderRadius: borderRadius,
-                  ),
-                  child: Semantics(
-                    label: 'Message from ${widget.messageData.sender}',
-                    child: IntrinsicWidth(
-                      child: MessageContent(
-                        message: widget.messageData,
-                        isFromCurrentUser: widget.isMe,
-                        chatGroupId: widget.chatGroupId,
-                        chatService: widget.chatService,
-                        chatType: widget.chatType,
-                        squadId: widget.squadId,
+                child: ClipRRect(
+                  borderRadius: borderRadius,
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: Container(
+                      key: _messageKey,
+                      margin: const EdgeInsets.symmetric(vertical: 1.0),
+                      decoration: BoxDecoration(
+                        gradient: widget.isMe
+                            ? LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: _isPressed
+                                    ? [
+                                        const Color(0xFF007AFF)
+                                            .withValues(alpha: 0.85),
+                                        const Color(0xFF0051D5)
+                                            .withValues(alpha: 0.85),
+                                      ]
+                                    : [
+                                        const Color(0xFF007AFF)
+                                            .withValues(alpha: 0.92),
+                                        const Color(0xFF0051D5)
+                                            .withValues(alpha: 0.92),
+                                      ],
+                              )
+                            : LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: _isPressed
+                                    ? [
+                                        const Color(0xFF3C3C3E)
+                                            .withValues(alpha: 0.85),
+                                        const Color(0xFF2C2C2E)
+                                            .withValues(alpha: 0.85),
+                                      ]
+                                    : [
+                                        const Color(0xFF3C3C3E)
+                                            .withValues(alpha: 0.92),
+                                        const Color(0xFF2C2C2E)
+                                            .withValues(alpha: 0.92),
+                                      ],
+                              ),
+                        borderRadius: borderRadius,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          width: 0.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                          BoxShadow(
+                            color: widget.isMe
+                                ? const Color(0xFF007AFF)
+                                    .withValues(alpha: 0.15)
+                                : Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 20,
+                            spreadRadius: -5,
+                          ),
+                        ],
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.center,
+                            colors: [
+                              Colors.white.withValues(alpha: 0.15),
+                              Colors.white.withValues(alpha: 0.0),
+                            ],
+                          ),
+                          borderRadius: borderRadius,
+                        ),
+                        padding: _getMessagePadding(),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.7,
+                        ),
+                        child: Semantics(
+                          label: 'Message from ${widget.messageData.sender}',
+                          child: IntrinsicWidth(
+                            child: MessageContent(
+                              message: widget.messageData,
+                              isFromCurrentUser: widget.isMe,
+                              chatGroupId: widget.chatGroupId,
+                              chatService: widget.chatService,
+                              chatType: widget.chatType,
+                              squadId: widget.squadId,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -243,9 +313,9 @@ class _BubbleReactions extends StatelessWidget {
     if (reactions.isEmpty) return const SizedBox.shrink();
 
     return Positioned(
-      bottom: -20,
-      right: isOutgoing ? -4 : null,
-      left: isOutgoing ? null : -4,
+      bottom: -10,
+      right: isOutgoing ? 8 : null,
+      left: isOutgoing ? null : 8,
       child: MessageReactions(
         reactions: reactions,
         onReactionTap: onReactionTap,
@@ -299,7 +369,6 @@ class MessageBubble extends ConsumerStatefulWidget {
 
 class _MessageBubbleState extends ConsumerState<MessageBubble> {
   late models.MessageData _messageData;
-  bool _isGrokExpanded = false; // Track if Grok message is expanded
 
   // Overlay references for dismissal
   OverlayEntry? _reactionsOverlay;
@@ -520,238 +589,72 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
   Widget build(BuildContext context) {
     // Removed excessive debug logging - this method is called on every frame
 
-    // Check if this is a Grok AI message for unique styling
+    // Check if this is a Grok AI message - use dedicated Grok UI
     if (_messageData.isGrokMessage) {
-      return _buildGrokMessage(context);
+      return GrokMessageBubble(
+        messageData: _messageData,
+        index: 0, // Will be set by parent if needed
+      );
     }
 
     // Standard layout for regular messages
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0).add(
-          EdgeInsets.only(
-              left: widget.isMe
-                  ? 0
-                  : 40) // Add extra left padding for received messages to accommodate avatar
-          ),
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
       child: Column(
         crossAxisAlignment:
             widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          Stack(
-            clipBehavior: Clip.none,
+          Row(
+            mainAxisAlignment:
+                widget.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Message bubble
-              Row(
-                mainAxisAlignment: widget.isMe
-                    ? MainAxisAlignment.end
-                    : MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _AnimatedMessageBubble(
-                          messageData: _messageData,
-                          isMe: widget.isMe,
-                          chatGroupId: widget.chatGroupId,
-                          chatService: widget.chatService,
-                          chatType: widget.chatType,
-                          squadId: widget.squadId,
-                          onTap: widget.onTap,
-                          onLongPress: widget.onLongPress,
-                          onLongPressDetails: (position, size, offset) {
-                            _showOverlays(position, size, offset);
-                          },
-                          index: 0, // Will be set by parent
-                          isFirstInGroup: widget.isFirstInGroup,
-                          isLastInGroup: widget.isLastInGroup,
-                        ),
-                        if (_messageData.reactions.isNotEmpty)
-                          _BubbleReactions(
-                            reactions: _messageData.reactions,
-                            isOutgoing: widget.isMe,
-                            onReactionTap: (emoji) =>
-                                _showReactionDetails(emoji),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              // Avatar positioned at bottom of message for received messages
+              // Avatar for received messages (on the left)
               if (!widget.isMe && widget.showAvatar)
-                Positioned(
-                  bottom: 2, // Align with the bottom of the bubble
-                  left: -40, // Position to the left of the bubble
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
                   child: MessageAvatar(
                     senderName: _messageData.sender,
+                    senderUid: _messageData.senderUid,
                     isFromCurrentUser: widget.isMe,
                   ),
                 ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGrokMessage(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Column(
-        children: [
-          // HAL-like collapsed state initially
-          Center(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 500),
-              transitionBuilder: (child, animation) {
-                return ScaleTransition(
-                  scale: animation,
-                  child: FadeTransition(
-                    opacity: animation,
-                    child: child,
-                  ),
-                );
-              },
-              child: _isGrokExpanded
-                  ? _buildExpandedGrokMessage()
-                  : _buildCollapsedGrokMessage(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCollapsedGrokMessage() {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        setState(() {
-          _isGrokExpanded = true;
-        });
-      },
-      child: Semantics(
-        label: 'Grok message - tap to expand',
-        child: Container(
-          width: 27,
-          height: 27,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black,
-            border: Border.all(
-              color: const Color(0xFF8B0000),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF8B0000).withValues(alpha: 0.6),
-                blurRadius: 7,
-                spreadRadius: 2,
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.8),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Container(
-              width: 3,
-              height: 3,
-              decoration: const BoxDecoration(
-                color: Color(0xFF8B0000),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExpandedGrokMessage() {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        setState(() {
-          _isGrokExpanded = false;
-        });
-      },
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 320),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0A0A0A), // Very dark background
-          border: Border.all(
-            color: const Color(0xFF8B0000), // Dark red border
-            width: 2.0,
-          ),
-          borderRadius: BorderRadius.circular(4), // Minimal rounding
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF8B0000).withValues(alpha: 0.4),
-              blurRadius: 12,
-              spreadRadius: 2,
-              offset: const Offset(0, 0),
-            ),
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.8),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            // Header bar with subtle glow
-            Container(
-              width: double.infinity,
-              height: 6,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFF8B0000).withValues(alpha: 0.8),
-                    const Color(0xFF8B0000).withValues(alpha: 0.4),
-                    Colors.transparent,
+              // Message bubble
+              Flexible(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _AnimatedMessageBubble(
+                      messageData: _messageData,
+                      isMe: widget.isMe,
+                      chatGroupId: widget.chatGroupId,
+                      chatService: widget.chatService,
+                      chatType: widget.chatType,
+                      squadId: widget.squadId,
+                      onTap: widget.onTap,
+                      onLongPress: widget.onLongPress,
+                      onLongPressDetails: (position, size, offset) {
+                        _showOverlays(position, size, offset);
+                      },
+                      index: 0, // Will be set by parent
+                      isFirstInGroup: widget.isFirstInGroup,
+                      isLastInGroup: widget.isLastInGroup,
+                    ),
+                    if (_messageData.reactions.isNotEmpty)
+                      _BubbleReactions(
+                        reactions: _messageData.reactions,
+                        isOutgoing: widget.isMe,
+                        onReactionTap: (emoji) => _showReactionDetails(emoji),
+                      ),
                   ],
                 ),
               ),
-            ),
-            // Message content
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Terminal-like prompt indicator
-                  Container(
-                    margin: const EdgeInsets.only(right: 8.0, top: 2.0),
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF8B0000),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  // Text content
-                  Expanded(
-                    child: Text(
-                      _messageData.text,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontFamily: 'monospace', // Terminal-like font
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+              // Spacing for received messages without avatars to keep alignment
+              if (!widget.isMe && !widget.showAvatar)
+                const SizedBox(width: 40), // 32 (avatar) + 8 (padding) = 40
+            ],
+          ),
+        ],
       ),
     );
   }

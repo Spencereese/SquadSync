@@ -79,12 +79,13 @@ class IgdbAuthService {
     if (clientId == null || clientSecret == null) {
       _logger.e('❌ IGDB credentials not found!');
       _logger.e('   Client ID: ${clientId != null ? "Found" : "Missing"}');
-      _logger.e('   Client Secret: ${clientSecret != null ? "Found" : "Missing"}');
+      _logger
+          .e('   Client Secret: ${clientSecret != null ? "Found" : "Missing"}');
       _logger.e('   Please check .env file or environment variables');
       throw Exception(
           'IGDB credentials not found. Please run storeCredentials() first or set IGDB_CLIENT_ID and IGDB_CLIENT_SECRET environment variables.');
     }
-    
+
     _logger.i('🔑 Fetching new IGDB access token...');
 
     final response = await http.post(
@@ -108,7 +109,8 @@ class IgdbAuthService {
       await _storage!
           .setString(_tokenExpiryKey, _tokenExpiry!.toIso8601String());
 
-      _logger.i('✅ IGDB access token fetched successfully (expires in ${expiresIn}s)');
+      _logger.i(
+          '✅ IGDB access token fetched successfully (expires in ${expiresIn}s)');
       return _accessToken!;
     } else {
       _logger.e('❌ Failed to fetch IGDB token: ${response.statusCode}');

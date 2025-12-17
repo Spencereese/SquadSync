@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service_supabase.dart';
 import '../domain/entities/message.dart';
 import '../domain/entities/lobby_state.dart';
+import '../domain/entities/chat_group.dart';
 import 'chat_screen.dart';
 import '../core/app_theme.dart';
 import 'widgets/user_groups_tab.dart';
@@ -413,16 +414,13 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                     ),
                   ),
                   subtitle: Text(
-                    'Last: ${group.lastActivity != null ? _formatLastActivity(group.lastActivity!) : "No activity"}',
+                    _formatLastMessage(group),
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.6),
                       fontSize: 12,
                     ),
-                  ),
-                  trailing: Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.white.withOpacity(0.4),
                   ),
                   onTap: () async {
                     HapticFeedback.lightImpact();
@@ -689,18 +687,65 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     }
   }
 
-  String _formatLastActivity(DateTime time) {
-    final now = DateTime.now();
-    final difference = now.difference(time);
+  String _formatLastMessage(ChatGroup group) {
+    final senderName = group.metadata?['last_message_sender'] as String?;
+    final messageText = group.metadata?['last_message_text'] as String?;
+    final lastActivity = group.lastActivity;
 
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
+    if (lastActivity == null || senderName == null || messageText == null) {
+      return 'No activity';
+    }
+
+    final timestamp = _formatTimestamp(lastActivity);
+    final prefix = '$senderName: ';
+    final suffix = ' $timestamp';
+
+    // Approximate max characters that can fit (adjust based on font size)
+    // At fontSize 12, roughly 50-60 chars fit comfortably
+    const maxLength = 55;
+    final availableLength = maxLength - prefix.length - suffix.length;
+
+    String displayMessage = messageText;
+    if (messageText.length > availableLength) {
+      // Truncate and add .. before timestamp
+      displayMessage = '${messageText.substring(0, availableLength - 2)}..';
+    }
+
+    return '$prefix$displayMessage$suffix';
+  }
+
+  String _formatTimestamp(DateTime time) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final messageDay = DateTime(time.year, time.month, time.day);
+    final difference = today.difference(messageDay).inDays;
+
+    if (difference == 0) {
+      // Same day - show military time (22:22)
+      final hour = time.hour.toString().padLeft(2, '0');
+      final minute = time.minute.toString().padLeft(2, '0');
+      return '$hour:$minute';
+    } else if (difference < 7) {
+      // Within a week - show day of week
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return days[time.weekday - 1];
     } else {
-      return 'now';
+      // Over a week - show "Jan 4" format
+      const months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
+      ];
+      return '${months[time.month - 1]} ${time.day}';
     }
   }
 

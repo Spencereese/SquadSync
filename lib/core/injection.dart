@@ -18,6 +18,7 @@ import 'package:squad_sync/domain/repositories/game_repository.dart';
 import 'package:squad_sync/services/igdb_auth_service.dart';
 import 'package:squad_sync/services/friends_service.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
+import 'package:squad_sync/services/auto_merge_service.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 
 // System imports
@@ -156,6 +157,9 @@ Future<void> setupInjection() async {
       getIt<GameRemoteDataSource>(),
     ),
   );
+
+  // Auto-merge service
+  getIt.registerSingleton<AutoMergeService>(AutoMergeService());
 
   debugPrint('Dependency injection setup completed');
 }

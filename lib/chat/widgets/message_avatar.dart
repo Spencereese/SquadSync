@@ -167,6 +167,16 @@ class _UserMenuSheet extends ConsumerWidget {
               ),
               _buildMenuItem(
                 context,
+                icon: Icons.person_add,
+                label: 'Add Friend',
+                color: Colors.purple,
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _sendFriendRequest(context, ref, uid, userName);
+                },
+              ),
+              _buildMenuItem(
+                context,
                 icon: Icons.sports_martial_arts,
                 label: 'Ban',
                 color: Colors.orange,
@@ -422,6 +432,34 @@ class _UserMenuSheet extends ConsumerWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to open message: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Send a friend request to the user
+  Future<void> _sendFriendRequest(BuildContext context, WidgetRef ref,
+      String targetUid, String targetName) async {
+    try {
+      await ref
+          .read(userNotifierProvider.notifier)
+          .sendFriendRequest(targetUid);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Friend request sent to $targetName'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send friend request: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );

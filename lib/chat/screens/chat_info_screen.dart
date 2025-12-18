@@ -27,6 +27,7 @@ import 'components/chat_info_links_files.dart';
 import '../../domain/entities/message.dart' show ChatType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/chat_notifier.dart' as cn;
+import '../../presentation/notifiers/user_notifier.dart';
 import '../services/chat_message_search_delegate.dart';
 import '../widgets/background_preview_screen.dart';
 
@@ -1348,14 +1349,10 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: () {
-                    // Show member profile
+                    // Show member menu
                     final uid = member['uid'] as String?;
                     if (uid != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Profile for ${member['name']}'),
-                        ),
-                      );
+                      _showMemberMenu(context, member);
                     }
                   },
                   child: Padding(
@@ -2472,6 +2469,79 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
           behavior: SnackBarBehavior.floating,
         ),
       );
+    }
+  }
+
+  /// Show member menu with friend request option
+  void _showMemberMenu(BuildContext context, Map<String, dynamic> member) {
+    final theme = Theme.of(context);
+    final uid = member['uid'] as String;
+    final displayName = member['displayName'] as String? ?? 'Unknown';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  displayName,
+                  style: theme.textTheme.titleLarge,
+                ),
+              ),
+              const Divider(height: 1),
+              // Add Friend option
+              ListTile(
+                leading:
+                    Icon(Icons.person_add, color: theme.colorScheme.primary),
+                title: const Text('Add Friend'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _sendFriendRequestToMember(context, uid, displayName);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Send friend request to a member
+  Future<void> _sendFriendRequestToMember(
+      BuildContext context, String targetUid, String targetName) async {
+    try {
+      await ref
+          .read(userNotifierProvider.notifier)
+          .sendFriendRequest(targetUid);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Friend request sent to $targetName'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send friend request: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

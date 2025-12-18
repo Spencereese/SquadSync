@@ -455,11 +455,126 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 if (authUser != null) {
                   await SupabaseService.client.from('users').update({
                     'online': false,
-                  }).eq('id', authUser.id);
+                  }).eq('uid', authUser.id);
                 }
               }
             },
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFriendsSection(ThemeData theme) {
+    return Container(
+      decoration: theme.glassyCard(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with Add Friend button
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Friends',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _showAddFriendDialog(context),
+                  icon: const Icon(Icons.person_add, size: 18),
+                  label: const Text('Add Friend'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Friends list
+          if (_isLoadingFriends)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_friends.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.group_outlined,
+                      size: 48,
+                      color: theme.colorScheme.onSurface.withOpacity(0.3),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No friends yet',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        color: theme.colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () => _showAddFriendDialog(context),
+                      icon: const Icon(Icons.person_add),
+                      label: const Text('Add your first friend'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _friends.length,
+              separatorBuilder: (context, index) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final friend = _friends[index];
+                final displayName = friend['display_name'] ?? 'Unknown';
+                final photoUrl = friend['photo_url'] as String?;
+
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage:
+                        photoUrl != null ? NetworkImage(photoUrl) : null,
+                    child: photoUrl == null
+                        ? Text(displayName[0].toUpperCase())
+                        : null,
+                  ),
+                  title: Text(
+                    displayName,
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(
+                      Icons.person_remove,
+                      color: theme.colorScheme.error,
+                    ),
+                    onPressed: () => _removeFriend(friend['uid'] as String,
+                        friend['display_name'] ?? 'Unknown'),
+                  ),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -527,105 +642,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       color: theme.colorScheme.primary,
                     ),
                   ),
-                ),
-              ),
-              if (!isLast) _buildDivider(theme),
-            ],
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildFriendsSection(ThemeData theme) {
-    if (_isLoadingFriends) {
-      return Container(
-        decoration: theme.glassyCard(),
-        child: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: CircularProgressIndicator(),
-          ),
-        ),
-      );
-    }
-
-    if (_friends.isEmpty) {
-      return Container(
-        decoration: theme.glassyCard(),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: Text(
-              'No friends yet',
-              style: GoogleFonts.robotoMono(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      decoration: theme.glassyCard(),
-      child: Column(
-        children: _friends.asMap().entries.map((entry) {
-          final index = entry.key;
-          final friend = entry.value;
-          final isLast = index == _friends.length - 1;
-          final isOnline = friend['online_status'] == true;
-
-          return Column(
-            children: [
-              ListTile(
-                leading: Stack(
-                  children: [
-                    CircleAvatar(
-                      backgroundImage: friend['profile_image'] != null
-                          ? NetworkImage(friend['profile_image'])
-                          : null,
-                      child: friend['profile_image'] == null
-                          ? Text(friend['display_name'][0].toUpperCase())
-                          : null,
-                    ),
-                    if (isOnline)
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: theme.colorScheme.surface,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                title: Text(
-                  friend['display_name'],
-                  style: GoogleFonts.robotoMono(),
-                ),
-                subtitle: Text(
-                  isOnline ? 'Online' : 'Offline',
-                  style: GoogleFonts.robotoMono(
-                    fontSize: 12,
-                    color: isOnline
-                        ? Colors.green
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                trailing: IconButton(
-                  icon:
-                      Icon(Icons.person_remove, color: theme.colorScheme.error),
-                  onPressed: () => _showRemoveFriendDialog(
-                      friend['uid'], friend['display_name']),
                 ),
               ),
               if (!isLast) _buildDivider(theme),
@@ -717,7 +733,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       await SupabaseService.client.from('users').update({
         'notification_settings': updatedSettings,
-      }).eq('id', user.id);
+      }).eq('uid', user.id);
 
       // Refresh user state
       ref.invalidate(userNotifierProvider);
@@ -813,6 +829,187 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showAddFriendDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => _AddFriendDialog(
+        onFriendAdded: () {
+          _loadFriends();
+        },
+      ),
+    );
+  }
+}
+
+// Add Friend Dialog Widget
+class _AddFriendDialog extends ConsumerStatefulWidget {
+  final VoidCallback onFriendAdded;
+
+  const _AddFriendDialog({required this.onFriendAdded});
+
+  @override
+  ConsumerState<_AddFriendDialog> createState() => _AddFriendDialogState();
+}
+
+class _AddFriendDialogState extends ConsumerState<_AddFriendDialog> {
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _searchUsers(String query) async {
+    if (query.trim().isEmpty || query.length < 2) {
+      setState(() {
+        _searchResults = [];
+      });
+      return;
+    }
+
+    setState(() => _isSearching = true);
+
+    try {
+      final currentUser = AuthServiceSupabase().currentUser;
+      if (currentUser == null) return;
+
+      final response = await SupabaseService.client
+          .from('users')
+          .select('uid, display_name, photo_url')
+          .ilike('display_name', '%$query%')
+          .neq('uid', currentUser.id)
+          .limit(10);
+
+      if (mounted) {
+        setState(() {
+          _searchResults = List<Map<String, dynamic>>.from(response);
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSearching = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Search failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendFriendRequest(String uid, String displayName) async {
+    try {
+      await ref.read(userNotifierProvider.notifier).sendFriendRequest(uid);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Friend request sent to $displayName'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        widget.onFriendAdded();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send friend request: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: Text('Add Friend', style: GoogleFonts.orbitron()),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search by display name...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onChanged: (value) {
+                _searchUsers(value);
+              },
+            ),
+            const SizedBox(height: 16),
+            if (_isSearching)
+              const CircularProgressIndicator()
+            else if (_searchResults.isEmpty &&
+                _searchController.text.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No users found',
+                  style: GoogleFonts.robotoMono(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, index) {
+                    final user = _searchResults[index];
+                    final displayName = user['display_name'] ?? 'Unknown';
+                    final photoUrl = user['photo_url'] as String?;
+
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage:
+                            photoUrl != null ? NetworkImage(photoUrl) : null,
+                        child: photoUrl == null
+                            ? Text(displayName[0].toUpperCase())
+                            : null,
+                      ),
+                      title: Text(displayName, style: GoogleFonts.robotoMono()),
+                      trailing: IconButton(
+                        icon:
+                            const Icon(Icons.person_add, color: Colors.purple),
+                        onPressed: () => _sendFriendRequest(
+                            user['uid'] as String, displayName),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Close', style: GoogleFonts.robotoMono()),
+        ),
+      ],
     );
   }
 }

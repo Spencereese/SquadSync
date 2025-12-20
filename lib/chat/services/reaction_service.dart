@@ -60,6 +60,32 @@ class ReactionService {
           );
         }
       } else {
+        // Check if user already has 2 reactions on this message
+        final userReactions = await SupabaseService.client
+            .from('reactions')
+            .select('id, emoji, created_at')
+            .eq('message_id', messageId)
+            .eq('user_id', userId)
+            .order('created_at', ascending: true);
+
+        if (userReactions.length >= 2) {
+          // User already has 2 reactions, remove the oldest one
+          final oldestReaction = userReactions.first;
+          final oldestEmoji = oldestReaction['emoji'] as String;
+
+          await SupabaseService.client
+              .from('reactions')
+              .delete()
+              .eq('id', oldestReaction['id']);
+
+          debugPrint(
+              '🔄 Removed oldest reaction: $oldestEmoji to make room for $emoji');
+
+          // Update message reactions column to remove the old emoji
+          await _updateMessageReactionsColumn(
+              messageId, oldestEmoji, userId, true);
+        }
+
         // User hasn't reacted with this emoji, add it
         await SupabaseService.client.from('reactions').insert({
           'message_id': messageId,

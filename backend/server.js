@@ -133,12 +133,26 @@ app.get('/', (req, res) => {
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
+  const health = {
+    status: 'healthy',
+    services: {
+      grok: !!process.env.XAI_API_KEY,
+      igdb: !!process.env.IGDB_CLIENT_ID && !!process.env.IGDB_CLIENT_SECRET,
+      supabase: !!process.env.SUPABASE_URL,
+      database: false,
+    }
+  };
+
+  // Database is optional (only for analytics/message history)
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'healthy', database: 'connected' });
+    health.services.database = true;
   } catch (err) {
-    res.status(500).json({ status: 'unhealthy', error: err.message });
+    // Database error is non-critical
+    health.database_note = 'Optional - analytics/history unavailable';
   }
+
+  res.json(health);
 });
 
 // Get historical messages
@@ -343,7 +357,7 @@ app.post('/grok', async (req, res) => {
     const fullPrompt = `${systemPrompt}\n\nUser message: ${message}${userContext}${recentContext}`;
 
     const response = await axios.post('https://api.x.ai/v1/chat/completions', {
-      model: 'grok-4.1-fast-latest',
+      model: 'grok-3',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: fullPrompt }
@@ -392,7 +406,7 @@ app.post('/smart-replies', async (req, res) => {
     const context = messages.slice(-5).join(' | '); // Last 5 messages for context
 
     const response = await axios.post('https://api.x.ai/v1/chat/completions', {
-      model: 'grok-4.1-fast-latest',
+      model: 'grok-3',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Recent messages: ${context}\n\nAnalyze sentiment and suggest smart replies with emojis:` }
@@ -463,7 +477,7 @@ Return recommendations as JSON: {"recommendations": [{"lobbyId": "id", "score": 
     const prompt = `User pinned games: ${gameNames}\nUser preferences: ${preferencesStr}\nAvailable lobbies: ${lobbiesStr}\n\nProvide AI matchmaking recommendations:`;
 
     const response = await axios.post('https://api.x.ai/v1/chat/completions', {
-      model: 'grok-4.1-fast-latest',
+      model: 'grok-3',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt }

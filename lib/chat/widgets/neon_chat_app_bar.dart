@@ -313,6 +313,9 @@ class _CenterAvatarStack extends StatelessWidget {
                           child: CachedNetworkImage(
                             imageUrl: avatarUrl!,
                             fit: BoxFit.cover,
+                            memCacheWidth: 200, // Optimize memory usage
+                            memCacheHeight: 200,
+                            fadeInDuration: const Duration(milliseconds: 100),
                             placeholder: (context, url) => Icon(
                               Icons.groups,
                               color: neonColor.withOpacity(0.5),

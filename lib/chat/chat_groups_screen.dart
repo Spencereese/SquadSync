@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
 import '../domain/entities/message.dart';
 import '../domain/entities/lobby_state.dart';
 import '../domain/entities/chat_group.dart';
@@ -9,6 +10,7 @@ import 'chat_screen.dart';
 import '../core/app_theme.dart';
 import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
+import 'widgets/group_chat_context_menu.dart';
 import 'dialogs/group_actions_dialog.dart';
 import 'dialogs/add_friend_dialog.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
@@ -49,8 +51,23 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     // This ensures discover filtering works correctly
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
-        debugPrint('🔴 ChatGroupsScreen: Calling loadUserGroups()');
-        await ref.read(chatNotifierProvider.notifier).loadUserGroups();
+        // Only load if groups haven't been loaded yet
+        final chatState = ref.read(chatNotifierProvider);
+        final hasLoadedGroups = chatState.whenOrNull(
+              data: (state) =>
+                  state.chatGroups.isNotEmpty ||
+                  state.userChatGroups.isNotEmpty,
+            ) ??
+            false;
+
+        if (!hasLoadedGroups) {
+          debugPrint(
+              '🔴 ChatGroupsScreen: Calling loadUserGroups() (no cached data)');
+          await ref.read(chatNotifierProvider.notifier).loadUserGroups();
+        } else {
+          debugPrint(
+              '🟢 ChatGroupsScreen: Using cached groups (${chatState.value?.chatGroups.length ?? 0} groups)');
+        }
 
         // Now initialize discover groups AFTER user groups are loaded
         if (mounted) {
@@ -116,11 +133,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
   void _onTabTapped(int index) {
     if (index != _selectedIndexNotifier.value) {
       _selectedIndexNotifier.value = index;
-      _pageController.animateToPage(
-        index,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOutSine,
-      );
+      _pageController.jumpToPage(index);
       HapticFeedback.lightImpact();
       _clearNotification(index);
     }
@@ -392,36 +405,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
               itemBuilder: (context, index) {
                 final group = groups[index];
 
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                    backgroundImage: group.avatarUrl != null
-                        ? NetworkImage(group.avatarUrl!)
-                        : null,
-                    child: group.avatarUrl == null
-                        ? Icon(
-                            Icons.group,
-                            color: Theme.of(context).colorScheme.primary,
-                          )
-                        : null,
-                  ),
-                  title: Text(
-                    group.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    _formatLastMessage(group),
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.6),
-                      fontSize: 12,
-                    ),
-                  ),
+                return InkWell(
                   onTap: () async {
                     HapticFeedback.lightImpact();
                     await ref
@@ -440,6 +424,149 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                       );
                     }
                   },
+                  onLongPress: () async {
+                    HapticFeedback.mediumImpact();
+                    final currentUser = AuthServiceSupabase().currentUser;
+                    if (currentUser == null) return;
+
+                    try {
+                      // Fetch group metadata from users.user_groups
+                      final userData = await SupabaseService.client
+                          .from('users')
+                          .select('user_groups')
+                          .eq('uid', currentUser.id)
+                          .maybeSingle();
+
+                      final userGroups = List<Map<String, dynamic>>.from(
+                          userData?['user_groups'] ?? []);
+                      final groupMeta = userGroups.firstWhere(
+                        (g) => g['id'] == group.id,
+                        orElse: () => <String, dynamic>{},
+                      );
+
+                      final isMuted = groupMeta['is_muted'] as bool? ?? false;
+                      final isPinned = groupMeta['is_pinned'] as bool? ?? false;
+
+                      // Check if user is creator
+                      final groupData = await SupabaseService.client
+                          .from('chat_groups')
+                          .select('created_by')
+                          .eq('id', group.id)
+                          .maybeSingle();
+                      final createdBy =
+                          groupData?['created_by'] as String? ?? '';
+                      final isCreator = createdBy == currentUser.id;
+
+                      if (!context.mounted) return;
+
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.transparent,
+                        builder: (context) => GroupChatContextMenu(
+                          groupId: group.id,
+                          groupName: group.name,
+                          createdBy: createdBy,
+                          isMuted: isMuted,
+                          isPinned: isPinned,
+                          onMarkUnread: () async {
+                            await ref
+                                .read(chatNotifierProvider.notifier)
+                                .markGroupAsUnread(group.id);
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          onTogglePinned: () async {
+                            await ref
+                                .read(chatNotifierProvider.notifier)
+                                .togglePinGroup(group.id, isPinned);
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          onToggleMute: () async {
+                            await ref
+                                .read(chatNotifierProvider.notifier)
+                                .toggleMuteGroup(group.id, isMuted);
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          onIgnore: () async {
+                            await ref
+                                .read(chatNotifierProvider.notifier)
+                                .ignoreGroup(group.id);
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          onLeave: () async {
+                            Navigator.pop(context);
+                            _showLeaveGroupDialog(
+                                context, group.id, group.name);
+                          },
+                          onDelete: isCreator
+                              ? () async {
+                                  try {
+                                    await ref
+                                        .read(chatNotifierProvider.notifier)
+                                        .deleteGroup(group.id);
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content:
+                                              Text('Deleted "${group.name}"'),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text('Failed to delete: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                }
+                              : null,
+                        ),
+                      );
+                    } catch (e) {
+                      debugPrint('Error showing context menu: $e');
+                    }
+                  },
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withOpacity(0.2),
+                      backgroundImage: group.avatarUrl != null
+                          ? NetworkImage(group.avatarUrl!)
+                          : null,
+                      child: group.avatarUrl == null
+                          ? Icon(
+                              Icons.group,
+                              color: Theme.of(context).colorScheme.primary,
+                            )
+                          : null,
+                    ),
+                    title: Text(
+                      group.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      _formatLastMessage(group),
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.6),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 );
               },
             );
@@ -685,6 +812,66 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
         );
       }
     }
+  }
+
+  void _showLeaveGroupDialog(
+      BuildContext context, String groupId, String groupName) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text(
+            'Leave Group',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Text(
+            'Are you sure you want to leave "$groupName"?',
+            style: const TextStyle(color: Colors.white),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop(); // Close dialog first
+                try {
+                  await ref
+                      .read(chatNotifierProvider.notifier)
+                      .leaveGroup(groupId);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('You left "$groupName"'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to leave group: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Leave',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   String _formatLastMessage(ChatGroup group) {

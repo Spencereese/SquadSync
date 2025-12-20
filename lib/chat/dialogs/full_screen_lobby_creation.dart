@@ -6,7 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/game.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
-import '../../widgets/game_search_delegate.dart';
+import '../../presentation/notifiers/user_notifier.dart';
+import '../../widgets/game_tile.dart';
+import '../../widgets/unified_game_selection_sheet.dart';
 import '../../core/app_theme.dart';
 
 /// Full-screen lobby creation with chat info screen styling
@@ -85,16 +87,15 @@ class _FullScreenLobbyCreationState
       final supabase = Supabase.instance.client;
       final response = await supabase
           .from('tag_analytics')
-          .select('tag_name, trending_score')
+          .select('tag, trending_score')
           .gt('trending_score', 5.0)
           .order('trending_score', ascending: false)
           .limit(10);
 
       if (mounted) {
         setState(() {
-          _trendingTags = (response as List)
-              .map((tag) => tag['tag_name'] as String)
-              .toList();
+          _trendingTags =
+              (response as List).map((tag) => tag['tag'] as String).toList();
         });
       }
     } catch (e) {
@@ -306,16 +307,195 @@ class _FullScreenLobbyCreationState
   }
 
   Widget _buildGameSelector(ThemeData theme, Color neonColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Selected game display
+        if (_selectedGame != null)
+          Container(
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  neonColor.withOpacity(0.2),
+                  neonColor.withOpacity(0.1),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: neonColor.withOpacity(0.5),
+                width: 2,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.white.withOpacity(0.1),
+                  ),
+                  child: Icon(Icons.gamepad, color: neonColor, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedGame!.name,
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Selected Game',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: Colors.white.withOpacity(0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    setState(() => _selectedGame = null);
+                  },
+                ),
+              ],
+            ),
+          ),
+
+        // Pinned games carousel
+        Consumer(
+          builder: (context, ref, child) {
+            final userState = ref.watch(userNotifierProvider);
+            return userState.when(
+              data: (appUser) {
+                final pinnedGames = appUser?.pinnedGames ?? [];
+                if (pinnedGames.isEmpty) {
+                  return _buildSearchButton(theme, neonColor);
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your Pinned Games',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.7),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 120,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: pinnedGames.length,
+                        itemBuilder: (context, index) {
+                          final gameMap = pinnedGames[index];
+                          final gameName =
+                              gameMap['name'] as String? ?? 'Unknown';
+                          final isSelected = _selectedGame?.name == gameName;
+                          return Container(
+                            width: 100,
+                            margin: const EdgeInsets.only(right: 12),
+                            child: GestureDetector(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                // Convert map to Game object
+                                final game = Game.fromJson(gameMap);
+                                setState(() => _selectedGame = game);
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? neonColor
+                                        : Colors.white.withOpacity(0.2),
+                                    width: isSelected ? 3 : 1,
+                                  ),
+                                  color: isSelected
+                                      ? neonColor.withOpacity(0.2)
+                                      : Colors.white.withOpacity(0.05),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.gamepad,
+                                      color: isSelected
+                                          ? neonColor
+                                          : Colors.white.withOpacity(0.7),
+                                      size: 36,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8),
+                                      child: Text(
+                                        gameName,
+                                        textAlign: TextAlign.center,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: isSelected
+                                              ? FontWeight.w600
+                                              : FontWeight.normal,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildSearchButton(theme, neonColor),
+                  ],
+                );
+              },
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+              error: (error, _) => _buildSearchButton(theme, neonColor),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchButton(ThemeData theme, Color neonColor) {
     return GestureDetector(
       onTap: () async {
         HapticFeedback.lightImpact();
-        final game = await showSearch(
-          context: context,
-          delegate: GameSearchDelegate(ref: ref),
+        await UnifiedGameSelectionSheet.show(
+          context,
+          title: 'Select Game',
+          subtitle: 'Choose a game for this lobby',
+          showPinnedGames: true,
+          showSearchButton: true,
+          showMaxSpotSelector: false,
+          onGameSelected: (game) {
+            setState(() => _selectedGame = game);
+            Navigator.of(context).pop();
+          },
         );
-        if (game != null) {
-          setState(() => _selectedGame = game);
-        }
       },
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -323,49 +503,21 @@ class _FullScreenLobbyCreationState
           color: Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withOpacity(0.2),
             width: 1,
           ),
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (_selectedGame != null)
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.white.withOpacity(0.1),
-                ),
-                child: Icon(Icons.gamepad, color: neonColor, size: 24),
-              )
-            else
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.white.withOpacity(0.05),
-                ),
-                child: Icon(Icons.add,
-                    color: Colors.white.withOpacity(0.5), size: 24),
+            Icon(Icons.search, color: neonColor, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Search for a game',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: Colors.white.withOpacity(0.7),
               ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                _selectedGame?.name ?? 'Tap to select game',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: _selectedGame != null
-                      ? Colors.white
-                      : Colors.white.withOpacity(0.5),
-                ),
-              ),
-            ),
-            Icon(
-              Icons.chevron_right,
-              color: Colors.white.withOpacity(0.3),
-              size: 20,
             ),
           ],
         ),

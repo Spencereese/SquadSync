@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:retry/retry.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Custom exception for rate limiting
 class RateLimitException implements Exception {}
@@ -75,10 +76,16 @@ class AiMatchmakingResponse {
 /// Service for integrating xAI's Grok AI into the chat via backend
 class GrokService {
   static final Logger _logger = Logger();
-  static const String _backendUrl = String.fromEnvironment('BACKEND_URL',
-      defaultValue: kDebugMode
-          ? 'http://localhost:8080'
-          : 'https://lobbiesync-backend-756172684661.us-central1.run.app');
+
+  /// Get backend URL from environment variables (runtime)
+  static String get _backendUrl {
+    final url = dotenv.env['BACKEND_URL'];
+    if (url != null && url.isNotEmpty) {
+      return url;
+    }
+    // Fallback to Cloud Run production URL
+    return 'https://squadsync-backend-kinmmpi3ca-uc.a.run.app';
+  }
 
   static const int _maxRetries = 3;
   static const int _baseDelayMs = 1000;

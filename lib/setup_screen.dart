@@ -20,6 +20,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final _supabase = SupabaseService.client;
   bool _isLoading = false;
+  bool _isPasswordVisible = false;
 
   @override
   void initState() {
@@ -341,12 +342,24 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: _passwordController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Password',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                       hintText: 'Enter your password',
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _isPasswordVisible
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _isPasswordVisible = !_isPasswordVisible;
+                          });
+                        },
+                      ),
                     ),
-                    obscureText: true,
+                    obscureText: !_isPasswordVisible,
                     textInputAction: TextInputAction.done,
                     onSubmitted: (_) => _onEmailButtonPressed(),
                     enabled: !_isLoading,

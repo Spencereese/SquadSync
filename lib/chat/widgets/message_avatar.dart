@@ -36,18 +36,43 @@ class MessageAvatar extends ConsumerWidget {
         return GestureDetector(
           onTap:
               onTap ?? () => _showUserMenu(context, ref, senderName, senderUid),
-          child: CircleAvatar(
-            radius: 16,
-            backgroundImage: profileImage != null && profileImage.isNotEmpty
-                ? CachedNetworkImageProvider(_fixMediaUrl(profileImage))
-                : null,
-            child: profileImage == null || profileImage.isEmpty
-                ? Text(
+          child: profileImage != null && profileImage.isNotEmpty
+              ? CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.transparent,
+                  child: ClipOval(
+                    child: CachedNetworkImage(
+                      imageUrl: _fixMediaUrl(profileImage),
+                      width: 32,
+                      height: 32,
+                      memCacheWidth: 96, // 3x for retina displays
+                      memCacheHeight: 96,
+                      fit: BoxFit.cover,
+                      fadeInDuration: const Duration(milliseconds: 100),
+                      placeholder: (context, url) => Text(
+                        senderName.isNotEmpty
+                            ? senderName[0].toUpperCase()
+                            : '?',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 14),
+                      ),
+                      errorWidget: (context, url, error) => Text(
+                        senderName.isNotEmpty
+                            ? senderName[0].toUpperCase()
+                            : '?',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 14),
+                      ),
+                    ),
+                  ),
+                )
+              : CircleAvatar(
+                  radius: 16,
+                  child: Text(
                     senderName.isNotEmpty ? senderName[0].toUpperCase() : '?',
                     style: const TextStyle(color: Colors.white, fontSize: 14),
-                  )
-                : null,
-          ),
+                  ),
+                ),
         );
       },
       orElse: () => CircleAvatar(

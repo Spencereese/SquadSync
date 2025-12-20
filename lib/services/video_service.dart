@@ -12,6 +12,7 @@ import 'package:retry/retry.dart';
 import 'app_flow_manager.dart';
 import '../chat/sqlite_helper.dart';
 import 'voice_service.dart'; // Reuse error types and config
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Video service error types (extends VoiceServiceError)
 enum VideoServiceError {
@@ -431,9 +432,13 @@ class VideoService {
     }
 
     try {
+      // Get backend URL from environment variable (runtime)
+      final backendUrl = dotenv.env['BACKEND_URL'] ??
+          'https://squadsync-backend-kinmmpi3ca-uc.a.run.app';
+
       final response = await retry(
         () => http.post(
-          Uri.parse('http://localhost:8080/generate-agora-token'),
+          Uri.parse('$backendUrl/generate-agora-token'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'channelName': channelName,

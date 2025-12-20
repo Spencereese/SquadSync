@@ -343,51 +343,53 @@ class _GameSelectionWidgetState extends ConsumerState<GameSelectionWidget> {
           width: 1,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          if (widget.header != null)
-            widget.header!
-          else
-            _buildDefaultHeader(theme),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            if (widget.header != null)
+              widget.header!
+            else
+              _buildDefaultHeader(theme),
 
-          const SizedBox(height: 16),
-
-          // Max spots selector (for chat lobby creation)
-          if (widget.showMaxSpotSelector) _buildMaxSpotSelector(theme),
-
-          // Search button
-          if (widget.showSearchButton) ...[
-            _buildSearchButton(theme),
             const SizedBox(height: 16),
+
+            // Max spots selector (for chat lobby creation)
+            if (widget.showMaxSpotSelector) _buildMaxSpotSelector(theme),
+
+            // Search button
+            if (widget.showSearchButton) ...[
+              _buildSearchButton(theme),
+              const SizedBox(height: 16),
+            ],
+
+            // Active lobbies section (if chat group context)
+            if (widget.chatGroupId != null) ...[
+              _buildActiveLobbiesSection(theme, ref),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+            ],
+
+            // Pinned games section
+            if (widget.showPinnedGames && pinnedGames.isNotEmpty) ...[
+              _buildPinnedGamesSection(theme, pinnedGames),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+            ],
+
+            // Popular games section
+            _buildPopularGamesSection(theme),
+
+            // Footer
+            if (widget.footer != null) ...[
+              const SizedBox(height: 16),
+              widget.footer!,
+            ],
           ],
-
-          // Active lobbies section (if chat group context)
-          if (widget.chatGroupId != null) ...[
-            _buildActiveLobbiesSection(theme, ref),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 16),
-          ],
-
-          // Pinned games section
-          if (widget.showPinnedGames && pinnedGames.isNotEmpty) ...[
-            _buildPinnedGamesSection(theme, pinnedGames),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 16),
-          ],
-
-          // Popular games section
-          _buildPopularGamesSection(theme),
-
-          // Footer
-          if (widget.footer != null) ...[
-            const SizedBox(height: 16),
-            widget.footer!,
-          ],
-        ],
+        ),
       ),
     );
   }

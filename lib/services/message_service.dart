@@ -766,7 +766,7 @@ class MessageService with WidgetsBindingObserver {
         'chat_type': chatType.name,
         'text': grokResponse,
         'message_type': 'text',
-        'isAiResponse': true, // PostgreSQL column with quotes - case-sensitive
+        'ai_response': grokResponse, // Store AI response in snake_case column
         'reactions': {},
         'timestamp': timestamp.toIso8601String(),
         'is_deleted': false,

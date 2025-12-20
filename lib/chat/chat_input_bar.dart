@@ -91,11 +91,20 @@ class _ChatInputBarState extends State<ChatInputBar> {
       if (lastAtIndex != -1) {
         final textAfterAt = textBeforeCursor.substring(lastAtIndex + 1);
         if (!textAfterAt.contains(' ')) {
-          // Show mention suggestions filtered by actual members
+          // Show mention suggestions filtered by actual members + Grok
           final searchQuery = textAfterAt.toLowerCase();
-          _mentionSuggestions = widget.availableMembers!
+          final memberSuggestions = widget.availableMembers!
               .where((user) => user.toLowerCase().contains(searchQuery))
               .toList();
+
+          // Add Grok if search matches
+          final allSuggestions = <String>[];
+          if ('grok'.contains(searchQuery)) {
+            allSuggestions.add('Grok');
+          }
+          allSuggestions.addAll(memberSuggestions);
+
+          _mentionSuggestions = allSuggestions;
 
           setState(() {
             _showMentions = _mentionSuggestions.isNotEmpty;
@@ -418,6 +427,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         itemCount: _mentionSuggestions.length,
         itemBuilder: (context, index) {
           final user = _mentionSuggestions[index];
+          final isGrok = user == 'Grok';
           final avatarUrl = widget.memberAvatars?[user];
 
           return Material(
@@ -429,24 +439,48 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
-                    // Avatar
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
-                          ? NetworkImage(avatarUrl)
-                          : null,
-                      child: avatarUrl == null || avatarUrl.isEmpty
-                          ? Text(
-                              user.isNotEmpty ? user[0].toUpperCase() : '?',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            )
-                          : null,
-                    ),
+                    // Avatar or AI icon
+                    if (isGrok)
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [
+                              Theme.of(context).colorScheme.primary,
+                              Theme.of(context).colorScheme.secondary,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            '🤖',
+                            style: TextStyle(fontSize: 18),
+                          ),
+                        ),
+                      )
+                    else
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        backgroundImage:
+                            avatarUrl != null && avatarUrl.isNotEmpty
+                                ? NetworkImage(avatarUrl)
+                                : null,
+                        child: avatarUrl == null || avatarUrl.isEmpty
+                            ? Text(
+                                user.isNotEmpty ? user[0].toUpperCase() : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      ),
                     const SizedBox(width: 12),
                     // Username
                     Expanded(

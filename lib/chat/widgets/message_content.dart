@@ -421,6 +421,9 @@ class MessageContent extends ConsumerWidget {
           child: CachedNetworkImage(
             imageUrl: fixedUrl,
             fit: BoxFit.cover,
+            memCacheWidth: 400, // 2x for retina
+            memCacheHeight: 400,
+            fadeInDuration: const Duration(milliseconds: 100),
             placeholder: (context, url) => Container(
               width: 100,
               height: 100,
@@ -476,6 +479,9 @@ class MessageContent extends ConsumerWidget {
               child: CachedNetworkImage(
                 imageUrl: imageUrl,
                 fit: BoxFit.contain,
+                memCacheWidth: 1080,
+                memCacheHeight: 1920,
+                fadeInDuration: const Duration(milliseconds: 150),
                 placeholder: (context, url) =>
                     const Center(child: CircularProgressIndicator()),
                 errorWidget: (context, url, error) => const Center(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
 import '../core/app_theme.dart';
 import '../domain/entities/app_user.dart';
 import '../domain/entities/system_state.dart';
@@ -809,7 +810,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               try {
                 await AuthServiceSupabase().signOut();
                 if (context.mounted) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  // Use go_router to navigate to setup screen
+                  context.go('/setup');
                 }
               } catch (e) {
                 if (context.mounted) {

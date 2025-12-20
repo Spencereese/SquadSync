@@ -59,6 +59,10 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
 
     if (clientId == null) throw Exception('IGDB client ID not found.');
 
+    print('🔍 IGDB Search Query: "$query"');
+    print('🔑 Client ID: ${clientId.substring(0, 5)}...');
+    print('🔐 Token: ${token.substring(0, 10)}...');
+
     IgdbErrorType? lastError;
     for (int attempt = 0; attempt < _maxRetries; attempt++) {
       try {
@@ -76,6 +80,8 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           limit ${limit * 2};
         ''';
 
+        print('📤 IGDB Query Body:\n$queryBody');
+
         final response = await _dio.post<String>(
           'https://api.igdb.com/v4/games',
           data: queryBody,
@@ -88,17 +94,25 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           ),
         );
 
+        print('📥 IGDB Response Status: ${response.statusCode}');
+        print('📥 IGDB Response Data Length: ${response.data?.length ?? 0}');
+
         if (response.statusCode == 200 && response.data != null) {
           final data = json.decode(response.data!) as List<dynamic>;
+          print('📊 IGDB Parsed ${data.length} raw results');
           final games = data
               .where((game) => _isValidGame(game))
               .map((game) => Game.fromIgdb(game))
               .toList();
+          print('✅ IGDB Filtered to ${games.length} valid games');
           return _deduplicateGames(games).take(limit).toList();
         } else if (response.statusCode == 401) {
+          print('🔄 Token expired, refreshing...');
           await refreshToken();
           continue;
         } else {
+          print(
+              '❌ IGDB Error: Status ${response.statusCode}, Body: ${response.data}');
           lastError =
               _classifyError(response.statusCode ?? 500, response.data ?? '');
           if (lastError == IgdbErrorType.auth ||
@@ -107,12 +121,15 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           }
         }
       } on DioException catch (e) {
+        print('❌ Dio Exception: ${e.message}');
+        print('   Response: ${e.response?.data}');
         if (e.response?.statusCode == 401) {
           await refreshToken();
           continue;
         }
         lastError = IgdbErrorType.network;
       } catch (e) {
+        print('❌ Unknown Error: $e');
         lastError = IgdbErrorType.network;
       }
 

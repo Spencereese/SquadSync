@@ -579,10 +579,14 @@ class VoiceService {
       return null;
     }
 
+    // Get backend URL from environment variable (runtime)
+    final backendUrl = dotenv.env['BACKEND_URL'] ??
+        'https://squadsync-backend-kinmmpi3ca-uc.a.run.app';
+
     try {
       final response = await retry(
         () => http.post(
-          Uri.parse('http://localhost:8080/generate-agora-token'),
+          Uri.parse('$backendUrl/generate-agora-token'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'channelName': channelName,

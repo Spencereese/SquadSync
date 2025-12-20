@@ -105,8 +105,11 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
   }
 
   void _dismiss() {
+    if (!mounted) return;
     _animationController.reverse().then((_) {
-      widget.onDismiss();
+      if (mounted) {
+        widget.onDismiss();
+      }
     });
   }
 
@@ -126,15 +129,19 @@ class _IMessageReactionsBarState extends State<IMessageReactionsBar>
 
       debugPrint('✅ Reaction added successfully');
 
-      _dismiss();
+      if (mounted) {
+        _dismiss();
+      }
     } catch (e) {
       debugPrint('❌ Error adding reaction: $e');
-      if (widget.scaffoldMessenger != null) {
+      if (mounted && widget.scaffoldMessenger != null) {
         widget.scaffoldMessenger!.showSnackBar(
           SnackBar(content: Text('Failed to add reaction: $e')),
         );
       }
-      _dismiss();
+      if (mounted) {
+        _dismiss();
+      }
     }
   }
 

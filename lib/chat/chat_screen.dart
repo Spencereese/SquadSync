@@ -78,6 +78,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   double _previousKeyboardHeight = 0.0;
   bool? _previousSyncState;
 
+  // Debounce guard for chat info navigation
+  DateTime? _lastChatInfoNavigation;
+  static const _chatInfoDebounceMs = 500;
+
   // Cache for lobbies future to prevent repeated fetches
   Future<List<Map<String, dynamic>>>? _lobbiesFuture;
 
@@ -224,6 +228,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Load chat image URL early for user groups to prevent blank avatar on first load
     if (widget.chatType == ChatType.userGroup && widget.chatGroupId != null) {
       _loadChatImageUrl();
+      // Preload background image immediately in parallel
+      _preloadBackgroundImage();
     }
 
     // Load mute status from local storage first
@@ -593,6 +599,47 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       }
     } catch (e) {
       debugPrint('Error loading mute status: $e');
+    }
+  }
+
+  /// Preload background image during initState for faster display
+  Future<void> _preloadBackgroundImage() async {
+    try {
+      if (widget.chatGroupId == null) return;
+
+      final backgroundData = await SupabaseService.client
+          .from('chat_groups')
+          .select('background_type, background_value')
+          .eq('id', widget.chatGroupId!)
+          .maybeSingle();
+
+      if (backgroundData != null && mounted) {
+        final type = backgroundData['background_type'] ?? 'none';
+        final value = backgroundData['background_value'] ?? '';
+
+        if (type == 'image' && value.isNotEmpty) {
+          _cachedBackgroundUrl = value;
+          _backgroundImageLoaded = false;
+
+          // Preload in parallel with other operations
+          precacheImage(NetworkImage(value), context).then((_) {
+            if (mounted && _cachedBackgroundUrl == value) {
+              setState(() {
+                _backgroundImageLoaded = true;
+              });
+            }
+          }).catchError((error) {
+            debugPrint('Error preloading background image: $error');
+            if (mounted) {
+              setState(() {
+                _backgroundImageLoaded = true;
+              });
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error preloading background: $e');
     }
   }
 
@@ -1531,6 +1578,20 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   onGamepadPressed: isUserGroup ? _handleLobbyCreation : null,
                   showGamepadBadge: isUserGroup && _getActiveLobbyCount() > 0,
                   onCenterTapped: () async {
+                    // Debounce rapid taps to prevent multiple navigations
+                    final now = DateTime.now();
+                    if (_lastChatInfoNavigation != null) {
+                      final timeSinceLastNav = now
+                          .difference(_lastChatInfoNavigation!)
+                          .inMilliseconds;
+                      if (timeSinceLastNav < _chatInfoDebounceMs) {
+                        debugPrint(
+                            'ChatScreen: Debouncing rapid chat info tap (${timeSinceLastNav}ms ago)');
+                        return;
+                      }
+                    }
+                    _lastChatInfoNavigation = now;
+
                     // Fetch actual member list from chat_groups table
                     List<Map<String, dynamic>> members = [];
 
@@ -1698,13 +1759,17 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         }
         // Show placeholder while loading, then fade in the image
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
+          duration: const Duration(milliseconds: 200),
           child: _backgroundImageLoaded && _cachedBackgroundUrl == value
               ? Container(
                   key: ValueKey(value),
                   decoration: BoxDecoration(
                     image: DecorationImage(
-                      image: NetworkImage(value),
+                      image: ResizeImage(
+                        NetworkImage(value),
+                        width: 1080, // Optimize memory usage
+                        height: 1920,
+                      ),
                       fit: BoxFit.cover,
                       opacity: 1.0,
                     ),

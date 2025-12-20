@@ -704,21 +704,24 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
           .eq('id', groupId);
 
       // Remove from all users' user_groups
-      final usersWithGroup = await SupabaseService.client
-          .from('users')
-          .select('uid, user_groups')
-          .contains('user_groups', [
-        {'id': groupId}
-      ]);
+      // Fetch all users and filter client-side since JSONB contains query is problematic
+      final allUsers =
+          await SupabaseService.client.from('users').select('uid, user_groups');
 
-      for (final userData in (usersWithGroup as List)) {
+      for (final userData in (allUsers as List)) {
         final userGroups =
             List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
-        userGroups.removeWhere((g) => g['id'] == groupId);
+        final hadGroup = userGroups
+            .any((g) => g['id'] == groupId || g['chat_group_id'] == groupId);
 
-        await SupabaseService.client.from('users').update({
-          'user_groups': userGroups,
-        }).eq('uid', userData['uid']);
+        if (hadGroup) {
+          userGroups.removeWhere(
+              (g) => g['id'] == groupId || g['chat_group_id'] == groupId);
+
+          await SupabaseService.client.from('users').update({
+            'user_groups': userGroups,
+          }).eq('uid', userData['uid']);
+        }
       }
 
       // Reload groups
@@ -885,6 +888,16 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       // This prevents groups from disappearing after join
       debugPrint('🔄 Reloading user groups after join...');
       await loadUserGroups();
+
+      // Show success feedback
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Successfully joined ${group?.name ?? "group"}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e, stackTrace) {
       debugPrint('Error joining group: $e');
       debugPrint('Stack trace: $stackTrace');

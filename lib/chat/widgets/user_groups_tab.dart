@@ -392,10 +392,11 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
                       onPressed: () {
-                        // Open create group dialog
-                        showDialog(
-                          context: context,
-                          builder: (context) => const GroupActionsDialog(),
+                        // Open create group full-page screen
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const GroupActionsDialog(),
+                          ),
                         );
                       },
                       icon: const Icon(Icons.add, color: Colors.black),

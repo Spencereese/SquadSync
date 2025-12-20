@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,13 +9,14 @@ import '../presentation/notifiers/discovery_notifier.dart';
 import '../presentation/notifiers/lobby_notifier.dart';
 import '../presentation/notifiers/chat_notifier.dart';
 import '../presentation/notifiers/game_state_notifier.dart';
+import '../presentation/notifiers/user_notifier.dart';
+import '../presentation/notifiers/game_notifier.dart';
 
 import '../domain/entities/lobby.dart';
 import '../domain/entities/message.dart';
 import '../domain/entities/game.dart';
 import '../core/app_theme.dart';
 import '../chat/chat_screen.dart';
-import '../lobbies_tab/widgets/game_selector_modal.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
   const DiscoveryScreen({super.key});
@@ -24,12 +27,70 @@ class DiscoveryScreen extends ConsumerStatefulWidget {
 
 class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _gameSearchController = TextEditingController();
   String _searchQuery = '';
+  String _gameSearchQuery = '';
   Game? _selectedGame;
+  List<Game> _favoriteGames = [];
+  List<Game> _recentGames = [];
+  List<Game> _searchResults = [];
+  bool _isLoadingGames = true;
+  bool _isSearching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGames();
+  }
+
+  Future<void> _loadGames() async {
+    setState(() => _isLoadingGames = true);
+
+    try {
+      // Get favorite games from user preferences
+      final userState = ref.read(userNotifierProvider).value;
+      if (userState?.pinnedGames != null && userState!.pinnedGames.isNotEmpty) {
+        _favoriteGames = userState.pinnedGames
+            .map((g) {
+              try {
+                return Game.fromCache(g);
+              } catch (e) {
+                debugPrint('Error parsing favorite game: $e');
+                return null;
+              }
+            })
+            .where((g) => g != null)
+            .cast<Game>()
+            .toList();
+      }
+
+      // Get game history (recent games)
+      final gameState = await ref.read(gameStateNotifierProvider.future);
+      _recentGames = gameState.gameHistory
+          .take(5)
+          .map((g) {
+            try {
+              return Game.fromCache(g);
+            } catch (e) {
+              debugPrint('Error parsing recent game: $e');
+              return null;
+            }
+          })
+          .where((g) => g != null)
+          .cast<Game>()
+          .toList();
+
+      if (mounted) setState(() => _isLoadingGames = false);
+    } catch (e) {
+      debugPrint('Error loading games: $e');
+      if (mounted) setState(() => _isLoadingGames = false);
+    }
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _gameSearchController.dispose();
     super.dispose();
   }
 
@@ -172,14 +233,33 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                   ),
                 ),
                 error: (error, stack) {
-                  debugPrint('Firestore error in discovery: $error');
+                  debugPrint('Supabase error in discovery: $error');
+
+                  // Provide user-friendly error messages
+                  String errorMessage = 'Error loading lobbies';
+                  if (error.toString().contains('HandshakeException')) {
+                    errorMessage = 'Connection issue. Pull to refresh.';
+                  } else if (error.toString().contains('timedOut') ||
+                      error.toString().contains('RealtimeSubscribeException')) {
+                    errorMessage = 'Connection timeout. Pull to refresh.';
+                  }
+
                   return SliverToBoxAdapter(
                     child: Center(
                       child: Padding(
                         padding: EdgeInsets.all(32.0),
-                        child: Text(
-                          'Error loading lobbies: $error',
-                          style: const TextStyle(color: Colors.white70),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.cloud_off,
+                                size: 48, color: Colors.white38),
+                            const SizedBox(height: 16),
+                            Text(
+                              errorMessage,
+                              style: const TextStyle(color: Colors.white70),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -205,78 +285,454 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   Widget _buildGameSelectorButton() {
     final theme = Theme.of(context);
 
-    return GestureDetector(
-      onTap: () async {
-        HapticFeedback.mediumImpact();
-        await GameSelectorModal.show(
-          context,
-          onGameSelected: (game) {
-            setState(() => _selectedGame = game);
-            ref
-                .read(gameStateNotifierProvider.notifier)
-                .setCurrentGame(game.toJson());
-          },
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              theme.colorScheme.primary.withOpacity(0.3),
-              theme.colorScheme.primary.withOpacity(0.1),
+    // If game is selected, show compact view
+    if (_selectedGame != null) {
+      return GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          setState(() => _selectedGame = null);
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.primary.withOpacity(0.3),
+                theme.colorScheme.primary.withOpacity(0.1),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: theme.colorScheme.primary,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            children: [
+              if (_selectedGame!.coverUrl != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    _selectedGame!.coverUrl!,
+                    width: 48,
+                    height: 64,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Icon(
+                        Icons.gamepad,
+                        size: 48,
+                        color: theme.colorScheme.primary),
+                  ),
+                )
+              else
+                Icon(Icons.gamepad, size: 48, color: theme.colorScheme.primary),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _selectedGame!.name,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      'Tap to change game',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.close,
+                color: theme.colorScheme.primary,
+              ),
             ],
           ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: theme.colorScheme.primary,
-            width: 2,
-          ),
         ),
-        child: Row(
-          children: [
-            if (_selectedGame?.coverUrl != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  _selectedGame!.coverUrl!,
-                  width: 48,
-                  height: 64,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Icon(
-                      Icons.gamepad,
-                      size: 48,
-                      color: theme.colorScheme.primary),
+      );
+    }
+
+    // No game selected - show expanded inline selector
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primary.withOpacity(0.2),
+            theme.colorScheme.primary.withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.primary.withOpacity(0.5),
+          width: 2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Icon(
+                Icons.gamepad,
+                color: theme.colorScheme.primary,
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Select Game',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.primary,
                 ),
-              )
-            else
-              Icon(Icons.gamepad, size: 48, color: theme.colorScheme.primary),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _selectedGame?.name ?? 'Select a Game',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Search Bar - Now ABOVE the carousel
+          TextField(
+            controller: _gameSearchController,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Search all games...',
+              hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+              prefixIcon: Icon(Icons.search, color: theme.colorScheme.primary),
+              suffixIcon: _gameSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, color: Colors.white70),
+                      onPressed: () {
+                        _gameSearchController.clear();
+                        setState(() {
+                          _gameSearchQuery = '';
+                          _searchResults = [];
+                          _isSearching = false;
+                        });
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: theme.colorScheme.primary.withOpacity(0.1),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary.withOpacity(0.3),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary.withOpacity(0.3),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+            ),
+            onChanged: (query) async {
+              setState(() {
+                _gameSearchQuery = query;
+                _isSearching = query.isNotEmpty;
+              });
+
+              if (query.isEmpty) {
+                setState(() => _searchResults = []);
+                return;
+              }
+
+              // Debounce search
+              await Future.delayed(const Duration(milliseconds: 300));
+              if (_gameSearchQuery != query) return;
+
+              // Perform IGDB search
+              try {
+                final result = await ref
+                    .read(gameNotifierProvider.notifier)
+                    .searchGames(query);
+
+                result.when(
+                  data: (games) {
+                    if (mounted && _gameSearchQuery == query) {
+                      setState(() => _searchResults = games);
+                    }
+                  },
+                  loading: () {},
+                  error: (e, st) {
+                    debugPrint('Search error: $e');
+                    if (mounted) setState(() => _searchResults = []);
+                  },
+                );
+              } catch (e) {
+                debugPrint('Search exception: $e');
+              }
+            },
+          ),
+          const SizedBox(height: 20),
+
+          // Show search results OR favorite games carousel
+          if (_isSearching && _searchResults.isNotEmpty) ...[
+            Row(
+              children: [
+                Icon(Icons.search, color: theme.colorScheme.primary, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'Search Results',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 180,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _searchResults.length,
+                itemBuilder: (context, index) {
+                  final game = _searchResults[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: _buildInlineGameCard(game, theme, isLarge: true),
+                  );
+                },
+              ),
+            ),
+          ] else if (_isSearching) ...[
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: CircularProgressIndicator(),
+              ),
+            ),
+          ] else ...[
+            // Favorite Games Carousel (when NOT searching)
+            if (_favoriteGames.isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.star, color: theme.colorScheme.primary, size: 18),
+                  const SizedBox(width: 8),
                   Text(
-                    'Tap to filter lobbies by game',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.white70,
+                    'Favorite Games',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 180,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _favoriteGames.length,
+                  itemBuilder: (context, index) {
+                    final game = _favoriteGames[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: _buildInlineGameCard(game, theme, isLarge: true),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Recent Games Grid
+            if (_recentGames.isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.history,
+                      color: theme.colorScheme.primary, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Recently Played',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: _recentGames
+                    .map((game) => _buildInlineGameCard(game, theme))
+                    .toList(),
+              ),
+            ],
+          ],
+
+          if (_isLoadingGames)
+            const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
             ),
-            Icon(
-              Icons.keyboard_arrow_down,
-              color: theme.colorScheme.primary,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInlineGameCard(Game game, ThemeData theme,
+      {bool isLarge = false}) {
+    final width = isLarge ? 120.0 : 80.0;
+    final height = isLarge ? 180.0 : 110.0;
+    final isFavorite = _favoriteGames
+        .any((g) => g.igdbId == game.igdbId || g.name == game.name);
+
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _selectedGame = game);
+        ref
+            .read(gameStateNotifierProvider.notifier)
+            .setCurrentGame(game.toJson());
+      },
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: theme.colorScheme.primary.withOpacity(0.3),
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: theme.colorScheme.primary.withOpacity(0.2),
+              blurRadius: 8,
+              spreadRadius: 0,
             ),
           ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(
+            children: [
+              // Game Cover
+              if (game.coverUrl != null)
+                Positioned.fill(
+                  child: Image.network(
+                    game.coverUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: theme.colorScheme.surface.withOpacity(0.5),
+                        child: Icon(
+                          Icons.gamepad,
+                          size: isLarge ? 48 : 32,
+                          color: theme.colorScheme.onSurface.withOpacity(0.5),
+                        ),
+                      );
+                    },
+                  ),
+                )
+              else
+                Container(
+                  color: theme.colorScheme.surface.withOpacity(0.5),
+                  child: Center(
+                    child: Icon(
+                      Icons.gamepad,
+                      size: isLarge ? 48 : 32,
+                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                    ),
+                  ),
+                ),
+
+              // Gradient Overlay
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.3),
+                        Colors.black.withOpacity(0.7),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Star button (top right)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: GestureDetector(
+                  onTap: () async {
+                    HapticFeedback.lightImpact();
+                    try {
+                      final userNotifier =
+                          ref.read(userNotifierProvider.notifier);
+                      if (isFavorite) {
+                        await userNotifier.removePinnedGame(game.name);
+                        if (mounted) {
+                          setState(() {
+                            _favoriteGames.removeWhere((g) =>
+                                g.igdbId == game.igdbId || g.name == game.name);
+                          });
+                        }
+                      } else {
+                        await userNotifier.addPinnedGame(game.toJson());
+                        if (mounted) {
+                          setState(() {
+                            _favoriteGames.add(game);
+                          });
+                        }
+                      }
+                    } catch (e) {
+                      debugPrint('Error toggling favorite: $e');
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isFavorite ? Icons.star : Icons.star_border,
+                      color: isFavorite ? Colors.amber : Colors.white,
+                      size: isLarge ? 20 : 16,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Game Name
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  game.name,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: isLarge ? 12 : 10,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -447,6 +903,11 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
           .order('available_since', ascending: false);
 
       return (usersResponse as List).cast<Map<String, dynamic>>();
+    } on HandshakeException catch (e) {
+      debugPrint(
+          '⚠️ Network error fetching available friends (retrying...): $e');
+      // Return empty list on network error
+      return [];
     } catch (e) {
       debugPrint('Error fetching available friends: $e');
       return [];
@@ -624,6 +1085,10 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
       final response = await query.order('created_at', ascending: false);
 
       return (response as List).map((json) => Lobby.fromJson(json)).toList();
+    } on HandshakeException catch (e) {
+      debugPrint('⚠️ Network error fetching my lobbies (retrying...): $e');
+      // Return empty list on network error to avoid crashes
+      return [];
     } catch (e) {
       debugPrint('Error fetching my lobbies: $e');
       return [];
@@ -724,7 +1189,11 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
       final response =
           await query.order('created_at', ascending: false).limit(20);
 
-      return (response as List).map((json) => Lobby.fromJson(json)).toList();
+      return response.map((json) => Lobby.fromJson(json)).toList();
+    } on HandshakeException catch (e) {
+      debugPrint(
+          '⚠️ Network error fetching friends\' lobbies (retrying...): $e');
+      return [];
     } catch (e) {
       debugPrint('Error fetching friends\' lobbies: $e');
       return [];
@@ -892,6 +1361,12 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   List<String> _getAvailableSpots(Lobby lobby) {
     final availableSpots = <String>[];
     final maxSpots = lobby.maxSpots;
+
+    // Guard against empty spots array
+    if (lobby.spots.isEmpty || lobby.spots.length < maxSpots) {
+      return availableSpots;
+    }
+
     for (int i = 1; i <= maxSpots; i++) {
       if (lobby.spots[i - 1] == null) {
         availableSpots.add(i.toString());

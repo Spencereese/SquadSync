@@ -433,7 +433,27 @@ class LobbyRemoteDataSourceImpl
         .order(orderBy, ascending: ascending)
         .limit(limit);
 
-    return query.map((dataList) {
+    // Add timeout and error handling with retry logic
+    return query.timeout(
+      const Duration(seconds: 15),
+      onTimeout: (sink) {
+        debugPrint('⚠️ Public lobbies stream timeout - returning empty list');
+        sink.add([]); // Emit empty list on timeout
+      },
+    ).handleError((error, stackTrace) {
+      debugPrint('⚠️ Public lobbies stream error: $error');
+
+      // Handle specific error types gracefully
+      if (error.toString().contains('HandshakeException') ||
+          error.toString().contains('SocketException') ||
+          error.toString().contains('RealtimeSubscribeException')) {
+        debugPrint('⚠️ Connection issue detected, returning empty stream');
+        return <List<dynamic>>[];
+      }
+
+      // Re-throw other errors
+      throw error;
+    }).map((dataList) {
       var filteredData = dataList;
 
       // Apply isActive filter if specified

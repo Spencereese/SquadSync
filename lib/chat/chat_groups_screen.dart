@@ -324,9 +324,10 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                 icon: const Icon(Icons.add, color: Colors.cyanAccent),
                 onPressed: () {
                   HapticFeedback.lightImpact();
-                  showDialog(
-                    context: context,
-                    builder: (context) => const GroupActionsDialog(),
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const GroupActionsDialog(),
+                    ),
                   );
                 },
                 tooltip: 'Create group',
@@ -805,6 +806,11 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
             context,
             groupId,
           );
+
+      // Switch to "My Groups" tab after successful join
+      if (mounted && _selectedIndexNotifier.value != 0) {
+        _onTabTapped(0);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

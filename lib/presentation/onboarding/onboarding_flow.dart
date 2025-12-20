@@ -461,8 +461,10 @@ class _SignInPage extends ConsumerWidget {
             child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, emailController.text.trim()),
-            child: const Text('Send Reset Link', style: TextStyle(color: Colors.cyan)),
+            onPressed: () =>
+                Navigator.pop(context, emailController.text.trim()),
+            child: const Text('Send Reset Link',
+                style: TextStyle(color: Colors.cyan)),
           ),
         ],
       ),
@@ -474,7 +476,8 @@ class _SignInPage extends ConsumerWidget {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Password reset email sent! Check your inbox.'),
+              content:
+                  const Text('Password reset email sent! Check your inbox.'),
               backgroundColor: Colors.cyan.withOpacity(0.9),
               behavior: SnackBarBehavior.floating,
             ),

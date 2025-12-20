@@ -1,6 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../services/auth_service_supabase.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../utils.dart';
 import '../../domain/entities/message.dart';
 import '../../domain/entities/game.dart';
@@ -10,7 +12,7 @@ import '../../widgets/game_tile.dart';
 import '../../widgets/unified_game_selection_sheet.dart';
 import '../chat_screen.dart';
 
-/// Dialog for creating a new group with enhanced UI
+/// Full-page screen for creating a new group with animated glass theme
 class GroupActionsDialog extends ConsumerStatefulWidget {
   const GroupActionsDialog({super.key});
 
@@ -18,74 +20,139 @@ class GroupActionsDialog extends ConsumerStatefulWidget {
   ConsumerState<GroupActionsDialog> createState() => _GroupActionsDialogState();
 }
 
-class _GroupActionsDialogState extends ConsumerState<GroupActionsDialog> {
+class _GroupActionsDialogState extends ConsumerState<GroupActionsDialog>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutCubic,
+    ));
+
+    _animationController.forward();
   }
 
   @override
   void dispose() {
+    _animationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleBack() async {
+    await _animationController.reverse();
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
-        ),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.grey[900]!,
-              Colors.grey[850]!,
-            ],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.cyanAccent.withValues(alpha: 0.3),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.cyanAccent.withValues(alpha: 0.1),
-              blurRadius: 20,
-              spreadRadius: 5,
+    return WillPopScope(
+      onWillPop: () async {
+        await _handleBack();
+        return false;
+      },
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: Stack(
+          children: [
+            // Full-screen blur for liquid glass effect
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                child: Container(
+                  color: Colors.black.withOpacity(0.6),
+                ),
+              ),
+            ),
+            // Main content
+            Scaffold(
+              backgroundColor: Colors.transparent,
+              body: SlideTransition(
+                position: _slideAnimation,
+                child: Column(
+                  children: [
+                    // Custom app bar matching ChatInfoScreen
+                    _buildAppBar(context),
+
+                    // Scrollable content
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 16),
+
+                            // Content
+                            _CreateGroupTab(),
+
+                            const SizedBox(height: 32),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
           children: [
-            // Header with gradient and close button
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.cyanAccent.withValues(alpha: 0.15),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
+            // Back button with glass effect
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: _handleBack,
+                  ),
                 ),
               ),
+            ),
+            const SizedBox(width: 16),
+
+            // Title with icon
+            Expanded(
               child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.cyanAccent.withValues(alpha: 0.2),
+                      color: Colors.cyanAccent.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -94,40 +161,31 @@ class _GroupActionsDialogState extends ConsumerState<GroupActionsDialog> {
                       size: 24,
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Create New Group',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Create New Group',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Build your gaming community',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 13,
+                        Text(
+                          'Build your gaming community',
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withOpacity(0.6),
+                            fontSize: 13,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
-                    onPressed: () => Navigator.pop(context),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-
-            // Content
-            Expanded(
-              child: _CreateGroupTab(),
             ),
           ],
         ),
@@ -274,251 +332,23 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Group Name
-          const Text(
-            'Group Name *',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _nameController,
-            style: const TextStyle(color: Colors.white, fontSize: 16),
-            decoration: InputDecoration(
-              hintText: 'Enter group name...',
-              hintStyle: const TextStyle(color: Colors.grey),
-              filled: true,
-              fillColor: Colors.grey[800],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              prefixIcon: const Icon(Icons.group, color: Colors.cyanAccent),
-            ),
-            textCapitalization: TextCapitalization.words,
-          ),
-
-          const SizedBox(height: 24),
-
-          // Description (Optional)
-          const Text(
-            'Description (Optional)',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _descriptionController,
-            style: const TextStyle(color: Colors.white, fontSize: 16),
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: 'What is this group about?',
-              hintStyle: const TextStyle(color: Colors.grey),
-              filled: true,
-              fillColor: Colors.grey[800],
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-            textCapitalization: TextCapitalization.sentences,
-          ),
-
-          const SizedBox(height: 24),
-
-          // Game Focus (Optional)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Game Focus (Optional)',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              TextButton.icon(
-                onPressed: _showGameSearch,
-                icon: const Icon(Icons.search,
-                    size: 18, color: Colors.cyanAccent),
-                label: const Text(
-                  'Search IGDB',
-                  style: TextStyle(color: Colors.cyanAccent),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (_selectedGame != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.cyanAccent.withValues(alpha: 0.5),
-                  width: 2,
-                ),
-              ),
-              child: Stack(
-                children: [
-                  GameTile(
-                    game: _selectedGame!,
-                    style: GameTileStyle.list,
-                    onTap: () {
-                      setState(() => _selectedGame = null);
-                    },
-                  ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Material(
-                      color: Colors.red.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(20),
-                      child: InkWell(
-                        onTap: () {
-                          setState(() => _selectedGame = null);
-                        },
-                        borderRadius: BorderRadius.circular(20),
-                        child: const Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.close,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[800]?.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.grey[700]!,
-                  width: 1,
-                ),
-              ),
-              child: _loadingGames
-                  ? const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: Colors.cyanAccent,
-                          strokeWidth: 2,
-                        ),
-                      ),
-                    )
-                  : _popularGames.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            children: [
-                              const Icon(Icons.videogame_asset_off,
-                                  color: Colors.grey, size: 32),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'No popular games loaded',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                              const SizedBox(height: 8),
-                              TextButton(
-                                onPressed: _loadPopularGames,
-                                child: const Text(
-                                  'Retry',
-                                  style: TextStyle(color: Colors.cyanAccent),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : Column(
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: Text(
-                                'Popular Games',
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              height: 120,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 8),
-                                itemCount: _popularGames.length,
-                                itemBuilder: (context, index) {
-                                  final game = _popularGames[index];
-                                  return Container(
-                                    width: 140,
-                                    margin: const EdgeInsets.symmetric(
-                                        horizontal: 4),
-                                    child: GameTile(
-                                      game: game,
-                                      style: GameTileStyle.grid,
-                                      onTap: () {
-                                        setState(() => _selectedGame = game);
-                                      },
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-            ),
-
-          const SizedBox(height: 24),
-
-          // Privacy Setting
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[800]?.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _isPublic
-                    ? Colors.cyanAccent.withValues(alpha: 0.3)
-                    : Colors.grey.withValues(alpha: 0.3),
-                width: 1,
-              ),
-            ),
+          // Group Name Glass Card
+          _buildGlassCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(
-                      _isPublic ? Icons.public : Icons.lock,
-                      color: Colors.cyanAccent,
-                      size: 20,
-                    ),
+                    Icon(Icons.group, color: Colors.cyanAccent, size: 20),
                     const SizedBox(width: 8),
-                    const Text(
-                      'Group Privacy',
-                      style: TextStyle(
+                    Text(
+                      'Group Name *',
+                      style: GoogleFonts.inter(
                         color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -527,82 +357,385 @@ class _CreateGroupTabState extends ConsumerState<_CreateGroupTab> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                SwitchListTile(
-                  value: _isPublic,
-                  onChanged: (value) => setState(() => _isPublic = value),
-                  title: Text(
-                    _isPublic ? 'Public Group' : 'Private Group',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  subtitle: Text(
-                    _isPublic
-                        ? 'Anyone can find and join this group'
-                        : 'Invite-only, members need an invite code',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                  activeColor: Colors.cyanAccent,
-                  contentPadding: EdgeInsets.zero,
+                _buildGlassTextField(
+                  controller: _nameController,
+                  hintText: 'Enter group name...',
+                  prefixIcon: Icons.group,
+                  textCapitalization: TextCapitalization.words,
                 ),
               ],
             ),
           ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 16),
 
-          // Create Button
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              onPressed: _isCreating ? null : _createGroup,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.cyanAccent,
-                foregroundColor: Colors.black,
-                disabledBackgroundColor: Colors.grey[700],
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 4,
-              ),
-              child: _isCreating
-                  ? const SizedBox(
-                      height: 24,
-                      width: 24,
-                      child: CircularProgressIndicator(
-                        color: Colors.black,
-                        strokeWidth: 2,
+          // Description Glass Card
+          _buildGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.description, color: Colors.cyanAccent, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Description (Optional)',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
-                    )
-                  : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_circle, size: 24),
-                        SizedBox(width: 8),
-                        Text(
-                          'Create Group',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildGlassTextField(
+                  controller: _descriptionController,
+                  hintText: 'What is this group about?',
+                  maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
+                ),
+              ],
             ),
           ),
 
           const SizedBox(height: 16),
 
-          // Info text
-          Text(
-            'You\'ll be able to invite members after creating the group',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey[500],
-              fontSize: 12,
-              fontStyle: FontStyle.italic,
+          // Game Focus Glass Card
+          _buildGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.videogame_asset,
+                            color: Colors.cyanAccent, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Game Focus',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    TextButton.icon(
+                      onPressed: _showGameSearch,
+                      icon: const Icon(Icons.search,
+                          size: 18, color: Colors.cyanAccent),
+                      label: Text(
+                        'Search',
+                        style: GoogleFonts.inter(color: Colors.cyanAccent),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_selectedGame != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.cyanAccent.withOpacity(0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Stack(
+                          children: [
+                            GameTile(
+                              game: _selectedGame!,
+                              style: GameTileStyle.list,
+                              onTap: () {
+                                setState(() => _selectedGame = null);
+                              },
+                            ),
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Material(
+                                color: Colors.red.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(20),
+                                child: InkWell(
+                                  onTap: () {
+                                    setState(() => _selectedGame = null);
+                                  },
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(6),
+                                    child: Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  _buildPopularGamesCarousel(),
+              ],
             ),
           ),
+
+          const SizedBox(height: 16),
+
+          // Privacy & Settings Glass Card
+          _buildGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.settings, color: Colors.cyanAccent, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Privacy',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.1),
+                          width: 1,
+                        ),
+                      ),
+                      child: SwitchListTile(
+                        value: _isPublic,
+                        onChanged: (value) => setState(() => _isPublic = value),
+                        title: Text(
+                          'Public Group',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        subtitle: Text(
+                          _isPublic
+                              ? 'Anyone can find and join this group'
+                              : 'Only invited members can join',
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withOpacity(0.6),
+                            fontSize: 13,
+                          ),
+                        ),
+                        activeColor: Colors.cyanAccent,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Create Button
+          SizedBox(
+            width: double.infinity,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.cyanAccent.withOpacity(0.8),
+                        Colors.cyanAccent.withOpacity(0.6),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.cyanAccent.withOpacity(0.3),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton(
+                    onPressed: _isCreating ? null : _createGroup,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: _isCreating
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.black,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            'Create Group',
+                            style: GoogleFonts.inter(
+                              color: Colors.black,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGlassCard({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassTextField({
+    required TextEditingController controller,
+    required String hintText,
+    IconData? prefixIcon,
+    int maxLines = 1,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.1),
+              width: 1,
+            ),
+          ),
+          child: TextField(
+            controller: controller,
+            style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
+            maxLines: maxLines,
+            textCapitalization: textCapitalization,
+            decoration: InputDecoration(
+              hintText: hintText,
+              hintStyle: GoogleFonts.inter(
+                color: Colors.white.withOpacity(0.4),
+              ),
+              filled: false,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
+              prefixIcon: prefixIcon != null
+                  ? Icon(prefixIcon, color: Colors.cyanAccent.withOpacity(0.7))
+                  : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPopularGamesCarousel() {
+    if (_loadingGames) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: CircularProgressIndicator(color: Colors.cyanAccent),
+        ),
+      );
+    }
+
+    if (_popularGames.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text(
+            'No popular games available',
+            style: GoogleFonts.inter(
+              color: Colors.white.withOpacity(0.6),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 180,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _popularGames.length,
+        itemBuilder: (context, index) {
+          final game = _popularGames[index];
+          return Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GameTile(
+              game: game,
+              style: GameTileStyle.grid,
+              onTap: () {
+                setState(() => _selectedGame = game);
+              },
+            ),
+          );
+        },
       ),
     );
   }

@@ -206,6 +206,15 @@ class _LookingForSquadButtonState extends State<_LookingForSquadButton> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final buttonColor = _isLookingForSquad
+        ? Colors.orange
+        : (widget.neonColor == Colors.white ||
+                widget.neonColor.computeLuminance() > 0.8
+            ? theme.colorScheme
+                .primary // Use theme primary if neonColor is too light
+            : widget.neonColor);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: SizedBox(
@@ -213,12 +222,12 @@ class _LookingForSquadButtonState extends State<_LookingForSquadButton> {
         child: ElevatedButton.icon(
           onPressed: _isLoading ? null : _toggleLookingForSquad,
           icon: _isLoading
-              ? const SizedBox(
+              ? SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: theme.colorScheme.onPrimary,
                   ),
                 )
               : Icon(
@@ -226,6 +235,7 @@ class _LookingForSquadButtonState extends State<_LookingForSquadButton> {
                       ? Icons.notifications_off
                       : Icons.notifications_active,
                   size: 20,
+                  color: Colors.black,
                 ),
           label: Text(
             _isLookingForSquad
@@ -234,19 +244,18 @@ class _LookingForSquadButtonState extends State<_LookingForSquadButton> {
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
+              color: Colors.black,
             ),
           ),
           style: ElevatedButton.styleFrom(
-            backgroundColor:
-                _isLookingForSquad ? Colors.orange : widget.neonColor,
-            foregroundColor: Colors.white,
+            backgroundColor: buttonColor,
+            foregroundColor: Colors.black,
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
             elevation: 4,
-            shadowColor: (_isLookingForSquad ? Colors.orange : widget.neonColor)
-                .withValues(alpha: 0.5),
+            shadowColor: buttonColor.withValues(alpha: 0.5),
           ),
         ),
       ),

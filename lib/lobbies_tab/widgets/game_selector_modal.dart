@@ -5,10 +5,10 @@ import 'dart:ui';
 import '../../core/app_theme.dart';
 import '../../domain/entities/game.dart';
 import '../../presentation/notifiers/game_state_notifier.dart';
+import '../../presentation/notifiers/game_notifier.dart';
 import '../../presentation/notifiers/user_notifier.dart';
-import '../../widgets/game_search_delegate.dart';
 
-/// Game selector modal with pinned games carousel
+/// Game selector modal with favorite games carousel
 /// Opens from the lobby tab's game selector button
 class GameSelectorModal extends ConsumerStatefulWidget {
   final Function(Game) onGameSelected;
@@ -51,10 +51,14 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _animation;
+  final TextEditingController _searchController = TextEditingController();
 
-  List<Game> _pinnedGames = [];
+  List<Game> _favoriteGames = [];
   List<Game> _recentGames = [];
+  List<Game> _searchResults = [];
   bool _isLoading = true;
+  bool _isSearching = false;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -82,15 +86,15 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
     setState(() => _isLoading = true);
 
     try {
-      // Get pinned games from user preferences
+      // Get favorite games from user preferences
       final userState = ref.read(userNotifierProvider).value;
       if (userState?.pinnedGames != null && userState!.pinnedGames.isNotEmpty) {
-        _pinnedGames = userState.pinnedGames
+        _favoriteGames = userState.pinnedGames
             .map((g) {
               try {
                 return Game.fromCache(g);
               } catch (e) {
-                debugPrint('Error parsing pinned game: $e');
+                debugPrint('Error parsing favorite game: $e');
                 return null;
               }
             })
@@ -125,6 +129,7 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
   @override
   void dispose() {
     _animationController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -219,15 +224,6 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () async {
-              final game = await GameSearchDelegate.show(context, ref: ref);
-              if (game != null && mounted) {
-                widget.onGameSelected(game);
-              }
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.close),
             onPressed: _dismiss,
           ),
@@ -240,24 +236,119 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Pinned Games Carousel
-        if (_pinnedGames.isNotEmpty) ...[
-          _buildSectionHeader(theme, 'Pinned Games', Icons.push_pin),
-          const SizedBox(height: 12),
-          _buildPinnedGamesCarousel(theme),
-          const SizedBox(height: 24),
-        ],
+        // Search Bar - ABOVE the carousel
+        TextField(
+          controller: _searchController,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Search all games...',
+            hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+            prefixIcon: Icon(Icons.search, color: theme.colorScheme.primary),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, color: Colors.white70),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                        _searchResults = [];
+                        _isSearching = false;
+                      });
+                    },
+                  )
+                : null,
+            filled: true,
+            fillColor: theme.colorScheme.primary.withOpacity(0.1),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary.withOpacity(0.3),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary.withOpacity(0.3),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
+          ),
+          onChanged: (query) async {
+            setState(() {
+              _searchQuery = query;
+              _isSearching = query.isNotEmpty;
+            });
 
-        // Recent Games
-        if (_recentGames.isNotEmpty) ...[
-          _buildSectionHeader(theme, 'Recently Played', Icons.history),
-          const SizedBox(height: 12),
-          _buildGameGrid(_recentGames, theme),
-          const SizedBox(height: 24),
-        ],
+            if (query.isEmpty) {
+              setState(() => _searchResults = []);
+              return;
+            }
 
-        // Search Button
-        _buildSearchButton(theme),
+            // Debounce search
+            await Future.delayed(const Duration(milliseconds: 300));
+            if (_searchQuery != query) return;
+
+            // Perform IGDB search
+            try {
+              final result = await ref
+                  .read(gameNotifierProvider.notifier)
+                  .searchGames(query);
+
+              result.when(
+                data: (games) {
+                  if (mounted && _searchQuery == query) {
+                    setState(() => _searchResults = games);
+                  }
+                },
+                loading: () {},
+                error: (e, st) {
+                  debugPrint('Search error: $e');
+                  if (mounted) setState(() => _searchResults = []);
+                },
+              );
+            } catch (e) {
+              debugPrint('Search exception: $e');
+            }
+          },
+        ),
+        const SizedBox(height: 20),
+
+        // Show search results OR favorite games
+        if (_isSearching && _searchResults.isNotEmpty) ...[
+          _buildSectionHeader(theme, 'Search Results', Icons.search),
+          const SizedBox(height: 12),
+          _buildGamesCarousel(_searchResults, theme),
+          const SizedBox(height: 24),
+        ] else if (_isSearching) ...[
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20.0),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        ] else ...[
+          // Favorite Games Carousel
+          if (_favoriteGames.isNotEmpty) ...[
+            _buildSectionHeader(theme, 'Favorite Games', Icons.star),
+            const SizedBox(height: 12),
+            _buildGamesCarousel(_favoriteGames, theme),
+            const SizedBox(height: 24),
+          ],
+
+          // Recent Games
+          if (_recentGames.isNotEmpty) ...[
+            _buildSectionHeader(theme, 'Recently Played', Icons.history),
+            const SizedBox(height: 12),
+            _buildGameGrid(_recentGames, theme),
+            const SizedBox(height: 24),
+          ],
+        ],
       ],
     );
   }
@@ -278,14 +369,14 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
     );
   }
 
-  Widget _buildPinnedGamesCarousel(ThemeData theme) {
+  Widget _buildGamesCarousel(List<Game> games, ThemeData theme) {
     return SizedBox(
       height: 180,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: _pinnedGames.length,
+        itemCount: games.length,
         itemBuilder: (context, index) {
-          final game = _pinnedGames[index];
+          final game = games[index];
           return Padding(
             padding: const EdgeInsets.only(right: 16),
             child: _buildGameCard(game, theme, isLarge: true),
@@ -306,6 +397,8 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
   Widget _buildGameCard(Game game, ThemeData theme, {bool isLarge = false}) {
     final width = isLarge ? 120.0 : 80.0;
     final height = isLarge ? 160.0 : 110.0;
+    final isFavorite = _favoriteGames
+        .any((g) => g.igdbId == game.igdbId || g.name == game.name);
 
     return GestureDetector(
       onTap: () {
@@ -371,9 +464,54 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.transparent,
+                        Colors.black.withOpacity(0.3),
                         Colors.black.withOpacity(0.7),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Star button (top right)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: GestureDetector(
+                  onTap: () async {
+                    HapticFeedback.lightImpact();
+                    try {
+                      final userNotifier =
+                          ref.read(userNotifierProvider.notifier);
+                      if (isFavorite) {
+                        await userNotifier.removePinnedGame(game.name);
+                        if (mounted) {
+                          setState(() {
+                            _favoriteGames.removeWhere((g) =>
+                                g.igdbId == game.igdbId || g.name == game.name);
+                          });
+                        }
+                      } else {
+                        await userNotifier.addPinnedGame(game.toJson());
+                        if (mounted) {
+                          setState(() {
+                            _favoriteGames.add(game);
+                          });
+                        }
+                      }
+                    } catch (e) {
+                      debugPrint('Error toggling favorite: $e');
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isFavorite ? Icons.star : Icons.star_border,
+                      color: isFavorite ? Colors.amber : Colors.white,
+                      size: isLarge ? 20 : 16,
                     ),
                   ),
                 ),
@@ -397,36 +535,6 @@ class _GameSelectorModalState extends ConsumerState<GameSelectorModal>
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchButton(ThemeData theme) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: () async {
-          final game = await GameSearchDelegate.show(context, ref: ref);
-          if (game != null && mounted) {
-            widget.onGameSelected(game);
-          }
-        },
-        style: ElevatedButton.styleFrom(
-          backgroundColor: theme.colorScheme.primary.withOpacity(0.2),
-          foregroundColor: theme.colorScheme.primary,
-          padding: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: theme.colorScheme.primary.withOpacity(0.5),
-            ),
-          ),
-        ),
-        icon: const Icon(Icons.search),
-        label: const Text(
-          'Search All Games (IGDB)',
-          style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
     );

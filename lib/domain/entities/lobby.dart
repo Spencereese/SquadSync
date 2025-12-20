@@ -27,7 +27,18 @@ class Lobby with _$Lobby {
     String? chatGroupId,
   }) = _Lobby;
 
-  factory Lobby.fromJson(Map<String, dynamic> json) => _$LobbyFromJson(json);
+  factory Lobby.fromJson(Map<String, dynamic> json) {
+    // Handle null spots/spotTimers from database
+    if (json['spots'] == null) {
+      final maxSpots = json['maxSpots'] as int? ?? 0;
+      json['spots'] = List.filled(maxSpots, null);
+    }
+    if (json['spotTimers'] == null) {
+      final maxSpots = json['maxSpots'] as int? ?? 0;
+      json['spotTimers'] = List.filled(maxSpots, null);
+    }
+    return _$LobbyFromJson(json);
+  }
 
   factory Lobby.create({
     required String name,

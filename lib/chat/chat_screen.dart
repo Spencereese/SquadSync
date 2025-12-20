@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
 
@@ -71,8 +72,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   late ScrollController _scrollController;
   String _chatName = 'Lobby Chat';
   String? _chatImageUrl;
-  String? _cachedBackgroundUrl;
-  bool _backgroundImageLoaded = false;
 
   bool _isMuted = false;
   double _previousKeyboardHeight = 0.0;
@@ -228,8 +227,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Load chat image URL early for user groups to prevent blank avatar on first load
     if (widget.chatType == ChatType.userGroup && widget.chatGroupId != null) {
       _loadChatImageUrl();
-      // Preload background image immediately in parallel
-      _preloadBackgroundImage();
     }
 
     // Load mute status from local storage first
@@ -602,72 +599,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  /// Preload background image during initState for faster display
-  Future<void> _preloadBackgroundImage() async {
-    try {
-      if (widget.chatGroupId == null) return;
-
-      final backgroundData = await SupabaseService.client
-          .from('chat_groups')
-          .select('background_type, background_value')
-          .eq('id', widget.chatGroupId!)
-          .maybeSingle();
-
-      if (backgroundData != null && mounted) {
-        final type = backgroundData['background_type'] ?? 'none';
-        final value = backgroundData['background_value'] ?? '';
-
-        if (type == 'image' && value.isNotEmpty) {
-          _cachedBackgroundUrl = value;
-          _backgroundImageLoaded = false;
-
-          // Preload in parallel with other operations
-          precacheImage(NetworkImage(value), context).then((_) {
-            if (mounted && _cachedBackgroundUrl == value) {
-              setState(() {
-                _backgroundImageLoaded = true;
-              });
-            }
-          }).catchError((error) {
-            debugPrint('Error preloading background image: $error');
-            if (mounted) {
-              setState(() {
-                _backgroundImageLoaded = true;
-              });
-            }
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('Error preloading background: $e');
-    }
-  }
-
   void _precacheBackgroundImage(
       BuildContext context, Map<String, dynamic> background) {
-    final type = background['type'] ?? 'none';
-    final value = background['value'] ?? '';
-
-    if (type == 'image' && value.isNotEmpty && value != _cachedBackgroundUrl) {
-      _cachedBackgroundUrl = value;
-      _backgroundImageLoaded = false;
-
-      precacheImage(NetworkImage(value), context).then((_) {
-        if (mounted && _cachedBackgroundUrl == value) {
-          setState(() {
-            _backgroundImageLoaded = true;
-          });
-        }
-      }).catchError((error) {
-        debugPrint('Error precaching background image: $error');
-        if (mounted) {
-          setState(() {
-            _backgroundImageLoaded =
-                true; // Show anyway to avoid infinite loading
-          });
-        }
-      });
-    }
+    // CachedNetworkImage handles caching automatically - no manual precaching needed
   }
 
   Future<void> _sendMessage(msg.Message? replyToMessage,
@@ -1757,28 +1691,20 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         if (value.isEmpty) {
           return Container(color: const Color(0xFF0B0E14));
         }
-        // Show placeholder while loading, then fade in the image
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: _backgroundImageLoaded && _cachedBackgroundUrl == value
-              ? Container(
-                  key: ValueKey(value),
-                  decoration: BoxDecoration(
-                    image: DecorationImage(
-                      image: ResizeImage(
-                        NetworkImage(value),
-                        width: 1080, // Optimize memory usage
-                        height: 1920,
-                      ),
-                      fit: BoxFit.cover,
-                      opacity: 1.0,
-                    ),
-                  ),
-                )
-              : Container(
-                  key: const ValueKey('placeholder'),
-                  color: const Color(0xFF0B0E14),
-                ),
+        // CachedNetworkImage loads instantly from cache on subsequent opens
+        return CachedNetworkImage(
+          imageUrl: value,
+          fit: BoxFit.cover,
+          maxWidthDiskCache: 1080, // Optimize memory usage
+          maxHeightDiskCache: 1920,
+          fadeInDuration: Duration.zero, // No fade animation for instant display
+          fadeOutDuration: Duration.zero,
+          placeholder: (context, url) => Container(
+            color: const Color(0xFF0B0E14),
+          ),
+          errorWidget: (context, url, error) => Container(
+            color: const Color(0xFF0B0E14),
+          ),
         );
 
       case 'preset':

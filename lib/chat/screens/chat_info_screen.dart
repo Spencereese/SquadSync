@@ -3001,6 +3001,10 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
         onAvatarUpdated: () async {
           // Reload user groups to refresh the avatar in UI
           await ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+          // Trigger UI refresh to show updated avatar immediately
+          if (mounted) {
+            setState(() {});
+          }
         },
       ),
     );

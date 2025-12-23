@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -83,6 +84,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   // Cache for lobbies future to prevent repeated fetches
   Future<List<Map<String, dynamic>>>? _lobbiesFuture;
+
+  // Image preview state
+  XFile? _selectedImage;
+  bool _showImagePreview = false;
 
   // Guard to prevent repeated lobby queries in didChangeDependencies
   bool _hasQueriedLobby = false;
@@ -184,6 +189,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     _typingManager = ChatTypingManager();
     _uiManager = ChatUIManager();
     _backgroundService = BackgroundService();
+
+    // CRITICAL: Clear message cache on init to force processing
+    _uiManager.clearMessageCache();
+    debugPrint('🧹 Cleared message cache on ChatScreen init');
 
     _animationController = AnimationController(
       vsync: this,
@@ -358,6 +367,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         // Initialize chat using the coordinator
         final chatGroupId = effectiveChatGroupId;
         if (chatGroupId != null) {
+          // Load user groups first to ensure chatGroups map is populated
+          ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+
           ref
               .read(cn.chatNotifierProvider.notifier)
               .initializeChat(chatGroupId, widget.chatType)
@@ -601,7 +613,22 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   void _precacheBackgroundImage(
       BuildContext context, Map<String, dynamic> background) {
-    // CachedNetworkImage handles caching automatically - no manual precaching needed
+    // Add logging to debug background issues
+    final type = background['type'];
+    final value = background['value'];
+    debugPrint('🎨 Background loaded: type=$type, value=$value');
+
+    // Precache network images to prevent loading delays
+    if (type == 'image' && value != null && value.isNotEmpty) {
+      try {
+        precacheImage(NetworkImage(value), context).catchError((error) {
+          debugPrint('❌ Failed to precache background image: $error');
+          return null;
+        });
+      } catch (e) {
+        debugPrint('❌ Error precaching background: $e');
+      }
+    }
   }
 
   Future<void> _sendMessage(msg.Message? replyToMessage,
@@ -758,10 +785,47 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _sendMedia() async {
+    // Pick media and show preview
+    final media = await _mediaHandler.pickMedia();
+    if (media != null) {
+      setState(() {
+        _selectedImage = media;
+        _showImagePreview = true;
+      });
+    }
+  }
+
+  Future<void> _confirmSendImage() async {
+    if (_selectedImage == null) return;
+
     final chatGroupId = effectiveChatGroupId;
     if (chatGroupId == null) return;
-    await _mediaHandler.sendMedia(ref,
-        chatGroupId: chatGroupId, chatType: widget.chatType);
+
+    final messageText = _messageController.text;
+    _messageController.clear();
+
+    setState(() {
+      _showImagePreview = false;
+    });
+
+    await _mediaHandler.sendMedia(
+      ref,
+      chatGroupId: chatGroupId,
+      chatType: widget.chatType,
+      media: _selectedImage!,
+      messageText: messageText.isNotEmpty ? messageText : null,
+    );
+
+    setState(() {
+      _selectedImage = null;
+    });
+  }
+
+  void _cancelImagePreview() {
+    setState(() {
+      _selectedImage = null;
+      _showImagePreview = false;
+    });
   }
 
   Future<void> _startRecording() async {
@@ -1299,6 +1363,17 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     return StreamBuilder<Map<String, dynamic>>(
       stream: _backgroundService.getCurrentBackground(chatGroupId),
       builder: (context, snapshot) {
+        // Enhanced logging for debugging
+        if (snapshot.hasError) {
+          debugPrint('❌ Background stream error: ${snapshot.error}');
+        }
+        if (snapshot.hasData) {
+          debugPrint('✅ Background stream data: ${snapshot.data}');
+        } else {
+          debugPrint(
+              '⚠️ Background stream: no data yet (connectionState: ${snapshot.connectionState})');
+        }
+
         final background =
             snapshot.data ?? {'type': 'color', 'value': '#0B0E14'};
 
@@ -1363,9 +1438,33 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                 },
                 child: ref.watch(cn.chatNotifierProvider).when(
                       data: (chatStateData) {
+                        print(
+                            '🔄 ChatScreen: Provider watch triggered, checking messages...');
+
                         final messages =
                             chatStateData.chatMessages[widget.chatGroupId] ??
                                 [];
+
+                        print(
+                            '📬 ChatScreen: Got ${messages.length} messages from chatStateData.chatMessages for group ${widget.chatGroupId}');
+                        print(
+                            '📊 ChatScreen: Total chatMessages keys: ${chatStateData.chatMessages.keys.length}');
+                        print(
+                            '📊 ChatScreen: Map identity hashCode: ${chatStateData.chatMessages.hashCode}');
+                        print(
+                            '📊 ChatScreen: List identity hashCode: ${messages.hashCode}');
+
+                        // Debug: Log message IDs to identify missing messages - increased threshold
+                        if (messages.length < 22) {
+                          print(
+                              '⚠️ ChatScreen: Expected ~22 messages but got ${messages.length}');
+                          print('⚠️ ChatScreen: Latest 5 message IDs:');
+                          for (int i = 0; i < messages.length && i < 5; i++) {
+                            final msg = messages[i];
+                            print(
+                                '  - ${msg.id.substring(0, 8)}: ${msg.messageType}, mediaUrl=${msg.mediaUrl != null ? "present" : "null"}');
+                          }
+                        }
 
                         // Fetch display names for message senders
                         _fetchDisplayNamesForMessages(messages);
@@ -1436,6 +1535,66 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                                 .read(cn.chatNotifierProvider.notifier)
                                 .clearReplyToMessage(),
                           ),
+                        // Image preview
+                        if (_showImagePreview && _selectedImage != null)
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              border: Border(
+                                top: BorderSide(
+                                  color: Colors.grey[700]!,
+                                  width: 0.5,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                // Image thumbnail
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.file(
+                                    File(_selectedImage!.path),
+                                    width: 70,
+                                    height: 70,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // File info
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Image selected',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Add caption or send',
+                                        style: TextStyle(
+                                          color: Colors.grey[400],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Cancel button
+                                IconButton(
+                                  icon: Icon(Icons.close, color: Colors.white),
+                                  onPressed: _cancelImagePreview,
+                                ),
+                              ],
+                            ),
+                          ),
                         // Input bar
                         Semantics(
                           label: 'Chat input bar',
@@ -1444,8 +1603,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                             focusNode: _inputFocusNode,
                             isRecording: chatState.isRecording,
                             isUploading: chatState.isUploading,
-                            onSend: () => _sendMessage(
-                                chatState.replyToMessage, squadStateData),
+                            onSend: _showImagePreview
+                                ? _confirmSendImage
+                                : () => _sendMessage(
+                                    chatState.replyToMessage, squadStateData),
                             onMedia: _sendMedia,
                             onRecordStart: _startRecording,
                             onRecordStop: _stopRecording,
@@ -1458,9 +1619,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                               );
                             },
                             quickReactionEmoji: chatState.quickReactionEmoji,
-                            hintText: chatState.replyToMessage != null
-                                ? 'Reply'
-                                : 'Message',
+                            hintText: _showImagePreview
+                                ? 'Caption'
+                                : (chatState.replyToMessage != null
+                                    ? 'Reply'
+                                    : 'Message'),
+                            hasAttachment: _showImagePreview,
                             // Pass actual members for @ mentions
                             availableMembers: squadStateData
                                 .memberDisplayNames.values
@@ -1689,22 +1853,46 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       case 'image':
         // Network image - full brightness for custom backgrounds
         if (value.isEmpty) {
+          debugPrint('⚠️ Image background has empty value');
           return Container(color: const Color(0xFF0B0E14));
         }
+        debugPrint('🖼️ Loading image background: $value');
         // CachedNetworkImage loads instantly from cache on subsequent opens
         return CachedNetworkImage(
           imageUrl: value,
           fit: BoxFit.cover,
           maxWidthDiskCache: 1080, // Optimize memory usage
           maxHeightDiskCache: 1920,
-          fadeInDuration: Duration.zero, // No fade animation for instant display
+          fadeInDuration:
+              Duration.zero, // No fade animation for instant display
           fadeOutDuration: Duration.zero,
-          placeholder: (context, url) => Container(
-            color: const Color(0xFF0B0E14),
-          ),
-          errorWidget: (context, url, error) => Container(
-            color: const Color(0xFF0B0E14),
-          ),
+          imageBuilder: (context, imageProvider) {
+            debugPrint('✅ Background image loaded successfully');
+            return Container(
+              decoration: BoxDecoration(
+                image: DecorationImage(
+                  image: imageProvider,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            );
+          },
+          placeholder: (context, url) {
+            return Container(color: const Color(0xFF0B0E14));
+          },
+          errorWidget: (context, url, error) {
+            debugPrint('❌ Failed to load background image: $error');
+            return Container(
+              color: const Color(0xFF0B0E14),
+              child: Center(
+                child: Icon(
+                  Icons.broken_image,
+                  color: Colors.white24,
+                  size: 48,
+                ),
+              ),
+            );
+          },
         );
 
       case 'preset':

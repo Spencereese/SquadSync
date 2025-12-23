@@ -34,15 +34,26 @@ class ChatMediaHandler {
   }
 
   /// Pick and send media (image or video) from gallery/camera
+  /// Now returns the picked file for preview instead of sending immediately
+  Future<XFile?> pickMedia() async {
+    try {
+      final XFile? media = await _picker.pickMedia();
+      return media;
+    } catch (e) {
+      debugPrint('Error picking media: $e');
+      return null;
+    }
+  }
+
+  /// Upload and send the media after user confirms
   Future<void> sendMedia(
     WidgetRef ref, {
     required String? chatGroupId,
     required ChatType chatType,
+    required XFile media,
+    String? messageText,
   }) async {
     try {
-      final XFile? media = await _picker.pickMedia();
-      if (media == null) return;
-
       ref.read(chatStateProvider.notifier).setUploading(true);
       File file = File(media.path);
       bool isVideo = media.mimeType?.startsWith('video/') ?? false;
@@ -59,6 +70,7 @@ class ChatMediaHandler {
 
       final timestampMs = DateTime.now().millisecondsSinceEpoch;
 
+      // Send image first (without text)
       await _chatService.sendMessage(
         ref,
         senderUid: user.id,
@@ -76,6 +88,20 @@ class ChatMediaHandler {
         chatGroupId: chatGroupId,
         chatType: chatType,
       );
+
+      // If there's text, send it as separate message
+      if (messageText != null && messageText.trim().isNotEmpty) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        await _chatService.sendMessage(
+          ref,
+          senderUid: user.id,
+          text: messageText.trim(),
+          photos: [],
+          videos: [],
+          chatGroupId: chatGroupId,
+          chatType: chatType,
+        );
+      }
 
       ref.read(chatStateProvider.notifier).setUploading(false);
       HapticFeedback.lightImpact();

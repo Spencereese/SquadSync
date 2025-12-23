@@ -19,6 +19,7 @@ class ChatInputBar extends StatefulWidget {
       availableMembers; // List of member display names for mentions
   final Map<String, String>? memberAvatars; // Map of display name to avatar URL
   final Color? backgroundColor; // Background color for adaptive glass UI
+  final bool hasAttachment; // Whether an image/attachment is selected
 
   const ChatInputBar({
     super.key,
@@ -37,6 +38,7 @@ class ChatInputBar extends StatefulWidget {
     this.availableMembers,
     this.memberAvatars,
     this.backgroundColor,
+    this.hasAttachment = false,
   });
 
   @override
@@ -309,7 +311,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   enableSuggestions: true,
                 ),
               ),
-              if (hasText)
+              if (hasText || widget.hasAttachment)
                 Padding(
                   padding: const EdgeInsets.only(right: 8.0),
                   child: Semantics(

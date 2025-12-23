@@ -1,11 +1,14 @@
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/app_theme.dart';
 import '../../domain/entities/lobby_state.dart';
+import '../../domain/entities/game.dart';
 import '../../presentation/notifiers/lobby_notifier.dart';
 import '../../presentation/notifiers/user_notifier.dart';
+import '../../presentation/notifiers/game_notifier.dart';
 import '../../screens/lobby_tab_screen.dart';
 
 /// Chat lobby sheet showing pinned games carousel and active lobbies for the group
@@ -41,7 +44,13 @@ class ChatLobbySheet extends ConsumerStatefulWidget {
 
 class _ChatLobbySheetState extends ConsumerState<ChatLobbySheet> {
   final PageController _pageController = PageController(viewportFraction: 0.85);
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   double _currentPage = 0;
+  Timer? _debounce;
+  List<Game> _searchResults = [];
+  bool _isSearching = false;
+  bool _isLoadingSearch = false;
 
   @override
   void initState() {
@@ -51,12 +60,77 @@ class _ChatLobbySheetState extends ConsumerState<ChatLobbySheet> {
         _currentPage = _pageController.page ?? 0;
       });
     });
+
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+
+    final query = _searchController.text.trim();
+
+    if (query.isEmpty) {
+      setState(() {
+        _isSearching = false;
+        _searchResults = [];
+        _isLoadingSearch = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _isLoadingSearch = true;
+    });
+
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      _performSearch(query);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    try {
+      final result =
+          await ref.read(gameNotifierProvider.notifier).searchGames(query);
+
+      result.when(
+        data: (games) {
+          if (mounted && _searchController.text.trim() == query) {
+            setState(() {
+              _searchResults = games;
+              _isLoadingSearch = false;
+            });
+          }
+        },
+        loading: () {},
+        error: (e, st) {
+          debugPrint('Search error: $e');
+          if (mounted) {
+            setState(() {
+              _searchResults = [];
+              _isLoadingSearch = false;
+            });
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('Search error: $e');
+      if (mounted) {
+        setState(() {
+          _searchResults = [];
+          _isLoadingSearch = false;
+        });
+      }
+    }
   }
 
   Future<void> _createLobby(Map<String, dynamic> game) async {
@@ -200,9 +274,116 @@ class _ChatLobbySheetState extends ConsumerState<ChatLobbySheet> {
 
                     const Divider(),
 
-                    // Pinned Games Carousel
-                    if (pinnedGames.isNotEmpty) ...[
-                      const SizedBox(height: 16),
+                    // Search Bar
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                      child: TextField(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Search for a game...',
+                          hintStyle: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant
+                                .withOpacity(0.5),
+                          ),
+                          prefixIcon: Icon(
+                            Icons.search,
+                            color: neonColor,
+                          ),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(
+                                    Icons.clear,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _searchFocusNode.unfocus();
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.05),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: neonColor.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: neonColor.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: neonColor,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Games Carousel (Pinned or Search Results)
+                    if (_isSearching) ...[
+                      // Search Results Section
+                      if (_isLoadingSearch)
+                        const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      else if (_searchResults.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text(
+                            'No games found for "${_searchController.text}"',
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      else ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                          child: Text(
+                            'Search Results',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: neonColor,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 400,
+                          child: _buildSearchResultsCarousel(neonColor),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                    ] else if (pinnedGames.isNotEmpty) ...[
+                      // Pinned Games Section
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                        child: Text(
+                          'Pinned Games',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: neonColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       SizedBox(
                         height: 400,
                         child:
@@ -237,6 +418,128 @@ class _ChatLobbySheetState extends ConsumerState<ChatLobbySheet> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSearchResultsCarousel(Color neonColor) {
+    return PageView.builder(
+      controller: _pageController,
+      clipBehavior: Clip.none,
+      itemCount: _searchResults.length,
+      itemBuilder: (context, index) {
+        final game = _searchResults[index];
+        final isSelected = index == _currentPage.round();
+        final gameMap = game.toJson();
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          clipBehavior: Clip.none,
+          margin: EdgeInsets.symmetric(
+            horizontal: 8.0,
+            vertical: isSelected ? 0 : 16,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: isSelected
+                ? neonColor.neonGlow(
+                    blur: 25,
+                    spread: 2,
+                    opacity: 0.4,
+                  )
+                : null,
+          ),
+          child: GestureDetector(
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              _createLobby(gameMap);
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  // Background image
+                  if (game.coverUrl != null && game.coverUrl!.isNotEmpty)
+                    Positioned.fill(
+                      child: Image.network(
+                        game.coverUrl!.startsWith('http')
+                            ? game.coverUrl!
+                            : 'https:${game.coverUrl}',
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: const Color(0xFF14181F),
+                        ),
+                      ),
+                    )
+                  else
+                    Positioned.fill(
+                      child: Container(color: const Color(0xFF14181F)),
+                    ),
+
+                  // Glass border
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color:
+                                neonColor.withOpacity(isSelected ? 0.6 : 0.3),
+                            width: isSelected ? 2.5 : 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Game name overlay at the bottom
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                      ),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.4),
+                            border: Border(
+                              top: BorderSide(
+                                color: neonColor.withOpacity(0.3),
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            game.name,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              shadows: neonColor.neonGlow(
+                                blur: 10,
+                                opacity: 0.3,
+                              ),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

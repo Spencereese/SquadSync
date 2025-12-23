@@ -322,6 +322,17 @@ class MessageService with WidgetsBindingObserver {
     String? finalVideoUrl = videoUrl;
     String? finalAudioUrl = audioUrl;
 
+    // Extract media URLs from photos/videos/audio arrays if provided
+    if (photos.isNotEmpty && finalImageUrl == null) {
+      finalImageUrl = photos.first['uri'] as String?;
+    }
+    if (videos.isNotEmpty && finalVideoUrl == null) {
+      finalVideoUrl = videos.first['uri'] as String?;
+    }
+    if (audio.isNotEmpty && finalAudioUrl == null) {
+      finalAudioUrl = audio.first['uri'] as String?;
+    }
+
     if (mediaFilePath != null && mediaType != null) {
       try {
         final file = File(mediaFilePath);
@@ -622,6 +633,15 @@ class MessageService with WidgetsBindingObserver {
       final cachedMessages = await _sqliteHelper.getMessages(offset, limit,
           chatGroupId: chatGroupId);
       _logger.d('Loaded ${cachedMessages.length} messages from SQLite cache');
+
+      // Debug: Log photo messages to verify media_url is present
+      for (final msg in cachedMessages) {
+        if (msg['media_url'] != null || msg['message_type'] == 'image') {
+          print(
+              '📸 SQLite cached photo message: id=${msg['id']}, message_type=${msg['message_type']}, media_url=${msg['media_url']}, media_type=${msg['media_type']}');
+        }
+      }
+
       return cachedMessages;
     } catch (e) {
       _logger.e('Failed to load cached messages: $e');

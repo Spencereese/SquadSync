@@ -10,6 +10,8 @@ class MessageData {
   final List<Map<String, dynamic>> photos;
   final String? videoUrl;
   final String? audioUrl;
+  final String? mediaUrl; // Direct URL for images/media
+  final String? mediaType; // Type: image, video, audio
   final DateTime timestamp;
   final bool delivered;
   final bool read;
@@ -37,6 +39,8 @@ class MessageData {
     this.photos = const [],
     this.videoUrl,
     this.audioUrl,
+    this.mediaUrl,
+    this.mediaType,
     DateTime? timestamp,
     this.delivered = false,
     this.read = false,
@@ -59,6 +63,11 @@ class MessageData {
   /// Factory constructor to create MessageData from Map
   factory MessageData.fromMap(Map<String, dynamic> data,
       {Map<String, String>? uidToDisplayName}) {
+    if (kDebugMode) {
+      print(
+          '🔍 MessageData.fromMap called for id=${data['id']}, message_type=${data['message_type']}, media_url=${data['media_url']}, media_type=${data['media_type']}');
+    }
+
     final id = data['id']?.toString() ?? '';
     final isAiResponse = data['isAiResponse'] ??
         (data['ai_response'] != null &&
@@ -87,16 +96,27 @@ class MessageData {
           '',
       content:
           _parseTextField(data, 'content') ?? _parseTextField(data, 'text'),
-      photos: _parsePhotos(data['photos']),
-      videoUrl: data['videoUrl'] ?? _parseVideoUrl(data['videos']),
-      audioUrl: data['audioUrl'] ?? _parseAudioUrl(data['audio']),
-      timestamp: data['timestamp_ms'] is int && data['timestamp_ms'] != 0
-          ? DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms'])
-          : (data['timestamp'] is DateTime
-              ? data['timestamp'] as DateTime
-              : (data['timestamp'] is String
-                  ? DateTime.parse(data['timestamp'])
-                  : DateTime.now())),
+      photos: _parsePhotosFromData(data),
+      videoUrl: _parseVideoFromData(data),
+      audioUrl: _parseAudioFromData(data),
+      mediaUrl: data['media_url'],
+      mediaType: data['media_type'],
+      timestamp: (() {
+        DateTime parsedTimestamp;
+        if (data['timestamp_ms'] is int && data['timestamp_ms'] != 0) {
+          parsedTimestamp =
+              DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms']);
+        } else if (data['timestamp'] is DateTime) {
+          parsedTimestamp = data['timestamp'] as DateTime;
+        } else if (data['timestamp'] is String) {
+          parsedTimestamp = DateTime.parse(data['timestamp']);
+        } else {
+          parsedTimestamp = DateTime.now();
+        }
+        print(
+            '🕐 Timestamp parsed: id=${data['id']}, timestamp_ms=${data['timestamp_ms']}, parsedTimestamp=$parsedTimestamp');
+        return parsedTimestamp;
+      })(),
       delivered: data['delivered'] ?? false,
       read: data['read'] ?? false,
       reactions: _parseReactions(data['reactions']),
@@ -118,6 +138,25 @@ class MessageData {
           ? ClipMessageData.fromJson(data['clipData'] as Map<String, dynamic>)
           : null,
       shouldShowTimestamp: false, // Will be set by message processing logic
+      type: (() {
+        // Infer type from media fields if message_type is wrong in database
+        final mediaUrl = data['media_url'];
+        final mediaType = data['media_type'];
+        MessageType inferredType = MessageType.text;
+
+        if (mediaUrl != null && mediaUrl.toString().isNotEmpty) {
+          if (mediaType == 'image')
+            inferredType = MessageType.image;
+          else if (mediaType == 'video')
+            inferredType = MessageType.video;
+          else if (mediaType == 'audio') inferredType = MessageType.audio;
+        }
+        if (data['pollId'] != null) inferredType = MessageType.poll;
+
+        print(
+            '🔧 Type inference: id=${data['id']}, mediaUrl=$mediaUrl, mediaType=$mediaType → inferredType=$inferredType');
+        return inferredType;
+      })(),
     );
   }
 
@@ -154,68 +193,94 @@ class MessageData {
     return value.toString();
   }
 
-  /// Parse photos field which can be in different formats
-  static List<Map<String, dynamic>> _parsePhotos(dynamic photosData) {
-    if (photosData == null) return [];
+  /// Parse photos from media_url/media_type format
+  static List<Map<String, dynamic>> _parsePhotosFromData(
+      Map<String, dynamic> data) {
+    final mediaUrl = data['media_url'];
+    final mediaType = data['media_type'];
+    final messageType = data['message_type'];
 
-    // If it's already a list of maps, cast it
-    if (photosData is List) {
-      return photosData.whereType<Map<String, dynamic>>().toList();
+    if (kDebugMode) {
+      print(
+          '📸 _parsePhotosFromData: mediaUrl=$mediaUrl, mediaType=$mediaType, messageType=$messageType');
     }
 
-    // If it's a single map, wrap it in a list
-    if (photosData is Map<String, dynamic>) {
-      return [photosData];
-    }
+    // Check if media_type is 'image', OR infer from URL extension, OR check message_type
+    final isImage = mediaType == 'image' ||
+        messageType == 'image' ||
+        (mediaUrl is String &&
+            (mediaUrl.contains('.jpg') ||
+                mediaUrl.contains('.jpeg') ||
+                mediaUrl.contains('.png') ||
+                mediaUrl.contains('.gif') ||
+                mediaUrl.contains('.webp')));
 
-    // If it's a list of dynamic, try to cast each item
-    if (photosData is List<dynamic>) {
-      return photosData
-          .where((item) => item is Map<String, dynamic>)
-          .cast<Map<String, dynamic>>()
-          .toList();
+    if (mediaUrl != null &&
+        mediaUrl is String &&
+        isImage &&
+        mediaUrl.isNotEmpty) {
+      if (kDebugMode) {
+        print('✅ Photo parsed: $mediaUrl');
+      }
+      return [
+        {
+          'uri': mediaUrl,
+          'creation_timestamp':
+              data['timestamp_ms'] ?? DateTime.now().millisecondsSinceEpoch,
+        }
+      ];
     }
-
+    if (kDebugMode) {
+      print('❌ No photo parsed');
+    }
     return [];
   }
 
-  /// Parse video URL from various formats
-  static String? _parseVideoUrl(dynamic videosData) {
-    if (videosData == null) return null;
+  /// Parse video from media_url/media_type format
+  static String? _parseVideoFromData(Map<String, dynamic> data) {
+    final mediaUrl = data['media_url'];
+    final mediaType = data['media_type'];
+    final messageType = data['message_type'];
 
-    // If it's a list, get the first video's URI
-    if (videosData is List && videosData.isNotEmpty) {
-      final firstVideo = videosData[0];
-      if (firstVideo is Map<String, dynamic>) {
-        return firstVideo['uri'] as String?;
-      }
+    // Check if media_type is 'video', OR infer from URL extension, OR check message_type
+    final isVideo = mediaType == 'video' ||
+        messageType == 'video' ||
+        (mediaUrl is String &&
+            (mediaUrl.contains('.mp4') ||
+                mediaUrl.contains('.mov') ||
+                mediaUrl.contains('.avi') ||
+                mediaUrl.contains('.webm')));
+
+    if (mediaUrl != null &&
+        mediaUrl is String &&
+        isVideo &&
+        mediaUrl.isNotEmpty) {
+      return mediaUrl;
     }
-
-    // If it's a single video map
-    if (videosData is Map<String, dynamic>) {
-      return videosData['uri'] as String?;
-    }
-
     return null;
   }
 
-  /// Parse audio URL from various formats
-  static String? _parseAudioUrl(dynamic audioData) {
-    if (audioData == null) return null;
+  /// Parse audio from media_url/media_type format
+  static String? _parseAudioFromData(Map<String, dynamic> data) {
+    final mediaUrl = data['media_url'];
+    final mediaType = data['media_type'];
+    final messageType = data['message_type'];
 
-    // If it's a list, get the first audio's URI
-    if (audioData is List && audioData.isNotEmpty) {
-      final firstAudio = audioData[0];
-      if (firstAudio is Map<String, dynamic>) {
-        return firstAudio['uri'] as String?;
-      }
+    // Check if media_type is 'audio', OR infer from URL extension, OR check message_type
+    final isAudio = mediaType == 'audio' ||
+        messageType == 'audio' ||
+        (mediaUrl is String &&
+            (mediaUrl.contains('.mp3') ||
+                mediaUrl.contains('.wav') ||
+                mediaUrl.contains('.m4a') ||
+                mediaUrl.contains('.ogg')));
+
+    if (mediaUrl != null &&
+        mediaUrl is String &&
+        isAudio &&
+        mediaUrl.isNotEmpty) {
+      return mediaUrl;
     }
-
-    // If it's a single audio map
-    if (audioData is Map<String, dynamic>) {
-      return audioData['uri'] as String?;
-    }
-
     return null;
   }
 

@@ -10,6 +10,7 @@ import '../../services/message_service.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'chat_notifier.dart' as cn;
 
 /// State for MessageNotifier - handles core messaging operations
 class MessageState {
@@ -254,7 +255,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     _messagesSubscription = stream.listen(
       (data) {
         debugPrint(
-            'MessageNotifier: 🎯 Stream emitted data type: ${data.runtimeType}');
+            'MessageNotifier: 🎯 Stream emitted data type: ${data.runtimeType}, count: ${(data as List).length}');
         _onSupabaseMessagesSnapshot(data, chatGroupId);
       },
       onError: (error) => _onStreamError(error, chatGroupId, chatType),
@@ -289,6 +290,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       _retryCount = 0;
 
       final remoteMessages = <Message>[];
+      print(
+          '📥 Processing ${dataList.length} messages from Supabase stream for chat $chatGroupId');
       for (final item in dataList) {
         // Declare at outer scope so catch block can access
         Map<String, dynamic> messageData = {};
@@ -357,6 +360,14 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           }
 
           final message = Message.fromJson(cleanedData);
+
+          // Log photo messages specifically
+          if (message.messageType == MessageType.image ||
+              message.mediaUrl != null) {
+            print(
+                '📸 Photo message parsed: id=${message.id}, messageType=${message.messageType}, mediaUrl=${message.mediaUrl}, mediaType=${message.mediaType}');
+          }
+
           remoteMessages.add(message);
         } catch (e, stackTrace) {
           debugPrint(
@@ -496,12 +507,20 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       // CRITICAL: Only update state if there are actual new or updated messages
       if (newCount == 0 && updatedCount == 0) {
         // No changes - skip state update to prevent unnecessary rebuilds
+        print('⏭️ Skipping state update - no new or updated messages');
         return;
       }
 
       if (newCount > 0 || updatedCount > 0) {
         debugPrint(
             'MessageNotifier: Merging $newCount new, $updatedCount updated messages');
+        print(
+            '✅ STATE UPDATE: $newCount new messages, $updatedCount updated messages for chat $chatGroupId');
+
+        // Update the chat group's lastActivity timestamp when new messages arrive
+        if (newCount > 0 && remoteMessages.isNotEmpty) {
+          _updateChatGroupLastActivity(chatGroupId, remoteMessages);
+        }
       }
 
       final newState = currentState.copyWith(
@@ -942,6 +961,25 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
 
   bool isUserTyping(String chatGroupId, String userId) {
     return getTypingUsers(chatGroupId).contains(userId);
+  }
+
+  /// Update chat group's lastActivity timestamp when new messages arrive
+  void _updateChatGroupLastActivity(
+      String chatGroupId, List<Message> messages) {
+    try {
+      if (messages.isEmpty) return;
+
+      // Get the most recent message timestamp
+      final latestMessage =
+          messages.reduce((a, b) => a.timestamp.isAfter(b.timestamp) ? a : b);
+
+      // Update the ChatNotifier's state with new lastActivity
+      final chatNotifier = ref.read(cn.chatNotifierProvider.notifier);
+      chatNotifier.updateGroupLastActivity(
+          chatGroupId, latestMessage.timestamp);
+    } catch (e) {
+      debugPrint('MessageNotifier: Failed to update group lastActivity: $e');
+    }
   }
 }
 

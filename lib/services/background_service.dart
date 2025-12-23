@@ -206,13 +206,16 @@ class BackgroundService {
   /// });
   /// ```
   Stream<Map<String, dynamic>> getCurrentBackground(String chatGroupId) {
+    debugPrint('🔄 Setting up background stream for chat group: $chatGroupId');
     // Background columns enabled in production (Dec 12, 2025)
     return SupabaseService.client
         .from('chat_groups')
         .stream(primaryKey: ['id'])
         .eq('id', chatGroupId)
         .map((list) {
+          debugPrint('📦 Background stream received ${list.length} records');
           if (list.isEmpty) {
+            debugPrint('⚠️ No chat group found with ID: $chatGroupId');
             return {
               'type': 'none',
               'value': '',
@@ -222,13 +225,15 @@ class BackgroundService {
           }
 
           final data = list.first;
-
-          return {
+          final result = {
             'type': data['background_type'] ?? 'none',
             'value': data['background_value'] ?? '',
             'updatedAt': data['background_updated_at'],
             'updatedBy': data['background_updated_by'],
           };
+
+          debugPrint('🎨 Background data: $result');
+          return result;
         });
   }
 

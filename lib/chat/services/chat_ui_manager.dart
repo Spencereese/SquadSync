@@ -36,8 +36,9 @@ class ChatUIManager {
   List<dynamic> _processedMessages = [];
   final Map<String, List<String>> _lastReadByCache = {};
   bool _needsMessageProcessing = true;
-  String _lastMessagesHash =
-      ''; // Track message content changes including reactions
+  String _lastMessageIdsHash = ''; // Track message IDs (structural changes)
+  String _lastMessagesContentHash =
+      ''; // Track content changes (reactions, etc)
 
   // Getters for UI state
   String get searchQuery => _searchQuery;
@@ -48,6 +49,15 @@ class ChatUIManager {
   List<dynamic> get processedMessages => _processedMessages;
   Map<String, List<String>> get lastReadByCache => _lastReadByCache;
   bool get needsMessageProcessing => _needsMessageProcessing;
+
+  /// Clear the message cache to force reprocessing
+  void clearMessageCache() {
+    print('🗑️ Clearing message cache to force reprocessing');
+    _processedMessages.clear();
+    _lastMessageIdsHash = '';
+    _lastMessagesContentHash = '';
+    _needsMessageProcessing = true;
+  }
 
   // Setters for UI state
   set searchQuery(String value) => _searchQuery = value;
@@ -187,18 +197,34 @@ class ChatUIManager {
         markAsDelivered, // Made optional for Supabase migration
     bool disableSwipeForTimestamp = false, // Disable swipe in preview mode
   }) {
-    // Generate hash of message content including reactions to detect ANY changes
-    final messagesHash = messages
-        .map((m) => '${m.id}:${m.reactions?.toString() ?? ""}:${m.isDeleted}')
+    print(
+        '🏗️ buildMessagesList called: ${messages.length} messages for chat $chatGroupId');
+
+    // Generate hash of message IDs to detect if different messages are present
+    final messageIdsHash = messages.map((m) => m.id).join('|');
+    final messagesContentHash = messages
+        .map((m) =>
+            '${m.id}:${m.reactions?.toString() ?? ""}:${m.isDeleted}:${m.mediaUrl ?? ""}')
         .join('|');
 
-    // Optimize message processing - only reprocess when message content changes
-    if (_needsMessageProcessing ||
+    // CRITICAL: Always reprocess if message IDs changed (new/removed messages)
+    final messageIdsChanged = messageIdsHash != _lastMessageIdsHash;
+    final contentChanged = messagesContentHash != _lastMessagesContentHash;
+    final needsProcessing = _needsMessageProcessing ||
         messages.length != _processedMessages.length ||
-        messagesHash != _lastMessagesHash) {
-      _lastMessagesHash = messagesHash;
-      _processMessages(messages, cleanText, uidToDisplayName: uidToDisplayName);
-    }
+        messageIdsChanged ||
+        contentChanged ||
+        _processedMessages.isEmpty; // Always process if cache is empty
+
+    print(
+        '🔍 Hash check: messageCount=${messages.length}, cachedCount=${_processedMessages.length}, idsChanged=$messageIdsChanged, contentChanged=$contentChanged, cacheEmpty=${_processedMessages.isEmpty}');
+
+    // ALWAYS PROCESS - cache was causing issues where images wouldn't load
+    print('🔨 ALWAYS processing messages (cache disabled)');
+    _lastMessageIdsHash = messageIdsHash;
+    _lastMessagesContentHash = messagesContentHash;
+    _needsMessageProcessing = false;
+    _processMessages(messages, cleanText, uidToDisplayName: uidToDisplayName);
 
     if (_processedMessages.isEmpty) {
       return const Center(
@@ -520,15 +546,26 @@ class ChatUIManager {
   void _processMessages(
       List<Message> messages, String Function(String) cleanText,
       {Map<String, String>? uidToDisplayName}) {
+    print('🔨 _processMessages called with ${messages.length} messages');
+
     // Filter out deleted messages before processing
     final visibleMessages =
         messages.where((message) => message.isDeleted != true).toList();
 
+    print(
+        '🔨 After filtering deleted: ${visibleMessages.length} visible messages');
+
     // Convert messages to MessageData objects
     final messageDataList = visibleMessages.map((message) {
       final json = message.toJson();
+      print(
+          '🔄 Converting Message to MessageData: id=${message.id}, messageType=${message.messageType}, mediaUrl=${message.mediaUrl}, mediaType=${message.mediaType}');
+      print(
+          '📋 JSON output: media_url=${json['media_url']}, media_type=${json['media_type']}');
       final messageData =
           MessageData.fromMap(json, uidToDisplayName: uidToDisplayName);
+      print(
+          '✅ MessageData created: id=${messageData.id}, photos=${messageData.photos.length}, videoUrl=${messageData.videoUrl}, audioUrl=${messageData.audioUrl}');
       return messageData;
     }).toList();
 

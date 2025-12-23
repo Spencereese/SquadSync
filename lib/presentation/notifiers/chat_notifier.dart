@@ -76,12 +76,90 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       if (messagesChanged || replyChanged || typingChanged) {
         debugPrint(
             'ChatNotifier: Syncing from MessageNotifier (messages: $messagesChanged, reply: $replyChanged, typing: $typingChanged)');
-        state = AsyncValue.data(chatState.copyWith(
-          chatMessages: messageState.messages,
-          replyToMessage: messageState.replyToMessage,
-          replyingToMessageId: messageState.replyingToMessageId,
-          typingIndicators: messageState.typingUsers,
-        ));
+
+        // Debug: Log message counts per chat group
+        for (final entry in messageState.messages.entries) {
+          debugPrint(
+              'ChatNotifier: Syncing ${entry.value.length} messages for group ${entry.key}');
+        }
+
+        // CRITICAL: Create completely new Map and List instances
+        final newChatMessages = <String, List<Message>>{};
+        for (final entry in messageState.messages.entries) {
+          newChatMessages[entry.key] = List<Message>.from(entry.value);
+        }
+
+        final newTypingIndicators = <String, Set<String>>{};
+        for (final entry in messageState.typingUsers.entries) {
+          newTypingIndicators[entry.key] = Set<String>.from(entry.value);
+        }
+
+        // NUCLEAR OPTION: Create entirely new ChatState instead of copyWith
+        // This forces Freezed to create a new object with different identity
+        final newState = ChatState(
+          isInitialized: chatState.isInitialized,
+          isInitialDataLoaded: chatState.isInitialDataLoaded,
+          displayName: chatState.displayName,
+          profileImage: chatState.profileImage,
+          chatMessages: newChatMessages, // NEW MAP INSTANCE
+          chatGroups: chatState.chatGroups,
+          userChatGroups: chatState.userChatGroups,
+          selectedChatGroupId: chatState.selectedChatGroupId,
+          lastReadTimestamps: chatState.lastReadTimestamps,
+          typingIndicators: newTypingIndicators, // NEW MAP INSTANCE
+          unreadCounts: chatState.unreadCounts,
+          hasNewMessages: chatState.hasNewMessages,
+          mediaHistory: chatState.mediaHistory,
+          pinnedMessages: chatState.pinnedMessages,
+          activePolls: chatState.activePolls,
+          isRecording: chatState.isRecording,
+          isPlayingVoiceNote: chatState.isPlayingVoiceNote,
+          currentVoiceNoteId: chatState.currentVoiceNoteId,
+          voiceNoteProgress: chatState.voiceNoteProgress,
+          isAiResponding: chatState.isAiResponding,
+          aiResponses: chatState.aiResponses,
+          showEmojiPicker: chatState.showEmojiPicker,
+          showAttachmentOptions: chatState.showAttachmentOptions,
+          replyingToMessageId:
+              messageState.replyingToMessageId, // FROM MESSAGE STATE
+          editingMessageId: chatState.editingMessageId,
+          expandedMessages: chatState.expandedMessages,
+          isUploading: chatState.isUploading,
+          quickReactionEmoji: chatState.quickReactionEmoji,
+          quickReactionEmojis: chatState.quickReactionEmojis,
+          typingUser: chatState.typingUser,
+          replyToMessage: messageState.replyToMessage, // FROM MESSAGE STATE
+          isOnline: chatState.isOnline,
+          isSyncing: chatState.isSyncing,
+          lastSyncTimestamps: chatState.lastSyncTimestamps,
+          pendingMessages: chatState.pendingMessages,
+          syncError: chatState.syncError,
+          syncConflicts: chatState.syncConflicts,
+          messageAnalytics: chatState.messageAnalytics,
+          messageReactions: chatState.messageReactions,
+          searchResults: chatState.searchResults,
+          isSearching: chatState.isSearching,
+          searchQuery: chatState.searchQuery,
+          voiceChatActive: chatState.voiceChatActive,
+          voiceChatParticipants: chatState.voiceChatParticipants,
+          mutedChats: chatState.mutedChats,
+          pinnedChats: chatState.pinnedChats,
+          chatThemes: chatState.chatThemes,
+          notificationsEnabled: chatState.notificationsEnabled,
+        );
+
+        // Update state
+        state = AsyncValue.data(newState);
+        debugPrint(
+            '🔥 ChatNotifier: Set state with Map hashCode: ${newChatMessages.hashCode}, timestamp: ${DateTime.now().millisecondsSinceEpoch}');
+
+        // Debug: Verify state was updated correctly
+        state.whenData((updatedState) {
+          for (final entry in updatedState.chatMessages.entries) {
+            debugPrint(
+                '✅ ChatNotifier STATE AFTER UPDATE: ${entry.value.length} messages in state for group ${entry.key}');
+          }
+        });
       }
     });
   }
@@ -1148,6 +1226,44 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   Map<String, Poll> getActivePolls(String chatGroupId) {
     final mediaNotifier = ref.read(mediaNotifierProvider.notifier);
     return mediaNotifier.getActivePolls(chatGroupId);
+  }
+
+  /// Update a chat group's lastActivity timestamp (called by MessageNotifier when new messages arrive)
+  Future<void> updateGroupLastActivity(
+      String chatGroupId, DateTime timestamp) async {
+    state = await AsyncValue.guard(() async {
+      final currentState = await future;
+
+      // Find the group in chatGroups
+      final group = currentState.chatGroups[chatGroupId];
+      if (group == null) {
+        debugPrint(
+            'ChatNotifier: Group $chatGroupId not found, skipping lastActivity update');
+        return currentState;
+      }
+
+      // Update the group's lastActivity
+      final updatedGroup = group.copyWith(lastActivity: timestamp);
+
+      // Update both chatGroups and userChatGroups maps
+      final updatedChatGroups =
+          Map<String, ChatGroup>.from(currentState.chatGroups);
+      updatedChatGroups[chatGroupId] = updatedGroup;
+
+      final updatedUserChatGroups =
+          Map<String, ChatGroup>.from(currentState.userChatGroups);
+      if (updatedUserChatGroups.containsKey(chatGroupId)) {
+        updatedUserChatGroups[chatGroupId] = updatedGroup;
+      }
+
+      debugPrint(
+          'ChatNotifier: Updated lastActivity for group $chatGroupId to $timestamp');
+
+      return currentState.copyWith(
+        chatGroups: updatedChatGroups,
+        userChatGroups: updatedUserChatGroups,
+      );
+    });
   }
 
   // Dispose (handled automatically by AutoDisposeAsyncNotifier)

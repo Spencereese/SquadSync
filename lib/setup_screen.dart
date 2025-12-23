@@ -74,7 +74,18 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
         await _handlePostSignIn(authResponse.user!);
       }
     } on AuthException catch (e) {
-      _showSnackBar('Authentication failed: ${e.message}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Authentication failed: ${e.message}'),
+            action: SnackBarAction(
+              label: 'Reset Password',
+              onPressed: _showForgotPasswordDialog,
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
     } catch (e) {
       _showSnackBar('An unexpected error occurred');
       debugPrint('Auth error: $e');
@@ -310,6 +321,67 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
     }
   }
 
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController(
+      text: _emailController.text.trim(),
+    );
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Enter your email address and we\'ll send you a password reset link.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                border: OutlineInputBorder(),
+                hintText: 'Enter your email',
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(context, emailController.text.trim()),
+            child: const Text('Send Reset Link'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      try {
+        await _supabase.auth.resetPasswordForEmail(result);
+        if (mounted) {
+          _showSnackBar('Password reset email sent! Check your inbox.');
+        }
+      } on AuthException catch (e) {
+        if (mounted) {
+          _showSnackBar('Failed to send reset email: ${e.message}');
+        }
+      } catch (e) {
+        if (mounted) {
+          _showSnackBar('An error occurred. Please try again.');
+        }
+      }
+    }
+    emailController.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -364,7 +436,17 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                     onSubmitted: (_) => _onEmailButtonPressed(),
                     enabled: !_isLoading,
                   ),
-                  const SizedBox(height: 24),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _isLoading ? null : _showForgotPasswordDialog,
+                      child: const Text(
+                        'Forgot Password?',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   ElevatedButton(
                     onPressed: _onEmailButtonPressed,
                     style: ElevatedButton.styleFrom(

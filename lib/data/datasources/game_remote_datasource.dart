@@ -69,14 +69,13 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
         final queryBody = query.isEmpty
             ? '''
           fields name,slug,cover.url,summary,first_release_date,genres.name,platforms.name,category;
-          where rating > 70 & cover.url != null & category = 0 & version_parent = null;
+          where rating > 70 & cover.url != null & category = 0;
           sort rating desc;
           limit $limit;
         '''
             : '''
           search "$query";
           fields name,slug,cover.url,summary,first_release_date,genres.name,platforms.name,category;
-          where category = (0,8,9,10) & version_parent = null;
           limit ${limit * 2};
         ''';
 
@@ -96,12 +95,30 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
 
         print('📥 IGDB Response Status: ${response.statusCode}');
         print('📥 IGDB Response Data Length: ${response.data?.length ?? 0}');
+        print('📥 IGDB Raw Response: ${response.data}');
 
         if (response.statusCode == 200 && response.data != null) {
           final data = json.decode(response.data!) as List<dynamic>;
           print('📊 IGDB Parsed ${data.length} raw results');
+
+          // Log first game for debugging
+          if (data.isNotEmpty) {
+            print('🔍 First game data: ${json.encode(data.first)}');
+            final firstGame = data.first as Map<String, dynamic>;
+            print('   - name: ${firstGame['name']}');
+            print('   - cover: ${firstGame['cover']}');
+            print('   - slug: ${firstGame['slug']}');
+          }
+
           final games = data
-              .where((game) => _isValidGame(game))
+              .where((game) {
+                final isValid = _isValidGame(game);
+                if (!isValid && data.length <= 5) {
+                  print(
+                      '❌ Filtered out: ${(game as Map)['name']} (cover: ${game['cover']})');
+                }
+                return isValid;
+              })
               .map((game) => Game.fromIgdb(game))
               .toList();
           print('✅ IGDB Filtered to ${games.length} valid games');
@@ -263,24 +280,20 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
       {bool requireMultiplayer = false}) {
     final name = (game['name'] as String? ?? '').toLowerCase();
 
-    // Skip common DLC/expansion patterns
+    // Skip common DLC/expansion patterns - be aggressive to avoid clutter
     final invalidPatterns = [
       'dlc',
       'season pass',
-      'expansion',
-      'bundle',
-      'edition',
-      'pack',
-      'content',
       ': episode',
-      'remaster',
-      'remake',
-      'definitive',
-      'ultimate',
-      'deluxe',
-      'gold',
-      'goty',
-      'complete',
+      ' - episode',
+      ' pack',
+      ': pack',
+      'crew pack',
+      ': season',
+      ' season 1',
+      ' season 2',
+      ' season 3',
+      ' chapter',
     ];
 
     // Allow games with these words in title (they're actual games)
@@ -288,6 +301,8 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
       'black ops',
       'modern warfare',
       'world at war',
+      'jet pack',
+      'wolf pack',
     ];
 
     for (final allow in allowPatterns) {
@@ -295,11 +310,17 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
     }
 
     for (final pattern in invalidPatterns) {
-      if (name.contains(pattern)) return false;
+      if (name.contains(pattern)) {
+        print('⚠️ Filtered "${game['name']}" - matches pattern: $pattern');
+        return false;
+      }
     }
 
     // Require cover image
-    if (game['cover'] == null) return false;
+    if (game['cover'] == null) {
+      print('⚠️ Filtered "${game['name']}" - no cover image');
+      return false;
+    }
 
     // If multiplayer required, check for multiplayer modes or specific game modes
     if (requireMultiplayer) {

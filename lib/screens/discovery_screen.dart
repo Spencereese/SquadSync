@@ -1439,14 +1439,9 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
           ),
         );
 
-        // Navigate to chat if group exists
-        if (chatGroupId != null) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => const ChatScreen(chatType: ChatType.squad),
-            ),
-          );
-        }
+        // Navigate back to ChatGroupsScreen with My Groups tab (index 0)
+        // Pop the discovery screen to return to the main app
+        Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } catch (e) {
       if (mounted) {

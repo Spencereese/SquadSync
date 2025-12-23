@@ -79,6 +79,14 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
     super.dispose();
   }
 
+  bool _isImageOnlyMessage() {
+    return (widget.messageData.mediaUrl?.isNotEmpty == true &&
+            (widget.messageData.mediaType == 'image' ||
+                widget.messageData.type == models.MessageType.image)) &&
+        (widget.messageData.text?.isEmpty ?? true) &&
+        (widget.messageData.pollId?.isEmpty ?? true);
+  }
+
   BorderRadius get borderRadius {
     if (widget.isFirstInGroup && widget.isLastInGroup)
       return BorderRadius.circular(20);
@@ -155,75 +163,86 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
                       key: _messageKey,
                       margin: const EdgeInsets.symmetric(vertical: 1.0),
                       decoration: BoxDecoration(
-                        gradient: widget.isMe
-                            ? LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: _isPressed
-                                    ? [
-                                        const Color(0xFF007AFF)
-                                            .withValues(alpha: 0.85),
-                                        const Color(0xFF0051D5)
-                                            .withValues(alpha: 0.85),
-                                      ]
-                                    : [
-                                        const Color(0xFF007AFF)
-                                            .withValues(alpha: 0.92),
-                                        const Color(0xFF0051D5)
-                                            .withValues(alpha: 0.92),
-                                      ],
-                              )
-                            : LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: _isPressed
-                                    ? [
-                                        const Color(0xFF3C3C3E)
-                                            .withValues(alpha: 0.85),
-                                        const Color(0xFF2C2C2E)
-                                            .withValues(alpha: 0.85),
-                                      ]
-                                    : [
-                                        const Color(0xFF3C3C3E)
-                                            .withValues(alpha: 0.92),
-                                        const Color(0xFF2C2C2E)
-                                            .withValues(alpha: 0.92),
-                                      ],
-                              ),
+                        // No background for image-only messages
+                        gradient: _isImageOnlyMessage()
+                            ? null
+                            : (widget.isMe
+                                ? LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: _isPressed
+                                        ? [
+                                            const Color(0xFF007AFF)
+                                                .withValues(alpha: 0.85),
+                                            const Color(0xFF0051D5)
+                                                .withValues(alpha: 0.85),
+                                          ]
+                                        : [
+                                            const Color(0xFF007AFF)
+                                                .withValues(alpha: 0.92),
+                                            const Color(0xFF0051D5)
+                                                .withValues(alpha: 0.92),
+                                          ],
+                                  )
+                                : LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: _isPressed
+                                        ? [
+                                            const Color(0xFF3C3C3E)
+                                                .withValues(alpha: 0.85),
+                                            const Color(0xFF2C2C2E)
+                                                .withValues(alpha: 0.85),
+                                          ]
+                                        : [
+                                            const Color(0xFF3C3C3E)
+                                                .withValues(alpha: 0.92),
+                                            const Color(0xFF2C2C2E)
+                                                .withValues(alpha: 0.92),
+                                          ],
+                                  )),
                         borderRadius: borderRadius,
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          width: 0.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                          BoxShadow(
-                            color: widget.isMe
-                                ? const Color(0xFF007AFF)
-                                    .withValues(alpha: 0.15)
-                                : Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 20,
-                            spreadRadius: -5,
-                          ),
-                        ],
+                        border: _isImageOnlyMessage()
+                            ? null
+                            : Border.all(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                width: 0.5,
+                              ),
+                        boxShadow: _isImageOnlyMessage()
+                            ? null
+                            : [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                                BoxShadow(
+                                  color: widget.isMe
+                                      ? const Color(0xFF007AFF)
+                                          .withValues(alpha: 0.15)
+                                      : Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 20,
+                                  spreadRadius: -5,
+                                ),
+                              ],
                       ),
                       child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.center,
-                            colors: [
-                              Colors.white.withValues(alpha: 0.15),
-                              Colors.white.withValues(alpha: 0.0),
-                            ],
-                          ),
-                          borderRadius: borderRadius,
-                        ),
-                        padding: _getMessagePadding(),
+                        decoration: _isImageOnlyMessage()
+                            ? null
+                            : BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.center,
+                                  colors: [
+                                    Colors.white.withValues(alpha: 0.15),
+                                    Colors.white.withValues(alpha: 0.0),
+                                  ],
+                                ),
+                                borderRadius: borderRadius,
+                              ),
+                        padding: _isImageOnlyMessage()
+                            ? EdgeInsets.zero
+                            : _getMessagePadding(),
                         constraints: BoxConstraints(
                           maxWidth: MediaQuery.of(context).size.width * 0.7,
                         ),

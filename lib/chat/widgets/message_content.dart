@@ -58,7 +58,19 @@ class MessageContent extends ConsumerWidget {
         if (message.replyTo?.isNotEmpty == true)
           _buildReplyPreview(context, ref),
         if (message.text.isNotEmpty) _buildTextContent(context),
-        if (message.photos.isNotEmpty) _buildImageContent(context),
+        // SIMPLIFIED: Render images directly from mediaUrl (no conversion needed)
+        if (message.mediaUrl != null &&
+            message.mediaUrl!.isNotEmpty &&
+            (message.mediaType == 'image' ||
+                message.type == MessageType.image)) ...[
+          // Debug logging
+          Builder(builder: (context) {
+            print(
+                '🎨 UI RENDER: id=${message.id}, mediaUrl=${message.mediaUrl}, mediaType=${message.mediaType}, type=${message.type}');
+            return const SizedBox.shrink();
+          }),
+          _buildImageFromUrl(context, message.mediaUrl!),
+        ],
         if (message.videoUrl?.isNotEmpty == true) _buildVideoContent(),
         if (message.audioUrl?.isNotEmpty == true) _buildAudioContent(),
         // Add subtle status indicators for sent messages
@@ -397,9 +409,21 @@ class MessageContent extends ConsumerWidget {
     return LinkPreviewWidget(url: url, type: linkType);
   }
 
+  /// SIMPLIFIED: Build image directly from URL (no MessageData conversion)
+  Widget _buildImageFromUrl(BuildContext context, String imageUrl) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4.0),
+      child: _buildImage(context, imageUrl),
+    );
+  }
+
   Widget _buildImage(BuildContext context, String? imageUrl) {
+    print('🖼️ _buildImage called: imageUrl=$imageUrl');
     final fixedUrl = fixMediaUrl(imageUrl);
+    print('🔧 After fixMediaUrl: fixedUrl=$fixedUrl');
+
     if (fixedUrl.isEmpty) {
+      print('❌ Empty URL after fix');
       return Semantics(
         label: 'Invalid image',
         child: const Text(
@@ -409,50 +433,74 @@ class MessageContent extends ConsumerWidget {
       );
     }
 
+    print('✅ Building CachedNetworkImage with URL: $fixedUrl');
     return GestureDetector(
       onTap: () => _showFullScreenImage(context, fixedUrl),
       child: Container(
         constraints: const BoxConstraints(
-          maxWidth: 200, // Smaller within bubble
+          maxWidth: 200,
           maxHeight: 200,
         ),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           child: CachedNetworkImage(
             imageUrl: fixedUrl,
             fit: BoxFit.cover,
-            memCacheWidth: 400, // 2x for retina
-            memCacheHeight: 400,
-            fadeInDuration: const Duration(milliseconds: 100),
+            memCacheWidth: 500, // 2x for retina
+            memCacheHeight: 600,
+            fadeInDuration: const Duration(milliseconds: 200),
             placeholder: (context, url) => Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-            errorWidget: (context, url, error) => Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error, color: Colors.red, size: 24),
-                  SizedBox(height: 4),
-                  Text(
-                    'Failed to load',
-                    style: TextStyle(fontSize: 12, color: Colors.white70),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+              width: 200,
+              height: 200,
+              color: Colors.transparent,
+              child: Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.grey[400],
+                ),
               ),
             ),
+            errorWidget: (context, url, error) {
+              print('❌ CachedNetworkImage ERROR: url=$url, error=$error');
+              return Container(
+                width: 200,
+                height: 150,
+                decoration: BoxDecoration(
+                  color: Colors.grey[900]?.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[800]!, width: 1),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.grey[600],
+                      size: 32,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Image unavailable',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[500],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ),

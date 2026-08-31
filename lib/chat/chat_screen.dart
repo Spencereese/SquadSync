@@ -106,6 +106,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   ChatInitBail _initializationServiceBail = ChatInitBail.none;
   int _initializationServiceGeneration = 0;
   int _initializationHardFailureRetries = 0;
+  int _channelRateLimitRetries = 0;
 
   // CRITICAL: Cached state to prevent build() from watching providers
   // This stops disposal loops from keyboard/focus/MediaQuery changes
@@ -179,10 +180,13 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     _retryInitializationServiceIfNeeded();
   }
 
-  void _resetInitializationServiceFlags() {
+  void _resetInitializationServiceFlags({bool resetRateLimitRetries = true}) {
     _initializationServiceCompleted = false;
     _initializationServiceBail = ChatInitBail.none;
     _initializationHardFailureRetries = 0;
+    if (resetRateLimitRetries) {
+      _channelRateLimitRetries = 0;
+    }
   }
 
   void _bindTypingListener(String chatGroupId) {
@@ -216,7 +220,14 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     ref
         .read(cn.chatNotifierProvider.notifier)
         .initializeChat(chatGroupId, widget.chatType)
-        .catchError((error) {
+        .then((_) {
+      if (!mounted ||
+          generation != _initializationServiceGeneration ||
+          chatGroupId != _registeredActiveChatGroupId) {
+        return;
+      }
+      _channelRateLimitRetries = 0;
+    }).catchError((error) {
       if (!mounted ||
           generation != _initializationServiceGeneration ||
           chatGroupId != _registeredActiveChatGroupId) {
@@ -224,24 +235,27 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       }
       String errorMsg = error.toString();
       if (errorMsg.contains('ChannelRateLimitReached')) {
-        errorMsg = 'Too many connections. Cleaning up...';
-        SupabaseService.dispose();
-        Future.delayed(const Duration(seconds: 1), () {
-          if (!shouldContinueDelayedChatReinit(
-            isMounted: mounted,
-            scheduledId: chatGroupId,
-            scheduledGeneration: generation,
-            currentRegisteredId: _registeredActiveChatGroupId,
-            currentGeneration: _initializationServiceGeneration,
-          )) {
-            return;
-          }
-          _resetInitializationServiceFlags();
-          _scheduleChatStart(
-            chatGroupId,
-            _initializationServiceGeneration,
-          );
-        });
+        errorMsg = rateLimitRetrySnackMessage(_channelRateLimitRetries);
+        if (shouldScheduleRateLimitRetry(_channelRateLimitRetries)) {
+          _channelRateLimitRetries++;
+          SupabaseService.dispose();
+          Future.delayed(const Duration(seconds: 1), () {
+            if (!shouldContinueDelayedChatReinit(
+              isMounted: mounted,
+              scheduledId: chatGroupId,
+              scheduledGeneration: generation,
+              currentRegisteredId: _registeredActiveChatGroupId,
+              currentGeneration: _initializationServiceGeneration,
+            )) {
+              return;
+            }
+            _resetInitializationServiceFlags(resetRateLimitRetries: false);
+            _scheduleChatStart(
+              chatGroupId,
+              _initializationServiceGeneration,
+            );
+          });
+        }
       } else if (errorMsg.contains('channelError')) {
         errorMsg = 'Connection issue. Chat will work with limited features.';
       } else {

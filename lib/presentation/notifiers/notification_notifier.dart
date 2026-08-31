@@ -118,6 +118,25 @@ bool shouldContinueDelayedChatReinit({
   );
 }
 
+/// One delayed ChannelRateLimitReached replay, then stop.
+const kMaxChatRateLimitRetries = 1;
+
+bool shouldScheduleRateLimitRetry(
+  int rateLimitRetries, {
+  int maxRateLimitRetries = kMaxChatRateLimitRetries,
+}) {
+  return rateLimitRetries < maxRateLimitRetries;
+}
+
+const kRateLimitRetrySnack = 'Too many connections. Cleaning up...';
+const kRateLimitGiveUpSnack = 'Too many connections — try again later';
+
+String rateLimitRetrySnackMessage(int rateLimitRetries) {
+  return shouldScheduleRateLimitRetry(rateLimitRetries)
+      ? kRateLimitRetrySnack
+      : kRateLimitGiveUpSnack;
+}
+
 bool shouldCleanupPreviousThreadChannels({
   required String? previousId,
   required String? nextId,

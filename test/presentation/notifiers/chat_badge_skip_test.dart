@@ -290,6 +290,33 @@ void main() {
     );
   });
 
+  test('delayed rate-limit path stops after one replay', () {
+    expect(shouldScheduleRateLimitRetry(0), isTrue);
+    expect(shouldScheduleRateLimitRetry(1), isFalse);
+    expect(rateLimitRetrySnackMessage(0), kRateLimitRetrySnack);
+    expect(rateLimitRetrySnackMessage(1), kRateLimitGiveUpSnack);
+
+    var retries = 0;
+    var scheduled = 0;
+    final snacks = <String>[];
+    void onRateLimit() {
+      snacks.add(rateLimitRetrySnackMessage(retries));
+      if (shouldScheduleRateLimitRetry(retries)) {
+        retries++;
+        scheduled++;
+      }
+    }
+
+    onRateLimit();
+    expect(scheduled, 1);
+    expect(snacks, [kRateLimitRetrySnack]);
+    onRateLimit();
+    expect(scheduled, 1);
+    expect(snacks, [kRateLimitRetrySnack, kRateLimitGiveUpSnack]);
+    onRateLimit();
+    expect(scheduled, 1);
+  });
+
   test('init UI writes only apply for the current generation', () {
     expect(
       shouldCommitInitializationCompletion(
@@ -499,6 +526,34 @@ void main() {
     tester.binding.scheduleFrame();
     await tester.pump();
     expect(attempts, 2);
+  });
+
+  // Pattern harness: ChatScreen rate-limit catch + delay. Does not mount ChatScreen.
+  testWidgets('rate-limit delayed replay stops after N failures', (tester) async {
+    final snacks = <String>[];
+    var scheduledReplays = 0;
+    final key = GlobalKey<_RateLimitRetryHarnessState>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: _RateLimitRetryHarness(
+            key: key,
+            onSnack: snacks.add,
+            onScheduleReplay: () => scheduledReplays++,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    key.currentState!.onRateLimit();
+    expect(scheduledReplays, 1);
+    expect(snacks, [kRateLimitRetrySnack]);
+    key.currentState!.onRateLimit();
+    expect(scheduledReplays, 1);
+    expect(snacks, [kRateLimitRetrySnack, kRateLimitGiveUpSnack]);
+    key.currentState!.onRateLimit();
+    expect(scheduledReplays, 1);
   });
 }
 
@@ -803,6 +858,37 @@ class _ThrowRetryPostFrameHarnessState
           runInit();
         });
       }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// Pattern harness for ChatScreen ChannelRateLimitReached: one delayed
+/// _scheduleChatStart, then give up. Does not mount ChatScreen.
+class _RateLimitRetryHarness extends StatefulWidget {
+  const _RateLimitRetryHarness({
+    super.key,
+    required this.onSnack,
+    required this.onScheduleReplay,
+  });
+
+  final void Function(String message) onSnack;
+  final void Function() onScheduleReplay;
+
+  @override
+  State<_RateLimitRetryHarness> createState() => _RateLimitRetryHarnessState();
+}
+
+class _RateLimitRetryHarnessState extends State<_RateLimitRetryHarness> {
+  var _retries = 0;
+
+  void onRateLimit() {
+    widget.onSnack(rateLimitRetrySnackMessage(_retries));
+    if (shouldScheduleRateLimitRetry(_retries)) {
+      _retries++;
+      widget.onScheduleReplay();
     }
   }
 

@@ -57,6 +57,7 @@ void main() {
     );
 
     final list = tester.widget<ListView>(find.byType(ListView));
-    expect(list.padding?.bottom, kMainTabBarHeight + inset);
+    final padding = list.padding as EdgeInsets?;
+    expect(padding?.bottom, kMainTabBarHeight + inset);
   });
 }

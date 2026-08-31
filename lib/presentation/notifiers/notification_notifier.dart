@@ -25,6 +25,9 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
   final Map<String, int> _lobbyPlayerCounts = {};
   final Set<String> _processedMomentumEvents = {};
 
+  /// Chat currently on screen. Incoming messages for this group do not badge.
+  String? _activeChatGroupId;
+
   @override
   Future<BadgeState> build() async {
     // Initialize notification service
@@ -156,8 +159,27 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
     // Don't badge own messages
     if (senderId == currentUserId) return;
 
+    final incomingGroup = payload.newRecord['chat_group_id'] ??
+        payload.newRecord['chat_id'] ??
+        payload.newRecord['group_id'];
+    if (_activeChatGroupId != null) {
+      if (incomingGroup == null ||
+          incomingGroup.toString() == _activeChatGroupId) {
+        return;
+      }
+    }
+
     _notificationService.incrementBadge('chat');
     state = AsyncData(_notificationService.getBadgeState());
+  }
+
+  /// ChatScreen registers the open thread so badges do not increment there.
+  void setActiveChatGroup(String? chatGroupId) {
+    _activeChatGroupId = chatGroupId;
+    if (chatGroupId != null) {
+      _notificationService.clearBadge('chat');
+      state = AsyncData(_notificationService.getBadgeState());
+    }
   }
 
   /// Send direct invite notification
@@ -214,7 +236,7 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
       final user = await _supabase
           .from('users')
           .select('display_name')
-          .eq('id', userId)
+          .eq('uid', userId)
           .single();
       return user['display_name'] as String? ?? 'Unknown';
     } catch (e) {

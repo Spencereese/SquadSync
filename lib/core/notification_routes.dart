@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -6,15 +7,50 @@ class NotificationRoutes {
   NotificationRoutes._();
 
   static void Function(String location)? go;
+  static GoRouter? router;
+  static GlobalKey<NavigatorState>? navigatorKey;
 
-  /// Wire taps through the live [rootNavigatorKey] after GoRouter is built.
+  /// Wire taps after GoRouter is built. Prefers the live navigator; falls
+  /// back to the stored [GoRouter] and one post-frame retry so
+  /// [getInitialMessage] does not silently drop before the first frame.
+  static void bindRouter(GoRouter goRouter, GlobalKey<NavigatorState> key) {
+    router = goRouter;
+    navigatorKey = key;
+    go = navigate;
+  }
+
+  /// Older name used by app_widgets / tests.
   static void bindNavigator(GlobalKey<NavigatorState> key) {
-    go = (location) {
-      final context = key.currentContext;
-      if (context != null && context.mounted) {
-        GoRouter.of(context).go(location);
+    navigatorKey = key;
+    go = navigate;
+  }
+
+  static void navigate(String location) {
+    final context = navigatorKey?.currentContext;
+    if (context != null && context.mounted) {
+      GoRouter.of(context).go(location);
+      return;
+    }
+    final stored = router;
+    if (stored != null) {
+      stored.go(location);
+      return;
+    }
+    debugPrint(
+        'NotificationRoutes: navigator not ready for $location; retrying next frame');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final retryContext = navigatorKey?.currentContext;
+      if (retryContext != null && retryContext.mounted) {
+        GoRouter.of(retryContext).go(location);
+        return;
       }
-    };
+      if (router != null) {
+        router!.go(location);
+        return;
+      }
+      debugPrint(
+          'NotificationRoutes: dropped $location (no GoRouter / unmounted key)');
+    });
   }
 
   static String? locationFor(Map<String, dynamic> data) {

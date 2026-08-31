@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/core/notification_routes.dart';
 
@@ -40,5 +41,20 @@ void main() {
     NotificationRoutes.open({'type': 'chat', 'chatGroupId': 'g1'});
     expect(opened, '/chat/g1');
     NotificationRoutes.go = null;
+  });
+
+  testWidgets('navigate retries when the navigator context is missing',
+      (tester) async {
+    NotificationRoutes.router = null;
+    NotificationRoutes.navigatorKey = GlobalKey<NavigatorState>();
+    NotificationRoutes.go = NotificationRoutes.navigate;
+    // No context and no router — should log and schedule a frame, not throw.
+    expect(
+      () => NotificationRoutes.open({'type': 'chat', 'chatGroupId': 'g1'}),
+      returnsNormally,
+    );
+    await tester.pump();
+    NotificationRoutes.go = null;
+    NotificationRoutes.navigatorKey = null;
   });
 }

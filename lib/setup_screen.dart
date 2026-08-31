@@ -301,7 +301,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
       }
     } catch (e) {
       debugPrint('Error saving name: $e');
-      _showSnackBar('Error saving name: $e');
+      _showSnackBar(EmailAuth.forUnexpected(e).message);
     }
   }
 

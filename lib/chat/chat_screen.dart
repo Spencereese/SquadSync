@@ -197,7 +197,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(notificationNotifierProvider.notifier).clearBadge('chat');
+      ref
+          .read(notificationNotifierProvider.notifier)
+          .setActiveChatGroup(widget.chatGroupId ?? '');
     });
 
     _animationController = AnimationController(
@@ -448,6 +450,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   void dispose() {
+    ref.read(notificationNotifierProvider.notifier).setActiveChatGroup(null);
     // Clean up Supabase channels for this chat to prevent rate limit errors
     if (widget.chatGroupId != null) {
       _cleanupChatChannels(widget.chatGroupId!);

@@ -217,7 +217,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       FirebaseAnalyticsObserver(analytics: analytics),
     ],
   );
-  NotificationRoutes.bindNavigator(rootNavigatorKey);
+  NotificationRoutes.bindRouter(router, rootNavigatorKey);
   return router;
 });
 

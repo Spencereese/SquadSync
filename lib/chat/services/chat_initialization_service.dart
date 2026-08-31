@@ -11,8 +11,9 @@ import '../chat_state_notifier.dart';
 
 /// Service responsible for complex chat initialization logic
 class ChatInitializationService {
-  /// Initializes chat with all necessary setup operations
-  Future<void> initializeChat({
+  /// Initializes chat with all necessary setup operations.
+  /// Returns `false` when lobby state is not ready so the caller can retry.
+  Future<bool> initializeChat({
     required BuildContext context,
     required WidgetRef ref,
     required String? chatGroupId,
@@ -25,12 +26,15 @@ class ChatInitializationService {
     required Function(String) sendMessage,
     required TextEditingController messageController,
     required String? initialMessage,
+    LobbyState? squadState,
   }) async {
-    final squadState = ref.read(ln.lobbyNotifierProvider).valueOrNull;
+    final resolvedSquad =
+        squadState ?? ref.read(ln.lobbyNotifierProvider).valueOrNull;
 
-    if (squadState == null) {
-      // Handle loading state
-      return;
+    if (resolvedSquad == null) {
+      debugPrint(
+          'ChatInitializationService: squadState null; caller should retry');
+      return false;
     }
 
     // Load chat details
@@ -38,7 +42,7 @@ class ChatInitializationService {
       context: context,
       chatGroupId: chatGroupId,
       chatType: chatType,
-      squadState: squadState,
+      squadState: resolvedSquad,
       setChatName: setChatName,
       setChatImageUrl: setChatImageUrl,
     );
@@ -81,6 +85,7 @@ class ChatInitializationService {
         scrollToBottom();
       });
     }
+    return true;
   }
 
   Future<void> _loadChatDetails({

@@ -70,10 +70,62 @@ void main() {
     );
   });
 
+  test('first non-null thread id starts initializeChat path', () {
+    expect(
+      shouldStartChatInitialization(
+        alreadyInitialized: false,
+        nextThreadId: null,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldStartChatInitialization(
+        alreadyInitialized: false,
+        nextThreadId: 'lobby-1',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldStartChatInitialization(
+        alreadyInitialized: true,
+        nextThreadId: 'lobby-1',
+      ),
+      isFalse,
+    );
+  });
+
+  test('initialization service retries only after a null-squad bail', () {
+    expect(
+      shouldRetryChatInitializationService(
+        serviceCompleted: false,
+        bailedOnNullSquad: true,
+        squadStateAvailable: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRetryChatInitializationService(
+        serviceCompleted: true,
+        bailedOnNullSquad: true,
+        squadStateAvailable: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRetryChatInitializationService(
+        serviceCompleted: false,
+        bailedOnNullSquad: true,
+        squadStateAvailable: false,
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets(
       'listenManual registers selectedLobbyId when widget chatGroupId is null',
       (tester) async {
     String? registered;
+    String? initialized;
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -82,21 +134,27 @@ void main() {
         child: MaterialApp(
           home: _SquadActiveThreadHarness(
             onRegister: (id) => registered = id,
+            onInitialize: (id) => initialized = id,
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(registered, 'lobby-squad-1');
+    expect(initialized, 'lobby-squad-1');
     expect(shouldSkipChatBadgeIncrement(registered, 'lobby-squad-1'), isTrue);
   });
 }
 
 /// Same listenManual + resolve path ChatScreen._syncActiveChatThread uses.
 class _SquadActiveThreadHarness extends ConsumerStatefulWidget {
-  const _SquadActiveThreadHarness({required this.onRegister});
+  const _SquadActiveThreadHarness({
+    required this.onRegister,
+    this.onInitialize,
+  });
 
   final void Function(String id) onRegister;
+  final void Function(String id)? onInitialize;
 
   @override
   ConsumerState<_SquadActiveThreadHarness> createState() =>
@@ -106,6 +164,7 @@ class _SquadActiveThreadHarness extends ConsumerStatefulWidget {
 class _SquadActiveThreadHarnessState
     extends ConsumerState<_SquadActiveThreadHarness> {
   String? _registered;
+  var _hasInitializedChat = false;
 
   @override
   void initState() {
@@ -119,8 +178,16 @@ class _SquadActiveThreadHarnessState
           selectedLobbyId: next?.selectedLobbyId,
         );
         if (id == null || id == _registered) return;
+        final already = _hasInitializedChat;
         _registered = id;
         widget.onRegister(id);
+        if (shouldStartChatInitialization(
+          alreadyInitialized: already,
+          nextThreadId: id,
+        )) {
+          _hasInitializedChat = true;
+          widget.onInitialize?.call(id);
+        }
       },
       fireImmediately: true,
     );

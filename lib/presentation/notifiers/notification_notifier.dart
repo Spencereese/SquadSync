@@ -37,6 +37,25 @@ String? resolveActiveChatGroupId({
   return null;
 }
 
+/// First non-null thread id should start ChatNotifier.initializeChat.
+bool shouldStartChatInitialization({
+  required bool alreadyInitialized,
+  required String? nextThreadId,
+}) {
+  return !alreadyInitialized &&
+      nextThreadId != null &&
+      nextThreadId.isNotEmpty;
+}
+
+/// Re-run ChatInitializationService after it bailed on a missing lobby.
+bool shouldRetryChatInitializationService({
+  required bool serviceCompleted,
+  required bool bailedOnNullSquad,
+  required bool squadStateAvailable,
+}) {
+  return !serviceCompleted && bailedOnNullSquad && squadStateAvailable;
+}
+
 /// Riverpod notifier for managing notifications with Supabase real-time subscriptions
 class NotificationNotifier extends AsyncNotifier<BadgeState> {
   final _supabase = Supabase.instance.client;

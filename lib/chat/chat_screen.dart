@@ -100,6 +100,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   /// Captured while [ref] is valid. Dispose must not call [ref] (Riverpod 2.x).
   NotificationNotifier? _notificationNotifier;
   String? _registeredActiveChatGroupId;
+  String? _typingListenerChatGroupId;
+  bool _initializationServiceCompleted = false;
+  bool _initializationServiceBailed = false;
 
   // CRITICAL: Cached state to prevent build() from watching providers
   // This stops disposal loops from keyboard/focus/MediaQuery changes
@@ -114,7 +117,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       widgetChatGroupId: widget.chatGroupId,
       isSquad: widget.chatType == ChatType.squad,
       selectedLobbyId: widget.chatType == ChatType.squad
-          ? ref.read(ln.lobbyNotifierProvider).value?.selectedLobbyId
+          ? (_cachedSquadState?.selectedLobbyId ?? _registeredActiveChatGroupId)
           : null,
     );
   }
@@ -130,7 +133,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   String? get debugRegisteredActiveChatGroupId => _registeredActiveChatGroupId;
 
   /// Register the open thread for badge skip. No-op until the id is non-null.
-  /// Skips repeat calls so lobby ticks do not wipe the shared chat badge.
+  /// First non-null id also starts initializeChat / loadUserGroups.
   void _syncActiveChatThread({String? selectedLobbyId}) {
     final notifier = _notificationNotifier;
     if (notifier == null) return;
@@ -142,14 +145,141 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               ? _cachedSquadState?.selectedLobbyId
               : null),
     );
-    if (id == null || id == _registeredActiveChatGroupId) return;
-    _registeredActiveChatGroupId = id;
-    notifier.setActiveChatGroup(id);
+    final isNewId = id != null && id != _registeredActiveChatGroupId;
+    if (isNewId) {
+      _registeredActiveChatGroupId = id;
+      notifier.setActiveChatGroup(id);
+      _bindTypingListener(id);
+      if (shouldStartChatInitialization(
+        alreadyInitialized: _hasInitializedChat,
+        nextThreadId: id,
+      )) {
+        _hasInitializedChat = true;
+        _scheduleChatStart(id);
+      } else if (_hasInitializedChat) {
+        _scheduleNotifierChat(id);
+      }
+    }
+    _retryInitializationServiceIfNeeded();
+  }
+
+  void _bindTypingListener(String chatGroupId) {
+    if (_typingListenerChatGroupId == chatGroupId) return;
+    _typingListenerChatGroupId = chatGroupId;
     _typingManager.initializeTypingListener(
       ref,
-      chatGroupId: id,
+      chatGroupId: chatGroupId,
       chatType: widget.chatType,
     );
+  }
+
+  void _scheduleChatStart(String chatGroupId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _startNotifierChat(chatGroupId);
+      _runInitializationService(chatGroupId);
+    });
+  }
+
+  void _scheduleNotifierChat(String chatGroupId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _startNotifierChat(chatGroupId);
+    });
+  }
+
+  void _startNotifierChat(String chatGroupId) {
+    ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+    ref
+        .read(cn.chatNotifierProvider.notifier)
+        .initializeChat(chatGroupId, widget.chatType)
+        .catchError((error) {
+      if (!mounted) return;
+      String errorMsg = error.toString();
+      if (errorMsg.contains('ChannelRateLimitReached')) {
+        errorMsg = 'Too many connections. Cleaning up...';
+        SupabaseService.dispose();
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) {
+            ref
+                .read(cn.chatNotifierProvider.notifier)
+                .initializeChat(chatGroupId, widget.chatType);
+          }
+        });
+      } else if (errorMsg.contains('channelError')) {
+        errorMsg = 'Connection issue. Chat will work with limited features.';
+      } else {
+        errorMsg = 'Connection issue. Retrying...';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMsg),
+          backgroundColor: errorMsg.contains('limited features')
+              ? Colors.orange
+              : Theme.of(context).colorScheme.error,
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Dismiss',
+            textColor: Colors.white,
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            },
+          ),
+        ),
+      );
+    });
+  }
+
+  Future<void> _runInitializationService(String chatGroupId) async {
+    if (!mounted || _initializationServiceCompleted) return;
+    final ran = await _initializationService.initializeChat(
+      context: context,
+      ref: ref,
+      chatGroupId: chatGroupId,
+      chatGroupName: widget.chatGroupName,
+      chatType: widget.chatType,
+      setChatName: (name) {
+        if (mounted) setState(() => _chatName = name);
+        _uiManager.chatName = name;
+      },
+      setChatImageUrl: (url) {
+        if (mounted) setState(() => _chatImageUrl = url);
+        _uiManager.chatImageUrl = url;
+      },
+      loadMoreMessages: _loadMoreMessages,
+      scrollToBottom: _scrollToBottom,
+      sendMessage: (message) {
+        _messageController.text = message;
+        _sendMessage(null);
+      },
+      messageController: _messageController,
+      initialMessage: widget.initialMessage,
+      squadState: _cachedSquadState,
+    );
+    if (ran) {
+      _initializationServiceCompleted = true;
+      _initializationServiceBailed = false;
+    } else {
+      _initializationServiceBailed = true;
+    }
+  }
+
+  void _retryInitializationServiceIfNeeded() {
+    if (!shouldRetryChatInitializationService(
+      serviceCompleted: _initializationServiceCompleted,
+      bailedOnNullSquad: _initializationServiceBailed,
+      squadStateAvailable: _cachedSquadState != null,
+    )) {
+      return;
+    }
+    final id = threadChatGroupId;
+    if (id == null) return;
+    _initializationServiceBailed = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _runInitializationService(id);
+    });
   }
 
   int? _getTimestampMs(dynamic message) {
@@ -375,105 +505,13 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       });
     }
 
-    // CRITICAL FIX: Only initialize chat ONCE, not on every dependency change
-    // didChangeDependencies() runs when keyboard opens/closes, causing disposal loops
-    if (!_hasInitializedChat) {
-      _hasInitializedChat = true;
-
-      // Initialize provider-dependent services here, after the widget is mounted
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-
-        // Use initialization service for complex setup
-        _initializationService.initializeChat(
-          context: context,
-          ref: ref,
-          chatGroupId: threadChatGroupId,
-          chatGroupName: widget.chatGroupName,
-          chatType: widget.chatType,
-          setChatName: (name) {
-            if (mounted) setState(() => _chatName = name);
-            _uiManager.chatName = name;
-          },
-          setChatImageUrl: (url) {
-            if (mounted) setState(() => _chatImageUrl = url);
-            _uiManager.chatImageUrl = url;
-          },
-          loadMoreMessages: _loadMoreMessages,
-          scrollToBottom: _scrollToBottom,
-          sendMessage: (message) {
-            _messageController.text = message;
-            _sendMessage(null);
-          },
-          messageController: _messageController,
-          initialMessage: widget.initialMessage,
-        );
-
-        // Initialize chat using the coordinator
-        final chatGroupId = threadChatGroupId;
-        if (chatGroupId != null) {
-          // Load user groups first to ensure chatGroups map is populated
-          ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
-
-          ref
-              .read(cn.chatNotifierProvider.notifier)
-              .initializeChat(chatGroupId, widget.chatType)
-              .catchError((error) {
-            if (mounted) {
-              // Extract user-friendly error message
-              String errorMsg = error.toString();
-              if (errorMsg.contains('ChannelRateLimitReached')) {
-                errorMsg = 'Too many connections. Cleaning up...';
-                // Auto-cleanup channels
-                SupabaseService.dispose();
-                // Auto-retry after cleanup
-                Future.delayed(const Duration(seconds: 1), () {
-                  if (mounted) {
-                    ref
-                        .read(cn.chatNotifierProvider.notifier)
-                        .initializeChat(chatGroupId, widget.chatType);
-                  }
-                });
-              } else if (errorMsg.contains('channelError')) {
-                errorMsg =
-                    'Connection issue. Chat will work with limited features.';
-              } else {
-                errorMsg = 'Connection issue. Retrying...';
-              }
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(errorMsg),
-                  backgroundColor: errorMsg.contains('limited features')
-                      ? Colors.orange
-                      : Theme.of(context).colorScheme.error,
-                  duration: const Duration(seconds: 4),
-                  action: SnackBarAction(
-                    label: 'Dismiss',
-                    textColor: Colors.white,
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                    },
-                  ),
-                ),
-              );
-            }
-          });
-        }
-      });
-    } // End of _hasInitializedChat guard
+    // ChatNotifier / ChatInitializationService start from _syncActiveChatThread
+    // once threadChatGroupId is non-null (late squad lobby id included).
 
     // Initialize scroll controller with callbacks
     _scrollControllerService.initialize(
       onScrollChanged: () => mounted ? setState(() {}) : null,
       onLoadMoreMessages: _loadMoreMessages,
-    );
-
-    // Initialize typing manager
-    _typingManager.initializeTypingListener(
-      ref,
-      chatGroupId: threadChatGroupId,
-      chatType: widget.chatType,
     );
   }
 
@@ -487,12 +525,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   void dispose() {
-    final threadId = _registeredActiveChatGroupId ?? widget.chatGroupId;
     _notificationNotifier?.setActiveChatGroup(null);
     _notificationNotifier = null;
     _registeredActiveChatGroupId = null;
-    // Squad has a null widget id; the argument is only a gate. Always clean up.
-    _cleanupChatChannels(threadId ?? 'chat');
+    _cleanupChatChannels();
 
     _scrollControllerService.dispose();
     _scrollController.dispose();
@@ -505,10 +541,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     super.dispose();
   }
 
-  /// Clean up all Supabase channels for this chat
-  void _cleanupChatChannels(String chatGroupId) {
+  /// Removes all realtime channels. Topic-scoped cleanup is not available.
+  void _cleanupChatChannels() {
     try {
-      // Clean up all channels since we can't filter by topic
       final channels = SupabaseService.client.getChannels();
       for (final channel in channels) {
         SupabaseService.safeRemoveChannel(channel);

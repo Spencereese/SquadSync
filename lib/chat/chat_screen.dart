@@ -39,7 +39,9 @@ import '../domain/entities/lobby_state.dart';
 import 'widgets/neon_chat_app_bar.dart';
 import 'screens/chat_info_screen.dart';
 import '../presentation/notifiers/lobby_notifier.dart';
+import '../presentation/notifiers/message_notifier.dart';
 import '../presentation/notifiers/notification_notifier.dart';
+import '../core/chat_messages.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
@@ -112,6 +114,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   // This stops disposal loops from keyboard/focus/MediaQuery changes
   LobbyState? _cachedSquadState;
   cs.ChatState? _cachedChatState;
+  MessageState? _cachedMessageState;
 
   bool get isUserGroup => widget.chatType == ChatType.userGroup;
   bool get isDM => widget.chatType == ChatType.dm;
@@ -575,6 +578,16 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       (previous, next) {
         if (mounted && next != null) {
           setState(() => _cachedChatState = next);
+        }
+      },
+      fireImmediately: true,
+    );
+
+    ref.listenManual(
+      messageNotifierProvider.select((value) => value.valueOrNull),
+      (previous, next) {
+        if (mounted && next != null) {
+          setState(() => _cachedMessageState = next);
         }
       },
       fireImmediately: true,
@@ -1704,35 +1717,17 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   }
                   return false;
                 },
-                child: ref.watch(cn.chatNotifierProvider).when(
-                      data: (chatStateData) {
-                        print(
-                            '🔄 ChatScreen: Provider watch triggered, checking messages...');
+                child: Builder(
+                      builder: (context) {
+                        final messages = messagesForOpenThread(
+                          threadId: threadChatGroupId,
+                          ownerMessages:
+                              _cachedMessageState?.messages ?? const {},
+                          fallback: chatState.chatMessages,
+                        );
 
-                        final messages =
-                            chatStateData.chatMessages[threadChatGroupId] ??
-                                [];
-
-                        print(
-                            '📬 ChatScreen: Got ${messages.length} messages from chatStateData.chatMessages for group $threadChatGroupId');
-                        print(
-                            '📊 ChatScreen: Total chatMessages keys: ${chatStateData.chatMessages.keys.length}');
-                        print(
-                            '📊 ChatScreen: Map identity hashCode: ${chatStateData.chatMessages.hashCode}');
-                        print(
-                            '📊 ChatScreen: List identity hashCode: ${messages.hashCode}');
-
-                        // Debug: Log message IDs to identify missing messages - increased threshold
-                        if (messages.length < 22) {
-                          print(
-                              '⚠️ ChatScreen: Expected ~22 messages but got ${messages.length}');
-                          print('⚠️ ChatScreen: Latest 5 message IDs:');
-                          for (int i = 0; i < messages.length && i < 5; i++) {
-                            final msg = messages[i];
-                            print(
-                                '  - ${msg.id.substring(0, 8)}: ${msg.messageType}, mediaUrl=${msg.mediaUrl != null ? "present" : "null"}');
-                          }
-                        }
+                        debugPrint(
+                            '📬 ChatScreen: Got ${messages.length} messages from MessageNotifier for group $threadChatGroupId');
 
                         // Fetch display names for message senders
                         _fetchDisplayNamesForMessages(messages);
@@ -1771,10 +1766,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                                   : MediaQuery.viewPaddingOf(context).bottom),
                         );
                       },
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (error, stack) =>
-                          Center(child: Text('Error loading messages: $error')),
                     ),
               ), // End NotificationListener
               // Input Bar positioned at bottom - moves up with keyboard

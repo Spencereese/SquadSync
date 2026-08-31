@@ -9,6 +9,7 @@ import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/auth_service_supabase.dart';
 import 'package:squad_sync/services/supabase_service.dart';
+import 'package:squad_sync/core/realtime_subscribe.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/domain/entities/constitution.dart';
@@ -34,6 +35,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   StreamSubscription? _currentLobbySubscription;
   StreamSubscription? _userLobbiesSubscription;
+  int _lobbyChannelErrorRetries = 0;
 
   @override
   Future<LobbyState> build() async {
@@ -147,6 +149,15 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
+  void _resubscribeCurrentLobbyOnce(String lobbyId) {
+    if (!shouldResubscribeAfterChannelError(_lobbyChannelErrorRetries)) {
+      debugPrint('Lobby channel dead after resubscribe');
+      return;
+    }
+    _lobbyChannelErrorRetries++;
+    _subscribeToCurrentLobby(lobbyId);
+  }
+
   /// Subscribe to real-time updates for a specific lobby
   void _subscribeToCurrentLobby(String lobbyId) {
     _currentLobbySubscription?.cancel();
@@ -174,10 +185,9 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         // Handle RealtimeSubscribeException gracefully
         if (error is RealtimeSubscribeException) {
           debugPrint('❌ RealtimeSubscribeException: ${error.status}');
-          if (error.status == RealtimeSubscribeStatus.channelError ||
-              error.status == RealtimeSubscribeStatus.timedOut) {
-            debugPrint('❌ Channel error/timeout - cleaning up channels');
-            SupabaseService.cleanupOldChannels();
+          if (isDeadRealtimeStatus(error.status)) {
+            debugPrint('❌ Lobby channel dead; resubscribing once');
+            _resubscribeCurrentLobbyOnce(lobbyId);
           }
         }
       },

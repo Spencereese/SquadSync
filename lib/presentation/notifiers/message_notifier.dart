@@ -9,6 +9,7 @@ import 'package:squad_sync/core/injection.dart';
 import '../../services/message_service.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
+import '../../core/realtime_subscribe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_notifier.dart' as cn;
 
@@ -87,6 +88,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   String? _currentChatGroupId;
   ChatType? _currentChatType;
   int _retryCount = 0;
+  int _channelErrorRetries = 0;
+  bool _subscribing = false;
   static const int _maxRetries = 3;
   Timer? _retryTimer;
   Timer? _typingDebounceTimer;
@@ -125,34 +128,22 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       return;
     }
 
-    // AGGRESSIVE cleanup BEFORE creating new channels
-    final currentChannelCount = SupabaseService.activeChannelCount;
-    debugPrint(
-        'MessageNotifier: 📊 Current channel count: $currentChannelCount');
-
-    // Force cleanup if we have ANY orphaned channels
-    if (currentChannelCount > 0) {
+    if (shouldNukeAllRealtimeChannels(SupabaseService.activeChannelCount)) {
       debugPrint(
-          'MessageNotifier: 🧹 Pre-emptive cleanup of $currentChannelCount channels');
-      await _disposeMessagesStream(); // Clean up our own first
-      await SupabaseService.cleanupOldChannels(); // Then global cleanup
-
-      final afterCleanup = SupabaseService.activeChannelCount;
-      debugPrint('MessageNotifier: ✅ After cleanup: $afterCleanup channels');
+          'MessageNotifier: near channel cap (${SupabaseService.activeChannelCount}); scoped cleanup');
+      await _disposeOwnRealtime();
     }
 
-    // Wait a moment for cleanup to complete
-    await Future.delayed(const Duration(milliseconds: 100));
-
     if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
-      await _disposeMessagesStream();
+      await _disposeOwnRealtime();
       _currentChatGroupId = chatGroupId;
       _currentChatType = chatType;
       _retryCount = 0;
+      _channelErrorRetries = 0;
     }
 
     await _loadInitialMessages(chatGroupId);
-    _startMessagesStream(chatGroupId, chatType);
+    await _startSupabaseMessagesStream(chatGroupId, chatType);
   }
 
   Future<void> _loadInitialMessages(String chatGroupId) async {
@@ -177,12 +168,10 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     }
   }
 
-  void _startMessagesStream(String chatGroupId, ChatType chatType) {
-    _startSupabaseMessagesStream(chatGroupId, chatType);
-  }
-
   Future<void> _startSupabaseMessagesStream(
       String chatGroupId, ChatType chatType) async {
+    if (_subscribing) return;
+    _subscribing = true;
     try {
       final currentUser = _authService.currentUser;
       if (currentUser == null) {
@@ -190,6 +179,9 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
             'MessageNotifier: No authenticated user for Supabase stream');
         return;
       }
+
+      await _supabaseMessagesSubscription?.cancel();
+      _supabaseMessagesSubscription = null;
 
       debugPrint('MessageNotifier: Starting Supabase stream for $chatGroupId');
 
@@ -207,22 +199,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
             },
             onError: (error) {
               debugPrint('MessageNotifier: Supabase stream error: $error');
-
-              // Handle RealtimeSubscribeException specifically
-              if (error is RealtimeSubscribeException) {
-                debugPrint(
-                    'MessageNotifier: Channel error detected - ${error.status}');
-                if (error.status == RealtimeSubscribeStatus.channelError) {
-                  debugPrint(
-                      'MessageNotifier: Channel limit likely exceeded, cleaning up');
-                  SupabaseService.cleanupOldChannels();
-                }
-              }
-
-              _useSupabase = false;
-              _supabaseMessagesSubscription?.cancel();
-              _supabaseMessagesSubscription = null;
-              _startFallbackMessagesStream(chatGroupId, chatType);
+              _recoverDeadMessagesChannel(error, chatGroupId, chatType);
             },
           );
 
@@ -230,9 +207,33 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       debugPrint('MessageNotifier: Supabase stream initialized');
     } catch (e) {
       debugPrint('MessageNotifier: Failed to start Supabase stream: $e');
-      _useSupabase = false;
-      _startFallbackMessagesStream(chatGroupId, chatType);
+      _subscribing = false;
+      await _recoverDeadMessagesChannel(e, chatGroupId, chatType);
+    } finally {
+      _subscribing = false;
     }
+  }
+
+  Future<void> _recoverDeadMessagesChannel(
+    Object error,
+    String chatGroupId,
+    ChatType chatType,
+  ) async {
+    final dead = error is RealtimeSubscribeException &&
+        isDeadRealtimeStatus(error.status);
+    if (!dead && error is! RealtimeSubscribeException) {
+      debugPrint('MessageNotifier: non-channel stream error: $error');
+    }
+    await _disposeOwnRealtime();
+    if (!shouldResubscribeAfterChannelError(_channelErrorRetries)) {
+      debugPrint(
+          'MessageNotifier: channel dead after $kMaxRealtimeResubscribe resubscribe; not swallowing');
+      return;
+    }
+    _channelErrorRetries++;
+    debugPrint(
+        'MessageNotifier: resubscribing live channel (attempt $_channelErrorRetries)');
+    await _startSupabaseMessagesStream(chatGroupId, chatType);
   }
 
   void _startFallbackMessagesStream(String chatGroupId, ChatType chatType) {
@@ -271,10 +272,9 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       if (data is RealtimeSubscribeException) {
         debugPrint(
             'MessageNotifier: RealtimeSubscribeException received: ${data.status}');
-        if (data.status == RealtimeSubscribeStatus.channelError) {
+        if (isDeadRealtimeStatus(data.status)) {
           debugPrint(
-              'MessageNotifier: Channel error - cleaning up and skipping');
-          await SupabaseService.cleanupOldChannels();
+              'MessageNotifier: Channel error in snapshot; resubscribe owns this');
         }
         return; // Don't process further, error already logged
       }
@@ -405,13 +405,13 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           'MessageNotifier: RealtimeSubscribeException caught: ${e.status}');
       debugPrint('MessageNotifier: Details: ${e.details}');
 
-      if (e.status == RealtimeSubscribeStatus.channelError) {
-        debugPrint('MessageNotifier: Channel error - attempting cleanup');
-        await SupabaseService.cleanupOldChannels();
+      if (isDeadRealtimeStatus(e.status) && _currentChatGroupId != null) {
+        await _recoverDeadMessagesChannel(
+          e,
+          _currentChatGroupId!,
+          _currentChatType ?? ChatType.userGroup,
+        );
       }
-
-      // Don't set error state for channel errors - just log and continue
-      debugPrint('MessageNotifier: Continuing without throwing exception');
     } catch (e, stackTrace) {
       debugPrint('MessageNotifier: Error processing Supabase messages: $e');
       debugPrint(
@@ -571,7 +571,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       _retryTimer = Timer(delay, () {
         if (_currentChatGroupId == chatGroupId &&
             _currentChatType == chatType) {
-          _startMessagesStream(chatGroupId, chatType);
+          _startSupabaseMessagesStream(chatGroupId, chatType);
         }
       });
     } else {
@@ -580,30 +580,20 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     }
   }
 
-  Future<void> _disposeMessagesStream() async {
-    debugPrint('MessageNotifier: Disposing messages stream');
+  Future<void> _disposeOwnRealtime() async {
     await _messagesSubscription?.cancel();
     _messagesSubscription = null;
     await _supabaseMessagesSubscription?.cancel();
     _supabaseMessagesSubscription = null;
-
     if (_typingChannel != null) {
       await SupabaseService.safeRemoveChannel(_typingChannel!);
       _typingChannel = null;
     }
+  }
 
-    // CRITICAL: Clean up orphaned channels created by .stream()
-    // These aren't tracked by subscriptions and cause channelratelimitreached
-    try {
-      final channels = supabase.getChannels();
-      debugPrint(
-          'MessageNotifier: Cleaning up ${channels.length} orphaned channels');
-      for (final channel in channels) {
-        await SupabaseService.safeRemoveChannel(channel);
-      }
-    } catch (e) {
-      debugPrint('MessageNotifier: Error cleaning orphaned channels: $e');
-    }
+  Future<void> _disposeMessagesStream() async {
+    debugPrint('MessageNotifier: Disposing messages stream');
+    await _disposeOwnRealtime();
 
     _retryTimer?.cancel();
     _retryTimer = null;
@@ -837,10 +827,17 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
               'MessageNotifier: Typing channel subscribed for $chatGroupId');
         } else if (status == RealtimeSubscribeStatus.channelError) {
           debugPrint('❌ MessageNotifier: Typing channel error: $error');
-          // Cleanup on error - don't let this block chat functionality
           if (_typingChannel != null) {
             await SupabaseService.safeRemoveChannel(_typingChannel!);
             _typingChannel = null;
+          }
+          if (shouldResubscribeAfterChannelError(_channelErrorRetries)) {
+            _channelErrorRetries++;
+            debugPrint('MessageNotifier: resubscribing typing channel');
+            await _initializeTypingChannel(chatGroupId);
+          } else {
+            debugPrint(
+                'MessageNotifier: typing channel dead after resubscribe');
           }
         }
       });

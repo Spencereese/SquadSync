@@ -40,6 +40,9 @@ jobs:
           test/core/email_auth_test.dart \
           test/core/app_env_test.dart \
           test/core/session_guard_test.dart \
+          test/core/chat_messages_test.dart \
+          test/core/sqlite_cells_test.dart \
+          test/core/realtime_subscribe_test.dart \
           test/core/google_auth_config_test.dart \
           test/core/notification_routes_test.dart \
           test/core/notification_cooldowns_test.dart \

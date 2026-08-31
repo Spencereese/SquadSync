@@ -6,16 +6,24 @@ import 'package:sqflite_sqlcipher/sqflite.dart' as sqlcipher;
 import 'package:path/path.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:async';
+import 'package:squad_sync/core/sqlite_cells.dart';
 
 class SQLiteHelper {
   static Database? _database;
+  static Future<Database>? _opening;
   static const String _encryptionKeyName = 'sqlite_encryption_key';
   static const _secureStorage = FlutterSecureStorage();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+    if (_opening != null) return _opening!;
+    _opening = _initDatabase();
+    try {
+      _database = await _opening!;
+      return _database!;
+    } finally {
+      _opening = null;
+    }
   }
 
   /// Get or generate encryption key for SQLite database
@@ -617,26 +625,34 @@ class SQLiteHelper {
       debugPrint('❌ Failed to initialize database: $e');
       debugPrint('Stack trace: $stackTrace');
 
-      // Try to delete corrupted database and retry
+      if (!isSqliteCipherOpenFailure(e)) {
+        rethrow;
+      }
+
+      // Key-mismatch / exclusive lock: delete and recreate once.
       try {
+        try {
+          await _database?.close();
+        } catch (_) {}
+        _database = null;
         final databasesPath = await getDatabasesPath();
         final path = join(databasesPath, 'lobbiesync.db');
+        try {
+          await sqlcipher.deleteDatabase(path);
+        } catch (_) {}
         final file = File(path);
-
         if (await file.exists()) {
           debugPrint('🗑️  Deleting corrupted database...');
           await file.delete();
-          debugPrint('♻️  Retrying database initialization...');
-
-          // Retry initialization
-          final encryptionKey = await _getEncryptionKey();
-          return await sqlcipher.openDatabase(
-            path,
-            version: 16,
-            password: encryptionKey,
-            onCreate: (db, version) async {
-              // Simplified onCreate for recovery
-              await db.execute('''
+        }
+        debugPrint('♻️  Recreating database after cipher open_failed...');
+        final encryptionKey = await _getEncryptionKey();
+        return await sqlcipher.openDatabase(
+          path,
+          version: 16,
+          password: encryptionKey,
+          onCreate: (db, version) async {
+            await db.execute('''
                 CREATE TABLE messages (
                   id TEXT PRIMARY KEY,
                   sender_id TEXT,
@@ -665,13 +681,12 @@ class SQLiteHelper {
                   synced INTEGER DEFAULT 1
                 )
               ''');
-              await db.execute(
-                  'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
-              await db.execute(
-                  'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
-            },
-          );
-        }
+            await db.execute(
+                'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
+            await db.execute(
+                'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
+          },
+        );
       } catch (retryError) {
         debugPrint('❌ Retry failed: $retryError');
       }

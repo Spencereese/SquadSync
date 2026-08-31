@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/app_env.dart';
 import '../core/auth_redirect.dart';
+import '../core/session_guard.dart';
 import 'supabase_service.dart';
 
 /// Supabase Auth Service for SquadSync
@@ -76,7 +77,10 @@ class AuthServiceSupabase {
   }
 
   /// Check if user is authenticated
-  bool get isAuthenticated => currentUser != null;
+  bool get isAuthenticated => isUsableAuthSession(
+        hasUser: currentUser != null,
+        expiresAtSeconds: currentSession?.expiresAt,
+      );
 
   /// Sign in with email and password
   Future<AuthResponse> signInWithEmailPassword({

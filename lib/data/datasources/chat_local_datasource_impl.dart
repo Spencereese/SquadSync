@@ -1,19 +1,31 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/entities/chat_group.dart';
 import 'package:squad_sync/data/datasources/chat_local_datasource.dart';
+import 'package:squad_sync/core/sqlite_cells.dart';
 
 class ChatLocalDataSourceImpl implements ChatLocalDataSource {
   final SQLiteHelper _sqliteHelper;
 
   ChatLocalDataSourceImpl(this._sqliteHelper);
 
+  Future<Database?> _openCache() async {
+    try {
+      return await _sqliteHelper.database;
+    } catch (e) {
+      debugPrint('Chat cache unavailable; message path continues: $e');
+      return null;
+    }
+  }
+
   @override
   Future<void> cacheMessages(String chatGroupId, List<Message> messages) async {
-    final db = await _sqliteHelper.database;
+    final db = await _openCache();
+    if (db == null) return;
     final batch = db.batch();
 
     for (final message in messages) {
@@ -38,7 +50,7 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
           'voice_note_url': message.voiceNoteUrl,
           'voice_note_duration': message.voiceNoteDuration,
           'ai_response': message.aiResponse,
-          'metadata': message.metadata,
+          'metadata': encodeSqliteCell(message.metadata),
           'is_edited': (message.isEdited ?? false) ? 1 : 0,
           'edited_at': message.editedAt?.toIso8601String(),
           'is_deleted': (message.isDeleted ?? false) ? 1 : 0,
@@ -57,7 +69,8 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
   @override
   Future<List<Message>> getCachedMessages(String chatGroupId,
       {int limit = 50, DateTime? before}) async {
-    final db = await _sqliteHelper.database;
+    final db = await _openCache();
+    if (db == null) return const [];
     final whereClause = before != null
         ? 'chat_group_id = ? AND timestamp_ms < ?'
         : 'chat_group_id = ?';
@@ -169,12 +182,12 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
           'created_at': group.createdAt.toIso8601String(),
           'description': group.description,
           'avatar_url': group.avatarUrl,
-          'metadata': group.metadata,
+          'metadata': encodeSqliteCell(group.metadata),
           'admins': group.admins?.join(','),
           'moderators': group.moderators?.join(','),
           'is_active': group.isActive ?? true ? 1 : 0,
           'last_activity': group.lastActivity?.toIso8601String(),
-          'settings': group.settings,
+          'settings': encodeSqliteCell(group.settings),
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );

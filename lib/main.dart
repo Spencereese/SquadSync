@@ -311,11 +311,17 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
           // User logged in - initialize peacock notifications
           PeacockNotificationService.initialize();
           PeacockNotificationService.checkPendingNotifications();
+          try {
+            di.getIt<AutoMergeService>().startMergeDetection();
+          } catch (_) {}
           debugPrint(
               '✅ Peacock notifications active for user: ${session.user.id}');
         } else {
           // User logged out - dispose listener
           PeacockNotificationService.dispose();
+          try {
+            di.getIt<AutoMergeService>().stopMergeDetection();
+          } catch (_) {}
           debugPrint('🦚 Peacock notifications disposed');
         }
       });

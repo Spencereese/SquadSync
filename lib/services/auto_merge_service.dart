@@ -74,6 +74,8 @@ class AutoMergeService {
   void stopMergeDetection() {
     _mergeDetectionSubscription?.cancel();
     _mergeDetectionSubscription = null;
+    _authSubscription?.cancel();
+    _authSubscription = null;
   }
 
   /// Check for merge opportunities between friend lobbies

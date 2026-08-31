@@ -159,7 +159,10 @@ class SupabaseService {
   }
 
   /// Check if user is authenticated in Supabase
-  static bool get isAuthenticated => currentUser != null;
+  static bool get isAuthenticated => isUsableAuthSession(
+        hasUser: currentUser != null,
+        expiresAtSeconds: currentSession?.expiresAt,
+      );
 
   /// Get current Supabase user
   static User? get currentUser => maybeClient?.auth.currentUser;

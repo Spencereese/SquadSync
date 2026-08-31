@@ -6,6 +6,7 @@ import 'package:logger/logger.dart';
 import 'package:workmanager/workmanager.dart';
 import '../chat/sqlite_helper.dart';
 import 'supabase_service.dart';
+import '../core/workmanager_skip.dart';
 
 /// Background sync service for offline-first operations
 /// Syncs pending messages, uploads, and data changes when online
@@ -53,7 +54,12 @@ class BackgroundSyncService {
             );
             _logger.i('Workmanager background tasks registered');
           } catch (e) {
-            _logger.w('Workmanager registerPeriodicTask skipped: $e');
+            if (isExpectedWorkmanagerSkip(e)) {
+              debugPrint(
+                  'Workmanager periodic task skipped (simulator/unsupported)');
+            } else {
+              _logger.w('Workmanager registerPeriodicTask skipped: $e');
+            }
           }
         }
       } catch (e) {

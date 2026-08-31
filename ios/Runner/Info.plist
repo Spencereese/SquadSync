@@ -53,6 +53,12 @@
 		     Leave YOUR_ placeholders in git. Dart fails closed while they remain. -->
 		<key>GIDClientID</key>
 		<string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
+		<!-- URL schemes:
+		     codsquadapp — in-app deep links (join, chat).
+		     com.example.codSquadApp — Supabase Auth redirect
+		       (com.example.codSquadApp://auth-callback). Replaces leftover
+		       com.squadsync.app. Register that redirect in Supabase.
+		     google.sign.in — reversed iOS client ID (YOUR_ placeholder in git). -->
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>
@@ -70,7 +76,7 @@
 				<string>Editor</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
-					<string>com.squadsync.app</string>
+					<string>com.example.codSquadApp</string>
 				</array>
 				<key>CFBundleURLName</key>
 				<string>supabase.auth.callback</string>
@@ -99,20 +105,22 @@
 			<string>remote-notification</string>
 			<string>audio</string>
 		</array>
+		<!-- Leave APNs registration to the in-app permission flow.
+		     Placeholder GoogleService-Info.plist.example has no real FCM id. -->
 		<key>FirebaseAppDelegateAutoRegister</key>
-		<true/>
+		<false/>
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>SquadSync needs photo library access so you can set a profile or group image and attach photos in chat.</string>
+		<string>Cod Squad needs photo library access so you can set a profile or group image and attach photos in chat.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>
-		<string>SquadSync needs permission to save images you share or download from chat.</string>
+		<string>Cod Squad needs permission to save images you share or download from chat.</string>
 		<key>NSCameraUsageDescription</key>
-		<string>SquadSync needs camera access to take photos and clips for chat, scan QR invite codes, and use video chat.</string>
+		<string>Cod Squad needs camera access to take photos and clips for chat, scan QR invite codes, and use video chat.</string>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>SquadSync needs microphone access for voice chat, video chat, and voice notes.</string>
+		<string>Cod Squad needs microphone access for voice chat, video chat, and voice notes.</string>
 		<key>NSSpeechRecognitionUsageDescription</key>
-		<string>SquadSync uses speech recognition to transcribe voice notes for easier reading.</string>
+		<string>Cod Squad uses speech recognition to transcribe voice notes for easier reading.</string>
 		<key>NSUserNotificationsUsageDescription</key>
-		<string>SquadSync sends notifications for squad chat, lobby invites, and game session updates.</string>
+		<string>Cod Squad sends notifications for squad chat, lobby invites, and game session updates.</string>
 		<key>NSAppTransportSecurity</key>
 		<dict>
 			<key>NSAllowsArbitraryLoads</key>

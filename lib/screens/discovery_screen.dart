@@ -16,6 +16,7 @@ import '../domain/entities/lobby.dart';
 import '../domain/entities/message.dart';
 import '../domain/entities/game.dart';
 import '../core/app_theme.dart';
+import '../core/layout.dart';
 import '../chat/chat_screen.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
@@ -270,7 +271,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
               ),
               SliverToBoxAdapter(
                 child: SizedBox(
-                  height: 96 + MediaQuery.viewPaddingOf(context).bottom,
+                  height: mainTabClearanceOf(context),
                 ),
               ),
             ],
@@ -278,7 +279,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
         ),
         floatingActionButton: Padding(
           padding: EdgeInsets.only(
-            bottom: 80 + MediaQuery.viewPaddingOf(context).bottom,
+            bottom: mainTabClearanceOf(context),
           ),
           child: FloatingActionButton.extended(
             onPressed: () => _showCreatePublicLobbyDialog(context, ref),

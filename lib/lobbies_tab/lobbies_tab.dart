@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/layout.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
 import '../presentation/notifiers/user_notifier.dart';
@@ -806,7 +807,7 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
         // Bottom spacing
         SliverToBoxAdapter(
           child: SizedBox(
-            height: 80.0 + MediaQuery.viewPaddingOf(context).bottom,
+            height: mainTabClearanceOf(context),
           ),
         ),
       ],

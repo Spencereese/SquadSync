@@ -8,6 +8,7 @@ import '../dialogs/group_actions_dialog.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import '../../utils.dart';
+import '../../core/layout.dart';
 import 'group_chat_context_menu.dart';
 
 class UserGroupsTab extends ConsumerStatefulWidget {
@@ -435,7 +436,7 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
             child: ListView.separated(
               padding: EdgeInsets.only(
                 top: 8,
-                bottom: 100 + MediaQuery.viewPaddingOf(context).bottom,
+                bottom: mainTabClearanceOf(context),
               ),
               itemCount: groups.length,
               separatorBuilder: (context, index) => const Divider(

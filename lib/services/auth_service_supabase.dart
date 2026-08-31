@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:logger/logger.dart';
 import 'dart:math';
 
+import '../core/auth_redirect.dart';
+
 /// Supabase Auth Service for SquadSync
 ///
 /// Replaces Firebase Auth as the primary authentication system.
@@ -100,7 +102,7 @@ class AuthServiceSupabase {
     try {
       final result = await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: 'codsquadapp://auth-callback',
+        redirectTo: kSupabaseAuthRedirect,
         authScreenLaunchMode: LaunchMode.externalApplication,
       );
 
@@ -121,7 +123,7 @@ class AuthServiceSupabase {
     try {
       final result = await _supabase.auth.signInWithOAuth(
         OAuthProvider.apple,
-        redirectTo: 'codsquadapp://auth-callback',
+        redirectTo: kSupabaseAuthRedirect,
         authScreenLaunchMode: LaunchMode.externalApplication,
       );
 

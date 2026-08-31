@@ -17,6 +17,7 @@ import 'core/app_theme.dart';
 import 'core/email_auth.dart';
 import 'core/google_auth_config.dart';
 import 'services/supabase_service.dart';
+import 'widgets/email_auth_actions.dart';
 
 class SetupScreen extends ConsumerStatefulWidget {
   const SetupScreen({super.key});
@@ -550,22 +551,10 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                               ),
                             ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              NeonPulseButton(
-                                onPressed:
-                                    _isLoading ? null : _handleEmailSignIn,
-                                child: const Text('Sign In'),
-                              ),
-                              const SizedBox(height: 10),
-                              NeonPulseButton(
-                                onPressed: _isLoading
-                                    ? null
-                                    : _handleEmailCreateAccount,
-                                child: const Text('Create Account'),
-                              ),
-                            ],
+                          child: EmailAuthActions(
+                            enabled: !_isLoading,
+                            onSignIn: _handleEmailSignIn,
+                            onCreateAccount: _handleEmailCreateAccount,
                           ),
                         ),
                         const SizedBox(height: 18),

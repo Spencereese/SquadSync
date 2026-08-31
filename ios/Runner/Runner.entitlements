@@ -12,6 +12,8 @@
 	<array>
 		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	</array>
+	<!-- AASA appID must be TEAMID.com.example.codSquadApp (parked bundle ID).
+	     Supabase Auth redirect: com.example.codSquadApp://auth-callback -->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:sfckxrnoiwetmzdycqaa.supabase.co</string>

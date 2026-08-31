@@ -38,4 +38,6 @@ jobs:
           test/presentation/notifiers/game_notifier_test.dart \
           test/core/email_auth_test.dart \
           test/core/google_auth_config_test.dart \
-          test/core/notification_routes_test.dart
+          test/core/notification_routes_test.dart \
+          test/core/layout_insets_test.dart \
+          test/widgets/email_auth_actions_test.dart

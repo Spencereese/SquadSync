@@ -8,6 +8,7 @@ import '../domain/entities/lobby_state.dart';
 import '../domain/entities/chat_group.dart';
 import 'chat_screen.dart';
 import '../core/app_theme.dart';
+import '../core/layout.dart';
 import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
 import 'widgets/group_chat_context_menu.dart';
@@ -101,7 +102,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
         setState(() {
           if (keyboardHeight > 0) {
             _navBottomOffset =
-                -(75.0 + MediaQuery.viewPaddingOf(context).bottom);
+                -mainTabClearanceOf(context);
             _navOpacity = 0.0;
           } else {
             _navBottomOffset = 0.0;
@@ -1016,7 +1017,7 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                             final neon =
                                 Theme.of(context).colorScheme.primary;
                             return Container(
-                              height: 75 + bottomSafe,
+                              height: mainTabClearance(bottomSafe),
                               padding: EdgeInsets.only(bottom: bottomSafe),
                               decoration: BoxDecoration(
                                 color: const Color(0xE60B0E14),

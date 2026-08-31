@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io' show Platform;
 
+import '../core/auth_redirect.dart';
+
 /// Supabase service for SquadSync
 ///
 /// Primary data layer for auth, realtime, and storage.
@@ -143,7 +145,7 @@ class SupabaseService {
   }) async {
     return await client.auth.signInWithOAuth(
       provider,
-      redirectTo: 'codsquadapp://auth-callback',
+      redirectTo: kSupabaseAuthRedirect,
       authScreenLaunchMode: LaunchMode.externalApplication,
     );
   }

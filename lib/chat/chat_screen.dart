@@ -97,6 +97,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   // didChangeDependencies() runs on EVERY dependency change (MediaQuery, keyboard, etc.)
   bool _hasInitializedChat = false;
 
+  /// Captured while [ref] is valid. Dispose must not call [ref] (Riverpod 2.x).
+  NotificationNotifier? _notificationNotifier;
+
   // CRITICAL: Cached state to prevent build() from watching providers
   // This stops disposal loops from keyboard/focus/MediaQuery changes
   LobbyState? _cachedSquadState;
@@ -197,9 +200,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref
-          .read(notificationNotifierProvider.notifier)
-          .setActiveChatGroup(widget.chatGroupId ?? '');
+      final chatGroupId = widget.chatGroupId;
+      if (chatGroupId == null) return;
+      final notifier = ref.read(notificationNotifierProvider.notifier);
+      _notificationNotifier = notifier;
+      notifier.setActiveChatGroup(chatGroupId);
     });
 
     _animationController = AnimationController(
@@ -450,7 +455,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   void dispose() {
-    ref.read(notificationNotifierProvider.notifier).setActiveChatGroup(null);
+    _notificationNotifier?.setActiveChatGroup(null);
+    _notificationNotifier = null;
     // Clean up Supabase channels for this chat to prevent rate limit errors
     if (widget.chatGroupId != null) {
       _cleanupChatChannels(widget.chatGroupId!);

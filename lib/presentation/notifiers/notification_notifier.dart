@@ -11,6 +11,16 @@ final notificationNotifierProvider =
   NotificationNotifier.new,
 );
 
+/// Skip the shared chat badge only when the open thread matches the payload.
+/// Messages with no group column still increment, even if a chat is mounted.
+bool shouldSkipChatBadgeIncrement(
+  String? activeChatGroupId,
+  Object? incomingGroup,
+) {
+  return incomingGroup != null &&
+      incomingGroup.toString() == activeChatGroupId;
+}
+
 /// Riverpod notifier for managing notifications with Supabase real-time subscriptions
 class NotificationNotifier extends AsyncNotifier<BadgeState> {
   final _supabase = Supabase.instance.client;
@@ -162,11 +172,8 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
     final incomingGroup = payload.newRecord['chat_group_id'] ??
         payload.newRecord['chat_id'] ??
         payload.newRecord['group_id'];
-    if (_activeChatGroupId != null) {
-      if (incomingGroup == null ||
-          incomingGroup.toString() == _activeChatGroupId) {
-        return;
-      }
+    if (shouldSkipChatBadgeIncrement(_activeChatGroupId, incomingGroup)) {
+      return;
     }
 
     _notificationService.incrementBadge('chat');
@@ -174,9 +181,12 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
   }
 
   /// ChatScreen registers the open thread so badges do not increment there.
+  /// Empty string is treated as no active chat — never register `''`.
   void setActiveChatGroup(String? chatGroupId) {
-    _activeChatGroupId = chatGroupId;
-    if (chatGroupId != null) {
+    final id =
+        (chatGroupId == null || chatGroupId.isEmpty) ? null : chatGroupId;
+    _activeChatGroupId = id;
+    if (id != null) {
       _notificationService.clearBadge('chat');
       state = AsyncData(_notificationService.getBadgeState());
     }

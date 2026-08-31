@@ -99,6 +99,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   /// Captured while [ref] is valid. Dispose must not call [ref] (Riverpod 2.x).
   NotificationNotifier? _notificationNotifier;
+  String? _registeredActiveChatGroupId;
 
   // CRITICAL: Cached state to prevent build() from watching providers
   // This stops disposal loops from keyboard/focus/MediaQuery changes
@@ -109,12 +110,31 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   bool get isDM => widget.chatType == ChatType.dm;
 
   String? get effectiveChatGroupId {
-    if (widget.chatGroupId != null) return widget.chatGroupId;
-    if (widget.chatType == ChatType.squad) {
-      final squadAsync = ref.read(ln.lobbyNotifierProvider);
-      return squadAsync.value?.selectedLobbyId;
-    }
-    return null;
+    return resolveActiveChatGroupId(
+      widgetChatGroupId: widget.chatGroupId,
+      isSquad: widget.chatType == ChatType.squad,
+      selectedLobbyId: widget.chatType == ChatType.squad
+          ? ref.read(ln.lobbyNotifierProvider).value?.selectedLobbyId
+          : null,
+    );
+  }
+
+  /// Register the open thread for badge skip. No-op until the id is non-null.
+  /// Skips repeat calls so lobby ticks do not wipe the shared chat badge.
+  void _syncActiveChatThread({String? selectedLobbyId}) {
+    final notifier = _notificationNotifier;
+    if (notifier == null) return;
+    final id = resolveActiveChatGroupId(
+      widgetChatGroupId: widget.chatGroupId,
+      isSquad: widget.chatType == ChatType.squad,
+      selectedLobbyId: selectedLobbyId ??
+          (widget.chatType == ChatType.squad
+              ? _cachedSquadState?.selectedLobbyId
+              : null),
+    );
+    if (id == null || id == _registeredActiveChatGroupId) return;
+    _registeredActiveChatGroupId = id;
+    notifier.setActiveChatGroup(id);
   }
 
   int? _getTimestampMs(dynamic message) {
@@ -198,14 +218,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     _uiManager.clearMessageCache();
     debugPrint('🧹 Cleared message cache on ChatScreen init');
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final chatGroupId = widget.chatGroupId;
-      if (chatGroupId == null) return;
-      final notifier = ref.read(notificationNotifierProvider.notifier);
-      _notificationNotifier = notifier;
-      notifier.setActiveChatGroup(chatGroupId);
-    });
+    // Capture even when chatGroupId starts null so dispose can still clear.
+    _notificationNotifier = ref.read(notificationNotifierProvider.notifier);
 
     _animationController = AnimationController(
       vsync: this,
@@ -261,6 +275,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       initialIsMuted: _isMuted,
     );
 
+    _syncActiveChatThread();
+
     // CRITICAL FIX: Use ref.listen() instead of ref.watch() in build()
     // This prevents disposal cascades from keyboard/MediaQuery changes
     ref.listenManual(
@@ -268,6 +284,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       (previous, next) {
         if (mounted && next != null) {
           setState(() => _cachedSquadState = next);
+          _syncActiveChatThread(selectedLobbyId: next.selectedLobbyId);
         }
       },
       fireImmediately: true,
@@ -457,6 +474,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   void dispose() {
     _notificationNotifier?.setActiveChatGroup(null);
     _notificationNotifier = null;
+    _registeredActiveChatGroupId = null;
     // Clean up Supabase channels for this chat to prevent rate limit errors
     if (widget.chatGroupId != null) {
       _cleanupChatChannels(widget.chatGroupId!);

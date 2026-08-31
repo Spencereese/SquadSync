@@ -21,6 +21,22 @@ bool shouldSkipChatBadgeIncrement(
       incomingGroup.toString() == activeChatGroupId;
 }
 
+/// ChatScreen's active thread: widget id, or squad [selectedLobbyId].
+/// Never returns an empty string.
+String? resolveActiveChatGroupId({
+  required String? widgetChatGroupId,
+  required bool isSquad,
+  String? selectedLobbyId,
+}) {
+  if (widgetChatGroupId != null && widgetChatGroupId.isNotEmpty) {
+    return widgetChatGroupId;
+  }
+  if (isSquad && selectedLobbyId != null && selectedLobbyId.isNotEmpty) {
+    return selectedLobbyId;
+  }
+  return null;
+}
+
 /// Riverpod notifier for managing notifications with Supabase real-time subscriptions
 class NotificationNotifier extends AsyncNotifier<BadgeState> {
   final _supabase = Supabase.instance.client;

@@ -15,4 +15,54 @@ void main() {
     expect(shouldSkipChatBadgeIncrement(null, 'g1'), isFalse);
     expect(shouldSkipChatBadgeIncrement(null, null), isFalse);
   });
+
+  test('squad uses selectedLobbyId when widget chatGroupId is null', () {
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: null,
+        isSquad: true,
+        selectedLobbyId: 'lobby-1',
+      ),
+      'lobby-1',
+    );
+    expect(
+      shouldSkipChatBadgeIncrement('lobby-1', 'lobby-1'),
+      isTrue,
+    );
+  });
+
+  test('widget chatGroupId wins; empty ids never register', () {
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: 'group-1',
+        isSquad: true,
+        selectedLobbyId: 'lobby-1',
+      ),
+      'group-1',
+    );
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: '',
+        isSquad: true,
+        selectedLobbyId: '',
+      ),
+      isNull,
+    );
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: null,
+        isSquad: true,
+        selectedLobbyId: null,
+      ),
+      isNull,
+    );
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: null,
+        isSquad: false,
+        selectedLobbyId: 'lobby-1',
+      ),
+      isNull,
+    );
+  });
 }

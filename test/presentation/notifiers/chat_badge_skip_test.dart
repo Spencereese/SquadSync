@@ -94,6 +94,42 @@ void main() {
     );
   });
 
+  test('lobby switch after first init refreshes initialization service', () {
+    expect(
+      shouldRefreshChatInitializationOnNewThread(
+        alreadyInitialized: true,
+        isNewId: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRefreshChatInitializationOnNewThread(
+        alreadyInitialized: false,
+        isNewId: true,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRefreshChatInitializationOnNewThread(
+        alreadyInitialized: true,
+        isNewId: false,
+      ),
+      isFalse,
+    );
+  });
+
+  test('channel cleanup matches chat topics for the thread id', () {
+    expect(
+      isChatThreadChannelTopic('realtime:presence:lobby-1', 'lobby-1'),
+      isTrue,
+    );
+    expect(isChatThreadChannelTopic('typing:lobby-1', 'lobby-1'), isTrue);
+    expect(isChatThreadChannelTopic('messages_lobby-1', 'lobby-1'), isTrue);
+    expect(isChatThreadChannelTopic('presence:lobby-1', 'other'), isFalse);
+    expect(isChatThreadChannelTopic('lobby_momentum', 'lobby-1'), isFalse);
+    expect(isChatThreadChannelTopic('chat_badges', 'lobby-1'), isFalse);
+  });
+
   test('initialization service retries only after a null-squad bail', () {
     expect(
       shouldRetryChatInitializationService(

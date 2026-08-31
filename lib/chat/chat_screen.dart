@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -156,8 +157,13 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       )) {
         _hasInitializedChat = true;
         _scheduleChatStart(id);
-      } else if (_hasInitializedChat) {
-        _scheduleNotifierChat(id);
+      } else if (shouldRefreshChatInitializationOnNewThread(
+        alreadyInitialized: _hasInitializedChat,
+        isNewId: true,
+      )) {
+        _initializationServiceCompleted = false;
+        _initializationServiceBailed = false;
+        _scheduleChatStart(id);
       }
     }
     _retryInitializationServiceIfNeeded();
@@ -178,13 +184,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       if (!mounted) return;
       _startNotifierChat(chatGroupId);
       _runInitializationService(chatGroupId);
-    });
-  }
-
-  void _scheduleNotifierChat(String chatGroupId) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _startNotifierChat(chatGroupId);
     });
   }
 
@@ -233,35 +232,46 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _runInitializationService(String chatGroupId) async {
     if (!mounted || _initializationServiceCompleted) return;
-    final ran = await _initializationService.initializeChat(
-      context: context,
-      ref: ref,
-      chatGroupId: chatGroupId,
-      chatGroupName: widget.chatGroupName,
-      chatType: widget.chatType,
-      setChatName: (name) {
-        if (mounted) setState(() => _chatName = name);
-        _uiManager.chatName = name;
-      },
-      setChatImageUrl: (url) {
-        if (mounted) setState(() => _chatImageUrl = url);
-        _uiManager.chatImageUrl = url;
-      },
-      loadMoreMessages: _loadMoreMessages,
-      scrollToBottom: _scrollToBottom,
-      sendMessage: (message) {
-        _messageController.text = message;
-        _sendMessage(null);
-      },
-      messageController: _messageController,
-      initialMessage: widget.initialMessage,
-      squadState: _cachedSquadState,
-    );
-    if (ran) {
-      _initializationServiceCompleted = true;
-      _initializationServiceBailed = false;
-    } else {
+    try {
+      final ran = await _initializationService.initializeChat(
+        context: context,
+        ref: ref,
+        chatGroupId: chatGroupId,
+        chatGroupName: widget.chatGroupName,
+        chatType: widget.chatType,
+        setChatName: (name) {
+          if (mounted) setState(() => _chatName = name);
+          _uiManager.chatName = name;
+        },
+        setChatImageUrl: (url) {
+          if (mounted) setState(() => _chatImageUrl = url);
+          _uiManager.chatImageUrl = url;
+        },
+        loadMoreMessages: _loadMoreMessages,
+        scrollToBottom: _scrollToBottom,
+        sendMessage: (message) {
+          _messageController.text = message;
+          _sendMessage(null);
+        },
+        messageController: _messageController,
+        initialMessage: widget.initialMessage,
+        squadState: _cachedSquadState,
+      );
+      if (!mounted) return;
+      if (ran) {
+        _initializationServiceCompleted = true;
+        _initializationServiceBailed = false;
+      } else {
+        _initializationServiceBailed = true;
+      }
+    } catch (e) {
+      debugPrint('ChatInitializationService failed: $e');
       _initializationServiceBailed = true;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not finish opening chat')),
+        );
+      }
     }
   }
 
@@ -525,10 +535,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   void dispose() {
+    final threadId = _registeredActiveChatGroupId ?? widget.chatGroupId;
     _notificationNotifier?.setActiveChatGroup(null);
     _notificationNotifier = null;
     _registeredActiveChatGroupId = null;
-    _cleanupChatChannels();
+    _cleanupChatChannels(threadId: threadId);
 
     _scrollControllerService.dispose();
     _scrollController.dispose();
@@ -541,17 +552,49 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     super.dispose();
   }
 
-  /// Removes all realtime channels. Topic-scoped cleanup is not available.
-  void _cleanupChatChannels() {
+  /// Removes chat/thread realtime channels when topic is readable.
+  /// Falls back to removing every channel if topics are unavailable.
+  void _cleanupChatChannels({String? threadId}) {
     try {
       final channels = SupabaseService.client.getChannels();
+      final scoped = <RealtimeChannel>[];
+      var topicsReadable = true;
       for (final channel in channels) {
+        final topic = _realtimeChannelTopic(channel);
+        if (topic == null) {
+          topicsReadable = false;
+          break;
+        }
+        if (isChatThreadChannelTopic(topic, threadId)) {
+          scoped.add(channel);
+        }
+      }
+      final toRemove = topicsReadable ? scoped : channels;
+      if (!topicsReadable) {
+        debugPrint(
+            '🧹 Channel topics unavailable; removing all ${channels.length} channels');
+      } else {
+        debugPrint(
+            '🧹 Removing ${toRemove.length} chat channels for $threadId');
+      }
+      for (final channel in toRemove) {
         SupabaseService.safeRemoveChannel(channel);
-        debugPrint('🧹 Cleaned up channel');
       }
     } catch (e) {
       debugPrint('⚠️ Error cleaning up channels: $e');
     }
+  }
+
+  /// realtime_client marks [topic] `@internal`; it is the only handle we have.
+  String? _realtimeChannelTopic(RealtimeChannel channel) {
+    try {
+      // ignore: invalid_use_of_internal_member
+      final topic = channel.topic;
+      if (topic is String && topic.isNotEmpty) return topic;
+    } catch (e) {
+      debugPrint('Channel topic unread: $e');
+    }
+    return null;
   }
 
   void _handleSyncStateChanges(cs.ChatState chatState) {

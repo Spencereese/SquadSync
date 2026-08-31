@@ -56,6 +56,30 @@ bool shouldRetryChatInitializationService({
   return !serviceCompleted && bailedOnNullSquad && squadStateAvailable;
 }
 
+/// Re-run name/image/settings/draft when the mounted ChatScreen switches thread.
+bool shouldRefreshChatInitializationOnNewThread({
+  required bool alreadyInitialized,
+  required bool isNewId,
+}) {
+  return alreadyInitialized && isNewId;
+}
+
+/// Chat/presence/typing/message topics for [threadId].
+/// [topic] may be `realtime:presence:<id>` or `presence:<id>`.
+bool isChatThreadChannelTopic(String topic, String? threadId) {
+  final name = topic.toLowerCase().replaceFirst(RegExp(r'^realtime:'), '');
+  const markers = [
+    'presence:',
+    'typing:',
+    'typing_',
+    'messages_',
+    'messages:',
+  ];
+  if (!markers.any(name.startsWith)) return false;
+  if (threadId == null || threadId.isEmpty) return true;
+  return name.contains(threadId.toLowerCase());
+}
+
 /// Riverpod notifier for managing notifications with Supabase real-time subscriptions
 class NotificationNotifier extends AsyncNotifier<BadgeState> {
   final _supabase = Supabase.instance.client;

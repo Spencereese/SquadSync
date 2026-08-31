@@ -12,6 +12,7 @@ GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
     expect(GoogleAuthConfig.isPlaceholder(GoogleAuthConfig.iosClientId), isTrue);
     expect(GoogleAuthConfig.isIosClientConfigured, isFalse);
     expect(GoogleAuthConfig.canAttemptSignIn, isFalse);
+    expect(GoogleAuthConfig.notConfiguredHint, 'Google Sign-In is not configured.');
   });
 
   test('example your_google values fail closed', () {

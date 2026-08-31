@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/notification_cooldowns.dart';
 import '../../core/notification_routes.dart';
 import '../../domain/entities/notification_priority.dart';
 
@@ -19,8 +20,8 @@ class NotificationService {
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  // Cooldown tracking (in-memory + persistent)
-  final Map<String, DateTime> _cooldowns = {};
+  // Cooldown tracking (in-memory + persistent). Map values are expiry times.
+  final NotificationCooldownStore _cooldowns = NotificationCooldownStore();
   static const Duration _defaultCooldown = Duration(minutes: 45);
   static const Duration _momentumCooldown = Duration(minutes: 30);
 
@@ -330,16 +331,12 @@ class NotificationService {
   }
 
   /// Check if notification is on cooldown
-  bool _isOnCooldown(String key) {
-    final lastSent = _cooldowns[key];
-    if (lastSent == null) return false;
-    return DateTime.now().difference(lastSent) < _defaultCooldown;
-  }
+  bool _isOnCooldown(String key) => _cooldowns.isActive(key);
 
-  /// Set cooldown for notification key
+  /// Set cooldown for notification key (stores expiry, not last-sent)
   void _setCooldown(String key, Duration duration) {
-    _cooldowns[key] = DateTime.now();
-    _saveCooldowns(); // Persist to SharedPreferences
+    _cooldowns.setExpiry(key, duration);
+    _saveCooldowns();
   }
 
   /// Load cooldowns from persistent storage
@@ -350,13 +347,10 @@ class NotificationService {
       if (raw == null || raw.isEmpty) return;
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return;
-      _cooldowns
-        ..clear()
-        ..addEntries(
-          decoded.entries.where((e) => e.value is String).map(
-                (e) => MapEntry(e.key.toString(), DateTime.parse(e.value as String)),
-              ),
-        );
+      _cooldowns.loadIsoMap({
+        for (final e in decoded.entries)
+          if (e.value is String) e.key.toString(): e.value as String,
+      });
     } catch (e) {
       debugPrint('⚠️ Failed to load cooldowns: $e');
     }
@@ -366,9 +360,7 @@ class NotificationService {
   Future<void> _saveCooldowns() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final encoded = jsonEncode(
-        _cooldowns.map((key, value) => MapEntry(key, value.toIso8601String())),
-      );
+      final encoded = jsonEncode(_cooldowns.toIsoMap());
       await prefs.setString('notification_cooldowns', encoded);
     } catch (e) {
       debugPrint('⚠️ Failed to save cooldowns: $e');
@@ -470,29 +462,33 @@ class NotificationService {
     );
   }
 
-  /// Clear badge for specific type
+  /// Clear badge for specific type and push the remaining iOS count.
   void clearBadge(String type) {
     _badgeCounts[type] = 0;
+    _pushIosBadgeCount();
   }
 
   /// Clear all badges
   void clearAllBadges() {
-    _badgeCounts.clear();
-    if (Platform.isIOS) {
-      _localNotifications.show(
-        0,
-        null,
-        null,
-        const NotificationDetails(
-          iOS: DarwinNotificationDetails(
-            presentAlert: false,
-            presentSound: false,
-            presentBadge: true,
-            badgeNumber: 0,
-          ),
+    _badgeCounts.updateAll((key, value) => 0);
+    _pushIosBadgeCount();
+  }
+
+  void _pushIosBadgeCount() {
+    if (!Platform.isIOS) return;
+    _localNotifications.show(
+      0,
+      null,
+      null,
+      NotificationDetails(
+        iOS: DarwinNotificationDetails(
+          presentAlert: false,
+          presentSound: false,
+          presentBadge: true,
+          badgeNumber: _totalBadgeCount,
         ),
-      );
-    }
+      ),
+    );
   }
 }
 

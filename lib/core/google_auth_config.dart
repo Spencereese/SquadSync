@@ -30,6 +30,8 @@ class GoogleAuthConfig {
     return !isPlaceholder(webClientId);
   }
 
+  static const notConfiguredHint = 'Google Sign-In is not configured.';
+
   static const notConfiguredMessage =
       'Google Sign-In is not configured. Copy GoogleService-Info.plist, '
       'set GIDClientID and the reversed URL scheme from that file, and put '

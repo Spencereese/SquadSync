@@ -111,7 +111,20 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
       }
     } on AuthException catch (e) {
       final feedback = EmailAuth.forCreateAccount(e);
-      _showSnackBar(feedback.message);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(feedback.message),
+            action: feedback.suggestSignIn
+                ? SnackBarAction(
+                    label: 'Sign In',
+                    onPressed: _handleEmailSignIn,
+                  )
+                : null,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
     } catch (e) {
       _showSnackBar('An unexpected error occurred');
       debugPrint('Auth error: $e');
@@ -582,10 +595,15 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                         ),
                         const SizedBox(height: 18),
                         ElevatedButton(
-                          onPressed: _isLoading ? null : _handleGoogleSignIn,
+                          onPressed: (_isLoading ||
+                                  !GoogleAuthConfig.canAttemptSignIn)
+                              ? null
+                              : _handleGoogleSignIn,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
                             foregroundColor: Colors.black,
+                            disabledBackgroundColor: Colors.white70,
+                            disabledForegroundColor: Colors.black54,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                           ),
                           child: Row(
@@ -604,6 +622,18 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                             ],
                           ),
                         ),
+                        if (!GoogleAuthConfig.canAttemptSignIn)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              GoogleAuthConfig.notConfiguredHint,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.72),
+                              ),
+                            ),
+                          ),
                         if (_showAppleSignIn) ...[
                           const SizedBox(height: 12),
                           SignInWithAppleButton(

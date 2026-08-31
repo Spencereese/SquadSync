@@ -298,23 +298,30 @@ void main() {
 
     var retries = 0;
     var scheduled = 0;
+    var disposed = 0;
     final snacks = <String>[];
     void onRateLimit() {
       snacks.add(rateLimitRetrySnackMessage(retries));
+      disposed++;
       if (shouldScheduleRateLimitRetry(retries)) {
         retries++;
         scheduled++;
+        expect(shouldZeroRateLimitRetries(delayedReplay: true), isFalse);
       }
     }
 
     onRateLimit();
     expect(scheduled, 1);
+    expect(disposed, 1);
     expect(snacks, [kRateLimitRetrySnack]);
     onRateLimit();
     expect(scheduled, 1);
+    expect(disposed, 2);
     expect(snacks, [kRateLimitRetrySnack, kRateLimitGiveUpSnack]);
     onRateLimit();
     expect(scheduled, 1);
+    expect(disposed, 3);
+    expect(shouldZeroRateLimitRetries(delayedReplay: false), isTrue);
   });
 
   test('init UI writes only apply for the current generation', () {
@@ -532,6 +539,7 @@ void main() {
   testWidgets('rate-limit delayed replay stops after N failures', (tester) async {
     final snacks = <String>[];
     var scheduledReplays = 0;
+    var disposed = 0;
     final key = GlobalKey<_RateLimitRetryHarnessState>();
 
     await tester.pumpWidget(
@@ -541,6 +549,7 @@ void main() {
             key: key,
             onSnack: snacks.add,
             onScheduleReplay: () => scheduledReplays++,
+            onDisposeChannels: () => disposed++,
           ),
         ),
       ),
@@ -548,12 +557,15 @@ void main() {
     await tester.pump();
     key.currentState!.onRateLimit();
     expect(scheduledReplays, 1);
+    expect(disposed, 1);
     expect(snacks, [kRateLimitRetrySnack]);
     key.currentState!.onRateLimit();
     expect(scheduledReplays, 1);
+    expect(disposed, 2);
     expect(snacks, [kRateLimitRetrySnack, kRateLimitGiveUpSnack]);
     key.currentState!.onRateLimit();
     expect(scheduledReplays, 1);
+    expect(disposed, 3);
   });
 }
 
@@ -872,10 +884,12 @@ class _RateLimitRetryHarness extends StatefulWidget {
     super.key,
     required this.onSnack,
     required this.onScheduleReplay,
+    required this.onDisposeChannels,
   });
 
   final void Function(String message) onSnack;
   final void Function() onScheduleReplay;
+  final void Function() onDisposeChannels;
 
   @override
   State<_RateLimitRetryHarness> createState() => _RateLimitRetryHarnessState();
@@ -886,6 +900,7 @@ class _RateLimitRetryHarnessState extends State<_RateLimitRetryHarness> {
 
   void onRateLimit() {
     widget.onSnack(rateLimitRetrySnackMessage(_retries));
+    widget.onDisposeChannels();
     if (shouldScheduleRateLimitRetry(_retries)) {
       _retries++;
       widget.onScheduleReplay();

@@ -137,6 +137,10 @@ String rateLimitRetrySnackMessage(int rateLimitRetries) {
       : kRateLimitGiveUpSnack;
 }
 
+/// Delayed replay must keep the budget; thread switch / success zeros it.
+bool shouldZeroRateLimitRetries({required bool delayedReplay}) =>
+    !delayedReplay;
+
 bool shouldCleanupPreviousThreadChannels({
   required String? previousId,
   required String? nextId,

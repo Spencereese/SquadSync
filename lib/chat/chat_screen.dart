@@ -236,9 +236,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       String errorMsg = error.toString();
       if (errorMsg.contains('ChannelRateLimitReached')) {
         errorMsg = rateLimitRetrySnackMessage(_channelRateLimitRetries);
+        SupabaseService.dispose();
         if (shouldScheduleRateLimitRetry(_channelRateLimitRetries)) {
           _channelRateLimitRetries++;
-          SupabaseService.dispose();
           Future.delayed(const Duration(seconds: 1), () {
             if (!shouldContinueDelayedChatReinit(
               isMounted: mounted,
@@ -249,7 +249,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             )) {
               return;
             }
-            _resetInitializationServiceFlags(resetRateLimitRetries: false);
+            _resetInitializationServiceFlags(
+              resetRateLimitRetries:
+                  shouldZeroRateLimitRetries(delayedReplay: true),
+            );
             _scheduleChatStart(
               chatGroupId,
               _initializationServiceGeneration,

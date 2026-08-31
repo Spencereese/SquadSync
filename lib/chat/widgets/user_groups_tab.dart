@@ -433,9 +433,10 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
           // Groups list
           Expanded(
             child: ListView.separated(
-              padding: const EdgeInsets.only(
-                  top: 8,
-                  bottom: 100), // Add bottom padding to avoid nav bar overlap
+              padding: EdgeInsets.only(
+                top: 8,
+                bottom: 100 + MediaQuery.viewPaddingOf(context).bottom,
+              ),
               itemCount: groups.length,
               separatorBuilder: (context, index) => const Divider(
                 color: Colors.grey,

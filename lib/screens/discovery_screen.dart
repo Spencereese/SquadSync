@@ -104,8 +104,10 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
         backgroundColor: Colors.black,
         appBar: AppBar(
           title: const Text('Lobbies'),
-          backgroundColor: Colors.black,
+          backgroundColor: const Color(0xFF0B0E14),
+          foregroundColor: Colors.white,
           elevation: 0,
+          systemOverlayStyle: SystemUiOverlayStyle.light,
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -266,16 +268,26 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                   );
                 },
               ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 96 + MediaQuery.viewPaddingOf(context).bottom,
+                ),
+              ),
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showCreatePublicLobbyDialog(context, ref),
-          backgroundColor: Colors.cyanAccent,
-          icon: const Icon(Icons.add, color: Colors.black),
-          label: const Text(
-            'Create Public Lobby',
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        floatingActionButton: Padding(
+          padding: EdgeInsets.only(
+            bottom: 80 + MediaQuery.viewPaddingOf(context).bottom,
+          ),
+          child: FloatingActionButton.extended(
+            onPressed: () => _showCreatePublicLobbyDialog(context, ref),
+            backgroundColor: Colors.cyanAccent,
+            icon: const Icon(Icons.add, color: Colors.black),
+            label: const Text(
+              'Create Public Lobby',
+              style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
           ),
         ),
       ),

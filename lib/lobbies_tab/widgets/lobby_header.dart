@@ -20,8 +20,8 @@ class LobbyHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
-      padding: const EdgeInsets.only(
-        top: 40.0, // Add top padding to avoid phone settings/clock
+      padding: EdgeInsets.only(
+        top: MediaQuery.paddingOf(context).top,
       ),
       child: Column(
         children: [

@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -329,22 +330,42 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
     final theme = Theme.of(context);
     final neon = theme.colorScheme.primary;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B0E14),
-      body: Stack(
-        children: [
-          const _LoginBackdrop(),
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
-                  child: GlassmorphicContainer(
-                    blur: 22,
-                    borderRadius: 24,
-                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-                    child: Column(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Color(0xFF0B0E14),
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0B0E14),
+        resizeToAvoidBottomInset: true,
+        body: Stack(
+          children: [
+            const _LoginBackdrop(),
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: 440,
+                        minHeight: constraints.maxHeight - 32,
+                      ),
+                      child: Center(
+                        child: GlassmorphicContainer(
+                          blur: 22,
+                          borderRadius: 24,
+                          padding:
+                              const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                          child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -483,26 +504,29 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                   ),
                 ),
               ),
-            ),
-          ),
-          if (_isLoading)
-            ColoredBox(
-              color: Colors.black.withValues(alpha: 0.5),
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: Colors.white),
-                    SizedBox(height: 16),
-                    Text(
-                      'Signing in...',
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
-                  ],
-                ),
+            );
+                },
               ),
             ),
-        ],
+            if (_isLoading)
+              ColoredBox(
+                color: Colors.black.withValues(alpha: 0.5),
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: Colors.white),
+                      SizedBox(height: 16),
+                      Text(
+                        'Signing in...',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

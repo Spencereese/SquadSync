@@ -1635,13 +1635,13 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                             backgroundColor: _getBackgroundColor(background),
                           ),
                         ),
-                        // Add bottom padding for keyboard and iPhone home indicator
+                        // Home indicator / Dynamic Island bottom inset when the
+                        // keyboard is hidden. Keyboard already replaces that inset.
                         SizedBox(
                           height: isKeyboardVisible
                               ? 8.0
                               : 8.0 +
-                                  (MediaQuery.of(context).viewPadding.bottom /
-                                      2),
+                                  MediaQuery.viewPaddingOf(context).bottom,
                         ),
                       ],
                     ),

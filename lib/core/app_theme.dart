@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// SquadSync 2026 Material 3 Theme System
@@ -339,6 +340,11 @@ class AppTheme {
       backgroundColor: Colors.transparent,
       foregroundColor: colorScheme.onSurface,
       centerTitle: true,
+      systemOverlayStyle: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
       titleTextStyle: GoogleFonts.orbitron(
         fontSize: 20,
         fontWeight: FontWeight.w700,

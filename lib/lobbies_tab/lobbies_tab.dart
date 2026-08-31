@@ -647,8 +647,8 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.5),
+                          Colors.black.withValues(alpha: 0.3),
+                          Colors.black.withValues(alpha: 0.5),
                         ],
                       ),
                     ),
@@ -805,7 +805,9 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
 
         // Bottom spacing
         SliverToBoxAdapter(
-          child: const SizedBox(height: 80.0),
+          child: SizedBox(
+            height: 80.0 + MediaQuery.viewPaddingOf(context).bottom,
+          ),
         ),
       ],
     );

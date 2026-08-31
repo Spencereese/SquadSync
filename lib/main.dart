@@ -82,6 +82,16 @@ void main() async {
   // Note: Native splash will be removed by app_widgets.dart after Flutter content is ready
   // DO NOT call FlutterNativeSplash.remove() here - it removes splash too early
 
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarDividerColor: Colors.transparent,
+  ));
+
   // ProviderScope must wrap the app — SquadSyncApp is a ConsumerStatefulWidget.
   runApp(
     ProviderScope(

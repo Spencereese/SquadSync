@@ -9,7 +9,7 @@
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
-		<string>com.example.codSquadApp</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
@@ -45,18 +45,24 @@
 		<true/>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
-		<!-- Handoff URL Scheme -->
+		<!-- Google Sign-In: GIDClientID + reversed URL scheme must match
+		     GoogleService-Info.plist CLIENT_ID / REVERSED_CLIENT_ID
+		     (and GOOGLE_IOS_CLIENT_ID in .env). Replace the placeholders
+		     below when you drop in a real Firebase iOS app. -->
+		<key>GIDClientID</key>
+		<string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
 					<string>codsquadapp</string>
 				</array>
 				<key>CFBundleURLName</key>
-				<string>com.example.codSquadApp</string>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			</dict>
-			<!-- Supabase Auth Callback -->
 			<dict>
 				<key>CFBundleTypeRole</key>
 				<string>Editor</string>
@@ -64,49 +70,54 @@
 				<array>
 					<string>com.squadsync.app</string>
 				</array>
+				<key>CFBundleURLName</key>
+				<string>supabase.auth.callback</string>
+			</dict>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>google.sign.in</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.YOUR_IOS_CLIENT_ID</string>
+				</array>
 			</dict>
 		</array>
-		<!-- Handoff and Siri Activity Types -->
 		<key>NSUserActivityTypes</key>
 		<array>
-			<string>com.example.codSquadApp.chat</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).chat</string>
 			<string>SendMessageIntent</string>
 		</array>
-		<!-- Siri Usage Description -->
 		<key>NSSiriUsageDescription</key>
 		<string>Send messages to your squad chat using Siri.</string>
-		<!-- Enable Background Modes for Fetch and Remote Notifications -->
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>fetch</string>
 			<string>remote-notification</string>
 		</array>
-		<!-- Firebase Auto Registration -->
 		<key>FirebaseAppDelegateAutoRegister</key>
 		<true/>
-		<!-- Photo Library Permissions -->
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>This app needs access to your photo library to let you select group images.</string>
+		<string>SquadSync needs photo library access so you can set a profile or group image and attach photos in chat.</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>
-		<string>This app needs access to save images to your photo library.</string>
-		<!-- Camera Permissions -->
+		<string>SquadSync needs permission to save images you share or download from chat.</string>
 		<key>NSCameraUsageDescription</key>
-		<string>This app needs access to your camera to scan QR codes for joining groups and sharing invite links.</string>
-		<!-- Microphone Permissions for Voice Chat and Voice Notes -->
+		<string>SquadSync needs camera access to take photos and clips for chat, scan QR invite codes, and use video chat.</string>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>SquadSync needs microphone access for voice chat and voice notes.</string>
-		<!-- Speech Recognition Permissions for Voice-to-Text Transcription -->
+		<string>SquadSync needs microphone access for voice chat, video chat, and voice notes.</string>
 		<key>NSSpeechRecognitionUsageDescription</key>
 		<string>SquadSync uses speech recognition to transcribe voice notes for easier reading.</string>
-		<!-- Network Security Configuration for IGDB API -->
+		<key>NSUserNotificationsUsageDescription</key>
+		<string>SquadSync sends notifications for squad chat, lobby invites, and game session updates.</string>
 		<key>NSAppTransportSecurity</key>
 		<dict>
 			<key>NSAllowsArbitraryLoads</key>
 			<true/>
 		</dict>
 		<key>UIStatusBarHidden</key>
-		<true/>
-		<key>UIViewControllerBasedStatusBarAppearance</key>
 		<false/>
+		<key>UIViewControllerBasedStatusBarAppearance</key>
+		<true/>
 	</dict>
 </plist>

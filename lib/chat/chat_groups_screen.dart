@@ -95,11 +95,13 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     super.didChangeDependencies();
     // Monitor keyboard height changes
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+      if (!mounted) return;
+      final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
       if (keyboardHeight != _lastKeyboardHeight) {
         setState(() {
           if (keyboardHeight > 0) {
-            _navBottomOffset = -75.0;
+            _navBottomOffset =
+                -(75.0 + MediaQuery.viewPaddingOf(context).bottom);
             _navOpacity = 0.0;
           } else {
             _navBottomOffset = 0.0;
@@ -257,8 +259,10 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           title: const Text('Chats'),
-          backgroundColor: Colors.black,
+          backgroundColor: const Color(0xFF0B0E14),
+          foregroundColor: Colors.white,
           elevation: 0,
+          systemOverlayStyle: SystemUiOverlayStyle.light,
           leading: _isDMView
               ? IconButton(
                   icon: const Icon(Icons.arrow_back, color: Colors.cyanAccent),
@@ -1005,33 +1009,51 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeInOut,
                         opacity: _navOpacity,
-                        child: Container(
-                          height: 75,
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 8,
-                                offset: const Offset(0, -2),
-                              ),
-                            ],
-                          ),
-                          child: ValueListenableBuilder<int>(
-                            valueListenable: _selectedIndexNotifier,
-                            builder: (context, selectedIndex, child) {
-                              return Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  _buildTabItem(0, selectedIndex, squadState),
-                                  _buildTabItem(1, selectedIndex, squadState),
-                                  _buildTabItem(2, selectedIndex, squadState),
-                                  _buildTabItem(3, selectedIndex, squadState),
+                        child: Builder(
+                          builder: (context) {
+                            final bottomSafe =
+                                MediaQuery.viewPaddingOf(context).bottom;
+                            final neon =
+                                Theme.of(context).colorScheme.primary;
+                            return Container(
+                              height: 75 + bottomSafe,
+                              padding: EdgeInsets.only(bottom: bottomSafe),
+                              decoration: BoxDecoration(
+                                color: const Color(0xE60B0E14),
+                                border: Border(
+                                  top: BorderSide(
+                                    color: neon.withValues(alpha: 0.28),
+                                  ),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: neon.withValues(alpha: 0.12),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, -2),
+                                  ),
                                 ],
-                              );
-                            },
-                          ),
+                              ),
+                              child: ValueListenableBuilder<int>(
+                                valueListenable: _selectedIndexNotifier,
+                                builder: (context, selectedIndex, child) {
+                                  return Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceEvenly,
+                                    children: [
+                                      _buildTabItem(
+                                          0, selectedIndex, squadState),
+                                      _buildTabItem(
+                                          1, selectedIndex, squadState),
+                                      _buildTabItem(
+                                          2, selectedIndex, squadState),
+                                      _buildTabItem(
+                                          3, selectedIndex, squadState),
+                                    ],
+                                  );
+                                },
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),

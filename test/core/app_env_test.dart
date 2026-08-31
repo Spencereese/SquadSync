@@ -48,6 +48,20 @@ void main() {
     );
   });
 
+  test('parked URL is not Supabase-configured', () {
+    AppEnv.debugReplaceForTest({
+      'SUPABASE_URL': 'https://your-project.supabase.co',
+      'SUPABASE_ANON_KEY': 'your_anon_key',
+    });
+    addTearDown(() => AppEnv.debugReplaceForTest({}));
+
+    expect(AppEnv.isSupabaseConfigured, isFalse);
+    expect(
+      isPlaceholderEnvValue('SUPABASE_URL', AppEnv.supabaseUrl),
+      isTrue,
+    );
+  });
+
   test('placeholder dart-define does not overwrite a real file .env', () {
     final merged = mergeEnvLayers(
       asset: const {

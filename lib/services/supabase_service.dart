@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 
 import '../core/app_env.dart';
 import '../core/auth_redirect.dart';
+import '../core/session_guard.dart';
 
 /// Supabase service for SquadSync
 ///
@@ -28,13 +29,30 @@ import '../core/auth_redirect.dart';
 class SupabaseService {
   static bool _isInitialized = false;
 
-  /// Supabase client instance
+  static bool get isInitialized => _isInitialized;
+
+  static bool get isReady =>
+      _isInitialized && AppEnv.isSupabaseConfigured;
+
+  /// Null when parked / init was skipped. Never throws.
+  static SupabaseClient? get maybeClient {
+    if (!_isInitialized) return null;
+    try {
+      return Supabase.instance.client;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Live client. Prefer [maybeClient] / [isReady] at call sites that
+  /// can run before init (Setup, Auth, AutoMerge).
   static SupabaseClient get client {
-    if (!_isInitialized) {
+    final existing = maybeClient;
+    if (existing == null) {
       throw StateError(
           'Supabase not initialized. Call SupabaseService.initialize() first.');
     }
-    return Supabase.instance.client;
+    return existing;
   }
 
   /// Initialize Supabase
@@ -53,11 +71,10 @@ class SupabaseService {
         supabaseUrl == null ||
         supabaseAnonKey == null) {
       debugPrint(
-        'Supabase initialize skipped; URL=${supabaseUrl ?? '(empty)'}',
+        'Supabase not configured (empty or placeholder URL). '
+        'Client stays offline. flutter run --dart-define-from-file=.env',
       );
-      throw StateError(
-        'Supabase is not configured. Use --dart-define-from-file=.env',
-      );
+      return;
     }
 
     // Use anon key for proper authentication with RLS
@@ -108,16 +125,47 @@ class SupabaseService {
     }
 
     _isInitialized = true;
+    await ensureFreshSession();
+  }
+
+  /// Refresh an expired/near-expiry Keychain JWT, or [signOut] so a
+  /// dead session cannot keep opening realtime.
+  static Future<Session?> ensureFreshSession() async {
+    if (!isReady) return null;
+    final existing = maybeClient;
+    if (existing == null) return null;
+
+    final session = existing.auth.currentSession;
+    if (session == null) return null;
+
+    if (!shouldAttemptSessionRefresh(expiresAtSeconds: session.expiresAt)) {
+      return session;
+    }
+
+    try {
+      final response = await existing.auth.refreshSession();
+      return response.session;
+    } catch (e) {
+      debugPrint(
+        'Session refresh failed; signing out dead Keychain session: $e',
+      );
+      try {
+        await existing.auth.signOut();
+      } catch (signOutError) {
+        debugPrint('Sign-out after dead session failed: $signOutError');
+      }
+      return null;
+    }
   }
 
   /// Check if user is authenticated in Supabase
-  static bool get isAuthenticated => client.auth.currentUser != null;
+  static bool get isAuthenticated => currentUser != null;
 
   /// Get current Supabase user
-  static User? get currentUser => client.auth.currentUser;
+  static User? get currentUser => maybeClient?.auth.currentUser;
 
   /// Get current user ID
-  static String? get currentUserId => client.auth.currentUser?.id;
+  static String? get currentUserId => currentUser?.id;
 
   /// Sign in with email and password
   static Future<AuthResponse> signInWithPassword({
@@ -156,7 +204,7 @@ class SupabaseService {
   }
 
   /// Get current session
-  static Session? get currentSession => client.auth.currentSession;
+  static Session? get currentSession => maybeClient?.auth.currentSession;
 
   /// Sign out from Supabase
   static Future<void> signOut() async {
@@ -164,7 +212,8 @@ class SupabaseService {
   }
 
   /// Get active channel count
-  static int get activeChannelCount => client.getChannels().length;
+  static int get activeChannelCount =>
+      maybeClient?.getChannels().length ?? 0;
 
   /// Check if approaching channel limit
   /// Supabase free tier typically limits to 100 channels per client
@@ -196,6 +245,7 @@ class SupabaseService {
   /// Strategy: Remove ALL orphaned channels immediately to prevent buildup
   /// This is aggressive but necessary for chat-heavy apps
   static Future<int> cleanupOldChannels() async {
+    if (maybeClient == null) return 0;
     try {
       final channels = client.getChannels();
       final channelCount = channels.length;
@@ -234,6 +284,7 @@ class SupabaseService {
   /// Dispose of real-time subscriptions
   /// Call this when cleaning up
   static Future<void> dispose() async {
+    if (maybeClient == null) return;
     try {
       // Clean up any active subscriptions
       final count = activeChannelCount;
@@ -258,4 +309,4 @@ class SupabaseService {
 /// ```dart
 /// final data = await supabase.from('table').select();
 /// ```
-final supabase = SupabaseService.client;
+SupabaseClient get supabase => SupabaseService.client;

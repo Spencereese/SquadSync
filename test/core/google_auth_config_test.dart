@@ -46,6 +46,30 @@ GOOGLE_WEB_CLIENT_ID=your_google_web_client_id.apps.googleusercontent.com
     expect(GoogleAuthConfig.canAttemptSignIn, isTrue);
   });
 
+  test('env client id wins over bundled Firebase OAuth clients', () {
+    dotenv.testLoad(fileInput: '''
+GOOGLE_IOS_CLIENT_ID=999-from-env.apps.googleusercontent.com
+GOOGLE_WEB_CLIENT_ID=888-from-env.apps.googleusercontent.com
+''');
+
+    expect(
+      GoogleAuthConfig.iosClientId,
+      '999-from-env.apps.googleusercontent.com',
+    );
+    expect(
+      GoogleAuthConfig.webClientId,
+      '888-from-env.apps.googleusercontent.com',
+    );
+    expect(
+      GoogleAuthConfig.iosClientId,
+      isNot(GoogleAuthConfig.bundledIosClientId),
+    );
+    expect(
+      GoogleAuthConfig.webClientId,
+      isNot(GoogleAuthConfig.bundledWebClientId),
+    );
+  });
+
   test('a filled client id is not a placeholder', () {
     expect(
       GoogleAuthConfig.isPlaceholder(

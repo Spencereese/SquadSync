@@ -177,6 +177,13 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       await future;
       if (epoch != _initializeChatEpoch) return;
 
+      final session = await SupabaseService.ensureFreshSession();
+      if (session == null) {
+        debugPrint('ChatNotifier: no valid session; skip realtime');
+        return;
+      }
+      if (epoch != _initializeChatEpoch) return;
+
       // AGGRESSIVE cleanup if approaching limit
       if (SupabaseService.activeChannelCount > 80) {
         debugPrint(

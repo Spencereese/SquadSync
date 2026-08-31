@@ -83,8 +83,12 @@ void main() async {
     if (!di.getIt.isRegistered<AutoMergeService>()) {
       di.getIt.registerSingleton<AutoMergeService>(AutoMergeService());
     }
-    di.getIt<AutoMergeService>().startMergeDetection();
-    debugPrint('Auto-merge service initialized');
+    if (AppEnv.isSupabaseConfigured && SupabaseService.isInitialized) {
+      di.getIt<AutoMergeService>().startMergeDetection();
+      debugPrint('Auto-merge service initialized');
+    } else {
+      debugPrint('AutoMerge skipped: Supabase not configured');
+    }
   } catch (e) {
     debugPrint('Auto-merge service initialization failed: $e');
   }
@@ -288,14 +292,20 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
       final user = authService.currentUser;
 
       if (user != null) {
-        // User already authenticated - initialize peacock notifications
-        await PeacockNotificationService.initialize();
-        await PeacockNotificationService.checkPendingNotifications();
-        debugPrint('✅ Peacock notification service initialized');
+        final session = await SupabaseService.ensureFreshSession();
+        if (session == null) {
+          debugPrint('Peacock skipped: session expired');
+        } else {
+          await PeacockNotificationService.initialize();
+          await PeacockNotificationService.checkPendingNotifications();
+          debugPrint('✅ Peacock notification service initialized');
+        }
       }
 
       // Listen for auth state changes to handle login/logout
-      SupabaseService.client.auth.onAuthStateChange.listen((data) {
+      final authClient = SupabaseService.maybeClient;
+      if (authClient == null) return;
+      authClient.auth.onAuthStateChange.listen((data) {
         final session = data.session;
         if (session != null) {
           // User logged in - initialize peacock notifications

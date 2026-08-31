@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
+import 'supabase_service.dart';
+
 /// JWT Validation Helper for Supabase Authentication
 ///
 /// Provides utilities to validate JWT tokens and extract claims
@@ -24,7 +26,7 @@ import 'package:flutter/foundation.dart';
 class JwtValidator {
   /// Get current session from Supabase
   static Session? get _currentSession =>
-      Supabase.instance.client.auth.currentSession;
+      SupabaseService.maybeClient?.auth.currentSession;
 
   /// Check if user is authenticated (has valid JWT)
   static bool isAuthenticated() {

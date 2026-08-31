@@ -29,7 +29,6 @@ class SetupScreen extends ConsumerStatefulWidget {
 class SetupScreenState extends ConsumerState<SetupScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final _supabase = SupabaseService.client;
   bool _isLoading = false;
   bool _isPasswordVisible = false;
   bool _googleInitialized = false;
@@ -41,8 +40,20 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
     super.dispose();
   }
 
+  SupabaseClient? get _maybeClient => SupabaseService.maybeClient;
+
+  SupabaseClient get _supabase {
+    final client = _maybeClient;
+    if (client == null) {
+      throw StateError('Supabase is not configured.');
+    }
+    return client;
+  }
+
   bool _guardSupabaseReady() {
-    if (AppEnv.isSupabaseConfigured) return true;
+    if (AppEnv.isSupabaseConfigured && SupabaseService.isInitialized) {
+      return true;
+    }
     debugPrint('Auth skipped; SUPABASE_URL=${AppEnv.supabaseUrl}');
     _showSnackBar(EmailAuth.unavailableMessage);
     return false;
@@ -187,6 +198,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   }
 
   Future<void> _handleAppleSignIn() async {
+    if (!_guardSupabaseReady()) return;
     setState(() => _isLoading = true);
     try {
       final rawNonce = _generateNonce();
@@ -324,6 +336,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   }
 
   Future<void> _showForgotPasswordDialog() async {
+    if (!_guardSupabaseReady()) return;
     final emailController = TextEditingController(
       text: _emailController.text.trim(),
     );

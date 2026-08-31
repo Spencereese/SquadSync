@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/app_env.dart';
 import '../services/supabase_service.dart';
 import '../services/auth_service_supabase.dart';
 
@@ -10,16 +12,56 @@ class AutoMergeService {
   factory AutoMergeService() => _instance;
   AutoMergeService._internal();
 
-  final _supabase = SupabaseService.client;
   StreamSubscription? _mergeDetectionSubscription;
+  StreamSubscription<AuthState>? _authSubscription;
   final Set<String> _processedMerges = {};
+
+  SupabaseClient? get _maybeClient => SupabaseService.maybeClient;
+
+  SupabaseClient get _supabase {
+    final client = _maybeClient;
+    if (client == null) {
+      throw StateError('Supabase is not configured.');
+    }
+    return client;
+  }
 
   /// Start listening for merge opportunities
   void startMergeDetection() {
     _mergeDetectionSubscription?.cancel();
+    _mergeDetectionSubscription = null;
 
-    // Listen to new lobbies in real-time
-    _mergeDetectionSubscription = _supabase
+    if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
+      debugPrint('AutoMerge skipped: Supabase not configured');
+      return;
+    }
+
+    _authSubscription ??= _supabase.auth.onAuthStateChange.listen((data) {
+      if (data.session == null) {
+        stopMergeDetection();
+      } else if (_mergeDetectionSubscription == null) {
+        _openLobbiesStream();
+      }
+    });
+
+    if (AuthServiceSupabase().currentUser == null) {
+      debugPrint('AutoMerge skipped: no session');
+      return;
+    }
+
+    _openLobbiesStream();
+  }
+
+  void _openLobbiesStream() {
+    final client = _maybeClient;
+    if (client == null) return;
+    if (AuthServiceSupabase().currentUser == null) {
+      debugPrint('AutoMerge skipped: no session');
+      return;
+    }
+
+    _mergeDetectionSubscription?.cancel();
+    _mergeDetectionSubscription = client
         .from('lobbies')
         .stream(primaryKey: ['id'])
         .eq('is_public', false) // Only check friend lobbies

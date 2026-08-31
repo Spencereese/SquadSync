@@ -13,7 +13,8 @@ class PeacockNotificationService {
 
   /// Start listening for peacock queue notifications
   static Future<void> initialize() async {
-    final user = AuthServiceSupabase().currentUser;
+    final session = await SupabaseService.ensureFreshSession();
+    final user = session?.user;
     if (user == null) {
       developer.log(
           'Cannot initialize peacock notifications - user not authenticated');

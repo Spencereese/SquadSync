@@ -14,6 +14,7 @@ import '../chat/dialogs/group_actions_dialog.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/ab_testing_service.dart';
 import '../services/supabase_service.dart';
+import 'app_env.dart';
 import '../domain/entities/message.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -28,7 +29,6 @@ final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 /// GoRouter configuration provider with A/B testing integration
 final goRouterProvider = Provider<GoRouter>((ref) {
-  final authService = AuthServiceSupabase();
   final analytics = FirebaseAnalytics.instance;
   final abTestService = ref.watch(abTestingServiceProvider).asData?.value;
 
@@ -37,8 +37,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     debugLogDiagnostics: kDebugMode,
     initialLocation: '/',
     redirect: (context, state) async {
-      final user = authService.currentUser;
       final isLoginRoute = state.matchedLocation == '/setup';
+
+      if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
+        return isLoginRoute ? null : '/setup';
+      }
+
+      final session = await SupabaseService.ensureFreshSession();
+      final user = session?.user;
 
       // Track navigation for A/B testing
       if (abTestService != null) {

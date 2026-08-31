@@ -1,9 +1,17 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/app_env.dart';
 import '../../domain/entities/notification_priority.dart';
 import '../../notification_service.dart';
+import '../../services/supabase_service.dart';
+
+/// Riverpod forbids mutating providers during [State.initState] / [build].
+void scheduleProviderWriteAfterBuild(VoidCallback write) {
+  WidgetsBinding.instance.addPostFrameCallback((_) => write());
+}
 
 /// Provider for NotificationNotifier
 final notificationNotifierProvider =
@@ -195,8 +203,17 @@ bool isChatThreadChannelTopic(String topic, String? threadId) {
 
 /// Riverpod notifier for managing notifications with Supabase real-time subscriptions
 class NotificationNotifier extends AsyncNotifier<BadgeState> {
-  final _supabase = Supabase.instance.client;
   final _notificationService = NotificationService();
+
+  SupabaseClient? get _maybeClient => SupabaseService.maybeClient;
+
+  SupabaseClient get _supabase {
+    final client = _maybeClient;
+    if (client == null) {
+      throw StateError('Supabase is not configured.');
+    }
+    return client;
+  }
 
   // Subscriptions for cleanup
   RealtimeChannel? _lobbyChannel;
@@ -215,16 +232,24 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
     // Initialize notification service
     await NotificationService.initialize();
 
-    // Set up real-time subscriptions for momentum detection
-    _setupLobbyMomentumSubscription();
-    _setupChatBadgeSubscription();
-
-    // Clean up on dispose
     ref.onDispose(() {
       _lobbyChannel?.unsubscribe();
       _chatChannel?.unsubscribe();
       _presenceSubscription?.cancel();
     });
+
+    if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
+      return _notificationService.getBadgeState();
+    }
+
+    final session = await SupabaseService.ensureFreshSession();
+    if (session == null) {
+      debugPrint('NotificationNotifier: no valid session; skip realtime');
+      return _notificationService.getBadgeState();
+    }
+
+    _setupLobbyMomentumSubscription();
+    _setupChatBadgeSubscription();
 
     return _notificationService.getBadgeState();
   }

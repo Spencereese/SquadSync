@@ -6,6 +6,15 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/notification_notifier.dart';
 
 void main() {
+  testWidgets('setActiveChatGroup write is deferred off the build frame',
+      (tester) async {
+    var wrote = false;
+    scheduleProviderWriteAfterBuild(() => wrote = true);
+    expect(wrote, isFalse);
+    await tester.pump();
+    expect(wrote, isTrue);
+  });
+
   test('skips only when the open thread matches the incoming group', () {
     expect(shouldSkipChatBadgeIncrement('g1', 'g1'), isTrue);
     expect(shouldSkipChatBadgeIncrement('g1', 'g2'), isFalse);

@@ -12,12 +12,16 @@ import '../presentation/widgets/animated_theme_wrapper.dart';
 import '../presentation/hooks/game_theme_sync.dart';
 import '../services/supabase_service.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import '../core/app_env.dart';
 import '../core/app_router.dart';
 import '../core/notification_routes.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   debugPrint('authStateProvider: Setting up auth state listener');
-  return Supabase.instance.client.auth.onAuthStateChange.map((data) {
+  if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
+    return Stream<User?>.value(null);
+  }
+  return SupabaseService.client.auth.onAuthStateChange.map((data) {
     final user = data.session?.user;
     debugPrint(
         'authStateProvider: Auth state changed - event: ${data.event}, user: ${user?.id ?? "null"}, session exists: ${data.session != null}');

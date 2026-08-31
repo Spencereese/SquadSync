@@ -119,6 +119,12 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       String chatGroupId, ChatType chatType) async {
     await future;
 
+    final session = await SupabaseService.ensureFreshSession();
+    if (session == null) {
+      debugPrint('MessageNotifier: no valid session; skip realtime');
+      return;
+    }
+
     // AGGRESSIVE cleanup BEFORE creating new channels
     final currentChannelCount = SupabaseService.activeChannelCount;
     debugPrint(

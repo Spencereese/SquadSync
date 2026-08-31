@@ -160,7 +160,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       }
       _registeredActiveChatGroupId = id;
       _initializationServiceGeneration++;
-      notifier.setActiveChatGroup(id);
+      scheduleProviderWriteAfterBuild(() {
+        if (!mounted) return;
+        if (id != _registeredActiveChatGroupId) return;
+        _notificationNotifier?.setActiveChatGroup(id);
+      });
       _bindTypingListener(id);
       if (shouldStartChatInitialization(
         alreadyInitialized: _hasInitializedChat,

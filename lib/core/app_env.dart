@@ -36,6 +36,13 @@ class AppEnv {
       !isPlaceholderEnvValue('SUPABASE_URL', supabaseUrl) &&
       !isPlaceholderEnvValue('SUPABASE_ANON_KEY', supabaseAnonKey);
 
+  /// Test hook. Does not load assets or dart-defines.
+  @visibleForTesting
+  static void debugReplaceForTest(Map<String, String> values) {
+    _values = Map<String, String>.from(values);
+    _syncDotenv(_values);
+  }
+
   static Future<void> load() async {
     var asset = <String, String>{};
     try {

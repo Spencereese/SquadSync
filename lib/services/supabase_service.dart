@@ -49,7 +49,9 @@ class SupabaseService {
     final supabaseUrl = AppEnv.supabaseUrl;
     final supabaseAnonKey = AppEnv.supabaseAnonKey;
 
-    if (!AppEnv.isSupabaseConfigured) {
+    if (!AppEnv.isSupabaseConfigured ||
+        supabaseUrl == null ||
+        supabaseAnonKey == null) {
       debugPrint(
         'Supabase initialize skipped; URL=${supabaseUrl ?? '(empty)'}',
       );

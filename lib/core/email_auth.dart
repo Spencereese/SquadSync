@@ -95,6 +95,9 @@ class EmailAuth {
   }
 
   static EmailAuthFeedback forUnexpected(Object error) {
+    if (error is AuthException && isConfigOrNetworkFailure(error)) {
+      return const EmailAuthFeedback(message: unavailableMessage);
+    }
     if (isConfigOrNetworkFailure(error)) {
       return const EmailAuthFeedback(message: unavailableMessage);
     }

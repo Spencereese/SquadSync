@@ -8,7 +8,7 @@ class NotificationManager {
       await SupabaseService.client.from('users').update({
         'fcm_token': token,
         'last_token_update': DateTime.now().toIso8601String(),
-      }).eq('id', user.id);
+      }).eq('uid', user.id);
     }
   }
 
@@ -18,7 +18,7 @@ class NotificationManager {
       final response = await SupabaseService.client
           .from('users')
           .select('fcm_token')
-          .eq('id', user.id)
+          .eq('uid', user.id)
           .maybeSingle();
       return response?['fcm_token'] as String?;
     }

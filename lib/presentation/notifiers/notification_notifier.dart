@@ -156,8 +156,7 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
     // Don't badge own messages
     if (senderId == currentUserId) return;
 
-    // Update badge count (low priority - badge only)
-    _notificationService.clearBadge('chat');
+    _notificationService.incrementBadge('chat');
     state = AsyncData(_notificationService.getBadgeState());
   }
 

@@ -17,6 +17,7 @@ import '../services/supabase_service.dart';
 import '../domain/entities/message.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'notification_routes.dart';
 
 /// A/B Testing Service Provider
 final abTestingServiceProvider = FutureProvider<ABTestingService>((ref) async {
@@ -31,7 +32,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   final analytics = FirebaseAnalytics.instance;
   final abTestService = ref.watch(abTestingServiceProvider).asData?.value;
 
-  return GoRouter(
+  final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     debugLogDiagnostics: kDebugMode,
     initialLocation: '/',
@@ -216,6 +217,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       FirebaseAnalyticsObserver(analytics: analytics),
     ],
   );
+  NotificationRoutes.bindNavigator(rootNavigatorKey);
+  return router;
 });
 
 /// Deep link router - handles universal links and app links

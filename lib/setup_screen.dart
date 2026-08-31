@@ -362,12 +362,14 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
           _showSnackBar('Password reset email sent. Check your inbox.');
         }
       } on AuthException catch (e) {
+        debugPrint('Auth recover: $e');
         if (mounted) {
-          _showSnackBar('Failed to send reset email: ${e.message}');
+          _showSnackBar(EmailAuth.forUnexpected(e).message);
         }
       } catch (e) {
+        debugPrint('Auth recover: $e');
         if (mounted) {
-          _showSnackBar('An error occurred. Please try again.');
+          _showSnackBar(EmailAuth.forUnexpected(e).message);
         }
       }
     }
@@ -463,6 +465,11 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                         const SizedBox(height: 28),
                         TextField(
                           controller: _emailController,
+                          style: const TextStyle(
+                            color: titleColor,
+                            fontSize: 16,
+                          ),
+                          cursorColor: neon,
                           decoration: const InputDecoration(
                             labelText: 'Email',
                             hintText: 'you@email.com',
@@ -475,6 +482,11 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                         const SizedBox(height: 14),
                         TextField(
                           controller: _passwordController,
+                          style: const TextStyle(
+                            color: titleColor,
+                            fontSize: 16,
+                          ),
+                          cursorColor: neon,
                           decoration: InputDecoration(
                             labelText: 'Password',
                             hintText: 'Enter your password',

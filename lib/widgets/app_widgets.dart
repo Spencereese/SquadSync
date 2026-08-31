@@ -38,7 +38,7 @@ class SquadSyncMaterialApp extends ConsumerWidget {
     GameThemeSync.watch(ref);
 
     final router = ref.watch(goRouterProvider);
-    NotificationRoutes.go = router.go;
+    NotificationRoutes.bindNavigator(rootNavigatorKey);
 
     // Remove native splash after first frame is rendered (only once)
     if (!_splashRemoved) {

@@ -64,6 +64,11 @@ class AppTheme {
 
       // Floating action button with neon glow
       floatingActionButtonTheme: _buildFABTheme(colorScheme),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: seedColor,
+        selectionColor: seedColor.withValues(alpha: 0.35),
+        selectionHandleColor: seedColor,
+      ),
     );
   }
 

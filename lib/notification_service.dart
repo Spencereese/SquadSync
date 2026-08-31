@@ -97,7 +97,7 @@ class NotificationService {
       _handleMessage(initialMessage);
     }
     FirebaseMessaging.onMessageOpenedApp.listen(_handleMessage);
-    FirebaseMessaging.onBackgroundMessage(_backgroundHandler);
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
     final token = await _messaging.getToken();
     developer.log('FCM Token: $token');
@@ -105,7 +105,7 @@ class NotificationService {
     if (user != null && token != null) {
       await SupabaseService.client.from('users').update({
         'fcm_token': token,
-      }).eq('id', user.id);
+      }).eq('uid', user.id);
     }
     _messaging.onTokenRefresh.listen((newToken) async {
       developer.log('New FCM Token: $newToken');
@@ -113,17 +113,12 @@ class NotificationService {
       if (currentUser != null) {
         await SupabaseService.client.from('users').update({
           'fcm_token': newToken,
-        }).eq('id', currentUser.id);
+        }).eq('uid', currentUser.id);
       }
     });
 
     await _instance._loadCooldowns();
     _initialized = true;
-  }
-
-  static Future<void> _backgroundHandler(RemoteMessage message) async {
-    developer.log(
-        'Background message: ${message.notification?.title} - ${message.notification?.body}');
   }
 
   static void _handleMessage(RemoteMessage message) {
@@ -150,8 +145,8 @@ class NotificationService {
     try {
       final response = await SupabaseService.client
           .from('users')
-          .select('id, fcm_token')
-          .inFilter('id', recipientUids);
+          .select('uid, fcm_token')
+          .inFilter('uid', recipientUids);
 
       if (response.isEmpty) {
         developer.log('No FCM tokens found for recipients');
@@ -206,7 +201,7 @@ class NotificationService {
     try {
       final response = await SupabaseService.client
           .from('users')
-          .select('id, fcm_token')
+          .select('uid, fcm_token')
           .eq('display_name', recipientDisplayName)
           .maybeSingle();
 
@@ -214,7 +209,7 @@ class NotificationService {
         developer.log('No user found for $recipientDisplayName');
         return;
       }
-      final uid = response['id'] as String?;
+      final uid = response['uid'] as String?;
       if (uid == null || uid.isEmpty) {
         developer.log('No uid for $recipientDisplayName');
         return;
@@ -401,6 +396,10 @@ class NotificationService {
       _badgeCounts.values.fold<int>(0, (sum, count) => sum + count);
 
   Future<void> _updateBadge(String type) async {
+    incrementBadge(type);
+  }
+
+  void incrementBadge(String type) {
     _badgeCounts[type] = (_badgeCounts[type] ?? 0) + 1;
     _pushIosBadgeCount();
   }
@@ -439,4 +438,11 @@ class NotificationService {
       ),
     );
   }
+}
+
+/// Must be top-level for FCM background isolates.
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  developer.log(
+      'Background message: ${message.notification?.title} - ${message.notification?.body}');
 }

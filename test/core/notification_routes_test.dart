@@ -33,4 +33,12 @@ void main() {
   test('unknown type does not invent a route', () {
     expect(NotificationRoutes.locationFor({'type': 'unknown'}), isNull);
   });
+
+  test('open calls go when a handler is bound', () {
+    String? opened;
+    NotificationRoutes.go = (location) => opened = location;
+    NotificationRoutes.open({'type': 'chat', 'chatGroupId': 'g1'});
+    expect(opened, '/chat/g1');
+    NotificationRoutes.go = null;
+  });
 }

@@ -1,8 +1,21 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
 /// Maps FCM / local-notification payloads to existing go_router locations.
 class NotificationRoutes {
   NotificationRoutes._();
 
   static void Function(String location)? go;
+
+  /// Wire taps through the live [rootNavigatorKey] after GoRouter is built.
+  static void bindNavigator(GlobalKey<NavigatorState> key) {
+    go = (location) {
+      final context = key.currentContext;
+      if (context != null && context.mounted) {
+        GoRouter.of(context).go(location);
+      }
+    };
+  }
 
   static String? locationFor(Map<String, dynamic> data) {
     final type = data['type']?.toString();

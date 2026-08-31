@@ -38,6 +38,7 @@ import '../domain/entities/lobby_state.dart';
 import 'widgets/neon_chat_app_bar.dart';
 import 'screens/chat_info_screen.dart';
 import '../presentation/notifiers/lobby_notifier.dart';
+import '../presentation/notifiers/notification_notifier.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
@@ -193,6 +194,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // CRITICAL: Clear message cache on init to force processing
     _uiManager.clearMessageCache();
     debugPrint('🧹 Cleared message cache on ChatScreen init');
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notificationNotifierProvider.notifier).clearBadge('chat');
+    });
 
     _animationController = AnimationController(
       vsync: this,

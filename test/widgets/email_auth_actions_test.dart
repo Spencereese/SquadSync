@@ -129,4 +129,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(signedIn, isTrue);
   });
+
+  testWidgets('recover ClientException snackbar never contains http',
+      (tester) async {
+    final error = AuthException(
+      'ClientException: Failed to fetch, uri=https://your-project.supabase.co/auth/v1/recover?',
+      statusCode: '0',
+    );
+    final message = EmailAuth.forUnexpected(error).message;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) {
+              return TextButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(message)),
+                  );
+                },
+                child: const Text('recover'),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('recover'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('http'), findsNothing);
+    expect(find.textContaining('your-project'), findsNothing);
+    expect(find.text(EmailAuth.unavailableMessage), findsOneWidget);
+  });
 }

@@ -67,4 +67,17 @@ void main() {
     );
     expect(feedback.message, EmailAuth.unavailableMessage);
   });
+
+  test('recover ClientException copy never contains http', () {
+    final error = AuthException(
+      'ClientException: Failed to fetch, uri=https://your-project.supabase.co/auth/v1/recover?',
+      statusCode: '0',
+    );
+    expect(EmailAuth.isConfigOrNetworkFailure(error), isTrue);
+    final message = EmailAuth.forUnexpected(error).message;
+    expect(message, EmailAuth.unavailableMessage);
+    expect(message.toLowerCase().contains('http'), isFalse);
+    expect(message.contains('your-project'), isFalse);
+    expect(message.contains('recover'), isFalse);
+  });
 }

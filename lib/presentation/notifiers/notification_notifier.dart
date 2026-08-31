@@ -99,6 +99,23 @@ bool shouldRunInitializationService({
   );
 }
 
+/// Rate-limit delayed initializeChat must not outrank a newer lobby.
+bool shouldContinueDelayedChatReinit({
+  required bool isMounted,
+  required String scheduledId,
+  required int scheduledGeneration,
+  required String? currentRegisteredId,
+  required int currentGeneration,
+}) {
+  if (!isMounted) return false;
+  return shouldCommitInitializationCompletion(
+    finishingId: scheduledId,
+    finishingGeneration: scheduledGeneration,
+    currentRegisteredId: currentRegisteredId,
+    currentGeneration: currentGeneration,
+  );
+}
+
 bool shouldCleanupPreviousThreadChannels({
   required String? previousId,
   required String? nextId,

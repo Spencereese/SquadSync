@@ -227,11 +227,18 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         errorMsg = 'Too many connections. Cleaning up...';
         SupabaseService.dispose();
         Future.delayed(const Duration(seconds: 1), () {
-          if (mounted) {
-            ref
-                .read(cn.chatNotifierProvider.notifier)
-                .initializeChat(chatGroupId, widget.chatType);
+          if (!shouldContinueDelayedChatReinit(
+            isMounted: mounted,
+            scheduledId: chatGroupId,
+            scheduledGeneration: generation,
+            currentRegisteredId: _registeredActiveChatGroupId,
+            currentGeneration: _initializationServiceGeneration,
+          )) {
+            return;
           }
+          ref
+              .read(cn.chatNotifierProvider.notifier)
+              .initializeChat(chatGroupId, widget.chatType);
         });
       } else if (errorMsg.contains('channelError')) {
         errorMsg = 'Connection issue. Chat will work with limited features.';
@@ -280,10 +287,26 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         chatGroupName: widget.chatGroupName,
         chatType: widget.chatType,
         setChatName: (name) {
+          if (!shouldCommitInitializationCompletion(
+            finishingId: chatGroupId,
+            finishingGeneration: generation,
+            currentRegisteredId: _registeredActiveChatGroupId,
+            currentGeneration: _initializationServiceGeneration,
+          )) {
+            return;
+          }
           if (mounted) setState(() => _chatName = name);
           _uiManager.chatName = name;
         },
         setChatImageUrl: (url) {
+          if (!shouldCommitInitializationCompletion(
+            finishingId: chatGroupId,
+            finishingGeneration: generation,
+            currentRegisteredId: _registeredActiveChatGroupId,
+            currentGeneration: _initializationServiceGeneration,
+          )) {
+            return;
+          }
           if (mounted) setState(() => _chatImageUrl = url);
           _uiManager.chatImageUrl = url;
         },

@@ -255,6 +255,60 @@ void main() {
     );
   });
 
+  test('delayed rate-limit re-init is abandoned after a lobby switch', () {
+    expect(
+      shouldContinueDelayedChatReinit(
+        isMounted: true,
+        scheduledId: 'lobby-1',
+        scheduledGeneration: 1,
+        currentRegisteredId: 'lobby-2',
+        currentGeneration: 2,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldContinueDelayedChatReinit(
+        isMounted: false,
+        scheduledId: 'lobby-1',
+        scheduledGeneration: 1,
+        currentRegisteredId: 'lobby-1',
+        currentGeneration: 1,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldContinueDelayedChatReinit(
+        isMounted: true,
+        scheduledId: 'lobby-2',
+        scheduledGeneration: 2,
+        currentRegisteredId: 'lobby-2',
+        currentGeneration: 2,
+      ),
+      isTrue,
+    );
+  });
+
+  test('init UI writes only apply for the current generation', () {
+    expect(
+      shouldCommitInitializationCompletion(
+        finishingId: 'lobby-1',
+        finishingGeneration: 1,
+        currentRegisteredId: 'lobby-2',
+        currentGeneration: 2,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldCommitInitializationCompletion(
+        finishingId: 'lobby-2',
+        finishingGeneration: 2,
+        currentRegisteredId: 'lobby-2',
+        currentGeneration: 2,
+      ),
+      isTrue,
+    );
+  });
+
   test('hard failure snacks once then allows one bounded retry', () {
     expect(shouldShowInitFailureSnackBar(0), isTrue);
     expect(shouldShowInitFailureSnackBar(1), isFalse);
@@ -367,7 +421,7 @@ void main() {
     expect(committed.map((e) => e.id), ['lobby-2']);
   });
 
-  testWidgets('throw bail snacks once then schedules one retry', (tester) async {
+  testWidgets('throw bail snacks once then allows one retry', (tester) async {
     final snacks = <String>[];
     var attempts = 0;
     final key = GlobalKey<_ThrowRetryHarnessState>();
@@ -401,6 +455,45 @@ void main() {
     expect(key.currentState!.retryScheduled, isFalse);
 
     key.currentState!.runScheduledRetry();
+    expect(attempts, 2);
+  });
+
+  testWidgets(
+      'throw bail post-frame retry runs after scheduleFrame and pump',
+      (tester) async {
+    final snacks = <String>[];
+    var attempts = 0;
+    final key = GlobalKey<_ThrowRetryPostFrameHarnessState>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: _ThrowRetryPostFrameHarness(
+            key: key,
+            onSnack: snacks.add,
+            onAttempt: () {
+              attempts++;
+              throw StateError('init failed');
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    key.currentState!.runInit();
+    expect(attempts, 1);
+    expect(snacks, ['Could not finish opening chat']);
+    expect(key.currentState!.bail, ChatInitBail.hardFailure);
+    expect(key.currentState!.hardFailureRetries, 1);
+
+    tester.binding.scheduleFrame();
+    await tester.pump();
+    expect(attempts, 2);
+    expect(snacks, ['Could not finish opening chat']);
+    expect(key.currentState!.hardFailureRetries, 2);
+
+    tester.binding.scheduleFrame();
+    await tester.pump();
     expect(attempts, 2);
   });
 }
@@ -630,6 +723,81 @@ class _ThrowRetryHarnessState extends State<_ThrowRetryHarness> {
       );
       _retries++;
       _retryScheduled = shouldRetry;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// Same catch path as ChatScreen._runInitializationService: one snack,
+/// then WidgetsBinding.addPostFrameCallback for a single retry.
+class _ThrowRetryPostFrameHarness extends StatefulWidget {
+  const _ThrowRetryPostFrameHarness({
+    super.key,
+    required this.onSnack,
+    required this.onAttempt,
+  });
+
+  final void Function(String message) onSnack;
+  final void Function() onAttempt;
+
+  @override
+  State<_ThrowRetryPostFrameHarness> createState() =>
+      _ThrowRetryPostFrameHarnessState();
+}
+
+class _ThrowRetryPostFrameHarnessState
+    extends State<_ThrowRetryPostFrameHarness> {
+  var _completed = false;
+  var _bail = ChatInitBail.none;
+  var _retries = 0;
+  var _generation = 1;
+  final _id = 'lobby-1';
+
+  ChatInitBail get bail => _bail;
+  int get hardFailureRetries => _retries;
+
+  void runInit() {
+    if (!shouldRunInitializationService(
+      requestedId: _id,
+      requestedGeneration: _generation,
+      currentRegisteredId: _id,
+      currentGeneration: _generation,
+      alreadyCompleted: _completed,
+    )) {
+      return;
+    }
+    try {
+      widget.onAttempt();
+      _completed = true;
+      _bail = ChatInitBail.none;
+    } catch (_) {
+      if (!shouldCommitInitializationCompletion(
+        finishingId: _id,
+        finishingGeneration: _generation,
+        currentRegisteredId: _id,
+        currentGeneration: _generation,
+      )) {
+        return;
+      }
+      _bail = ChatInitBail.hardFailure;
+      if (shouldShowInitFailureSnackBar(_retries)) {
+        widget.onSnack('Could not finish opening chat');
+      }
+      final shouldRetry = shouldRetryChatInitializationService(
+        serviceCompleted: false,
+        bail: ChatInitBail.hardFailure,
+        squadStateAvailable: true,
+        hardFailureRetries: _retries,
+      );
+      _retries++;
+      if (shouldRetry) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          runInit();
+        });
+      }
     }
   }
 

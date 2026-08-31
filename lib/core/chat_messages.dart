@@ -14,11 +14,22 @@ List<Message> messagesForOpenThread({
   return fallback[threadId] ?? const [];
 }
 
-/// A non-empty remote page wins over a stale/partial cache row.
+/// A larger remote page always wins. A 1-row cache never beats remote.
 List<Message> preferRemoteMessagePage({
   required List<Message> cached,
   required List<Message> remote,
 }) {
+  if (remote.length > cached.length) return remote;
+  if (cached.length <= 1 && remote.isNotEmpty) return remote;
   if (remote.isNotEmpty) return remote;
   return cached;
+}
+
+/// `is_deleted` is often NULL/0 on older rows. Only explicit true is gone.
+bool isLiveChatMessageRow(Map<String, dynamic> row) {
+  final deleted = row['is_deleted'];
+  if (deleted == true || deleted == 1 || deleted == 'true' || deleted == '1') {
+    return false;
+  }
+  return true;
 }

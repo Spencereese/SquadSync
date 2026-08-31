@@ -36,7 +36,8 @@ class BackgroundSyncService {
         if (kIsWeb ||
             defaultTargetPlatform == TargetPlatform.macOS ||
             defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.linux) {
+            defaultTargetPlatform == TargetPlatform.linux ||
+            (kDebugMode && defaultTargetPlatform == TargetPlatform.iOS)) {
           _logger.i('Workmanager skipped on this platform');
         } else {
           await Workmanager().initialize(
@@ -63,7 +64,12 @@ class BackgroundSyncService {
           }
         }
       } catch (e) {
-        _logger.w('Workmanager not available on this platform: $e');
+        if (isExpectedWorkmanagerSkip(e)) {
+          debugPrint(
+              'Workmanager initialize skipped (simulator/unsupported)');
+        } else {
+          _logger.w('Workmanager not available on this platform: $e');
+        }
       }
 
       // Listen to connectivity changes

@@ -58,32 +58,9 @@ class SQLiteHelper {
     return key;
   }
 
-  Future<Database> _initDatabase() async {
-    try {
-      // Get database path with proper error handling
-      final databasesPath = await getDatabasesPath();
-      debugPrint('📂 Database path: $databasesPath');
-
-      // Ensure directory exists
-      final directory = Directory(databasesPath);
-      if (!await directory.exists()) {
-        debugPrint('📁 Creating database directory...');
-        await directory.create(recursive: true);
-      }
-
-      final path = join(databasesPath, 'lobbiesync.db');
-      debugPrint('💾 Opening database at: $path');
-
-      // Get encryption key
-      final encryptionKey = await _getEncryptionKey();
-
-      // Use sqlcipher for encrypted database
-      return await sqlcipher.openDatabase(
-        path,
-        version: 16, // Clear cache again due to metadata corruption
-        password: encryptionKey,
-        onCreate: (db, version) async {
-          await db.execute('''
+  /// Full v16 schema. Used by first open and cipher-recovery recreate.
+  static Future<void> createFullSchema(Database db) async {
+    await db.execute('''
           CREATE TABLE messages (
             id TEXT PRIMARY KEY,
             sender_id TEXT,
@@ -112,7 +89,7 @@ class SQLiteHelper {
             synced INTEGER DEFAULT 1
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE groups_cache (
             id TEXT PRIMARY KEY,
             game_name TEXT,
@@ -121,14 +98,14 @@ class SQLiteHelper {
             cached_at INTEGER
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE timers (
             key TEXT PRIMARY KEY,
             data TEXT,
             created_at TEXT
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE games_cache (
             id TEXT PRIMARY KEY,
             query TEXT,
@@ -136,13 +113,13 @@ class SQLiteHelper {
             cached_at INTEGER
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE cache_metadata (
             cache_key TEXT PRIMARY KEY,
             cached_at INTEGER
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE voice_rooms_cache (
             room_id TEXT PRIMARY KEY,
             room_name TEXT,
@@ -150,7 +127,7 @@ class SQLiteHelper {
             cached_at TEXT
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE lobbies (
             id TEXT PRIMARY KEY,
             name TEXT,
@@ -169,7 +146,7 @@ class SQLiteHelper {
             updatedAt TEXT
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE chat_groups (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -188,7 +165,7 @@ class SQLiteHelper {
             settings TEXT
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE polls (
             id TEXT PRIMARY KEY,
             question TEXT NOT NULL,
@@ -201,17 +178,44 @@ class SQLiteHelper {
             is_active INTEGER DEFAULT 1
           )
         ''');
-          // Create indexes for better query performance
-          await db.execute(
-              'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
-          await db.execute(
-              'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
-          await db.execute(
-              'CREATE INDEX idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
-          await db.execute(
-              'CREATE INDEX idx_groups_cache ON groups_cache(game_name, search_term)');
-          await db.execute(
-              'CREATE INDEX idx_polls_chat_group ON polls(chat_group_id)');
+    await db.execute(
+        'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
+    await db.execute(
+        'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
+    await db.execute(
+        'CREATE INDEX idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
+    await db.execute(
+        'CREATE INDEX idx_groups_cache ON groups_cache(game_name, search_term)');
+    await db.execute(
+        'CREATE INDEX idx_polls_chat_group ON polls(chat_group_id)');
+  }
+
+  Future<Database> _initDatabase() async {
+    try {
+      // Get database path with proper error handling
+      final databasesPath = await getDatabasesPath();
+      debugPrint('📂 Database path: $databasesPath');
+
+      // Ensure directory exists
+      final directory = Directory(databasesPath);
+      if (!await directory.exists()) {
+        debugPrint('📁 Creating database directory...');
+        await directory.create(recursive: true);
+      }
+
+      final path = join(databasesPath, 'lobbiesync.db');
+      debugPrint('💾 Opening database at: $path');
+
+      // Get encryption key
+      final encryptionKey = await _getEncryptionKey();
+
+      // Use sqlcipher for encrypted database
+      return await sqlcipher.openDatabase(
+        path,
+        version: 16, // Clear cache again due to metadata corruption
+        password: encryptionKey,
+        onCreate: (db, version) async {
+          await createFullSchema(db);
         },
         onUpgrade: (db, oldVersion, newVersion) async {
           if (oldVersion < 2) {
@@ -652,39 +656,7 @@ class SQLiteHelper {
           version: 16,
           password: encryptionKey,
           onCreate: (db, version) async {
-            await db.execute('''
-                CREATE TABLE messages (
-                  id TEXT PRIMARY KEY,
-                  sender_id TEXT,
-                  sender_name TEXT,
-                  timestamp_ms INTEGER,
-                  content TEXT,
-                  text TEXT,
-                  reactions TEXT,
-                  delivered INTEGER,
-                  read INTEGER,
-                  reply_to TEXT,
-                  created_at TEXT,
-                  chat_group_id TEXT,
-                  message_type TEXT,
-                  media_url TEXT,
-                  media_type TEXT,
-                  poll TEXT,
-                  voice_note_url TEXT,
-                  voice_note_duration INTEGER,
-                  ai_response TEXT,
-                  metadata TEXT,
-                  is_edited INTEGER DEFAULT 0,
-                  edited_at TEXT,
-                  is_deleted INTEGER DEFAULT 0,
-                  deleted_at TEXT,
-                  synced INTEGER DEFAULT 1
-                )
-              ''');
-            await db.execute(
-                'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
-            await db.execute(
-                'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
+            await createFullSchema(db);
           },
         );
       } catch (retryError) {

@@ -10,6 +10,7 @@ import '../../services/message_service.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import '../../core/realtime_subscribe.dart';
+import '../../core/chat_messages.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_notifier.dart' as cn;
 
@@ -88,7 +89,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   String? _currentChatGroupId;
   ChatType? _currentChatType;
   int _retryCount = 0;
-  int _channelErrorRetries = 0;
+  int _messagesChannelErrorRetries = 0;
+  int _typingChannelErrorRetries = 0;
   bool _subscribing = false;
   static const int _maxRetries = 3;
   Timer? _retryTimer;
@@ -139,7 +141,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       _currentChatGroupId = chatGroupId;
       _currentChatType = chatType;
       _retryCount = 0;
-      _channelErrorRetries = 0;
+      _messagesChannelErrorRetries = 0;
+      _typingChannelErrorRetries = 0;
     }
 
     await _loadInitialMessages(chatGroupId);
@@ -189,7 +192,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           .from('chat_messages')
           .stream(primaryKey: ['id'])
           .eq('chat_id', chatGroupId)
-          .order('timestamp', ascending: true)
+          .order('created_at', ascending: true)
           .limit(100)
           .listen(
             (data) {
@@ -225,14 +228,15 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       debugPrint('MessageNotifier: non-channel stream error: $error');
     }
     await _disposeOwnRealtime();
-    if (!shouldResubscribeAfterChannelError(_channelErrorRetries)) {
+    if (!shouldResubscribeAfterChannelError(_messagesChannelErrorRetries)) {
       debugPrint(
-          'MessageNotifier: channel dead after $kMaxRealtimeResubscribe resubscribe; not swallowing');
+          'MessageNotifier: channel dead after $kMaxRealtimeResubscribe resubscribe; degraded fallback');
+      _startFallbackMessagesStream(chatGroupId, chatType);
       return;
     }
-    _channelErrorRetries++;
+    _messagesChannelErrorRetries++;
     debugPrint(
-        'MessageNotifier: resubscribing live channel (attempt $_channelErrorRetries)');
+        'MessageNotifier: resubscribing live channel (attempt $_messagesChannelErrorRetries)');
     await _startSupabaseMessagesStream(chatGroupId, chatType);
   }
 
@@ -250,10 +254,11 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         .from('chat_messages')
         .stream(primaryKey: ['id'])
         .eq('chat_id', chatGroupId)
-        .order('timestamp', ascending: true)
+        .order('created_at', ascending: true)
         .limit(100)
-        .map((messages) =>
-            messages.where((msg) => msg['is_deleted'] != true).toList());
+        .map((messages) => messages
+            .where((msg) => isLiveChatMessageRow(Map<String, dynamic>.from(msg)))
+            .toList());
 
     _messagesSubscription = stream.listen(
       (data) {
@@ -273,10 +278,12 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         debugPrint(
             'MessageNotifier: RealtimeSubscribeException received: ${data.status}');
         if (isDeadRealtimeStatus(data.status)) {
-          debugPrint(
-              'MessageNotifier: Channel error in snapshot; resubscribe owns this');
+          final type = _currentChatType;
+          if (type != null) {
+            await _recoverDeadMessagesChannel(data, chatGroupId, type);
+          }
         }
-        return; // Don't process further, error already logged
+        return;
       }
 
       // CRITICAL: Accept dynamic and safely cast to avoid signature-level cast errors
@@ -831,13 +838,13 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
             await SupabaseService.safeRemoveChannel(_typingChannel!);
             _typingChannel = null;
           }
-          if (shouldResubscribeAfterChannelError(_channelErrorRetries)) {
-            _channelErrorRetries++;
+          if (shouldResubscribeAfterChannelError(_typingChannelErrorRetries)) {
+            _typingChannelErrorRetries++;
             debugPrint('MessageNotifier: resubscribing typing channel');
             await _initializeTypingChannel(chatGroupId);
           } else {
             debugPrint(
-                'MessageNotifier: typing channel dead after resubscribe');
+                'MessageNotifier: typing channel dead after resubscribe; degraded');
           }
         }
       });

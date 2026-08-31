@@ -105,6 +105,15 @@ class ReactionConverter
   }
 }
 
+/// PostgREST/SQLite may send 0/1/'true' instead of bool.
+bool? _asBoolish(Object? value) {
+  if (value == null) return null;
+  if (value is bool) return value;
+  if (value == 1 || value == '1' || value == 'true') return true;
+  if (value == 0 || value == '0' || value == 'false') return false;
+  return null;
+}
+
 enum MessageType {
   text,
   image,
@@ -191,12 +200,12 @@ class Message with _$Message {
         aiResponse: json['aiResponse'] ?? json['ai_response'] as String?,
         metadata: safeMetadata,
         clipData: safeClipData,
-        isEdited: (json['isEdited'] ?? json['is_edited']) as bool?,
+        isEdited: _asBoolish(json['isEdited'] ?? json['is_edited']),
         editedAt: (json['editedAt'] ?? json['edited_at']) != null
             ? const TimestampConverter()
                 .fromJson(json['editedAt'] ?? json['edited_at'])
             : null,
-        isDeleted: (json['isDeleted'] ?? json['is_deleted']) as bool?,
+        isDeleted: _asBoolish(json['isDeleted'] ?? json['is_deleted']),
         deletedAt: (json['deletedAt'] ?? json['deleted_at']) != null
             ? const TimestampConverter()
                 .fromJson(json['deletedAt'] ?? json['deleted_at'])

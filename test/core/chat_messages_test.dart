@@ -53,4 +53,51 @@ void main() {
       hasLength(1),
     );
   });
+
+  test('larger remote page wins over a smaller cache', () {
+    final cached = [_msg('c1')];
+    final remote = List.generate(22, (i) => _msg('r$i'));
+    expect(
+      preferRemoteMessagePage(cached: cached, remote: remote),
+      hasLength(22),
+    );
+    expect(
+      preferRemoteMessagePage(
+        cached: [_msg('a'), _msg('b')],
+        remote: [_msg('1'), _msg('2'), _msg('3')],
+      ),
+      hasLength(3),
+    );
+  });
+
+  test('Message.fromJson accepts integer is_deleted', () {
+    final live = Message.fromJson({
+      'id': 'm1',
+      'sender_id': 'u1',
+      'text': 'hello',
+      'timestamp': '2026-01-01T00:00:00Z',
+      'message_type': 'text',
+      'is_deleted': 0,
+    });
+    expect(live.isDeleted, isFalse);
+    final gone = Message.fromJson({
+      'id': 'm2',
+      'sender_id': 'u1',
+      'text': 'bye',
+      'timestamp': '2026-01-01T00:00:00Z',
+      'message_type': 'text',
+      'is_deleted': 1,
+    });
+    expect(gone.isDeleted, isTrue);
+  });
+
+  test('isLiveChatMessageRow treats null/0/false as live', () {
+    expect(isLiveChatMessageRow({}), isTrue);
+    expect(isLiveChatMessageRow({'is_deleted': null}), isTrue);
+    expect(isLiveChatMessageRow({'is_deleted': 0}), isTrue);
+    expect(isLiveChatMessageRow({'is_deleted': false}), isTrue);
+    expect(isLiveChatMessageRow({'is_deleted': true}), isFalse);
+    expect(isLiveChatMessageRow({'is_deleted': 1}), isFalse);
+    expect(isLiveChatMessageRow({'is_deleted': 'true'}), isFalse);
+  });
 }

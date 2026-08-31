@@ -36,6 +36,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   StreamSubscription? _currentLobbySubscription;
   StreamSubscription? _userLobbiesSubscription;
   int _lobbyChannelErrorRetries = 0;
+  String? _currentSubscribedLobbyId;
 
   @override
   Future<LobbyState> build() async {
@@ -160,6 +161,10 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   /// Subscribe to real-time updates for a specific lobby
   void _subscribeToCurrentLobby(String lobbyId) {
+    if (_currentSubscribedLobbyId != lobbyId) {
+      _lobbyChannelErrorRetries = 0;
+      _currentSubscribedLobbyId = lobbyId;
+    }
     _currentLobbySubscription?.cancel();
     _currentLobbySubscription = _repository.getLobbyStream(lobbyId).listen(
       (lobby) {
@@ -1068,6 +1073,8 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       _subscribeToCurrentLobby(lobbyId);
     } else {
       _currentLobbySubscription?.cancel();
+      _currentSubscribedLobbyId = null;
+      _lobbyChannelErrorRetries = 0;
     }
   }
 

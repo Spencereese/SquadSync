@@ -108,9 +108,7 @@ class SupabaseService {
               await Supabase.instance.client.auth.getClaims();
           final claims =
               claimsResponse.claims.claims; // Access claims map via JwtPayload
-          debugPrint('   JWT Claims: ${claims.keys.toList()}');
-          debugPrint('   User role: ${claims['role']}');
-          debugPrint('   App metadata: ${claims['app_metadata']}');
+          debugPrint('   JWT claim keys: ${claims.keys.toList()}');
         } catch (e) {
           debugPrint('   ⚠️ Failed to get JWT claims: $e');
         }
@@ -242,46 +240,12 @@ class SupabaseService {
     }
   }
 
-  /// Proactively clean up channels approaching rate limit
-  /// Returns number of channels cleaned
-  ///
-  /// Strategy: Remove ALL orphaned channels immediately to prevent buildup
-  /// This is aggressive but necessary for chat-heavy apps
+  /// No-op. Do not nuke sibling typing/lobby/messages/presence channels.
+  /// Cap is enforced by single-subscribe + one recovery.
   static Future<int> cleanupOldChannels() async {
-    if (maybeClient == null) return 0;
-    try {
-      final channels = client.getChannels();
-      final channelCount = channels.length;
-
-      // AGGRESSIVE: Clean up ANY channels found (they shouldn't persist)
-      if (channelCount == 0) {
-        return 0; // No cleanup needed
-      }
-
-      debugPrint(
-          '🧹 AGGRESSIVE cleanup: $channelCount orphaned channels detected');
-
-      // Remove ALL orphaned channels - they should be tracked by subscriptions only
-      int cleaned = 0;
-      for (final channel in channels) {
-        try {
-          await client.removeChannel(channel);
-          cleaned++;
-        } catch (e) {
-          debugPrint('⚠️ Failed to remove channel: $e');
-          // Continue with other channels
-        }
-      }
-
-      if (cleaned > 0) {
-        debugPrint('✅ Aggressively cleaned $cleaned orphaned channels');
-      }
-
-      return cleaned;
-    } catch (e) {
-      debugPrint('⚠️ Error during aggressive cleanup: $e');
-      return 0;
-    }
+    // Never nuke sibling typing/lobby/messages/presence channels.
+    // Cap is enforced by single-subscribe + one recovery, not a wipe.
+    return 0;
   }
 
   /// Dispose of real-time subscriptions

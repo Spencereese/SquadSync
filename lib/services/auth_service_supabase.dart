@@ -296,16 +296,8 @@ class AuthServiceSupabase {
           claimsResponse.claims.claims; // Access claims map via JwtPayload
 
       if (kDebugMode) {
-        _logger.d('🔐 JWT Claims retrieved:');
-        _logger.d('   Role: ${claims['role']}');
-        _logger
-            .d('   User ID: ${claimsResponse.claims.sub}'); // Direct property
-        _logger.d('   Email: ${claims['email']}');
-        _logger.d('   App Metadata: ${claims['app_metadata']}');
-        _logger.d('   User Metadata: ${claims['user_metadata']}');
-
-        // Check expiration
-        final exp = claimsResponse.claims.exp; // Direct property
+        _logger.d('🔐 JWT claims retrieved: ${claims.keys.toList()}');
+        final exp = claimsResponse.claims.exp;
         if (exp != null) {
           final expiryDate = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
           final timeRemaining = expiryDate.difference(DateTime.now());

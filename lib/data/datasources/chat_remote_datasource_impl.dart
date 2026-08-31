@@ -7,6 +7,7 @@ import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/entities/chat_group.dart';
 import 'package:squad_sync/data/datasources/chat_remote_datasource.dart';
 import 'package:squad_sync/services/supabase_service.dart';
+import 'package:squad_sync/core/chat_messages.dart';
 
 class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   final SupabaseClient _supabase = SupabaseService.client;
@@ -57,27 +58,29 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   Future<List<Message>> fetchMessages(String chatGroupId,
       {int limit = 50, DateTime? before}) async {
     // Use filter method for proper query building
+    // Do not .eq('is_deleted', false): older rows are often NULL/0 and
+    // PostgREST drops them. Order by created_at — timestamp is missing
+    // on the same older rows. Filter live rows in Dart.
     final response = before != null
         ? await _supabase
             .from('chat_messages')
             .select()
             .eq('chat_id', chatGroupId)
-            .eq('is_deleted', false)
-            .filter('timestamp', 'lt', before.toIso8601String())
-            .order('timestamp', ascending: true)
+            .filter('created_at', 'lt', before.toIso8601String())
+            .order('created_at', ascending: true)
             .limit(limit)
         : await _supabase
             .from('chat_messages')
             .select()
             .eq('chat_id', chatGroupId)
-            .eq('is_deleted', false)
-            .order('timestamp', ascending: true)
+            .order('created_at', ascending: true)
             .limit(limit);
 
     final messages = <Message>[];
     for (final item in response) {
       try {
         final messageData = Map<String, dynamic>.from(item);
+        if (!isLiveChatMessageRow(messageData)) continue;
 
         // Clean JSONB fields with incompatible data types using the same logic as stream
         for (final key in [
@@ -152,14 +155,14 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     return _supabase
         .from('chat_messages')
         .stream(primaryKey: ['id'])
-        .order('timestamp', ascending: true)
+        .order('created_at', ascending: true)
         .limit(100)
         .map((data) {
           // Filter in Dart since stream builder doesn't support all filters
           final filtered = data
               .where((item) =>
                   item['chat_id'] == chatGroupId &&
-                  (item['is_deleted'] == false || item['is_deleted'] == null))
+                  isLiveChatMessageRow(Map<String, dynamic>.from(item)))
               .toList();
           return filtered.map((item) => Message.fromJson(item)).toList();
         });
@@ -858,12 +861,13 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         .from('chat_messages')
         .select()
         .eq('chat_id', chatGroupId)
-        .eq('is_deleted', false)
-        .gt('timestamp', since.toIso8601String())
-        .order('timestamp', ascending: true);
+        .gt('created_at', since.toIso8601String())
+        .order('created_at', ascending: true);
 
     return (response as List<dynamic>)
-        .map((data) => Message.fromJson(data as Map<String, dynamic>))
+        .map((data) => Map<String, dynamic>.from(data as Map))
+        .where(isLiveChatMessageRow)
+        .map(Message.fromJson)
         .toList();
   }
 

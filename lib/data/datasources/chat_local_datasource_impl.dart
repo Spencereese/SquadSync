@@ -198,7 +198,8 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
 
   @override
   Future<List<ChatGroup>> getCachedChatGroups() async {
-    final db = await _sqliteHelper.database;
+    final db = await _openCache();
+    if (db == null) return [];
     final maps = await db.query('chat_groups');
 
     return maps
@@ -212,7 +213,7 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
               createdAt: DateTime.parse(map['created_at'] as String),
               description: map['description'] as String?,
               avatarUrl: map['avatar_url'] as String?,
-              metadata: map['metadata'] as Map<String, dynamic>?,
+              metadata: decodeSqliteMap(map['metadata']),
               admins: map['admins'] != null
                   ? (map['admins'] as String).split(',')
                   : null,
@@ -223,7 +224,7 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
               lastActivity: map['last_activity'] != null
                   ? DateTime.parse(map['last_activity'] as String)
                   : null,
-              settings: map['settings'] as Map<String, dynamic>?,
+              settings: decodeSqliteMap(map['settings']),
             ))
         .toList();
   }

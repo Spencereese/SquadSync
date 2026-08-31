@@ -18,6 +18,25 @@ void main() {
     expect(decoded['empty'], isEmpty);
   });
 
+  test('encode then decodeSqliteMap returns a Map', () {
+    final nested = {
+      'theme': 'dark',
+      'flags': {'muted': true},
+    };
+    final encoded = encodeSqliteCell(nested);
+    expect(encoded, isA<String>());
+    final decoded = decodeSqliteMap(encoded);
+    expect(decoded, isA<Map<String, dynamic>>());
+    expect(decoded!['theme'], 'dark');
+    expect(decoded['flags'], {'muted': true});
+  });
+
+  test('decodeSqliteMap accepts an already-decoded Map', () {
+    expect(decodeSqliteMap({'a': 1}), {'a': 1});
+    expect(decodeSqliteMap(null), isNull);
+    expect(decodeSqliteMap(''), isNull);
+  });
+
   test('scalars pass through', () {
     expect(encodeSqliteCell('plain'), 'plain');
     expect(encodeSqliteCell(3), 3);

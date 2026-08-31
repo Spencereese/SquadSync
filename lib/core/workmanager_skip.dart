@@ -3,6 +3,7 @@ bool isExpectedWorkmanagerSkip(Object error) {
   final text = error.toString().toLowerCase();
   return text.contains('simulator') ||
       text.contains('not implemented') ||
+      text.contains('unhandledmethod') ||
       text.contains('missingpluginexception') ||
       text.contains('unregistered') ||
       text.contains('channel-error') ||

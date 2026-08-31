@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 void main() {
   test('seven sibling channels are not a nuke-all', () {
     expect(shouldNukeAllRealtimeChannels(7), isFalse);
-    expect(shouldNukeAllRealtimeChannels(81), isTrue);
+    expect(shouldNukeAllRealtimeChannels(81), isFalse);
   });
 
   test('channelError recovers once then stops', () {
@@ -36,6 +36,7 @@ void main() {
       isExpectedWorkmanagerSkip('MissingPluginException(No implementation found)'),
       isTrue,
     );
+    expect(isExpectedWorkmanagerSkip('unhandledMethod'), isTrue);
     expect(isExpectedWorkmanagerSkip('disk full'), isFalse);
   });
 }

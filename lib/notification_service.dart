@@ -101,7 +101,7 @@ class NotificationService {
 
     try {
       final token = await _messaging.getToken();
-      developer.log('FCM Token: $token');
+      developer.log('FCM token ${token != null ? "received" : "unavailable"}');
       final user = AuthServiceSupabase().currentUser;
       if (user != null && token != null) {
         await SupabaseService.client.from('users').update({
@@ -112,7 +112,7 @@ class NotificationService {
       developer.log('FCM token unavailable (expected on simulator): $e');
     }
     _messaging.onTokenRefresh.listen((newToken) async {
-      developer.log('New FCM Token: $newToken');
+      developer.log('FCM token refreshed');
       try {
         final currentUser = AuthServiceSupabase().currentUser;
         if (currentUser != null) {

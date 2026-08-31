@@ -3,11 +3,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Same cap as [kMaxChatRateLimitRetries] — one recovery subscribe.
 const kMaxRealtimeResubscribe = 1;
 
-/// Only nuke-all when we are actually near the client channel cap.
-/// Seven live sibling channels (lobby/typing/messages/presence/badges)
-/// are normal — do not treat that as orphaned.
+/// Never nuke sibling typing/lobby/messages/presence/badges channels.
+/// Cap is enforced by single-subscribe + one recovery, not a wipe.
 bool shouldNukeAllRealtimeChannels(int activeChannelCount) {
-  return activeChannelCount > 80;
+  return false;
 }
 
 /// One recovery subscribe after a dead channel. Do not loop.

@@ -163,7 +163,6 @@ class JwtValidator {
 
     debugPrint('🔐 JWT Token Info:');
     debugPrint('   User ID: ${claims['sub']}');
-    debugPrint('   Email: ${claims['email']}');
     debugPrint('   Role: ${claims['role']}');
     debugPrint('   Expires in: ${getTimeUntilExpiry()} seconds');
     debugPrint('   Should refresh: ${shouldRefreshToken()}');

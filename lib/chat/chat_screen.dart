@@ -236,9 +236,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           )) {
             return;
           }
-          ref
-              .read(cn.chatNotifierProvider.notifier)
-              .initializeChat(chatGroupId, widget.chatType);
+          _resetInitializationServiceFlags();
+          _scheduleChatStart(
+            chatGroupId,
+            _initializationServiceGeneration,
+          );
         });
       } else if (errorMsg.contains('channelError')) {
         errorMsg = 'Connection issue. Chat will work with limited features.';

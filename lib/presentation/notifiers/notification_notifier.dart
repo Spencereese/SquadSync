@@ -99,7 +99,9 @@ bool shouldRunInitializationService({
   );
 }
 
-/// Rate-limit delayed initializeChat must not outrank a newer lobby.
+/// Rate-limit delayed re-init must not outrank a newer lobby.
+/// When this returns true, ChatScreen replays scheduleChatStart
+/// (notifier + ChatInitializationService), not a raw initializeChat.
 bool shouldContinueDelayedChatReinit({
   required bool isMounted,
   required String scheduledId,

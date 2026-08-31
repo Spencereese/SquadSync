@@ -256,6 +256,8 @@ void main() {
   });
 
   test('delayed rate-limit re-init is abandoned after a lobby switch', () {
+    // Gate only. ChatScreen then calls _scheduleChatStart (notifier +
+    // ChatInitializationService), not a raw initializeChat.
     expect(
       shouldContinueDelayedChatReinit(
         isMounted: true,
@@ -458,6 +460,8 @@ void main() {
     expect(attempts, 2);
   });
 
+  // Pattern harness: mirrors ChatScreen._runInitializationService catch +
+  // addPostFrameCallback. Does not mount ChatScreen (Provider/Supabase).
   testWidgets(
       'throw bail post-frame retry runs after scheduleFrame and pump',
       (tester) async {
@@ -730,8 +734,9 @@ class _ThrowRetryHarnessState extends State<_ThrowRetryHarness> {
   Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
-/// Same catch path as ChatScreen._runInitializationService: one snack,
-/// then WidgetsBinding.addPostFrameCallback for a single retry.
+/// Pattern harness for ChatScreen._runInitializationService catch:
+/// one snack, then addPostFrameCallback for a single retry.
+/// Does not mount ChatScreen.
 class _ThrowRetryPostFrameHarness extends StatefulWidget {
   const _ThrowRetryPostFrameHarness({
     super.key,

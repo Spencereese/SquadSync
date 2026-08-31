@@ -386,8 +386,10 @@ void main() {
         ),
       ),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      key.currentState!.runInit();
+    });
     await tester.pump();
-    key.currentState!.runInit();
     expect(attempts, 1);
     expect(snacks, ['Could not finish opening chat']);
     expect(key.currentState!.bail, ChatInitBail.hardFailure);

@@ -47,13 +47,79 @@ bool shouldStartChatInitialization({
       nextThreadId.isNotEmpty;
 }
 
-/// Re-run ChatInitializationService after it bailed on a missing lobby.
+/// Why ChatInitializationService stopped before completing.
+enum ChatInitBail { none, nullSquad, hardFailure }
+
+/// Re-run after a null-squad wait, or one bounded hard-failure retry.
 bool shouldRetryChatInitializationService({
   required bool serviceCompleted,
-  required bool bailedOnNullSquad,
+  required ChatInitBail bail,
   required bool squadStateAvailable,
+  required int hardFailureRetries,
+  int maxHardFailureRetries = 1,
 }) {
-  return !serviceCompleted && bailedOnNullSquad && squadStateAvailable;
+  if (serviceCompleted) return false;
+  switch (bail) {
+    case ChatInitBail.nullSquad:
+      return squadStateAvailable;
+    case ChatInitBail.hardFailure:
+      return hardFailureRetries < maxHardFailureRetries;
+    case ChatInitBail.none:
+      return false;
+  }
+}
+
+bool shouldShowInitFailureSnackBar(int hardFailureRetries) =>
+    hardFailureRetries == 0;
+
+/// Ignore in-flight init that finished after a lobby switch.
+bool shouldCommitInitializationCompletion({
+  required String finishingId,
+  required int finishingGeneration,
+  required String? currentRegisteredId,
+  required int currentGeneration,
+}) {
+  return finishingId == currentRegisteredId &&
+      finishingGeneration == currentGeneration;
+}
+
+bool shouldRunInitializationService({
+  required String requestedId,
+  required int requestedGeneration,
+  required String? currentRegisteredId,
+  required int currentGeneration,
+  required bool alreadyCompleted,
+}) {
+  if (alreadyCompleted) return false;
+  return shouldCommitInitializationCompletion(
+    finishingId: requestedId,
+    finishingGeneration: requestedGeneration,
+    currentRegisteredId: currentRegisteredId,
+    currentGeneration: currentGeneration,
+  );
+}
+
+bool shouldCleanupPreviousThreadChannels({
+  required String? previousId,
+  required String? nextId,
+}) {
+  return previousId != null &&
+      previousId.isNotEmpty &&
+      nextId != null &&
+      nextId != previousId;
+}
+
+/// Nuke-all only when every channel topic failed to read.
+enum ChannelCleanupMode { scoped, nukeAll }
+
+ChannelCleanupMode channelCleanupMode({
+  required int readableTopicCount,
+  required int unreadableTopicCount,
+}) {
+  if (readableTopicCount == 0 && unreadableTopicCount > 0) {
+    return ChannelCleanupMode.nukeAll;
+  }
+  return ChannelCleanupMode.scoped;
 }
 
 /// Re-run name/image/settings/draft when the mounted ChatScreen switches thread.
@@ -66,18 +132,23 @@ bool shouldRefreshChatInitializationOnNewThread({
 
 /// Chat/presence/typing/message topics for [threadId].
 /// [topic] may be `realtime:presence:<id>` or `presence:<id>`.
+/// Matches the segment after the marker, not a substring of the id.
 bool isChatThreadChannelTopic(String topic, String? threadId) {
   final name = topic.toLowerCase().replaceFirst(RegExp(r'^realtime:'), '');
-  const markers = [
-    'presence:',
-    'typing:',
-    'typing_',
-    'messages_',
-    'messages:',
-  ];
-  if (!markers.any(name.startsWith)) return false;
+  const colonMarkers = ['presence:', 'typing:', 'messages:'];
+  const underscoreMarkers = ['typing_', 'messages_'];
+  final isChatTopic = colonMarkers.any(name.startsWith) ||
+      underscoreMarkers.any(name.startsWith);
+  if (!isChatTopic) return false;
   if (threadId == null || threadId.isEmpty) return true;
-  return name.contains(threadId.toLowerCase());
+  final id = threadId.toLowerCase();
+  for (final marker in colonMarkers) {
+    if (name == '$marker$id') return true;
+  }
+  for (final marker in underscoreMarkers) {
+    if (name == '$marker$id') return true;
+  }
+  return false;
 }
 
 /// Riverpod notifier for managing notifications with Supabase real-time subscriptions

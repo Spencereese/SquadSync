@@ -33,6 +33,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   // Presence tracking
   RealtimeChannel? _presenceChannel;
   String? _currentChatGroupId;
+  int _initializeChatEpoch = 0;
   ChatType? _currentChatType;
 
   @override
@@ -171,8 +172,10 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   /// Initialize chat for a specific group
   /// Delegates message streaming to MessageNotifier
   Future<void> initializeChat(String chatGroupId, ChatType chatType) async {
+    final epoch = ++_initializeChatEpoch;
     try {
       await future;
+      if (epoch != _initializeChatEpoch) return;
 
       // AGGRESSIVE cleanup if approaching limit
       if (SupabaseService.activeChannelCount > 80) {
@@ -185,20 +188,24 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
 
         // Give Supabase time to process removals
         await Future.delayed(const Duration(milliseconds: 500));
+        if (epoch != _initializeChatEpoch) return;
       }
 
       if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
         await _disposePresenceChannel();
+        if (epoch != _initializeChatEpoch) return;
         _currentChatGroupId = chatGroupId;
         _currentChatType = chatType;
       }
 
       // Initialize presence tracking (await to ensure channel cleanup)
       await _initializePresenceChannel(chatGroupId);
+      if (epoch != _initializeChatEpoch) return;
 
       // Initialize message streaming via MessageNotifier
       final messageNotifier = ref.read(messageNotifierProvider.notifier);
       await messageNotifier.initializeMessagesStream(chatGroupId, chatType);
+      if (epoch != _initializeChatEpoch) return;
     } on RealtimeSubscribeException catch (e, stackTrace) {
       debugPrint(
           '❌ ChatNotifier: RealtimeSubscribeException during init: ${e.status}');
@@ -215,6 +222,8 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       // User will see cached messages but real-time updates may be degraded
     }
 
+    if (epoch != _initializeChatEpoch) return;
+
     // Load active polls via MediaNotifier (polls are stored in chat_messages.poll JSONB, not separate table)
     // Skip for now as polls table doesn't exist
     try {
@@ -225,6 +234,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
           '⚠️ Skipping polls loading (polls stored in chat_messages): $e');
     }
 
+    if (epoch != _initializeChatEpoch) return;
     // Update selected chat group in state
     await selectChatGroup(chatGroupId);
   }

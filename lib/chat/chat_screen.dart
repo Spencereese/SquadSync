@@ -103,7 +103,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   String? _registeredActiveChatGroupId;
   String? _typingListenerChatGroupId;
   bool _initializationServiceCompleted = false;
-  bool _initializationServiceBailed = false;
+  ChatInitBail _initializationServiceBail = ChatInitBail.none;
+  int _initializationServiceGeneration = 0;
+  int _initializationHardFailureRetries = 0;
 
   // CRITICAL: Cached state to prevent build() from watching providers
   // This stops disposal loops from keyboard/focus/MediaQuery changes
@@ -148,7 +150,15 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
     final isNewId = id != null && id != _registeredActiveChatGroupId;
     if (isNewId) {
+      final previousId = _registeredActiveChatGroupId;
+      if (shouldCleanupPreviousThreadChannels(
+        previousId: previousId,
+        nextId: id,
+      )) {
+        _cleanupChatChannels(threadId: previousId);
+      }
       _registeredActiveChatGroupId = id;
+      _initializationServiceGeneration++;
       notifier.setActiveChatGroup(id);
       _bindTypingListener(id);
       if (shouldStartChatInitialization(
@@ -156,17 +166,23 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         nextThreadId: id,
       )) {
         _hasInitializedChat = true;
-        _scheduleChatStart(id);
+        _resetInitializationServiceFlags();
+        _scheduleChatStart(id, _initializationServiceGeneration);
       } else if (shouldRefreshChatInitializationOnNewThread(
         alreadyInitialized: _hasInitializedChat,
         isNewId: true,
       )) {
-        _initializationServiceCompleted = false;
-        _initializationServiceBailed = false;
-        _scheduleChatStart(id);
+        _resetInitializationServiceFlags();
+        _scheduleChatStart(id, _initializationServiceGeneration);
       }
     }
     _retryInitializationServiceIfNeeded();
+  }
+
+  void _resetInitializationServiceFlags() {
+    _initializationServiceCompleted = false;
+    _initializationServiceBail = ChatInitBail.none;
+    _initializationHardFailureRetries = 0;
   }
 
   void _bindTypingListener(String chatGroupId) {
@@ -179,21 +195,33 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  void _scheduleChatStart(String chatGroupId) {
+  void _scheduleChatStart(String chatGroupId, int generation) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _startNotifierChat(chatGroupId);
-      _runInitializationService(chatGroupId);
+      if (generation != _initializationServiceGeneration ||
+          chatGroupId != _registeredActiveChatGroupId) {
+        return;
+      }
+      _startNotifierChat(chatGroupId, generation);
+      _runInitializationService(chatGroupId, generation);
     });
   }
 
-  void _startNotifierChat(String chatGroupId) {
+  void _startNotifierChat(String chatGroupId, int generation) {
+    if (generation != _initializationServiceGeneration ||
+        chatGroupId != _registeredActiveChatGroupId) {
+      return;
+    }
     ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
     ref
         .read(cn.chatNotifierProvider.notifier)
         .initializeChat(chatGroupId, widget.chatType)
         .catchError((error) {
-      if (!mounted) return;
+      if (!mounted ||
+          generation != _initializationServiceGeneration ||
+          chatGroupId != _registeredActiveChatGroupId) {
+        return;
+      }
       String errorMsg = error.toString();
       if (errorMsg.contains('ChannelRateLimitReached')) {
         errorMsg = 'Too many connections. Cleaning up...';
@@ -230,8 +258,20 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     });
   }
 
-  Future<void> _runInitializationService(String chatGroupId) async {
-    if (!mounted || _initializationServiceCompleted) return;
+  Future<void> _runInitializationService(
+    String chatGroupId,
+    int generation,
+  ) async {
+    if (!mounted) return;
+    if (!shouldRunInitializationService(
+      requestedId: chatGroupId,
+      requestedGeneration: generation,
+      currentRegisteredId: _registeredActiveChatGroupId,
+      currentGeneration: _initializationServiceGeneration,
+      alreadyCompleted: _initializationServiceCompleted,
+    )) {
+      return;
+    }
     try {
       final ran = await _initializationService.initializeChat(
         context: context,
@@ -258,19 +298,54 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         squadState: _cachedSquadState,
       );
       if (!mounted) return;
+      if (!shouldCommitInitializationCompletion(
+        finishingId: chatGroupId,
+        finishingGeneration: generation,
+        currentRegisteredId: _registeredActiveChatGroupId,
+        currentGeneration: _initializationServiceGeneration,
+      )) {
+        return;
+      }
       if (ran) {
         _initializationServiceCompleted = true;
-        _initializationServiceBailed = false;
+        _initializationServiceBail = ChatInitBail.none;
+        _initializationHardFailureRetries = 0;
       } else {
-        _initializationServiceBailed = true;
+        _initializationServiceBail = ChatInitBail.nullSquad;
       }
     } catch (e) {
       debugPrint('ChatInitializationService failed: $e');
-      _initializationServiceBailed = true;
-      if (mounted) {
+      if (!shouldCommitInitializationCompletion(
+        finishingId: chatGroupId,
+        finishingGeneration: generation,
+        currentRegisteredId: _registeredActiveChatGroupId,
+        currentGeneration: _initializationServiceGeneration,
+      )) {
+        return;
+      }
+      _initializationServiceBail = ChatInitBail.hardFailure;
+      if (shouldShowInitFailureSnackBar(_initializationHardFailureRetries) &&
+          mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not finish opening chat')),
         );
+      }
+      final shouldRetry = shouldRetryChatInitializationService(
+        serviceCompleted: false,
+        bail: ChatInitBail.hardFailure,
+        squadStateAvailable: _cachedSquadState != null,
+        hardFailureRetries: _initializationHardFailureRetries,
+      );
+      _initializationHardFailureRetries++;
+      if (shouldRetry) {
+        final id = threadChatGroupId;
+        if (id != null) {
+          final retryGeneration = _initializationServiceGeneration;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _runInitializationService(id, retryGeneration);
+          });
+        }
       }
     }
   }
@@ -278,17 +353,21 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   void _retryInitializationServiceIfNeeded() {
     if (!shouldRetryChatInitializationService(
       serviceCompleted: _initializationServiceCompleted,
-      bailedOnNullSquad: _initializationServiceBailed,
+      bail: _initializationServiceBail,
       squadStateAvailable: _cachedSquadState != null,
+      hardFailureRetries: _initializationHardFailureRetries,
     )) {
       return;
     }
     final id = threadChatGroupId;
     if (id == null) return;
-    _initializationServiceBailed = false;
+    if (_initializationServiceBail == ChatInitBail.nullSquad) {
+      _initializationServiceBail = ChatInitBail.none;
+    }
+    final generation = _initializationServiceGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _runInitializationService(id);
+      _runInitializationService(id, generation);
     });
   }
 
@@ -558,24 +637,31 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     try {
       final channels = SupabaseService.client.getChannels();
       final scoped = <RealtimeChannel>[];
-      var topicsReadable = true;
+      var readable = 0;
+      var unreadable = 0;
       for (final channel in channels) {
         final topic = _realtimeChannelTopic(channel);
         if (topic == null) {
-          topicsReadable = false;
-          break;
+          unreadable++;
+          continue;
         }
+        readable++;
         if (isChatThreadChannelTopic(topic, threadId)) {
           scoped.add(channel);
         }
       }
-      final toRemove = topicsReadable ? scoped : channels;
-      if (!topicsReadable) {
+      final mode = channelCleanupMode(
+        readableTopicCount: readable,
+        unreadableTopicCount: unreadable,
+      );
+      final toRemove =
+          mode == ChannelCleanupMode.nukeAll ? channels : scoped;
+      if (mode == ChannelCleanupMode.nukeAll) {
         debugPrint(
             '🧹 Channel topics unavailable; removing all ${channels.length} channels');
       } else {
         debugPrint(
-            '🧹 Removing ${toRemove.length} chat channels for $threadId');
+            '🧹 Removing ${toRemove.length} chat channels for $threadId (skipped $unreadable unread)');
       }
       for (final channel in toRemove) {
         SupabaseService.safeRemoveChannel(channel);
@@ -590,7 +676,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     try {
       // ignore: invalid_use_of_internal_member
       final topic = channel.topic;
-      if (topic is String && topic.isNotEmpty) return topic;
+      if (topic.isNotEmpty) return topic;
     } catch (e) {
       debugPrint('Channel topic unread: $e');
     }

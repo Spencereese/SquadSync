@@ -16,6 +16,8 @@ import UserNotifications
     // The example GoogleService-Info.plist uses YOUR_ placeholders and has
     // no real APNs/FCM identity. Firebase Messaging registers after the
     // in-app permission prompt once a real plist is in place.
+    // UIScene plugin deprecations: parked. Flutter still uses
+    // FlutterAppDelegate; no UIApplicationSceneManifest rewrite.
     if !Self.hasRealFirebasePlist() {
       NSLog("Cod Squad: skipping APNs registration (placeholder GoogleService-Info)")
     }

@@ -79,6 +79,16 @@ void main() async {
     rethrow;
   }
 
+  try {
+    if (!di.getIt.isRegistered<AutoMergeService>()) {
+      di.getIt.registerSingleton<AutoMergeService>(AutoMergeService());
+    }
+    di.getIt<AutoMergeService>().startMergeDetection();
+    debugPrint('Auto-merge service initialized');
+  } catch (e) {
+    debugPrint('Auto-merge service initialization failed: $e');
+  }
+
   // Note: Native splash will be removed by app_widgets.dart after Flutter content is ready
   // DO NOT call FlutterNativeSplash.remove() here - it removes splash too early
 
@@ -144,17 +154,7 @@ Future<void> _initializeFirebase() async {
     // This is called after login in AuthServiceSupabase
     // PeacockNotificationService.initialize() is called when user signs in
 
-    // Initialize auto-merge service for lobby merge suggestions
-    try {
-      final autoMergeService = di.getIt<AutoMergeService>();
-      autoMergeService.startMergeDetection();
-      debugPrint('Auto-merge service initialized');
-    } catch (e) {
-      debugPrint('Auto-merge service initialization failed: $e');
-      // Continue without auto-merge - not critical
-    }
-
-    // Dependency injection is already done before this function is called
+    // Auto-merge starts after GetIt setup in main() — not here.
     // Remove duplicate call to avoid issues
     // await di.setupInjection();
     // debugPrint('Dependency injection initialized');

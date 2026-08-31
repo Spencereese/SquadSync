@@ -99,21 +99,29 @@ class NotificationService {
     FirebaseMessaging.onMessageOpenedApp.listen(_handleMessage);
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-    final token = await _messaging.getToken();
-    developer.log('FCM Token: $token');
-    final user = AuthServiceSupabase().currentUser;
-    if (user != null && token != null) {
-      await SupabaseService.client.from('users').update({
-        'fcm_token': token,
-      }).eq('uid', user.id);
+    try {
+      final token = await _messaging.getToken();
+      developer.log('FCM Token: $token');
+      final user = AuthServiceSupabase().currentUser;
+      if (user != null && token != null) {
+        await SupabaseService.client.from('users').update({
+          'fcm_token': token,
+        }).eq('uid', user.id);
+      }
+    } catch (e) {
+      developer.log('FCM token unavailable (expected on simulator): $e');
     }
     _messaging.onTokenRefresh.listen((newToken) async {
       developer.log('New FCM Token: $newToken');
-      final currentUser = AuthServiceSupabase().currentUser;
-      if (currentUser != null) {
-        await SupabaseService.client.from('users').update({
-          'fcm_token': newToken,
-        }).eq('uid', currentUser.id);
+      try {
+        final currentUser = AuthServiceSupabase().currentUser;
+        if (currentUser != null) {
+          await SupabaseService.client.from('users').update({
+            'fcm_token': newToken,
+          }).eq('uid', currentUser.id);
+        }
+      } catch (e) {
+        developer.log('FCM token refresh store skipped: $e');
       }
     });
 

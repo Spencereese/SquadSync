@@ -6,7 +6,6 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -126,8 +125,8 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
       return;
     }
     await GoogleSignIn.instance.initialize(
-      clientId: dotenv.env['GOOGLE_IOS_CLIENT_ID'],
-      serverClientId: dotenv.env['GOOGLE_WEB_CLIENT_ID'],
+      clientId: GoogleAuthConfig.iosClientId,
+      serverClientId: GoogleAuthConfig.webClientId,
     );
     _googleInitialized = true;
   }

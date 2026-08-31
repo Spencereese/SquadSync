@@ -45,20 +45,17 @@
 		<true/>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
-		<!-- Google Sign-In (Spencer — local only, do not commit real IDs):
-		     1. Drop the real gitignored GoogleService-Info.plist into ios/Runner/.
-		     2. Copy CLIENT_ID → GIDClientID below.
-		     3. Copy REVERSED_CLIENT_ID into the google.sign.in URL scheme.
-		     4. Put the same CLIENT_ID in .env as GOOGLE_IOS_CLIENT_ID.
-		     Leave YOUR_ placeholders in git. Dart fails closed while they remain. -->
+		<!-- Google Sign-In: CLIENT_ID / REVERSED_CLIENT_ID from
+		     ios/Runner/GoogleService-Info.plist (gitignored). Production FCM
+		     still needs that real plist; the example copy is placeholders only. -->
 		<key>GIDClientID</key>
-		<string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
+		<string>756172684661-99ecq9sd74qvt9ufs28os52j9g33h1v9.apps.googleusercontent.com</string>
 		<!-- URL schemes:
 		     codsquadapp — in-app deep links (join, chat).
 		     com.example.codSquadApp — Supabase Auth redirect
 		       (com.example.codSquadApp://auth-callback). Replaces leftover
 		       com.squadsync.app. Register that redirect in Supabase.
-		     google.sign.in — reversed iOS client ID (YOUR_ placeholder in git). -->
+		     google.sign.in — REVERSED_CLIENT_ID from GoogleService-Info.plist. -->
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>
@@ -88,7 +85,7 @@
 				<string>google.sign.in</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
-					<string>com.googleusercontent.apps.YOUR_IOS_CLIENT_ID</string>
+					<string>com.googleusercontent.apps.756172684661-99ecq9sd74qvt9ufs28os52j9g33h1v9</string>
 				</array>
 			</dict>
 		</array>

@@ -8,11 +8,11 @@ import 'package:squad_sync/presentation/notifiers/notification_notifier.dart';
 void main() {
   testWidgets('setActiveChatGroup write is deferred off the build frame',
       (tester) async {
-    var wrote = false;
-    scheduleProviderWriteAfterBuild(() => wrote = true);
-    expect(wrote, isFalse);
-    await tester.pump();
-    expect(wrote, isTrue);
+    final key = GlobalKey<_DeferWriteHarnessState>();
+    await tester.pumpWidget(_DeferWriteHarness(key: key, onWrite: () {}));
+    final state = key.currentState!;
+    expect(state.wroteDuringBuild, isFalse);
+    expect(state.wroteAfterSchedule, isTrue);
   });
 
   test('skips only when the open thread matches the incoming group', () {
@@ -918,4 +918,33 @@ class _RateLimitRetryHarnessState extends State<_RateLimitRetryHarness> {
 
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+class _DeferWriteHarness extends StatefulWidget {
+  const _DeferWriteHarness({super.key, required this.onWrite});
+
+  final VoidCallback onWrite;
+
+  @override
+  State<_DeferWriteHarness> createState() => _DeferWriteHarnessState();
+}
+
+class _DeferWriteHarnessState extends State<_DeferWriteHarness> {
+  var wroteAfterSchedule = false;
+  var wroteDuringBuild = true;
+
+  @override
+  void initState() {
+    super.initState();
+    scheduleProviderWriteAfterBuild(() {
+      wroteAfterSchedule = true;
+      widget.onWrite();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    wroteDuringBuild = wroteAfterSchedule;
+    return const SizedBox.shrink();
+  }
 }

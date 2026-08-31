@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'app_env.dart';
+
 /// Google Sign-In client IDs. `.env` wins when filled; otherwise the
 /// project's public Firebase OAuth clients (same as GoogleService-Info
 /// CLIENT_ID / android web client_type 3). Production FCM still needs
@@ -16,11 +18,15 @@ class GoogleAuthConfig {
   static const bundledWebClientId =
       '756172684661-pv3rscsdd548cb5r6orrs6u2bvu1oi6e.apps.googleusercontent.com';
 
-  static String? get iosClientId =>
-      _preferFilled(dotenv.env['GOOGLE_IOS_CLIENT_ID'], bundledIosClientId);
+  static String? get iosClientId => _preferFilled(
+        AppEnv.get('GOOGLE_IOS_CLIENT_ID') ?? dotenv.env['GOOGLE_IOS_CLIENT_ID'],
+        bundledIosClientId,
+      );
 
-  static String? get webClientId =>
-      _preferFilled(dotenv.env['GOOGLE_WEB_CLIENT_ID'], bundledWebClientId);
+  static String? get webClientId => _preferFilled(
+        AppEnv.get('GOOGLE_WEB_CLIENT_ID') ?? dotenv.env['GOOGLE_WEB_CLIENT_ID'],
+        bundledWebClientId,
+      );
 
   static String? _preferFilled(String? envValue, String bundled) {
     if (!isPlaceholder(envValue)) return envValue;

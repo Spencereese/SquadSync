@@ -12,6 +12,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/app_env.dart';
 import 'core/app_theme.dart';
 import 'core/email_auth.dart';
 import 'core/google_auth_config.dart';
@@ -40,6 +41,13 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
     super.dispose();
   }
 
+  bool _guardSupabaseReady() {
+    if (AppEnv.isSupabaseConfigured) return true;
+    debugPrint('Auth skipped; SUPABASE_URL=${AppEnv.supabaseUrl}');
+    _showSnackBar(EmailAuth.unavailableMessage);
+    return false;
+  }
+
   bool _hasEmailPassword() {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -52,6 +60,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
 
   Future<void> _handleEmailSignIn() async {
     if (!_hasEmailPassword()) return;
+    if (!_guardSupabaseReady()) return;
 
     setState(() => _isLoading = true);
     try {
@@ -84,6 +93,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
 
   Future<void> _handleEmailCreateAccount() async {
     if (!_hasEmailPassword()) return;
+    if (!_guardSupabaseReady()) return;
 
     setState(() => _isLoading = true);
     try {
@@ -132,6 +142,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   }
 
   Future<void> _handleGoogleSignIn() async {
+    if (!_guardSupabaseReady()) return;
     if (!GoogleAuthConfig.canAttemptSignIn) {
       _showSnackBar(GoogleAuthConfig.notConfiguredMessage);
       return;

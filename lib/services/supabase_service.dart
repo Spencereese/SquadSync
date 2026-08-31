@@ -1,8 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io' show Platform;
 
+import '../core/app_env.dart';
 import '../core/auth_redirect.dart';
 
 /// Supabase service for SquadSync
@@ -46,13 +46,16 @@ class SupabaseService {
   ///
   /// Supabase 2.12.0+ supports idempotent initialization - safe to call multiple times
   static Future<void> initialize() async {
-    // Load credentials from environment variables
-    final supabaseUrl = dotenv.env['SUPABASE_URL'];
-    final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
+    final supabaseUrl = AppEnv.supabaseUrl;
+    final supabaseAnonKey = AppEnv.supabaseAnonKey;
 
-    if (supabaseUrl == null || supabaseAnonKey == null) {
-      throw Exception(
-          'SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env file');
+    if (!AppEnv.isSupabaseConfigured) {
+      debugPrint(
+        'Supabase initialize skipped; URL=${supabaseUrl ?? '(empty)'}',
+      );
+      throw StateError(
+        'Supabase is not configured. Use --dart-define-from-file=.env',
+      );
     }
 
     // Use anon key for proper authentication with RLS

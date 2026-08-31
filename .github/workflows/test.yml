@@ -38,6 +38,7 @@ jobs:
           test/presentation/notifiers/game_notifier_test.dart \
           test/presentation/notifiers/chat_badge_skip_test.dart \
           test/core/email_auth_test.dart \
+          test/core/app_env_test.dart \
           test/core/google_auth_config_test.dart \
           test/core/notification_routes_test.dart \
           test/core/notification_cooldowns_test.dart \

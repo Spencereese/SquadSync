@@ -54,7 +54,10 @@ class EmailAuth {
         message: 'Confirm your email, then sign in.',
       );
     }
-    return EmailAuthFeedback(message: 'Sign in failed: ${e.message}');
+    if (isConfigOrNetworkFailure(e)) {
+      return const EmailAuthFeedback(message: unavailableMessage);
+    }
+    return const EmailAuthFeedback(message: 'Sign in failed.');
   }
 
   static EmailAuthFeedback forCreateAccount(AuthException e) {
@@ -69,6 +72,32 @@ class EmailAuth {
         message: 'Password is too weak. Use at least 6 characters.',
       );
     }
-    return EmailAuthFeedback(message: 'Could not create account: ${e.message}');
+    if (isConfigOrNetworkFailure(e)) {
+      return const EmailAuthFeedback(message: unavailableMessage);
+    }
+    return const EmailAuthFeedback(message: 'Could not create account.');
+  }
+
+  static const unavailableMessage =
+      'Sign-in unavailable — check connection.';
+
+  static bool isConfigOrNetworkFailure(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('clientexception') ||
+        text.contains('failed to fetch') ||
+        text.contains('your-project.supabase') ||
+        text.contains('your_anon_key') ||
+        text.contains('socketexception') ||
+        text.contains('failed host lookup') ||
+        text.contains('xmlhttprequest') ||
+        text.contains('connection refused') ||
+        text.contains('network is unreachable');
+  }
+
+  static EmailAuthFeedback forUnexpected(Object error) {
+    if (isConfigOrNetworkFailure(error)) {
+      return const EmailAuthFeedback(message: unavailableMessage);
+    }
+    return const EmailAuthFeedback(message: 'An unexpected error occurred');
   }
 }

@@ -89,4 +89,44 @@ void main() {
     expect(signIn.suggestSignIn, isFalse);
     expect(create.offerPasswordReset, isFalse);
   });
+
+  testWidgets('already-registered snackbar Sign In action fires', (tester) async {
+    var signedIn = false;
+    final feedback = EmailAuth.forCreateAccount(
+      AuthException('User already registered',
+          statusCode: '422', code: 'user_already_exists'),
+    );
+    expect(feedback.suggestSignIn, isTrue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) {
+              return TextButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    emailAuthSnackBar(
+                      feedback,
+                      onSignIn: () => signedIn = true,
+                    ),
+                  );
+                },
+                child: const Text('trigger'),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('trigger'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('already exists'), findsOneWidget);
+    expect(find.text('Sign In'), findsOneWidget);
+
+    await tester.tap(find.text('Sign In'));
+    await tester.pumpAndSettle();
+    expect(signedIn, isTrue);
+  });
 }

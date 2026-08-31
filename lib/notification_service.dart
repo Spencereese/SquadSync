@@ -1,20 +1,42 @@
-import 'dart:io';
+import 'dart:convert';
 import 'dart:developer' as developer;
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'core/notification_routes.dart';
-import '../services/auth_service_supabase.dart';
-import '../services/supabase_service.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'core/io_platform.dart';
+import 'core/notification_cooldowns.dart';
+import 'core/notification_routes.dart';
+import 'domain/entities/notification_priority.dart';
+import 'services/auth_service_supabase.dart';
+import 'services/supabase_service.dart';
+
+/// Live notification service (imported from main + peacock).
+/// Cooldown expiry + iOS badge push live here — not in the deleted
+/// `lib/data/services/notification_service.dart` duplicate.
 class NotificationService {
+  NotificationService._();
+  static final NotificationService _instance = NotificationService._();
+  factory NotificationService() => _instance;
+
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
-  static Future<void> initialize() async {
-    // Initialize local notifications
+  final NotificationCooldownStore _cooldowns = NotificationCooldownStore();
+  final Map<String, int> _badgeCounts = {
+    'chat': 0,
+    'lobby': 0,
+    'invites': 0,
+  };
+  bool _initialized = false;
+
+  static Future<void> initialize() => _instance._initialize();
+
+  Future<void> _initialize() async {
+    if (_initialized) return;
+
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -44,8 +66,7 @@ class NotificationService {
       },
     );
 
-    // Request permissions for iOS
-    NotificationSettings settings = await _messaging.requestPermission(
+    final settings = await _messaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
@@ -53,36 +74,32 @@ class NotificationService {
     );
     developer.log('User granted permission: ${settings.authorizationStatus}');
 
-    // Set foreground notification presentation options (iOS)
     await _messaging.setForegroundNotificationPresentationOptions(
       alert: true,
       badge: true,
       sound: true,
     );
 
-    // Handle foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       developer.log(
           'Foreground message: ${message.notification?.title} - ${message.notification?.body}');
-      if (message.notification != null && Platform.isIOS) {
-        _showLocalNotification(message);
+      if (message.notification != null && kIsIos) {
+        _instance._showLocalNotification(
+          title: message.notification?.title ?? 'Cod Squad',
+          body: message.notification?.body ?? '',
+          payload: message.data,
+        );
       }
     });
 
-    // Handle notifications when app is opened from terminated state
-    RemoteMessage? initialMessage = await _messaging.getInitialMessage();
+    final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
       _handleMessage(initialMessage);
     }
-
-    // Handle notifications when app is in background and opened
     FirebaseMessaging.onMessageOpenedApp.listen(_handleMessage);
-
-    // Background messages
     FirebaseMessaging.onBackgroundMessage(_backgroundHandler);
 
-    // Store FCM token for the current user
-    String? token = await _messaging.getToken();
+    final token = await _messaging.getToken();
     developer.log('FCM Token: $token');
     final user = AuthServiceSupabase().currentUser;
     if (user != null && token != null) {
@@ -96,37 +113,12 @@ class NotificationService {
       if (currentUser != null) {
         await SupabaseService.client.from('users').update({
           'fcm_token': newToken,
-        }).eq('uid', currentUser.id);
+        }).eq('id', currentUser.id);
       }
     });
-  }
 
-  static Future<void> _showLocalNotification(RemoteMessage message) async {
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-      badgeNumber: 1,
-    );
-    const androidDetails = AndroidNotificationDetails(
-      'channel_id',
-      'SquadSync Notifications',
-      channelDescription: 'Notifications for SquadSync app',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
-    const notificationDetails = NotificationDetails(
-      iOS: iosDetails,
-      android: androidDetails,
-    );
-
-    await _localNotifications.show(
-      message.messageId.hashCode,
-      message.notification?.title,
-      message.notification?.body,
-      notificationDetails,
-      payload: jsonEncode(message.data),
-    );
+    await _instance._loadCooldowns();
+    _initialized = true;
   }
 
   static Future<void> _backgroundHandler(RemoteMessage message) async {
@@ -140,19 +132,10 @@ class NotificationService {
   }
 
   static Future<void> sendNotification(String title, String body) async {
-    // Broadcast notification (for testing or squad-wide alerts)
     developer.log('Sending broadcast notification: $title - $body');
   }
 
-  /// Send notification to multiple users by UIDs using FCM v1 API
-  ///
-  /// [title] - Notification title
-  /// [body] - Notification body
-  /// [recipientUids] - List of user UIDs to send notification to
-  /// [data] - Optional data payload for navigation/actions
-  ///
-  /// IMPORTANT: This uses Supabase Edge Function to send FCM notifications
-  /// The Edge Function handles OAuth2 authentication with service account credentials
+  /// Send via Supabase Edge Function (FCM v1). No legacy server-key HTTP.
   static Future<void> sendNotificationToUsers({
     required String title,
     required String body,
@@ -165,7 +148,6 @@ class NotificationService {
     }
 
     try {
-      // Fetch FCM tokens for all recipients
       final response = await SupabaseService.client
           .from('users')
           .select('id, fcm_token')
@@ -192,8 +174,6 @@ class NotificationService {
       developer.log(
           'Sending notifications to ${tokens.length} users via Supabase Edge Function');
 
-      // Call Supabase Edge Function to send notifications
-      // The Edge Function handles FCM v1 API authentication
       final edgeFunctionResponse =
           await SupabaseService.client.functions.invoke(
         'send-push-notification',
@@ -206,71 +186,257 @@ class NotificationService {
       );
 
       if (edgeFunctionResponse.status == 200) {
-        developer.log('✅ Notifications sent successfully via Edge Function');
+        developer.log('Notifications sent successfully via Edge Function');
       } else {
         developer.log(
-            '⚠️ Edge Function response: ${edgeFunctionResponse.status} - ${edgeFunctionResponse.data}');
+            'Edge Function response: ${edgeFunctionResponse.status} - ${edgeFunctionResponse.data}');
       }
     } catch (e) {
-      developer.log('❌ Error sending notifications: $e');
-      // Gracefully fail - don't block the main operation
+      developer.log('Error sending notifications: $e');
     }
   }
 
+  /// Look up the user and send through [sendNotificationToUsers].
+  /// The old `https://fcm.googleapis.com/fcm/send` + YOUR_FCM_SERVER_KEY path is gone.
   static Future<void> sendNotificationToUser({
     required String recipientDisplayName,
     required String title,
     required String body,
   }) async {
     try {
-      // Find the user's FCM token by displayName
       final response = await SupabaseService.client
           .from('users')
-          .select('fcm_token')
+          .select('id, fcm_token')
           .eq('display_name', recipientDisplayName)
           .maybeSingle();
 
       if (response == null) {
-        developer.log('No FCM token found for $recipientDisplayName');
+        developer.log('No user found for $recipientDisplayName');
         return;
       }
-      final fcmToken = response['fcm_token'] as String?;
-
-      if (fcmToken == null) {
-        developer.log('FCM token not available for $recipientDisplayName');
+      final uid = response['id'] as String?;
+      if (uid == null || uid.isEmpty) {
+        developer.log('No uid for $recipientDisplayName');
         return;
       }
-
-      // FCM server key (replace with your Firebase project's server key)
-      const serverKey = 'YOUR_FCM_SERVER_KEY_HERE'; // Add from Firebase Console
-      final url = Uri.parse('https://fcm.googleapis.com/fcm/send');
-
-      final response2 = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'key=$serverKey',
-        },
-        body: jsonEncode({
-          'to': fcmToken,
-          'notification': {
-            'title': title,
-            'body': body,
-          },
-          'data': {
-            'screen': 'squad', // Optional: for navigation on tap
-          },
-        }),
+      await sendNotificationToUsers(
+        title: title,
+        body: body,
+        recipientUids: [uid],
+        data: const {'screen': 'squad'},
       );
-
-      if (response2.statusCode == 200) {
-        developer
-            .log('Notification sent to $recipientDisplayName: $title - $body');
-      } else {
-        developer.log('Failed to send notification: ${response2.body}');
-      }
     } catch (e) {
       developer.log('Error sending notification to $recipientDisplayName: $e');
     }
+  }
+
+  Future<void> _showLocalNotification({
+    required String title,
+    required String body,
+    required Map<String, dynamic> payload,
+    NotificationPriority priority = NotificationPriority.medium,
+  }) async {
+    final cooldownKey =
+        '${payload['user_id']}_${payload['lobby_id']}_${payload['type']}';
+    if (_isOnCooldown(cooldownKey)) {
+      developer.log('Notification on cooldown: $cooldownKey');
+      return;
+    }
+
+    if (priority == NotificationPriority.low) {
+      await _updateBadge(payload['type'] as String? ?? 'lobby');
+      return;
+    }
+
+    const androidDetails = AndroidNotificationDetails(
+      'channel_id',
+      'Cod Squad Notifications',
+      channelDescription: 'Notifications for Cod Squad',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      badgeNumber: _totalBadgeCount,
+    );
+    final notificationDetails = NotificationDetails(
+      iOS: iosDetails,
+      android: androidDetails,
+    );
+
+    await _localNotifications.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title,
+      body,
+      notificationDetails,
+      payload: jsonEncode(payload),
+    );
+
+    _setCooldown(
+      cooldownKey,
+      payload['type'] == 'momentum'
+          ? NotificationCooldownStore.momentumDuration
+          : NotificationCooldownStore.defaultDuration,
+    );
+  }
+
+  Future<void> sendMomentumNotification({
+    required String lobbyId,
+    required String gameName,
+    required int currentPlayers,
+    required int maxPlayers,
+    required String joinerName,
+    required List<String> participantNames,
+    String? gameImageUrl,
+  }) async {
+    final spotPreview = '$currentPlayers/$maxPlayers spots';
+    final tags = participantNames.take(3).join(', ');
+    await _showLocalNotification(
+      title: '$joinerName joined $gameName',
+      body: '$spotPreview filled — $tags ready to play!',
+      payload: {
+        'type': 'momentum',
+        'lobby_id': lobbyId,
+        'game_name': gameName,
+        'current_players': currentPlayers,
+        'max_players': maxPlayers,
+      },
+      priority: NotificationPriority.high,
+    );
+  }
+
+  Future<void> sendDirectInvite({
+    required String recipientId,
+    required String inviterName,
+    required String lobbyId,
+    required String gameName,
+    String? gameImageUrl,
+  }) async {
+    await _showLocalNotification(
+      title: '$inviterName invited you',
+      body: 'Join the $gameName lobby now!',
+      payload: {
+        'type': 'direct_invite',
+        'lobby_id': lobbyId,
+        'user_id': recipientId,
+        'inviter_name': inviterName,
+        'game_name': gameName,
+      },
+      priority: NotificationPriority.high,
+    );
+    await sendNotificationToUsers(
+      title: '$inviterName invited you',
+      body: 'Join the $gameName lobby now!',
+      recipientUids: [recipientId],
+      data: {
+        'type': 'direct_invite',
+        'lobby_id': lobbyId,
+      },
+    );
+  }
+
+  Future<void> sendSpotAvailable({
+    required String lobbyId,
+    required String gameName,
+    required int spotsOpen,
+    required List<String> friendsInLobby,
+  }) async {
+    final friendsList = friendsInLobby.take(3).join(', ');
+    await _showLocalNotification(
+      title: 'Spot available in $gameName',
+      body: '$spotsOpen open — $friendsList waiting',
+      payload: {
+        'type': 'spot_available',
+        'lobby_id': lobbyId,
+        'game_name': gameName,
+        'spots_open': spotsOpen,
+      },
+    );
+  }
+
+  bool _isOnCooldown(String key) => _cooldowns.isActive(key);
+
+  void _setCooldown(String key, Duration duration) {
+    _cooldowns.setExpiry(key, duration);
+    _saveCooldowns();
+  }
+
+  Future<void> _loadCooldowns() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawV2 = prefs.getString(NotificationCooldownStore.prefsKeyV2);
+      if (rawV2 != null && rawV2.isNotEmpty) {
+        final decoded = jsonDecode(rawV2);
+        _cooldowns.loadPersisted(decoded);
+        return;
+      }
+      final rawV1 = prefs.getString(NotificationCooldownStore.prefsKeyV1);
+      if (rawV1 == null || rawV1.isEmpty) return;
+      final decoded = jsonDecode(rawV1);
+      final migrated = _cooldowns.loadPersisted(decoded);
+      if (migrated) {
+        await _saveCooldowns();
+        await prefs.remove(NotificationCooldownStore.prefsKeyV1);
+      }
+    } catch (e) {
+      developer.log('Failed to load cooldowns: $e');
+    }
+  }
+
+  Future<void> _saveCooldowns() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        NotificationCooldownStore.prefsKeyV2,
+        jsonEncode(_cooldowns.toPersistedJson()),
+      );
+    } catch (e) {
+      developer.log('Failed to save cooldowns: $e');
+    }
+  }
+
+  int get _totalBadgeCount =>
+      _badgeCounts.values.fold<int>(0, (sum, count) => sum + count);
+
+  Future<void> _updateBadge(String type) async {
+    _badgeCounts[type] = (_badgeCounts[type] ?? 0) + 1;
+    _pushIosBadgeCount();
+  }
+
+  BadgeState getBadgeState() {
+    return BadgeState(
+      chatUnreadCount: _badgeCounts['chat'] ?? 0,
+      lobbyUpdatesCount: _badgeCounts['lobby'] ?? 0,
+      invitesCount: _badgeCounts['invites'] ?? 0,
+    );
+  }
+
+  void clearBadge(String type) {
+    _badgeCounts[type] = 0;
+    _pushIosBadgeCount();
+  }
+
+  void clearAllBadges() {
+    _badgeCounts.updateAll((key, value) => 0);
+    _pushIosBadgeCount();
+  }
+
+  void _pushIosBadgeCount() {
+    if (!kIsIos) return;
+    _localNotifications.show(
+      0,
+      null,
+      null,
+      NotificationDetails(
+        iOS: DarwinNotificationDetails(
+          presentAlert: false,
+          presentSound: false,
+          presentBadge: true,
+          badgeNumber: _totalBadgeCount,
+        ),
+      ),
+    );
   }
 }

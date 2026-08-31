@@ -66,24 +66,18 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
         await _handlePostSignIn(authResponse.user!);
       }
     } on AuthException catch (e) {
-      final feedback = EmailAuth.forSignIn(e);
+      debugPrint('Auth sign-in: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(feedback.message),
-            action: feedback.offerPasswordReset
-                ? SnackBarAction(
-                    label: 'Reset Password',
-                    onPressed: _showForgotPasswordDialog,
-                  )
-                : null,
-            duration: const Duration(seconds: 6),
+          emailAuthSnackBar(
+            EmailAuth.forSignIn(e),
+            onResetPassword: _showForgotPasswordDialog,
           ),
         );
       }
     } catch (e) {
-      _showSnackBar('An unexpected error occurred');
-      debugPrint('Auth error: $e');
+      debugPrint('Auth sign-in: $e');
+      _showSnackBar(EmailAuth.forUnexpected(e).message);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -110,24 +104,18 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
         _showSnackBar('Check your email to confirm the account, then sign in.');
       }
     } on AuthException catch (e) {
-      final feedback = EmailAuth.forCreateAccount(e);
+      debugPrint('Auth create account: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(feedback.message),
-            action: feedback.suggestSignIn
-                ? SnackBarAction(
-                    label: 'Sign In',
-                    onPressed: _handleEmailSignIn,
-                  )
-                : null,
-            duration: const Duration(seconds: 6),
+          emailAuthSnackBar(
+            EmailAuth.forCreateAccount(e),
+            onSignIn: _handleEmailSignIn,
           ),
         );
       }
     } catch (e) {
-      _showSnackBar('An unexpected error occurred');
-      debugPrint('Auth error: $e');
+      debugPrint('Auth create account: $e');
+      _showSnackBar(EmailAuth.forUnexpected(e).message);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -629,8 +617,8 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                               GoogleAuthConfig.notConfiguredHint,
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.72),
+                                color: neon.withValues(alpha: 0.95),
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),

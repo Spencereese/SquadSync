@@ -41,5 +41,30 @@ void main() {
       expect(feedback.suggestSignIn, isTrue);
       expect(feedback.message, contains('Sign in'));
     });
+
+    test('ClientException and placeholder URL stay off the snackbar', () {
+      final error = AuthException(
+        'ClientException: Failed to fetch, uri=https://your-project.supabase.co/auth/v1/signup',
+        statusCode: '0',
+      );
+
+      expect(EmailAuth.isConfigOrNetworkFailure(error), isTrue);
+      expect(
+        EmailAuth.forCreateAccount(error).message,
+        EmailAuth.unavailableMessage,
+      );
+      expect(EmailAuth.forCreateAccount(error).message.contains('http'), isFalse);
+      expect(
+        EmailAuth.forSignIn(error).message,
+        EmailAuth.unavailableMessage,
+      );
+    });
+  });
+
+  test('unexpected fetch errors use the short connection copy', () {
+    final feedback = EmailAuth.forUnexpected(
+      Exception('ClientException: Failed to fetch, uri=https://your-project.supabase.co/auth/v1/token'),
+    );
+    expect(feedback.message, EmailAuth.unavailableMessage);
   });
 }

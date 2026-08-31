@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/notification_priority.dart';
-import '../../data/services/notification_service.dart';
+import '../../notification_service.dart';
 
 /// Provider for NotificationNotifier
 final notificationNotifierProvider =
@@ -28,7 +28,7 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
   @override
   Future<BadgeState> build() async {
     // Initialize notification service
-    await _notificationService.initialize();
+    await NotificationService.initialize();
 
     // Set up real-time subscriptions for momentum detection
     _setupLobbyMomentumSubscription();

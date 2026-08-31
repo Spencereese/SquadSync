@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -371,10 +372,18 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
     emailController.dispose();
   }
 
+  bool get _showAppleSignIn {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final neon = theme.colorScheme.primary;
+    const titleColor = Color(0xFFF5FBFF);
+    const subtitleColor = Color(0xFFD6E8F5);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -393,11 +402,14 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
             SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  final narrow = constraints.maxWidth < 400;
+                  final pagePad = narrow ? 16.0 : 24.0;
+                  final cardPad = narrow ? 16.0 : 24.0;
                   return SingleChildScrollView(
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: pagePad,
                       vertical: 16,
                     ),
                     child: ConstrainedBox(
@@ -409,8 +421,12 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                         child: GlassmorphicContainer(
                           blur: 22,
                           borderRadius: 24,
-                          padding:
-                              const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                          padding: EdgeInsets.fromLTRB(
+                            cardPad,
+                            28,
+                            cardPad,
+                            24,
+                          ),
                           child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -428,15 +444,18 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                         Text(
                           'Cod Squad',
                           textAlign: TextAlign.center,
-                          style: theme.textTheme.headlineSmall,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            color: titleColor,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           'Sign in to find your squad',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurface
-                                .withValues(alpha: 0.7),
+                            color: subtitleColor,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(height: 28),
@@ -485,19 +504,69 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                           child: TextButton(
                             onPressed:
                                 _isLoading ? null : _showForgotPasswordDialog,
-                            child: const Text('Forgot Password?'),
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 0,
+                                vertical: 8,
+                              ),
+                              minimumSize: Size.zero,
+                            ),
+                            child: Text(
+                              'Forgot password?',
+                              softWrap: true,
+                              overflow: TextOverflow.visible,
+                              textAlign: TextAlign.right,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: neon,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
-                        NeonPulseButton(
-                          onPressed: _isLoading ? null : _handleEmailSignIn,
-                          child: const Text('Sign In'),
-                        ),
-                        const SizedBox(height: 10),
-                        NeonPulseButton(
-                          onPressed:
-                              _isLoading ? null : _handleEmailCreateAccount,
-                          child: const Text('Create Account'),
+                        Theme(
+                          data: theme.copyWith(
+                            elevatedButtonTheme: ElevatedButtonThemeData(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: neon,
+                                foregroundColor: theme.colorScheme.onPrimary,
+                                disabledForegroundColor: theme
+                                    .colorScheme.onPrimary
+                                    .withValues(alpha: 0.7),
+                                disabledBackgroundColor:
+                                    neon.withValues(alpha: 0.45),
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 16,
+                                ),
+                                textStyle: theme.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              NeonPulseButton(
+                                onPressed:
+                                    _isLoading ? null : _handleEmailSignIn,
+                                child: const Text('Sign In'),
+                              ),
+                              const SizedBox(height: 10),
+                              NeonPulseButton(
+                                onPressed: _isLoading
+                                    ? null
+                                    : _handleEmailCreateAccount,
+                                child: const Text('Create Account'),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 18),
                         Row(
@@ -546,11 +615,13 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        SignInWithAppleButton(
-                          onPressed: _isLoading ? null : _handleAppleSignIn,
-                          style: SignInWithAppleButtonStyle.black,
-                        ),
+                        if (_showAppleSignIn) ...[
+                          const SizedBox(height: 12),
+                          SignInWithAppleButton(
+                            onPressed: _isLoading ? null : _handleAppleSignIn,
+                            style: SignInWithAppleButtonStyle.black,
+                          ),
+                        ],
                       ],
                     ),
                   ),

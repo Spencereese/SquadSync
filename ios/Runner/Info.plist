@@ -5,7 +5,7 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>SquadSync</string>
+		<string>Cod Squad</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
-		<string>SquadSync</string>
+		<string>Cod Squad</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -45,10 +45,12 @@
 		<true/>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
-		<!-- Google Sign-In: GIDClientID + reversed URL scheme must match
-		     GoogleService-Info.plist CLIENT_ID / REVERSED_CLIENT_ID
-		     (and GOOGLE_IOS_CLIENT_ID in .env). Replace the placeholders
-		     below when you drop in a real Firebase iOS app. -->
+		<!-- Google Sign-In (Spencer — local only, do not commit real IDs):
+		     1. Drop the real gitignored GoogleService-Info.plist into ios/Runner/.
+		     2. Copy CLIENT_ID → GIDClientID below.
+		     3. Copy REVERSED_CLIENT_ID into the google.sign.in URL scheme.
+		     4. Put the same CLIENT_ID in .env as GOOGLE_IOS_CLIENT_ID.
+		     Leave YOUR_ placeholders in git. Dart fails closed while they remain. -->
 		<key>GIDClientID</key>
 		<string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
 		<key>CFBundleURLTypes</key>
@@ -95,6 +97,7 @@
 		<array>
 			<string>fetch</string>
 			<string>remote-notification</string>
+			<string>audio</string>
 		</array>
 		<key>FirebaseAppDelegateAutoRegister</key>
 		<true/>
@@ -113,7 +116,75 @@
 		<key>NSAppTransportSecurity</key>
 		<dict>
 			<key>NSAllowsArbitraryLoads</key>
-			<true/>
+			<false/>
+			<key>NSExceptionDomains</key>
+			<dict>
+				<key>supabase.co</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>igdb.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>twitch.tv</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>googleapis.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>gstatic.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>firebaseio.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>firebasestorage.app</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>agora.io</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>sd-rtn.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>run.app</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>lobbiesync.app</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>youtube.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>googleusercontent.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+			</dict>
 		</dict>
 		<key>UIStatusBarHidden</key>
 		<false/>

@@ -21,7 +21,7 @@ jobs:
         channel: 'stable'
         cache: true
 
-    - name: Provide dummy .env for asset bundling
+    - name: Provide dummy .env for filesystem dotenv overlay
       run: cp .env.example .env
 
     - name: Install dependencies
@@ -32,5 +32,10 @@ jobs:
     - name: Analyze lib
       run: flutter analyze lib --no-fatal-infos --no-fatal-warnings
 
-    - name: Run GameNotifier unit tests
-      run: flutter test test/presentation/notifiers/game_notifier_test.dart
+    - name: Run unit tests
+      run: |
+        flutter test \
+          test/presentation/notifiers/game_notifier_test.dart \
+          test/core/email_auth_test.dart \
+          test/core/google_auth_config_test.dart \
+          test/core/notification_routes_test.dart

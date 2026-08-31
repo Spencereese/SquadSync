@@ -1331,23 +1331,6 @@ class MockGameRepository extends _i1.Mock implements _i14.GameRepository {
       ) as _i11.Future<List<_i15.Game>>);
 
   @override
-  _i11.Future<void> persistGames(
-    String? query,
-    List<_i15.Game>? games,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #persistGames,
-          [
-            query,
-            games,
-          ],
-        ),
-        returnValue: _i11.Future<void>.value(),
-        returnValueForMissingStub: _i11.Future<void>.value(),
-      ) as _i11.Future<void>);
-
-  @override
   _i11.Future<void> cacheGamesLocally(
     String? query,
     List<_i15.Game>? games,

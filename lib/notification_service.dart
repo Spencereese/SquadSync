@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:developer' as developer;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'core/notification_routes.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
 import 'package:http/http.dart' as http;
@@ -25,7 +26,23 @@ class NotificationService {
       android: androidSettings,
       iOS: iosSettings,
     );
-    await _localNotifications.initialize(initSettings);
+    await _localNotifications.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (response) {
+        final raw = response.payload;
+        if (raw == null || raw.isEmpty) return;
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map<String, dynamic>) {
+            NotificationRoutes.open(decoded);
+          } else if (decoded is Map) {
+            NotificationRoutes.open(decoded.cast<String, dynamic>());
+          }
+        } catch (e) {
+          developer.log('Notification payload was not JSON: $e');
+        }
+      },
+    );
 
     // Request permissions for iOS
     NotificationSettings settings = await _messaging.requestPermission(
@@ -89,6 +106,7 @@ class NotificationService {
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      badgeNumber: 1,
     );
     const androidDetails = AndroidNotificationDetails(
       'channel_id',
@@ -107,6 +125,7 @@ class NotificationService {
       message.notification?.title,
       message.notification?.body,
       notificationDetails,
+      payload: jsonEncode(message.data),
     );
   }
 
@@ -117,27 +136,7 @@ class NotificationService {
 
   static void _handleMessage(RemoteMessage message) {
     developer.log('Handling message: ${message.data}');
-
-    final data = message.data;
-    final type = data['type'];
-
-    switch (type) {
-      case 'lobby_join':
-        final lobbyId = data['lobbyId'];
-        final gameName = data['gameName'] ?? '';
-        final hostName = data['hostName'] ?? '';
-        developer.log(
-            'Should navigate to lobby: $lobbyId for $gameName hosted by $hostName');
-        // TODO: Navigate to lobby screen
-        break;
-      case 'chat':
-        if (data['screen'] == 'chat') {
-          developer.log('Should navigate to ChatScreen');
-        }
-        break;
-      default:
-        developer.log('Unknown message type: $type');
-    }
+    NotificationRoutes.open(message.data);
   }
 
   static Future<void> sendNotification(String title, String body) async {

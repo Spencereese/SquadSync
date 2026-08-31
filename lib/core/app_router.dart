@@ -23,6 +23,8 @@ final abTestingServiceProvider = FutureProvider<ABTestingService>((ref) async {
   return await ABTestingService.initialize();
 });
 
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 /// GoRouter configuration provider with A/B testing integration
 final goRouterProvider = Provider<GoRouter>((ref) {
   final authService = AuthServiceSupabase();
@@ -30,6 +32,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   final abTestService = ref.watch(abTestingServiceProvider).asData?.value;
 
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     debugLogDiagnostics: kDebugMode,
     initialLocation: '/',
     redirect: (context, state) async {

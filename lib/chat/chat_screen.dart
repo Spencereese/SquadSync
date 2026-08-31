@@ -998,7 +998,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   },
                 ),
 
-                const SizedBox(height: 20),
+                SizedBox(
+                  height: 20 + MediaQuery.viewPaddingOf(context).bottom,
+                ),
               ],
             ),
           ),
@@ -1497,11 +1499,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                                           .padding
                                           .top, // Just app bar
                           bottomPadding: inputBarHeight +
-                              keyboardHeight + // Add keyboard height so messages scroll up
+                              keyboardHeight +
                               (isKeyboardVisible
                                   ? 0
-                                  : MediaQuery.of(context).viewPadding.bottom /
-                                      2), // Allow scrolling under input bar
+                                  : MediaQuery.viewPaddingOf(context).bottom),
                         );
                       },
                       loading: () =>

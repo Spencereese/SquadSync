@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/notification_routes.dart';
 import '../../domain/entities/notification_priority.dart';
 
 class NotificationService {
@@ -97,7 +99,7 @@ class NotificationService {
   /// Handle notification tap when app is in background
   Future<void> _handleMessageOpenedApp(RemoteMessage message) async {
     debugPrint('👆 Notification tapped: ${message.data}');
-    // TODO: Navigate to relevant screen based on payload
+    NotificationRoutes.open(message.data);
   }
 
   /// Determine notification priority from payload
@@ -167,6 +169,7 @@ class NotificationService {
       presentBadge: true,
       presentSound: true,
       sound: 'default',
+      badgeNumber: _totalBadgeCount,
       attachments:
           imageUrl != null ? [DarwinNotificationAttachment(imageUrl)] : null,
     );
@@ -343,11 +346,17 @@ class NotificationService {
   Future<void> _loadCooldowns() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString('notification_cooldowns');
-      if (json != null) {
-        // Parse stored cooldowns (JSON format)
-        // TODO: Implement JSON deserialization
-      }
+      final raw = prefs.getString('notification_cooldowns');
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      _cooldowns
+        ..clear()
+        ..addEntries(
+          decoded.entries.where((e) => e.value is String).map(
+                (e) => MapEntry(e.key.toString(), DateTime.parse(e.value as String)),
+              ),
+        );
     } catch (e) {
       debugPrint('⚠️ Failed to load cooldowns: $e');
     }
@@ -357,12 +366,17 @@ class NotificationService {
   Future<void> _saveCooldowns() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // TODO: Serialize cooldowns to JSON
-      await prefs.setString('notification_cooldowns', '{}');
+      final encoded = jsonEncode(
+        _cooldowns.map((key, value) => MapEntry(key, value.toIso8601String())),
+      );
+      await prefs.setString('notification_cooldowns', encoded);
     } catch (e) {
       debugPrint('⚠️ Failed to save cooldowns: $e');
     }
   }
+
+  int get _totalBadgeCount =>
+      _badgeCounts.values.fold<int>(0, (sum, count) => sum + count);
 
   /// Update in-app badge count
   Future<void> _updateBadge(String type) async {
@@ -373,8 +387,19 @@ class NotificationService {
           .resolvePlatformSpecificImplementation<
               IOSFlutterLocalNotificationsPlugin>()
           ?.requestPermissions(badge: true);
-      // Set iOS app badge
-      // Note: Requires additional plugin or native code
+      await _localNotifications.show(
+        0,
+        null,
+        null,
+        NotificationDetails(
+          iOS: DarwinNotificationDetails(
+            presentAlert: false,
+            presentSound: false,
+            presentBadge: true,
+            badgeNumber: _totalBadgeCount,
+          ),
+        ),
+      );
     }
   }
 
@@ -416,14 +441,24 @@ class NotificationService {
 
   /// Encode payload to JSON string
   String _encodePayload(Map<String, dynamic> payload) {
-    // Simple encoding - can be enhanced with proper JSON
-    return payload.toString();
+    return jsonEncode(payload);
   }
 
   /// Handle notification tap
   void _onNotificationTapped(NotificationResponse response) {
     debugPrint('👆 Notification tapped: ${response.payload}');
-    // TODO: Parse payload and navigate to relevant screen
+    final raw = response.payload;
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        NotificationRoutes.open(decoded);
+      } else if (decoded is Map) {
+        NotificationRoutes.open(decoded.cast<String, dynamic>());
+      }
+    } catch (e) {
+      debugPrint('⚠️ Notification payload was not JSON: $e');
+    }
   }
 
   /// Get badge state
@@ -443,6 +478,21 @@ class NotificationService {
   /// Clear all badges
   void clearAllBadges() {
     _badgeCounts.clear();
+    if (Platform.isIOS) {
+      _localNotifications.show(
+        0,
+        null,
+        null,
+        const NotificationDetails(
+          iOS: DarwinNotificationDetails(
+            presentAlert: false,
+            presentSound: false,
+            presentBadge: true,
+            badgeNumber: 0,
+          ),
+        ),
+      );
+    }
   }
 }
 

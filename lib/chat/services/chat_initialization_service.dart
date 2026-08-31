@@ -33,9 +33,6 @@ class ChatInitializationService {
       return;
     }
 
-    // Update online status
-    _updateOnlineStatus(true, squadState);
-
     // Load chat details
     await _loadChatDetails(
       context: context,
@@ -134,16 +131,8 @@ class ChatInitializationService {
     // This handles cases where the app was terminated while composing
   }
 
-  void _updateOnlineStatus(bool isOnline, LobbyState squadState) {
-    // Implementation moved from ChatScreen
-    // Updates user's online status in Supabase
-  }
-
-  /// Cleanup operations when chat is disposed
-  void dispose(BuildContext context, WidgetRef ref) {
-    final squadState = ref.read(ln.lobbyNotifierProvider).valueOrNull;
-    if (squadState != null) {
-      _updateOnlineStatus(false, squadState);
-    }
-  }
+  /// Cleanup operations when chat is disposed.
+  /// Presence is owned by ChatNotifier — this service does not write a
+  /// fake online flag.
+  void dispose(BuildContext context, WidgetRef ref) {}
 }

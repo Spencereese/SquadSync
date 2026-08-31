@@ -37,7 +37,6 @@ analyzer:
     unused_catch_stack: ignore
     invalid_null_aware_operator: ignore
     unawaited_return_in_try_block: ignore
-    asset_does_not_exist: ignore
 
 linter:
   rules:

@@ -78,8 +78,6 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           limit ${limit * 2};
         ''';
 
-        debugPrint('📤 IGDB Query Body:\n$queryBody');
-
         final response = await _dio.post<String>(
           'https://api.igdb.com/v4/games',
           data: queryBody,
@@ -118,7 +116,7 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           continue;
         } else {
           debugPrint(
-              '❌ IGDB Error: Status ${response.statusCode}, Body: ${response.data}');
+              'IGDB error status=${response.statusCode} type=${_classifyError(response.statusCode ?? 500, '')}');
           lastError =
               _classifyError(response.statusCode ?? 500, response.data ?? '');
           if (lastError == IgdbErrorType.auth ||
@@ -127,15 +125,15 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           }
         }
       } on DioException catch (e) {
-        debugPrint('❌ Dio Exception: ${e.message}');
-        debugPrint('   Response: ${e.response?.data}');
+        debugPrint(
+            'IGDB DioException status=${e.response?.statusCode} type=${e.type}');
         if (e.response?.statusCode == 401) {
           await refreshToken();
           continue;
         }
         lastError = IgdbErrorType.network;
       } catch (e) {
-        debugPrint('❌ Unknown Error: $e');
+        debugPrint('IGDB unknown error type=${e.runtimeType}');
         lastError = IgdbErrorType.network;
       }
 

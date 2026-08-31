@@ -13,6 +13,7 @@ import '../presentation/hooks/game_theme_sync.dart';
 import '../services/supabase_service.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import '../core/app_router.dart';
+import '../core/notification_routes.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   debugPrint('authStateProvider: Setting up auth state listener');
@@ -37,6 +38,7 @@ class SquadSyncMaterialApp extends ConsumerWidget {
     GameThemeSync.watch(ref);
 
     final router = ref.watch(goRouterProvider);
+    NotificationRoutes.go = router.go;
 
     // Remove native splash after first frame is rendered (only once)
     if (!_splashRemoved) {
@@ -51,7 +53,7 @@ class SquadSyncMaterialApp extends ConsumerWidget {
 
     return AnimatedThemeWrapper(
       child: MaterialApp.router(
-        title: 'SquadSync',
+        title: 'Cod Squad',
         routerConfig: router,
         debugShowCheckedModeBanner: false,
       ),

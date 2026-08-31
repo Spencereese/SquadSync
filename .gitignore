@@ -56,7 +56,6 @@ service-account.json
 # iOS
 ios/build/
 **/Pods/
-**/Podfile.lock
 Runner.xcworkspace/xcuserdata/
 *.xcuserstate
 

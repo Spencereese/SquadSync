@@ -13,6 +13,8 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/app_theme.dart';
+import 'core/email_auth.dart';
+import 'core/google_auth_config.dart';
 import 'services/supabase_service.dart';
 
 class SetupScreen extends ConsumerStatefulWidget {
@@ -37,46 +39,77 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
     super.dispose();
   }
 
-  Future<void> _handleEmailAuth() async {
+  bool _hasEmailPassword() {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     if (email.isEmpty || password.isEmpty) {
       _showSnackBar('Please enter both email and password');
-      return;
+      return false;
     }
+    return true;
+  }
+
+  Future<void> _handleEmailSignIn() async {
+    if (!_hasEmailPassword()) return;
 
     setState(() => _isLoading = true);
     try {
-      AuthResponse authResponse;
-      try {
-        authResponse = await _supabase.auth.signInWithPassword(
-          email: email,
-          password: password,
-        );
-      } catch (_) {
-        authResponse = await _supabase.auth.signUp(
-          email: email,
-          password: password,
-        );
-      }
+      final authResponse = await _supabase.auth.signInWithPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
 
       if (authResponse.user != null) {
         await Future.delayed(const Duration(milliseconds: 300));
         await _handlePostSignIn(authResponse.user!);
       }
     } on AuthException catch (e) {
+      final feedback = EmailAuth.forSignIn(e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Authentication failed: ${e.message}'),
-            action: SnackBarAction(
-              label: 'Reset Password',
-              onPressed: _showForgotPasswordDialog,
-            ),
+            content: Text(feedback.message),
+            action: feedback.offerPasswordReset
+                ? SnackBarAction(
+                    label: 'Reset Password',
+                    onPressed: _showForgotPasswordDialog,
+                  )
+                : null,
             duration: const Duration(seconds: 6),
           ),
         );
       }
+    } catch (e) {
+      _showSnackBar('An unexpected error occurred');
+      debugPrint('Auth error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleEmailCreateAccount() async {
+    if (!_hasEmailPassword()) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final authResponse = await _supabase.auth.signUp(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      if (authResponse.user != null) {
+        if (authResponse.session == null) {
+          _showSnackBar('Check your email to confirm the account, then sign in.');
+          return;
+        }
+        await Future.delayed(const Duration(milliseconds: 300));
+        await _handlePostSignIn(authResponse.user!);
+      } else {
+        _showSnackBar('Check your email to confirm the account, then sign in.');
+      }
+    } on AuthException catch (e) {
+      final feedback = EmailAuth.forCreateAccount(e);
+      _showSnackBar(feedback.message);
     } catch (e) {
       _showSnackBar('An unexpected error occurred');
       debugPrint('Auth error: $e');
@@ -97,6 +130,11 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
   }
 
   Future<void> _handleGoogleSignIn() async {
+    if (!GoogleAuthConfig.canAttemptSignIn) {
+      _showSnackBar(GoogleAuthConfig.notConfiguredMessage);
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
       await _ensureGoogleSignIn();
@@ -219,11 +257,13 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
           controller: nameController,
           decoration: const InputDecoration(hintText: 'First Name'),
           textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _saveName(user, nameController.text),
+          onSubmitted: (_) =>
+              _saveName(user, nameController.text, dialogContext),
         ),
         actions: [
           TextButton(
-            onPressed: () => _saveName(user, nameController.text),
+            onPressed: () =>
+                _saveName(user, nameController.text, dialogContext),
             child: const Text('Save'),
           ),
         ],
@@ -231,7 +271,11 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
     );
   }
 
-  Future<void> _saveName(User user, String name) async {
+  Future<void> _saveName(
+    User user,
+    String name,
+    BuildContext dialogContext,
+  ) async {
     if (name.trim().isEmpty) {
       _showSnackBar('Please enter your first name');
       return;
@@ -246,8 +290,10 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
         'updated_at': now,
       });
 
+      if (dialogContext.mounted) {
+        Navigator.pop(dialogContext);
+      }
       if (mounted) {
-        Navigator.pop(context);
         context.go('/');
       }
     } catch (e) {
@@ -380,7 +426,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'SquadSync',
+                          'Cod Squad',
                           textAlign: TextAlign.center,
                           style: theme.textTheme.headlineSmall,
                         ),
@@ -428,7 +474,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                           textInputAction: TextInputAction.done,
                           onSubmitted: (_) {
                             if (!_isLoading) {
-                              _handleEmailAuth();
+                              _handleEmailSignIn();
                             }
                           },
                           enabled: !_isLoading,
@@ -444,8 +490,14 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                         ),
                         const SizedBox(height: 4),
                         NeonPulseButton(
-                          onPressed: _isLoading ? null : _handleEmailAuth,
-                          child: const Text('Sign In / Register'),
+                          onPressed: _isLoading ? null : _handleEmailSignIn,
+                          child: const Text('Sign In'),
+                        ),
+                        const SizedBox(height: 10),
+                        NeonPulseButton(
+                          onPressed:
+                              _isLoading ? null : _handleEmailCreateAccount,
+                          child: const Text('Create Account'),
                         ),
                         const SizedBox(height: 18),
                         Row(
@@ -496,7 +548,7 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                         ),
                         const SizedBox(height: 12),
                         SignInWithAppleButton(
-                          onPressed: _isLoading ? () {} : _handleAppleSignIn,
+                          onPressed: _isLoading ? null : _handleAppleSignIn,
                           style: SignInWithAppleButtonStyle.black,
                         ),
                       ],

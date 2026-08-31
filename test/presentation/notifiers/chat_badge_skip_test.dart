@@ -386,21 +386,21 @@ void main() {
         ),
       ),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      key.currentState!.runInit();
-    });
     await tester.pump();
+    key.currentState!.runInit();
     expect(attempts, 1);
     expect(snacks, ['Could not finish opening chat']);
     expect(key.currentState!.bail, ChatInitBail.hardFailure);
     expect(key.currentState!.hardFailureRetries, 1);
+    expect(key.currentState!.retryScheduled, isTrue);
 
-    await tester.pump();
+    key.currentState!.runScheduledRetry();
     expect(attempts, 2);
     expect(snacks, ['Could not finish opening chat']);
     expect(key.currentState!.hardFailureRetries, 2);
+    expect(key.currentState!.retryScheduled, isFalse);
 
-    await tester.pump();
+    key.currentState!.runScheduledRetry();
     expect(attempts, 2);
   });
 }
@@ -582,10 +582,18 @@ class _ThrowRetryHarnessState extends State<_ThrowRetryHarness> {
   var _bail = ChatInitBail.none;
   var _retries = 0;
   var _generation = 1;
+  var _retryScheduled = false;
   final _id = 'lobby-1';
 
   ChatInitBail get bail => _bail;
   int get hardFailureRetries => _retries;
+  bool get retryScheduled => _retryScheduled;
+
+  void runScheduledRetry() {
+    if (!_retryScheduled) return;
+    _retryScheduled = false;
+    runInit();
+  }
 
   void runInit() {
     if (!shouldRunInitializationService(
@@ -621,11 +629,7 @@ class _ThrowRetryHarnessState extends State<_ThrowRetryHarness> {
         hardFailureRetries: _retries,
       );
       _retries++;
-      if (shouldRetry) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) runInit();
-        });
-      }
+      _retryScheduled = shouldRetry;
     }
   }
 

@@ -1,4 +1,8 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/domain/entities/lobby_state.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/notification_notifier.dart';
 
 void main() {
@@ -65,4 +69,70 @@ void main() {
       isNull,
     );
   });
+
+  testWidgets(
+      'listenManual registers selectedLobbyId when widget chatGroupId is null',
+      (tester) async {
+    String? registered;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          lobbyNotifierProvider.overrideWith(_SeededLobbyNotifier.new),
+        ],
+        child: MaterialApp(
+          home: _SquadActiveThreadHarness(
+            onRegister: (id) => registered = id,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(registered, 'lobby-squad-1');
+    expect(shouldSkipChatBadgeIncrement(registered, 'lobby-squad-1'), isTrue);
+  });
+}
+
+/// Same listenManual + resolve path ChatScreen._syncActiveChatThread uses.
+class _SquadActiveThreadHarness extends ConsumerStatefulWidget {
+  const _SquadActiveThreadHarness({required this.onRegister});
+
+  final void Function(String id) onRegister;
+
+  @override
+  ConsumerState<_SquadActiveThreadHarness> createState() =>
+      _SquadActiveThreadHarnessState();
+}
+
+class _SquadActiveThreadHarnessState
+    extends ConsumerState<_SquadActiveThreadHarness> {
+  String? _registered;
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual(
+      lobbyNotifierProvider.select((value) => value.valueOrNull),
+      (previous, next) {
+        final id = resolveActiveChatGroupId(
+          widgetChatGroupId: null,
+          isSquad: true,
+          selectedLobbyId: next?.selectedLobbyId,
+        );
+        if (id == null || id == _registered) return;
+        _registered = id;
+        widget.onRegister(id);
+      },
+      fireImmediately: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+class _SeededLobbyNotifier extends LobbyNotifier {
+  @override
+  Future<LobbyState> build() async {
+    return LobbyState.initial().copyWith(selectedLobbyId: 'lobby-squad-1');
+  }
 }

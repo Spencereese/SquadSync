@@ -119,6 +119,16 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
+  /// Widget id, else the registered squad/lobby thread. Never `''`.
+  String? get threadChatGroupId {
+    final registered = _registeredActiveChatGroupId;
+    if (registered != null && registered.isNotEmpty) return registered;
+    return effectiveChatGroupId;
+  }
+
+  @visibleForTesting
+  String? get debugRegisteredActiveChatGroupId => _registeredActiveChatGroupId;
+
   /// Register the open thread for badge skip. No-op until the id is non-null.
   /// Skips repeat calls so lobby ticks do not wipe the shared chat badge.
   void _syncActiveChatThread({String? selectedLobbyId}) {
@@ -135,6 +145,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     if (id == null || id == _registeredActiveChatGroupId) return;
     _registeredActiveChatGroupId = id;
     notifier.setActiveChatGroup(id);
+    _typingManager.initializeTypingListener(
+      ref,
+      chatGroupId: id,
+      chatType: widget.chatType,
+    );
   }
 
   int? _getTimestampMs(dynamic message) {
@@ -373,7 +388,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         _initializationService.initializeChat(
           context: context,
           ref: ref,
-          chatGroupId: widget.chatGroupId,
+          chatGroupId: threadChatGroupId,
           chatGroupName: widget.chatGroupName,
           chatType: widget.chatType,
           setChatName: (name) {
@@ -395,7 +410,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         );
 
         // Initialize chat using the coordinator
-        final chatGroupId = effectiveChatGroupId;
+        final chatGroupId = threadChatGroupId;
         if (chatGroupId != null) {
           // Load user groups first to ensure chatGroups map is populated
           ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
@@ -457,7 +472,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Initialize typing manager
     _typingManager.initializeTypingListener(
       ref,
-      chatGroupId: widget.chatGroupId,
+      chatGroupId: threadChatGroupId,
       chatType: widget.chatType,
     );
   }
@@ -472,13 +487,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   void dispose() {
+    final threadId = _registeredActiveChatGroupId ?? widget.chatGroupId;
     _notificationNotifier?.setActiveChatGroup(null);
     _notificationNotifier = null;
     _registeredActiveChatGroupId = null;
-    // Clean up Supabase channels for this chat to prevent rate limit errors
-    if (widget.chatGroupId != null) {
-      _cleanupChatChannels(widget.chatGroupId!);
-    }
+    // Squad has a null widget id; the argument is only a gate. Always clean up.
+    _cleanupChatChannels(threadId ?? 'chat');
 
     _scrollControllerService.dispose();
     _scrollController.dispose();
@@ -545,7 +559,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _loadMoreMessages() async {
     await _scrollControllerService.loadMoreMessages(
-      chatGroupId: widget.chatGroupId,
+      chatGroupId: threadChatGroupId,
       onStateChanged: () => mounted ? setState(() {}) : null,
     );
   }
@@ -579,12 +593,15 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   Future<void> _loadMuteStatus() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final localMuted =
-          prefs.getBool('chat_muted_${widget.chatGroupId ?? 'squad'}');
+      final muteKey = 'chat_muted_${threadChatGroupId ?? 'squad'}';
+      final localMuted = prefs.getBool(muteKey);
 
       // Try to load from Supabase for cross-device sync
       final currentUserId = _auth.currentUserId;
-      if (currentUserId != null && widget.chatGroupId != null) {
+      final threadId = threadChatGroupId;
+      if (currentUserId != null &&
+          threadId != null &&
+          widget.chatType != ChatType.squad) {
         final userData = await SupabaseService.client
             .from('users')
             .select('user_groups')
@@ -595,7 +612,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           final userGroups =
               List<Map<String, dynamic>>.from(userData['user_groups'] ?? []);
           final groupData = userGroups.firstWhere(
-            (g) => g['id'] == widget.chatGroupId,
+            (g) => g['id'] == threadId,
             orElse: () => <String, dynamic>{},
           );
 
@@ -608,8 +625,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               });
             }
             // Update local cache
-            await prefs.setBool(
-                'chat_muted_${widget.chatGroupId ?? 'squad'}', supabaseMuted);
+            await prefs.setBool(muteKey, supabaseMuted);
             return;
           }
         }
@@ -627,8 +643,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               _isMuted = supabaseMuted;
             });
           }
-          await prefs.setBool(
-              'chat_muted_${widget.chatGroupId ?? 'squad'}', supabaseMuted);
+          await prefs.setBool(muteKey, supabaseMuted);
           return;
         }
       }
@@ -684,12 +699,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // Determine chat group ID
-      String? chatGroupId = widget.chatGroupId;
-      if (chatGroupId == null && widget.chatType == ChatType.squad) {
-        final squadAsync = ref.read(ln.lobbyNotifierProvider);
-        chatGroupId = squadAsync.value?.selectedLobbyId;
-      }
+      final chatGroupId = threadChatGroupId;
       if (chatGroupId == null) {
         // Cannot send message without chat group ID
         if (mounted) {
@@ -756,7 +766,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   /// Handle lobby creation from chat
   /// Opens full-screen lobby creation directly
   Future<void> _handleLobbyCreation() async {
-    if (widget.chatGroupId == null) {
+    final chatGroupId = threadChatGroupId;
+    if (chatGroupId == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No chat group ID available')),
@@ -770,7 +781,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       await Navigator.of(context).push(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
-              FullScreenLobbyCreation(chatGroupId: widget.chatGroupId!),
+              FullScreenLobbyCreation(chatGroupId: chatGroupId),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
@@ -785,14 +796,15 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   /// Calculate number of active lobbies for badge
   int _getActiveLobbyCount() {
     final squadState = ref.read(ln.lobbyNotifierProvider).value;
-    if (squadState == null || widget.chatGroupId == null) return 0;
+    final chatGroupId = threadChatGroupId;
+    if (squadState == null || chatGroupId == null) return 0;
 
     int count = 0;
 
     // Count private lobbies in this chat group
     squadState.gameLobbies.forEach((gameName, lobbies) {
       for (final lobby in lobbies) {
-        if (lobby['chatGroupId'] == widget.chatGroupId &&
+        if (lobby['chatGroupId'] == chatGroupId &&
             lobby['isActive'] == true) {
           count++;
         }
@@ -803,7 +815,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     squadState.gameLobbies.forEach((gameName, lobbies) {
       for (final lobby in lobbies) {
         if (lobby['isActive'] == true &&
-            lobby['chatGroupId'] != widget.chatGroupId) {
+            lobby['chatGroupId'] != chatGroupId) {
           final spots = lobby['spots'] as List<String?>? ?? [];
           final hasGroupMember = spots.any(
               (uid) => uid != null && squadState.lobbyMemberUids.contains(uid));
@@ -831,7 +843,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   Future<void> _confirmSendImage() async {
     if (_selectedImage == null) return;
 
-    final chatGroupId = effectiveChatGroupId;
+    final chatGroupId = threadChatGroupId;
     if (chatGroupId == null) return;
 
     final messageText = _messageController.text;
@@ -868,7 +880,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _stopRecording() async {
     await _mediaHandler.stopRecording(ref,
-        chatGroupId: widget.chatGroupId, chatType: widget.chatType);
+        chatGroupId: threadChatGroupId, chatType: widget.chatType);
     _animationController.stop();
   }
 
@@ -1015,7 +1027,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                     HapticFeedback.lightImpact();
                     Navigator.pop(context);
                     PollCreationDialog.show(context,
-                        chatGroupId: widget.chatGroupId,
+                        chatGroupId: threadChatGroupId,
                         chatType: widget.chatType);
                   },
                 ),
@@ -1111,13 +1123,24 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
       if (video == null) return;
 
+      final chatGroupId = threadChatGroupId;
+      if (chatGroupId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Cannot send clip: no chat group selected')),
+          );
+        }
+        return;
+      }
+
       // Haptic feedback on selection
       HapticFeedback.lightImpact();
 
       // Send clip message via ChatNotifier (processClip is called internally)
       await ref.read(cn.chatNotifierProvider.notifier).sendMessage(
             ref,
-            widget.chatGroupId ?? '',
+            chatGroupId,
             'Clip', // Message text
             msg.MessageType.clip,
             widget.chatType,
@@ -1365,7 +1388,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     final chatState = chatStateData;
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final isKeyboardVisible = keyboardHeight > 0;
-    final chatGroupId = effectiveChatGroupId;
+    final chatGroupId = threadChatGroupId;
 
     // Auto-scroll when keyboard appears
     if (keyboardHeight > 0 && _previousKeyboardHeight == 0) {
@@ -1477,11 +1500,11 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                             '🔄 ChatScreen: Provider watch triggered, checking messages...');
 
                         final messages =
-                            chatStateData.chatMessages[widget.chatGroupId] ??
+                            chatStateData.chatMessages[threadChatGroupId] ??
                                 [];
 
                         print(
-                            '📬 ChatScreen: Got ${messages.length} messages from chatStateData.chatMessages for group ${widget.chatGroupId}');
+                            '📬 ChatScreen: Got ${messages.length} messages from chatStateData.chatMessages for group $threadChatGroupId');
                         print(
                             '📊 ChatScreen: Total chatMessages keys: ${chatStateData.chatMessages.keys.length}');
                         print(
@@ -1510,7 +1533,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
                         return _uiManager.buildMessagesList(
                           ref: ref,
-                          chatGroupId: widget.chatGroupId,
+                          chatGroupId: threadChatGroupId,
                           chatType: widget.chatType,
                           scrollController: _scrollControllerService,
                           messages: messages,
@@ -1649,7 +1672,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                               _typingManager.onTextChanged(
                                 value,
                                 ref,
-                                chatGroupId: widget.chatGroupId,
+                                chatGroupId: threadChatGroupId,
                               );
                             },
                             quickReactionEmoji: chatState.quickReactionEmoji,
@@ -1696,7 +1719,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                 left: 0,
                 right: 0,
                 child: NeonChatAppBar(
-                  squadId: widget.chatGroupId ?? 'unknown',
+                  squadId: threadChatGroupId ?? 'unknown',
                   squadName: _chatName,
                   avatarUrl: _chatImageUrl,
                   backgroundColor: _getBackgroundColor(background),
@@ -1728,7 +1751,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                     List<Map<String, dynamic>> members = [];
 
                     try {
-                      final chatGroupId = widget.chatGroupId;
+                      final chatGroupId = threadChatGroupId;
                       if (chatGroupId != null) {
                         // Fetch chat group to get member UIDs
                         final groupResponse = await SupabaseService.client
@@ -1784,7 +1807,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                       context,
                       _RipplePageRoute(
                         page: ChatInfoScreen(
-                          squadId: widget.chatGroupId ?? 'unknown',
+                          squadId: threadChatGroupId ?? 'unknown',
                           squadName: _chatName,
                           avatarUrl: _chatImageUrl,
                           chatType: widget.chatType,

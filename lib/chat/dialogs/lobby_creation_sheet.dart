@@ -373,13 +373,13 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
         // Selected game card or search + pinned games
         if (_selectedGame != null)
           _buildSelectedGameCard(theme, isDark)
-        else ..[
+        else ...[
           // Search bar
           _buildCompactSearchBar(theme, isDark),
           const SizedBox(height: 12),
-          
+
           // Pinned games carousel
-          if (_pinnedGames.isNotEmpty) ..[
+          if (_pinnedGames.isNotEmpty) ...[
             Text(
               'Pinned Games',
               style: TextStyle(
@@ -508,10 +508,17 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
             onTap: () {
               setState(() {
                 _selectedGame = Game(
-                  id: game['id'] as int? ?? 0,
                   name: gameName ?? 'Unknown',
+                  slug: (game['slug'] as String?) ?? '',
+                  igdbId: game['id'] as int? ?? game['igdbId'] as int?,
                   coverUrl: coverUrl,
-                  slug: game['slug'] as String?,
+                  summary: game['summary'] as String?,
+                  firstReleaseDate: null,
+                  genres: const <String>[],
+                  platforms: const <String>[],
+                  maxSpots: game['maxSpots'] as int?,
+                  isCached: false,
+                  cachedAt: null,
                 );
               });
               HapticFeedback.selectionClick();
@@ -760,7 +767,7 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
                 ),
                 
                 // Expanded options
-                if (_isVisibilityExpanded) ..[
+                if (_isVisibilityExpanded) ...[
                   const SizedBox(height: 12),
                   Container(
                     height: 1,

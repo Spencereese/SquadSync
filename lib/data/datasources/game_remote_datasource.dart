@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
 import 'package:dio_cache_interceptor_hive_store/dio_cache_interceptor_hive_store.dart';
 import 'package:path_provider/path_provider.dart';
@@ -59,9 +60,7 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
 
     if (clientId == null) throw Exception('IGDB client ID not found.');
 
-    print('🔍 IGDB Search Query: "$query"');
-    print('🔑 Client ID: ${clientId.substring(0, 5)}...');
-    print('🔐 Token: ${token.substring(0, 10)}...');
+    debugPrint('IGDB search query: "$query"');
 
     IgdbErrorType? lastError;
     for (int attempt = 0; attempt < _maxRetries; attempt++) {
@@ -79,7 +78,7 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           limit ${limit * 2};
         ''';
 
-        print('📤 IGDB Query Body:\n$queryBody');
+        debugPrint('📤 IGDB Query Body:\n$queryBody');
 
         final response = await _dio.post<String>(
           'https://api.igdb.com/v4/games',
@@ -93,42 +92,32 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           ),
         );
 
-        print('📥 IGDB Response Status: ${response.statusCode}');
-        print('📥 IGDB Response Data Length: ${response.data?.length ?? 0}');
-        print('📥 IGDB Raw Response: ${response.data}');
+        debugPrint(
+            'IGDB response status=${response.statusCode} bytes=${response.data?.length ?? 0}');
 
         if (response.statusCode == 200 && response.data != null) {
           final data = json.decode(response.data!) as List<dynamic>;
-          print('📊 IGDB Parsed ${data.length} raw results');
-
-          // Log first game for debugging
-          if (data.isNotEmpty) {
-            print('🔍 First game data: ${json.encode(data.first)}');
-            final firstGame = data.first as Map<String, dynamic>;
-            print('   - name: ${firstGame['name']}');
-            print('   - cover: ${firstGame['cover']}');
-            print('   - slug: ${firstGame['slug']}');
-          }
+          debugPrint('IGDB parsed ${data.length} raw results');
 
           final games = data
               .where((game) {
                 final isValid = _isValidGame(game);
                 if (!isValid && data.length <= 5) {
-                  print(
+                  debugPrint(
                       '❌ Filtered out: ${(game as Map)['name']} (cover: ${game['cover']})');
                 }
                 return isValid;
               })
               .map((game) => Game.fromIgdb(game))
               .toList();
-          print('✅ IGDB Filtered to ${games.length} valid games');
+          debugPrint('✅ IGDB Filtered to ${games.length} valid games');
           return _deduplicateGames(games).take(limit).toList();
         } else if (response.statusCode == 401) {
-          print('🔄 Token expired, refreshing...');
+          debugPrint('🔄 Token expired, refreshing...');
           await refreshToken();
           continue;
         } else {
-          print(
+          debugPrint(
               '❌ IGDB Error: Status ${response.statusCode}, Body: ${response.data}');
           lastError =
               _classifyError(response.statusCode ?? 500, response.data ?? '');
@@ -138,15 +127,15 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
           }
         }
       } on DioException catch (e) {
-        print('❌ Dio Exception: ${e.message}');
-        print('   Response: ${e.response?.data}');
+        debugPrint('❌ Dio Exception: ${e.message}');
+        debugPrint('   Response: ${e.response?.data}');
         if (e.response?.statusCode == 401) {
           await refreshToken();
           continue;
         }
         lastError = IgdbErrorType.network;
       } catch (e) {
-        print('❌ Unknown Error: $e');
+        debugPrint('❌ Unknown Error: $e');
         lastError = IgdbErrorType.network;
       }
 
@@ -311,14 +300,14 @@ class GameRemoteDataSourceImpl implements GameRemoteDataSource {
 
     for (final pattern in invalidPatterns) {
       if (name.contains(pattern)) {
-        print('⚠️ Filtered "${game['name']}" - matches pattern: $pattern');
+        debugPrint('⚠️ Filtered "${game['name']}" - matches pattern: $pattern');
         return false;
       }
     }
 
     // Require cover image
     if (game['cover'] == null) {
-      print('⚠️ Filtered "${game['name']}" - no cover image');
+      debugPrint('⚠️ Filtered "${game['name']}" - no cover image');
       return false;
     }
 

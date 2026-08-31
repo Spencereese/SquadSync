@@ -71,7 +71,7 @@ class MessageState {
 
 /// MessageNotifier - Handles core messaging operations:
 /// - Sending/receiving messages with optimistic updates
-/// - Real-time message streaming (Supabase + Firestore fallback)
+/// - Real-time message streaming (Supabase)
 /// - Reactions on messages
 /// - Typing indicators
 /// - Reply functionality
@@ -172,11 +172,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   }
 
   void _startMessagesStream(String chatGroupId, ChatType chatType) {
-    if (_useSupabase) {
-      _startSupabaseMessagesStream(chatGroupId, chatType);
-    } else {
-      _startFirestoreMessagesStream(chatGroupId, chatType);
-    }
+    _startSupabaseMessagesStream(chatGroupId, chatType);
   }
 
   Future<void> _startSupabaseMessagesStream(
@@ -220,7 +216,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
               _useSupabase = false;
               _supabaseMessagesSubscription?.cancel();
               _supabaseMessagesSubscription = null;
-              _startFirestoreMessagesStream(chatGroupId, chatType);
+              _startFallbackMessagesStream(chatGroupId, chatType);
             },
           );
 
@@ -229,11 +225,11 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     } catch (e) {
       debugPrint('MessageNotifier: Failed to start Supabase stream: $e');
       _useSupabase = false;
-      _startFirestoreMessagesStream(chatGroupId, chatType);
+      _startFallbackMessagesStream(chatGroupId, chatType);
     }
   }
 
-  void _startFirestoreMessagesStream(String chatGroupId, ChatType chatType) {
+  void _startFallbackMessagesStream(String chatGroupId, ChatType chatType) {
     final currentUser = _authService.currentUser;
     if (currentUser == null) {
       debugPrint('MessageNotifier: No authenticated user, skipping stream');
@@ -241,7 +237,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     }
 
     debugPrint(
-        'MessageNotifier: Starting Firestore fallback stream for $chatGroupId');
+        'MessageNotifier: Starting Supabase fallback stream for $chatGroupId');
 
     final stream = SupabaseService.client
         .from('chat_messages')

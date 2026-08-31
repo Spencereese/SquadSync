@@ -1,7 +1,7 @@
 name: squad_sync
-description: "A new Flutter project."
+description: "SquadSync — lobby, chat, and squad coordination for gaming groups."
 publish_to: 'none'
-version: 3.4.3+4
+version: 3.4.4+5
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -9,80 +9,82 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  agora_rtc_engine: ^6.5.3
+  app_links: ^6.4.1
+  audioplayers: ^6.1.0
+  badges: ^3.1.2
+  cached_network_image: ^3.4.1
+  collection: ^1.18.0
+  confetti: ^0.8.0
+  connectivity_plus: ^6.1.0
+  crypto: ^3.0.6
+  cupertino_icons: ^1.0.8
   dio: ^5.4.0
   dio_cache_interceptor: ^3.5.0
   dio_cache_interceptor_hive_store: ^3.2.2
-  path_provider: ^2.1.2
-  google_sign_in: ^7.2.0
-  sign_in_with_apple: ^7.0.1
-  uuid: ^4.4.2
-  # Firebase: Analytics & Push Notifications ONLY (Dec 2025 - Database fully migrated to Supabase)
-  firebase_core: ^4.2.1  # Required for firebase_analytics and firebase_messaging
-  firebase_messaging: ^16.0.2  # Push notifications (FCM)
-  firebase_analytics: ^12.0.2  # User analytics and event tracking
-  supabase_flutter: ^2.12.0  # Latest: getClaims, idempotent init, PostgREST v12
-  supabase_auth_ui: ^0.4.1   # Compatible version (0.5.x requires sign_in_with_apple ^6.x)
-  postgres: ^3.3.0           # Updated for compatibility with Supabase 2.12.0
   emoji_picker_flutter: ^4.3.0
-  audioplayers: ^6.1.0
-  cupertino_icons: ^1.0.8
-  collection: ^1.18.0
-  shared_preferences: ^2.3.0
+  # Firebase: Analytics & FCM only. Database lives on Supabase.
+  firebase_analytics: ^12.0.2
+  firebase_core: ^4.2.1
+  firebase_messaging: ^16.0.2
   fl_chart: ^1.1.0
+  flutter_animate: ^4.5.0
+  flutter_dotenv: ^5.1.0
   flutter_local_notifications: ^19.4.2
-  table_calendar: ^3.1.2
-  intl: ^0.20.2
-  timezone: ^0.10.1
-  image_picker: ^1.1.2
+  flutter_native_splash: ^2.4.2
+  flutter_riverpod: ^2.6.1
+  flutter_secure_storage: ^9.2.4
+  flutter_typeahead: ^5.0.2
+  freezed_annotation: ^2.4.4
+  get_it: ^8.0.0
+  go_router: ^14.6.2
+  google_fonts: ^6.2.1
+  google_sign_in: ^7.2.0
+  hooks_riverpod: ^2.6.1
+  http: ^1.2.2
   image_cropper: ^8.0.2
+  image_picker: ^1.1.2
+  intl: ^0.20.2
+  just_audio: ^0.10.5
+  logger: ^2.6.2
+  package_info_plus: ^9.0.0
+  path: ^1.9.0
+  path_provider: ^2.1.2
+  permission_handler: ^11.3.1
+  pinch_zoom: ^2.0.1
+  postgres: ^3.3.0
+  qr_flutter: ^4.1.0
+  record: ^6.1.1
+  retry: ^3.1.0
+  riverpod: ^2.6.1
+  rxdart: ^0.28.0
+  share_plus: ^12.0.0
+  shared_preferences: ^2.3.0
+  sign_in_with_apple: ^7.0.1
+  speech_to_text: ^7.0.0
   sqflite: ^2.3.0
   sqflite_sqlcipher: ^3.1.1
-  path: ^1.8.3
-  pinch_zoom: ^2.0.1
-  app_links: ^6.4.1
-  flutter_animate: ^4.5.0
-  google_fonts: ^6.2.1
-  package_info_plus: ^9.0.0
+  supabase_auth_ui: ^0.4.1
+  supabase_flutter: ^2.12.0
+  table_calendar: ^3.1.2
+  timezone: ^0.10.1
   url_launcher: ^6.3.0
-  video_player: ^2.9.2
+  uuid: ^4.4.2
   video_compress: ^3.1.2
-  record: ^6.1.1
-  cached_network_image: ^3.4.1
-  riverpod: ^2.5.1
-  flutter_riverpod: ^2.5.1
-  hooks_riverpod: ^2.5.2
-  just_audio: ^0.10.5
-  share_plus: ^12.0.0
-  flutter_typeahead: ^5.0.2
-  flutter_secure_storage: ^9.2.4
-  qr_flutter: ^4.1.0
-  badges: ^3.1.2
-  go_router: ^14.6.2
-  agora_rtc_engine: ^6.5.3
-  permission_handler: ^11.3.1
-  speech_to_text: ^7.0.0
-  connectivity_plus: ^6.1.0
-  flutter_dotenv: ^5.1.0
-  retry: ^3.1.0
-  rxdart: ^0.28.0
-  get_it: ^8.0.0
-  logger: ^2.6.2
-  confetti: ^0.8.0
-  freezed_annotation: ^2.4.4  # Stable version matching freezed 2.5.7
-  workmanager: ^0.5.2  # Background sync for offline-first operations
+  video_player: ^2.9.2
+  workmanager: ^0.5.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
-  flutter_launcher_icons: ^0.14.4
-  flutter_native_splash: ^2.4.2
-  mockito: ^5.4.4
-  freezed: ^2.5.7  # Stable version without DiagnosticableTreeMixin bugs
-  json_serializable: ^6.8.0
   build_runner: ^2.4.13
+  flutter_launcher_icons: ^0.14.4
+  flutter_lints: ^6.0.0
+  freezed: ^2.5.7
   integration_test:
     sdk: flutter
+  json_serializable: ^6.8.0
+  mockito: ^5.4.4
 
 flutter:
   uses-material-design: true 

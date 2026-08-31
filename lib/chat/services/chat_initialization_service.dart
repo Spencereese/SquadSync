@@ -136,7 +136,7 @@ class ChatInitializationService {
 
   void _updateOnlineStatus(bool isOnline, LobbyState squadState) {
     // Implementation moved from ChatScreen
-    // Updates user's online status in Firestore
+    // Updates user's online status in Supabase
   }
 
   /// Cleanup operations when chat is disposed

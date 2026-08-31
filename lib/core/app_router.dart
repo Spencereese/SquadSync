@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,7 +30,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   final abTestService = ref.watch(abTestingServiceProvider).asData?.value;
 
   return GoRouter(
-    debugLogDiagnostics: true,
+    debugLogDiagnostics: kDebugMode,
     initialLocation: '/',
     redirect: (context, state) async {
       final user = authService.currentUser;

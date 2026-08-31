@@ -82,8 +82,15 @@ void main() async {
   // Note: Native splash will be removed by app_widgets.dart after Flutter content is ready
   // DO NOT call FlutterNativeSplash.remove() here - it removes splash too early
 
-  // Run the app
-  runApp(SquadSyncApp(prefs: prefs));
+  // ProviderScope must wrap the app — SquadSyncApp is a ConsumerStatefulWidget.
+  runApp(
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
+      child: SquadSyncApp(prefs: prefs),
+    ),
+  );
 }
 
 /// Initialize Firebase for Analytics & Messaging ONLY
@@ -299,11 +306,6 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ProviderScope(
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(widget.prefs),
-      ],
-      child: const SquadSyncMaterialApp(),
-    );
+    return const SquadSyncMaterialApp();
   }
 }

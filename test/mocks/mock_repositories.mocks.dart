@@ -1331,13 +1331,13 @@ class MockGameRepository extends _i1.Mock implements _i14.GameRepository {
       ) as _i11.Future<List<_i15.Game>>);
 
   @override
-  _i11.Future<void> syncGamesToFirestore(
+  _i11.Future<void> persistGames(
     String? query,
     List<_i15.Game>? games,
   ) =>
       (super.noSuchMethod(
         Invocation.method(
-          #syncGamesToFirestore,
+          #persistGames,
           [
             query,
             games,

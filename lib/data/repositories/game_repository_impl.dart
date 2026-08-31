@@ -30,8 +30,7 @@ class GameRepositoryImpl implements GameRepository {
       // Cache results
       await _localDataSource.cacheGames(query, games);
 
-      // Sync to Firestore
-      await syncGamesToFirestore(query, games);
+      await persistGames(query, games);
 
       return games;
     } catch (e) {
@@ -60,8 +59,7 @@ class GameRepositoryImpl implements GameRepository {
       // Cache results with 1 hour TTL
       await _localDataSource.cachePopularGames(games);
 
-      // Sync to Firestore
-      await syncGamesToFirestore('popular', games);
+      await persistGames('popular', games);
 
       return games;
     } catch (e) {
@@ -94,9 +92,9 @@ class GameRepositoryImpl implements GameRepository {
   }
 
   @override
-  Future<void> syncGamesToFirestore(String query, List<Game> games) async {
-    // TODO: Migrate to Supabase when needed
-    // No longer using Firestore for game syncing
+  Future<void> persistGames(String query, List<Game> games) async {
+    // Games are cached locally. Remote catalog sync can be added on Supabase
+    // if a shared games table is needed; do not write to Firebase.
     return;
   }
 

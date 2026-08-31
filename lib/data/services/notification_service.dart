@@ -6,7 +6,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/notification_priority.dart';
-import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -41,11 +40,10 @@ class NotificationService {
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
     // iOS initialization with permissions
-    final iosSettings = DarwinInitializationSettings(
+    const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
-      onDidReceiveLocalNotification: _onDidReceiveLocalNotification,
     );
 
     final initSettings = InitializationSettings(
@@ -369,7 +367,6 @@ class NotificationService {
   /// Update in-app badge count
   Future<void> _updateBadge(String type) async {
     _badgeCounts[type] = (_badgeCounts[type] ?? 0) + 1;
-    final totalBadges = _badgeCounts.values.reduce((a, b) => a + b);
 
     if (Platform.isIOS) {
       await _localNotifications
@@ -421,16 +418,6 @@ class NotificationService {
   String _encodePayload(Map<String, dynamic> payload) {
     // Simple encoding - can be enhanced with proper JSON
     return payload.toString();
-  }
-
-  /// Handle iOS local notification in foreground
-  Future<void> _onDidReceiveLocalNotification(
-    int id,
-    String? title,
-    String? body,
-    String? payload,
-  ) async {
-    debugPrint('📱 iOS local notification: $title');
   }
 
   /// Handle notification tap

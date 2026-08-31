@@ -5,8 +5,7 @@ import 'dart:io' show Platform;
 
 /// Supabase service for SquadSync
 ///
-/// Provides dual-client architecture alongside Firebase.
-/// Currently being integrated as a complementary data layer.
+/// Primary data layer for auth, realtime, and storage.
 ///
 /// Usage:
 /// ```dart

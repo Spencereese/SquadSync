@@ -1,8 +1,9 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/notification_priority.dart';
-import '../services/notification_service.dart';
+import '../../data/services/notification_service.dart';
 
 /// Provider for NotificationNotifier
 final notificationNotifierProvider =
@@ -64,7 +65,6 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
 
       final lobbyId = newRecord['lobby_id'] as String?;
       final userId = newRecord['user_id'] as String?;
-      final spotIndex = newRecord['spot_index'] as int?;
 
       if (lobbyId == null || userId == null) return;
 
@@ -131,7 +131,7 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
       // Update player count tracker
       _lobbyPlayerCounts[lobbyId] = currentPlayers;
     } catch (e) {
-      print('❌ Error handling lobby momentum: $e');
+      debugPrint('Error handling lobby momentum: $e');
     }
   }
 

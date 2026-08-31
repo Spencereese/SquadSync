@@ -995,8 +995,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         allTimeRatings: updatedAllTimeRatings,
       ));
 
-      // TODO: Persist to Firestore
-      // await _firestoreManager.updateFirestore({'dailyRatings': updatedDailyRatings, 'allTimeRatings': updatedAllTimeRatings});
+      // Ratings persist via UserNotifier / Supabase users table.
     }
   }
 

@@ -31,18 +31,16 @@ abstract class ICacheService {
   void setDefaultMaxAge(String key, Duration maxAge);
 }
 
-/// Interface for Firestore service (LEGACY - migrating to Supabase)
-abstract class IFirestoreService {
-  // void registerField<T>(FirestoreFieldSerializer<T> serializer);
+/// Interface for remote document persistence (Supabase).
+abstract class IRemoteDataService {
   void markFieldChanged(String fieldName);
-  Future<void> updateFirestore({
+  Future<void> persist({
     required Map<String, String> displayNameCache,
     bool force = false,
   });
-  Future<Map<String, dynamic>?> loadFirestore(
+  Future<Map<String, dynamic>?> loadDocument(
       String collection, String document);
 
-  // Voice room methods
   Stream<Map<String, dynamic>?> getVoiceRoomStream(String roomId);
   Future<void> updateVoiceRoom(String roomId, Map<String, dynamic> data);
   Future<void> updateVoiceParticipant(
@@ -133,8 +131,8 @@ abstract class INotificationManager {
   Future<void> cancelNotification(int id);
 }
 
-/// Interface for Firestore manager
-abstract class IFirestoreManager {
+/// Interface for remote document manager (Supabase)
+abstract class IRemoteDataManager {
   Future<void> updateDocument(
       String collection, String document, Map<String, dynamic> data);
   Future<Map<String, dynamic>?> getDocument(String collection, String document);
@@ -239,7 +237,7 @@ abstract class ISquadPersistenceManager {
   void dispose();
   Future<void> leaveSquad();
   void selectSquad(String squadId);
-  Future<void> updateFirestoreAsync({bool force = false});
-  void updateFirestore({bool force = false});
+  Future<void> persistAsync({bool force = false});
+  void persist({bool force = false});
   void markFieldChanged(String field);
 }

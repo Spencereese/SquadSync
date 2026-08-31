@@ -52,8 +52,16 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
 
     // Initialize dependencies
     _repository = ref.read(gameRepositoryProvider);
-    _localDataSource ??= di.getIt<GameLocalDataSource>();
-    _twitchService = TwitchService(di.getIt<Dio>());
+    try {
+      _localDataSource ??= di.getIt<GameLocalDataSource>();
+    } catch (e) {
+      _logger.w('GameLocalDataSource not registered: $e');
+    }
+    try {
+      _twitchService = TwitchService(di.getIt<Dio>());
+    } catch (e) {
+      _logger.w('Twitch/Dio not available: $e');
+    }
 
     // Verify IGDB credentials are loaded
     try {
@@ -120,7 +128,11 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
       // Fallback chain: cached -> local JSON
       try {
         _logger.i('   Trying cached games...');
-        final cachedGames = await localDataSource.getCachedGames(query);
+        final cache = _localDataSource;
+        if (cache == null) {
+          throw StateError('No local game cache');
+        }
+        final cachedGames = await cache.getCachedGames(query);
         if (cachedGames.isNotEmpty) {
           final dedupedGames = _dedupGamesBySlug(cachedGames);
           _logger.i('✅ Cache returned ${dedupedGames.length} games');
@@ -130,7 +142,7 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
         // Final fallback: filter popular_games.json
         _logger.i('   Trying offline games (popular_games.json)...');
         final offlineGames =
-            await localDataSource.getOfflineGames(query, limit: 30);
+            await cache.getOfflineGames(query, limit: 30);
         final dedupedGames = _dedupGamesBySlug(offlineGames);
         _logger.i('✅ Offline data returned ${dedupedGames.length} games');
         return AsyncValue.data(dedupedGames);
@@ -206,11 +218,11 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
   }
 
   Future<void> fetchGameDetails(int igdbId) async {
-    state = const AsyncValue.loading();
+    final previous = state.value ?? GameState.initial();
 
     state = await AsyncValue.guard(() async {
       final game = await _repository.getGameDetails(igdbId);
-      return state.value!.copyWith(currentGame: game);
+      return previous.copyWith(currentGame: game, isInitialized: true);
     });
   }
 

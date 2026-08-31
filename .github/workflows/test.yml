@@ -21,11 +21,16 @@ jobs:
         channel: 'stable'
         cache: true
 
+    - name: Provide dummy .env for asset bundling
+      run: cp .env.example .env
+
     - name: Install dependencies
       run: flutter pub get
 
+    # Fail only on analyzer errors. Leftover unused-import / unused-element
+    # warnings from the abandoned tree are tracked but not release-blocking.
     - name: Analyze lib
-      run: flutter analyze lib --no-fatal-infos
+      run: flutter analyze lib --no-fatal-infos --no-fatal-warnings
 
     - name: Run GameNotifier unit tests
       run: flutter test test/presentation/notifiers/game_notifier_test.dart

@@ -18,6 +18,7 @@ import 'core/email_auth.dart';
 import 'core/google_auth_config.dart';
 import 'services/supabase_service.dart';
 import 'widgets/email_auth_actions.dart';
+import 'widgets/login_brand.dart';
 
 class SetupScreen extends ConsumerStatefulWidget {
   const SetupScreen({super.key});
@@ -426,13 +427,18 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                       horizontal: pagePad,
                       vertical: 16,
                     ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: 440,
-                        minHeight: constraints.maxHeight - 32,
-                      ),
-                      child: Center(
-                        child: GlassmorphicContainer(
+                    // Align gives loose width so maxWidth: 440 actually applies
+                    // on a tight 1440-wide scroll view (ConstrainedBox alone
+                    // cannot shrink a tight incoming width).
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 440),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight - 32,
+                          ),
+                          child: GlassmorphicContainer(
                           blur: 22,
                           borderRadius: 24,
                           padding: EdgeInsets.fromLTRB(
@@ -445,32 +451,10 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Image.asset(
-                          'assets/images/logo.png',
-                          height: 72,
-                          errorBuilder: (_, __, ___) => Icon(
-                            Icons.groups_3_rounded,
-                            size: 64,
-                            color: neon,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Cod Squad',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            color: titleColor,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Sign in to find your squad',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: subtitleColor,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        LoginBrandHeader(
+                          neon: neon,
+                          titleColor: titleColor,
+                          subtitleColor: subtitleColor,
                         ),
                         const SizedBox(height: 28),
                         TextField(
@@ -513,34 +497,6 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                           enabled: !_isLoading,
                           autofillHints: const [AutofillHints.password],
                         ),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed:
-                                _isLoading ? null : _showForgotPasswordDialog,
-                            style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 0,
-                                vertical: 8,
-                              ),
-                              minimumSize: Size.zero,
-                            ),
-                            child: Text(
-                              'Forgot password?',
-                              softWrap: true,
-                              overflow: TextOverflow.visible,
-                              textAlign: TextAlign.right,
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                color: neon,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
                         Theme(
                           data: theme.copyWith(
                             elevatedButtonTheme: ElevatedButtonThemeData(
@@ -570,7 +526,12 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                             onCreateAccount: _handleEmailCreateAccount,
                           ),
                         ),
-                        const SizedBox(height: 18),
+                        ForgotPasswordButton(
+                          onPressed:
+                              _isLoading ? null : _showForgotPasswordDialog,
+                          color: neon,
+                        ),
+                        const SizedBox(height: 10),
                         Row(
                           children: [
                             Expanded(
@@ -646,7 +607,8 @@ class SetupScreenState extends ConsumerState<SetupScreen> {
                   ),
                 ),
               ),
-            );
+            ),
+          );
                 },
               ),
             ),

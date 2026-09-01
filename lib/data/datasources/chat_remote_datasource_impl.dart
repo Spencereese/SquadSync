@@ -60,39 +60,31 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     DateTime? before,
     required String orderColumn,
   }) async {
-    // Epoch thread ids (e.g. 1766267555951) may be stored as text or int.
-    final asInt = int.tryParse(chatGroupId);
-    final orFilter = asInt != null
-        ? 'chat_id.eq.$chatGroupId,chat_id.eq.$asInt'
-        : null;
-
+    // chat_id is text. Do not .or() an int — PostgREST treats it as dead weight.
     if (before != null) {
-      final filtered = orFilter != null
-          ? _supabase
-              .from('chat_messages')
-              .select()
-              .or(orFilter)
-              .filter(orderColumn, 'lt', before.toIso8601String())
-          : _supabase
-              .from('chat_messages')
-              .select()
-              .eq('chat_id', chatGroupId)
-              .filter(orderColumn, 'lt', before.toIso8601String());
-      return await filtered.order(orderColumn, ascending: true).limit(limit);
+      return await _supabase
+          .from('chat_messages')
+          .select()
+          .eq('chat_id', chatGroupId)
+          .filter(orderColumn, 'lt', before.toIso8601String())
+          .order(orderColumn, ascending: true)
+          .limit(limit);
     }
 
-    final filtered = orFilter != null
-        ? _supabase.from('chat_messages').select().or(orFilter)
-        : _supabase.from('chat_messages').select().eq('chat_id', chatGroupId);
-    return await filtered.order(orderColumn, ascending: true).limit(limit);
+    return await _supabase
+        .from('chat_messages')
+        .select()
+        .eq('chat_id', chatGroupId)
+        .order(orderColumn, ascending: true)
+        .limit(limit);
   }
 
   @override
   Future<List<Message>> fetchMessages(String chatGroupId,
       {int limit = 50, DateTime? before}) async {
     // Do not .eq('is_deleted', false): older rows are often NULL/0 and
-    // PostgREST drops them. Do not limit(1). Match chat_id as text or int.
-    // Prefer timestamp (NOT NULL) if created_at returns a 1-row page.
+    // PostgREST drops them. Do not limit(1). chat_id is text — no int .or().
+    // Prefer timestamp; fall back to created_at if that page is ≤1 row.
     var response = await _selectChatMessageRows(
       chatGroupId,
       limit: limit,
@@ -897,24 +889,29 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   @override
   Future<List<Message>> fetchMessagesSince(
       String chatGroupId, DateTime since) async {
-    final asInt = int.tryParse(chatGroupId);
-    final response = asInt != null
-        ? await _supabase
-            .from('chat_messages')
-            .select()
-            .or('chat_id.eq.$chatGroupId,chat_id.eq.$asInt')
-            .gt('timestamp', since.toIso8601String())
-            .order('timestamp', ascending: true)
-        : await _supabase
-            .from('chat_messages')
-            .select()
-            .eq('chat_id', chatGroupId)
-            .gt('timestamp', since.toIso8601String())
-            .order('timestamp', ascending: true);
+    var response = await _supabase
+        .from('chat_messages')
+        .select()
+        .eq('chat_id', chatGroupId)
+        .gt('timestamp', since.toIso8601String())
+        .order('timestamp', ascending: true);
     debugPrint(
-        'PostgREST chat_messages since raw=${(response as List).length}');
+        'PostgREST chat_messages since raw=${(response as List).length} order=timestamp');
+    if ((response as List).length <= 1) {
+      final createdAtPage = await _supabase
+          .from('chat_messages')
+          .select()
+          .eq('chat_id', chatGroupId)
+          .gt('created_at', since.toIso8601String())
+          .order('created_at', ascending: true);
+      debugPrint(
+          'PostgREST chat_messages since raw=${(createdAtPage as List).length} order=created_at');
+      if ((createdAtPage as List).length > (response as List).length) {
+        response = createdAtPage;
+      }
+    }
 
-    return response
+    return (response as List)
         .map((data) => Map<String, dynamic>.from(data as Map))
         .where((row) =>
             sameChatId(row['chat_id'], chatGroupId) &&

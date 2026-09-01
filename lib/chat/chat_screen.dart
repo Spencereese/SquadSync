@@ -95,6 +95,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   // Guard to prevent repeated lobby queries in didChangeDependencies
   bool _hasQueriedLobby = false;
+  String? _lobbyChatGroupId;
+  Map<String, int> _threadHistoryCounts = const {};
 
   // CRITICAL: Guard to prevent repeated chat initialization
   // didChangeDependencies() runs on EVERY dependency change (MediaQuery, keyboard, etc.)
@@ -126,7 +128,21 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       selectedLobbyId: widget.chatType == ChatType.squad
           ? (_cachedSquadState?.selectedLobbyId ?? _registeredActiveChatGroupId)
           : null,
+      lobbyChatGroupId: _boundLobbyChatGroupId,
+      historyCounts: _threadHistoryCounts,
     );
+  }
+
+  /// Lobby current chat id from bind, or squad currentLobby after mapping.
+  /// userGroup does not inherit an unrelated squad lobby chat id.
+  String? get _boundLobbyChatGroupId {
+    if (_lobbyChatGroupId != null && _lobbyChatGroupId!.isNotEmpty) {
+      return _lobbyChatGroupId;
+    }
+    if (widget.chatType == ChatType.squad) {
+      return _cachedSquadState?.currentLobby?.chatGroupId;
+    }
+    return null;
   }
 
   /// Widget id, else the registered squad/lobby thread. Never `''`.
@@ -138,6 +154,111 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
   @visibleForTesting
   String? get debugRegisteredActiveChatGroupId => _registeredActiveChatGroupId;
+
+  /// Read-only: find the lobby by id or chat_group_id and bind open-chat
+  /// to the thread that actually has messages. Does not write server rows.
+  ///
+  /// If the lobby row's chat_group_id is still the 1-row id and no other
+  /// candidate is stored on that lobby, the live thread cannot be invented.
+  Future<void> _bindLobbyChatThread() async {
+    final currentLobby = _cachedSquadState?.currentLobby;
+    final probeId = widget.chatGroupId ??
+        _cachedSquadState?.selectedLobbyId ??
+        currentLobby?.id;
+    if (probeId == null || probeId.isEmpty) return;
+
+    try {
+      debugPrint('🔍 Binding lobby chat thread from probe $probeId');
+      var lobbyResponse = await SupabaseService.client
+          .from('lobbies')
+          .select()
+          .eq('chat_group_id', probeId)
+          .maybeSingle();
+      lobbyResponse ??= await SupabaseService.client
+          .from('lobbies')
+          .select()
+          .eq('id', probeId)
+          .maybeSingle();
+      final stateLobbyId = currentLobby?.id;
+      if (lobbyResponse == null &&
+          stateLobbyId != null &&
+          stateLobbyId.isNotEmpty &&
+          stateLobbyId != probeId) {
+        lobbyResponse = await SupabaseService.client
+            .from('lobbies')
+            .select()
+            .eq('id', stateLobbyId)
+            .maybeSingle();
+      }
+
+      final lobbyId = (lobbyResponse?['id'] as String?) ??
+          stateLobbyId ??
+          probeId;
+      final relatedToState = currentLobby != null &&
+          (widget.chatType == ChatType.squad ||
+              currentLobby.id == probeId ||
+              currentLobby.chatGroupId == probeId ||
+              currentLobby.id == widget.chatGroupId ||
+              currentLobby.chatGroupId == widget.chatGroupId);
+      final rawCurrent = lobbyResponse?['chat_group_id'] ??
+          (relatedToState ? currentLobby?.chatGroupId : null);
+      final currentChatId = rawCurrent == null || rawCurrent.toString().isEmpty
+          ? null
+          : rawCurrent.toString();
+
+      final counts = <String, int>{};
+      final toCount = <String>{
+        probeId,
+        if (widget.chatGroupId != null && widget.chatGroupId!.isNotEmpty)
+          widget.chatGroupId!,
+        if (currentChatId != null && currentChatId.isNotEmpty) currentChatId,
+      };
+      for (final id in toCount) {
+        try {
+          final rows = await SupabaseService.client
+              .from('chat_messages')
+              .select('id')
+              .eq('chat_id', id);
+          counts[id] = (rows as List).length;
+          debugPrint('PostgREST chat_messages count=$id raw=${counts[id]}');
+        } catch (e) {
+          debugPrint('Chat thread count skipped for $id: $e');
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _lobbyChatGroupId = currentChatId;
+        _threadHistoryCounts = counts;
+      });
+
+      final resolved = resolveActiveChatGroupId(
+        widgetChatGroupId: widget.chatGroupId,
+        isSquad: widget.chatType == ChatType.squad,
+        selectedLobbyId:
+            widget.chatType == ChatType.squad ? lobbyId : null,
+        lobbyChatGroupId: currentChatId,
+        historyCounts: counts,
+      );
+      debugPrint(
+          '🔗 Open-chat bound to $resolved (probe=$probeId lobbyChat=$currentChatId)');
+
+      final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
+      lobbyNotifier.setSelectedLobbyId(lobbyId);
+      _syncActiveChatThread(
+        selectedLobbyId:
+            widget.chatType == ChatType.squad ? lobbyId : null,
+      );
+      if (resolved != null) {
+        await _saveLastChatGroup(resolved);
+      }
+    } catch (e) {
+      debugPrint('❌ Lobby chat bind failed: $e');
+      if (mounted && probeId.isNotEmpty) {
+        ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(probeId);
+      }
+    }
+  }
 
   /// Register the open thread for badge skip. No-op until the id is non-null.
   /// First non-null id also starts initializeChat / loadUserGroups.
@@ -151,6 +272,8 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           (widget.chatType == ChatType.squad
               ? _cachedSquadState?.selectedLobbyId
               : null),
+      lobbyChatGroupId: _boundLobbyChatGroupId,
+      historyCounts: _threadHistoryCounts,
     );
     final isNewId = id != null && id != _registeredActiveChatGroupId;
     if (isNewId) {
@@ -527,12 +650,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
 
-    // Save this chat group as the last used chat group
     debugPrint(
         '🔍 ChatScreen init: chatType=${widget.chatType}, chatGroupId=${widget.chatGroupId}');
     if (widget.chatType == ChatType.userGroup && widget.chatGroupId != null) {
       debugPrint('🔍 Conditions met for setting squad ID');
-      _saveLastChatGroup(widget.chatGroupId!);
     } else {
       debugPrint(
           '⚠️ Conditions NOT met: chatType=${widget.chatType}, chatGroupId=${widget.chatGroupId}');
@@ -598,58 +719,15 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Set squad ID for user group chats by querying lobby table
-    if (widget.chatType == ChatType.userGroup &&
-        widget.chatGroupId != null &&
+    // Bind lobby + current chat id (read-only). Do not write server rows.
+    if ((widget.chatType == ChatType.userGroup ||
+            widget.chatType == ChatType.squad) &&
         !_hasQueriedLobby) {
-      _hasQueriedLobby = true; // Guard to prevent repeated queries
+      _hasQueriedLobby = true;
 
-      // Run async lobby query after frame builds to avoid setState during build
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-
-        try {
-          debugPrint(
-              '🔍 Querying lobby for chat_group_id: ${widget.chatGroupId}');
-
-          // Query lobby by chat_group_id
-          final lobbyResponse = await SupabaseService.client
-              .from('lobbies')
-              .select()
-              .eq('chat_group_id', widget.chatGroupId!)
-              .maybeSingle();
-
-          String lobbyId;
-
-          if (lobbyResponse == null) {
-            debugPrint(
-                '⚠️ No lobby found for chat group, using chat_group_id as lobby_id');
-            // If no lobby found, the lobby ID is the same as chat_group_id
-            // (lobbies are created with id = chat_group_id in chat_remote_datasource_impl.dart)
-            lobbyId = widget.chatGroupId!;
-          } else {
-            lobbyId = lobbyResponse['id'] as String;
-            debugPrint(
-                '✅ Found lobby: $lobbyId for chat_group_id: ${widget.chatGroupId}');
-          }
-
-          // Set the lobby ID in the notifier
-          if (mounted) {
-            final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
-            lobbyNotifier.setSelectedLobbyId(lobbyId);
-            debugPrint('✅ Set lobby ID in didChangeDependencies: $lobbyId');
-          }
-        } catch (e) {
-          debugPrint(
-              '❌ Error querying/setting lobby ID in didChangeDependencies: $e');
-          // Fallback: use chat_group_id as lobby ID
-          if (mounted) {
-            final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
-            lobbyNotifier.setSelectedLobbyId(widget.chatGroupId!);
-            debugPrint(
-                '⚠️ Fallback: Set chat_group_id as lobby ID: ${widget.chatGroupId}');
-          }
-        }
+        await _bindLobbyChatThread();
       });
     }
 

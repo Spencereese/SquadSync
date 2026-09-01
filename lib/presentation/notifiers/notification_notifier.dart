@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_env.dart';
+import '../../core/chat_messages.dart';
 import '../../domain/entities/notification_priority.dart';
 import '../../notification_service.dart';
 import '../../services/supabase_service.dart';
@@ -29,20 +30,37 @@ bool shouldSkipChatBadgeIncrement(
       incomingGroup.toString() == activeChatGroupId;
 }
 
-/// ChatScreen's active thread: widget id, or squad [selectedLobbyId].
-/// Never returns an empty string.
+/// ChatScreen's active thread: widget id, lobby current chat, or squad lobby id.
+/// When both a stale id and a current chat id exist, [historyCounts] picks
+/// the thread that actually has messages (no invented rows).
 String? resolveActiveChatGroupId({
   required String? widgetChatGroupId,
   required bool isSquad,
   String? selectedLobbyId,
+  String? lobbyChatGroupId,
+  Map<String, int> historyCounts = const {},
 }) {
-  if (widgetChatGroupId != null && widgetChatGroupId.isNotEmpty) {
-    return widgetChatGroupId;
+  final widgetId = (widgetChatGroupId != null && widgetChatGroupId.isNotEmpty)
+      ? widgetChatGroupId
+      : null;
+  final currentChat =
+      (lobbyChatGroupId != null && lobbyChatGroupId.isNotEmpty)
+          ? lobbyChatGroupId
+          : null;
+  final squadLobby = (isSquad &&
+          selectedLobbyId != null &&
+          selectedLobbyId.isNotEmpty)
+      ? selectedLobbyId
+      : null;
+
+  if (historyCounts.values.any((count) => count > 0)) {
+    return preferChatIdWithHistory(
+      candidates: [widgetId, currentChat, squadLobby],
+      historyCounts: historyCounts,
+    );
   }
-  if (isSquad && selectedLobbyId != null && selectedLobbyId.isNotEmpty) {
-    return selectedLobbyId;
-  }
-  return null;
+  if (currentChat != null) return currentChat;
+  return widgetId ?? squadLobby;
 }
 
 /// First non-null thread id should start ChatNotifier.initializeChat.

@@ -72,6 +72,34 @@ void main() {
     );
   });
 
+  test('equal-length remote does not wipe extra cached ids', () {
+    final cached = [_msg('a'), _msg('b'), _msg('c')];
+    final remote = [_msg('a'), _msg('b'), _msg('d')];
+    final merged = preferRemoteMessagePage(cached: cached, remote: remote);
+    expect(merged.map((m) => m.id), containsAll(['a', 'b', 'c', 'd']));
+    expect(merged.map((m) => m.id), contains('c'));
+    expect(merged, hasLength(4));
+  });
+
+  test('preferChatIdWithHistory uses the thread that owns history', () {
+    const stale = '1766267555951';
+    const live = '1766270568521';
+    expect(
+      preferChatIdWithHistory(
+        candidates: [stale, live],
+        historyCounts: {stale: 1, live: 46},
+      ),
+      live,
+    );
+    expect(
+      preferChatIdWithHistory(
+        candidates: [stale],
+        historyCounts: {stale: 1, live: 46},
+      ),
+      stale,
+    );
+  });
+
   test('preferRemoteMessagePage does not prefer a smaller remote', () {
     expect(
       preferRemoteMessagePage(

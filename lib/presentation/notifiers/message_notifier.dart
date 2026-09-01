@@ -193,7 +193,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           .from('chat_messages')
           .stream(primaryKey: ['id'])
           .eq('chat_id', chatGroupId)
-          .order('timestamp', ascending: true)
+          .order('created_at', ascending: true)
           .limit(100)
           .listen(
             (data) {

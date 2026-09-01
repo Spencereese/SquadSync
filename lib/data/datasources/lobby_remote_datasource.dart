@@ -152,6 +152,8 @@ class LobbyRemoteDataSourceImpl
       'isActive': data['is_active'] ?? true,
       'description': data['description'],
       'settings': data['settings'],
+      'chatGroupId':
+          (data['chat_group_id'] ?? data['chatGroupId'])?.toString(),
     };
   }
 

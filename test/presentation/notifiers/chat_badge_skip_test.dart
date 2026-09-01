@@ -44,6 +44,38 @@ void main() {
     );
   });
 
+  test('lobby/chat binding uses the id with history when both exist', () {
+    const stale = '1766267555951';
+    const live = '1766270568521';
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: stale,
+        isSquad: false,
+        lobbyChatGroupId: live,
+        historyCounts: {stale: 1, live: 46},
+      ),
+      live,
+    );
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: stale,
+        isSquad: true,
+        selectedLobbyId: stale,
+        lobbyChatGroupId: live,
+        historyCounts: {stale: 1, live: 46},
+      ),
+      live,
+    );
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: stale,
+        isSquad: false,
+        lobbyChatGroupId: live,
+      ),
+      live,
+    );
+  });
+
   test('widget chatGroupId wins; empty ids never register', () {
     expect(
       resolveActiveChatGroupId(

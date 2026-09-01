@@ -95,10 +95,9 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     options connectionOptions: UIScene.ConnectionOptions
   ) {
     SimulatorAppLinks.consumeSceneConnection(connectionOptions)
-    // Host/reuse first. super.scene may move AppDelegate.window; it must
-    // not instantiate a second storyboard FVC / run a second engine.
-    hostFlutterView(on: scene)
-    super.scene(scene, willConnectTo: session, options: connectionOptions)
+    // Do not call super.scene(willConnect) — FlutterSceneDelegate treats
+    // AppDelegate.window as a launch window, creates a second UIWindow,
+    // and Dart paints off the Simulator-captured surface.
     hostFlutterView(on: scene)
     if let engine = (window?.rootViewController as? FlutterViewController)?.engine {
       _ = self.registerSceneLifeCycle(with: engine)
@@ -121,6 +120,9 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
       window = UIWindow(windowScene: windowScene)
     }
     window?.windowScene = windowScene
+    for other in windowScene.windows where other !== window {
+      other.isHidden = true
+    }
     if let existing = AppDelegate.existingFlutterViewController() {
       if window?.rootViewController !== existing {
         window?.rootViewController = existing
@@ -134,14 +136,33 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
         bundle: nil
       )
     }
-    window?.makeKeyAndVisible()
-    if let app = UIApplication.shared.delegate as? FlutterAppDelegate {
-      app.window = window
+    if let flutter = window?.rootViewController as? FlutterViewController {
+      flutter.engine.viewController = flutter
+      let host = window ?? UIWindow()
+      flutter.view.isHidden = false
+      flutter.view.alpha = 1
+      if flutter.view.bounds.isEmpty || flutter.view.bounds.size == .zero {
+        flutter.view.frame = host.bounds
+      }
+      host.layoutIfNeeded()
+      flutter.view.layoutIfNeeded()
     }
-    let hosted = window?.rootViewController is FlutterViewController
-    NSLog(
-      "Cod Squad: sim scene hosted FVC=\(hosted) key=\(window?.isKeyWindow == true)"
-    )
+    window?.isHidden = false
+    window?.makeKeyAndVisible()
+    let flutter = window?.rootViewController as? FlutterViewController
+    let view = flutter?.view
+    let hosted = flutter != nil
+    let inHierarchy = view?.window != nil
+    let size = view?.bounds.size ?? .zero
+    let hidden = view?.isHidden ?? true
+    let line =
+      "Cod Squad: sim scene hosted FVC=\(hosted) key=\(window?.isKeyWindow == true) " +
+      "inHierarchy=\(inHierarchy) size=\(size.width)x\(size.height) hidden=\(hidden)"
+    NSLog("%@", line)
+    print(line)
+    if let data = (line + "\n").data(using: .utf8) {
+      FileHandle.standardError.write(data)
+    }
   }
 
   override func scene(_ scene: UIScene, openURLContexts urlContexts: Set<UIOpenURLContext>) {
@@ -181,6 +202,30 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   private var runtimeChannelAttempts = 0
   private static let maxRuntimeChannelAttempts = 8
   private static let runtimeChannelRetryDelay: TimeInterval = 0.25
+
+#if targetEnvironment(simulator)
+  /// Scene-owned key window only. Ignore launch-window assignment so
+  /// FlutterSceneDelegate does not move the FVC off the captured surface.
+  override var window: UIWindow? {
+    get {
+      let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+      for scene in scenes {
+        if let key = scene.windows.first(where: { $0.isKeyWindow }) {
+          return key
+        }
+        if let hosted = scene.windows.first(where: {
+          $0.rootViewController is FlutterViewController && !$0.isHidden
+        }) {
+          return hosted
+        }
+      }
+      return nil
+    }
+    set {
+      NSLog("Cod Squad: ignore AppDelegate.window set under UIScene")
+    }
+  }
+#endif
 
   override func application(
     _ application: UIApplication,

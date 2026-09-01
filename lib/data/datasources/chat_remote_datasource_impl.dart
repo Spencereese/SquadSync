@@ -120,6 +120,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       }
     }
 
+    debugPrint('Got ${messages.length} of ${response.length}');
     return messages;
   }
 

@@ -97,6 +97,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             } catch (e) {
               debugPrint('GoRouter: last-chat bind skipped: $e');
             }
+            debugPrint(
+              'GoRouter: groups-list path before last-chat redirect '
+              'last=$lastGroupId open=$openId',
+            );
             debugPrint('GoRouter: Redirecting to last chat: $openId');
             return '/chat/$openId';
           }

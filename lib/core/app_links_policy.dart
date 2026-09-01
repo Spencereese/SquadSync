@@ -63,6 +63,37 @@ Future<bool> loadIosSimulatorFromChannel({MethodChannel? channel}) async {
   return _channelSaysSimulator!;
 }
 
+/// Simulator swallow rules. Google / Supabase auth schemes stay open.
+bool shouldSwallowSimulatorAppLink(Uri url) {
+  if (isSimulatorAuthScheme(url)) return false;
+  final scheme = url.scheme.toLowerCase();
+  if (scheme == 'codsquadapp' || scheme == 'com.example.codsquadapp') {
+    return true;
+  }
+  final host = url.host.toLowerCase();
+  if (scheme == 'https' || scheme == 'http') {
+    if (host == 'lobbiesync.app' || host.endsWith('.lobbiesync.app')) {
+      return true;
+    }
+    if (host.contains('supabase.co')) return true;
+  }
+  return false;
+}
+
+bool isSimulatorAuthScheme(Uri url) {
+  final scheme = url.scheme.toLowerCase();
+  if (scheme.contains('googleusercontent')) return true;
+  final host = url.host.toLowerCase();
+  final path = url.path.toLowerCase();
+  if (scheme == 'com.example.codsquadapp') {
+    return host == 'auth-callback' || path.contains('auth-callback');
+  }
+  if ((scheme == 'https' || scheme == 'http') && host.contains('supabase.co')) {
+    return path.contains('/auth');
+  }
+  return false;
+}
+
 Map<String, String> _platformEnvironment() {
   if (kIsWeb) return const {};
   try {

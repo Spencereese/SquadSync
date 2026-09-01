@@ -42,6 +42,39 @@ void main() {
     expect(plan.subscribeUriLinkStream, isTrue);
   });
 
+  test('sim swallows com.example.codsquadapp except auth schemes', () {
+    expect(
+      shouldSwallowSimulatorAppLink(
+        Uri.parse('com.example.codsquadapp://chat/1766270568521'),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(Uri.parse('codsquadapp://chat/1')),
+      isTrue,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(
+        Uri.parse('com.example.codsquadapp://auth-callback'),
+      ),
+      isFalse,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(
+        Uri.parse(
+          'com.googleusercontent.apps.123:/oauth',
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(
+        Uri.parse('https://sfckxrnoiwetmzdycqaa.supabase.co/auth/v1/callback'),
+      ),
+      isFalse,
+    );
+  });
+
   test('physical device still consumes launch link and subscribes', () {
     debugSetIosSimulatorChannelValue(false);
     expect(detectIosSimulator(), isFalse);

@@ -225,7 +225,14 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   }
 
   Future<void> _initDeepLinks() async {
-    final plan = planAppLinkListen();
+    final fromChannel = await loadIosSimulatorFromChannel();
+    final envHasKeys = simulatorEnvKeysPresent();
+    final detected = detectIosSimulator(channelSaysSimulator: fromChannel);
+    final plan = planAppLinkListen(isIosSimulator: detected);
+    debugPrint(
+      'detectIosSimulator=$detected consumeInitialLink=${plan.consumeInitialLink} '
+      'envHasSimulatorKeys=$envHasKeys',
+    );
     if (plan.consumeInitialLink) {
       final initialLink = await _appLinks.getInitialLink();
       if (initialLink != null && mounted) {

@@ -4,6 +4,21 @@ import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private var runtimeChannel: FlutterMethodChannel?
+
+  override func application(
+    _ application: UIApplication,
+    willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+#if targetEnvironment(simulator)
+    let stripped = Self.strippingSimulatorAppLinks(from: launchOptions)
+    Self.logLaunchStrip(stage: "willFinish", original: launchOptions, stripped: stripped)
+    return super.application(application, willFinishLaunchingWithOptions: stripped)
+#else
+    return super.application(application, willFinishLaunchingWithOptions: launchOptions)
+#endif
+  }
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -11,9 +26,8 @@ import UserNotifications
     var options = launchOptions
 #if targetEnvironment(simulator)
     options = Self.strippingSimulatorAppLinks(from: launchOptions)
-    DispatchQueue.main.async {
-      Self.dismissOpenInAppPromptIfPresent()
-    }
+    Self.logLaunchStrip(stage: "didFinish", original: launchOptions, stripped: options)
+    Self.confirmNoAssociatedDomainLeftover(options)
 #endif
     GeneratedPluginRegistrant.register(with: self)
     if #available(iOS 10.0, *) {
@@ -28,7 +42,9 @@ import UserNotifications
     if !Self.hasRealFirebasePlist() {
       NSLog("Cod Squad: skipping APNs registration (placeholder GoogleService-Info)")
     }
-    return super.application(application, didFinishLaunchingWithOptions: options)
+    let launched = super.application(application, didFinishLaunchingWithOptions: options)
+    registerRuntimeChannel()
+    return launched
   }
 
 #if targetEnvironment(simulator)
@@ -42,9 +58,6 @@ import UserNotifications
   ) -> Bool {
     if Self.shouldSwallowSimulatorAppLink(url) {
       NSLog("Cod Squad: swallow simulator app link scheme=\(url.scheme ?? "")")
-      DispatchQueue.main.async {
-        Self.dismissOpenInAppPromptIfPresent()
-      }
       return true
     }
     return super.application(app, open: url, options: options)
@@ -55,13 +68,11 @@ import UserNotifications
     continue userActivity: NSUserActivity,
     restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
   ) -> Bool {
-    if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
-       let url = userActivity.webpageURL,
-       Self.shouldSwallowSimulatorAppLink(url) {
-      NSLog("Cod Squad: swallow simulator universal link")
-      DispatchQueue.main.async {
-        Self.dismissOpenInAppPromptIfPresent()
-      }
+    if Self.shouldClearSimulatorUserActivity(userActivity) {
+      NSLog(
+        "Cod Squad: swallow simulator universal-link handoff type=\(userActivity.activityType) url=\(userActivity.webpageURL?.absoluteString ?? "nil")"
+      )
+      userActivity.invalidate()
       return true
     }
     return super.application(
@@ -87,12 +98,53 @@ import UserNotifications
     return !placeholders.contains { haystack.contains($0) }
   }
 
+  private func registerRuntimeChannel() {
+    if runtimeChannel != nil { return }
+    guard let messenger = flutterMessenger() else {
+      NSLog("Cod Squad: runtime channel messenger missing; retry")
+      DispatchQueue.main.async { [weak self] in
+        self?.registerRuntimeChannel()
+      }
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "com.example.codSquadApp/runtime",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { call, result in
+      if call.method == "isIosSimulator" {
+#if targetEnvironment(simulator)
+        result(true)
+#else
+        result(false)
+#endif
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    runtimeChannel = channel
+  }
+
+  private func flutterMessenger() -> FlutterBinaryMessenger? {
+    if let controller = window?.rootViewController as? FlutterViewController {
+      return controller.binaryMessenger
+    }
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    for window in scenes.flatMap({ $0.windows }) {
+      if let controller = window.rootViewController as? FlutterViewController {
+        return controller.binaryMessenger
+      }
+    }
+    return nil
+  }
+
 #if targetEnvironment(simulator)
   private static func strippingSimulatorAppLinks(
     from launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> [UIApplication.LaunchOptionsKey: Any]? {
     guard var options = launchOptions else { return launchOptions }
     if let url = options[.url] as? URL, shouldSwallowSimulatorAppLink(url) {
+      NSLog("Cod Squad: strip launch URL scheme=\(url.scheme ?? "")")
       options.removeValue(forKey: .url)
     }
     if let dict = options[.userActivityDictionary] as? [AnyHashable: Any] {
@@ -100,8 +152,11 @@ import UserNotifications
       var removedSwallow = false
       for (key, value) in dict {
         if let activity = value as? NSUserActivity,
-           let url = activity.webpageURL,
-           shouldSwallowSimulatorAppLink(url) {
+           shouldClearSimulatorUserActivity(activity) {
+          NSLog(
+            "Cod Squad: strip launch userActivity type=\(activity.activityType) url=\(activity.webpageURL?.absoluteString ?? "nil")"
+          )
+          activity.invalidate()
           removedSwallow = true
           continue
         }
@@ -119,46 +174,65 @@ import UserNotifications
     return options
   }
 
-  /// Both "open in" and "cod squad", or Cancel + Open action titles.
-  static func shouldDismissOpenInAppPrompt(
-    title: String?,
-    message: String?,
-    actionTitles: [String]
-  ) -> Bool {
-    let text = "\(title ?? "") \(message ?? "")".lowercased()
-    let hasOpenIn = text.contains("open in")
-    let hasCodSquad = text.contains("cod squad")
-    if hasOpenIn && hasCodSquad { return true }
-    let actions = Set(actionTitles.map { $0.lowercased() })
-    return actions.contains("cancel") && actions.contains("open")
+  private static func confirmNoAssociatedDomainLeftover(
+    _ options: [UIApplication.LaunchOptionsKey: Any]?
+  ) {
+    let url = options?[.url] as? URL
+    let dict = options?[.userActivityDictionary] as? [AnyHashable: Any]
+    var leftover = false
+    if let url, shouldSwallowSimulatorAppLink(url) { leftover = true }
+    if let dict {
+      for value in dict.values {
+        if let activity = value as? NSUserActivity,
+           shouldClearSimulatorUserActivity(activity) {
+          leftover = true
+        }
+      }
+    }
+    NSLog(
+      "Cod Squad: launchOptions leftover=\(leftover) url=\(url?.absoluteString ?? "nil") userActivity=\(dict != nil)"
+    )
   }
 
-  private static func shouldSwallowSimulatorAppLink(_ url: URL) -> Bool {
-    let scheme = url.scheme?.lowercased() ?? ""
-    if scheme == "codsquadapp" { return true }
-    let host = url.host?.lowercased() ?? ""
-    if scheme == "https" || scheme == "http" {
-      return host == "lobbiesync.app" || host.hasSuffix(".lobbiesync.app")
+  private static func logLaunchStrip(
+    stage: String,
+    original: [UIApplication.LaunchOptionsKey: Any]?,
+    stripped: [UIApplication.LaunchOptionsKey: Any]?
+  ) {
+    let originalUrl = (original?[.url] as? URL)?.absoluteString ?? "nil"
+    let strippedUrl = (stripped?[.url] as? URL)?.absoluteString ?? "nil"
+    let originalActivity = original?[.userActivityDictionary] != nil
+    let strippedActivity = stripped?[.userActivityDictionary] != nil
+    NSLog(
+      "Cod Squad: \(stage) launch strip originalUrl=\(originalUrl) strippedUrl=\(strippedUrl) originalActivity=\(originalActivity) strippedActivity=\(strippedActivity)"
+    )
+  }
+
+  static func shouldClearSimulatorUserActivity(_ activity: NSUserActivity) -> Bool {
+    if activity.activityType == NSUserActivityTypeBrowsingWeb {
+      return true
+    }
+    if let url = activity.webpageURL {
+      return shouldSwallowSimulatorAppLink(url)
     }
     return false
   }
 
-  private static func dismissOpenInAppPromptIfPresent() {
-    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-    for window in scenes.flatMap({ $0.windows }) {
-      guard var top = window.rootViewController else { continue }
-      while let presented = top.presentedViewController {
-        top = presented
+  static func shouldSwallowSimulatorAppLink(_ url: URL) -> Bool {
+    let scheme = url.scheme?.lowercased() ?? ""
+    if scheme == "com.example.codsquadapp" { return false }
+    if scheme.contains("googleusercontent") { return false }
+    if scheme == "codsquadapp" { return true }
+    let host = url.host?.lowercased() ?? ""
+    if scheme == "https" || scheme == "http" {
+      if host == "lobbiesync.app" || host.hasSuffix(".lobbiesync.app") {
+        return true
       }
-      guard let alert = top as? UIAlertController else { continue }
-      if Self.shouldDismissOpenInAppPrompt(
-        title: alert.title,
-        message: alert.message,
-        actionTitles: alert.actions.compactMap { $0.title }
-      ) {
-        alert.dismiss(animated: false)
+      if host.contains("supabase.co") && !url.path.lowercased().contains("/auth") {
+        return true
       }
     }
+    return false
   }
 #endif
 }

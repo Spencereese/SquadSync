@@ -126,13 +126,6 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
         'metadata': (() {
           final decoded = safeJsonDecode(map['metadata'] as String?);
           if (decoded is! Map) return null;
-          final meta = decoded;
-          // Skip metadata with old schema fields
-          if (meta.containsKey('photos') ||
-              meta.containsKey('videos') ||
-              meta.containsKey('audio')) {
-            return null;
-          }
           return decoded;
         })(),
         'isEdited': map['is_edited'] == 1,
@@ -297,13 +290,6 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
         'metadata': (() {
           final decoded = safeJsonDecode(map['metadata'] as String?);
           if (decoded is! Map) return null;
-          final meta = decoded;
-          // Skip metadata with old schema fields
-          if (meta.containsKey('photos') ||
-              meta.containsKey('videos') ||
-              meta.containsKey('audio')) {
-            return null;
-          }
           return decoded;
         })(),
         'isEdited': map['is_edited'] == 1,

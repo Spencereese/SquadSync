@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/message_display_url.dart';
+
 /// Core message data model to replace the Map<String, dynamic> usage
 class MessageData {
   final String id;
@@ -99,8 +101,9 @@ class MessageData {
       photos: _parsePhotosFromData(data),
       videoUrl: _parseVideoFromData(data),
       audioUrl: _parseAudioFromData(data),
-      mediaUrl: data['media_url'],
-      mediaType: data['media_type'],
+      mediaUrl: resolveMessageDisplayMediaUrl(data),
+      mediaType: data['media_type']?.toString() ??
+          data['mediaType']?.toString(),
       timestamp: (() {
         DateTime parsedTimestamp;
         if (data['timestamp_ms'] is int && data['timestamp_ms'] != 0) {
@@ -150,6 +153,8 @@ class MessageData {
   bool get hasContent =>
       text.isNotEmpty ||
       photos.isNotEmpty ||
+      mediaUrl?.isNotEmpty == true ||
+      type == MessageType.image ||
       videoUrl?.isNotEmpty == true ||
       audioUrl?.isNotEmpty == true ||
       pollId?.isNotEmpty == true;
@@ -179,12 +184,12 @@ class MessageData {
     return value.toString();
   }
 
-  /// Parse photos from media_url/media_type format
+  /// Parse photos from media_url, then metadata.photos[0].
   static List<Map<String, dynamic>> _parsePhotosFromData(
       Map<String, dynamic> data) {
-    final mediaUrl = data['media_url'];
-    final mediaType = data['media_type'];
-    final messageType = data['message_type'];
+    final mediaUrl = resolveMessageDisplayMediaUrl(data);
+    final mediaType = data['media_type'] ?? data['mediaType'];
+    final messageType = data['message_type'] ?? data['messageType'];
 
     if (kDebugMode) {
       print(
@@ -194,17 +199,14 @@ class MessageData {
     // Check if media_type is 'image', OR infer from URL extension, OR check message_type
     final isImage = mediaType == 'image' ||
         messageType == 'image' ||
-        (mediaUrl is String &&
+        (mediaUrl != null &&
             (mediaUrl.contains('.jpg') ||
                 mediaUrl.contains('.jpeg') ||
                 mediaUrl.contains('.png') ||
                 mediaUrl.contains('.gif') ||
                 mediaUrl.contains('.webp')));
 
-    if (mediaUrl != null &&
-        mediaUrl is String &&
-        isImage &&
-        mediaUrl.isNotEmpty) {
+    if (mediaUrl != null && isImage && mediaUrl.isNotEmpty) {
       if (kDebugMode) {
         print('✅ Photo parsed: $mediaUrl');
       }

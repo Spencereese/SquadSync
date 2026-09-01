@@ -247,6 +247,59 @@ void main() {
     expect(parseLiveChatMessage({'is_deleted': true}), isNull);
   });
 
+  test('image mediaType + null mediaUrl uses metadata.photos[0]', () {
+    const url = 'https://example.com/fallback.jpg';
+    final data = md.MessageData.fromMap({
+      'id': 'img-fallback',
+      'sender_id': 'u1',
+      'text': '',
+      'media_type': 'image',
+      'media_url': null,
+      'metadata': {
+        'photos': [url],
+      },
+    });
+    expect(data.type, md.MessageType.image);
+    expect(data.mediaUrl, url);
+    expect(data.photos, isNotEmpty);
+    expect(data.photos.first['uri'], url);
+
+    final mapped = md.MessageData.fromMap({
+      'id': 'img-map',
+      'sender_id': 'u1',
+      'text': '',
+      'media_type': 'image',
+      'media_url': null,
+      'metadata': {
+        'photos': [
+          {'uri': url}
+        ],
+      },
+    });
+    expect(mapped.mediaUrl, url);
+    expect(mapped.photos.first['uri'], url);
+
+    final live = parseLiveChatMessage({
+      'id': 'img-live',
+      'sender_id': 'u1',
+      'chat_id': '1766270568521',
+      'text': '',
+      'media_type': 'image',
+      'media_url': null,
+      'timestamp': '2026-01-01T00:00:00Z',
+      'metadata': {
+        'photos': [url],
+      },
+    }, expectedChatId: '1766270568521');
+    expect(live, isNotNull);
+    expect(live!.mediaUrl, url);
+    expect(live.mediaType, 'image');
+    final fromEntity = md.MessageData.fromMap(live.toJson());
+    expect(fromEntity.mediaUrl, url);
+    expect(fromEntity.photos.first['uri'], url);
+    expect(fromEntity.type, md.MessageType.image);
+  });
+
   test('image mediaType wins over null mediaUrl', () {
     expect(
       md.inferMessageDataType({

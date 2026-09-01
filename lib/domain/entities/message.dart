@@ -1,6 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../core/message_display_url.dart';
+
 part 'message.freezed.dart';
 
 class TimestampConverter implements JsonConverter<DateTime, dynamic> {
@@ -198,7 +200,7 @@ class Message with _$Message {
             _nonEmptyStamp(json['timestamp']) ?? json['created_at']),
         messageType: const MessageTypeConverter()
             .fromJson(json['messageType'] ?? json['message_type']),
-        mediaUrl: json['mediaUrl'] ?? json['media_url'] as String?,
+        mediaUrl: resolveMessageDisplayMediaUrl(json),
         mediaType: json['mediaType'] ?? json['media_type'] as String?,
         reactions: const ReactionConverter().fromJson(json['reactions']),
         replyTo: json['replyTo'] ?? json['reply_to'] as String?,

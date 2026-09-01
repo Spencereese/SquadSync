@@ -96,6 +96,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   ) {
     SimulatorAppLinks.consumeSceneConnection(connectionOptions)
     super.scene(scene, willConnectTo: session, options: connectionOptions)
+    hostFlutterView(on: scene)
     if let engine = (window?.rootViewController as? FlutterViewController)?.engine {
       _ = self.registerSceneLifeCycle(with: engine)
       AppDelegate.bindRuntimeChannelFromScene(window: window)
@@ -105,6 +106,35 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     DispatchQueue.main.async {
       AppDelegate.bindRuntimeChannelFromScene(window: self.window)
     }
+  }
+
+  /// Scene wrap without a hosted FVC left a status-bar-only black
+  /// framebuffer (Dart ran, ChatScreen never mounted). Always attach a
+  /// visible FlutterViewController before returning from willConnect.
+  private func hostFlutterView(on scene: UIScene) {
+    guard let windowScene = scene as? UIWindowScene else { return }
+    if window == nil {
+      window = UIWindow(windowScene: windowScene)
+    }
+    window?.windowScene = windowScene
+    if !(window?.rootViewController is FlutterViewController) {
+      let storyboard = UIStoryboard(name: "Main", bundle: nil)
+      if let flutter = storyboard.instantiateInitialViewController()
+        as? FlutterViewController
+      {
+        window?.rootViewController = flutter
+      } else {
+        window?.rootViewController = FlutterViewController()
+      }
+    }
+    window?.makeKeyAndVisible()
+    if let app = UIApplication.shared.delegate as? FlutterAppDelegate {
+      app.window = window
+    }
+    let hosted = window?.rootViewController is FlutterViewController
+    NSLog(
+      "Cod Squad: sim scene hosted FVC=\(hosted) key=\(window?.isKeyWindow == true)"
+    )
   }
 
   override func scene(_ scene: UIScene, openURLContexts urlContexts: Set<UIOpenURLContext>) {
@@ -212,7 +242,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   ) -> UISceneConfiguration {
     SimulatorAppLinks.consumeSceneConnection(options)
     let config = UISceneConfiguration(
-      name: "Cod Squad",
+      name: nil,
       sessionRole: connectingSceneSession.role
     )
     config.delegateClass = RunnerSceneDelegate.self

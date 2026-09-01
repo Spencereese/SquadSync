@@ -163,6 +163,9 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     if let data = (line + "\n").data(using: .utf8) {
       FileHandle.standardError.write(data)
     }
+    // Native stderr before Dart attach is not captured by `flutter run`.
+    // Replay the same line over the runtime channel after the engine binds.
+    AppDelegate.noteSimSceneHosted(line)
   }
 
   override func scene(_ scene: UIScene, openURLContexts urlContexts: Set<UIOpenURLContext>) {
@@ -202,6 +205,10 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   private var runtimeChannelAttempts = 0
   private static let maxRuntimeChannelAttempts = 8
   private static let runtimeChannelRetryDelay: TimeInterval = 0.25
+  private var simSceneHostedLine: String?
+  private var simSceneHostedEmitAttempts = 0
+  private static let maxSimSceneHostedEmitAttempts = 12
+  private static let simSceneHostedEmitDelay: TimeInterval = 0.25
 
 #if targetEnvironment(simulator)
   /// Scene-owned key window only. Ignore launch-window assignment so
@@ -418,19 +425,46 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
       name: "com.example.codSquadApp/runtime",
       binaryMessenger: messenger
     )
-    channel.setMethodCallHandler { call, result in
+    channel.setMethodCallHandler { [weak self] call, result in
       if call.method == "isIosSimulator" {
 #if targetEnvironment(simulator)
         result(true)
 #else
         result(false)
 #endif
+      } else if call.method == "getSimSceneHosted" {
+        result(self?.simSceneHostedLine)
       } else {
         result(FlutterMethodNotImplemented)
       }
     }
     runtimeChannel = channel
     NSLog("Cod Squad: runtime channel bound source=\(source)")
+    simSceneHostedEmitAttempts = 0
+    emitSimSceneHostedToDart()
+  }
+
+  static func noteSimSceneHosted(_ line: String) {
+    guard let app = UIApplication.shared.delegate as? AppDelegate else { return }
+    app.simSceneHostedLine = line
+    app.simSceneHostedEmitAttempts = 0
+    app.emitSimSceneHostedToDart()
+  }
+
+  /// Flutter `debugPrint` after Dart attach so `flutter run` stdout sees the host line.
+  private func emitSimSceneHostedToDart() {
+    guard let line = simSceneHostedLine else { return }
+    if let channel = runtimeChannel {
+      channel.invokeMethod("simSceneHosted", arguments: line)
+    }
+    simSceneHostedEmitAttempts += 1
+    if simSceneHostedEmitAttempts >= Self.maxSimSceneHostedEmitAttempts {
+      return
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.simSceneHostedEmitDelay) {
+      [weak self] in
+      self?.emitSimSceneHostedToDart()
+    }
   }
 
   private func bindRuntimeChannelFromAvailableMessenger(source: String) {

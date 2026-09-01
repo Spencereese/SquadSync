@@ -4,15 +4,20 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../screens/voice_room_screen.dart';
 
+/// Compact Load / Pending chip for the ChatScreen header.
+enum ChatHeaderStatus { idle, loading, pending }
+
 /// Custom iMessage-style app bar for ChatScreen with NEON VOID glass aesthetics
 ///
 /// Features:
 /// - Frosted glass background with blur
 /// - Left: Back button in glass bubble
 /// - Center: Tappable avatar + lobby name in overlapping layout
-/// - Right: Gamepad button (lobby creation) + Voice chat button in glass bubbles
+/// - Right: optional Load/Pending chip + Gamepad + Voice chat in glass bubbles
 /// - Hero animation support for avatar transitions
 class NeonChatAppBar extends StatelessWidget {
+  static const double contentHeight = 120;
+
   final String squadId;
   final String squadName;
   final String? avatarUrl;
@@ -23,6 +28,7 @@ class NeonChatAppBar extends StatelessWidget {
   final Color? backgroundColor;
   final bool hideBackButton;
   final bool hideVoiceButton;
+  final ChatHeaderStatus headerStatus;
 
   const NeonChatAppBar({
     super.key,
@@ -36,7 +42,11 @@ class NeonChatAppBar extends StatelessWidget {
     this.backgroundColor,
     this.hideBackButton = false,
     this.hideVoiceButton = false,
+    this.headerStatus = ChatHeaderStatus.idle,
   });
+
+  static double heightFor(BuildContext context) =>
+      contentHeight + MediaQuery.paddingOf(context).top;
 
   @override
   Widget build(BuildContext context) {
@@ -45,8 +55,9 @@ class NeonChatAppBar extends StatelessWidget {
     final topPadding = MediaQuery.of(context).padding.top;
 
     return SizedBox(
-      height: 120 + topPadding,
+      height: contentHeight + topPadding,
       child: Stack(
+        clipBehavior: Clip.hardEdge,
         children: [
           // UI layer - positioned absolutely
           Positioned(
@@ -56,6 +67,7 @@ class NeonChatAppBar extends StatelessWidget {
             child: SizedBox(
               height: 60,
               child: Stack(
+                clipBehavior: Clip.none,
                 children: [
                   // Center: Avatar + Lobby Name
                   Center(
@@ -82,13 +94,20 @@ class NeonChatAppBar extends StatelessWidget {
                       ),
                     ),
 
-                  // Right: Gamepad + Voice buttons
+                  // Right: Load/Pending chip + Gamepad + Voice
                   Positioned(
                     right: 0,
                     top: 4,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (headerStatus != ChatHeaderStatus.idle) ...[
+                          ChatHeaderStatusChip(
+                            status: headerStatus,
+                            backgroundColor: backgroundColor,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         if (onGamepadPressed != null)
                           Padding(
                             padding: const EdgeInsets.only(right: 10),
@@ -153,6 +172,93 @@ class NeonChatAppBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Single-line Load / Pending chip. Does not wrap or stack over header buttons.
+class ChatHeaderStatusChip extends StatelessWidget {
+  final ChatHeaderStatus status;
+  final Color? backgroundColor;
+
+  const ChatHeaderStatusChip({
+    super.key,
+    required this.status,
+    this.backgroundColor,
+  });
+
+  bool get _isLight {
+    return (backgroundColor?.computeLuminance() ?? 0.0) > 0.5;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (status == ChatHeaderStatus.idle) {
+      return const SizedBox.shrink();
+    }
+    final loading = status == ChatHeaderStatus.loading;
+    final label = loading ? 'Load' : 'Pending';
+    final fg = _isLight ? Colors.black87 : Colors.white;
+    return Semantics(
+      label: loading ? 'Loading' : 'Pending',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: 88,
+          minHeight: 28,
+          maxHeight: 32,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: _isLight
+                    ? Colors.black.withOpacity(0.4)
+                    : Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _isLight
+                      ? Colors.black.withOpacity(0.5)
+                      : Colors.white.withOpacity(0.2),
+                  width: _isLight ? 1.0 : 0.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (loading) ...[
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.6,
+                        color: fg,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: fg,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -28,6 +28,7 @@ void main() async {
   // Preserve native splash screen until we're ready
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  bindRuntimeHostedLogHandler();
   try {
     await AppEnv.load();
   } catch (e) {

@@ -4,6 +4,26 @@ import 'package:squad_sync/core/app_links_policy.dart';
 void main() {
   tearDown(() {
     debugSetIosSimulatorChannelValue(null);
+    debugResetSimSceneHostedLog();
+  });
+
+  test('sim scene hosted line is logged once after Dart attach', () {
+    const line =
+        'Cod Squad: sim scene hosted FVC=true key=true inHierarchy=true size=402.0x874.0 hidden=false';
+    final printed = <String>[];
+    logSimSceneHostedLine(line, log: printed.add);
+    logSimSceneHostedLine(line, log: printed.add);
+    logSimSceneHostedLine('  $line  ', log: printed.add);
+    expect(printed, [line]);
+    expect(printed.single, contains('sim scene hosted FVC=true'));
+  });
+
+  test('empty hosted line is not logged', () {
+    final printed = <String>[];
+    logSimSceneHostedLine(null, log: printed.add);
+    logSimSceneHostedLine('', log: printed.add);
+    logSimSceneHostedLine('   ', log: printed.add);
+    expect(printed, isEmpty);
   });
 
   test('sim detector does not depend on SIMULATOR_* env', () {

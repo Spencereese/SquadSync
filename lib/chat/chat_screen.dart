@@ -1768,66 +1768,61 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           // Chat content with app bar positioned above scroll content
           Stack(
             children: [
-              // Scrollable content that can scroll behind the app bar
-              NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  // Dismiss keyboard when user starts scrolling
-                  if (notification is ScrollStartNotification) {
-                    FocusScope.of(context).unfocus();
-                  }
-                  return false;
-                },
-                child: Builder(
-                      builder: (context) {
-                        final messages = messagesForOpenThread(
-                          threadId: threadChatGroupId,
-                          ownerMessages:
-                              _cachedMessageState?.messages ?? const {},
-                          fallback: chatState.chatMessages,
-                        );
+              // Message list starts below the header so short bubbles
+              // ("Load" / "Pending") cannot stack over header controls.
+              Positioned(
+                top: NeonChatAppBar.heightFor(context) +
+                    ((isUserGroup && widget.chatGroupId != null) ? 60.0 : 0.0),
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (notification is ScrollStartNotification) {
+                      FocusScope.of(context).unfocus();
+                    }
+                    return false;
+                  },
+                  child: Builder(
+                    builder: (context) {
+                      final messages = messagesForOpenThread(
+                        threadId: threadChatGroupId,
+                        ownerMessages:
+                            _cachedMessageState?.messages ?? const {},
+                        fallback: chatState.chatMessages,
+                      );
 
-                        debugPrint(
-                            '📬 ChatScreen: Got ${messages.length} messages from MessageNotifier for group $threadChatGroupId');
+                      debugPrint(
+                          '📬 ChatScreen: Got ${messages.length} messages from MessageNotifier for group $threadChatGroupId');
 
-                        // Fetch display names for message senders
-                        _fetchDisplayNamesForMessages(messages);
+                      _fetchDisplayNamesForMessages(messages);
 
-                        // Calculate input bar height dynamically
-                        final hasReply = chatState.replyToMessage != null;
-                        final inputBarHeight = hasReply ? 140.0 : 80.0;
+                      final hasReply = chatState.replyToMessage != null;
+                      final inputBarHeight = hasReply ? 140.0 : 80.0;
 
-                        return _uiManager.buildMessagesList(
-                          ref: ref,
-                          chatGroupId: threadChatGroupId,
-                          chatType: widget.chatType,
-                          scrollController: _scrollControllerService,
-                          messages: messages,
-                          onMessageLongPress: () {}, // Will be implemented
-                          onMessageTap: () {}, // Will be implemented
-                          getSender: _getSender,
-                          getTimestampMs: _getTimestampMs,
-                          cleanText: _cleanText,
-                          uidToDisplayName: squadStateData.memberDisplayNames,
-                          // markAsDelivered removed - Supabase inserts are immediate
-                          // Add padding to scroll under app bar and input bar
-                          topPadding:
-                              (isUserGroup && widget.chatGroupId != null)
-                                  ? 100 +
-                                      MediaQuery.of(context).padding.top +
-                                      60 // App bar + lobby selector
-                                  : 100 +
-                                      MediaQuery.of(context)
-                                          .padding
-                                          .top, // Just app bar
-                          bottomPadding: inputBarHeight +
-                              keyboardHeight +
-                              (isKeyboardVisible
-                                  ? 0
-                                  : MediaQuery.viewPaddingOf(context).bottom),
-                        );
-                      },
-                    ),
-              ), // End NotificationListener
+                      return _uiManager.buildMessagesList(
+                        ref: ref,
+                        chatGroupId: threadChatGroupId,
+                        chatType: widget.chatType,
+                        scrollController: _scrollControllerService,
+                        messages: messages,
+                        onMessageLongPress: () {},
+                        onMessageTap: () {},
+                        getSender: _getSender,
+                        getTimestampMs: _getTimestampMs,
+                        cleanText: _cleanText,
+                        uidToDisplayName: squadStateData.memberDisplayNames,
+                        topPadding: 8,
+                        bottomPadding: inputBarHeight +
+                            keyboardHeight +
+                            (isKeyboardVisible
+                                ? 0
+                                : MediaQuery.viewPaddingOf(context).bottom),
+                      );
+                    },
+                  ),
+                ),
+              ),
               // Input Bar positioned at bottom - moves up with keyboard
               AnimatedPositioned(
                 duration: Duration.zero,
@@ -1969,7 +1964,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
               // Lobby Selector positioned below app bar (for user groups)
               if (isUserGroup && widget.chatGroupId != null)
                 Positioned(
-                  top: 100 + MediaQuery.of(context).padding.top,
+                  top: NeonChatAppBar.heightFor(context),
                   left: 0,
                   right: 0,
                   child: _buildLobbySelector(),
@@ -1984,6 +1979,13 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   squadName: _chatName,
                   avatarUrl: _chatImageUrl,
                   backgroundColor: _getBackgroundColor(background),
+                  headerStatus: (chatState.isSyncing ||
+                          chatState.isUploading ||
+                          _scrollControllerService.isLoadingMore)
+                      ? ChatHeaderStatus.loading
+                      : (chatState.pendingMessages.isNotEmpty
+                          ? ChatHeaderStatus.pending
+                          : ChatHeaderStatus.idle),
                   onBackPressed: () {
                     if (context.canPop()) {
                       context.pop();

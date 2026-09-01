@@ -6,10 +6,28 @@ import 'package:flutter/services.dart';
 const iosSimulatorChannelName = 'com.example.codSquadApp/runtime';
 
 bool? _channelSaysSimulator;
+String? _lastSimSceneHostedLine;
 
 @visibleForTesting
 void debugSetIosSimulatorChannelValue(bool? value) {
   _channelSaysSimulator = value;
+}
+
+@visibleForTesting
+void debugResetSimSceneHostedLog() {
+  _lastSimSceneHostedLine = null;
+}
+
+/// Deduped Flutter log so `flutter run` stdout sees the native host line.
+void logSimSceneHostedLine(
+  String? line, {
+  void Function(String message)? log,
+}) {
+  final text = line?.trim() ?? '';
+  if (text.isEmpty) return;
+  if (text == _lastSimSceneHostedLine) return;
+  _lastSimSceneHostedLine = text;
+  (log ?? debugPrint)(text);
 }
 
 /// Whether to consume `getInitialLink()` at launch.
@@ -60,7 +78,30 @@ Future<bool> loadIosSimulatorFromChannel({MethodChannel? channel}) async {
     debugPrint('isIosSimulator channel failed: $e');
     _channelSaysSimulator = false;
   }
+  await loadSimSceneHostedFromChannel(channel: ch);
   return _channelSaysSimulator!;
+}
+
+/// Native host line after Dart attach. Complements [bindRuntimeHostedLogHandler].
+Future<void> loadSimSceneHostedFromChannel({MethodChannel? channel}) async {
+  final ch = channel ?? const MethodChannel(iosSimulatorChannelName);
+  try {
+    final value = await ch.invokeMethod<String>('getSimSceneHosted');
+    logSimSceneHostedLine(value);
+  } catch (e) {
+    debugPrint('getSimSceneHosted channel failed: $e');
+  }
+}
+
+/// Native → Dart `simSceneHosted` so flutter run captures the host line.
+void bindRuntimeHostedLogHandler({MethodChannel? channel}) {
+  final ch = channel ?? const MethodChannel(iosSimulatorChannelName);
+  ch.setMethodCallHandler((call) async {
+    if (call.method == 'simSceneHosted') {
+      logSimSceneHostedLine(call.arguments?.toString());
+    }
+    return null;
+  });
 }
 
 /// Simulator swallow rules. Google / Supabase auth schemes stay open.

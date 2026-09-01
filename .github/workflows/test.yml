@@ -39,6 +39,7 @@ jobs:
           test/presentation/notifiers/chat_badge_skip_test.dart \
           test/core/email_auth_test.dart \
           test/core/app_env_test.dart \
+          test/core/app_links_policy_test.dart \
           test/core/session_guard_test.dart \
           test/core/chat_messages_test.dart \
           test/core/sqlite_cells_test.dart \

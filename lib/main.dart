@@ -14,6 +14,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'core/injection.dart' as di;
 import 'core/app_router.dart';
+import 'core/app_links_policy.dart';
 import 'notification_service.dart';
 import 'widgets/app_widgets.dart';
 import 'services/supabase_service.dart';
@@ -224,6 +225,12 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   }
 
   Future<void> _initDeepLinks() async {
+    if (!shouldConsumeLaunchAppLink()) {
+      debugPrint(
+          'AppLinks: skip launch link on iOS simulator so ChatScreen stays visible');
+      return;
+    }
+
     // Handle initial link
     final initialLink = await _appLinks.getInitialLink();
     if (initialLink != null && mounted) {

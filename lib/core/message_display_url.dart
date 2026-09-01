@@ -31,11 +31,13 @@ String? resolveMessageDisplayMediaUrl(Map<String, dynamic> data) {
   final metadata = asMessageMetadataMap(data['metadata']);
   if (metadata != null) {
     final photos = metadata['photos'];
-    if (kDebugMode && photos != null) {
-      debugPrint('metadata.photos $photos');
-    }
     final fromPhotos = _firstPhotoUrl(photos);
-    if (fromPhotos != null) return fromPhotos;
+    if (fromPhotos != null) {
+      if (kDebugMode) {
+        debugPrint('photos resolved from metadata');
+      }
+      return fromPhotos;
+    }
     for (final key in const [
       'photo',
       'image',
@@ -53,7 +55,12 @@ String? resolveMessageDisplayMediaUrl(Map<String, dynamic> data) {
     ]) {
       final fromEquivalent = _firstPhotoUrl(metadata[key]) ??
           _urlFromPhotoEntry(metadata[key]);
-      if (fromEquivalent != null) return fromEquivalent;
+      if (fromEquivalent != null) {
+        if (kDebugMode) {
+          debugPrint('photos resolved from metadata');
+        }
+        return fromEquivalent;
+      }
     }
   }
 

@@ -41,6 +41,18 @@ void main() {
       shouldAttemptSessionRefresh(expiresAtSeconds: inAnHour, now: now),
       isFalse,
     );
+    final inSevenMinutes =
+        now.add(const Duration(minutes: 7)).millisecondsSinceEpoch ~/ 1000;
+    expect(
+      shouldAttemptSessionRefresh(expiresAtSeconds: inSevenMinutes, now: now),
+      isTrue,
+    );
+    final inTwentyMinutes =
+        now.add(const Duration(minutes: 20)).millisecondsSinceEpoch ~/ 1000;
+    expect(
+      shouldAttemptSessionRefresh(expiresAtSeconds: inTwentyMinutes, now: now),
+      isFalse,
+    );
   });
 
   test('currentUser is null when Supabase is unconfigured', () {

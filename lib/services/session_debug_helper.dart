@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io' show Platform;
 
+import '../core/session_guard.dart';
+import 'supabase_service.dart';
+
 /// Helper class to debug and verify Supabase session persistence
 ///
 /// Usage in your app:
@@ -48,9 +51,10 @@ class SessionDebugHelper {
         debugPrint(
             '  Time until expiry: ${timeUntilExpiry.inHours}h ${timeUntilExpiry.inMinutes % 60}m');
 
-        if (timeUntilExpiry.inHours < 1) {
+        if (shouldAttemptSessionRefresh(expiresAtSeconds: session.expiresAt)) {
           debugPrint(
-              '  INFO session expiring soon; ensureFreshSession will refresh');
+              '  INFO session expiring soon; calling ensureFreshSession');
+          await SupabaseService.ensureFreshSession();
         }
       }
     } else {

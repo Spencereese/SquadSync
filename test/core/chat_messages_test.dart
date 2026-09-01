@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/chat/models/message_data.dart' as md;
 import 'package:squad_sync/core/chat_messages.dart';
 import 'package:squad_sync/core/lobby_chat_bind.dart';
 import 'package:squad_sync/domain/entities/message.dart';
@@ -244,6 +245,41 @@ void main() {
     expect(parsed.map((m) => m.id).toSet(), hasLength(46));
 
     expect(parseLiveChatMessage({'is_deleted': true}), isNull);
+  });
+
+  test('image mediaType wins over null mediaUrl', () {
+    expect(
+      md.inferMessageDataType({
+        'media_url': null,
+        'media_type': 'image',
+        'message_type': 'text',
+      }),
+      md.MessageType.image,
+    );
+    expect(
+      md.inferMessageDataType({
+        'mediaUrl': null,
+        'message_type': 'image',
+      }),
+      md.MessageType.image,
+    );
+    expect(
+      md.inferMessageDataType({
+        'media_url': null,
+        'metadata': {
+          'photos': ['https://example.com/a.jpg']
+        },
+      }),
+      md.MessageType.image,
+    );
+    expect(
+      md.inferMessageDataType({
+        'media_url': null,
+        'media_type': null,
+        'text': 'hello',
+      }),
+      md.MessageType.text,
+    );
   });
 
   test('lobby_ids contains payload is a JSON array not a Postgres object', () {

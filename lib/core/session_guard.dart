@@ -10,11 +10,12 @@ bool isSessionExpired({
 }
 
 /// Refresh if [expiresAtSeconds] is missing, already expired, or inside
-/// [refreshWindow] of expiry.
+/// [refreshWindow] of expiry. Default 10m so a ~7m remaining JWT refreshes
+/// before InvalidJWT (do not wait for the token to die).
 bool shouldAttemptSessionRefresh({
   required int? expiresAtSeconds,
   DateTime? now,
-  Duration refreshWindow = const Duration(minutes: 5),
+  Duration refreshWindow = const Duration(minutes: 10),
 }) {
   if (expiresAtSeconds == null) return true;
   final expiry = DateTime.fromMillisecondsSinceEpoch(expiresAtSeconds * 1000);

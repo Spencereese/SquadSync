@@ -142,25 +142,7 @@ class MessageData {
           ? ClipMessageData.fromJson(data['clipData'] as Map<String, dynamic>)
           : null,
       shouldShowTimestamp: false, // Will be set by message processing logic
-      type: (() {
-        // Infer type from media fields if message_type is wrong in database
-        final mediaUrl = data['media_url'];
-        final mediaType = data['media_type'];
-        MessageType inferredType = MessageType.text;
-
-        if (mediaUrl != null && mediaUrl.toString().isNotEmpty) {
-          if (mediaType == 'image')
-            inferredType = MessageType.image;
-          else if (mediaType == 'video')
-            inferredType = MessageType.video;
-          else if (mediaType == 'audio') inferredType = MessageType.audio;
-        }
-        if (data['pollId'] != null) inferredType = MessageType.poll;
-
-        print(
-            '🔧 Type inference: id=${data['id']}, mediaUrl=$mediaUrl, mediaType=$mediaType → inferredType=$inferredType');
-        return inferredType;
-      })(),
+      type: inferMessageDataType(data),
     );
   }
 
@@ -464,5 +446,61 @@ class ClipMessageData {
 }
 
 enum MessageType { text, image, video, audio, poll, clip, system }
+
+/// Prefer explicit media_type / message_type / metadata over a null media_url.
+MessageType inferMessageDataType(Map<String, dynamic> data) {
+  if (data['pollId'] != null || data['poll_id'] != null) {
+    return MessageType.poll;
+  }
+  final mediaType =
+      '${data['media_type'] ?? data['mediaType'] ?? ''}'.toLowerCase();
+  final messageType =
+      '${data['message_type'] ?? data['messageType'] ?? ''}'.toLowerCase();
+  final fromMedia = _normalizeMediaKind(mediaType);
+  if (fromMedia != null) return fromMedia;
+  final fromDeclared = _normalizeMediaKind(messageType);
+  if (fromDeclared != null) return fromDeclared;
+  final fromMeta = _mediaKindFromMetadata(data['metadata']);
+  if (fromMeta != null) return fromMeta;
+  final mediaUrl = data['media_url'] ?? data['mediaUrl'];
+  if (mediaUrl is String && mediaUrl.isNotEmpty) {
+    final lower = mediaUrl.toLowerCase();
+    if (lower.contains('.jpg') ||
+        lower.contains('.jpeg') ||
+        lower.contains('.png') ||
+        lower.contains('.gif') ||
+        lower.contains('.webp')) {
+      return MessageType.image;
+    }
+    if (lower.contains('.mp4') || lower.contains('.mov') || lower.contains('.webm')) {
+      return MessageType.video;
+    }
+    if (lower.contains('.m4a') || lower.contains('.mp3') || lower.contains('.wav')) {
+      return MessageType.audio;
+    }
+  }
+  return MessageType.text;
+}
+
+MessageType? _normalizeMediaKind(String raw) {
+  if (raw.contains('image') || raw == 'photo' || raw == 'photos') {
+    return MessageType.image;
+  }
+  if (raw.contains('video')) return MessageType.video;
+  if (raw.contains('audio') || raw.contains('voice')) return MessageType.audio;
+  if (raw.contains('clip')) return MessageType.clip;
+  return null;
+}
+
+MessageType? _mediaKindFromMetadata(Object? metadata) {
+  if (metadata is! Map) return null;
+  final type = _normalizeMediaKind(
+    '${metadata['media_type'] ?? metadata['mediaType'] ?? metadata['type'] ?? ''}',
+  );
+  if (type != null) return type;
+  final photos = metadata['photos'];
+  if (photos is List && photos.isNotEmpty) return MessageType.image;
+  return null;
+}
 
 enum MessageStatus { sending, sent, delivered, read, failed }

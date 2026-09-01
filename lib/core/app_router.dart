@@ -19,6 +19,8 @@ import '../domain/entities/message.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'notification_routes.dart';
+import 'lobby_chat_bind.dart';
+import 'package:squad_sync/presentation/notifiers/notification_notifier.dart';
 
 /// A/B Testing Service Provider
 final abTestingServiceProvider = FutureProvider<ABTestingService>((ref) async {
@@ -76,8 +78,27 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final lastGroupId = prefs.getString('last_chat_group');
 
           if (lastGroupId != null && lastGroupId.isNotEmpty) {
-            debugPrint('GoRouter: Redirecting to last chat: $lastGroupId');
-            return '/chat/$lastGroupId';
+            var openId = lastGroupId;
+            try {
+              final snapshot = await loadLobbyChatBindSnapshot(lastGroupId);
+              final resolved = resolveActiveChatGroupId(
+                widgetChatGroupId: lastGroupId,
+                isSquad: false,
+                lobbyChatGroupId: snapshot.lobbyChatGroupId,
+                historyCounts: snapshot.historyCounts,
+                extraChatIds: snapshot.candidates,
+              );
+              if (resolved != null && resolved.isNotEmpty) {
+                openId = resolved;
+                if (openId != lastGroupId) {
+                  await prefs.setString('last_chat_group', openId);
+                }
+              }
+            } catch (e) {
+              debugPrint('GoRouter: last-chat bind skipped: $e');
+            }
+            debugPrint('GoRouter: Redirecting to last chat: $openId');
+            return '/chat/$openId';
           }
         } catch (e) {
           debugPrint('GoRouter: Error checking last chat: $e');
@@ -149,14 +170,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 );
               }
 
-              if (snapshot.hasError || snapshot.data == null) {
-                return const ChatGroupsScreen();
-              }
-
-              final response = snapshot.data!;
+              final response = snapshot.data;
               return ChatScreen(
                 chatGroupId: chatGroupId,
-                chatGroupName: response['name'] ?? 'Unknown Group',
+                chatGroupName: response?['name'] as String? ?? 'Chat',
                 chatType: ChatType.userGroup,
               );
             },
@@ -247,7 +264,35 @@ class DeepLinkRouter {
     );
 
     // Handle different deep link patterns
-    if (link == 'codsquadapp://chat' || link.contains('/chat')) {
+    final appLinkChatId = chatIdFromAppLink(link);
+    if (appLinkChatId != null) {
+      if (user == null) {
+        _showSnackBar(context, 'Please sign in first');
+        return;
+      }
+      // Do not drop /chat/:id (1f580ae AppLinks overlay mentioned the
+      // 46-row thread once and never opened it).
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        var openId = appLinkChatId;
+        try {
+          final snapshot = await loadLobbyChatBindSnapshot(appLinkChatId);
+          final resolved = resolveActiveChatGroupId(
+            widgetChatGroupId: appLinkChatId,
+            isSquad: false,
+            lobbyChatGroupId: snapshot.lobbyChatGroupId,
+            historyCounts: snapshot.historyCounts,
+            extraChatIds: snapshot.candidates,
+          );
+          if (resolved != null && resolved.isNotEmpty) openId = resolved;
+        } catch (e) {
+          debugPrint('DeepLinkRouter: chat bind skipped: $e');
+        }
+        debugPrint('DeepLinkRouter: Opening chat $openId');
+        router.go('/chat/$openId');
+      });
+    } else if (isChatListAppLink(link) ||
+        link == 'codsquadapp://chat' ||
+        (link.contains('/chat') && appLinkChatId == null)) {
       if (user != null && squadId != null) {
         // Deferred navigation with addPostFrameCallback
         WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/core/chat_messages.dart';
+import 'package:squad_sync/core/lobby_chat_bind.dart';
 import 'package:squad_sync/domain/entities/message.dart';
+import 'package:squad_sync/presentation/notifiers/notification_notifier.dart';
 
 Message _msg(String id) => Message(
       id: id,
@@ -79,6 +81,44 @@ void main() {
     expect(merged.map((m) => m.id), containsAll(['a', 'b', 'c', 'd']));
     expect(merged.map((m) => m.id), contains('c'));
     expect(merged, hasLength(4));
+  });
+
+  test('chatIdFromAppLink keeps /chat/:id instead of dropping it', () {
+    const live = '1766270568521';
+    expect(chatIdFromAppLink('codsquadapp://chat/$live'), live);
+    expect(chatIdFromAppLink('https://lobbiesync.app/chat/$live'), live);
+    expect(chatIdFromAppLink('codsquadapp://chat'), isNull);
+    expect(isChatListAppLink('codsquadapp://chat'), isTrue);
+    expect(isChatListAppLink('codsquadapp://chat/$live'), isFalse);
+  });
+
+  test('same-member siblings are bind candidates', () {
+    const stale = '1766267555951';
+    const live = '1766270568521';
+    final siblings = siblingChatIdsWithSameMembers(
+      probeMembers: const ['u1', 'u2'],
+      groups: [
+        (id: stale, members: ['u1', 'u2']),
+        (id: live, members: ['u2', 'u1']),
+        (id: 'other', members: ['u1']),
+      ],
+    );
+    expect(siblings, containsAll([stale, live]));
+    expect(siblings, isNot(contains('other')));
+
+    final candidates = collectOpenChatCandidates(
+      probeId: stale,
+      lobbyChatGroupId: stale,
+      siblingChatIds: siblings,
+    );
+    expect(candidates, containsAll([stale, live]));
+    expect(
+      preferChatIdWithHistory(
+        candidates: candidates.toList(),
+        historyCounts: {stale: 1, live: 46},
+      ),
+      live,
+    );
   });
 
   test('preferChatIdWithHistory uses the thread that owns history', () {

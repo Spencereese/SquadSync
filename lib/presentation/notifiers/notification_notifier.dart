@@ -39,6 +39,7 @@ String? resolveActiveChatGroupId({
   String? selectedLobbyId,
   String? lobbyChatGroupId,
   Map<String, int> historyCounts = const {},
+  Iterable<String?> extraChatIds = const [],
 }) {
   final widgetId = (widgetChatGroupId != null && widgetChatGroupId.isNotEmpty)
       ? widgetChatGroupId
@@ -55,7 +56,7 @@ String? resolveActiveChatGroupId({
 
   if (historyCounts.values.any((count) => count > 0)) {
     return preferChatIdWithHistory(
-      candidates: [widgetId, currentChat, squadLobby],
+      candidates: [widgetId, currentChat, squadLobby, ...extraChatIds],
       historyCounts: historyCounts,
     );
   }

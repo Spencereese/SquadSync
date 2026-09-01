@@ -74,6 +74,16 @@ void main() {
       ),
       live,
     );
+    expect(
+      resolveActiveChatGroupId(
+        widgetChatGroupId: stale,
+        isSquad: false,
+        lobbyChatGroupId: stale,
+        extraChatIds: const [live],
+        historyCounts: {stale: 1, live: 46},
+      ),
+      live,
+    );
   });
 
   test('widget chatGroupId wins; empty ids never register', () {

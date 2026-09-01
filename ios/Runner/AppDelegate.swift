@@ -47,13 +47,22 @@ enum SimulatorAppLinks {
     )
   }
 
+  /// Logs leftover scene URLs. Does not dismiss SpringBoard's system
+  /// "Open in Cod Squad?" sheet (Cancel + Open). In-app / VC dismiss cannot
+  /// take down that overlay. Google / Supabase auth stays unsallowed.
+  ///
+  /// After a clean Xcode 26 compile, if launch still shows a leftover sheet,
+  /// Tester should run leftover-only reset (do NOT erase the sim):
+  ///   xcrun simctl terminate 748CAA89-6E32-4FDE-88A3-248F13D21235 com.apple.mobilesafari
+  ///   xcrun simctl openurl 748CAA89-6E32-4FDE-88A3-248F13D21235 about:blank
+  /// Erase the sim only if those two fail to clear the sheet.
   static func consumeSceneConnection(_ options: UIScene.ConnectionOptions) {
     NSLog(
-      "Cod Squad: sim scene connect urls=\(options.URLContexts.count) activities=\(options.userActivities.count)"
+      "Cod Squad: sim scene connect urls=\(options.urlContexts.count) activities=\(options.userActivities.count)"
     )
-    for context in options.URLContexts {
+    for context in options.urlContexts {
       let swallow = shouldSwallowSimulatorAppLink(context.url)
-      logOpen(source: "scene URLContexts", url: context.url, swallow: swallow)
+      logOpen(source: "scene urlContexts", url: context.url, swallow: swallow)
     }
     for activity in options.userActivities {
       if let url = activity.webpageURL {
@@ -70,22 +79,6 @@ enum SimulatorAppLinks {
       }
     }
   }
-
-  static func clearPendingUniversalLinkHandoff() {
-    NSUserActivity.deleteAllSavedUserActivities {
-      NSLog("Cod Squad: sim cleared saved NSUserActivity handoff")
-    }
-    for scene in UIApplication.shared.connectedScenes {
-      scene.userActivity = nil
-      scene.session.stateRestorationActivity = nil
-      if let windowScene = scene as? UIWindowScene {
-        for window in windowScene.windows {
-          window.windowScene?.userActivity = nil
-        }
-      }
-    }
-    NSLog("Cod Squad: sim cleared pending UL / associated-domains handoff")
-  }
 }
 
 #if targetEnvironment(simulator)
@@ -97,11 +90,15 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   ) {
     SimulatorAppLinks.consumeSceneConnection(connectionOptions)
     super.scene(scene, willConnectTo: session, options: connectionOptions)
+    if let engine = (window?.rootViewController as? FlutterViewController)?.engine {
+      registerSceneLifeCycleWithFlutterEngine(engine)
+    }
+    AppDelegate.bindRuntimeChannelFromScene(window: window)
   }
 
-  override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+  override func scene(_ scene: UIScene, openURLContexts urlContexts: Set<UIOpenURLContext>) {
     var remaining = Set<UIOpenURLContext>()
-    for context in URLContexts {
+    for context in urlContexts {
       let swallow = SimulatorAppLinks.shouldSwallowSimulatorAppLink(context.url)
       SimulatorAppLinks.logOpen(source: "scene:openURLContexts", url: context.url, swallow: swallow)
       if !swallow {
@@ -129,8 +126,12 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
 #endif
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate,
+  FlutterPluginRegistrant
+{
   private var runtimeChannel: FlutterMethodChannel?
+  private var runtimeChannelAttempts = 0
+  private static let maxRuntimeChannelAttempts = 8
 
   override func application(
     _ application: UIApplication,
@@ -139,7 +140,6 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
 #if targetEnvironment(simulator)
     let stripped = Self.strippingSimulatorAppLinks(from: launchOptions)
     Self.logLaunchStrip(stage: "willFinish", original: launchOptions, stripped: stripped)
-    SimulatorAppLinks.clearPendingUniversalLinkHandoff()
     return super.application(application, willFinishLaunchingWithOptions: stripped)
 #else
     return super.application(application, willFinishLaunchingWithOptions: launchOptions)
@@ -155,9 +155,8 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     options = Self.strippingSimulatorAppLinks(from: launchOptions)
     Self.logLaunchStrip(stage: "didFinish", original: launchOptions, stripped: options)
     Self.confirmNoAssociatedDomainLeftover(options)
-    SimulatorAppLinks.clearPendingUniversalLinkHandoff()
-    Self.observeSimulatorScenes()
 #endif
+    pluginRegistrant = self
     GeneratedPluginRegistrant.register(with: self)
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
@@ -166,14 +165,26 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     // The example GoogleService-Info.plist uses YOUR_ placeholders and has
     // no real APNs/FCM identity. Firebase Messaging registers after the
     // in-app permission prompt once a real plist is in place.
-    // UIScene plugin deprecations: parked. Flutter still uses
-    // FlutterAppDelegate; no UIApplicationSceneManifest rewrite.
     if !Self.hasRealFirebasePlist() {
       NSLog("Cod Squad: skipping APNs registration (placeholder GoogleService-Info)")
     }
     let launched = super.application(application, didFinishLaunchingWithOptions: options)
     registerRuntimeChannel()
     return launched
+  }
+
+  /// Flutter 3.47 UIScene path: implicit engine is ready before
+  /// AppDelegate.window exists. Bind com.example.codSquadApp/runtime here
+  /// so isIosSimulator answers on Simulator.
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    bindRuntimeChannel(
+      on: engineBridge.applicationRegistrar.messenger(),
+      source: "implicitEngine"
+    )
+  }
+
+  func register(with registry: FlutterPluginRegistry) {
+    GeneratedPluginRegistrant.register(with: registry)
   }
 
 #if targetEnvironment(simulator)
@@ -194,6 +205,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   /// Consume leftover universal / custom-scheme chat links on Simulator so
   /// iOS does not show "Open in Cod Squad?" over ChatScreen.
   /// Google / Supabase auth schemes are not swallowed.
+  /// Does not dismiss an already-presented SpringBoard sheet.
   override func application(
     _ app: UIApplication,
     open url: URL,
@@ -243,15 +255,17 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     return !placeholders.contains { haystack.contains($0) }
   }
 
-  private func registerRuntimeChannel() {
-    if runtimeChannel != nil { return }
-    guard let messenger = flutterMessenger() else {
-      NSLog("Cod Squad: runtime channel messenger missing; retry")
-      DispatchQueue.main.async { [weak self] in
-        self?.registerRuntimeChannel()
-      }
+  static func bindRuntimeChannelFromScene(window: UIWindow?) {
+    guard let app = UIApplication.shared.delegate as? AppDelegate else { return }
+    if let controller = window?.rootViewController as? FlutterViewController {
+      app.bindRuntimeChannel(on: controller.binaryMessenger, source: "sceneDelegate")
       return
     }
+    app.registerRuntimeChannel()
+  }
+
+  private func bindRuntimeChannel(on messenger: FlutterBinaryMessenger, source: String) {
+    if runtimeChannel != nil { return }
     let channel = FlutterMethodChannel(
       name: "com.example.codSquadApp/runtime",
       binaryMessenger: messenger
@@ -268,6 +282,28 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
       }
     }
     runtimeChannel = channel
+    NSLog("Cod Squad: runtime channel bound source=\(source)")
+  }
+
+  private func registerRuntimeChannel() {
+    if runtimeChannel != nil { return }
+    guard let messenger = flutterMessenger() else {
+      runtimeChannelAttempts += 1
+      if runtimeChannelAttempts >= Self.maxRuntimeChannelAttempts {
+        NSLog(
+          "Cod Squad: runtime channel messenger missing; stop retry after \(Self.maxRuntimeChannelAttempts)"
+        )
+        return
+      }
+      NSLog(
+        "Cod Squad: runtime channel messenger missing; retry \(runtimeChannelAttempts)/\(Self.maxRuntimeChannelAttempts)"
+      )
+      DispatchQueue.main.async { [weak self] in
+        self?.registerRuntimeChannel()
+      }
+      return
+    }
+    bindRuntimeChannel(on: messenger, source: "appDelegate")
   }
 
   private func flutterMessenger() -> FlutterBinaryMessenger? {
@@ -284,24 +320,6 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   }
 
 #if targetEnvironment(simulator)
-  private static func observeSimulatorScenes() {
-    NotificationCenter.default.addObserver(
-      forName: UIScene.willConnectNotification,
-      object: nil,
-      queue: .main
-    ) { note in
-      guard let scene = note.object as? UIScene else { return }
-      NSLog("Cod Squad: sim UIScene.willConnect role=\(scene.session.role.rawValue)")
-      if let activity = scene.session.stateRestorationActivity {
-        if SimulatorAppLinks.shouldClearSimulatorUserActivity(activity) {
-          activity.invalidate()
-          scene.session.stateRestorationActivity = nil
-        }
-      }
-      SimulatorAppLinks.clearPendingUniversalLinkHandoff()
-    }
-  }
-
   private static func strippingSimulatorAppLinks(
     from launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> [UIApplication.LaunchOptionsKey: Any]? {

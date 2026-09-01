@@ -2,11 +2,25 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-/// iOS Simulator should not consume a leftover universal / app link at
-/// launch. That leftover is what shows "Open in Cod Squad?" over ChatScreen.
-/// Physical devices (debug or release) keep full universal-link handling.
+/// Whether to consume `getInitialLink()` at launch.
+/// iOS Simulator skips the leftover launch URL that shows
+/// "Open in Cod Squad?" over ChatScreen. Physical devices keep it.
 bool shouldConsumeLaunchAppLink({bool? isIosSimulator}) {
   return !(isIosSimulator ?? detectIosSimulator());
+}
+
+/// Cold/warm AppLinks after launch. Always subscribe — do not black out Dart.
+bool shouldSubscribeUriLinkStream() => true;
+
+/// Simulator skips only the initial launch link; [uriLinkStream] stays on.
+({bool consumeInitialLink, bool subscribeUriLinkStream}) planAppLinkListen({
+  bool? isIosSimulator,
+}) {
+  return (
+    consumeInitialLink:
+        shouldConsumeLaunchAppLink(isIosSimulator: isIosSimulator),
+    subscribeUriLinkStream: shouldSubscribeUriLinkStream(),
+  );
 }
 
 /// Runtime iOS Simulator detection. Physical devices return false.

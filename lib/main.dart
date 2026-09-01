@@ -225,19 +225,19 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   }
 
   Future<void> _initDeepLinks() async {
-    if (!shouldConsumeLaunchAppLink()) {
+    final plan = planAppLinkListen();
+    if (plan.consumeInitialLink) {
+      final initialLink = await _appLinks.getInitialLink();
+      if (initialLink != null && mounted) {
+        _handleDeepLink(initialLink.toString());
+      }
+    } else {
       debugPrint(
-          'AppLinks: skip launch link on iOS simulator so ChatScreen stays visible');
-      return;
+          'AppLinks: skip getInitialLink on iOS simulator; uriLinkStream stays on');
     }
 
-    // Handle initial link
-    final initialLink = await _appLinks.getInitialLink();
-    if (initialLink != null && mounted) {
-      _handleDeepLink(initialLink.toString());
-    }
+    if (!plan.subscribeUriLinkStream) return;
 
-    // Listen for incoming links - initial link handling may be different in v6
     _sub = _appLinks.uriLinkStream.listen((Uri? link) {
       if (link != null && mounted) {
         _handleDeepLink(link.toString());

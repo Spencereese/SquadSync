@@ -96,15 +96,41 @@ import UserNotifications
       options.removeValue(forKey: .url)
     }
     if let dict = options[.userActivityDictionary] as? [AnyHashable: Any] {
-      let hasWebLink = dict.values.contains { value in
-        guard let activity = value as? NSUserActivity else { return false }
-        return activity.webpageURL != nil
+      var filtered: [AnyHashable: Any] = [:]
+      var removedSwallow = false
+      for (key, value) in dict {
+        if let activity = value as? NSUserActivity,
+           let url = activity.webpageURL,
+           shouldSwallowSimulatorAppLink(url) {
+          removedSwallow = true
+          continue
+        }
+        filtered[key] = value
       }
-      if hasWebLink {
-        options.removeValue(forKey: .userActivityDictionary)
+      if removedSwallow {
+        let hasRemainingActivity = filtered.values.contains { $0 is NSUserActivity }
+        if hasRemainingActivity {
+          options[.userActivityDictionary] = filtered
+        } else {
+          options.removeValue(forKey: .userActivityDictionary)
+        }
       }
     }
     return options
+  }
+
+  /// Both "open in" and "cod squad", or Cancel + Open action titles.
+  static func shouldDismissOpenInAppPrompt(
+    title: String?,
+    message: String?,
+    actionTitles: [String]
+  ) -> Bool {
+    let text = "\(title ?? "") \(message ?? "")".lowercased()
+    let hasOpenIn = text.contains("open in")
+    let hasCodSquad = text.contains("cod squad")
+    if hasOpenIn && hasCodSquad { return true }
+    let actions = Set(actionTitles.map { $0.lowercased() })
+    return actions.contains("cancel") && actions.contains("open")
   }
 
   private static func shouldSwallowSimulatorAppLink(_ url: URL) -> Bool {
@@ -125,10 +151,11 @@ import UserNotifications
         top = presented
       }
       guard let alert = top as? UIAlertController else { continue }
-      let text = "\(alert.title ?? "") \(alert.message ?? "")".lowercased()
-      let looksLikeOpenInApp =
-        text.contains("open in") || text.contains("cod squad")
-      if looksLikeOpenInApp {
+      if Self.shouldDismissOpenInAppPrompt(
+        title: alert.title,
+        message: alert.message,
+        actionTitles: alert.actions.compactMap { $0.title }
+      ) {
         alert.dismiss(animated: false)
       }
     }

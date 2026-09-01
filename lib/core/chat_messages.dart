@@ -102,8 +102,8 @@ String chatRowId(Map<String, dynamic> row) {
   return 'row_${stamp}_$text';
 }
 
-/// Keep every live row. Wrong-thread / explicit delete only. Parse
-/// failures become a stub so 46 raw never becomes 45.
+/// Keep every live row. Wrong-thread / explicit delete only.
+/// 19e7d1f smoke: raw=46 with deleted id bcbbe08b-… → Got 45 is correct.
 Message? parseLiveChatMessage(
   Map<String, dynamic> row, {
   Object? expectedChatId,

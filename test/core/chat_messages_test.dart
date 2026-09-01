@@ -246,6 +246,48 @@ void main() {
     expect(parseLiveChatMessage({'is_deleted': true}), isNull);
   });
 
+  test('lobby_ids contains payload is a JSON array not a Postgres object', () {
+    final payload = lobbyIdsContainsPayload('1766270568521');
+    expect(payload, '["1766270568521"]');
+    expect(isLobbyIdsContainsPayload(payload), isTrue);
+    expect(isLobbyIdsContainsPayload('{1766270568521}'), isFalse);
+  });
+
+  test('explicit delete is skipped; 45 of 46 is the smoke criterion', () {
+    const live = '1766270568521';
+    const deletedId = 'bcbbe08b-6e91-4b9b-99ed-4d96b14ee494';
+    final rows = [
+      ...List.generate(45, (i) {
+        return {
+          'id': 'm$i',
+          'sender_id': 'u1',
+          'chat_id': live,
+          'text': 't$i',
+          'timestamp': '2026-01-01T00:00:00Z',
+          'is_deleted': 0,
+        };
+      }),
+      {
+        'id': deletedId,
+        'sender_id': 'u1',
+        'chat_id': live,
+        'text': 'gone',
+        'timestamp': '2026-01-01T00:00:00Z',
+        'is_deleted': true,
+      },
+    ];
+    final parsed = rows
+        .map((row) => parseLiveChatMessage(row, expectedChatId: live))
+        .whereType<Message>()
+        .toList();
+    expect(parsed, hasLength(45));
+    expect(parsed.map((m) => m.id), isNot(contains(deletedId)));
+    expect(
+      parseLiveChatMessage({'id': deletedId, 'is_deleted': true}),
+      isNull,
+    );
+  });
+
   test('isLiveChatMessageRow treats null/0/false as live', () {
     expect(isLiveChatMessageRow({}), isTrue);
     expect(isLiveChatMessageRow({'is_deleted': null}), isTrue);

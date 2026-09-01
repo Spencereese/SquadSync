@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../services/supabase_service.dart';
@@ -102,6 +104,18 @@ String? chatIdFromAppLink(String link) {
   return null;
 }
 
+/// JSONB `cs` must be a JSON array (`["id"]`), not a Postgres `{id}` list.
+String lobbyIdsContainsPayload(String lobbyId) => jsonEncode([lobbyId]);
+
+bool isLobbyIdsContainsPayload(String payload) {
+  try {
+    final decoded = jsonDecode(payload);
+    return decoded is List && decoded.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
+
 bool isChatListAppLink(String link) {
   if (chatIdFromAppLink(link) != null) return false;
   final trimmed = link.trim();
@@ -197,11 +211,16 @@ Future<LobbyChatBindSnapshot> loadLobbyChatBindSnapshot(String probeId) async {
     }
 
     for (final lobbyId in List<String>.from(lobbyIds)) {
+      final payload = lobbyIdsContainsPayload(lobbyId);
+      if (!isLobbyIdsContainsPayload(payload)) {
+        debugPrint('lobby_ids sibling lookup skipped; bad payload');
+        continue;
+      }
       try {
         final linked = await client
             .from('chat_groups')
             .select('id')
-            .contains('lobby_ids', [lobbyId]);
+            .filter('lobby_ids', 'cs', payload);
         for (final row in linked as List) {
           final id = chatIdOrNull((row as Map)['id']);
           if (id != null) siblingIds.add(id);

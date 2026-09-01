@@ -49,7 +49,8 @@ class SessionDebugHelper {
             '  Time until expiry: ${timeUntilExpiry.inHours}h ${timeUntilExpiry.inMinutes % 60}m');
 
         if (timeUntilExpiry.inHours < 1) {
-          debugPrint('  ⚠️  Session expiring soon - should auto-refresh');
+          debugPrint(
+              '  INFO session expiring soon; ensureFreshSession will refresh');
         }
       }
     } else {

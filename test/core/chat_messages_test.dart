@@ -185,6 +185,67 @@ void main() {
     expect(gone.isDeleted, isTrue);
   });
 
+  test('parseLiveChatMessage keeps integer id and created_at fallback', () {
+    final intId = parseLiveChatMessage({
+      'id': 1766270568521,
+      'sender_id': 99,
+      'chat_id': 1766270568521,
+      'text': 'kept',
+      'created_at': '2026-01-01T00:00:00Z',
+      'is_deleted': 0,
+    }, expectedChatId: '1766270568521');
+    expect(intId, isNotNull);
+    expect(intId!.id, '1766270568521');
+    expect(intId.text, 'kept');
+
+    final emptyTs = parseLiveChatMessage({
+      'id': 'm-empty-ts',
+      'sender_id': 'u1',
+      'chat_id': '1766270568521',
+      'text': 'fallback',
+      'timestamp': '',
+      'created_at': '2026-01-02T00:00:00Z',
+      'is_deleted': false,
+    }, expectedChatId: '1766270568521');
+    expect(emptyTs, isNotNull);
+    expect(emptyTs!.id, 'm-empty-ts');
+    expect(emptyTs.timestamp.day, 2);
+
+    final recovered = parseLiveChatMessage({
+      'id': 'm-bad-poll',
+      'sender_id': 'u1',
+      'chat_id': '1766270568521',
+      'text': 'still-live',
+      'timestamp': '2026-01-01T00:00:00Z',
+      'poll': <dynamic>['not-a-map'],
+    }, expectedChatId: '1766270568521');
+    expect(recovered, isNotNull);
+    expect(recovered!.text, 'still-live');
+  });
+
+  test('46 live rows stay 46 after parse; only explicit delete drops', () {
+    const live = '1766270568521';
+    final rows = List.generate(46, (i) {
+      return {
+        'id': i == 0 ? 1000 : 'm$i',
+        'sender_id': 'u1',
+        'chat_id': live,
+        'text': 't$i',
+        'timestamp': i == 1 ? '' : '2026-01-01T00:00:00Z',
+        'created_at': '2026-01-01T00:00:00Z',
+        'is_deleted': i == 2 ? 0 : null,
+      };
+    });
+    final parsed = rows
+        .map((row) => parseLiveChatMessage(row, expectedChatId: live))
+        .whereType<Message>()
+        .toList();
+    expect(parsed, hasLength(46));
+    expect(parsed.map((m) => m.id).toSet(), hasLength(46));
+
+    expect(parseLiveChatMessage({'is_deleted': true}), isNull);
+  });
+
   test('isLiveChatMessageRow treats null/0/false as live', () {
     expect(isLiveChatMessageRow({}), isTrue);
     expect(isLiveChatMessageRow({'is_deleted': null}), isTrue);

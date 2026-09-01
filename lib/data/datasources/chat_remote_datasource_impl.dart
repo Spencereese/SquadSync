@@ -110,46 +110,13 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     final messages = <Message>[];
     for (final item in response) {
       try {
-        final messageData = Map<String, dynamic>.from(item);
-        if (!sameChatId(messageData['chat_id'], chatGroupId)) continue;
-        if (!isLiveChatMessageRow(messageData)) continue;
-
-        // Clean JSONB fields with incompatible data types using the same logic as stream
-        for (final key in [
-          'metadata',
-          'reactions',
-          'clip_data',
-          'clipData',
-          'poll',
-          'ai_response'
-        ]) {
-          final value = messageData[key];
-          if (value == null) continue;
-
-          // Remove if it's a List when we expect Map
-          if (key == 'reactions') {
-            if (value is List && value.isEmpty)
-              continue; // Empty list is OK for reactions
-            if (value is! Map && value is! List) messageData.remove(key);
-          } else if (key == 'metadata') {
-            if (value is List ||
-                (value is Map &&
-                    (value.containsKey('photos') ||
-                        value.containsKey('videos') ||
-                        value.containsKey('audio')))) {
-              messageData.remove(key);
-            }
-          } else {
-            // For clip_data, poll, ai_response - only Maps allowed
-            if (value is List) messageData.remove(key);
-          }
-        }
-
-        messages.add(Message.fromJson(messageData));
+        final message = parseLiveChatMessage(
+          Map<String, dynamic>.from(item as Map),
+          expectedChatId: chatGroupId,
+        );
+        if (message != null) messages.add(message);
       } catch (e) {
         debugPrint('❌ Failed to parse message in fetchMessages: $e');
-        // Skip corrupt message
-        continue;
       }
     }
 
@@ -190,13 +157,15 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         .order('created_at', ascending: true)
         .limit(100)
         .map((data) {
-          // Filter in Dart since stream builder doesn't support all filters
-          final filtered = data
-              .where((item) =>
-                  sameChatId(item['chat_id'], chatGroupId) &&
-                  isLiveChatMessageRow(Map<String, dynamic>.from(item)))
-              .toList();
-          return filtered.map((item) => Message.fromJson(item)).toList();
+          final messages = <Message>[];
+          for (final item in data) {
+            final message = parseLiveChatMessage(
+              Map<String, dynamic>.from(item),
+              expectedChatId: chatGroupId,
+            );
+            if (message != null) messages.add(message);
+          }
+          return messages;
         });
   }
 
@@ -913,10 +882,8 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
 
     return (response as List)
         .map((data) => Map<String, dynamic>.from(data as Map))
-        .where((row) =>
-            sameChatId(row['chat_id'], chatGroupId) &&
-            isLiveChatMessageRow(row))
-        .map(Message.fromJson)
+        .map((row) => parseLiveChatMessage(row, expectedChatId: chatGroupId))
+        .whereType<Message>()
         .toList();
   }
 

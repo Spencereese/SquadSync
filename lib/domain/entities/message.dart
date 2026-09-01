@@ -15,6 +15,9 @@ class TimestampConverter implements JsonConverter<DateTime, dynamic> {
     if (json is DateTime) {
       return json;
     } else if (json is String) {
+      if (json.isEmpty) {
+        return DateTime.now();
+      }
       return DateTime.parse(json);
     } else if (json is int) {
       return DateTime.fromMillisecondsSinceEpoch(json);
@@ -105,6 +108,17 @@ class ReactionConverter
   }
 }
 
+String _asRowId(Object? value) {
+  if (value == null) return '';
+  return value.toString();
+}
+
+dynamic _nonEmptyStamp(Object? value) {
+  if (value == null) return null;
+  if (value is String && value.isEmpty) return null;
+  return value;
+}
+
 /// PostgREST/SQLite may send 0/1/'true' instead of bool.
 bool? _asBoolish(Object? value) {
   if (value == null) return null;
@@ -176,13 +190,12 @@ class Message with _$Message {
       }
 
       return Message(
-        id: json['id'] as String? ?? '',
-        senderId: json['senderId'] ??
-            json['senderUid'] ??
-            json['sender_id'] as String? ??
-            '',
-        text: json['text'] as String? ?? '',
-        timestamp: const TimestampConverter().fromJson(json['timestamp']),
+        id: _asRowId(json['id']),
+        senderId: _asRowId(
+            json['senderId'] ?? json['senderUid'] ?? json['sender_id']),
+        text: json['text']?.toString() ?? '',
+        timestamp: const TimestampConverter().fromJson(
+            _nonEmptyStamp(json['timestamp']) ?? json['created_at']),
         messageType: const MessageTypeConverter()
             .fromJson(json['messageType'] ?? json['message_type']),
         mediaUrl: json['mediaUrl'] ?? json['media_url'] as String?,

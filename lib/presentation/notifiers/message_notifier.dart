@@ -313,64 +313,17 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
 
           // Use dynamic map first, then convert manually field by field
           final rawMap = item;
-          if (!sameChatId(rawMap['chat_id'], chatGroupId)) {
-            continue;
-          }
-          if (!isLiveChatMessageRow(Map<String, dynamic>.from(rawMap))) {
-            continue;
-          }
-
-          // Manually copy each field to avoid any constructor issues
           for (final rawKey in rawMap.keys) {
             final key = rawKey.toString();
             final value = rawMap[rawKey];
             messageData[key] = value;
           }
 
-          final cleanedData = <String, dynamic>{};
-
-          // Copy only safe fields, skipping problematic JSONB columns entirely
-          for (final entry in messageData.entries) {
-            final key = entry.key;
-            final value = entry.value;
-
-            // Skip all JSONB fields that could cause type issues
-            if (key == 'metadata' ||
-                key == 'reactions' ||
-                key == 'clip_data' ||
-                key == 'clipData' ||
-                key == 'poll' ||
-                key == 'ai_response') {
-              // Only include these fields if they're the correct type
-              if (key == 'reactions') {
-                // Always include reactions regardless of type - let Message.fromJson handle it
-                cleanedData[key] = value;
-              } else if (key == 'metadata' ||
-                  key == 'clip_data' ||
-                  key == 'poll') {
-                if (value == null || value is Map) {
-                  // Check for old schema in metadata
-                  if (key == 'metadata' && value is Map) {
-                    final meta = value;
-                    if (!meta.containsKey('photos') &&
-                        !meta.containsKey('videos') &&
-                        !meta.containsKey('audio')) {
-                      cleanedData[key] = value;
-                    }
-                  } else {
-                    cleanedData[key] = value;
-                  }
-                }
-              }
-              // Skip if wrong type
-              continue;
-            }
-
-            // Copy all other fields as-is
-            cleanedData[key] = value;
-          }
-
-          final message = Message.fromJson(cleanedData);
+          final message = parseLiveChatMessage(
+            messageData,
+            expectedChatId: chatGroupId,
+          );
+          if (message == null) continue;
 
           // Log photo messages specifically
           if (message.messageType == MessageType.image ||

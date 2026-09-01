@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../domain/entities/message.dart';
 
 /// Messages for the open thread. Prefer the owner (MessageNotifier)
@@ -82,8 +84,60 @@ bool sameChatId(Object? left, Object? right) {
 /// `is_deleted` is often NULL/0 on older rows. Only explicit true is gone.
 bool isLiveChatMessageRow(Map<String, dynamic> row) {
   final deleted = row['is_deleted'];
-  if (deleted == true || deleted == 1 || deleted == 'true' || deleted == '1') {
+  if (deleted == true ||
+      deleted == 1 ||
+      deleted == 'true' ||
+      deleted == '1' ||
+      deleted == 't') {
     return false;
   }
   return true;
+}
+
+String chatRowId(Map<String, dynamic> row) {
+  final id = row['id'];
+  if (id != null && id.toString().isNotEmpty) return id.toString();
+  final stamp = row['created_at'] ?? row['timestamp'] ?? '';
+  final text = row['text'] ?? '';
+  return 'row_${stamp}_$text';
+}
+
+/// Keep every live row. Wrong-thread / explicit delete only. Parse
+/// failures become a stub so 46 raw never becomes 45.
+Message? parseLiveChatMessage(
+  Map<String, dynamic> row, {
+  Object? expectedChatId,
+}) {
+  if (expectedChatId != null &&
+      row.containsKey('chat_id') &&
+      !sameChatId(row['chat_id'], expectedChatId)) {
+    return null;
+  }
+  if (!isLiveChatMessageRow(row)) {
+    debugPrint('parseLiveChatMessage skip deleted id=${row['id']}');
+    return null;
+  }
+  try {
+    final message = Message.fromJson(row);
+    if (message.id.isEmpty) {
+      return message.copyWith(id: chatRowId(row));
+    }
+    return message;
+  } catch (e) {
+    debugPrint('parseLiveChatMessage recovered id=${row['id']}: $e');
+    return Message(
+      id: chatRowId(row),
+      senderId: row['sender_id']?.toString() ??
+          row['senderId']?.toString() ??
+          '',
+      text: row['text']?.toString() ?? '',
+      timestamp: const TimestampConverter().fromJson(
+        (row['timestamp'] is String &&
+                (row['timestamp'] as String).isEmpty)
+            ? row['created_at']
+            : (row['timestamp'] ?? row['created_at']),
+      ),
+      messageType: MessageType.text,
+    );
+  }
 }

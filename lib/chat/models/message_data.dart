@@ -108,8 +108,12 @@ class MessageData {
               DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms']);
         } else if (data['timestamp'] is DateTime) {
           parsedTimestamp = data['timestamp'] as DateTime;
-        } else if (data['timestamp'] is String) {
+        } else if (data['timestamp'] is String &&
+            (data['timestamp'] as String).isNotEmpty) {
           parsedTimestamp = DateTime.parse(data['timestamp']);
+        } else if (data['created_at'] is String &&
+            (data['created_at'] as String).isNotEmpty) {
+          parsedTimestamp = DateTime.parse(data['created_at'] as String);
         } else {
           parsedTimestamp = DateTime.now();
         }

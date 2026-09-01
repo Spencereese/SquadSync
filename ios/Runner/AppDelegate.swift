@@ -95,6 +95,9 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     options connectionOptions: UIScene.ConnectionOptions
   ) {
     SimulatorAppLinks.consumeSceneConnection(connectionOptions)
+    // Host/reuse first. super.scene may move AppDelegate.window; it must
+    // not instantiate a second storyboard FVC / run a second engine.
+    hostFlutterView(on: scene)
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     hostFlutterView(on: scene)
     if let engine = (window?.rootViewController as? FlutterViewController)?.engine {
@@ -108,24 +111,28 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     }
   }
 
-  /// Scene wrap without a hosted FVC left a status-bar-only black
-  /// framebuffer (Dart ran, ChatScreen never mounted). Always attach a
-  /// visible FlutterViewController before returning from willConnect.
+  /// One FlutterEngine only. AppDelegate/launchEngine already ran Dart
+  /// (`didFinishRegistrar`). Do not storyboard.instantiateInitialViewController
+  /// or FlutterViewController() — those create a second engine and SIGABRT
+  /// ("This FlutterEngine was already invoked").
   private func hostFlutterView(on scene: UIScene) {
     guard let windowScene = scene as? UIWindowScene else { return }
     if window == nil {
       window = UIWindow(windowScene: windowScene)
     }
     window?.windowScene = windowScene
-    if !(window?.rootViewController is FlutterViewController) {
-      let storyboard = UIStoryboard(name: "Main", bundle: nil)
-      if let flutter = storyboard.instantiateInitialViewController()
-        as? FlutterViewController
-      {
-        window?.rootViewController = flutter
-      } else {
-        window?.rootViewController = FlutterViewController()
+    if let existing = AppDelegate.existingFlutterViewController() {
+      if window?.rootViewController !== existing {
+        window?.rootViewController = existing
       }
+    } else if !(window?.rootViewController is FlutterViewController),
+      let engine = AppDelegate.existingRunningEngine()
+    {
+      window?.rootViewController = FlutterViewController(
+        engine: engine,
+        nibName: nil,
+        bundle: nil
+      )
     }
     window?.makeKeyAndVisible()
     if let app = UIApplication.shared.delegate as? FlutterAppDelegate {
@@ -246,7 +253,8 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
       sessionRole: connectingSceneSession.role
     )
     config.delegateClass = RunnerSceneDelegate.self
-    config.storyboard = UIStoryboard(name: "Main", bundle: nil)
+    // Do not set config.storyboard — iOS would instantiate a second
+    // Main FlutterViewController and re-invoke the running engine.
     return config
   }
 
@@ -301,6 +309,34 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     let haystack = "\(googleAppId) \(projectId)".uppercased()
     let placeholders = ["YOUR_", "YOUR_FIREBASE", "YOUR_GCM", "YOUR_IOS"]
     return !placeholders.contains { haystack.contains($0) }
+  }
+
+  static func existingFlutterViewController() -> FlutterViewController? {
+    if let app = UIApplication.shared.delegate as? FlutterAppDelegate,
+       let controller = app.window?.rootViewController as? FlutterViewController
+    {
+      return controller
+    }
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    for window in scenes.flatMap({ $0.windows }) {
+      if let controller = window.rootViewController as? FlutterViewController {
+        return controller
+      }
+    }
+    return nil
+  }
+
+  /// Launch engine already ran Dart. takeLaunchEngine transfers it once.
+  /// Never create a new implicit FlutterEngine after that.
+  static func existingRunningEngine() -> FlutterEngine? {
+    if let engine = existingFlutterViewController()?.engine {
+      return engine
+    }
+    guard let app = UIApplication.shared.delegate as? AppDelegate else { return nil }
+    let selector = NSSelectorFromString("takeLaunchEngine")
+    guard app.responds(to: selector) else { return nil }
+    guard let result = app.perform(selector) else { return nil }
+    return result.takeUnretainedValue() as? FlutterEngine
   }
 
   static func bindRuntimeChannelFromScene(window: UIWindow?) {

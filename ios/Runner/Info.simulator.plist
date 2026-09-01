@@ -26,8 +26,10 @@
 		<true/>
 		<key>UILaunchStoryboardName</key>
 		<string>LaunchScreen</string>
-		<key>UIMainStoryboardFile</key>
-		<string>Main</string>
+		<!-- No UIMainStoryboardFile: iOS 26 still connects a UIWindowScene.
+		     AppDelegate must not also instantiate Main's FlutterViewController
+		     (second FlutterEngine / already-invoked abort). Scene retargets
+		     the one launch-engine FVC. -->
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>

@@ -247,6 +247,58 @@ void main() {
     expect(parseLiveChatMessage({'is_deleted': true}), isNull);
   });
 
+  test('metadata.photos survives fromJson and fills MessageData.photos', () {
+    const url = 'https://example.com/kept-photo.jpg';
+    const id = 'e9c2dd77-6959-4e94-bf50-43a3e55cd3d2';
+    final entity = Message.fromJson({
+      'id': id,
+      'sender_id': 'u1',
+      'text': '',
+      'message_type': 'image',
+      'media_type': 'image',
+      'media_url': null,
+      'timestamp': '2026-01-01T00:00:00Z',
+      'metadata': {
+        'photos': [
+          {'uri': url}
+        ],
+      },
+    });
+    expect(entity.metadata, isNotNull);
+    expect(entity.metadata!['photos'], isNotEmpty);
+    expect(entity.mediaUrl, url);
+
+    final json = entity.toJson();
+    expect(json['metadata'], isNotNull);
+    expect((json['metadata'] as Map)['photos'], isNotEmpty);
+
+    final withoutResolvedUrl = Map<String, dynamic>.from(json)
+      ..['media_url'] = null
+      ..['mediaUrl'] = null;
+    final retried = md.MessageData.fromMap(withoutResolvedUrl);
+    expect(retried.type, md.MessageType.image);
+    expect(retried.mediaUrl, url);
+    expect(retried.photos, isNotEmpty);
+    expect(retried.photos.first['uri'], url);
+
+    final emptyMeta = Message.fromJson({
+      'id': 'a0d9fec9-f7c5-4d8a-b7aa-9bf6f950e980',
+      'sender_id': 'u1',
+      'text': '',
+      'message_type': 'image',
+      'media_type': 'image',
+      'media_url': null,
+      'timestamp': '2026-01-01T00:00:00Z',
+      'metadata': {},
+    });
+    expect(emptyMeta.metadata, isNotNull);
+    final emptyData = md.MessageData.fromMap(emptyMeta.toJson());
+    expect(emptyData.type, md.MessageType.image);
+    expect(emptyData.hasContent, isTrue);
+    expect(emptyData.mediaUrl, isNull);
+    expect(emptyData.photos, isEmpty);
+  });
+
   test('image mediaType + null mediaUrl uses metadata.photos[0]', () {
     const url = 'https://example.com/fallback.jpg';
     final data = md.MessageData.fromMap({

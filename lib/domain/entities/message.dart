@@ -171,18 +171,9 @@ class Message with _$Message {
 
   factory Message.fromJson(Map<String, dynamic> json) {
     try {
-      // Safe metadata parsing - completely skip if it contains old array fields
-      Map<String, dynamic>? safeMetadata;
-      final metadataRaw = json['metadata'];
-      if (metadataRaw != null && metadataRaw is Map) {
-        // Skip metadata completely if it has old schema fields
-        final hasOldFields = metadataRaw.containsKey('photos') ||
-            metadataRaw.containsKey('videos') ||
-            metadataRaw.containsKey('audio');
-        if (!hasOldFields) {
-          safeMetadata = Map<String, dynamic>.from(metadataRaw);
-        }
-      }
+      // Keep metadata.photos (and other photo keys) so MessageData.fromMap
+      // can resolve a display URL after a first-pass miss.
+      final safeMetadata = asMessageMetadataMap(json['metadata']);
 
       // Safe clipData parsing - skip if it's a List
       Map<String, dynamic>? safeClipData;
@@ -200,7 +191,10 @@ class Message with _$Message {
             _nonEmptyStamp(json['timestamp']) ?? json['created_at']),
         messageType: const MessageTypeConverter()
             .fromJson(json['messageType'] ?? json['message_type']),
-        mediaUrl: resolveMessageDisplayMediaUrl(json),
+        mediaUrl: resolveMessageDisplayMediaUrl({
+          ...json,
+          if (safeMetadata != null) 'metadata': safeMetadata,
+        }),
         mediaType: json['mediaType'] ?? json['media_type'] as String?,
         reactions: const ReactionConverter().fromJson(json['reactions']),
         replyTo: json['replyTo'] ?? json['reply_to'] as String?,

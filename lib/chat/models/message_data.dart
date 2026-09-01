@@ -192,8 +192,9 @@ class MessageData {
     final messageType = data['message_type'] ?? data['messageType'];
 
     if (kDebugMode) {
+      final metaPhotos = asMessageMetadataMap(data['metadata'])?['photos'];
       print(
-          '📸 _parsePhotosFromData: mediaUrl=$mediaUrl, mediaType=$mediaType, messageType=$messageType');
+          '📸 _parsePhotosFromData: mediaUrl=$mediaUrl, mediaType=$mediaType, messageType=$messageType, metadata.photos=$metaPhotos');
     }
 
     // Check if media_type is 'image', OR infer from URL extension, OR check message_type

@@ -51,15 +51,17 @@ enum SimulatorAppLinks {
   /// "Open in Cod Squad?" sheet (Cancel + Open). In-app / VC dismiss cannot
   /// take down that overlay. Google / Supabase auth stays unsallowed.
   ///
-  /// Sim Info.plist omits `codsquadapp` and `.chat` NSUserActivity so
-  /// SpringBoard does not claim leftover chat opens. Associated-domains
-  /// are already off on Runner.simulator.entitlements.
+  /// Sim Info.plist omits `codsquadapp` and `.chat` NSUserActivity.
+  /// Default CODE_SIGN_ENTITLEMENTS is Runner.simulator.entitlements
+  /// (no applinks) so Launch Services cannot register leftover UL.
+  /// Device keeps applinks via [sdk=iphoneos*].
   ///
-  /// After a clean Xcode 26 compile, if a leftover sheet is already up,
-  /// restart SpringBoard only (do NOT erase the sim):
+  /// After a clean Xcode 26 compile, rebuild LS then SpringBoard
+  /// (do NOT erase the sim):
   ///   xcrun simctl terminate 748CAA89-6E32-4FDE-88A3-248F13D21235 com.example.codSquadApp
   ///   xcrun simctl terminate 748CAA89-6E32-4FDE-88A3-248F13D21235 com.apple.mobilesafari
-  ///   xcrun simctl spawn 748CAA89-6E32-4FDE-88A3-248F13D21235 killall SpringBoard
+  ///   xcrun simctl spawn 748CAA89-6E32-4FDE-88A3-248F13D21235 /usr/bin/killall lsd
+  ///   xcrun simctl spawn 748CAA89-6E32-4FDE-88A3-248F13D21235 /usr/bin/killall SpringBoard
   static func consumeSceneConnection(_ options: UIScene.ConnectionOptions) {
     NSLog(
       "Cod Squad: sim scene connect urls=\(options.urlContexts.count) activities=\(options.userActivities.count)"
@@ -165,6 +167,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     options = Self.strippingSimulatorAppLinks(from: launchOptions)
     Self.logLaunchStrip(stage: "didFinish", original: launchOptions, stripped: options)
     Self.confirmNoAssociatedDomainLeftover(options)
+    Self.logSimulatorAssociatedDomainsClaim()
 #endif
     pluginRegistrant = self
     GeneratedPluginRegistrant.register(with: self)
@@ -209,7 +212,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   ) -> UISceneConfiguration {
     SimulatorAppLinks.consumeSceneConnection(options)
     let config = UISceneConfiguration(
-      name: nil,
+      name: "Cod Squad",
       sessionRole: connectingSceneSession.role
     )
     config.delegateClass = RunnerSceneDelegate.self
@@ -399,6 +402,26 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
       }
     }
     return options
+  }
+
+  /// Launch Services reads embedded applinks. Sim builds must log absent.
+  private static func logSimulatorAssociatedDomainsClaim() {
+    let urls = [
+      Bundle.main.url(forResource: "archived-expanded-entitlements", withExtension: "xcent"),
+      Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+    ]
+    var domains: Any?
+    for url in urls.compactMap({ $0 }) {
+      if let dict = NSDictionary(contentsOf: url) {
+        domains = dict["com.apple.developer.associated-domains"]
+        if domains != nil { break }
+      }
+    }
+    if let domains {
+      NSLog("Cod Squad: SIM STILL HAS associated-domains=\(domains)")
+    } else {
+      NSLog("Cod Squad: sim associated-domains absent (no leftover UL claim)")
+    }
   }
 
   private static func confirmNoAssociatedDomainLeftover(

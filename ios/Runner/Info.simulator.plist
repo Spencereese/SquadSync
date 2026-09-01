@@ -50,8 +50,9 @@
 		<!-- Simulator: omit codsquadapp so SpringBoard does not present
 		     leftover "Open in Cod Squad?" for chat custom-scheme / UL claims.
 		     Keep Google + com.example.codSquadApp for auth. Device Info.plist
-		     still registers codsquadapp. Associated-domains already omitted
-		     from Runner.simulator.entitlements. -->
+		     still registers codsquadapp. Default entitlements are
+		     Runner.simulator.entitlements (no applinks) so Launch Services
+		     cannot register leftover UL. Device keeps applinks. -->
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>
@@ -172,6 +173,25 @@
 					<key>NSIncludesSubdomains</key>
 					<true/>
 				</dict>
+			</dict>
+		</dict>
+		<key>UIApplicationSceneManifest</key>
+		<dict>
+			<key>UIApplicationSupportsMultipleScenes</key>
+			<false/>
+			<key>UISceneConfigurations</key>
+			<dict>
+				<key>UIWindowSceneSessionRoleApplication</key>
+				<array>
+					<dict>
+						<key>UISceneConfigurationName</key>
+						<string>Cod Squad</string>
+						<key>UISceneDelegateClassName</key>
+						<string>$(PRODUCT_MODULE_NAME).RunnerSceneDelegate</string>
+						<key>UISceneStoryboardFile</key>
+						<string>Main</string>
+					</dict>
+				</array>
 			</dict>
 		</dict>
 		<key>UIStatusBarHidden</key>

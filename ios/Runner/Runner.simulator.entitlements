@@ -12,8 +12,9 @@
 	<array>
 		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	</array>
-	<!-- Simulator only: no associated-domains so a leftover Safari/SpringBoard
-	     universal-link handoff cannot present "Open in Cod Squad?" at flutter run.
-	     Device builds keep Runner.entitlements applinks. -->
+	<!-- Simulator only: no associated-domains. This file is the DEFAULT
+	     CODE_SIGN_ENTITLEMENTS so an sdk-mismatch cannot leak device applinks
+	     into Launch Services. Device builds use Runner.entitlements via
+	     CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]. -->
 </dict>
 </plist>

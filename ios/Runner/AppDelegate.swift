@@ -51,11 +51,15 @@ enum SimulatorAppLinks {
   /// "Open in Cod Squad?" sheet (Cancel + Open). In-app / VC dismiss cannot
   /// take down that overlay. Google / Supabase auth stays unsallowed.
   ///
-  /// After a clean Xcode 26 compile, if launch still shows a leftover sheet,
-  /// Tester should run leftover-only reset (do NOT erase the sim):
+  /// Sim Info.plist omits `codsquadapp` and `.chat` NSUserActivity so
+  /// SpringBoard does not claim leftover chat opens. Associated-domains
+  /// are already off on Runner.simulator.entitlements.
+  ///
+  /// After a clean Xcode 26 compile, if a leftover sheet is already up,
+  /// restart SpringBoard only (do NOT erase the sim):
+  ///   xcrun simctl terminate 748CAA89-6E32-4FDE-88A3-248F13D21235 com.example.codSquadApp
   ///   xcrun simctl terminate 748CAA89-6E32-4FDE-88A3-248F13D21235 com.apple.mobilesafari
-  ///   xcrun simctl openurl 748CAA89-6E32-4FDE-88A3-248F13D21235 about:blank
-  /// Erase the sim only if those two fail to clear the sheet.
+  ///   xcrun simctl spawn 748CAA89-6E32-4FDE-88A3-248F13D21235 killall SpringBoard
   static func consumeSceneConnection(_ options: UIScene.ConnectionOptions) {
     NSLog(
       "Cod Squad: sim scene connect urls=\(options.urlContexts.count) activities=\(options.userActivities.count)"
@@ -92,8 +96,13 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     if let engine = (window?.rootViewController as? FlutterViewController)?.engine {
       _ = self.registerSceneLifeCycle(with: engine)
+      AppDelegate.bindRuntimeChannelFromScene(window: window)
+    } else {
+      AppDelegate.scheduleDelayedRuntimeChannelBind()
     }
-    AppDelegate.bindRuntimeChannelFromScene(window: window)
+    DispatchQueue.main.async {
+      AppDelegate.bindRuntimeChannelFromScene(window: self.window)
+    }
   }
 
   override func scene(_ scene: UIScene, openURLContexts urlContexts: Set<UIOpenURLContext>) {
@@ -132,6 +141,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   private var runtimeChannel: FlutterMethodChannel?
   private var runtimeChannelAttempts = 0
   private static let maxRuntimeChannelAttempts = 8
+  private static let runtimeChannelRetryDelay: TimeInterval = 0.25
 
   override func application(
     _ application: UIApplication,
@@ -158,6 +168,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
 #endif
     pluginRegistrant = self
     GeneratedPluginRegistrant.register(with: self)
+    bindRuntimeChannelFromRegistry(self, source: "didFinishRegistrar")
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
     }
@@ -169,7 +180,9 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
       NSLog("Cod Squad: skipping APNs registration (placeholder GoogleService-Info)")
     }
     let launched = super.application(application, didFinishLaunchingWithOptions: options)
-    registerRuntimeChannel()
+    if runtimeChannel == nil {
+      scheduleDelayedRuntimeChannelBind()
+    }
     return launched
   }
 
@@ -185,6 +198,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
 
   func register(with registry: FlutterPluginRegistry) {
     GeneratedPluginRegistrant.register(with: registry)
+    bindRuntimeChannelFromRegistry(registry, source: "pluginRegistrant")
   }
 
 #if targetEnvironment(simulator)
@@ -199,6 +213,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
       sessionRole: connectingSceneSession.role
     )
     config.delegateClass = RunnerSceneDelegate.self
+    config.storyboard = UIStoryboard(name: "Main", bundle: nil)
     return config
   }
 
@@ -261,7 +276,26 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
       app.bindRuntimeChannel(on: controller.binaryMessenger, source: "sceneDelegate")
       return
     }
-    app.registerRuntimeChannel()
+    app.bindRuntimeChannelFromAvailableMessenger(source: "sceneWindows")
+    if app.runtimeChannel == nil {
+      app.scheduleDelayedRuntimeChannelBind()
+    }
+  }
+
+  static func scheduleDelayedRuntimeChannelBind() {
+    guard let app = UIApplication.shared.delegate as? AppDelegate else { return }
+    app.scheduleDelayedRuntimeChannelBind()
+  }
+
+  private func bindRuntimeChannelFromRegistry(
+    _ registry: FlutterPluginRegistry,
+    source: String
+  ) {
+    guard let registrar = registry.registrar(forPlugin: "CodSquadRuntime") else {
+      NSLog("Cod Squad: runtime registrar missing source=\(source)")
+      return
+    }
+    bindRuntimeChannel(on: registrar.messenger(), source: source)
   }
 
   private func bindRuntimeChannel(on messenger: FlutterBinaryMessenger, source: String) {
@@ -285,25 +319,34 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     NSLog("Cod Squad: runtime channel bound source=\(source)")
   }
 
-  private func registerRuntimeChannel() {
+  private func bindRuntimeChannelFromAvailableMessenger(source: String) {
     if runtimeChannel != nil { return }
-    guard let messenger = flutterMessenger() else {
-      runtimeChannelAttempts += 1
-      if runtimeChannelAttempts >= Self.maxRuntimeChannelAttempts {
-        NSLog(
-          "Cod Squad: runtime channel messenger missing; stop retry after \(Self.maxRuntimeChannelAttempts)"
-        )
-        return
-      }
-      NSLog(
-        "Cod Squad: runtime channel messenger missing; retry \(runtimeChannelAttempts)/\(Self.maxRuntimeChannelAttempts)"
-      )
-      DispatchQueue.main.async { [weak self] in
-        self?.registerRuntimeChannel()
-      }
+    if let messenger = flutterMessenger() {
+      bindRuntimeChannel(on: messenger, source: source)
       return
     }
-    bindRuntimeChannel(on: messenger, source: "appDelegate")
+    bindRuntimeChannelFromRegistry(self, source: source)
+  }
+
+  private func scheduleDelayedRuntimeChannelBind() {
+    if runtimeChannel != nil { return }
+    runtimeChannelAttempts += 1
+    if runtimeChannelAttempts > Self.maxRuntimeChannelAttempts {
+      NSLog(
+        "Cod Squad: runtime channel messenger missing; stop delayed retry after \(Self.maxRuntimeChannelAttempts)"
+      )
+      return
+    }
+    NSLog(
+      "Cod Squad: runtime channel waiting for engine \(runtimeChannelAttempts)/\(Self.maxRuntimeChannelAttempts)"
+    )
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.runtimeChannelRetryDelay) { [weak self] in
+      guard let self else { return }
+      self.bindRuntimeChannelFromAvailableMessenger(source: "delayed")
+      if self.runtimeChannel == nil {
+        self.scheduleDelayedRuntimeChannelBind()
+      }
+    }
   }
 
   private func flutterMessenger() -> FlutterBinaryMessenger? {

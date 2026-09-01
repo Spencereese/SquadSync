@@ -54,32 +54,72 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     return message;
   }
 
+  Future<List<dynamic>> _selectChatMessageRows(
+    String chatGroupId, {
+    required int limit,
+    DateTime? before,
+    required String orderColumn,
+  }) async {
+    // Epoch thread ids (e.g. 1766267555951) may be stored as text or int.
+    final asInt = int.tryParse(chatGroupId);
+    final orFilter = asInt != null
+        ? 'chat_id.eq.$chatGroupId,chat_id.eq.$asInt'
+        : null;
+
+    if (before != null) {
+      final filtered = orFilter != null
+          ? _supabase
+              .from('chat_messages')
+              .select()
+              .or(orFilter)
+              .filter(orderColumn, 'lt', before.toIso8601String())
+          : _supabase
+              .from('chat_messages')
+              .select()
+              .eq('chat_id', chatGroupId)
+              .filter(orderColumn, 'lt', before.toIso8601String());
+      return await filtered.order(orderColumn, ascending: true).limit(limit);
+    }
+
+    final filtered = orFilter != null
+        ? _supabase.from('chat_messages').select().or(orFilter)
+        : _supabase.from('chat_messages').select().eq('chat_id', chatGroupId);
+    return await filtered.order(orderColumn, ascending: true).limit(limit);
+  }
+
   @override
   Future<List<Message>> fetchMessages(String chatGroupId,
       {int limit = 50, DateTime? before}) async {
-    // Use filter method for proper query building
     // Do not .eq('is_deleted', false): older rows are often NULL/0 and
-    // PostgREST drops them. Order by created_at — timestamp is missing
-    // on the same older rows. Filter live rows in Dart.
-    final response = before != null
-        ? await _supabase
-            .from('chat_messages')
-            .select()
-            .eq('chat_id', chatGroupId)
-            .filter('created_at', 'lt', before.toIso8601String())
-            .order('created_at', ascending: true)
-            .limit(limit)
-        : await _supabase
-            .from('chat_messages')
-            .select()
-            .eq('chat_id', chatGroupId)
-            .order('created_at', ascending: true)
-            .limit(limit);
+    // PostgREST drops them. Do not limit(1). Match chat_id as text or int.
+    // Prefer timestamp (NOT NULL) if created_at returns a 1-row page.
+    var response = await _selectChatMessageRows(
+      chatGroupId,
+      limit: limit,
+      before: before,
+      orderColumn: 'timestamp',
+    );
+    debugPrint(
+        'PostgREST chat_messages raw=${response.length} order=timestamp limit=$limit');
+    if (response.length <= 1) {
+      final createdAtPage = await _selectChatMessageRows(
+        chatGroupId,
+        limit: limit,
+        before: before,
+        orderColumn: 'created_at',
+      );
+      debugPrint(
+          'PostgREST chat_messages raw=${createdAtPage.length} order=created_at limit=$limit');
+      if (createdAtPage.length > response.length) {
+        response = createdAtPage;
+      }
+    }
 
     final messages = <Message>[];
     for (final item in response) {
       try {
         final messageData = Map<String, dynamic>.from(item);
+        if (!sameChatId(messageData['chat_id'], chatGroupId)) continue;
         if (!isLiveChatMessageRow(messageData)) continue;
 
         // Clean JSONB fields with incompatible data types using the same logic as stream
@@ -161,7 +201,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           // Filter in Dart since stream builder doesn't support all filters
           final filtered = data
               .where((item) =>
-                  item['chat_id'] == chatGroupId &&
+                  sameChatId(item['chat_id'], chatGroupId) &&
                   isLiveChatMessageRow(Map<String, dynamic>.from(item)))
               .toList();
           return filtered.map((item) => Message.fromJson(item)).toList();
@@ -857,16 +897,28 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   @override
   Future<List<Message>> fetchMessagesSince(
       String chatGroupId, DateTime since) async {
-    final response = await _supabase
-        .from('chat_messages')
-        .select()
-        .eq('chat_id', chatGroupId)
-        .gt('created_at', since.toIso8601String())
-        .order('created_at', ascending: true);
+    final asInt = int.tryParse(chatGroupId);
+    final response = asInt != null
+        ? await _supabase
+            .from('chat_messages')
+            .select()
+            .or('chat_id.eq.$chatGroupId,chat_id.eq.$asInt')
+            .gt('timestamp', since.toIso8601String())
+            .order('timestamp', ascending: true)
+        : await _supabase
+            .from('chat_messages')
+            .select()
+            .eq('chat_id', chatGroupId)
+            .gt('timestamp', since.toIso8601String())
+            .order('timestamp', ascending: true);
+    debugPrint(
+        'PostgREST chat_messages since raw=${(response as List).length}');
 
-    return (response as List<dynamic>)
+    return response
         .map((data) => Map<String, dynamic>.from(data as Map))
-        .where(isLiveChatMessageRow)
+        .where((row) =>
+            sameChatId(row['chat_id'], chatGroupId) &&
+            isLiveChatMessageRow(row))
         .map(Message.fromJson)
         .toList();
   }

@@ -14,15 +14,21 @@ List<Message> messagesForOpenThread({
   return fallback[threadId] ?? const [];
 }
 
-/// A larger remote page always wins. A 1-row cache never beats remote.
+/// Larger page wins. A 1-row (or smaller) remote never beats a larger cache.
 List<Message> preferRemoteMessagePage({
   required List<Message> cached,
   required List<Message> remote,
 }) {
   if (remote.length > cached.length) return remote;
-  if (cached.length <= 1 && remote.isNotEmpty) return remote;
+  if (cached.length > remote.length) return cached;
   if (remote.isNotEmpty) return remote;
   return cached;
+}
+
+/// PostgREST may return `chat_id` as int or String for epoch ids.
+bool sameChatId(Object? left, Object? right) {
+  if (left == null || right == null) return false;
+  return left.toString() == right.toString();
 }
 
 /// `is_deleted` is often NULL/0 on older rows. Only explicit true is gone.

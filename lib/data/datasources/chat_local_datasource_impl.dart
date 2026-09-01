@@ -166,7 +166,8 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
 
   @override
   Future<void> cacheChatGroups(List<ChatGroup> groups) async {
-    final db = await _sqliteHelper.database;
+    final db = await _openCache();
+    if (db == null) return;
     final batch = db.batch();
 
     for (final group in groups) {

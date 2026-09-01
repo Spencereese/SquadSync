@@ -61,13 +61,39 @@ void main() {
       preferRemoteMessagePage(cached: cached, remote: remote),
       hasLength(22),
     );
+  });
+
+  test('larger cache wins over a 1-row remote', () {
+    final cached = List.generate(22, (i) => _msg('c$i'));
+    final remote = [_msg('only-remote')];
+    expect(
+      preferRemoteMessagePage(cached: cached, remote: remote),
+      hasLength(22),
+    );
+  });
+
+  test('preferRemoteMessagePage does not prefer a smaller remote', () {
     expect(
       preferRemoteMessagePage(
-        cached: [_msg('a'), _msg('b')],
-        remote: [_msg('1'), _msg('2'), _msg('3')],
+        cached: [_msg('a'), _msg('b'), _msg('c')],
+        remote: [_msg('1'), _msg('2')],
       ),
       hasLength(3),
     );
+    expect(
+      preferRemoteMessagePage(
+        cached: [_msg('a'), _msg('b')],
+        remote: [_msg('1')],
+      ),
+      hasLength(2),
+    );
+  });
+
+  test('sameChatId matches epoch string vs int', () {
+    expect(sameChatId('1766267555951', 1766267555951), isTrue);
+    expect(sameChatId('1766267555951', '1766267555951'), isTrue);
+    expect(sameChatId('1766267555951', 'other'), isFalse);
+    expect(sameChatId(null, '1766267555951'), isFalse);
   });
 
   test('Message.fromJson accepts integer is_deleted', () {

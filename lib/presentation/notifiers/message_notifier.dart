@@ -94,6 +94,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   bool _subscribing = false;
   static const int _maxRetries = 3;
   Timer? _retryTimer;
+  Timer? _fallbackPollTimer;
   Timer? _typingDebounceTimer;
   final Set<String> _currentTypingUsers = {};
   bool _useSupabase = true;
@@ -192,7 +193,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           .from('chat_messages')
           .stream(primaryKey: ['id'])
           .eq('chat_id', chatGroupId)
-          .order('created_at', ascending: true)
+          .order('timestamp', ascending: true)
           .limit(100)
           .listen(
             (data) {
@@ -230,8 +231,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     await _disposeOwnRealtime();
     if (!shouldResubscribeAfterChannelError(_messagesChannelErrorRetries)) {
       debugPrint(
-          'MessageNotifier: channel dead after $kMaxRealtimeResubscribe resubscribe; degraded fallback');
-      _startFallbackMessagesStream(chatGroupId, chatType);
+          'MessageNotifier: channel dead after $kMaxRealtimeResubscribe resubscribe; degraded REST poll');
+      _startFallbackMessagesPoll(chatGroupId);
       return;
     }
     _messagesChannelErrorRetries++;
@@ -240,35 +241,30 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     await _startSupabaseMessagesStream(chatGroupId, chatType);
   }
 
-  void _startFallbackMessagesStream(String chatGroupId, ChatType chatType) {
+  void _startFallbackMessagesPoll(String chatGroupId) {
     final currentUser = _authService.currentUser;
     if (currentUser == null) {
-      debugPrint('MessageNotifier: No authenticated user, skipping stream');
+      debugPrint('MessageNotifier: No authenticated user, skipping REST poll');
       return;
     }
 
     debugPrint(
-        'MessageNotifier: Starting Supabase fallback stream for $chatGroupId');
+        'MessageNotifier: Starting degraded REST poll for $chatGroupId');
+    _fallbackPollTimer?.cancel();
+    Future<void> poll() async {
+      try {
+        final page = await _repository.loadMessages(chatGroupId, limit: 100);
+        debugPrint('MessageNotifier: REST poll got ${page.length}');
+        await _mergeMessages(chatGroupId, page);
+      } catch (e) {
+        debugPrint('MessageNotifier: REST poll failed: $e');
+      }
+    }
 
-    final stream = SupabaseService.client
-        .from('chat_messages')
-        .stream(primaryKey: ['id'])
-        .eq('chat_id', chatGroupId)
-        .order('created_at', ascending: true)
-        .limit(100)
-        .map((messages) => messages
-            .where((msg) => isLiveChatMessageRow(Map<String, dynamic>.from(msg)))
-            .toList());
-
-    _messagesSubscription = stream.listen(
-      (data) {
-        debugPrint(
-            'MessageNotifier: 🎯 Stream emitted data type: ${data.runtimeType}, count: ${(data as List).length}');
-        _onSupabaseMessagesSnapshot(data, chatGroupId);
-      },
-      onError: (error) => _onStreamError(error, chatGroupId, chatType),
-      onDone: () => debugPrint('MessageNotifier: Messages stream done'),
-    );
+    poll();
+    _fallbackPollTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      poll();
+    });
   }
 
   void _onSupabaseMessagesSnapshot(dynamic data, String chatGroupId) async {
@@ -317,6 +313,12 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
 
           // Use dynamic map first, then convert manually field by field
           final rawMap = item;
+          if (!sameChatId(rawMap['chat_id'], chatGroupId)) {
+            continue;
+          }
+          if (!isLiveChatMessageRow(Map<String, dynamic>.from(rawMap))) {
+            continue;
+          }
 
           // Manually copy each field to avoid any constructor issues
           for (final rawKey in rawMap.keys) {
@@ -588,6 +590,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   }
 
   Future<void> _disposeOwnRealtime() async {
+    _fallbackPollTimer?.cancel();
+    _fallbackPollTimer = null;
     await _messagesSubscription?.cancel();
     _messagesSubscription = null;
     await _supabaseMessagesSubscription?.cancel();

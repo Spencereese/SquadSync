@@ -188,6 +188,43 @@ class SQLiteHelper {
         'CREATE INDEX idx_groups_cache ON groups_cache(game_name, search_term)');
     await db.execute(
         'CREATE INDEX idx_polls_chat_group ON polls(chat_group_id)');
+    await db.execute('''
+          CREATE TABLE offline_queue (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            data TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            retry_count INTEGER DEFAULT 0,
+            last_retry_at INTEGER,
+            error TEXT
+          )
+        ''');
+    await db.execute('''
+          CREATE TABLE clips (
+            id TEXT PRIMARY KEY,
+            squad_id TEXT,
+            sender_id TEXT,
+            sender_name TEXT,
+            video_url TEXT NOT NULL,
+            thumbnail_url TEXT,
+            duration_sec INTEGER,
+            width INTEGER,
+            height INTEGER,
+            views INTEGER DEFAULT 0,
+            hype_reactions TEXT,
+            created_at INTEGER NOT NULL,
+            synced INTEGER DEFAULT 1,
+            updated_at INTEGER
+          )
+        ''');
+    await db.execute(
+        'CREATE INDEX idx_offline_queue_type ON offline_queue(type)');
+    await db.execute(
+        'CREATE INDEX idx_offline_queue_created ON offline_queue(created_at)');
+    await db.execute('CREATE INDEX idx_clips_squad ON clips(squad_id)');
+    await db.execute(
+        'CREATE INDEX idx_clips_created ON clips(created_at DESC)');
+    await db.execute('CREATE INDEX idx_clips_synced ON clips(synced)');
   }
 
   Future<Database> _initDatabase() async {

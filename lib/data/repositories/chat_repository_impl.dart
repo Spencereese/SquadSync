@@ -65,12 +65,17 @@ class ChatRepositoryImpl implements ChatRepository {
     try {
       final remoteMessages = await _remoteDataSource.fetchMessages(chatGroupId,
           limit: limit, before: before);
+      final chosen =
+          preferRemoteMessagePage(cached: cached, remote: remoteMessages);
       try {
-        await _localDataSource.cacheMessages(chatGroupId, remoteMessages);
+        // Never persist a smaller remote page over a larger cache.
+        if (chosen.length >= cached.length) {
+          await _localDataSource.cacheMessages(chatGroupId, chosen);
+        }
       } catch (e) {
         debugPrint('Chat cache write skipped: $e');
       }
-      return preferRemoteMessagePage(cached: cached, remote: remoteMessages);
+      return chosen;
     } catch (e) {
       debugPrint('Remote message page failed; using cache: $e');
       return cached;

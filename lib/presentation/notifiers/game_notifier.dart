@@ -71,14 +71,13 @@ class GameNotifier extends AutoDisposeAsyncNotifier<GameState> {
 
       if (clientId == null || clientSecret == null) {
         _logger.e('❌ IGDB credentials missing!');
-        _logger.e('   Client ID: ${clientId ?? "NOT FOUND"}');
+        _logger.e('   Client ID: ${clientId != null ? "found" : "NOT FOUND"}');
         _logger.e(
             '   Client Secret: ${clientSecret != null ? "Found" : "NOT FOUND"}');
         _logger.e(
             '   Check .env file exists and has IGDB_CLIENT_ID and IGDB_CLIENT_SECRET');
       } else {
         _logger.i('✅ IGDB credentials loaded');
-        _logger.i('   Client ID: ${clientId.substring(0, 8)}...');
       }
     } catch (e) {
       _logger.e('❌ Error checking IGDB credentials: $e');

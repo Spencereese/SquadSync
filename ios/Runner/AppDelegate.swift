@@ -91,7 +91,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     SimulatorAppLinks.consumeSceneConnection(connectionOptions)
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     if let engine = (window?.rootViewController as? FlutterViewController)?.engine {
-      registerSceneLifeCycleWithFlutterEngine(engine)
+      _ = self.registerSceneLifeCycle(with: engine)
     }
     AppDelegate.bindRuntimeChannelFromScene(window: window)
   }

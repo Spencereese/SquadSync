@@ -1,9 +1,67 @@
 import 'dart:developer' as developer;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../managers/notification_manager.dart';
-import '../services/supabase_service.dart';
 import '../notification_service.dart';
 import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
+
+/// Local XOR FCM-to-self for one peacock assignment.
+class PeacockSelfNotifyPlan {
+  const PeacockSelfNotifyPlan({
+    required this.showLocal,
+    required this.sendFcmToSelf,
+    required this.recipientUids,
+  });
+
+  final bool showLocal;
+  final bool sendFcmToSelf;
+  final List<String> recipientUids;
+
+  /// True if this plan would both present locally and FCM the same uid.
+  bool get wouldDoubleNotifySelf =>
+      showLocal && sendFcmToSelf && recipientUids.isNotEmpty;
+}
+
+/// One alert per assignment: in-app Realtime shows local; FCM only when
+/// backgrounded and that [notificationId] was not already presented locally.
+PeacockSelfNotifyPlan planPeacockSelfNotify({
+  required String notificationId,
+  required String? currentUid,
+  required bool isForeground,
+  required Set<String> locallyPresentedIds,
+}) {
+  if (locallyPresentedIds.contains(notificationId)) {
+    return const PeacockSelfNotifyPlan(
+      showLocal: false,
+      sendFcmToSelf: false,
+      recipientUids: [],
+    );
+  }
+  if (isForeground) {
+    return const PeacockSelfNotifyPlan(
+      showLocal: true,
+      sendFcmToSelf: false,
+      recipientUids: [],
+    );
+  }
+  final uid = currentUid;
+  if (uid == null || uid.isEmpty) {
+    return const PeacockSelfNotifyPlan(
+      showLocal: false,
+      sendFcmToSelf: false,
+      recipientUids: [],
+    );
+  }
+  return PeacockSelfNotifyPlan(
+    showLocal: false,
+    sendFcmToSelf: true,
+    recipientUids: [uid],
+  );
+}
 
 /// Service for listening to peacock queue assignment notifications
 ///
@@ -11,6 +69,39 @@ import '../services/auth_service_supabase.dart';
 /// and sends FCM push notifications when users are auto-assigned spots
 class PeacockNotificationService {
   static RealtimeChannel? _channel;
+  static final Set<String> _handledIds = <String>{};
+  static final Set<String> _locallyPresentedIds = <String>{};
+
+  /// Test hook. Production uses [AuthServiceSupabase.currentUser].
+  @visibleForTesting
+  static String? Function()? currentUidHook;
+
+  /// Test hook. Production uses [WidgetsBinding] lifecycle.
+  @visibleForTesting
+  static bool Function()? isForegroundHook;
+
+  /// Test hook. Production sends via [NotificationService.sendNotificationToUsers].
+  @visibleForTesting
+  static Future<void> Function({
+    required String title,
+    required String body,
+    required List<String> recipientUids,
+    Map<String, dynamic>? data,
+  })? sendToUsersHook;
+
+  /// Test hook. Production marks `peacock_notifications.sent = true`.
+  @visibleForTesting
+  static Future<void> Function(String notificationId)? markSentHook;
+
+  @visibleForTesting
+  static void resetTestHooks() {
+    currentUidHook = null;
+    isForegroundHook = null;
+    sendToUsersHook = null;
+    markSentHook = null;
+    _handledIds.clear();
+    _locallyPresentedIds.clear();
+  }
 
   /// Start listening for peacock queue notifications
   static Future<void> initialize() async {
@@ -40,7 +131,7 @@ class PeacockNotificationService {
           callback: (payload) async {
             developer
                 .log('🎮 Peacock notification received: ${payload.newRecord}');
-            await _handleNotification(payload.newRecord);
+            await handleNotification(payload.newRecord);
           },
         )
         .subscribe();
@@ -48,8 +139,12 @@ class PeacockNotificationService {
     developer.log('✅ Peacock notification listener active');
   }
 
-  /// Handle incoming notification
-  static Future<void> _handleNotification(Map<String, dynamic> record) async {
+  /// Handle incoming notification.
+  ///
+  /// Local for in-app Realtime, FCM only when backgrounded — never both
+  /// to the current uid for the same [record] id. Always marks `sent: true`.
+  @visibleForTesting
+  static Future<void> handleNotification(Map<String, dynamic> record) async {
     try {
       final title = record['title'] as String? ?? '🎮 Spot Available';
       final body = record['body'] as String? ?? 'Your spot is ready!';
@@ -64,25 +159,48 @@ class PeacockNotificationService {
           _nonEmpty(data['game_name']) ?? _nonEmpty(data['gameName']);
       final spotIndex = _nonEmpty(data['spot_index']) ?? '0';
 
-      developer.log('📣 Showing notification: $title - $body');
+      final duplicate = _handledIds.contains(notificationId);
+      _handledIds.add(notificationId);
+      if (duplicate) {
+        await _markSent(notificationId);
+        return;
+      }
 
-      await NotificationManager().showNotification(
-        title: title,
-        body: body,
-        type: type,
-        lobbyId: lobbyId,
-        gameName: gameName,
-        payload: {
-          'spot_index': spotIndex,
-        },
+      final currentUid =
+          currentUidHook?.call() ?? AuthServiceSupabase().currentUser?.id;
+      final plan = planPeacockSelfNotify(
+        notificationId: notificationId,
+        currentUid: currentUid,
+        isForeground: _isForeground(),
+        locallyPresentedIds: _locallyPresentedIds,
       );
 
-      final user = AuthServiceSupabase().currentUser;
-      if (user != null) {
-        await NotificationService.sendNotificationToUsers(
+      if (plan.showLocal) {
+        developer.log('📣 Showing notification: $title - $body');
+        await NotificationManager().showNotification(
           title: title,
           body: body,
-          recipientUids: [user.id],
+          type: type,
+          lobbyId: lobbyId,
+          gameName: gameName,
+          payload: {
+            'spot_index': spotIndex,
+          },
+        );
+        _locallyPresentedIds.add(notificationId);
+      }
+
+      // Never FCM to self if this assignment was (or just was) shown locally.
+      if (plan.sendFcmToSelf &&
+          !plan.showLocal &&
+          !_locallyPresentedIds.contains(notificationId) &&
+          plan.recipientUids.isNotEmpty) {
+        final send =
+            sendToUsersHook ?? NotificationService.sendNotificationToUsers;
+        await send(
+          title: title,
+          body: body,
+          recipientUids: plan.recipientUids,
           data: {
             'type': type,
             if (lobbyId != null) 'lobby_id': lobbyId,
@@ -92,15 +210,35 @@ class PeacockNotificationService {
         );
       }
 
-      // Mark notification as sent
-      await SupabaseService.client.from('peacock_notifications').update({
-        'sent': true,
-        'updated_at': DateTime.now().toIso8601String()
-      }).eq('id', notificationId);
+      await _markSent(notificationId);
 
-      developer.log('✅ Notification sent and marked as delivered');
+      developer.log('✅ Notification handled and marked as delivered');
     } catch (e) {
       developer.log('❌ Error handling peacock notification: $e');
+    }
+  }
+
+  static Future<void> _markSent(String notificationId) async {
+    final hook = markSentHook;
+    if (hook != null) {
+      await hook(notificationId);
+      return;
+    }
+    await SupabaseService.client.from('peacock_notifications').update({
+      'sent': true,
+      'updated_at': DateTime.now().toIso8601String()
+    }).eq('id', notificationId);
+  }
+
+  static bool _isForeground() {
+    final hook = isForegroundHook;
+    if (hook != null) return hook();
+    try {
+      final state = WidgetsBinding.instance.lifecycleState;
+      return state == null || state == AppLifecycleState.resumed;
+    } catch (_) {
+      // No binding (plain unit tests) — Realtime path is in-app.
+      return true;
     }
   }
 
@@ -140,7 +278,7 @@ class PeacockNotificationService {
             .log('📬 Found ${response.length} pending peacock notifications');
 
         for (final notification in response) {
-          await _handleNotification(notification);
+          await handleNotification(notification);
 
           // Small delay between notifications
           await Future.delayed(const Duration(milliseconds: 500));

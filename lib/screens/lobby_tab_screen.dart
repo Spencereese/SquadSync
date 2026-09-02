@@ -363,7 +363,10 @@ class _LobbyTabScreenContentState
     );
   }
 
+
   void _addGame(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
     // Use unified game selection sheet for consistency
     await UnifiedGameSelectionSheet.show(
       context,
@@ -376,33 +379,30 @@ class _LobbyTabScreenContentState
         try {
           final userNotifier = ref.read(userNotifierProvider.notifier);
           await userNotifier.addPinnedGame(game.toJson());
-
-          if (mounted) {
-            HapticFeedback.mediumImpact();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${game.name} added to pinned games!'),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+          if (!mounted) return;
+          HapticFeedback.mediumImpact();
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('${game.name} added to pinned games!'),
+              backgroundColor: colorScheme.primary,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-            );
-          }
+            ),
+          );
         } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Failed to add game: $e'),
-                backgroundColor: Theme.of(context).colorScheme.error,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+          if (!mounted) return;
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Failed to add game: $e'),
+              backgroundColor: colorScheme.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-            );
-          }
+            ),
+          );
         }
       },
     );

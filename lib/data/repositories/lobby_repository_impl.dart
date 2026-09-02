@@ -261,13 +261,7 @@ class LobbyRepositoryImpl implements LobbyRepository {
     } catch (e, stackTrace) {
       debugPrint('LobbyRepository: ❌ ERROR fetching lobby stats: $e');
       debugPrint('LobbyRepository: Stack trace: $stackTrace');
-      return {
-        'total_matches': 0,
-        'wins': 0,
-        'losses': 0,
-        'draws': 0,
-        'win_rate': 0.0,
-      };
+      rethrow;
     }
   }
 
@@ -278,7 +272,7 @@ class LobbyRepositoryImpl implements LobbyRepository {
     } catch (e, stackTrace) {
       debugPrint('LobbyRepository: ❌ ERROR fetching match history: $e');
       debugPrint('LobbyRepository: Stack trace: $stackTrace');
-      return const [];
+      rethrow;
     }
   }
 

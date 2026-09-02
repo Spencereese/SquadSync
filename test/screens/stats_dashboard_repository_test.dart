@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:squad_sync/core/injection.dart';
+import 'package:squad_sync/data/datasources/lobby_local_datasource.dart';
+import 'package:squad_sync/data/datasources/lobby_remote_datasource.dart';
+import 'package:squad_sync/data/repositories/lobby_repository_impl.dart';
 import 'package:squad_sync/domain/entities/app_user.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/user_notifier.dart';
 import 'package:squad_sync/screens/performance_stats_screen.dart';
+import 'package:squad_sync/screens/stats_dashboard_data.dart';
 
 import '../mocks/mock_repositories.mocks.dart';
 
@@ -146,4 +150,99 @@ void main() {
       verify(repo.getMatchHistory('lobby-1')).called(1);
     },
   );
+
+  test('LobbyRepositoryImpl rethrows remote stats/history outages, not zeros',
+      () async {
+    final repo = LobbyRepositoryImpl(
+      _UnusedLobbyLocal(),
+      _ThrowingLobbyRemote(),
+    );
+
+    await expectLater(
+      repo.getLobbyStats('lobby-1'),
+      throwsA(isA<Exception>()),
+    );
+    await expectLater(
+      repo.getMatchHistory('lobby-1'),
+      throwsA(isA<Exception>()),
+    );
+  });
+
+  test(
+    'total remote outage through LobbyRepositoryImpl is a fetch error, not empty W/L',
+    () async {
+      final repo = LobbyRepositoryImpl(
+        _UnusedLobbyLocal(),
+        _ThrowingLobbyRemote(),
+      );
+
+      await expectLater(
+        loadStatsDashboardSnapshot(
+          user: _user(),
+          lobby: LobbyState.initial().copyWith(selectedLobbyId: 'lobby-1'),
+          fetchLobbyStats: repo.getLobbyStats,
+          fetchMatchHistory: repo.getMatchHistory,
+        ),
+        throwsA(isA<Exception>()),
+      );
+    },
+  );
+
+  testWidgets(
+    'Stats screen shows error UI when the live repository remote is down',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = LobbyRepositoryImpl(
+        _UnusedLobbyLocal(),
+        _ThrowingLobbyRemote(),
+      );
+      final user = _user();
+      final lobby = LobbyState.initial().copyWith(
+        selectedLobbyId: 'lobby-1',
+        lobbyMemberUids: ['u1', 'u2'],
+        memberDisplayNames: const {'u1': 'Sam', 'u2': 'Kit'},
+        gameHistory: const [],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            lobbyRepositoryProvider.overrideWithValue(repo),
+            userNotifierProvider.overrideWith(() => _SeededUserNotifier(user)),
+            lobbyNotifierProvider.overrideWith(() => _SeededLobbyNotifier(lobby)),
+          ],
+          child: const MaterialApp(
+            home: PerformanceStatsScreen(),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.textContaining('Could not load stats:'), findsOneWidget);
+      expect(
+        find.text('No win/loss results in game history yet'),
+        findsNothing,
+      );
+      expect(find.byType(StatsDashboardView), findsNothing);
+    },
+  );
+}
+
+class _UnusedLobbyLocal extends Fake implements LobbyLocalDataSource {}
+
+class _ThrowingLobbyRemote extends Fake implements LobbyRemoteDataSource {
+  @override
+  Future<Map<String, dynamic>> getLobbyStats(String lobbyId) async {
+    throw Exception('remote stats down');
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getMatchHistory(String lobbyId) async {
+    throw Exception('remote history down');
+  }
 }

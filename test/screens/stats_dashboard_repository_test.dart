@@ -7,6 +7,7 @@ import 'package:squad_sync/data/datasources/lobby_local_datasource.dart';
 import 'package:squad_sync/data/datasources/lobby_remote_datasource.dart';
 import 'package:squad_sync/data/repositories/lobby_repository_impl.dart';
 import 'package:squad_sync/domain/entities/app_user.dart';
+import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/user_notifier.dart';
@@ -151,6 +152,65 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Stats screen fetches the lobby UUID when selectedLobbyId is a chat group',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = MockLobbyRepository();
+      when(repo.getLobbyStats('lobby-1')).thenAnswer(
+        (_) async => {
+          'total_matches': 3,
+          'wins': 2,
+          'losses': 1,
+          'draws': 0,
+          'win_rate': 66.67,
+        },
+      );
+      when(repo.getMatchHistory('lobby-1')).thenAnswer((_) async => const []);
+
+      final user = _user();
+      final lobby = LobbyState.initial().copyWith(
+        selectedLobbyId: 'chat-99',
+        lobbyMemberUids: ['u1'],
+        memberDisplayNames: const {'u1': 'Sam'},
+        userLobbies: {
+          'lobby-1': Lobby.create(
+            name: 'Lobby lobby-1',
+            gameName: 'Warzone',
+            maxSpots: 4,
+            createdBy: 'u1',
+          ).copyWith(id: 'lobby-1', memberUids: ['u1'], chatGroupId: 'chat-99'),
+        },
+        gameHistory: const [],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            lobbyRepositoryProvider.overrideWithValue(repo),
+            userNotifierProvider.overrideWith(() => _SeededUserNotifier(user)),
+            lobbyNotifierProvider.overrideWith(() => _SeededLobbyNotifier(lobby)),
+          ],
+          child: const MaterialApp(
+            home: PerformanceStatsScreen(),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('Wins 2'), findsOneWidget);
+      expect(find.text('Losses 1'), findsOneWidget);
+      verify(repo.getLobbyStats('lobby-1')).called(1);
+      verify(repo.getMatchHistory('lobby-1')).called(1);
+      verifyNever(repo.getLobbyStats('chat-99'));
+    },
+  );
+
   test('LobbyRepositoryImpl rethrows remote stats/history outages, not zeros',
       () async {
     final repo = LobbyRepositoryImpl(
@@ -226,6 +286,10 @@ void main() {
       expect(find.textContaining('Could not load stats:'), findsOneWidget);
       expect(
         find.text('No win/loss results in game history yet'),
+        findsNothing,
+      );
+      expect(
+        find.text('No matches recorded for this lobby yet'),
         findsNothing,
       );
       expect(find.byType(StatsDashboardView), findsNothing);

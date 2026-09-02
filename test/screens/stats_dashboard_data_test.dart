@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/data/lobby_stats_codec.dart';
 import 'package:squad_sync/domain/entities/app_user.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
@@ -275,6 +276,48 @@ void main() {
       expect(winLossFromLobbyStats(null).isEmpty, isTrue);
       expect(winLossFromLobbyStats(const {}).isEmpty, isTrue);
     });
+
+    test('unwraps nested get_lobby_stats / data wrappers', () {
+      final summary = winLossFromLobbyStats({
+        'get_lobby_stats': {
+          'wins': 4,
+          'losses': 2,
+          'draws': 0,
+        },
+      });
+      expect(summary.wins, 4);
+      expect(summary.losses, 2);
+    });
+  });
+
+  group('coerceLobbyStatsResponse', () {
+    test('reads a list of RPC rows', () {
+      final map = coerceLobbyStatsResponse([
+        {'wins': 3, 'losses': 1, 'draws': 0, 'total_matches': 4},
+      ]);
+      expect(map['wins'], 3);
+      expect(map['losses'], 1);
+    });
+
+    test('parses a Postgres record literal', () {
+      final map = coerceLobbyStatsResponse('(5,3,1,1,60.00)');
+      expect(map['total_matches'], '5');
+      expect(map['wins'], '3');
+      expect(map['losses'], '1');
+      expect(map['draws'], '1');
+      expect(winLossFromLobbyStats(map).wins, 3);
+    });
+
+    test('parses JSON text', () {
+      final map = coerceLobbyStatsResponse(
+        '{"wins":2,"losses":1,"draws":0,"total_matches":3}',
+      );
+      expect(winLossFromLobbyStats(map).wins, 2);
+    });
+
+    test('does not treat an unrelated map as zeroed stats', () {
+      expect(coerceLobbyStatsResponse({'foo': 1}), isEmpty);
+    });
   });
 
   group('ratingSummaryFrom', () {
@@ -382,6 +425,7 @@ void main() {
         selectedLobbyId: 'sel',
         currentLobby: _lobby(id: 'cur', members: ['a']),
         userLobbies: {
+          'sel': _lobby(id: 'sel', members: ['a']),
           'a': _lobby(id: 'a', members: ['a']),
           'b': _lobby(id: 'b', members: ['b']),
         },
@@ -408,6 +452,29 @@ void main() {
         },
       );
       expect(lobbyIdsForStats(lobby).toSet(), {'a', 'b'});
+    });
+
+    test('resolves selectedLobbyId when it is the lobby chatGroupId', () {
+      final lobby = LobbyState.initial().copyWith(
+        selectedLobbyId: 'chat-99',
+        userLobbies: {
+          'lobby-1': _lobby(id: 'lobby-1', members: ['u1'])
+              .copyWith(chatGroupId: 'chat-99'),
+        },
+      );
+      expect(resolveStatsLobbyId(lobby, 'chat-99'), 'lobby-1');
+      expect(lobbyIdsForStats(lobby), ['lobby-1']);
+    });
+
+    test('does not query an unknown selected id when userLobbies exist', () {
+      final lobby = LobbyState.initial().copyWith(
+        selectedLobbyId: 'chat-thread',
+        userLobbies: {
+          'lobby-1': _lobby(id: 'lobby-1', members: ['u1']),
+        },
+      );
+      expect(resolveStatsLobbyId(lobby, 'chat-thread'), isNull);
+      expect(lobbyIdsForStats(lobby), ['lobby-1']);
     });
   });
 
@@ -484,6 +551,75 @@ void main() {
       final byId = {for (final row in snap.memberStreaks) row.id: row.streak};
       expect(byId['u1'], 2);
       expect(byId['u2'], 0);
+    });
+
+    test('queries the lobby UUID when selectedLobbyId is the chat group id',
+        () async {
+      final fetchedIds = <String>[];
+      final snap = await loadStatsDashboardSnapshot(
+        user: _user(uid: 'u1', displayName: 'Sam'),
+        lobby: LobbyState.initial().copyWith(
+          selectedLobbyId: 'chat-99',
+          lobbyMemberUids: ['u1'],
+          memberDisplayNames: const {'u1': 'Sam'},
+          userLobbies: {
+            'lobby-1': _lobby(id: 'lobby-1', members: ['u1'])
+                .copyWith(chatGroupId: 'chat-99'),
+          },
+        ),
+        fetchLobbyStats: (id) async {
+          fetchedIds.add('stats:$id');
+          return {'wins': 5, 'losses': 2, 'draws': 0, 'total_matches': 7};
+        },
+        fetchMatchHistory: (id) async {
+          fetchedIds.add('history:$id');
+          return [
+            {
+              'result': 'win',
+              'playerUids': ['u1'],
+              'createdAt': '2026-09-01T12:00:00Z',
+            },
+          ];
+        },
+      );
+
+      expect(fetchedIds, ['stats:lobby-1', 'history:lobby-1']);
+      expect(snap.statsLobbyIds, ['lobby-1']);
+      expect(snap.winLoss.wins, 5);
+      expect(snap.winLoss.losses, 2);
+      expect(snap.winLoss.isEmpty, isFalse);
+      expect(snap.memberStreaks.single.streak, 1);
+    });
+
+    test('counts camelCase match_history rows when get_lobby_stats is zero',
+        () async {
+      final snap = await loadStatsDashboardSnapshot(
+        user: _user(uid: 'u1'),
+        lobby: LobbyState.initial().copyWith(
+          selectedLobbyId: 'lobby-1',
+          lobbyMemberUids: ['u1'],
+        ),
+        fetchLobbyStats: (_) async => {
+          'total_matches': 0,
+          'wins': 0,
+          'losses': 0,
+          'draws': 0,
+        },
+        fetchMatchHistory: (_) async => [
+          {
+            'outcome': 'win',
+            'playerUids': ['u1'],
+            'createdAt': '2026-09-01T12:00:00Z',
+          },
+          {
+            'outcome': 'loss',
+            'playerUids': ['u1'],
+            'createdAt': '2026-08-31T12:00:00Z',
+          },
+        ],
+      );
+      expect(snap.winLoss.wins, 1);
+      expect(snap.winLoss.losses, 1);
     });
 
     test('rethrows when every lobby fetch fails', () async {

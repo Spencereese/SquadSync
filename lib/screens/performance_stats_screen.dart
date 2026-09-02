@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/core/injection.dart';
@@ -13,9 +14,12 @@ import 'stats_dashboard_data.dart';
 /// Fetches `get_lobby_stats` + `match_history` once both user and lobby are ready.
 ///
 /// Avoids painting empty charts from `LobbyState.gameHistory`, which recordMatch
-/// never populates.
+/// never populates. Watches the lobby [AsyncValue] so membership-stream updates
+/// (selected/current/userLobbies) refetch instead of freezing the first local
+/// snapshot.
 final statsDashboardProvider =
     FutureProvider.autoDispose<StatsDashboardSnapshot>((ref) async {
+  ref.watch(ln.lobbyNotifierProvider);
   final user = await ref.watch(userNotifierProvider.future);
   final lobby = await ref.watch(ln.lobbyNotifierProvider.future);
   final repo = ref.watch(lobbyRepositoryProvider);
@@ -59,9 +63,65 @@ class PerformanceStatsScreen extends ConsumerWidget {
             ),
           ),
         ),
-        data: (snapshot) => StatsDashboardView(snapshot: snapshot),
+        data: (snapshot) => StatsDashboardView(
+          snapshot: snapshot,
+          onRecordWin: _recordAction(context, ref, snapshot, result: 'win'),
+          onRecordLoss: _recordAction(context, ref, snapshot, result: 'loss'),
+          onSeedSmokeHistory: kDebugMode
+              ? _seedSmokeHistory(context, ref, snapshot)
+              : null,
+        ),
       ),
     );
+  }
+
+  Future<void> Function()? _recordAction(
+    BuildContext context,
+    WidgetRef ref,
+    StatsDashboardSnapshot snapshot, {
+    required String result,
+  }) {
+    if (snapshot.statsLobbyIds.length != 1) return null;
+    final lobbyId = snapshot.statsLobbyIds.first;
+    return () async {
+      final notifier = ref.read(ln.lobbyNotifierProvider.notifier);
+      try {
+        if (result == 'win') {
+          await notifier.recordWin(lobbyId);
+        } else {
+          await notifier.recordLoss(lobbyId);
+        }
+        ref.invalidate(statsDashboardProvider);
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to record $result: $e')),
+        );
+      }
+    };
+  }
+
+  Future<void> Function()? _seedSmokeHistory(
+    BuildContext context,
+    WidgetRef ref,
+    StatsDashboardSnapshot snapshot,
+  ) {
+    if (snapshot.statsLobbyIds.length != 1) return null;
+    final lobbyId = snapshot.statsLobbyIds.first;
+    return () async {
+      final notifier = ref.read(ln.lobbyNotifierProvider.notifier);
+      try {
+        await notifier.recordWin(lobbyId);
+        await notifier.recordWin(lobbyId);
+        await notifier.recordLoss(lobbyId);
+        ref.invalidate(statsDashboardProvider);
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to seed match history: $e')),
+        );
+      }
+    };
   }
 }
 
@@ -70,9 +130,15 @@ class StatsDashboardView extends StatelessWidget {
   const StatsDashboardView({
     super.key,
     required this.snapshot,
+    this.onRecordWin,
+    this.onRecordLoss,
+    this.onSeedSmokeHistory,
   });
 
   final StatsDashboardSnapshot snapshot;
+  final Future<void> Function()? onRecordWin;
+  final Future<void> Function()? onRecordLoss;
+  final Future<void> Function()? onSeedSmokeHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +154,13 @@ class StatsDashboardView extends StatelessWidget {
           const SizedBox(height: 16),
           _DashboardCard(
             title: snapshot.winLossTitle,
-            child: _WinLossPie(summary: snapshot.winLoss),
+            child: _WinLossPie(
+              summary: snapshot.winLoss,
+              emptyMessage: snapshot.winLossEmptyMessage,
+              onRecordWin: onRecordWin,
+              onRecordLoss: onRecordLoss,
+              onSeedSmokeHistory: onSeedSmokeHistory,
+            ),
           ),
           const SizedBox(height: 16),
           _DashboardCard(
@@ -295,16 +367,46 @@ class _StreaksBarChart extends StatelessWidget {
 }
 
 class _WinLossPie extends StatelessWidget {
-  const _WinLossPie({required this.summary});
+  const _WinLossPie({
+    required this.summary,
+    required this.emptyMessage,
+    this.onRecordWin,
+    this.onRecordLoss,
+    this.onSeedSmokeHistory,
+  });
 
   final WinLossSummary summary;
+  final String emptyMessage;
+  final Future<void> Function()? onRecordWin;
+  final Future<void> Function()? onRecordLoss;
+  final Future<void> Function()? onSeedSmokeHistory;
 
   @override
   Widget build(BuildContext context) {
     if (summary.isEmpty) {
-      return const _EmptyHint(
+      return _EmptyHint(
         icon: Icons.pie_chart_outline,
-        message: 'No win/loss results in game history yet',
+        message: emptyMessage,
+        actions: [
+          if (onRecordWin != null)
+            _EmptyActionButton(
+              key: const Key('stats-record-win'),
+              label: 'Record win',
+              onPressed: onRecordWin!,
+            ),
+          if (onRecordLoss != null)
+            _EmptyActionButton(
+              key: const Key('stats-record-loss'),
+              label: 'Record loss',
+              onPressed: onRecordLoss!,
+            ),
+          if (onSeedSmokeHistory != null)
+            _EmptyActionButton(
+              key: const Key('stats-seed-match-history'),
+              label: 'Seed 2–1 smoke record',
+              onPressed: onSeedSmokeHistory!,
+            ),
+        ],
       );
     }
 
@@ -616,10 +718,15 @@ class _CommunityChip extends StatelessWidget {
 }
 
 class _EmptyHint extends StatelessWidget {
-  const _EmptyHint({required this.icon, required this.message});
+  const _EmptyHint({
+    required this.icon,
+    required this.message,
+    this.actions = const [],
+  });
 
   final IconData icon;
   final String message;
+  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
@@ -634,8 +741,42 @@ class _EmptyHint extends StatelessWidget {
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white54, fontSize: 13),
           ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: actions,
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+class _EmptyActionButton extends StatelessWidget {
+  const _EmptyActionButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: () {
+        onPressed();
+      },
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.cyanAccent,
+        side: const BorderSide(color: Colors.cyanAccent),
+      ),
+      child: Text(label),
     );
   }
 }

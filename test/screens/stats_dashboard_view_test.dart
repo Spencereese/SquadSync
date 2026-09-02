@@ -85,7 +85,7 @@ void main() {
 
     expect(find.text('No squad members to chart yet'), findsOneWidget);
     expect(
-      find.text('No win/loss results in game history yet'),
+      find.text('Join a lobby to track wins and losses'),
       findsOneWidget,
     );
     expect(find.text('—'), findsNWidgets(2));
@@ -112,5 +112,47 @@ void main() {
     expect(find.text('ALL LOBBIES WINS / LOSSES'), findsOneWidget);
     expect(find.text('SQUAD WINS / LOSSES'), findsNothing);
     expect(find.text('Wins 3'), findsOneWidget);
+  });
+
+  testWidgets('empty W/L with a queried lobby offers record/seed actions',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var seeded = false;
+    const snapshot = StatsDashboardSnapshot(
+      memberStreaks: [],
+      winLoss: WinLossSummary(),
+      ratings: RatingSummary(),
+      statsLobbyIds: ['lobby-1'],
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        StatsDashboardView(
+          snapshot: snapshot,
+          onRecordWin: () async {},
+          onRecordLoss: () async {},
+          onSeedSmokeHistory: () async {
+            seeded = true;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.text('No matches recorded for this lobby yet'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('stats-record-win')), findsOneWidget);
+    expect(find.byKey(const Key('stats-record-loss')), findsOneWidget);
+    expect(find.byKey(const Key('stats-seed-match-history')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('stats-seed-match-history')));
+    await tester.pump();
+    expect(seeded, isTrue);
   });
 }

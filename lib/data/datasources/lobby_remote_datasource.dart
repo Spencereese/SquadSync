@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:squad_sync/data/lobby_stats_codec.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/services/supabase_service.dart';
 import 'package:squad_sync/services/jwt_validator.dart';
@@ -588,21 +589,27 @@ class LobbyRemoteDataSourceImpl
     try {
       final response = await _supabase
           .rpc('get_lobby_stats', params: {'p_lobby_id': lobbyId});
+      debugPrint(
+        'StatsDashboard: KEY rpc get_lobby_stats lobby=$lobbyId '
+        'type=${response.runtimeType} value=$response',
+      );
 
-      if (response is List && response.isNotEmpty) {
-        return Map<String, dynamic>.from(response.first as Map);
-      }
-      if (response is Map) {
-        return Map<String, dynamic>.from(response);
+      final coerced = coerceLobbyStatsResponse(response);
+      if (coerced.isNotEmpty) return coerced;
+
+      if (response == null || (response is List && response.isEmpty)) {
+        return {
+          'total_matches': 0,
+          'wins': 0,
+          'losses': 0,
+          'draws': 0,
+          'win_rate': 0.0,
+        };
       }
 
-      return {
-        'total_matches': 0,
-        'wins': 0,
-        'losses': 0,
-        'draws': 0,
-        'win_rate': 0.0,
-      };
+      throw Exception(
+        'Unexpected get_lobby_stats shape (${response.runtimeType}): $response',
+      );
     } catch (e) {
       throw Exception('Failed to fetch lobby stats: $e');
     }
@@ -620,9 +627,13 @@ class LobbyRemoteDataSourceImpl
           .order('created_at', ascending: false)
           .limit(100);
 
-      return [
+      final rows = [
         for (final row in response) Map<String, dynamic>.from(row as Map),
       ];
+      debugPrint(
+        'StatsDashboard: KEY rpc match_history lobby=$lobbyId rows=${rows.length}',
+      );
+      return rows;
     } catch (e) {
       throw Exception('Failed to fetch match history: $e');
     }

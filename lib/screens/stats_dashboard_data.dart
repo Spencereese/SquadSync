@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+
+import '../data/lobby_stats_codec.dart';
 import '../domain/entities/app_user.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/lobby_state.dart';
@@ -130,6 +133,11 @@ class StatsDashboardSnapshot {
       ? 'All lobbies wins / losses'
       : 'Squad wins / losses';
 
+  /// Empty W/L copy: no lobby to query vs a real zero-row fetch.
+  String get winLossEmptyMessage => statsLobbyIds.isEmpty
+      ? 'Join a lobby to track wins and losses'
+      : 'No matches recorded for this lobby yet';
+
   factory StatsDashboardSnapshot.fromSources({
     AppUser? user,
     LobbyState? lobby,
@@ -173,16 +181,46 @@ class StatsDashboardSnapshot {
   }
 }
 
+/// Maps a selected/current id (or chat-group id) onto a real `lobbies.id`.
+///
+/// Chat screens and [LobbyTab] sometimes store `chatGroupId` on
+/// `selectedLobbyId`. `match_history.lobby_id` is the lobby UUID, so querying
+/// the chat id returns an honest-looking zero row.
+String? resolveStatsLobbyId(LobbyState lobby, String? candidate) {
+  if (candidate == null || candidate.isEmpty) return null;
+  if (lobby.userLobbies.containsKey(candidate)) return candidate;
+  if (lobby.currentLobby?.id == candidate) return candidate;
+  for (final entry in lobby.userLobbies.entries) {
+    final chatId = entry.value.chatGroupId;
+    if (chatId != null && chatId.isNotEmpty && chatId == candidate) {
+      return entry.key;
+    }
+  }
+  if (lobby.currentLobby?.chatGroupId == candidate) {
+    return lobby.currentLobby!.id;
+  }
+  return null;
+}
+
 /// Lobby ids whose `get_lobby_stats` / `match_history` rows feed the dashboard.
 List<String> lobbyIdsForStats(LobbyState lobby) {
-  final selected = lobby.selectedLobbyId;
-  if (selected != null && selected.isNotEmpty) return [selected];
+  final fromSelected = resolveStatsLobbyId(lobby, lobby.selectedLobbyId);
+  if (fromSelected != null) return [fromSelected];
+
   final currentId = lobby.currentLobby?.id;
   if (currentId != null && currentId.isNotEmpty) return [currentId];
+
   if (lobby.userLobbies.isNotEmpty) {
     return lobby.userLobbies.keys.where((id) => id.isNotEmpty).toList();
   }
-  return lobby.userLobbyIds.where((id) => id.isNotEmpty).toList();
+  final membershipIds =
+      lobby.userLobbyIds.where((id) => id.isNotEmpty).toList();
+  if (membershipIds.isNotEmpty) return membershipIds;
+
+  // Membership maps still empty (stream not filled). Last resort: raw id.
+  final selected = lobby.selectedLobbyId;
+  if (selected != null && selected.isNotEmpty) return [selected];
+  return const [];
 }
 
 /// Loads W/L from `get_lobby_stats` and streaks from `match_history` rows.
@@ -198,7 +236,18 @@ Future<StatsDashboardSnapshot> loadStatsDashboardSnapshot({
       fetchMatchHistory,
 }) async {
   final ids = lobbyIdsForStats(lobby);
+  debugPrint(
+    'StatsDashboard: KEY selected=${lobby.selectedLobbyId} '
+    'current=${lobby.currentLobby?.id} '
+    'resolvedIds=$ids '
+    'userLobbies=${lobby.userLobbies.keys.toList()} '
+    'userLobbyIds=${lobby.userLobbyIds}',
+  );
   if (ids.isEmpty) {
+    debugPrint(
+      'StatsDashboard: KEY empty reason=no-lobby '
+      '(no selected/current/user lobby id to query)',
+    );
     return StatsDashboardSnapshot.fromSources(
       user: user,
       lobby: lobby,
@@ -213,12 +262,19 @@ Future<StatsDashboardSnapshot> loadStatsDashboardSnapshot({
 
   final statsList = await Future.wait(ids.map((id) async {
     try {
-      final summary = winLossFromLobbyStats(await fetchLobbyStats(id));
+      final raw = await fetchLobbyStats(id);
+      final summary = winLossFromLobbyStats(raw);
       statsOk++;
+      debugPrint(
+        'StatsDashboard: KEY get_lobby_stats lobby=$id '
+        'wins=${summary.wins} losses=${summary.losses} draws=${summary.draws} '
+        'rawKeys=${raw.keys.toList()} raw=$raw',
+      );
       return summary;
     } catch (e, st) {
       lastError = e;
       lastStack = st;
+      debugPrint('StatsDashboard: KEY get_lobby_stats lobby=$id FAILED $e');
       return const WinLossSummary();
     }
   }));
@@ -226,10 +282,14 @@ Future<StatsDashboardSnapshot> loadStatsDashboardSnapshot({
     try {
       final rows = await fetchMatchHistory(id);
       historyOk++;
+      debugPrint(
+        'StatsDashboard: KEY match_history lobby=$id rows=${rows.length}',
+      );
       return rows;
     } catch (e, st) {
       lastError = e;
       lastStack = st;
+      debugPrint('StatsDashboard: KEY match_history lobby=$id FAILED $e');
       return const <Map<String, dynamic>>[];
     }
   }));
@@ -249,11 +309,19 @@ Future<StatsDashboardSnapshot> loadStatsDashboardSnapshot({
   for (final part in statsList) {
     remoteWinLoss += part;
   }
+  final extraHistory = historyLists.expand((rows) => rows).toList();
+  if (remoteWinLoss.isEmpty && extraHistory.isEmpty) {
+    debugPrint(
+      'StatsDashboard: KEY empty reason=fetched-zero '
+      'lobby=${ids.join(',')} stats=0-0-0 historyRows=0 '
+      '(no match_history rows for this lobby — honest empty, not a parse miss)',
+    );
+  }
 
   return StatsDashboardSnapshot.fromSources(
     user: user,
     lobby: lobby,
-    extraHistory: historyLists.expand((rows) => rows).toList(),
+    extraHistory: extraHistory,
     remoteWinLoss: remoteWinLoss,
     statsLobbyIds: ids,
   );
@@ -266,10 +334,12 @@ Future<StatsDashboardSnapshot> loadStatsDashboardSnapshot({
 /// from counts so the pie chart does not treat 66.7 as 6670%.
 WinLossSummary winLossFromLobbyStats(Map<String, dynamic>? stats) {
   if (stats == null || stats.isEmpty) return const WinLossSummary();
+  final coerced = coerceLobbyStatsResponse(stats);
+  if (coerced.isEmpty) return const WinLossSummary();
   return WinLossSummary(
-    wins: _asInt(stats['wins']) ?? 0,
-    losses: _asInt(stats['losses']) ?? 0,
-    draws: _asInt(stats['draws']) ?? 0,
+    wins: _asInt(coerced['wins']) ?? 0,
+    losses: _asInt(coerced['losses']) ?? 0,
+    draws: _asInt(coerced['draws']) ?? 0,
   );
 }
 
@@ -280,6 +350,19 @@ Map<String, dynamic> normalizeMatchHistoryRow(Map<String, dynamic> row) {
   row.forEach((key, value) {
     out[key.toString()] = value;
   });
+  void alias(String from, String to) {
+    if (!out.containsKey(to) && out.containsKey(from)) {
+      out[to] = out[from];
+    }
+  }
+
+  alias('playerUids', 'player_uids');
+  alias('memberUids', 'player_uids');
+  alias('member_uids', 'player_uids');
+  alias('createdAt', 'created_at');
+  alias('outcome', 'result');
+  alias('winLoss', 'result');
+  alias('win_loss', 'result');
   return out;
 }
 

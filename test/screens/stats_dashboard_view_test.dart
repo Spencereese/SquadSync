@@ -32,14 +32,29 @@ void main() {
         dailySampleSize: 2,
         allTimeSampleSize: 10,
       ),
+      community: CommunitySummary(
+        complaints: 2,
+        bans: 1,
+        friends: 4,
+        gameAverages: [
+          GameRatingAverage(gameName: 'Warzone', average: 4.0, sampleSize: 2),
+        ],
+      ),
     );
 
     await tester.pumpWidget(wrap(const StatsDashboardView(snapshot: snapshot)));
     await tester.pump();
 
     expect(find.text('SQUAD STREAKS'), findsOneWidget);
-    expect(find.text('WINS / LOSSES'), findsOneWidget);
+    expect(find.text('SQUAD WINS / LOSSES'), findsOneWidget);
     expect(find.text('AVERAGE RATINGS'), findsOneWidget);
+    expect(find.text('COMMUNITY'), findsOneWidget);
+    expect(find.byKey(const Key('stats-community')), findsOneWidget);
+    expect(find.text('Complaints'), findsOneWidget);
+    expect(find.text('Bans'), findsOneWidget);
+    expect(find.text('Friends'), findsOneWidget);
+    expect(find.text('Warzone'), findsOneWidget);
+    expect(find.text('4.0★'), findsOneWidget);
     expect(find.byKey(const Key('stats-streaks-chart')), findsOneWidget);
     expect(find.byKey(const Key('stats-win-loss-chart')), findsOneWidget);
     expect(find.byKey(const Key('stats-ratings')), findsOneWidget);

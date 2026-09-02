@@ -178,6 +178,43 @@ void main() {
         1,
       );
     });
+
+    test('does not credit a member when player_uids is empty', () {
+      final history = [
+        {
+          'result': 'win',
+          'player_uids': <String>[],
+          'created_at': '2026-09-01T12:00:00Z',
+        },
+      ];
+      expect(
+        streakFromGameHistory(history, memberId: 'u1', displayName: 'Sam'),
+        isNull,
+      );
+      final rows = buildMemberStreaks(
+        memberUids: ['u1', 'u2'],
+        displayNames: const {'u1': 'Sam', 'u2': 'Kit'},
+        currentStreaks: const {},
+        gameHistory: history,
+      );
+      expect(rows.every((r) => r.streak == 0), isTrue);
+    });
+
+    test('parses postgres-array player_uids from match_history', () {
+      expect(
+        streakFromGameHistory(
+          [
+            {
+              'result': 'win',
+              'player_uids': '{u1}',
+              'created_at': '2026-09-01T12:00:00Z',
+            },
+          ],
+          memberId: 'u1',
+        ),
+        1,
+      );
+    });
   });
 
   group('winLossFromGameHistory', () {
@@ -216,6 +253,27 @@ void main() {
 
     test('empty history is empty', () {
       expect(winLossFromGameHistory(const []).isEmpty, isTrue);
+    });
+  });
+
+  group('winLossFromLobbyStats', () {
+    test('parses bigint strings and ignores percent win_rate', () {
+      final summary = winLossFromLobbyStats({
+        'total_matches': '5',
+        'wins': '3',
+        'losses': 1,
+        'draws': 1.0,
+        'win_rate': '60.00',
+      });
+      expect(summary.wins, 3);
+      expect(summary.losses, 1);
+      expect(summary.draws, 1);
+      expect(summary.winRate, closeTo(0.75, 0.001));
+    });
+
+    test('empty or null stats are empty', () {
+      expect(winLossFromLobbyStats(null).isEmpty, isTrue);
+      expect(winLossFromLobbyStats(const {}).isEmpty, isTrue);
     });
   });
 
@@ -283,6 +341,113 @@ void main() {
         ),
       );
       expect(snap.ratings.allTimeAverage, 4);
+    });
+  });
+
+  group('communitySummaryFrom', () {
+    test('counts complaints, bans, friends, and per-game averages', () {
+      final summary = communitySummaryFrom(
+        _user(
+          allTimeRatings: const {
+            'Warzone': {'a': 4, 'b': 5},
+            'BF6': {'a': 3},
+          },
+        ).copyWith(
+          complaints: const {
+            'Warzone': {'u2': 1},
+          },
+          bans: const {
+            'Warzone': [
+              {'reason': 'toxicity'},
+            ],
+          },
+          friends: const ['f1', 'f2', 'f3'],
+        ),
+      );
+      expect(summary.complaints, 1);
+      expect(summary.bans, 1);
+      expect(summary.friends, 3);
+      expect(summary.gameAverages.map((g) => g.gameName).toList(),
+          ['BF6', 'Warzone']);
+      expect(
+        summary.gameAverages.firstWhere((g) => g.gameName == 'Warzone').average,
+        closeTo(4.5, 0.001),
+      );
+    });
+  });
+
+  group('loadStatsDashboardSnapshot', () {
+    test('uses getLobbyStats W/L and match_history streaks, not empty gameHistory',
+        () async {
+      final fetchedIds = <String>[];
+      final snap = await loadStatsDashboardSnapshot(
+        user: _user(uid: 'u1', displayName: 'Sam'),
+        lobby: LobbyState.initial().copyWith(
+          selectedLobbyId: 'lobby-1',
+          lobbyMemberUids: ['u1', 'u2'],
+          memberDisplayNames: const {'u1': 'Sam', 'u2': 'Kit'},
+          gameHistory: const [],
+        ),
+        fetchLobbyStats: (id) async {
+          fetchedIds.add('stats:$id');
+          return {
+            'total_matches': 4,
+            'wins': 3,
+            'losses': 1,
+            'draws': 0,
+            'win_rate': 75.0,
+          };
+        },
+        fetchMatchHistory: (id) async {
+          fetchedIds.add('history:$id');
+          return [
+            {
+              'id': 'm1',
+              'lobby_id': id,
+              'game_name': 'Warzone',
+              'result': 'win',
+              'player_uids': ['u1'],
+              'created_at': '2026-09-01T12:00:00Z',
+              'created_by': 'u1',
+            },
+            {
+              'id': 'm2',
+              'lobby_id': id,
+              'game_name': 'Warzone',
+              'result': 'win',
+              'player_uids': ['u1'],
+              'created_at': '2026-08-31T12:00:00Z',
+              'created_by': 'u1',
+            },
+            {
+              'id': 'm3',
+              'lobby_id': id,
+              'game_name': 'Warzone',
+              'result': 'loss',
+              'player_uids': ['u1'],
+              'created_at': '2026-08-30T12:00:00Z',
+              'created_by': 'u1',
+            },
+            {
+              'id': 'm4',
+              'lobby_id': id,
+              'game_name': 'Warzone',
+              'result': 'win',
+              'player_uids': <String>[],
+              'created_at': '2026-09-02T12:00:00Z',
+              'created_by': 'u1',
+            },
+          ];
+        },
+      );
+
+      expect(fetchedIds, ['stats:lobby-1', 'history:lobby-1']);
+      expect(snap.winLoss.wins, 3);
+      expect(snap.winLoss.losses, 1);
+      expect(snap.winLoss.draws, 0);
+      final byId = {for (final row in snap.memberStreaks) row.id: row.streak};
+      expect(byId['u1'], 2);
+      expect(byId['u2'], 0);
     });
   });
 

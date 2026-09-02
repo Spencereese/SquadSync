@@ -4,11 +4,28 @@ import 'dart:ui';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 
-import '../domain/entities/lobby_state.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import 'stats_dashboard_data.dart';
+
+/// Fetches `get_lobby_stats` + `match_history` once both user and lobby are ready.
+///
+/// Avoids painting empty charts from `LobbyState.gameHistory`, which recordMatch
+/// never populates.
+final statsDashboardProvider =
+    FutureProvider.autoDispose<StatsDashboardSnapshot>((ref) async {
+  final user = await ref.watch(userNotifierProvider.future);
+  final lobby = await ref.watch(ln.lobbyNotifierProvider.future);
+  final repo = ref.watch(lobbyRepositoryProvider);
+  return loadStatsDashboardSnapshot(
+    user: user,
+    lobby: lobby,
+    fetchLobbyStats: repo.getLobbyStats,
+    fetchMatchHistory: repo.getMatchHistory,
+  );
+});
 
 /// Squad stats dashboard (streaks, win/loss, ratings).
 ///
@@ -18,8 +35,7 @@ class PerformanceStatsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(userNotifierProvider);
-    final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
+    final statsAsync = ref.watch(statsDashboardProvider);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0E14),
@@ -29,7 +45,7 @@ class PerformanceStatsScreen extends ConsumerWidget {
         foregroundColor: Colors.cyanAccent,
         elevation: 0,
       ),
-      body: userAsync.when(
+      body: statsAsync.when(
         loading: () => const Center(
           child: CircularProgressIndicator(color: Colors.cyanAccent),
         ),
@@ -43,14 +59,7 @@ class PerformanceStatsScreen extends ConsumerWidget {
             ),
           ),
         ),
-        data: (user) {
-          final lobby = lobbyAsync.valueOrNull ?? LobbyState.initial();
-          final snapshot = StatsDashboardSnapshot.fromSources(
-            user: user,
-            lobby: lobby,
-          );
-          return StatsDashboardView(snapshot: snapshot);
-        },
+        data: (snapshot) => StatsDashboardView(snapshot: snapshot),
       ),
     );
   }
@@ -78,13 +87,18 @@ class StatsDashboardView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _DashboardCard(
-            title: 'Wins / losses',
+            title: 'Squad wins / losses',
             child: _WinLossPie(summary: snapshot.winLoss),
           ),
           const SizedBox(height: 16),
           _DashboardCard(
             title: 'Average ratings',
             child: _RatingsRow(ratings: snapshot.ratings),
+          ),
+          const SizedBox(height: 16),
+          _DashboardCard(
+            title: 'Community',
+            child: _CommunitySection(community: snapshot.community),
           ),
         ],
       ),
@@ -476,6 +490,124 @@ class _RatingTile extends StatelessWidget {
                 ? 'No ratings yet'
                 : '$sampleSize rating${sampleSize == 1 ? '' : 's'}',
             style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommunitySection extends StatelessWidget {
+  const _CommunitySection({required this.community});
+
+  final CommunitySummary community;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const Key('stats-community'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            _CommunityChip(
+              icon: Icons.report_outlined,
+              label: 'Complaints',
+              value: '${community.complaints}',
+            ),
+            _CommunityChip(
+              icon: Icons.gavel_outlined,
+              label: 'Bans',
+              value: '${community.bans}',
+            ),
+            _CommunityChip(
+              icon: Icons.group_outlined,
+              label: 'Friends',
+              value: '${community.friends}',
+            ),
+          ],
+        ),
+        if (community.gameAverages.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'PER-GAME AVERAGE',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 11,
+              letterSpacing: 1.1,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final game in community.gameAverages)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      game.gameName,
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    '${game.average.toStringAsFixed(1)}★',
+                    style: const TextStyle(
+                      color: Colors.cyanAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CommunityChip extends StatelessWidget {
+  const _CommunityChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.white54),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.cyanAccent,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),

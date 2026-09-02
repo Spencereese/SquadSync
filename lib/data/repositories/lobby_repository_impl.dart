@@ -272,6 +272,17 @@ class LobbyRepositoryImpl implements LobbyRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> getMatchHistory(String lobbyId) async {
+    try {
+      return await _remoteDataSource.getMatchHistory(lobbyId);
+    } catch (e, stackTrace) {
+      debugPrint('LobbyRepository: ❌ ERROR fetching match history: $e');
+      debugPrint('LobbyRepository: Stack trace: $stackTrace');
+      return const [];
+    }
+  }
+
+  @override
   Future<void> createInvite(Map<String, dynamic> inviteData) async {
     try {
       await _remoteDataSource.createInvite(inviteData);

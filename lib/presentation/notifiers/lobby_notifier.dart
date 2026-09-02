@@ -816,6 +816,12 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         playerUids: lobby.memberUids,
         notes: null,
       );
+      _appendMatchToHistory(
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'win',
+        playerUids: lobby.memberUids,
+      );
 
       debugPrint('LobbyNotifier: ✅ Win recorded for lobby $lobbyId');
     } catch (e, stackTrace) {
@@ -847,6 +853,12 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         playerUids: lobby.memberUids,
         notes: null,
       );
+      _appendMatchToHistory(
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'loss',
+        playerUids: lobby.memberUids,
+      );
 
       debugPrint('LobbyNotifier: ✅ Loss recorded for lobby $lobbyId');
     } catch (e, stackTrace) {
@@ -874,6 +886,40 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         'win_rate': 0.0,
       };
     }
+  }
+
+  /// Match rows from `match_history` for [lobbyId] (newest first).
+  Future<List<Map<String, dynamic>>> getMatchHistory(String lobbyId) async {
+    try {
+      return await _repository.getMatchHistory(lobbyId);
+    } catch (e) {
+      debugPrint('LobbyNotifier: ❌ ERROR fetching match history: $e');
+      return const [];
+    }
+  }
+
+  void _appendMatchToHistory({
+    required String lobbyId,
+    required String gameName,
+    required String result,
+    required List<String> playerUids,
+  }) {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        gameHistory: [
+          {
+            'lobby_id': lobbyId,
+            'game_name': gameName,
+            'result': result,
+            'player_uids': List<String>.from(playerUids),
+            'created_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          ...current.gameHistory,
+        ],
+      ),
+    );
   }
 
   // TODO: Implement addBan method

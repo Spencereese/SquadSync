@@ -62,6 +62,7 @@ abstract class LobbyRemoteDataSource {
     String? notes,
   });
   Future<Map<String, dynamic>> getLobbyStats(String lobbyId);
+  Future<List<Map<String, dynamic>>> getMatchHistory(String lobbyId);
 }
 
 class LobbyRemoteDataSourceImpl
@@ -589,7 +590,10 @@ class LobbyRemoteDataSourceImpl
           .rpc('get_lobby_stats', params: {'p_lobby_id': lobbyId});
 
       if (response is List && response.isNotEmpty) {
-        return response.first as Map<String, dynamic>;
+        return Map<String, dynamic>.from(response.first as Map);
+      }
+      if (response is Map) {
+        return Map<String, dynamic>.from(response);
       }
 
       return {
@@ -601,6 +605,26 @@ class LobbyRemoteDataSourceImpl
       };
     } catch (e) {
       throw Exception('Failed to fetch lobby stats: $e');
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getMatchHistory(String lobbyId) async {
+    validateJwt();
+
+    try {
+      final response = await _supabase
+          .from('match_history')
+          .select()
+          .eq('lobby_id', lobbyId)
+          .order('created_at', ascending: false)
+          .limit(100);
+
+      return [
+        for (final row in response) Map<String, dynamic>.from(row as Map),
+      ];
+    } catch (e) {
+      throw Exception('Failed to fetch match history: $e');
     }
   }
 }

@@ -376,6 +376,41 @@ void main() {
     });
   });
 
+  group('lobbyIdsForStats', () {
+    test('prefers selectedLobbyId over current and userLobbies', () {
+      final lobby = LobbyState.initial().copyWith(
+        selectedLobbyId: 'sel',
+        currentLobby: _lobby(id: 'cur', members: ['a']),
+        userLobbies: {
+          'a': _lobby(id: 'a', members: ['a']),
+          'b': _lobby(id: 'b', members: ['b']),
+        },
+      );
+      expect(lobbyIdsForStats(lobby), ['sel']);
+    });
+
+    test('prefers current lobby over userLobbies', () {
+      final lobby = LobbyState.initial().copyWith(
+        currentLobby: _lobby(id: 'cur', members: ['a']),
+        userLobbies: {
+          'a': _lobby(id: 'a', members: ['a']),
+          'b': _lobby(id: 'b', members: ['b']),
+        },
+      );
+      expect(lobbyIdsForStats(lobby), ['cur']);
+    });
+
+    test('unions userLobbies when nothing is selected', () {
+      final lobby = LobbyState.initial().copyWith(
+        userLobbies: {
+          'a': _lobby(id: 'a', members: ['a']),
+          'b': _lobby(id: 'b', members: ['b']),
+        },
+      );
+      expect(lobbyIdsForStats(lobby).toSet(), {'a', 'b'});
+    });
+  });
+
   group('loadStatsDashboardSnapshot', () {
     test('uses getLobbyStats W/L and match_history streaks, not empty gameHistory',
         () async {
@@ -445,9 +480,61 @@ void main() {
       expect(snap.winLoss.wins, 3);
       expect(snap.winLoss.losses, 1);
       expect(snap.winLoss.draws, 0);
+      expect(snap.winLossTitle, 'Squad wins / losses');
       final byId = {for (final row in snap.memberStreaks) row.id: row.streak};
       expect(byId['u1'], 2);
       expect(byId['u2'], 0);
+    });
+
+    test('rethrows when every lobby fetch fails', () async {
+      await expectLater(
+        loadStatsDashboardSnapshot(
+          user: _user(),
+          lobby: LobbyState.initial().copyWith(selectedLobbyId: 'lobby-1'),
+          fetchLobbyStats: (_) async => throw Exception('stats down'),
+          fetchMatchHistory: (_) async => throw Exception('history down'),
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('keeps partial W/L when one of two lobby fetches fails', () async {
+      final snap = await loadStatsDashboardSnapshot(
+        user: _user(),
+        lobby: LobbyState.initial().copyWith(
+          userLobbies: {
+            'a': _lobby(id: 'a', members: ['u1']),
+            'b': _lobby(id: 'b', members: ['u1']),
+          },
+        ),
+        fetchLobbyStats: (id) async {
+          if (id == 'a') throw Exception('stats down');
+          return {'wins': 2, 'losses': 1, 'draws': 0};
+        },
+        fetchMatchHistory: (_) async => const [],
+      );
+      expect(snap.winLoss.wins, 2);
+      expect(snap.winLoss.losses, 1);
+      expect(snap.winLossTitle, 'All lobbies wins / losses');
+    });
+
+    test('titles aggregated W/L as All lobbies when no lobby is selected',
+        () async {
+      final snap = await loadStatsDashboardSnapshot(
+        user: _user(),
+        lobby: LobbyState.initial().copyWith(
+          userLobbies: {
+            'a': _lobby(id: 'a', members: ['u1']),
+            'b': _lobby(id: 'b', members: ['u1']),
+          },
+        ),
+        fetchLobbyStats: (_) async => {'wins': 1, 'losses': 0, 'draws': 0},
+        fetchMatchHistory: (_) async => const [],
+      );
+      expect(snap.statsLobbyIds.toSet(), {'a', 'b'});
+      expect(snap.isAggregatedAcrossLobbies, isTrue);
+      expect(snap.winLossTitle, 'All lobbies wins / losses');
+      expect(snap.winLoss.wins, 2);
     });
   });
 

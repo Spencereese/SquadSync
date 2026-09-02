@@ -87,7 +87,7 @@ class StatsDashboardView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _DashboardCard(
-            title: 'Squad wins / losses',
+            title: snapshot.winLossTitle,
             child: _WinLossPie(summary: snapshot.winLoss),
           ),
           const SizedBox(height: 16),

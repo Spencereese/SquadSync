@@ -110,6 +110,7 @@ class StatsDashboardSnapshot {
     required this.winLoss,
     required this.ratings,
     this.community = const CommunitySummary(),
+    this.statsLobbyIds = const [],
   });
 
   final List<SquadMemberStreak> memberStreaks;
@@ -117,13 +118,24 @@ class StatsDashboardSnapshot {
   final RatingSummary ratings;
   final CommunitySummary community;
 
+  /// Lobby ids whose remote stats were aggregated into [winLoss].
+  final List<String> statsLobbyIds;
+
   bool get hasStreaks => memberStreaks.any((m) => m.streak > 0);
+
+  bool get isAggregatedAcrossLobbies => statsLobbyIds.length > 1;
+
+  /// Single-lobby pies stay "Squad"; unioned userLobbies are titled as all lobbies.
+  String get winLossTitle => isAggregatedAcrossLobbies
+      ? 'All lobbies wins / losses'
+      : 'Squad wins / losses';
 
   factory StatsDashboardSnapshot.fromSources({
     AppUser? user,
     LobbyState? lobby,
     List<Map<String, dynamic>> extraHistory = const [],
     WinLossSummary? remoteWinLoss,
+    List<String> statsLobbyIds = const [],
   }) {
     final lobbyState = lobby ?? LobbyState.initial();
     final remote = extraHistory.map(normalizeMatchHistoryRow).toList();
@@ -156,6 +168,7 @@ class StatsDashboardSnapshot {
       winLoss: winLoss,
       ratings: ratingSummaryFrom(daily, allTime),
       community: communitySummaryFrom(user),
+      statsLobbyIds: statsLobbyIds,
     );
   }
 }
@@ -186,23 +199,51 @@ Future<StatsDashboardSnapshot> loadStatsDashboardSnapshot({
 }) async {
   final ids = lobbyIdsForStats(lobby);
   if (ids.isEmpty) {
-    return StatsDashboardSnapshot.fromSources(user: user, lobby: lobby);
+    return StatsDashboardSnapshot.fromSources(
+      user: user,
+      lobby: lobby,
+      statsLobbyIds: ids,
+    );
   }
+
+  Object? lastError;
+  StackTrace? lastStack;
+  var statsOk = 0;
+  var historyOk = 0;
 
   final statsList = await Future.wait(ids.map((id) async {
     try {
-      return winLossFromLobbyStats(await fetchLobbyStats(id));
-    } catch (_) {
+      final summary = winLossFromLobbyStats(await fetchLobbyStats(id));
+      statsOk++;
+      return summary;
+    } catch (e, st) {
+      lastError = e;
+      lastStack = st;
       return const WinLossSummary();
     }
   }));
   final historyLists = await Future.wait(ids.map((id) async {
     try {
-      return await fetchMatchHistory(id);
-    } catch (_) {
+      final rows = await fetchMatchHistory(id);
+      historyOk++;
+      return rows;
+    } catch (e, st) {
+      lastError = e;
+      lastStack = st;
       return const <Map<String, dynamic>>[];
     }
   }));
+
+  // One lobby failing must not blank the dashboard; every fetch failing
+  // must not look like "no games yet".
+  if (statsOk == 0 && historyOk == 0) {
+    final error = lastError ?? Exception('Failed to load lobby stats');
+    final stack = lastStack;
+    if (stack != null) {
+      Error.throwWithStackTrace(error, stack);
+    }
+    throw error;
+  }
 
   var remoteWinLoss = const WinLossSummary();
   for (final part in statsList) {
@@ -214,6 +255,7 @@ Future<StatsDashboardSnapshot> loadStatsDashboardSnapshot({
     lobby: lobby,
     extraHistory: historyLists.expand((rows) => rows).toList(),
     remoteWinLoss: remoteWinLoss,
+    statsLobbyIds: ids,
   );
 }
 

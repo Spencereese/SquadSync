@@ -91,4 +91,26 @@ void main() {
     expect(find.text('—'), findsNWidgets(2));
     expect(find.text('No ratings yet'), findsNWidgets(2));
   });
+
+  testWidgets('titles W/L as All lobbies when aggregating multiple lobbies',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const snapshot = StatsDashboardSnapshot(
+      memberStreaks: [],
+      winLoss: WinLossSummary(wins: 3, losses: 1),
+      ratings: RatingSummary(),
+      statsLobbyIds: ['a', 'b'],
+    );
+
+    await tester.pumpWidget(wrap(const StatsDashboardView(snapshot: snapshot)));
+    await tester.pump();
+
+    expect(find.text('ALL LOBBIES WINS / LOSSES'), findsOneWidget);
+    expect(find.text('SQUAD WINS / LOSSES'), findsNothing);
+    expect(find.text('Wins 3'), findsOneWidget);
+  });
 }

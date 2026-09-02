@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/managers/notification_manager.dart';
 import 'package:squad_sync/services/peacock_notification_service.dart';
@@ -6,6 +7,87 @@ void main() {
   tearDown(() {
     NotificationManager.showLocal = null;
     PeacockNotificationService.resetTestHooks();
+  });
+
+  group('peacockLifecycleIsForeground', () {
+    test('null, resumed, and inactive are foreground (local, no FCM)', () {
+      expect(peacockLifecycleIsForeground(null), isTrue);
+      expect(peacockLifecycleIsForeground(AppLifecycleState.resumed), isTrue);
+      expect(peacockLifecycleIsForeground(AppLifecycleState.inactive), isTrue);
+    });
+
+    test('paused, hidden, and detached are background (FCM, no local)', () {
+      expect(peacockLifecycleIsForeground(AppLifecycleState.paused), isFalse);
+      expect(peacockLifecycleIsForeground(AppLifecycleState.hidden), isFalse);
+      expect(peacockLifecycleIsForeground(AppLifecycleState.detached), isFalse);
+    });
+
+    test('inactive Control Center plans local only — not FCM-to-self', () {
+      final plan = planPeacockSelfNotify(
+        notificationId: 'n1',
+        currentUid: 'uid-1',
+        isForeground: peacockLifecycleIsForeground(AppLifecycleState.inactive),
+        locallyPresentedIds: {},
+      );
+      expect(plan.showLocal, isTrue);
+      expect(plan.sendFcmToSelf, isFalse);
+      expect(plan.recipientUids, isEmpty);
+    });
+
+    test('paused, hidden, and detached plan FCM only — not local', () {
+      for (final state in [
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.detached,
+      ]) {
+        final plan = planPeacockSelfNotify(
+          notificationId: 'n1',
+          currentUid: 'uid-1',
+          isForeground: peacockLifecycleIsForeground(state),
+          locallyPresentedIds: {},
+        );
+        expect(plan.showLocal, isFalse, reason: '$state');
+        expect(plan.sendFcmToSelf, isTrue, reason: '$state');
+        expect(plan.recipientUids, ['uid-1'], reason: '$state');
+      }
+    });
+  });
+
+  group('PeacockIdCache', () {
+    test('evicts oldest when over maxSize', () {
+      final cache = PeacockIdCache(
+        maxSize: 2,
+        clock: () => DateTime.utc(2026, 9, 2, 12),
+      );
+      cache.add('a');
+      cache.add('b');
+      cache.add('c');
+      expect(cache.contains('a'), isFalse);
+      expect(cache.contains('b'), isTrue);
+      expect(cache.contains('c'), isTrue);
+      expect(cache.length, 2);
+    });
+
+    test('drops entries older than ttl', () {
+      var now = DateTime.utc(2026, 9, 2, 12);
+      final cache = PeacockIdCache(
+        maxSize: 8,
+        ttl: const Duration(hours: 6),
+        clock: () => now,
+      );
+      cache.add('old');
+      now = now.add(const Duration(hours: 7));
+      expect(cache.contains('old'), isFalse);
+      expect(cache.length, 0);
+    });
+
+    test('clear empties the cache', () {
+      final cache = PeacockIdCache(maxSize: 8);
+      cache.add('a');
+      cache.clear();
+      expect(cache.contains('a'), isFalse);
+      expect(cache.length, 0);
+    });
   });
 
   group('planPeacockSelfNotify', () {
@@ -153,6 +235,20 @@ void main() {
 
       final second = await runHandle(foreground: false);
       expect(second.local, isEmpty);
+      expect(second.fcm, isEmpty);
+      expect(second.sent, ['n1']);
+    });
+
+    test('dispose clears tracked ids so the same id can be handled again',
+        () async {
+      final first = await runHandle(foreground: true);
+      expect(first.local, isNotEmpty);
+      expect(first.fcm, isEmpty);
+
+      await PeacockNotificationService.dispose();
+
+      final second = await runHandle(foreground: true);
+      expect(second.local, isNotEmpty);
       expect(second.fcm, isEmpty);
       expect(second.sent, ['n1']);
     });

@@ -1,6 +1,5 @@
 import 'dart:developer' as developer;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -8,6 +7,53 @@ import '../managers/notification_manager.dart';
 import '../notification_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
+
+/// Assignment-id dedup. Caps size and drops entries older than [ttl] so a
+/// long-lived process cannot grow unbounded.
+class PeacockIdCache {
+  PeacockIdCache({
+    this.maxSize = defaultMaxSize,
+    this.ttl = defaultTtl,
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now;
+
+  static const int defaultMaxSize = 256;
+  static const Duration defaultTtl = Duration(hours: 6);
+
+  final int maxSize;
+  final Duration ttl;
+  final DateTime Function() _clock;
+  final Map<String, DateTime> _entries = <String, DateTime>{};
+
+  bool contains(String id) {
+    prune();
+    return _entries.containsKey(id);
+  }
+
+  void add(String id) {
+    prune();
+    _entries.remove(id);
+    _entries[id] = _clock();
+    while (_entries.length > maxSize) {
+      _entries.remove(_entries.keys.first);
+    }
+  }
+
+  void clear() => _entries.clear();
+
+  Set<String> toSet() {
+    prune();
+    return _entries.keys.toSet();
+  }
+
+  @visibleForTesting
+  int get length => _entries.length;
+
+  void prune() {
+    final cutoff = _clock().subtract(ttl);
+    _entries.removeWhere((_, stamped) => !stamped.isAfter(cutoff));
+  }
+}
 
 /// Local XOR FCM-to-self for one peacock assignment.
 class PeacockSelfNotifyPlan {
@@ -26,8 +72,24 @@ class PeacockSelfNotifyPlan {
       showLocal && sendFcmToSelf && recipientUids.isNotEmpty;
 }
 
+/// Visible-enough for a local peacock banner. iOS Control Center and the app
+/// switcher use [AppLifecycleState.inactive] while the UI can still be on
+/// screen — FCM-to-self only when paused, hidden, or detached.
+bool peacockLifecycleIsForeground(AppLifecycleState? state) {
+  switch (state) {
+    case null:
+    case AppLifecycleState.resumed:
+    case AppLifecycleState.inactive:
+      return true;
+    case AppLifecycleState.paused:
+    case AppLifecycleState.hidden:
+    case AppLifecycleState.detached:
+      return false;
+  }
+}
+
 /// One alert per assignment: in-app Realtime shows local; FCM only when
-/// backgrounded and that [notificationId] was not already presented locally.
+/// paused/hidden/detached and that [notificationId] was not already presented.
 PeacockSelfNotifyPlan planPeacockSelfNotify({
   required String notificationId,
   required String? currentUid,
@@ -69,8 +131,8 @@ PeacockSelfNotifyPlan planPeacockSelfNotify({
 /// and sends FCM push notifications when users are auto-assigned spots
 class PeacockNotificationService {
   static RealtimeChannel? _channel;
-  static final Set<String> _handledIds = <String>{};
-  static final Set<String> _locallyPresentedIds = <String>{};
+  static final PeacockIdCache _handledIds = PeacockIdCache();
+  static final PeacockIdCache _locallyPresentedIds = PeacockIdCache();
 
   /// Test hook. Production uses [AuthServiceSupabase.currentUser].
   @visibleForTesting
@@ -172,7 +234,7 @@ class PeacockNotificationService {
         notificationId: notificationId,
         currentUid: currentUid,
         isForeground: _isForeground(),
-        locallyPresentedIds: _locallyPresentedIds,
+        locallyPresentedIds: _locallyPresentedIds.toSet(),
       );
 
       if (plan.showLocal) {
@@ -234,20 +296,26 @@ class PeacockNotificationService {
     final hook = isForegroundHook;
     if (hook != null) return hook();
     try {
-      final state = WidgetsBinding.instance.lifecycleState;
-      return state == null || state == AppLifecycleState.resumed;
+      return peacockLifecycleIsForeground(
+        WidgetsBinding.instance.lifecycleState,
+      );
     } catch (_) {
       // No binding (plain unit tests) — Realtime path is in-app.
       return true;
     }
   }
 
-  /// Stop listening for notifications
+  /// Stop listening for notifications. Clears id caches (logout / app dispose).
   static Future<void> dispose() async {
-    if (_channel != null) {
-      developer.log('🦚 Disposing peacock notification listener');
-      await SupabaseService.client.removeChannel(_channel!);
+    try {
+      if (_channel != null) {
+        developer.log('🦚 Disposing peacock notification listener');
+        await SupabaseService.client.removeChannel(_channel!);
+      }
+    } finally {
       _channel = null;
+      _handledIds.clear();
+      _locallyPresentedIds.clear();
     }
   }
 

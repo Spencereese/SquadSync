@@ -71,6 +71,18 @@ void main() {
       expect(squadMemberUids(lobby), ['sam', 'kit']);
     });
 
+    test('resolves selectedLobbyId when it is the lobby chatGroupId', () {
+      final lobby = LobbyState.initial().copyWith(
+        selectedLobbyId: 'chat-99',
+        userLobbies: {
+          'lobby-1': _lobby(id: 'lobby-1', members: ['sam', 'kit'])
+              .copyWith(chatGroupId: 'chat-99'),
+          'lobby-2': _lobby(id: 'lobby-2', members: ['other']),
+        },
+      );
+      expect(squadMemberUids(lobby).toSet(), {'sam', 'kit'});
+    });
+
     test('unions user lobbies when none selected', () {
       final lobby = LobbyState.initial().copyWith(
         userLobbies: {

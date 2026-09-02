@@ -410,7 +410,8 @@ List<String> squadMemberUids(LobbyState lobby, {String? currentUid}) {
   if (lobby.lobbyMemberUids.isNotEmpty) {
     ids.addAll(lobby.lobbyMemberUids.where((id) => id.isNotEmpty));
   } else {
-    final selectedId = lobby.selectedLobbyId;
+    // selectedLobbyId is sometimes a chatGroupId (same as Stats W/L).
+    final selectedId = resolveStatsLobbyId(lobby, lobby.selectedLobbyId);
     final selected = selectedId == null ? null : lobby.userLobbies[selectedId];
     if (selected != null) {
       ids.addAll(selected.memberUids);

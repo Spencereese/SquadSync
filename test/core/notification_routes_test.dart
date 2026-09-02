@@ -31,6 +31,44 @@ void main() {
     );
   });
 
+  test('peacock_assigned and spot_available open /squad with game and lobby',
+      () {
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'peacock_assigned',
+        'game_name': 'Warzone',
+      }),
+      '/squad/Warzone',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'peacock_assigned',
+        'game_name': 'Warzone',
+        'lobby_id': 'lobby-9',
+      }),
+      '/squad/Warzone?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.locationFor({'type': 'peacock_assigned'}),
+      '/squad',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'spot_available',
+        'game_name': 'MW3',
+        'lobby_id': 'abc',
+      }),
+      '/squad/MW3?lobby_id=abc',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'peacock_assigned',
+        'lobby_id': '',
+      }),
+      '/squad',
+    );
+  });
+
   test('unknown type does not invent a route', () {
     expect(NotificationRoutes.locationFor({'type': 'unknown'}), isNull);
   });

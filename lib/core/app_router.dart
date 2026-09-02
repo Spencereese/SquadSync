@@ -129,7 +129,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as Map<String, dynamic>?;
           return LobbyTabScreen(
             gameName: extra?['gameName'] as String?,
-            lobbyId: extra?['lobbyId'] as String?,
+            lobbyId: extra?['lobbyId'] as String? ??
+                state.uri.queryParameters['lobby_id'],
             game: extra?['game'] as Map<String, dynamic>?,
             chatGroupId: extra?['chatGroupId'] as String?,
           );
@@ -143,7 +144,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as Map<String, dynamic>?;
           return LobbyTabScreen(
             gameName: gameName,
-            lobbyId: extra?['lobbyId'] as String?,
+            lobbyId: extra?['lobbyId'] as String? ??
+                state.uri.queryParameters['lobby_id'],
             game: extra?['game'] as Map<String, dynamic>?,
             chatGroupId: extra?['chatGroupId'] as String?,
           );

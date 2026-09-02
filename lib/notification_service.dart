@@ -80,17 +80,7 @@ class NotificationService {
       sound: true,
     );
 
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      developer.log(
-          'Foreground message: ${message.notification?.title} - ${message.notification?.body}');
-      if (message.notification != null && kIsIos) {
-        _instance._showLocalNotification(
-          title: message.notification?.title ?? 'Cod Squad',
-          body: message.notification?.body ?? '',
-          payload: message.data,
-        );
-      }
-    });
+    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
 
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
@@ -132,6 +122,53 @@ class NotificationService {
   static void _handleMessage(RemoteMessage message) {
     developer.log('Handling message: ${message.data}');
     NotificationRoutes.open(message.data);
+  }
+
+  /// Android does not auto-display FCM while the app is in the foreground.
+  /// iOS may also present via [setForegroundNotificationPresentationOptions];
+  /// cooldowns in [_showLocalNotification] suppress duplicate keys.
+  static bool shouldShowForegroundLocal(RemoteMessage message) =>
+      message.notification != null;
+
+  static void _onForegroundMessage(RemoteMessage message) {
+    developer.log(
+        'Foreground message: ${message.notification?.title} - ${message.notification?.body}');
+    if (!shouldShowForegroundLocal(message)) return;
+    _instance._showLocalNotification(
+      title: message.notification?.title ?? 'Cod Squad',
+      body: message.notification?.body ?? '',
+      payload: message.data,
+    );
+  }
+
+  /// Display a local notification on the same channel as foreground FCM.
+  static Future<void> showNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic>? payload,
+    NotificationPriority priority = NotificationPriority.medium,
+  }) {
+    return _instance.showLocalNotification(
+      title: title,
+      body: body,
+      payload: payload,
+      priority: priority,
+    );
+  }
+
+  /// Instance entry used by [NotificationManager] and FCM foreground display.
+  Future<void> showLocalNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic>? payload,
+    NotificationPriority priority = NotificationPriority.medium,
+  }) {
+    return _showLocalNotification(
+      title: title,
+      body: body,
+      payload: payload ?? const {'type': 'local'},
+      priority: priority,
+    );
   }
 
   static Future<void> sendNotification(String title, String body) async {

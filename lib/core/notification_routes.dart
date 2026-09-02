@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -63,6 +62,7 @@ class NotificationRoutes {
       'group_id',
     ]);
     final gameName = _firstNonEmpty(data, const ['gameName', 'game_name']);
+    final lobbyId = _firstNonEmpty(data, const ['lobbyId', 'lobby_id']);
 
     switch (type) {
       case 'chat':
@@ -72,10 +72,8 @@ class NotificationRoutes {
       case 'direct_invite':
       case 'momentum':
       case 'spot_available':
-        if (gameName != null) {
-          return '/squad/${Uri.encodeComponent(gameName)}';
-        }
-        return '/squad';
+      case 'peacock_assigned':
+        return _squadLocation(gameName: gameName, lobbyId: lobbyId);
       default:
         if (screen == 'chat') {
           return chatId != null ? '/chat/$chatId' : '/chat';
@@ -92,6 +90,16 @@ class NotificationRoutes {
     if (location != null) {
       go?.call(location);
     }
+  }
+
+  /// Existing `/squad` routes only. [lobbyId] is a query param so
+  /// the squad tab can select the lobby without a new path.
+  static String _squadLocation({String? gameName, String? lobbyId}) {
+    final path = gameName != null
+        ? '/squad/${Uri.encodeComponent(gameName)}'
+        : '/squad';
+    if (lobbyId == null) return path;
+    return '$path?lobby_id=${Uri.encodeComponent(lobbyId)}';
   }
 
   static String? _firstNonEmpty(Map<String, dynamic> data, List<String> keys) {

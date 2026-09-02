@@ -1,0 +1,303 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/domain/entities/app_user.dart';
+import 'package:squad_sync/domain/entities/lobby.dart';
+import 'package:squad_sync/domain/entities/lobby_state.dart';
+import 'package:squad_sync/screens/stats_dashboard_data.dart';
+
+AppUser _user({
+  String uid = 'me',
+  String? displayName = 'Alex',
+  Map<String, int> currentStreaks = const {},
+  Map<String, Map<String, int>> dailyRatings = const {},
+  Map<String, Map<String, int>> allTimeRatings = const {},
+}) {
+  return AppUser(
+    uid: uid,
+    displayName: displayName,
+    profileImage: null,
+    preferredModes: const {},
+    userBlocks: const {},
+    pinnedGames: const [],
+    notificationSettings: const {},
+    hasRatedGame: const {},
+    dailyRatings: dailyRatings,
+    allTimeRatings: allTimeRatings,
+    currentStreaks: currentStreaks,
+    complaints: const {},
+    bans: const {},
+    dailyBanVotes: const {},
+    blockedUsers: const [],
+    friends: const [],
+    alerts: const [],
+    userGroups: const [],
+    alertCircles: const [],
+    publicGroups: const [],
+    pinnedMessages: const [],
+  );
+}
+
+Lobby _lobby({
+  required String id,
+  required List<String> members,
+}) {
+  return Lobby.create(
+    name: 'Lobby $id',
+    gameName: 'Warzone',
+    maxSpots: 4,
+    createdBy: members.first,
+  ).copyWith(id: id, memberUids: members);
+}
+
+void main() {
+  group('squadMemberUids', () {
+    test('prefers lobbyMemberUids when present', () {
+      final lobby = LobbyState.initial().copyWith(
+        lobbyMemberUids: ['a', 'b'],
+        userLobbies: {
+          'x': _lobby(id: 'x', members: ['z']),
+        },
+      );
+      expect(squadMemberUids(lobby), ['a', 'b']);
+    });
+
+    test('falls back to selected lobby members', () {
+      final lobby = LobbyState.initial().copyWith(
+        selectedLobbyId: 'x',
+        userLobbies: {
+          'x': _lobby(id: 'x', members: ['sam', 'kit']),
+        },
+      );
+      expect(squadMemberUids(lobby), ['sam', 'kit']);
+    });
+
+    test('unions user lobbies when none selected', () {
+      final lobby = LobbyState.initial().copyWith(
+        userLobbies: {
+          'x': _lobby(id: 'x', members: ['a', 'b']),
+          'y': _lobby(id: 'y', members: ['b', 'c']),
+        },
+      );
+      expect(squadMemberUids(lobby).toSet(), {'a', 'b', 'c'});
+    });
+
+    test('includes current user uid', () {
+      final lobby = LobbyState.initial().copyWith(lobbyMemberUids: ['a']);
+      expect(squadMemberUids(lobby, currentUid: 'me').toSet(), {'a', 'me'});
+    });
+  });
+
+  group('buildMemberStreaks', () {
+    test('reads currentStreaks keyed by uid', () {
+      final rows = buildMemberStreaks(
+        memberUids: ['u1', 'u2'],
+        displayNames: const {'u1': 'Sam', 'u2': 'Kit'},
+        currentStreaks: const {'u1': 4, 'u2': 1},
+        gameHistory: const [],
+      );
+      expect(rows.map((r) => r.label).toList(), ['Sam', 'Kit']);
+      expect(rows.map((r) => r.streak).toList(), [4, 1]);
+    });
+
+    test('reads currentStreaks keyed by display name', () {
+      final rows = buildMemberStreaks(
+        memberUids: ['u1'],
+        displayNames: const {'u1': 'Sam'},
+        currentStreaks: const {'Sam': 7},
+        gameHistory: const [],
+      );
+      expect(rows.single.streak, 7);
+    });
+
+    test('falls back to currentStreaks keys when there are no members', () {
+      final rows = buildMemberStreaks(
+        memberUids: const [],
+        displayNames: const {},
+        currentStreaks: const {'Warzone': 3, 'BF6': 1},
+        gameHistory: const [],
+      );
+      expect(rows.map((r) => r.id).toList(), ['Warzone', 'BF6']);
+      expect(rows.first.streak, 3);
+    });
+
+    test('uses max game streak for current user when keys are games', () {
+      final rows = buildMemberStreaks(
+        memberUids: ['me', 'u2'],
+        displayNames: const {'me': 'Alex', 'u2': 'Kit'},
+        currentStreaks: const {'Warzone': 5, 'BF6': 2},
+        gameHistory: const [],
+        currentUserId: 'me',
+        currentUserName: 'Alex',
+      );
+      final byId = {for (final r in rows) r.id: r.streak};
+      expect(byId['me'], 5);
+      expect(byId['u2'], 0);
+    });
+
+    test('derives consecutive wins from newest gameHistory', () {
+      final history = [
+        {
+          'result': 'win',
+          'player_uids': ['u1'],
+          'timestamp': '2026-09-01T12:00:00Z',
+        },
+        {
+          'result': 'win',
+          'player_uids': ['u1'],
+          'timestamp': '2026-08-31T12:00:00Z',
+        },
+        {
+          'result': 'loss',
+          'player_uids': ['u1'],
+          'timestamp': '2026-08-30T12:00:00Z',
+        },
+      ];
+      final rows = buildMemberStreaks(
+        memberUids: ['u1'],
+        displayNames: const {'u1': 'Sam'},
+        currentStreaks: const {},
+        gameHistory: history,
+      );
+      expect(rows.single.streak, 2);
+    });
+
+    test('skips games the member was not in', () {
+      final history = [
+        {
+          'result': 'loss',
+          'player_uids': ['other'],
+          'timestamp': '2026-09-01T12:00:00Z',
+        },
+        {
+          'result': 'win',
+          'player_uids': ['u1'],
+          'timestamp': '2026-08-31T12:00:00Z',
+        },
+      ];
+      expect(
+        streakFromGameHistory(history, memberId: 'u1', displayName: 'Sam'),
+        1,
+      );
+    });
+  });
+
+  group('winLossFromGameHistory', () {
+    test('counts result win/loss/draw', () {
+      final summary = winLossFromGameHistory([
+        {'result': 'win'},
+        {'result': 'won'},
+        {'result': 'loss'},
+        {'result': 'draw'},
+      ]);
+      expect(summary.wins, 2);
+      expect(summary.losses, 1);
+      expect(summary.draws, 1);
+      expect(summary.total, 4);
+      expect(summary.winRate, closeTo(2 / 3, 0.001));
+    });
+
+    test('counts numeric wins/losses fields', () {
+      final summary = winLossFromGameHistory([
+        {'wins': 10, 'losses': 4, 'draws': 1},
+      ]);
+      expect(summary.wins, 10);
+      expect(summary.losses, 4);
+      expect(summary.draws, 1);
+    });
+
+    test('reads won boolean', () {
+      final summary = winLossFromGameHistory([
+        {'won': true},
+        {'won': false},
+        {'isWin': true},
+      ]);
+      expect(summary.wins, 2);
+      expect(summary.losses, 1);
+    });
+
+    test('empty history is empty', () {
+      expect(winLossFromGameHistory(const []).isEmpty, isTrue);
+    });
+  });
+
+  group('ratingSummaryFrom', () {
+    test('averages nested daily and all-time maps', () {
+      final summary = ratingSummaryFrom(
+        {
+          'Warzone': {'a': 4, 'b': 5},
+        },
+        {
+          'Warzone': {'a': 3, 'b': 5},
+          'BF6': {'a': 4},
+        },
+      );
+      expect(summary.dailyAverage, closeTo(4.5, 0.001));
+      expect(summary.dailySampleSize, 2);
+      expect(summary.allTimeAverage, closeTo(4.0, 0.001));
+      expect(summary.allTimeSampleSize, 3);
+      expect(RatingSummary.format(summary.dailyAverage), '4.5★');
+    });
+
+    test('empty maps format as em dash', () {
+      const empty = RatingSummary();
+      expect(empty.isEmpty, isTrue);
+      expect(RatingSummary.format(null), '—');
+    });
+  });
+
+  group('StatsDashboardSnapshot.fromSources', () {
+    test('wires user streaks, lobby history, and ratings', () {
+      final user = _user(
+        currentStreaks: const {'u1': 3, 'me': 1},
+        dailyRatings: const {
+          'Warzone': {'me': 5},
+        },
+        allTimeRatings: const {
+          'Warzone': {'me': 4, 'u1': 2},
+        },
+      );
+      final lobby = LobbyState.initial().copyWith(
+        lobbyMemberUids: ['me', 'u1'],
+        memberDisplayNames: const {'me': 'Alex', 'u1': 'Sam'},
+        gameHistory: [
+          {'result': 'win'},
+          {'result': 'loss'},
+          {'result': 'win'},
+        ],
+      );
+      final snap = StatsDashboardSnapshot.fromSources(user: user, lobby: lobby);
+      expect(snap.memberStreaks.length, 2);
+      expect(snap.winLoss.wins, 2);
+      expect(snap.winLoss.losses, 1);
+      expect(snap.ratings.dailyAverage, 5);
+      expect(snap.ratings.allTimeAverage, 3);
+      expect(snap.hasStreaks, isTrue);
+    });
+
+    test('falls back to lobby ratings when user maps are empty', () {
+      final snap = StatsDashboardSnapshot.fromSources(
+        user: _user(),
+        lobby: LobbyState.initial().copyWith(
+          allTimeRatings: const {
+            'Warzone': {'me': 4},
+          },
+        ),
+      );
+      expect(snap.ratings.allTimeAverage, 4);
+    });
+  });
+
+  group('SquadMemberStreak.shortLabel', () {
+    test('truncates long names', () {
+      const row = SquadMemberStreak(
+        id: 'x',
+        label: 'LongNameHere',
+        streak: 1,
+      );
+      expect(row.shortLabel, 'LongNam…');
+      expect(
+        const SquadMemberStreak(id: 'x', label: 'Sam', streak: 1).shortLabel,
+        'Sam',
+      );
+    });
+  });
+}

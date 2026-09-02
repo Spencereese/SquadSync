@@ -67,9 +67,8 @@ class PerformanceStatsScreen extends ConsumerWidget {
           snapshot: snapshot,
           onRecordWin: _recordAction(context, ref, snapshot, result: 'win'),
           onRecordLoss: _recordAction(context, ref, snapshot, result: 'loss'),
-          onSeedSmokeHistory: kDebugMode
-              ? _seedSmokeHistory(context, ref, snapshot)
-              : null,
+          onSeedSmokeHistory:
+              kDebugMode ? _seedSmokeHistory(context, ref, snapshot) : null,
         ),
       ),
     );
@@ -652,7 +651,8 @@ class _CommunitySection extends StatelessWidget {
                   Expanded(
                     child: Text(
                       game.gameName,
-                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 13),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -721,7 +721,7 @@ class _EmptyHint extends StatelessWidget {
   const _EmptyHint({
     required this.icon,
     required this.message,
-    this.actions = const [],
+    this.actions = const <Widget>[],
   });
 
   final IconData icon;

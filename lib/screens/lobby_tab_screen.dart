@@ -22,6 +22,15 @@ class LobbyTabScreen extends StatelessWidget {
   const LobbyTabScreen(
       {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
 
+  /// Deep links may send `lobby_id` without `gameName`. Honor the lobby id
+  /// instead of falling through to Discovery.
+  static bool shouldShowFullSquad({String? gameName, String? lobbyId}) {
+    return _hasText(gameName) || _hasText(lobbyId);
+  }
+
+  static bool _hasText(String? value) =>
+      value != null && value.trim().isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
     return _LobbyTabScreenContent(
@@ -83,10 +92,13 @@ class _LobbyTabScreenContentState
     final squadAsync = ref.watch(ln.lobbyNotifierProvider);
     return squadAsync.when(
       data: (squadState) {
-        // If gameName is provided, show full squad management interface
-        // (lobbyId is optional - LobbyTab can handle showing spots for a game)
-        if (widget.gameName != null) {
-          return _buildFullSquadInterface(context, squadState);
+        // gameName or lobbyId alone — do not drop lobby_id on Discovery.
+        if (LobbyTabScreen.shouldShowFullSquad(
+            gameName: widget.gameName, lobbyId: widget.lobbyId)) {
+          return KeyedSubtree(
+            key: const Key('lobby-full-squad'),
+            child: _buildFullSquadInterface(context, squadState),
+          );
         }
 
         // If no squad selected, show squad selection/dashboard instead of welcome screen
@@ -125,7 +137,10 @@ class _LobbyTabScreenContentState
   Widget _buildDashboardInterface(
       BuildContext context, LobbyState squadState, WidgetRef ref) {
     // Use the revamped Discovery screen as the Lobby tab content
-    return const DiscoveryScreen();
+    return const KeyedSubtree(
+      key: Key('lobby-discovery'),
+      child: DiscoveryScreen(),
+    );
   }
 
   Widget _buildFullSquadInterface(BuildContext context, LobbyState squadState) {

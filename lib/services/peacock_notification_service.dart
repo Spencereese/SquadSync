@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../managers/notification_manager.dart';
 import '../services/supabase_service.dart';
 import '../notification_service.dart';
 import '../services/auth_service_supabase.dart';
@@ -52,13 +53,30 @@ class PeacockNotificationService {
     try {
       final title = record['title'] as String? ?? '🎮 Spot Available';
       final body = record['body'] as String? ?? 'Your spot is ready!';
-      final data = record['data'] as Map<String, dynamic>? ?? {};
+      final rawData = record['data'];
+      final data = rawData is Map
+          ? Map<String, dynamic>.from(rawData)
+          : <String, dynamic>{};
       final notificationId = record['id'] as String;
+      final type = _nonEmpty(data['type']) ?? 'peacock_assigned';
+      final lobbyId = _nonEmpty(data['lobby_id']) ?? _nonEmpty(data['lobbyId']);
+      final gameName =
+          _nonEmpty(data['game_name']) ?? _nonEmpty(data['gameName']);
+      final spotIndex = _nonEmpty(data['spot_index']) ?? '0';
 
       developer.log('📣 Showing notification: $title - $body');
 
-      // Send local notification via Firebase Messaging
-      // This will display even if app is in background/foreground
+      await NotificationManager().showNotification(
+        title: title,
+        body: body,
+        type: type,
+        lobbyId: lobbyId,
+        gameName: gameName,
+        payload: {
+          'spot_index': spotIndex,
+        },
+      );
+
       final user = AuthServiceSupabase().currentUser;
       if (user != null) {
         await NotificationService.sendNotificationToUsers(
@@ -66,10 +84,10 @@ class PeacockNotificationService {
           body: body,
           recipientUids: [user.id],
           data: {
-            'type': data['type']?.toString() ?? 'peacock_assigned',
-            'lobby_id': data['lobby_id']?.toString() ?? '',
-            'game_name': data['game_name']?.toString() ?? '',
-            'spot_index': data['spot_index']?.toString() ?? '0',
+            'type': type,
+            if (lobbyId != null) 'lobby_id': lobbyId,
+            if (gameName != null) 'game_name': gameName,
+            'spot_index': spotIndex,
           },
         );
       }
@@ -93,6 +111,12 @@ class PeacockNotificationService {
       await SupabaseService.client.removeChannel(_channel!);
       _channel = null;
     }
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text == 'null') return null;
+    return text;
   }
 
   /// Fetch pending notifications on app startup

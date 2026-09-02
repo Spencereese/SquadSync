@@ -28,6 +28,39 @@ class NotificationCooldownStore {
     return _clock().isBefore(expiry);
   }
 
+  /// Cooldown identity for a notification payload.
+  ///
+  /// Returns null to skip cooldown: `type=local` (and missing type) must not
+  /// share a `null_null_local` key. When `user_id` / `lobby_id` are missing
+  /// on a typed payload, [uniqueSuffix] (or a clock tick) keeps keys unique.
+  static String? keyFor(
+    Map<String, dynamic> payload, {
+    String Function()? uniqueSuffix,
+  }) {
+    final type = _nonEmpty(payload['type']) ?? 'local';
+    if (type == 'local') return null;
+
+    final userId =
+        _nonEmpty(payload['user_id']) ?? _nonEmpty(payload['userId']);
+    final lobbyId =
+        _nonEmpty(payload['lobby_id']) ?? _nonEmpty(payload['lobbyId']);
+    if (userId == null && lobbyId == null) {
+      final id =
+          _nonEmpty(payload['id']) ?? _nonEmpty(payload['notification_id']);
+      if (id != null) return '${id}_$type';
+      final suffix = uniqueSuffix?.call() ??
+          DateTime.now().microsecondsSinceEpoch.toString();
+      return '${suffix}_$type';
+    }
+    return '${userId ?? 'none'}_${lobbyId ?? 'none'}_$type';
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text == 'null') return null;
+    return text;
+  }
+
   Map<String, String> toIsoMap() =>
       _expiryByKey.map((key, value) => MapEntry(key, value.toIso8601String()));
 

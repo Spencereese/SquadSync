@@ -29,6 +29,40 @@ final abTestingServiceProvider = FutureProvider<ABTestingService>((ref) async {
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// `/squad` and `/squad/:gameName` extras plus `lobby_id` query.
+@visibleForTesting
+class SquadRouteArgs {
+  const SquadRouteArgs({
+    this.gameName,
+    this.lobbyId,
+    this.game,
+    this.chatGroupId,
+  });
+
+  final String? gameName;
+  final String? lobbyId;
+  final Map<String, dynamic>? game;
+  final String? chatGroupId;
+
+  factory SquadRouteArgs.fromState(GoRouterState state) {
+    final extra = state.extra as Map<String, dynamic>?;
+    final pathGame = state.pathParameters['gameName'];
+    return SquadRouteArgs(
+      gameName: _nonEmpty(pathGame) ?? extra?['gameName'] as String?,
+      lobbyId: _nonEmpty(extra?['lobbyId']) ??
+          _nonEmpty(state.uri.queryParameters['lobby_id']),
+      game: extra?['game'] as Map<String, dynamic>?,
+      chatGroupId: extra?['chatGroupId'] as String?,
+    );
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty) return null;
+    return text;
+  }
+}
+
 /// GoRouter configuration provider with A/B testing integration
 final goRouterProvider = Provider<GoRouter>((ref) {
   final analytics = FirebaseAnalytics.instance;
@@ -126,13 +160,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/squad',
         name: 'squad',
         builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
+          final args = SquadRouteArgs.fromState(state);
           return LobbyTabScreen(
-            gameName: extra?['gameName'] as String?,
-            lobbyId: extra?['lobbyId'] as String? ??
-                state.uri.queryParameters['lobby_id'],
-            game: extra?['game'] as Map<String, dynamic>?,
-            chatGroupId: extra?['chatGroupId'] as String?,
+            gameName: args.gameName,
+            lobbyId: args.lobbyId,
+            game: args.game,
+            chatGroupId: args.chatGroupId,
           );
         },
       ),
@@ -140,14 +173,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/squad/:gameName',
         name: 'squadWithGame',
         builder: (context, state) {
-          final gameName = state.pathParameters['gameName']!;
-          final extra = state.extra as Map<String, dynamic>?;
+          final args = SquadRouteArgs.fromState(state);
           return LobbyTabScreen(
-            gameName: gameName,
-            lobbyId: extra?['lobbyId'] as String? ??
-                state.uri.queryParameters['lobby_id'],
-            game: extra?['game'] as Map<String, dynamic>?,
-            chatGroupId: extra?['chatGroupId'] as String?,
+            gameName: args.gameName,
+            lobbyId: args.lobbyId,
+            game: args.game,
+            chatGroupId: args.chatGroupId,
           );
         },
       ),

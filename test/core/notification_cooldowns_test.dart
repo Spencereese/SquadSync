@@ -73,4 +73,49 @@ void main() {
     store.loadPersisted({'k': expiry.toIso8601String()});
     expect(store.isActive('k'), isTrue);
   });
+
+  test(
+      'local type skips cooldown so missing ids do not collide as null_null_local',
+      () {
+    expect(NotificationCooldownStore.keyFor({'type': 'local'}), isNull);
+    expect(NotificationCooldownStore.keyFor({}), isNull);
+
+    final first = NotificationCooldownStore.keyFor({'type': 'local'});
+    final second = NotificationCooldownStore.keyFor({'type': 'local'});
+    expect(first, isNull);
+    expect(second, isNull);
+
+    var now = DateTime.utc(2026, 8, 31, 12);
+    final store = NotificationCooldownStore(clock: () => now);
+    // Two local shows must both be deliverable — no shared null_null_local key.
+    expect(store.isActive('null_null_local'), isFalse);
+    store.setExpiry('null_null_local', const Duration(minutes: 45));
+    expect(
+      NotificationCooldownStore.keyFor({'type': 'local'}),
+      isNot('null_null_local'),
+    );
+  });
+
+  test('typed payloads without ids get unique keys instead of null_null', () {
+    final a = NotificationCooldownStore.keyFor(
+      {'type': 'momentum'},
+      uniqueSuffix: () => 'a',
+    );
+    final b = NotificationCooldownStore.keyFor(
+      {'type': 'momentum'},
+      uniqueSuffix: () => 'b',
+    );
+    expect(a, 'a_momentum');
+    expect(b, 'b_momentum');
+    expect(a, isNot(b));
+    expect(a, isNot(contains('null_null')));
+
+    expect(
+      NotificationCooldownStore.keyFor({
+        'type': 'peacock_assigned',
+        'lobby_id': 'lobby-9',
+      }),
+      'none_lobby-9_peacock_assigned',
+    );
+  });
 }

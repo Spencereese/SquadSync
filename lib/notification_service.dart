@@ -51,18 +51,7 @@ class NotificationService {
     await _localNotifications.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (response) {
-        final raw = response.payload;
-        if (raw == null || raw.isEmpty) return;
-        try {
-          final decoded = jsonDecode(raw);
-          if (decoded is Map<String, dynamic>) {
-            NotificationRoutes.open(decoded);
-          } else if (decoded is Map) {
-            NotificationRoutes.open(decoded.cast<String, dynamic>());
-          }
-        } catch (e) {
-          developer.log('Notification payload was not JSON: $e');
-        }
+        NotificationRoutes.openRaw(response.payload);
       },
     );
 
@@ -124,11 +113,15 @@ class NotificationService {
     NotificationRoutes.open(message.data);
   }
 
-  /// Android does not auto-display FCM while the app is in the foreground.
-  /// iOS may also present via [setForegroundNotificationPresentationOptions];
-  /// cooldowns in [_showLocalNotification] suppress duplicate keys.
-  static bool shouldShowForegroundLocal(RemoteMessage message) =>
-      message.notification != null;
+  /// Android does not auto-display FCM while the app is in the foreground, so
+  /// we show a local notification. iOS already presents via
+  /// [setForegroundNotificationPresentationOptions] — a second local show
+  /// double-presents. Tests pass [isAndroid] because unit VM is not Android.
+  static bool shouldShowForegroundLocal(
+    RemoteMessage message, {
+    bool? isAndroid,
+  }) =>
+      (isAndroid ?? kIsAndroid) && message.notification != null;
 
   static void _onForegroundMessage(RemoteMessage message) {
     developer.log(
@@ -276,9 +269,8 @@ class NotificationService {
     required Map<String, dynamic> payload,
     NotificationPriority priority = NotificationPriority.medium,
   }) async {
-    final cooldownKey =
-        '${payload['user_id']}_${payload['lobby_id']}_${payload['type']}';
-    if (_isOnCooldown(cooldownKey)) {
+    final cooldownKey = NotificationCooldownStore.keyFor(payload);
+    if (cooldownKey != null && _isOnCooldown(cooldownKey)) {
       developer.log('Notification on cooldown: $cooldownKey');
       return;
     }
@@ -314,12 +306,14 @@ class NotificationService {
       payload: jsonEncode(payload),
     );
 
-    _setCooldown(
-      cooldownKey,
-      payload['type'] == 'momentum'
-          ? NotificationCooldownStore.momentumDuration
-          : NotificationCooldownStore.defaultDuration,
-    );
+    if (cooldownKey != null) {
+      _setCooldown(
+        cooldownKey,
+        payload['type'] == 'momentum'
+            ? NotificationCooldownStore.momentumDuration
+            : NotificationCooldownStore.defaultDuration,
+      );
+    }
   }
 
   Future<void> sendMomentumNotification({

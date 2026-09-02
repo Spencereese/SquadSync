@@ -54,6 +54,13 @@ void main() {
     );
     expect(
       NotificationRoutes.locationFor({
+        'type': 'peacock_assigned',
+        'lobby_id': 'lobby-9',
+      }),
+      '/squad?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.locationFor({
         'type': 'spot_available',
         'game_name': 'MW3',
         'lobby_id': 'abc',
@@ -79,6 +86,34 @@ void main() {
     NotificationRoutes.open({'type': 'chat', 'chatGroupId': 'g1'});
     expect(opened, '/chat/g1');
     NotificationRoutes.go = null;
+  });
+
+  test('peacock_assigned tap navigates to squad with lobby_id', () {
+    String? opened;
+    NotificationRoutes.go = (location) => opened = location;
+    NotificationRoutes.openRaw(
+      '{"type":"peacock_assigned","game_name":"Warzone","lobby_id":"lobby-9"}',
+    );
+    expect(opened, '/squad/Warzone?lobby_id=lobby-9');
+    NotificationRoutes.go = null;
+  });
+
+  test('screen squad|lobby reuses lobby_id on /squad', () {
+    expect(
+      NotificationRoutes.locationFor({
+        'screen': 'squad',
+        'lobby_id': 'lobby-9',
+        'game_name': 'Warzone',
+      }),
+      '/squad/Warzone?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'screen': 'lobby',
+        'lobby_id': 'lobby-9',
+      }),
+      '/squad?lobby_id=lobby-9',
+    );
   });
 
   testWidgets('navigate retries when the navigator context is missing',

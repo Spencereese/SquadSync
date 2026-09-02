@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import '../notification_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
@@ -34,18 +36,63 @@ class NotificationManager {
     return null;
   }
 
-  Future<void> showNotification(
-      {required String title, required String body}) async {
-    final payload = <String, dynamic>{'type': 'local'};
-    final hook = showLocal;
-    if (hook != null) {
-      await hook(title, body, payload);
-      return;
+  /// Local display. Pass [type]/[lobbyId]/[gameName] or a [payload] map so
+  /// taps can route (peacock must not always send `type=local`).
+  Future<void> showNotification({
+    required String title,
+    required String body,
+    String? type,
+    String? lobbyId,
+    String? gameName,
+    Map<String, dynamic>? payload,
+  }) async {
+    try {
+      final merged = payloadFor(
+        type: type,
+        lobbyId: lobbyId,
+        gameName: gameName,
+        payload: payload,
+      );
+      final hook = showLocal;
+      if (hook != null) {
+        await hook(title, body, merged);
+        return;
+      }
+      await NotificationService.initialize();
+      await NotificationService.showNotification(
+        title: title,
+        body: body,
+        payload: merged,
+      );
+    } catch (e) {
+      developer.log('NotificationManager.showNotification failed: $e');
     }
-    await NotificationService.showNotification(
-      title: title,
-      body: body,
-      payload: payload,
-    );
+  }
+
+  static Map<String, dynamic> payloadFor({
+    String? type,
+    String? lobbyId,
+    String? gameName,
+    Map<String, dynamic>? payload,
+  }) {
+    final merged = <String, dynamic>{
+      if (payload != null) ...payload,
+    };
+    merged['type'] = _nonEmpty(type) ?? _nonEmpty(merged['type']) ?? 'local';
+    final lobby = _nonEmpty(lobbyId) ??
+        _nonEmpty(merged['lobby_id']) ??
+        _nonEmpty(merged['lobbyId']);
+    final game = _nonEmpty(gameName) ??
+        _nonEmpty(merged['game_name']) ??
+        _nonEmpty(merged['gameName']);
+    if (lobby != null) merged['lobby_id'] = lobby;
+    if (game != null) merged['game_name'] = game;
+    return merged;
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text == 'null') return null;
+    return text;
   }
 }

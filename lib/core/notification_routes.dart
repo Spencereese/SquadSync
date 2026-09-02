@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -79,7 +81,7 @@ class NotificationRoutes {
           return chatId != null ? '/chat/$chatId' : '/chat';
         }
         if (screen == 'squad' || screen == 'lobby') {
-          return '/squad';
+          return _squadLocation(gameName: gameName, lobbyId: lobbyId);
         }
         return null;
     }
@@ -92,12 +94,26 @@ class NotificationRoutes {
     }
   }
 
+  /// Local-notification tap payload is JSON on [NotificationResponse.payload].
+  static void openRaw(String? raw) {
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        open(decoded);
+      } else if (decoded is Map) {
+        open(decoded.cast<String, dynamic>());
+      }
+    } catch (e) {
+      debugPrint('Notification payload was not JSON: $e');
+    }
+  }
+
   /// Existing `/squad` routes only. [lobbyId] is a query param so
   /// the squad tab can select the lobby without a new path.
   static String _squadLocation({String? gameName, String? lobbyId}) {
-    final path = gameName != null
-        ? '/squad/${Uri.encodeComponent(gameName)}'
-        : '/squad';
+    final path =
+        gameName != null ? '/squad/${Uri.encodeComponent(gameName)}' : '/squad';
     if (lobbyId == null) return path;
     return '$path?lobby_id=${Uri.encodeComponent(lobbyId)}';
   }

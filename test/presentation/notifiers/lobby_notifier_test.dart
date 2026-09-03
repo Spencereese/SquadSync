@@ -348,17 +348,18 @@ void main() {
 
     test('assignPeacockSpot claims next free seat then reduces assigned',
         () async {
-      when(mockRepository.loadLobbyState()).thenAnswer(
-        (_) async => LobbyState.initial().copyWith(
-          selectedLobbyId: 'lobby-9',
-          currentLobby: _lobby(
-            id: 'lobby-9',
-            spots: ['taken', null, null],
-          ),
-        ),
+      final lobby = _lobby(
+        id: 'lobby-9',
+        spots: ['taken', null, null],
+      );
+      when(mockRepository.getLobbyStream('lobby-9')).thenAnswer(
+        (_) => Stream<Lobby?>.value(lobby),
       );
       await container.read(lobbyNotifierProvider.future);
       final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.setSelectedLobbyId('lobby-9');
+      await Future<void>.delayed(Duration.zero);
+      expect(notifier.nextFreeSpotIndex(lobbyId: 'lobby-9'), 1);
 
       final claimed = await notifier.assignPeacockSpot(
         userId: 'user-1',

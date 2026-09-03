@@ -19,7 +19,9 @@ import 'package:squad_sync/services/igdb_auth_service.dart';
 import 'package:squad_sync/services/friends_service.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/services/constitution_manager.dart';
+import 'package:squad_sync/services/supabase_service.dart';
 import 'package:squad_sync/services/auto_merge_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 
 // System imports
@@ -202,10 +204,25 @@ final errorHandlingServiceProvider = Provider<ErrorHandlingService>((ref) {
   return ErrorHandlingService();
 });
 
-/// Constitution enforcement. Override in unit tests — default touches
-/// [Supabase.instance] and must not be constructed in a harness.
+/// Live Supabase client. Throws [StateError] when init was skipped —
+/// never [Supabase.instance] assert in unit harnesses. Override in tests
+/// that need a client; most suites override [constitutionManagerProvider]
+/// instead and never read this.
+final supabaseClientProvider = Provider<SupabaseClient>((ref) {
+  final client = SupabaseService.maybeClient;
+  if (client == null) {
+    throw StateError(
+      'Supabase client is not initialized. '
+      'Call SupabaseService.initialize() or override supabaseClientProvider.',
+    );
+  }
+  return client;
+});
+
+/// Constitution enforcement. Default injects [supabaseClientProvider].
+/// Override in unit tests so harnesses never touch a live client.
 final constitutionManagerProvider = Provider<ConstitutionManager>((ref) {
-  return ConstitutionManager();
+  return ConstitutionManager(supabase: ref.watch(supabaseClientProvider));
 });
 
 // Notifier providers are defined in their respective files (Riverpod 3.0):

@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/notification_routes.dart';
 import '../../../screens/voice_room_screen.dart';
 import '../../../screens/video_room_screen.dart';
 import 'chat_info_widgets.dart';
 import '../../../services/auth_service_supabase.dart';
 import '../../../services/friends_service.dart';
+import '../../../services/matchmaking_queue_machine.dart';
+import '../../../presentation/notifiers/lobby_notifier.dart';
 import '../../../notification_service.dart';
 
 /// Actions section with big circular buttons for squad actions
@@ -92,8 +96,14 @@ class ChatInfoActionsSection extends StatelessWidget {
   }
 }
 
-/// Looking for Squad button - alerts all friends across all groups
-class _LookingForSquadButton extends StatefulWidget {
+/// Looking for Squad — product matchmaking queue v1.
+///
+/// Join/leave looking reduce on [MatchmakingQueueTracker] after the
+/// existing LFG notify succeeds. A matched lobby hands off to
+/// [LobbyNotifier.assignPeacockSpot] (peacock assign path), not a
+/// parallel XOR. Queue rows are in-memory until Spencer applies a
+/// `matchmaking_queue` migration.
+class _LookingForSquadButton extends ConsumerStatefulWidget {
   final String squadId;
   final Color neonColor;
 
@@ -103,162 +113,310 @@ class _LookingForSquadButton extends StatefulWidget {
   });
 
   @override
-  State<_LookingForSquadButton> createState() => _LookingForSquadButtonState();
+  ConsumerState<_LookingForSquadButton> createState() =>
+      _LookingForSquadButtonState();
 }
 
-class _LookingForSquadButtonState extends State<_LookingForSquadButton> {
-  bool _isLookingForSquad = false;
+class _LookingForSquadButtonState
+    extends ConsumerState<_LookingForSquadButton> {
   bool _isLoading = false;
 
-  Future<void> _toggleLookingForSquad() async {
-    setState(() {
-      _isLoading = true;
-    });
+  MatchmakingQueueTracker get _tracker => MatchmakingQueueTracker.instance;
 
-    try {
-      final user = AuthServiceSupabase().currentUser;
-      if (user == null) {
-        throw Exception('User not authenticated');
-      }
+  MatchmakingQueueEntry _entryFor(String? uid) => uid == null
+      ? MatchmakingQueueEntry.idle
+      : _tracker.stateFor(uid);
 
-      if (!_isLookingForSquad) {
-        // Send notifications to all friends
-        final friendsService = FriendsService();
-        final friends = await friendsService.getFriendsWithDetails(user.id);
-
-        if (friends.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('No friends to notify'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          setState(() {
-            _isLoading = false;
-          });
-          return;
-        }
-
-        // Extract friend UIDs
-        final friendUids = friends
-            .map((f) => f['friend']?['uid'] as String?)
-            .where((uid) => uid != null)
-            .cast<String>()
-            .toList();
-
-        // Send push notifications to all friends
-        await NotificationService.sendNotificationToUsers(
-          title: '🎮 Friend Looking for Squad!',
-          body: 'Your friend is looking for a squad to play with!',
-          recipientUids: friendUids,
-          data: {
-            'type': 'lfg_alert',
-            'from_uid': user.id,
-            'squad_id': widget.squadId,
-          },
+  Future<void> _onPressed() async {
+    final user = AuthServiceSupabase().currentUser;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sign in to look for a squad'),
+            backgroundColor: Colors.red,
+          ),
         );
-
-        setState(() {
-          _isLookingForSquad = true;
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('🎮 ${friendUids.length} friends notified!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        // Cancel looking for squad
-        setState(() {
-          _isLookingForSquad = false;
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No longer looking for squad'),
-            ),
-          );
-        }
       }
+      return;
+    }
+
+    final entry = _entryFor(user.id);
+    switch (entry.phase) {
+      case MatchmakingQueuePhase.idle:
+      case MatchmakingQueuePhase.joined:
+        await _startLooking(user.id);
+        break;
+      case MatchmakingQueuePhase.looking:
+        await _cancelLooking(user.id);
+        break;
+      case MatchmakingQueuePhase.matched:
+        if (entry.hasJoinTarget) {
+          await _joinMatched(user.id, entry);
+        } else {
+          await _cancelLooking(user.id);
+        }
+        break;
+    }
+  }
+
+  Future<void> _startLooking(String userId) async {
+    setState(() => _isLoading = true);
+    try {
+      final friendsService = FriendsService();
+      final friends = await friendsService.getFriendsWithDetails(userId);
+      final friendUids = friends
+          .map((f) => f['friend']?['uid'] as String?)
+          .where((uid) => uid != null)
+          .cast<String>()
+          .toList();
+
+      await _tracker.startLookingAfter(
+        () async {
+          if (friendUids.isEmpty) return;
+          await NotificationService.sendNotificationToUsers(
+            title: '🎮 Friend Looking for Squad!',
+            body: 'Your friend is looking for a squad to play with!',
+            recipientUids: friendUids,
+            data: {
+              'type': 'lfg_alert',
+              'from_uid': userId,
+              'squad_id': widget.squadId,
+            },
+          );
+        },
+        userId: userId,
+        squadId: widget.squadId,
+      );
+      _tracker.processQueue();
+
+      if (!mounted) return;
+      final next = _entryFor(userId);
+      final message = next.phase == MatchmakingQueuePhase.matched
+          ? (next.hasJoinTarget
+              ? 'Matched — join ${next.gameName ?? 'the lobby'}'
+              : 'Matched with a player looking for a squad')
+          : (friendUids.isEmpty
+              ? 'Looking for a squad'
+              : '🎮 ${friendUids.length} friends notified!');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: next.phase == MatchmakingQueuePhase.matched
+              ? Colors.green
+              : (friendUids.isEmpty ? Colors.orange : Colors.green),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to send notifications: $e'),
+            content: Text('Failed to start looking: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
     } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _cancelLooking(String userId) async {
+    setState(() => _isLoading = true);
+    try {
+      await _tracker.cancelLookingAfter(
+        () async {},
+        userId: userId,
+      );
       if (mounted) {
-        setState(() {
-          _isLoading = false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No longer looking for squad')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to cancel: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _joinMatched(String userId, MatchmakingQueueEntry entry) async {
+    setState(() => _isLoading = true);
+    try {
+      final lobbyId = entry.lobbyId;
+      if (lobbyId != null && lobbyId.isNotEmpty) {
+        await ref.read(lobbyNotifierProvider.notifier).assignPeacockSpot(
+              userId: userId,
+              lobbyId: lobbyId,
+              gameName: entry.gameName,
+              notificationId: entry.notificationId,
+            );
+      }
+      final handoff = _tracker.joinMatched(userId);
+      if (!mounted) return;
+      if (handoff.state.hasJoinTarget) {
+        NotificationRoutes.open({
+          'type': 'lfg_matched',
+          'lobby_id': handoff.state.lobbyId,
+          if (handoff.state.gameName != null)
+            'game_name': handoff.state.gameName,
         });
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            handoff.handedOffToPeacock
+                ? 'Joined ${handoff.state.gameName ?? 'squad'}'
+                : 'Squad joined',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to join matched lobby: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final buttonColor = _isLookingForSquad
-        ? Colors.orange
-        : (widget.neonColor == Colors.white ||
-                widget.neonColor.computeLuminance() > 0.8
-            ? theme.colorScheme
-                .primary // Use theme primary if neonColor is too light
-            : widget.neonColor);
+    final uid = AuthServiceSupabase().currentUser?.id;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: _isLoading ? null : _toggleLookingForSquad,
-          icon: _isLoading
-              ? SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.onPrimary,
+    return ListenableBuilder(
+      listenable: _tracker,
+      builder: (context, _) {
+        final entry = _entryFor(uid);
+        final looking = entry.phase == MatchmakingQueuePhase.looking;
+        final matched = entry.phase == MatchmakingQueuePhase.matched;
+        final joined = entry.phase == MatchmakingQueuePhase.joined;
+        final canJoin = matched && entry.hasJoinTarget;
+
+        final Color buttonColor;
+        if (joined) {
+          buttonColor = Colors.green;
+        } else if (matched) {
+          buttonColor = Colors.green;
+        } else if (looking) {
+          buttonColor = Colors.orange;
+        } else if (widget.neonColor == Colors.white ||
+            widget.neonColor.computeLuminance() > 0.8) {
+          buttonColor = theme.colorScheme.primary;
+        } else {
+          buttonColor = widget.neonColor;
+        }
+
+        final String label;
+        if (joined) {
+          label = entry.gameName != null
+              ? 'In ${entry.gameName} squad'
+              : 'In squad';
+        } else if (canJoin) {
+          label = entry.gameName != null
+              ? 'Join ${entry.gameName}'
+              : 'Join matched squad';
+        } else if (matched) {
+          label = 'Cancel match';
+        } else if (looking) {
+          label = 'Cancel Looking for Squad';
+        } else {
+          label = 'Looking for Squad';
+        }
+
+        final IconData icon;
+        if (joined || canJoin) {
+          icon = Icons.group;
+        } else if (looking || matched) {
+          icon = Icons.notifications_off;
+        } else {
+          icon = Icons.notifications_active;
+        }
+
+        String? status;
+        if (looking) {
+          status = 'In queue — looking for a squad';
+        } else if (canJoin) {
+          status = 'Matched · ${entry.gameName ?? 'lobby ready'}';
+        } else if (matched) {
+          status = 'Matched — waiting for a lobby';
+        } else if (joined && entry.hasJoinTarget) {
+          status = 'Handed off to lobby';
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isLoading || joined ? null : _onPressed,
+                  icon: _isLoading
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: theme.colorScheme.onPrimary,
+                          ),
+                        )
+                      : Icon(
+                          icon,
+                          size: 20,
+                          color: Colors.black,
+                        ),
+                  label: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
                   ),
-                )
-              : Icon(
-                  _isLookingForSquad
-                      ? Icons.notifications_off
-                      : Icons.notifications_active,
-                  size: 20,
-                  color: Colors.black,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: buttonColor,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 4,
+                    shadowColor: buttonColor.withValues(alpha: 0.5),
+                  ),
                 ),
-          label: Text(
-            _isLookingForSquad
-                ? 'Cancel Looking for Squad'
-                : 'Looking for Squad',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black,
-            ),
+              ),
+              if (status != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  status,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ],
           ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: buttonColor,
-            foregroundColor: Colors.black,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            elevation: 4,
-            shadowColor: buttonColor.withValues(alpha: 0.5),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

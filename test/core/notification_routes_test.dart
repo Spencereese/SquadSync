@@ -76,6 +76,35 @@ void main() {
     );
   });
 
+  test('lfg_alert opens chat; lfg_matched opens /squad with lobby', () {
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'lfg_alert',
+        'squad_id': 'squad-1',
+      }),
+      '/chat/squad-1',
+    );
+    expect(
+      NotificationRoutes.locationFor({'type': 'lfg_alert'}),
+      '/chat',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'lfg_matched',
+        'game_name': 'Warzone',
+        'lobby_id': 'lobby-9',
+      }),
+      '/squad/Warzone?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'lfg_matched',
+        'lobby_id': 'lobby-9',
+      }),
+      '/squad?lobby_id=lobby-9',
+    );
+  });
+
   test('unknown type does not invent a route', () {
     expect(NotificationRoutes.locationFor({'type': 'unknown'}), isNull);
   });

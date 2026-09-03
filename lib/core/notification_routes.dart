@@ -75,7 +75,19 @@ class NotificationRoutes {
       case 'momentum':
       case 'spot_available':
       case 'peacock_assigned':
+      case 'lfg_matched':
         return _squadLocation(gameName: gameName, lobbyId: lobbyId);
+      case 'lfg_alert':
+        final squadId = _firstNonEmpty(data, const [
+          'squad_id',
+          'squadId',
+          'chatGroupId',
+          'chat_group_id',
+          'groupId',
+          'group_id',
+        ]);
+        if (squadId != null) return '/chat/$squadId';
+        return '/chat';
       default:
         if (screen == 'chat') {
           return chatId != null ? '/chat/$chatId' : '/chat';

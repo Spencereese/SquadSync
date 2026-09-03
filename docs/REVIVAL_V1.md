@@ -2,7 +2,7 @@
 
 **North star:** fastest path from "who's on?" to a locked squad in-game.
 
-Phase A freezes revival quality on tip before stacking more wishlist. This file is the freeze contract: what must already be true, what is parked until Phase B+, and the exit checklist.
+Phase A froze revival quality on tip. **Phase B started** with Matchmaking Queue v1 (product queue, not Grok AI matchmaking). Remaining Phase B (session ratings, availability pings, lobby polish) is still queued.
 
 Draft PR: https://github.com/Spencereese/SquadSync/pull/1 — **do not merge**.
 
@@ -14,11 +14,11 @@ Fill this block at freeze (and again if tip moves):
 Branch:  cursor/revive-squadsync-be5c
 SHA:     (this commit; filled after push)
 Short:   (this commit)
-Version: 3.4.68+70
+Version: 3.4.69+71
 Date:    2026-09-02
 ```
 
-At introduction of this checklist: branch `cursor/revive-squadsync-be5c`, version in `pubspec.yaml`. Subsequent revival-v1 slices bump patch/build on the same branch.
+At introduction of this checklist: branch `cursor/revive-squadsync-be5c`, version in `pubspec.yaml`. Subsequent slices bump patch/build on the same branch.
 
 ## In scope for freeze (must be true before Phase B)
 
@@ -36,15 +36,25 @@ These are revival-v1 quality gates, not new product:
 
 Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. Do not apply Supabase migrations from this freeze.
 
-## Out of scope / parked until Phase B+
+## Phase B status
 
-Do not start these on this freeze branch:
+| Slice | Status | Note |
+| --- | --- | --- |
+| Matchmaking Queue v1 | **Landed** (`3.4.69+71`) | Product LFG queue: idle → looking → matched → joined. In-memory tracker; join with a lobby hands off to `PeacockAssignmentTracker.assignSpot` / `LobbyNotifier.assignPeacockSpot`. Not Grok `AiMatchmaking` (Phase E). |
+| Session ratings | Queued | Phase B remainder |
+| Availability pings | Queued | Phase B remainder |
+| Lobby polish | Queued | Phase B remainder |
 
-- Matchmaking Queue
+**Parked migration (Spencer gate):** a shared `matchmaking_queue` (or equivalent) table so looking state is cross-device. v1 uses in-memory + existing `lfg_alert` / Looking-for-Squad notify. Do not apply SQL from this slice.
+
+## Out of scope / parked until later Phase B+ / E
+
+Do not start these on this branch:
+
 - Performance Leaderboard
 - Live Activities
 - Voice (new work; existing voice room stays as-is)
-- AI / Grok features
+- AI / Grok features (including `grok_service` `AiMatchmaking`)
 - Public launch
 - Bundle ID change
 - TestFlight
@@ -90,12 +100,12 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Lobby notifier LateInit / dotenv harness | 3.4.61 | Bind deps before swallowed offline init |
 | ConstitutionManager provider | 3.4.62 | Tests override; default must inject client (this freeze) |
 | Peacock product machine | 3.4.66–3.4.67 | Reducer **wired** into join/leave/assign/notify/expire. XOR still `planPeacockSelfNotify`. |
+| Matchmaking Queue v1 | 3.4.69+71 | Product LFG queue on chat info. Handoff to peacock assign. No new table. |
 
 ## Phase B+ parking lot (wishlist only)
 
-Record here so Phase A does not grow:
-
-1. Matchmaking Queue
-2. Performance Leaderboard
-3. Live Activities
-4. Voice / AI / public launch / TestFlight / bundle ID rename
+1. ~~Matchmaking Queue~~ — v1 landed; persistence table still Spencer-gated
+2. Session ratings / availability pings / lobby polish (remaining Phase B)
+3. Performance Leaderboard
+4. Live Activities
+5. Voice / AI / public launch / TestFlight / bundle ID rename

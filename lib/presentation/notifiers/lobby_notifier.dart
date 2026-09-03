@@ -1393,7 +1393,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 }
 
 final lobbyNotifierProvider =
-    AsyncNotifierProvider<LobbyNotifier, LobbyState>.new(
+    AsyncNotifierProvider<LobbyNotifier, LobbyState>(
   LobbyNotifier.new,
 );
 

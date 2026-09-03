@@ -99,6 +99,17 @@ void main() {
       expect(dispatch.plan.recipientUids, isEmpty);
     });
 
+    test('nextQueuedUserId is FIFO among queued users', () {
+      tracker.joinQueue('u1');
+      tracker.joinQueue('u2');
+      tracker.assignSpot('u1', lobbyId: 'lobby-9');
+      expect(tracker.nextQueuedUserId(), 'u2');
+      tracker.expire('u1');
+      expect(tracker.nextQueuedUserId(), 'u2');
+      tracker.leaveQueue('u2');
+      expect(tracker.nextQueuedUserId(), isNull);
+    });
+
     test('expire returns idle and drops the user', () {
       tracker.assignSpot('u1', lobbyId: 'lobby-9', notificationId: 'n1');
       tracker.notifySelf('u1', isForeground: true, currentUid: 'u1');

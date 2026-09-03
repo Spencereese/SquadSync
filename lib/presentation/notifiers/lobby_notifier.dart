@@ -47,10 +47,14 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     _constitutionManager = ref.read(constitutionManagerProvider);
     _errorHandler = ref.read(errorHandlingServiceProvider);
 
+    _bindPeacockQueueProcessor();
     ref.onDispose(() {
       _currentLobbySubscription?.cancel();
       _userLobbiesSubscription?.cancel();
       disposeOfflineFirst();
+      if (identical(_peacock.queueProcessor, processPeacockQueue)) {
+        _peacock.queueProcessor = null;
+      }
     });
 
     try {
@@ -400,7 +404,11 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   PeacockAssignmentTracker get _peacock => PeacockAssignmentTracker.instance;
 
-  /// Reduce [event] for [userId] before the matching repository call.
+  void _bindPeacockQueueProcessor() {
+    _peacock.queueProcessor = processPeacockQueue;
+  }
+
+  /// Reduce [event] for [userId] after the matching repository call succeeds.
   PeacockAssignmentState _reducePeacock({
     required String userId,
     required PeacockAssignmentEvent event,
@@ -418,16 +426,19 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }
 
   Future<void> addToPeacockQueue(String userId, String gameName) async {
+    _bindPeacockQueueProcessor();
+    await _repository.addToPeacockQueue(userId, gameName);
     _reducePeacock(
       userId: userId,
       event: PeacockAssignmentEvent.joinQueue,
     );
-    await _repository.addToPeacockQueue(userId, gameName);
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
   }
 
   Future<void> removeFromPeacockQueue(String userId) async {
+    _bindPeacockQueueProcessor();
     final phase = _peacock.stateFor(userId).phase;
+    await _repository.removeFromPeacockQueue(userId);
     if (phase == PeacockAssignmentPhase.queued) {
       _reducePeacock(
         userId: userId,
@@ -440,32 +451,36 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         event: PeacockAssignmentEvent.expire,
       );
     }
-    await _repository.removeFromPeacockQueue(userId);
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
   }
 
-  /// Process the peacock queue. When a spot is assigned, reduce
-  /// [PeacockAssignmentEvent.assignSpot] first, then the repository.
-  Future<void> processPeacockQueue({
+  /// Process the peacock queue. Selects the next queued uid when one is not
+  /// passed, persists via the repository, then [assignSpot] on the tracker
+  /// so product phase never lags on a bare stub call.
+  Future<String?> processPeacockQueue({
     String? assignedUserId,
     String? lobbyId,
     String? gameName,
     String? notificationId,
   }) async {
-    if (assignedUserId != null) {
+    _bindPeacockQueueProcessor();
+    final uid = assignedUserId ?? _peacock.nextQueuedUserId();
+    await _repository.processPeacockQueue();
+    if (uid != null) {
       _reducePeacock(
-        userId: assignedUserId,
+        userId: uid,
         event: PeacockAssignmentEvent.assignSpot,
         lobbyId: lobbyId ?? state.valueOrNull?.selectedLobbyId,
-        gameName: gameName,
+        gameName: gameName ?? _peacock.stateFor(uid).gameName,
         notificationId: notificationId,
       );
     }
-    await _repository.processPeacockQueue();
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    return uid;
   }
 
-  /// Assign a peacock spot: reduce assignSpot, then existing [assignSpot].
+  /// Assign a peacock spot: repository [assignSpot] first (when a spot index
+  /// is known), then reduce so a repo failure does not leave a phantom phase.
   Future<void> assignPeacockSpot({
     required String userId,
     required String lobbyId,
@@ -473,6 +488,10 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     String? notificationId,
     int? spotIndex,
   }) async {
+    _bindPeacockQueueProcessor();
+    if (spotIndex != null) {
+      await assignSpot(lobbyId, spotIndex, userId);
+    }
     _reducePeacock(
       userId: userId,
       event: PeacockAssignmentEvent.assignSpot,
@@ -480,9 +499,6 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       gameName: gameName,
       notificationId: notificationId,
     );
-    if (spotIndex != null) {
-      await assignSpot(lobbyId, spotIndex, userId);
-    }
   }
 
   /// Expire/cancel/timeout a peacock assignment.

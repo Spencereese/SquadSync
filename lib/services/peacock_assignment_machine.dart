@@ -165,6 +165,15 @@ class PeacockNotifyDispatch {
   bool get sentFcmToSelf => plan.sendFcmToSelf;
 }
 
+/// Production peacock queue process (LobbyNotifier.processPeacockQueue).
+/// Timer cleanup calls this so the next assign is never a repository stub.
+typedef PeacockQueueProcess = Future<String?> Function({
+  String? assignedUserId,
+  String? lobbyId,
+  String? gameName,
+  String? notificationId,
+});
+
 /// Owns per-user peacock phases. Production join/leave/assign/notify/expire
 /// reduce through here so [PeacockAssignmentPhase] is the product truth.
 class PeacockAssignmentTracker {
@@ -176,12 +185,25 @@ class PeacockAssignmentTracker {
   final Map<String, PeacockAssignmentState> _byUser =
       <String, PeacockAssignmentState>{};
 
+  /// Wired by [LobbyNotifier] to its peacock-aware process path.
+  PeacockQueueProcess? queueProcessor;
+
   /// Immutable view of tracked users. Idle users are omitted.
   Map<String, PeacockAssignmentState> get snapshot =>
       Map<String, PeacockAssignmentState>.unmodifiable(_byUser);
 
   PeacockAssignmentState stateFor(String userId) =>
       _byUser[userId] ?? PeacockAssignmentState.idle;
+
+  /// First queued user in insertion order, or null if the queue is empty.
+  String? nextQueuedUserId() {
+    for (final entry in _byUser.entries) {
+      if (entry.value.phase == PeacockAssignmentPhase.queued) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
 
   PeacockAssignmentState apply({
     required String userId,

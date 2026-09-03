@@ -4,6 +4,8 @@ import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
 import 'package:squad_sync/presentation/notifiers/timer_management_notifier.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
+import 'package:squad_sync/core/injection.dart';
+import 'package:squad_sync/services/peacock_assignment_machine.dart';
 import 'package:squad_sync/services/timer_service.dart';
 
 // Generate mocks with: flutter pub run build_runner build
@@ -102,11 +104,74 @@ void main() {
       // - State updates when subscription emits new data
     });
 
-    test('should cleanup expired peacock timers', () async {
-      // TODO: Implement test for peacock timer cleanup
-      // Test should verify:
-      // - Repository processPeacockQueue is called
-      // - Expired peacock entries are removed
+    test('cleanupExpiredPeacockTimers expires then process path assigns next',
+        () async {
+      PeacockAssignmentTracker.resetInstance();
+      addTearDown(PeacockAssignmentTracker.resetInstance);
+      final tracker = PeacockAssignmentTracker.instance;
+      tracker.assignSpot('expired-user', lobbyId: 'lobby-9');
+      tracker.joinQueue('next-user');
+
+      String? processedUid;
+      tracker.queueProcessor = ({
+        String? assignedUserId,
+        String? lobbyId,
+        String? gameName,
+        String? notificationId,
+      }) async {
+        processedUid = assignedUserId;
+        if (assignedUserId != null) {
+          tracker.assignSpot(assignedUserId, lobbyId: lobbyId);
+        }
+        return assignedUserId;
+      };
+
+      final notifier = container.read(timerManagementNotifierProvider.notifier);
+      await container.read(timerManagementNotifierProvider.future);
+      notifier.updateTimerStates(peacockTimers: {
+        'expired-user': Duration.zero,
+        'next-user': const Duration(seconds: 45),
+      });
+
+      await notifier.cleanupExpiredPeacockTimers();
+
+      expect(
+        tracker.stateFor('expired-user').phase,
+        PeacockAssignmentPhase.idle,
+      );
+      expect(processedUid, 'next-user');
+      expect(
+        tracker.stateFor('next-user').phase,
+        PeacockAssignmentPhase.assigned,
+      );
+      verifyNever(mockRepository.processPeacockQueue());
+    });
+
+    test('cleanupExpiredPeacockTimers assignSpot fallback without process path',
+        () async {
+      PeacockAssignmentTracker.resetInstance();
+      addTearDown(PeacockAssignmentTracker.resetInstance);
+      final tracker = PeacockAssignmentTracker.instance;
+      tracker.assignSpot('expired-user', lobbyId: 'lobby-9');
+      tracker.joinQueue('next-user');
+
+      final notifier = container.read(timerManagementNotifierProvider.notifier);
+      await container.read(timerManagementNotifierProvider.future);
+      notifier.updateTimerStates(peacockTimers: {
+        'expired-user': Duration.zero,
+      });
+
+      await notifier.cleanupExpiredPeacockTimers();
+
+      expect(
+        tracker.stateFor('expired-user').phase,
+        PeacockAssignmentPhase.idle,
+      );
+      expect(
+        tracker.stateFor('next-user').phase,
+        PeacockAssignmentPhase.assigned,
+      );
+      verifyNever(mockRepository.processPeacockQueue());
     });
 
     test('should sync timer data with local storage', () async {

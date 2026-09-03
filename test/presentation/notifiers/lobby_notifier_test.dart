@@ -256,23 +256,94 @@ void main() {
       );
     });
 
-    test('processPeacockQueue assignSpot reduces assigned then repo', () async {
+    test('processPeacockQueue repo then assignSpot reduces assigned', () async {
       await container.read(lobbyNotifierProvider.future);
       final notifier = container.read(lobbyNotifierProvider.notifier);
 
       await notifier.addToPeacockQueue('user-1', 'Warzone');
-      await notifier.processPeacockQueue(
+      final assigned = await notifier.processPeacockQueue(
         assignedUserId: 'user-1',
         lobbyId: 'lobby-9',
         gameName: 'Warzone',
         notificationId: 'n1',
       );
 
+      expect(assigned, 'user-1');
       verify(mockRepository.processPeacockQueue()).called(1);
       final state = PeacockAssignmentTracker.instance.stateFor('user-1');
       expect(state.phase, PeacockAssignmentPhase.assigned);
       expect(state.lobbyId, 'lobby-9');
       expect(state.notificationId, 'n1');
+    });
+
+    test('processPeacockQueue without uid selects next queued user', () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
+      await notifier.addToPeacockQueue('user-2', 'Warzone');
+      final assigned = await notifier.processPeacockQueue(lobbyId: 'lobby-9');
+
+      expect(assigned, 'user-1');
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.assigned,
+      );
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-2').phase,
+        PeacockAssignmentPhase.queued,
+      );
+    });
+
+    test('addToPeacockQueue does not join when repo fails', () async {
+      when(mockRepository.addToPeacockQueue(any, any))
+          .thenThrow(Exception('queue down'));
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await expectLater(
+        notifier.addToPeacockQueue('user-1', 'Warzone'),
+        throwsA(isA<Exception>()),
+      );
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.idle,
+      );
+    });
+
+    test('removeFromPeacockQueue stays queued when repo fails', () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
+      when(mockRepository.removeFromPeacockQueue(any))
+          .thenThrow(Exception('leave down'));
+
+      await expectLater(
+        notifier.removeFromPeacockQueue('user-1'),
+        throwsA(isA<Exception>()),
+      );
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.queued,
+      );
+    });
+
+    test('processPeacockQueue does not assign when repo fails', () async {
+      when(mockRepository.processPeacockQueue())
+          .thenThrow(Exception('process down'));
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
+      await expectLater(
+        notifier.processPeacockQueue(assignedUserId: 'user-1'),
+        throwsA(isA<Exception>()),
+      );
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.queued,
+      );
     });
 
     test('expirePeacockAssignment returns idle', () async {

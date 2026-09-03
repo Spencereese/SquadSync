@@ -243,7 +243,11 @@ class TimerManagementNotifier
     }
   }
 
-  /// Clean up expired peacock timers
+  /// Clean up expired peacock timers.
+  ///
+  /// Expire through the tracker, then assign the next queued uid via
+  /// [LobbyNotifier.processPeacockQueue] (wired as [PeacockAssignmentTracker.queueProcessor]).
+  /// Never treats the repository stub as the assign path.
   Future<void> cleanupExpiredPeacockTimers() async {
     try {
       final timers = state.valueOrNull?.peacockTimerStates ?? {};
@@ -253,7 +257,15 @@ class TimerManagementNotifier
           tracker.expire(entry.key);
         }
       }
-      await _repository.processPeacockQueue();
+      final nextUid = tracker.nextQueuedUserId();
+      if (nextUid != null) {
+        final process = tracker.queueProcessor;
+        if (process != null) {
+          await process(assignedUserId: nextUid);
+        } else {
+          tracker.assignSpot(nextUid);
+        }
+      }
       debugPrint('✅ Cleaned up expired peacock timers');
     } catch (e) {
       debugPrint('❌ Error cleaning up peacock timers: $e');

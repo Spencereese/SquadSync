@@ -14,7 +14,7 @@ Fill this block at freeze (and again if tip moves):
 Branch:  cursor/revive-squadsync-be5c
 SHA:     (this commit; filled after push)
 Short:   (this commit)
-Version: 3.4.67+69
+Version: 3.4.68+70
 Date:    2026-09-02
 ```
 
@@ -28,7 +28,7 @@ These are revival-v1 quality gates, not new product:
 - **Simulator URL scheme:** `ios/Runner/Info.simulator.plist` registers `codsquadapp` (and `com.example.codSquadApp` for auth). Unit tests may read the plist; they must not require live SpringBoard.
 - **ConstitutionManager DI:** default Riverpod path injects `SupabaseClient` (from `supabaseClientProvider` / `SupabaseService.maybeClient`). Construction without a client fails with a clear `StateError`, not a raw global assert. Voting UI goes through the provider, not `Supabase.instance` / `ConstitutionManager()`.
 - **Peacock XOR (closed):** one assignment is local **or** FCM-to-self, never both. Do not reopen the closed XOR / Live Notifications / Stats slices except to keep them green.
-- **Peacock product machine (wired):** `reducePeacockAssignment` is production truth. `PeacockAssignmentTracker` is reduced on join/leave/assign/notify/expire. Notify uses `planPeacockSelfNotify` (no parallel XOR). Not a scaffold.
+- **Peacock product machine (wired):** `reducePeacockAssignment` is production truth. Join/leave/assign reduce **after repo success**. `processPeacockQueue` selects/returns the assigned uid and always `assignSpot`s when an assignment happens. Notify uses `planPeacockSelfNotify` (no parallel XOR). Not a scaffold.
 - **Deep-link route coverage:** pure Dart parsers cover `codsquadapp` chat / join / squad / peacock / `screen=squad|lobby` / `lobby_id` without a simulator.
 - **Known human gates (not automatable here):**
   - iOS Simulator first custom-scheme open may show **"Open in Cod Squad?"** — Accept is a one-time SpringBoard tap.

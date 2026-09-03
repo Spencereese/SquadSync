@@ -192,8 +192,14 @@ final chatRemoteDataSourceProvider =
     Provider<ChatRemoteDataSource>((ref) => getIt<ChatRemoteDataSource>());
 
 // Service providers
-final errorHandlingServiceProvider =
-    Provider<ErrorHandlingService>((ref) => getIt<ErrorHandlingService>());
+final errorHandlingServiceProvider = Provider<ErrorHandlingService>((ref) {
+  if (getIt.isRegistered<ErrorHandlingService>()) {
+    return getIt<ErrorHandlingService>();
+  }
+  // Unit tests override this; fallback avoids GetIt NotRegisteredError when
+  // a harness forgets the override.
+  return ErrorHandlingService();
+});
 
 // Notifier providers are defined in their respective files (Riverpod 3.0):
 // - lobbyNotifierProvider in lobby_notifier.dart

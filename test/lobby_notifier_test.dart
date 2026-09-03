@@ -2,7 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
+import 'package:flutter/material.dart';
+import 'package:squad_sync/core/app_env.dart';
 import 'package:squad_sync/core/injection.dart';
+import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
@@ -12,17 +15,78 @@ import 'package:squad_sync/domain/entities/lobby.dart';
 @GenerateMocks([LobbyRepository])
 import 'lobby_notifier_test.mocks.dart';
 
+class _PassthroughErrorHandler extends Fake implements ErrorHandlingService {
+  @override
+  Future<T> withRetryAndMonitoring<T>({
+    required Future<T> Function() operation,
+    required String operationName,
+    BuildContext? context,
+    int maxAttempts = 3,
+    Duration slowThreshold = const Duration(milliseconds: 500),
+  }) =>
+      operation();
+
+  @override
+  Future<T> withRetry<T>({
+    required Future<T> Function() operation,
+    String? operationName,
+    int maxAttempts = 3,
+    Duration initialDelay = const Duration(seconds: 1),
+  }) =>
+      operation();
+
+  @override
+  Future<T> withPerformanceMonitoring<T>({
+    required Future<T> Function() operation,
+    required String operationName,
+    Duration slowThreshold = const Duration(milliseconds: 500),
+  }) =>
+      operation();
+
+  @override
+  Future<void> handleError({
+    BuildContext? context,
+    required dynamic error,
+    String? operation,
+    bool showSnackBar = true,
+    bool logToAnalytics = true,
+    StackTrace? stackTrace,
+  }) async {}
+
+  @override
+  Future<void> logEvent(
+          String eventName, Map<String, dynamic> parameters) async {}
+}
+
 void main() {
   group('Refactored LobbyNotifier - Core Functionality', () {
     late ProviderContainer container;
     late MockLobbyRepository mockRepository;
 
     setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      AppEnv.debugReplaceForTest({
+        'SUPABASE_URL': 'https://example.supabase.co',
+        'SUPABASE_ANON_KEY': 'test-anon-key-for-unit-harness',
+      });
+      addTearDown(() => AppEnv.debugReplaceForTest({}));
+
       mockRepository = MockLobbyRepository();
+      when(mockRepository.loadLobbyState())
+          .thenAnswer((_) async => LobbyState.initial());
+      when(mockRepository.getUserLobbiesStream(any)).thenAnswer(
+        (_) => Stream<List<Lobby>>.value(const []),
+      );
+      when(mockRepository.getLobbyStream(any)).thenAnswer(
+        (_) => Stream<Lobby?>.value(null),
+      );
 
       container = ProviderContainer(
         overrides: [
           lobbyRepositoryProvider.overrideWithValue(mockRepository),
+          errorHandlingServiceProvider.overrideWithValue(
+            _PassthroughErrorHandler(),
+          ),
         ],
       );
     });

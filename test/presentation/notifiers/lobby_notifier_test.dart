@@ -6,7 +6,10 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
+import 'package:flutter/material.dart';
+import 'package:squad_sync/core/app_env.dart';
 import 'package:squad_sync/core/injection.dart';
+import 'package:squad_sync/services/error_handling_service.dart';
 
 @GenerateMocks([LobbyRepository])
 import 'lobby_notifier_test.mocks.dart';
@@ -33,6 +36,49 @@ Lobby _lobby({
   );
 }
 
+class _PassthroughErrorHandler extends Fake implements ErrorHandlingService {
+  @override
+  Future<T> withRetryAndMonitoring<T>({
+    required Future<T> Function() operation,
+    required String operationName,
+    BuildContext? context,
+    int maxAttempts = 3,
+    Duration slowThreshold = const Duration(milliseconds: 500),
+  }) =>
+      operation();
+
+  @override
+  Future<T> withRetry<T>({
+    required Future<T> Function() operation,
+    String? operationName,
+    int maxAttempts = 3,
+    Duration initialDelay = const Duration(seconds: 1),
+  }) =>
+      operation();
+
+  @override
+  Future<T> withPerformanceMonitoring<T>({
+    required Future<T> Function() operation,
+    required String operationName,
+    Duration slowThreshold = const Duration(milliseconds: 500),
+  }) =>
+      operation();
+
+  @override
+  Future<void> handleError({
+    BuildContext? context,
+    required dynamic error,
+    String? operation,
+    bool showSnackBar = true,
+    bool logToAnalytics = true,
+    StackTrace? stackTrace,
+  }) async {}
+
+  @override
+  Future<void> logEvent(
+          String eventName, Map<String, dynamic> parameters) async {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -40,6 +86,13 @@ void main() {
   late ProviderContainer container;
 
   setUp(() {
+    // Avoid NotInitializedError from dotenv/AppEnv during notifier init.
+    AppEnv.debugReplaceForTest({
+      'SUPABASE_URL': 'https://example.supabase.co',
+      'SUPABASE_ANON_KEY': 'test-anon-key-for-unit-harness',
+    });
+    addTearDown(() => AppEnv.debugReplaceForTest({}));
+
     mockRepository = MockLobbyRepository();
 
     when(mockRepository.loadLobbyState()).thenAnswer(
@@ -60,6 +113,9 @@ void main() {
     container = ProviderContainer(
       overrides: [
         lobbyRepositoryProvider.overrideWithValue(mockRepository),
+        errorHandlingServiceProvider.overrideWithValue(
+          _PassthroughErrorHandler(),
+        ),
       ],
     );
   });

@@ -40,26 +40,24 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   @override
   Future<LobbyState> build() async {
+    // Bind required deps BEFORE offline init / load so a swallowed failure
+    // never leaves late fields unset (LateInitializationError on later calls).
+    _repository = ref.read(lobbyRepositoryProvider);
+    _constitutionManager = ConstitutionManager();
+    _errorHandler = ref.read(errorHandlingServiceProvider);
+
+    ref.onDispose(() {
+      _currentLobbySubscription?.cancel();
+      _userLobbiesSubscription?.cancel();
+      disposeOfflineFirst();
+    });
+
     try {
-      // Initialize offline-first capabilities
       await initializeOfflineFirst();
-
-      // Get dependencies
-      _repository = ref.read(lobbyRepositoryProvider);
-      _constitutionManager = ConstitutionManager();
-      _errorHandler = ref.read(errorHandlingServiceProvider);
-
-      // Clean up subscriptions on dispose
-      ref.onDispose(() {
-        _currentLobbySubscription?.cancel();
-        _userLobbiesSubscription?.cancel();
-        disposeOfflineFirst();
-      });
-
-      // Load initial state
       return await _loadState();
     } catch (e) {
       debugPrint('Error initializing lobby notifier: $e');
+      // Deps are already bound; return a safe default state.
       return LobbyState.initial();
     }
   }

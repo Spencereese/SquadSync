@@ -49,14 +49,24 @@
 		<true/>
 		<key>GIDClientID</key>
 		<string>756172684661-99ecq9sd74qvt9ufs28os52j9g33h1v9.apps.googleusercontent.com</string>
-		<!-- Simulator: omit codsquadapp so SpringBoard does not present
-		     leftover "Open in Cod Squad?" for chat custom-scheme / UL claims.
-		     Keep Google + com.example.codSquadApp for auth. Device Info.plist
-		     still registers codsquadapp. Default entitlements are
-		     Runner.simulator.entitlements (no applinks) so Launch Services
-		     cannot register leftover UL. Device keeps applinks. -->
+		<!-- Simulator must register codsquadapp so Debug-iphonesimulator
+		     Runner.app can openurl peacock / squad deep links (matches device
+		     Info.plist). SpringBoard may still show "Open in Cod Squad?" on
+		     first custom-scheme open; Accept is a one-time UI tap. Keep Google
+		     + com.example.codSquadApp for auth. Entitlements stay
+		     Runner.simulator.entitlements (no applinks). -->
 		<key>CFBundleURLTypes</key>
 		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>codsquadapp</string>
+				</array>
+				<key>CFBundleURLName</key>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			</dict>
 			<dict>
 				<key>CFBundleTypeRole</key>
 				<string>Editor</string>

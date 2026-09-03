@@ -2,7 +2,7 @@
 
 **North star:** fastest path from "who's on?" to a locked squad in-game.
 
-Phase A froze revival quality on tip. **Phase B started** with Matchmaking Queue v1 (product queue, not Grok AI matchmaking). Remaining Phase B (lobby polish) is still queued.
+Phase A froze revival quality on tip. **Phase B started** with Matchmaking Queue v1 (product queue, not Grok AI matchmaking). Lobby polish Tonight strip landed; remaining Phase B follow-ups stay parked.
 
 Draft PR: https://github.com/Spencereese/SquadSync/pull/1 — **do not merge**.
 
@@ -12,9 +12,9 @@ Fill this block at freeze (and again if tip moves):
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-SHA:     db77e982c180904898d57dd2bc366ad2054f7ac7
-Short:   db77e98
-Version: 3.4.75+77
+SHA:     71584253b83b11519567233415f9e3139b837afb
+Short:   7158425
+Version: 3.4.76+78
 Date:    2026-09-03
 ```
 
@@ -45,7 +45,7 @@ Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. Do not apply Su
 | Lobby share / copy | **Landed** (`3.4.72+74`) | Lobby header share copies and shares `codsquadapp://lobby/<id>`. Same parse as slice 2 (`locationForDeepLink`). No QR / SMS / Universal Links. |
 | Availability pings | **Landed** (`3.4.74+76`) | "I'm on now" from Looking-for-Squad chat info and lobby controls. Lobby members (minus sender) pinged via `NotificationService.sendNotificationToUsers`. Taps reuse `NotificationRoutes` (`availability_ping` → `/squad?lobby_id=`). No new table / screen / presenter. XOR still `planPeacockSelfNotify`. |
 | Session ratings | **Landed** (`3.4.75+77`) | Rate a squad session after Win/Loss on lobby controls and stats Record win/loss. Pure `reduceSessionRating`; persisted in existing `match_history.notes`. Average tiles read those notes. No new table / screen. XOR still `planPeacockSelfNotify`. |
-| Lobby polish | Queued | Phase B remainder |
+| Lobby polish | **Landed** (`3.4.76+78`) | Tonight strip on chat-info / lobby actions: I am on, Looking for Squad, Invite. Voice + Video under More. Dead Search entry removed (coming-soon snackbar is not a feature). XOR still `planPeacockSelfNotify`. |
 
 **Parked Phase B follow-up (Spencer gate):** a shared `matchmaking_queue` (or equivalent) table plus lobby-aware `processQueue` so looking state is cross-device. v1 stays in-memory + existing `lfg_alert` / Looking-for-Squad notify. Do not apply SQL from this slice.
 
@@ -107,11 +107,12 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Lobby share / copy | 3.4.72 | Lobby header share/copy of `codsquadapp://lobby/<id>` through `locationForDeepLink`. |
 | Availability pings | 3.4.74 | "I'm on now" from LFG / lobby. Existing `NotificationService` / `NotificationManager` / `NotificationRoutes`. |
 | Session ratings | 3.4.75 | Rate ended session from lobby Win/Loss + stats Record. `match_history.notes` JSON. Reducer `reduceSessionRating`. |
+| Lobby polish | 3.4.76 | Tonight strip regroup. Voice+Video under More. Search entry gone. |
 
 ## Phase B+ parking lot (wishlist only)
 
 1. ~~Matchmaking Queue~~ — v1 landed (`3.4.70+72`); persistence table + lobby-aware `processQueue` still Spencer-gated Phase B follow-up
-2. ~~Session ratings~~ — landed (`3.4.75+77`); lobby polish remaining Phase B
+2. ~~Session ratings / lobby polish~~ — ratings `3.4.75+77`; Tonight strip `3.4.76+78`
 3. Performance Leaderboard
 4. Live Activities
 5. Voice / AI / public launch / TestFlight / bundle ID rename

@@ -9,6 +9,8 @@ import 'package:squad_sync/chat/screens/components/chat_info_settings.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_backgrounds.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_media.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_links_files.dart';
+import 'package:squad_sync/domain/entities/lobby.dart';
+import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 
 void main() {
   group('ChatInfoAppBar', () {
@@ -47,75 +49,141 @@ void main() {
     });
   });
 
+  group('Tonight strip grouping', () {
+    test('I am on / Looking for Squad / Invite are Tonight; Voice+Video More',
+        () {
+      expect(
+          slotForTonightAction(kTonightOnNowAction), TonightStripSlot.tonight);
+      expect(
+        slotForTonightAction(kTonightLookingForSquadAction),
+        TonightStripSlot.tonight,
+      );
+      expect(
+          slotForTonightAction(kTonightInviteAction), TonightStripSlot.tonight);
+      expect(slotForTonightAction(kMoreVoiceAction), TonightStripSlot.more);
+      expect(slotForTonightAction(kMoreVideoAction), TonightStripSlot.more);
+    });
+
+    test('Search is omitted until it searches', () {
+      expect(slotForTonightAction(kDeadSearchAction), isNull);
+      expect(slotForTonightAction('search'), isNull);
+    });
+
+    test('tonightStripChildren keeps product order', () {
+      const onNow = Text('on');
+      const lfg = Text('lfg');
+      const invite = Text('inv');
+      final children = tonightStripChildren(
+        onNow: onNow,
+        lookingForSquad: lfg,
+        invite: invite,
+      );
+      expect(children, [onNow, lfg, invite]);
+    });
+
+    test('resolveInviteLobbyId prefers lobby bound to squad', () {
+      final bound = Lobby.create(
+        name: 'Bound',
+        gameName: 'Warzone',
+        maxSpots: 4,
+        createdBy: 'u1',
+      ).copyWith(id: 'lobby-bound', chatGroupId: 'squad-1');
+      final other = Lobby.create(
+        name: 'Other',
+        gameName: 'Warzone',
+        maxSpots: 4,
+        createdBy: 'u1',
+      ).copyWith(id: 'lobby-other');
+      expect(
+        resolveInviteLobbyId(
+          squadId: 'squad-1',
+          selectedLobbyId: 'lobby-other',
+          currentLobby: other,
+          userLobbies: {'lobby-bound': bound, 'lobby-other': other},
+        ),
+        'lobby-bound',
+      );
+    });
+
+    test('resolveInviteLobbyId falls back to squadId', () {
+      expect(
+        resolveInviteLobbyId(squadId: 'squad-1'),
+        'squad-1',
+      );
+    });
+  });
+
   group('ChatInfoActionsSection', () {
-    testWidgets('renders all three action buttons',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
+    setUp(MatchmakingQueueTracker.resetInstance);
+    tearDown(MatchmakingQueueTracker.resetInstance);
+
+    Future<void> pumpActions(WidgetTester tester) {
+      return tester.pumpWidget(
         const ProviderScope(
           child: MaterialApp(
             home: Scaffold(
-              body: ChatInfoActionsSection(
-                squadId: 'test-squad',
-                squadName: 'Test Squad',
-                neonColor: Colors.blue,
+              body: SingleChildScrollView(
+                child: ChatInfoActionsSection(
+                  squadId: 'test-squad',
+                  squadName: 'Test Squad',
+                  neonColor: Colors.blue,
+                ),
               ),
             ),
           ),
         ),
       );
+    }
+
+    testWidgets('Tonight block shows I am on, Looking for Squad, Invite',
+        (WidgetTester tester) async {
+      await pumpActions(tester);
+
+      expect(find.byKey(const Key('tonight-actions')), findsOneWidget);
+      expect(find.text('Tonight'), findsOneWidget);
+      expect(find.text("I'm on now"), findsOneWidget);
+      expect(find.text('Looking for Squad'), findsOneWidget);
+      expect(find.text('Invite'), findsOneWidget);
+    });
+
+    testWidgets('Search entry is gone (no coming-soon snackbar)',
+        (WidgetTester tester) async {
+      await pumpActions(tester);
+
+      expect(find.text('Search'), findsNothing);
+      expect(find.byIcon(Icons.search), findsNothing);
+      expect(find.text('Search feature coming soon!'), findsNothing);
+
+      await tester.tap(find.text('More'));
+      await tester.pump();
+
+      expect(find.text('Search'), findsNothing);
+      expect(find.byIcon(Icons.search), findsNothing);
+      expect(find.text('Search feature coming soon!'), findsNothing);
+    });
+
+    testWidgets('Voice + Video live under More, collapsed by default',
+        (WidgetTester tester) async {
+      await pumpActions(tester);
+
+      expect(find.text('More'), findsOneWidget);
+      expect(find.text('Voice Chat'), findsNothing);
+      expect(find.text('Video Chat'), findsNothing);
+      expect(find.text('Beta'), findsNothing);
+      expect(find.byKey(const Key('more-voice')), findsNothing);
+      expect(find.byKey(const Key('more-video')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('more-actions-toggle')));
+      await tester.pump();
 
       expect(find.text('Voice Chat'), findsOneWidget);
       expect(find.text('Video Chat'), findsOneWidget);
-      expect(find.text('Search'), findsOneWidget);
-      expect(find.text("I'm on now"), findsOneWidget);
-    });
-
-    testWidgets('displays Beta badge on Video Chat',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(
-              body: ChatInfoActionsSection(
-                squadId: 'test-squad',
-                squadName: 'Test Squad',
-                neonColor: Colors.blue,
-              ),
-            ),
-          ),
-        ),
-      );
-
       expect(find.text('Beta'), findsOneWidget);
-    });
-
-    testWidgets('renders action buttons with correct layout',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(
-              body: ChatInfoActionsSection(
-                squadId: 'test-squad',
-                squadName: 'Test Squad',
-                neonColor: Colors.blue,
-              ),
-            ),
-          ),
-        ),
-      );
-
-      // Verify all buttons are present
+      expect(find.byKey(const Key('more-voice')), findsOneWidget);
+      expect(find.byKey(const Key('more-video')), findsOneWidget);
       expect(find.byIcon(Icons.headset), findsOneWidget);
       expect(find.byIcon(Icons.video_call), findsOneWidget);
-      expect(find.byIcon(Icons.search), findsOneWidget);
-
-      // Verify buttons use Row layout
-      final row = tester.widget<Row>(find.ancestor(
-        of: find.text('Search'),
-        matching: find.byType(Row),
-      ));
-      expect(row.mainAxisAlignment, MainAxisAlignment.spaceEvenly);
+      expect(find.text('Search'), findsNothing);
     });
   });
 

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../chat/screens/components/chat_info_actions.dart';
+import '../../core/deep_link_routes.dart';
+import '../../domain/entities/lobby.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../services/auth_service_supabase.dart';
 import '../../services/availability_ping.dart';
@@ -7,31 +10,147 @@ import '../../services/session_rating_flow.dart';
 import '../../services/session_rating_machine.dart';
 import '../../screens/voice_room_screen.dart';
 
-/// LobbyControls component - handles action buttons and controls
-/// Extracted from the monolithic LobbyTab to improve maintainability
+/// LobbyControls — Tonight strip (I am on / Looking for Squad / Invite),
+/// Win/Loss, Voice under More. Search is not an entry.
 class LobbyControls extends ConsumerWidget {
   const LobbyControls({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return const SliverToBoxAdapter(
+    return SliverToBoxAdapter(
       child: Column(
         children: [
-          // Win/Loss/Voice buttons
-          Padding(
+          const Padding(
             padding: EdgeInsets.all(16.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _WinButton(),
-                _VoiceRoomButton(),
                 _LossButton(),
               ],
             ),
           ),
-          // Game alert section removed - moved to chat menu as friend-wide "Looking for Squad"
-          _OnNowButton(),
+          TonightActionsBlock(
+            children: tonightStripChildren(
+              onNow: const _OnNowButton(),
+              lookingForSquad: const _LobbyLookingForSquad(),
+              invite: const _LobbyInviteButton(),
+            ),
+          ),
+          MoreActionsBlock(
+            children: [
+              if (slotForTonightAction(kMoreVoiceAction) ==
+                  TonightStripSlot.more)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Center(
+                    child: _VoiceRoomButton(key: Key('more-voice')),
+                  ),
+                ),
+              if (slotForTonightAction(kDeadSearchAction) != null)
+                const SizedBox.shrink(),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// Looking for Squad on the lobby Tonight strip. Same live button as chat-info.
+class _LobbyLookingForSquad extends ConsumerWidget {
+  const _LobbyLookingForSquad();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
+    final lobby = state?.currentLobby;
+    final squadId =
+        lobby?.chatGroupId ?? state?.selectedLobbyId ?? lobby?.id ?? '';
+    if (squadId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return LookingForSquadButton(
+      key: const Key('tonight-looking-for-squad'),
+      squadId: squadId,
+      neonColor: Theme.of(context).colorScheme.primary,
+    );
+  }
+}
+
+/// Tonight Invite — [shareLobbyLink], same helper as lobby header.
+class _LobbyInviteButton extends ConsumerWidget {
+  const _LobbyInviteButton();
+
+  Future<void> _onPressed(BuildContext context, WidgetRef ref) async {
+    Lobby? currentLobby;
+    String? selectedLobbyId;
+    Map<String, Lobby> userLobbies = const {};
+    try {
+      final state = ref.read(ln.lobbyNotifierProvider).valueOrNull;
+      selectedLobbyId = state?.selectedLobbyId;
+      currentLobby = state?.currentLobby;
+      userLobbies = state?.userLobbies ?? const {};
+    } catch (_) {}
+
+    final lobbyId = resolveInviteLobbyId(
+      squadId: selectedLobbyId ?? currentLobby?.id ?? '',
+      selectedLobbyId: selectedLobbyId,
+      currentLobby: currentLobby,
+      userLobbies: userLobbies,
+    );
+    if (lobbyId.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No lobby selected')),
+        );
+      }
+      return;
+    }
+
+    try {
+      await shareLobbyLink(lobbyId: lobbyId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lobby link copied'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not share lobby link: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          key: const Key('tonight-invite'),
+          onPressed: () => _onPressed(context, ref),
+          icon: const Icon(Icons.share, size: 20),
+          label: const Text(
+            'Invite',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(fontSize: 18),
+            elevation: 4,
+          ),
+        ),
       ),
     );
   }
@@ -153,8 +272,6 @@ class _OnNowButtonState extends ConsumerState<_OnNowButton> {
   }
 }
 
-
-
 /// Win button widget
 class _WinButton extends ConsumerWidget {
   const _WinButton();
@@ -242,7 +359,7 @@ class _WinButton extends ConsumerWidget {
 
 /// Voice room button widget - extracted for better performance
 class _VoiceRoomButton extends ConsumerWidget {
-  const _VoiceRoomButton();
+  const _VoiceRoomButton({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

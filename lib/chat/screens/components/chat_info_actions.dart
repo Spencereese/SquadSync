@@ -8,16 +8,142 @@ import '../../../services/auth_service_supabase.dart';
 import '../../../services/availability_ping.dart';
 import '../../../services/friends_service.dart';
 import '../../../services/matchmaking_queue_machine.dart';
+import '../../../domain/entities/lobby.dart';
 import '../../../presentation/notifiers/lobby_notifier.dart';
 import '../../../notification_service.dart';
 
-/// Actions section with big circular buttons for squad actions
-///
-/// Features:
-/// - Voice chat navigation
-/// - Video chat navigation (with beta badge)
-/// - Search functionality
-/// - Glassmorphic button design
+/// Product order for the Tonight strip. Search is omitted until it searches.
+const kTonightOnNowAction = 'on_now';
+const kTonightLookingForSquadAction = 'looking_for_squad';
+const kTonightInviteAction = 'invite';
+const kMoreVoiceAction = 'voice';
+const kMoreVideoAction = 'video';
+const kDeadSearchAction = 'search';
+
+enum TonightStripSlot { tonight, more }
+
+/// Slot for a chat-info / lobby action. `null` means omit (dead Search).
+TonightStripSlot? slotForTonightAction(String actionId) {
+  switch (actionId) {
+    case kTonightOnNowAction:
+    case kTonightLookingForSquadAction:
+    case kTonightInviteAction:
+      return TonightStripSlot.tonight;
+    case kMoreVoiceAction:
+    case kMoreVideoAction:
+      return TonightStripSlot.more;
+    case kDeadSearchAction:
+      return null;
+    default:
+      return null;
+  }
+}
+
+/// Tonight children in product order: I am on, Looking for Squad, Invite.
+List<Widget> tonightStripChildren({
+  required Widget onNow,
+  required Widget lookingForSquad,
+  required Widget invite,
+}) =>
+    [onNow, lookingForSquad, invite];
+
+/// Resolve a lobby id for Tonight Invite → [shareLobbyLink].
+/// Prefers the lobby bound to [squadId], then selected / current, then [squadId].
+String resolveInviteLobbyId({
+  required String squadId,
+  String? selectedLobbyId,
+  Lobby? currentLobby,
+  Map<String, Lobby> userLobbies = const {},
+}) {
+  bool matches(Lobby lobby) =>
+      lobby.id == squadId || lobby.chatGroupId == squadId;
+
+  if (currentLobby != null &&
+      matches(currentLobby) &&
+      currentLobby.id.isNotEmpty) {
+    return currentLobby.id;
+  }
+  for (final lobby in userLobbies.values) {
+    if (matches(lobby) && lobby.id.isNotEmpty) return lobby.id;
+  }
+  final selected = selectedLobbyId?.trim();
+  if (selected != null && selected.isNotEmpty) return selected;
+  if (currentLobby != null && currentLobby.id.isNotEmpty) {
+    return currentLobby.id;
+  }
+  return squadId.trim();
+}
+
+/// Primary Tonight block: I am on / Looking for Squad / Invite.
+class TonightActionsBlock extends StatelessWidget {
+  const TonightActionsBlock({
+    super.key,
+    required this.children,
+  });
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      key: const Key('tonight-actions'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(32, 0, 32, 8),
+          child: Text(
+            'Tonight',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          children[i],
+        ],
+      ],
+    );
+  }
+}
+
+/// Collapsed More bucket for Voice + Video. Search is not a child.
+class MoreActionsBlock extends StatefulWidget {
+  const MoreActionsBlock({
+    super.key,
+    required this.children,
+  });
+
+  final List<Widget> children;
+
+  @override
+  State<MoreActionsBlock> createState() => _MoreActionsBlockState();
+}
+
+class _MoreActionsBlockState extends State<MoreActionsBlock> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const Key('more-actions'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextButton.icon(
+          key: const Key('more-actions-toggle'),
+          onPressed: () => setState(() => _expanded = !_expanded),
+          icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+          label: const Text('More'),
+        ),
+        if (_expanded) ...widget.children,
+      ],
+    );
+  }
+}
+
+/// Chat-info actions: Tonight strip first, Voice + Video under More.
+/// Search is gone until it searches (coming-soon snackbar is not a feature).
 class ChatInfoActionsSection extends StatelessWidget {
   final String squadId;
   final String squadName;
@@ -34,68 +160,80 @@ class ChatInfoActionsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              ChatInfoBigActionButton(
-                icon: Icons.headset,
-                label: 'Voice Chat',
-                neonColor: neonColor,
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => VoiceRoomScreen(
-                        roomId: squadId,
-                        squadName: squadName,
-                      ),
-                    ),
-                  );
-                },
-              ),
-              ChatInfoBigActionButton(
-                icon: Icons.video_call,
-                label: 'Video Chat',
-                neonColor: neonColor,
-                badge: 'Beta',
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => VideoRoomScreen(
-                        roomId: squadId,
-                        roomName: squadName,
-                      ),
-                    ),
-                  );
-                },
-              ),
-              ChatInfoBigActionButton(
-                icon: Icons.search,
-                label: 'Search',
-                neonColor: neonColor,
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Search feature coming soon!'),
-                    ),
-                  );
-                },
-              ),
-            ],
+        TonightActionsBlock(
+          children: tonightStripChildren(
+            onNow: _OnNowButton(
+              squadId: squadId,
+              neonColor: neonColor,
+            ),
+            lookingForSquad: LookingForSquadButton(
+              key: const Key('tonight-looking-for-squad'),
+              squadId: squadId,
+              neonColor: neonColor,
+            ),
+            invite: _InviteButton(
+              squadId: squadId,
+              neonColor: neonColor,
+            ),
           ),
         ),
-        const SizedBox(height: 16),
-        _LookingForSquadButton(
-          squadId: squadId,
-          neonColor: neonColor,
-        ),
-        const SizedBox(height: 12),
-        _OnNowButton(
-          squadId: squadId,
-          neonColor: neonColor,
+        const SizedBox(height: 8),
+        MoreActionsBlock(
+          children: [
+            if (slotForTonightAction(kMoreVoiceAction) ==
+                    TonightStripSlot.more ||
+                slotForTonightAction(kMoreVideoAction) == TonightStripSlot.more)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    if (slotForTonightAction(kMoreVoiceAction) ==
+                        TonightStripSlot.more)
+                      ChatInfoBigActionButton(
+                        key: const Key('more-voice'),
+                        icon: Icons.headset,
+                        label: 'Voice Chat',
+                        neonColor: neonColor,
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VoiceRoomScreen(
+                                roomId: squadId,
+                                squadName: squadName,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (slotForTonightAction(kMoreVideoAction) ==
+                        TonightStripSlot.more)
+                      ChatInfoBigActionButton(
+                        key: const Key('more-video'),
+                        icon: Icons.video_call,
+                        label: 'Video Chat',
+                        neonColor: neonColor,
+                        badge: 'Beta',
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VideoRoomScreen(
+                                roomId: squadId,
+                                roomName: squadName,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            // Dead Search stays omitted: slotForTonightAction('search') is null.
+            if (slotForTonightAction(kDeadSearchAction) != null)
+              const SizedBox.shrink(),
+          ],
         ),
       ],
     );
@@ -110,29 +248,28 @@ class ChatInfoActionsSection extends StatelessWidget {
 /// [MatchmakingQueueTracker.joinMatched] with `handoffToPeacock: false`
 /// so assign is never reduced twice. Queue rows are in-memory until
 /// Spencer applies a `matchmaking_queue` migration.
-class _LookingForSquadButton extends ConsumerStatefulWidget {
+class LookingForSquadButton extends ConsumerStatefulWidget {
   final String squadId;
   final Color neonColor;
 
-  const _LookingForSquadButton({
+  const LookingForSquadButton({
+    super.key,
     required this.squadId,
     required this.neonColor,
   });
 
   @override
-  ConsumerState<_LookingForSquadButton> createState() =>
+  ConsumerState<LookingForSquadButton> createState() =>
       _LookingForSquadButtonState();
 }
 
-class _LookingForSquadButtonState
-    extends ConsumerState<_LookingForSquadButton> {
+class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
   bool _isLoading = false;
 
   MatchmakingQueueTracker get _tracker => MatchmakingQueueTracker.instance;
 
-  MatchmakingQueueEntry _entryFor(String? uid) => uid == null
-      ? MatchmakingQueueEntry.idle
-      : _tracker.stateFor(uid);
+  MatchmakingQueueEntry _entryFor(String? uid) =>
+      uid == null ? MatchmakingQueueEntry.idle : _tracker.stateFor(uid);
 
   Future<void> _onPressed() async {
     final uid = _currentUidOrNull();
@@ -434,6 +571,106 @@ class _LookingForSquadButtonState
   }
 }
 
+/// Tonight Invite — live path is [shareLobbyLink] (same helper as lobby header).
+class _InviteButton extends ConsumerWidget {
+  final String squadId;
+  final Color neonColor;
+
+  const _InviteButton({
+    required this.squadId,
+    required this.neonColor,
+  });
+
+  Future<void> _onPressed(BuildContext context, WidgetRef ref) async {
+    String? selectedLobbyId;
+    Lobby? currentLobby;
+    Map<String, Lobby> userLobbies = const {};
+    try {
+      final state = ref.read(lobbyNotifierProvider).valueOrNull;
+      selectedLobbyId = state?.selectedLobbyId;
+      currentLobby = state?.currentLobby;
+      userLobbies = state?.userLobbies ?? const {};
+    } catch (_) {}
+
+    final lobbyId = resolveInviteLobbyId(
+      squadId: squadId,
+      selectedLobbyId: selectedLobbyId,
+      currentLobby: currentLobby,
+      userLobbies: userLobbies,
+    );
+    if (lobbyId.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No lobby selected')),
+        );
+      }
+      return;
+    }
+
+    try {
+      await shareLobbyLink(lobbyId: lobbyId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lobby link copied'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not share lobby link: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    Color buttonColor = neonColor;
+    if (neonColor == Colors.white || neonColor.computeLuminance() > 0.8) {
+      buttonColor = theme.colorScheme.primary;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          key: const Key('tonight-invite'),
+          onPressed: () => _onPressed(context, ref),
+          icon: const Icon(
+            Icons.share,
+            size: 20,
+            color: Colors.black,
+          ),
+          label: const Text(
+            'Invite',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: buttonColor,
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 4,
+            shadowColor: buttonColor.withValues(alpha: 0.5),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// "I'm on now" — pings lobby members through [AvailabilityPing.dispatch]
 /// → [NotificationService.sendNotificationToUsers]. Same LFG chat-info
 /// entry as Looking for Squad. No second notification presenter.
@@ -563,5 +800,3 @@ String? _currentUidOrNull() {
     return null;
   }
 }
-
-

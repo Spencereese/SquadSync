@@ -16,6 +16,7 @@ import 'package:squad_sync/domain/entities/constitution.dart';
 
 import '../../notification_service.dart';
 import '../../services/peacock_assignment_machine.dart';
+import '../../services/session_rating_machine.dart';
 import 'offline_first_mixin.dart';
 import 'timer_management_notifier.dart';
 import 'game_state_notifier.dart';
@@ -919,8 +920,14 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
-  /// Records a win for the current lobby
-  Future<void> recordWin(String lobbyId) async {
+  /// Records a win for the current lobby.
+  ///
+  /// [sessionRating] is reduced then encoded into existing
+  /// `match_history.notes` (no new table). Skip / unrated leaves notes null.
+  Future<void> recordWin(
+    String lobbyId, {
+    SessionRatingState? sessionRating,
+  }) async {
     try {
       final currentState = state.value;
       if (currentState == null) return;
@@ -930,18 +937,27 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         orElse: () => throw Exception('Lobby not found'),
       );
 
+      final rating = _reduceEndedSessionRating(
+        sessionRating,
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'win',
+      );
+      final notes = notesForSessionRating(rating);
+
       await _repository.recordMatchResult(
         lobbyId: lobbyId,
         gameName: lobby.gameName,
         result: 'win',
         playerUids: lobby.memberUids,
-        notes: null,
+        notes: notes,
       );
       _appendMatchToHistory(
         lobbyId: lobbyId,
         gameName: lobby.gameName,
         result: 'win',
         playerUids: lobby.memberUids,
+        rating: rating,
       );
 
       debugPrint('LobbyNotifier: ✅ Win recorded for lobby $lobbyId');
@@ -956,8 +972,11 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
-  /// Records a loss for the current lobby
-  Future<void> recordLoss(String lobbyId) async {
+  /// Records a loss for the current lobby. Same notes path as [recordWin].
+  Future<void> recordLoss(
+    String lobbyId, {
+    SessionRatingState? sessionRating,
+  }) async {
     try {
       final currentState = state.value;
       if (currentState == null) return;
@@ -967,18 +986,27 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         orElse: () => throw Exception('Lobby not found'),
       );
 
+      final rating = _reduceEndedSessionRating(
+        sessionRating,
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'loss',
+      );
+      final notes = notesForSessionRating(rating);
+
       await _repository.recordMatchResult(
         lobbyId: lobbyId,
         gameName: lobby.gameName,
         result: 'loss',
         playerUids: lobby.memberUids,
-        notes: null,
+        notes: notes,
       );
       _appendMatchToHistory(
         lobbyId: lobbyId,
         gameName: lobby.gameName,
         result: 'loss',
         playerUids: lobby.memberUids,
+        rating: rating,
       );
 
       debugPrint('LobbyNotifier: ✅ Loss recorded for lobby $lobbyId');
@@ -991,6 +1019,30 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       );
       rethrow;
     }
+  }
+
+  SessionRatingState _reduceEndedSessionRating(
+    SessionRatingState? sessionRating, {
+    required String lobbyId,
+    required String gameName,
+    required String result,
+  }) {
+    final current = sessionRating ?? SessionRatingState.unrated;
+    final event = isValidSessionStars(current.stars)
+        ? SessionRatingEvent.rate
+        : SessionRatingEvent.skip;
+    return reduceSessionRating(
+      current: current,
+      event: event,
+      stars: current.stars,
+      lobbyId: lobbyId,
+      raterUid: current.raterUid,
+      matchId: current.matchId,
+      gameName: gameName,
+      result: result,
+      comment: current.comment,
+      ratedAt: current.ratedAt,
+    );
   }
 
   /// Get lobby statistics (W/L record)
@@ -1024,21 +1076,23 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     required String gameName,
     required String result,
     required List<String> playerUids,
+    required SessionRatingState rating,
   }) {
     final current = state.value;
     if (current == null) return;
+    final row = applySessionRatingToMatchRow(
+      row: {
+        'lobby_id': lobbyId,
+        'game_name': gameName,
+        'result': result,
+        'player_uids': List<String>.from(playerUids),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      rating: rating,
+    );
     state = AsyncData(
       current.copyWith(
-        gameHistory: [
-          {
-            'lobby_id': lobbyId,
-            'game_name': gameName,
-            'result': result,
-            'player_uids': List<String>.from(playerUids),
-            'created_at': DateTime.now().toUtc().toIso8601String(),
-          },
-          ...current.gameHistory,
-        ],
+        gameHistory: [row, ...current.gameHistory],
       ),
     );
   }

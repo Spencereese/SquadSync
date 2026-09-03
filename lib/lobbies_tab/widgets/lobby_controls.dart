@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../services/auth_service_supabase.dart';
 import '../../services/availability_ping.dart';
+import '../../services/session_rating_flow.dart';
+import '../../services/session_rating_machine.dart';
 import '../../screens/voice_room_screen.dart';
 
 /// LobbyControls component - handles action buttons and controls
@@ -180,7 +182,17 @@ class _WinButton extends ConsumerWidget {
 
     if (confirmed == true && context.mounted) {
       try {
-        await ref.read(ln.lobbyNotifierProvider.notifier).recordWin(lobbyId);
+        final rating = await promptAndRecordEndedSession(
+          context: context,
+          ref: ref,
+          lobbyId: lobbyId,
+          result: 'win',
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(sessionRecordedSnackbar('win', rating))),
+          );
+        }
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -304,7 +316,17 @@ class _LossButton extends ConsumerWidget {
 
     if (confirmed == true && context.mounted) {
       try {
-        await ref.read(ln.lobbyNotifierProvider.notifier).recordLoss(lobbyId);
+        final rating = await promptAndRecordEndedSession(
+          context: context,
+          ref: ref,
+          lobbyId: lobbyId,
+          result: 'loss',
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(sessionRecordedSnackbar('loss', rating))),
+          );
+        }
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

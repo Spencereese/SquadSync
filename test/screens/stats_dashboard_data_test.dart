@@ -4,6 +4,7 @@ import 'package:squad_sync/domain/entities/app_user.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/screens/stats_dashboard_data.dart';
+import 'package:squad_sync/services/session_rating_machine.dart';
 
 AppUser _user({
   String uid = 'me',
@@ -396,6 +397,45 @@ void main() {
         ),
       );
       expect(snap.ratings.allTimeAverage, 4);
+    });
+
+    test('prefers session ratings encoded in match_history notes', () {
+      final now = DateTime.utc(2026, 9, 3, 18);
+      final today = encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 5,
+          ratedAt: DateTime.utc(2026, 9, 3, 12),
+        ),
+      );
+      final older = encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 3,
+          ratedAt: DateTime.utc(2026, 9, 1),
+        ),
+      );
+      final snap = StatsDashboardSnapshot.fromSources(
+        user: _user(
+          dailyRatings: const {
+            'Warzone': {'me': 1},
+          },
+          allTimeRatings: const {
+            'Warzone': {'me': 1},
+          },
+        ),
+        extraHistory: [
+          {'result': 'win', 'notes': today},
+          {'result': 'loss', 'notes': older},
+        ],
+        now: now,
+      );
+      expect(snap.ratings.dailyAverage, 5);
+      expect(snap.ratings.dailySampleSize, 1);
+      expect(snap.ratings.allTimeAverage, 4);
+      expect(snap.ratings.allTimeSampleSize, 2);
     });
   });
 

@@ -12,6 +12,7 @@ import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
+import 'package:squad_sync/services/session_rating_machine.dart';
 
 @GenerateMocks([LobbyRepository])
 import 'lobby_notifier_test.mocks.dart';
@@ -556,6 +557,91 @@ void main() {
       expect(lobby.gameName, 'Warzone');
       expect(lobby.spots.first, 'user-1');
       expect(lobby.maxSpots, 5);
+    });
+  });
+
+  group('LobbyNotifier - Session ratings', () {
+    test('recordWin encodes rating into match_history notes', () async {
+      final lobby = _lobby(id: 'lobby-1', memberUids: const ['user-1', 'u2']);
+      when(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).thenAnswer((_) async {});
+
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.state = AsyncData(
+        (notifier.state.value ?? LobbyState.initial()).copyWith(
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        stars: 4,
+        raterUid: 'user-1',
+        ratedAt: DateTime.utc(2026, 9, 3, 18),
+      );
+
+      await notifier.recordWin('lobby-1', sessionRating: rated);
+
+      final captured = verify(mockRepository.recordMatchResult(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'win',
+        playerUids: ['user-1', 'u2'],
+        notes: captureAnyNamed('notes'),
+      )).captured;
+      expect(captured, isNotEmpty);
+      final notes = captured.single as String?;
+      expect(notes, isNotNull);
+      final decoded = decodeSessionRatingFromNotes(notes);
+      expect(decoded?.stars, 4);
+      expect(decoded?.raterUid, 'user-1');
+      expect(decoded?.result, 'win');
+
+      final history = container.read(lobbyNotifierProvider).valueOrNull;
+      expect(history?.gameHistory, isNotEmpty);
+      expect(
+        sessionRatingFromMatchRow(history!.gameHistory.first)?.stars,
+        4,
+      );
+    });
+
+    test('recordLoss skip leaves notes null', () async {
+      final lobby = _lobby(id: 'lobby-1');
+      when(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).thenAnswer((_) async {});
+
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.state = AsyncData(
+        (notifier.state.value ?? LobbyState.initial()).copyWith(
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+      final skipped = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.skip,
+      );
+
+      await notifier.recordLoss('lobby-1', sessionRating: skipped);
+
+      verify(mockRepository.recordMatchResult(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'loss',
+        playerUids: ['user-1'],
+        notes: null,
+      )).called(1);
     });
   });
 }

@@ -2,7 +2,7 @@
 
 **North star:** fastest path from "who's on?" to a locked squad in-game.
 
-Phase A froze revival quality on tip. **Phase B started** with Matchmaking Queue v1 (product queue, not Grok AI matchmaking). Remaining Phase B (session ratings, lobby polish) is still queued.
+Phase A froze revival quality on tip. **Phase B started** with Matchmaking Queue v1 (product queue, not Grok AI matchmaking). Remaining Phase B (lobby polish) is still queued.
 
 Draft PR: https://github.com/Spencereese/SquadSync/pull/1 — **do not merge**.
 
@@ -12,9 +12,9 @@ Fill this block at freeze (and again if tip moves):
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-SHA:     527052f77ec1cac85b833d68e51c94273585cc19
-Short:   527052f
-Version: 3.4.74+76
+SHA:     26e1e345aed183161e19ef28d9ae82d0403ef67b
+Short:   26e1e34
+Version: 3.4.75+77
 Date:    2026-09-03
 ```
 
@@ -44,7 +44,7 @@ Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. Do not apply Su
 | Deep-link unify | **Landed** (`3.4.71+73`) | Chat peacock card, notification tap, and `lfg_matched` / `lfg_alert` / peacock / lobby URLs share `locationForDeepLink` + `NotificationRoutes.locationFor`. No ad-hoc `Navigator.push` for those taps. Universal Links / Open-in still Spencer-gated. |
 | Lobby share / copy | **Landed** (`3.4.72+74`) | Lobby header share copies and shares `codsquadapp://lobby/<id>`. Same parse as slice 2 (`locationForDeepLink`). No QR / SMS / Universal Links. |
 | Availability pings | **Landed** (`3.4.74+76`) | "I'm on now" from Looking-for-Squad chat info and lobby controls. Lobby members (minus sender) pinged via `NotificationService.sendNotificationToUsers`. Taps reuse `NotificationRoutes` (`availability_ping` → `/squad?lobby_id=`). No new table / screen / presenter. XOR still `planPeacockSelfNotify`. |
-| Session ratings | Queued | Phase B remainder |
+| Session ratings | **Landed** (`3.4.75+77`) | Rate a squad session after Win/Loss on lobby controls and stats Record win/loss. Pure `reduceSessionRating`; persisted in existing `match_history.notes`. Average tiles read those notes. No new table / screen. XOR still `planPeacockSelfNotify`. |
 | Lobby polish | Queued | Phase B remainder |
 
 **Parked Phase B follow-up (Spencer gate):** a shared `matchmaking_queue` (or equivalent) table plus lobby-aware `processQueue` so looking state is cross-device. v1 stays in-memory + existing `lfg_alert` / Looking-for-Squad notify. Do not apply SQL from this slice.
@@ -106,11 +106,12 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Deep-link unify | 3.4.71 | Peacock card / notification / LFG / lobby URLs share one go_router parse. |
 | Lobby share / copy | 3.4.72 | Lobby header share/copy of `codsquadapp://lobby/<id>` through `locationForDeepLink`. |
 | Availability pings | 3.4.74 | "I'm on now" from LFG / lobby. Existing `NotificationService` / `NotificationManager` / `NotificationRoutes`. |
+| Session ratings | 3.4.75 | Rate ended session from lobby Win/Loss + stats Record. `match_history.notes` JSON. Reducer `reduceSessionRating`. |
 
 ## Phase B+ parking lot (wishlist only)
 
 1. ~~Matchmaking Queue~~ — v1 landed (`3.4.70+72`); persistence table + lobby-aware `processQueue` still Spencer-gated Phase B follow-up
-2. Session ratings / lobby polish (remaining Phase B)
+2. ~~Session ratings~~ — landed (`3.4.75+77`); lobby polish remaining Phase B
 3. Performance Leaderboard
 4. Live Activities
 5. Voice / AI / public launch / TestFlight / bundle ID rename

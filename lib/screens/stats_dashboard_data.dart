@@ -4,6 +4,7 @@ import '../data/lobby_stats_codec.dart';
 import '../domain/entities/app_user.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/lobby_state.dart';
+import '../services/session_rating_machine.dart';
 
 /// One squad member's current streak for the Stats dashboard bar chart.
 class SquadMemberStreak {
@@ -144,6 +145,7 @@ class StatsDashboardSnapshot {
     List<Map<String, dynamic>> extraHistory = const [],
     WinLossSummary? remoteWinLoss,
     List<String> statsLobbyIds = const [],
+    DateTime? now,
   }) {
     final lobbyState = lobby ?? LobbyState.initial();
     final remote = extraHistory.map(normalizeMatchHistoryRow).toList();
@@ -164,6 +166,10 @@ class StatsDashboardSnapshot {
         ? fromRemoteStats
         : winLossFromGameHistory(history);
 
+    final fromSessions = ratingSummaryFromSessionHistory(history, now: now);
+    final fromMaps = ratingSummaryFrom(daily, allTime);
+    final ratings = fromSessions.isEmpty ? fromMaps : fromSessions;
+
     return StatsDashboardSnapshot(
       memberStreaks: buildMemberStreaks(
         memberUids: squadMemberUids(lobbyState, currentUid: user?.uid),
@@ -174,7 +180,7 @@ class StatsDashboardSnapshot {
         currentUserName: user?.displayName,
       ),
       winLoss: winLoss,
-      ratings: ratingSummaryFrom(daily, allTime),
+      ratings: ratings,
       community: communitySummaryFrom(user),
       statsLobbyIds: statsLobbyIds,
     );
@@ -596,6 +602,20 @@ WinLossSummary winLossFromGameHistory(List<Map<String, dynamic>> gameHistory) {
   }
 
   return WinLossSummary(wins: wins, losses: losses, draws: draws);
+}
+
+/// Session ratings decoded from `match_history.notes`.
+RatingSummary ratingSummaryFromSessionHistory(
+  List<Map<String, dynamic>> history, {
+  DateTime? now,
+}) {
+  final avg = sessionRatingAveragesFromHistory(history, now: now);
+  return RatingSummary(
+    dailyAverage: avg.dailyAverage,
+    allTimeAverage: avg.allTimeAverage,
+    dailySampleSize: avg.dailySampleSize,
+    allTimeSampleSize: avg.allTimeSampleSize,
+  );
 }
 
 RatingSummary ratingSummaryFrom(

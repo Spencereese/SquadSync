@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'package:squad_sync/services/session_rating_flow.dart';
+import 'package:squad_sync/services/session_rating_machine.dart';
 
 import '../presentation/notifiers/user_notifier.dart';
 import 'stats_dashboard_data.dart';
@@ -83,13 +85,17 @@ class PerformanceStatsScreen extends ConsumerWidget {
     if (snapshot.statsLobbyIds.length != 1) return null;
     final lobbyId = snapshot.statsLobbyIds.first;
     return () async {
-      final notifier = ref.read(ln.lobbyNotifierProvider.notifier);
       try {
-        if (result == 'win') {
-          await notifier.recordWin(lobbyId);
-        } else {
-          await notifier.recordLoss(lobbyId);
-        }
+        final rating = await promptAndRecordEndedSession(
+          context: context,
+          ref: ref,
+          lobbyId: lobbyId,
+          result: result,
+        );
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(sessionRecordedSnackbar(result, rating))),
+        );
         ref.invalidate(statsDashboardProvider);
       } catch (e) {
         if (!context.mounted) return;

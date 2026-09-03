@@ -346,6 +346,92 @@ void main() {
       );
     });
 
+    test('assignPeacockSpot claims next free seat then reduces assigned',
+        () async {
+      when(mockRepository.loadLobbyState()).thenAnswer(
+        (_) async => LobbyState.initial().copyWith(
+          selectedLobbyId: 'lobby-9',
+          currentLobby: _lobby(
+            id: 'lobby-9',
+            spots: ['taken', null, null],
+          ),
+        ),
+      );
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      final claimed = await notifier.assignPeacockSpot(
+        userId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+
+      expect(claimed, 1);
+      verify(mockRepository.assignSpot('lobby-9', 1, 'user-1')).called(1);
+      final peacock = PeacockAssignmentTracker.instance.stateFor('user-1');
+      expect(peacock.phase, PeacockAssignmentPhase.assigned);
+      expect(peacock.lobbyId, 'lobby-9');
+      expect(peacock.notificationId, 'n1');
+    });
+
+    test('assignPeacockSpot uses explicit spotIndex', () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      final claimed = await notifier.assignPeacockSpot(
+        userId: 'user-1',
+        lobbyId: 'lobby-9',
+        spotIndex: 2,
+      );
+
+      expect(claimed, 2);
+      verify(mockRepository.assignSpot('lobby-9', 2, 'user-1')).called(1);
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.assigned,
+      );
+    });
+
+    test('assignPeacockSpot without resolvable seat is phase-only handoff',
+        () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      final claimed = await notifier.assignPeacockSpot(
+        userId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+      );
+
+      expect(claimed, isNull);
+      verifyNever(mockRepository.assignSpot(any, any, any));
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.assigned,
+      );
+    });
+
+    test('assignPeacockSpot does not reduce when repo assign fails', () async {
+      when(mockRepository.assignSpot(any, any, any))
+          .thenThrow(Exception('seat down'));
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await expectLater(
+        notifier.assignPeacockSpot(
+          userId: 'user-1',
+          lobbyId: 'lobby-9',
+          spotIndex: 0,
+        ),
+        throwsA(isA<Exception>()),
+      );
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.idle,
+      );
+    });
+
     test('expirePeacockAssignment returns idle', () async {
       await container.read(lobbyNotifierProvider.future);
       final notifier = container.read(lobbyNotifierProvider.notifier);
@@ -364,6 +450,79 @@ void main() {
     });
   });
 
+  group('resolveNextFreeSpotIndex', () {
+    test('returns first empty seat', () {
+      expect(
+        resolveNextFreeSpotIndex(spots: ['taken', null, null]),
+        1,
+      );
+    });
+
+    test('reuses the user existing seat', () {
+      expect(
+        resolveNextFreeSpotIndex(
+          spots: ['other', 'user-1', null],
+          userId: 'user-1',
+        ),
+        1,
+      );
+      expect(
+        resolveNextFreeSpotIndex(
+          spots: ['user-1_calling', null],
+          userId: 'user-1',
+        ),
+        0,
+      );
+    });
+
+    test('extends when spots are shorter than maxSpots', () {
+      expect(
+        resolveNextFreeSpotIndex(spots: ['a', 'b'], maxSpots: 4),
+        2,
+      );
+    });
+
+    test('returns null when full or unknown', () {
+      expect(resolveNextFreeSpotIndex(), isNull);
+      expect(
+        resolveNextFreeSpotIndex(spots: ['a', 'b'], maxSpots: 2),
+        isNull,
+      );
+    });
+
+    test('prefers currentLobby then userLobbies then game spots', () {
+      final lobby = _lobby(
+        id: 'lobby-9',
+        spots: ['taken', null],
+        chatGroupId: 'chat-9',
+      );
+      final fromCurrent = resolveNextFreeSpotFromLobbyState(
+        state: LobbyState.initial().copyWith(currentLobby: lobby),
+        lobbyId: 'lobby-9',
+      );
+      expect(fromCurrent, 1);
+
+      final fromUser = resolveNextFreeSpotFromLobbyState(
+        state: LobbyState.initial().copyWith(
+          userLobbies: {'lobby-9': lobby},
+        ),
+        lobbyId: 'chat-9',
+      );
+      expect(fromUser, 1);
+
+      final fromGame = resolveNextFreeSpotFromLobbyState(
+        state: LobbyState.initial().copyWith(
+          gameLobbySpots: {
+            'Warzone': ['x', 'y', null],
+          },
+        ),
+        lobbyId: 'missing',
+        gameName: 'Warzone',
+      );
+      expect(fromGame, 2);
+    });
+  });
+
   group('LobbyNotifier - Helpers', () {
     test('empty state helpers', () async {
       await container.read(lobbyNotifierProvider.future);
@@ -375,6 +534,7 @@ void main() {
       expect(notifier.getActiveSquadMembersCount(null), 0);
       expect(notifier.getSquadHealthStatus(null), 'unknown');
       expect(notifier.getSquadHealthStatus('missing'), 'empty');
+      expect(notifier.nextFreeSpotIndex(lobbyId: 'missing'), isNull);
     });
   });
 

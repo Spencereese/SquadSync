@@ -14,8 +14,8 @@ Fill this block at freeze (and again if tip moves):
 Branch:  cursor/revive-squadsync-be5c
 SHA:     (this commit; filled after push)
 Short:   (this commit)
-Version: 3.4.69+71
-Date:    2026-09-02
+Version: 3.4.70+72
+Date:    2026-09-03
 ```
 
 At introduction of this checklist: branch `cursor/revive-squadsync-be5c`, version in `pubspec.yaml`. Subsequent slices bump patch/build on the same branch.
@@ -40,12 +40,12 @@ Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. Do not apply Su
 
 | Slice | Status | Note |
 | --- | --- | --- |
-| Matchmaking Queue v1 | **Landed** (`3.4.69+71`) | Product LFG queue: idle → looking → matched → joined. In-memory tracker; join with a lobby hands off to `PeacockAssignmentTracker.assignSpot` / `LobbyNotifier.assignPeacockSpot`. Not Grok `AiMatchmaking` (Phase E). |
+| Matchmaking Queue v1 | **Landed** (`3.4.70+72`) | Product LFG queue: idle → looking → matched → joined. LFG join is a **single** peacock handoff: `LobbyNotifier.assignPeacockSpot` claims the next free seat when lobby state is available (else snackbar “Handed off — claim spot in lobby”), then `joinMatched(handoffToPeacock: false)` so assign is never reduced twice. In-memory tracker only. Not Grok `AiMatchmaking` (Phase E). |
 | Session ratings | Queued | Phase B remainder |
 | Availability pings | Queued | Phase B remainder |
 | Lobby polish | Queued | Phase B remainder |
 
-**Parked migration (Spencer gate):** a shared `matchmaking_queue` (or equivalent) table so looking state is cross-device. v1 uses in-memory + existing `lfg_alert` / Looking-for-Squad notify. Do not apply SQL from this slice.
+**Parked Phase B follow-up (Spencer gate):** a shared `matchmaking_queue` (or equivalent) table plus lobby-aware `processQueue` so looking state is cross-device. v1 stays in-memory + existing `lfg_alert` / Looking-for-Squad notify. Do not apply SQL from this slice.
 
 ## Out of scope / parked until later Phase B+ / E
 
@@ -100,11 +100,11 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Lobby notifier LateInit / dotenv harness | 3.4.61 | Bind deps before swallowed offline init |
 | ConstitutionManager provider | 3.4.62 | Tests override; default must inject client (this freeze) |
 | Peacock product machine | 3.4.66–3.4.67 | Reducer **wired** into join/leave/assign/notify/expire. XOR still `planPeacockSelfNotify`. |
-| Matchmaking Queue v1 | 3.4.69+71 | Product LFG queue on chat info. Handoff to peacock assign. No new table. |
+| Matchmaking Queue v1 | 3.4.69–3.4.70 | Product LFG queue on chat info. Single peacock handoff + next-free-seat claim. In-memory only; persistence table still Spencer-gated. |
 
 ## Phase B+ parking lot (wishlist only)
 
-1. ~~Matchmaking Queue~~ — v1 landed; persistence table still Spencer-gated
+1. ~~Matchmaking Queue~~ — v1 landed (`3.4.70+72`); persistence table + lobby-aware `processQueue` still Spencer-gated Phase B follow-up
 2. Session ratings / availability pings / lobby polish (remaining Phase B)
 3. Performance Leaderboard
 4. Live Activities

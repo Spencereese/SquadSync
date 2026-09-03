@@ -157,6 +157,46 @@ void main() {
       expect(peacock.stateFor('u1').sentFcmToSelf, isFalse);
     });
 
+    test('joinMatched with handoffToPeacock false is phase-only', () {
+      tracker.startLooking('u1');
+      tracker.matchFound(
+        'u1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+      final handoff = tracker.joinMatched('u1', handoffToPeacock: false);
+      expect(handoff.state.phase, MatchmakingQueuePhase.joined);
+      expect(handoff.handedOffToPeacock, isFalse);
+      expect(handoff.peacockState, isNull);
+      expect(peacock.stateFor('u1').phase, PeacockAssignmentPhase.idle);
+    });
+
+    test('joinMatched skips assignSpot when peacock already assigned', () {
+      tracker.startLooking('u1');
+      tracker.matchFound(
+        'u1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+      peacock.assignSpot(
+        'u1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+      final handoff = tracker.joinMatched('u1');
+      expect(handoff.state.phase, MatchmakingQueuePhase.joined);
+      expect(handoff.handedOffToPeacock, isTrue);
+      expect(handoff.peacockState?.phase, PeacockAssignmentPhase.assigned);
+      expect(handoff.peacockState?.lobbyId, 'lobby-9');
+      expect(peacock.stateFor('u1').phase, PeacockAssignmentPhase.assigned);
+      expect(peacock.stateFor('u1').notificationId, 'n1');
+      expect(peacock.stateFor('u1').showedLocal, isFalse);
+      expect(peacock.stateFor('u1').sentFcmToSelf, isFalse);
+    });
+
     test('nextLookingUserId is FIFO among looking users', () {
       tracker.startLooking('u1');
       tracker.startLooking('u2');

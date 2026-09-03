@@ -479,9 +479,28 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     return uid;
   }
 
-  /// Assign a peacock spot: repository [assignSpot] first (when a spot index
-  /// is known), then reduce so a repo failure does not leave a phantom phase.
-  Future<void> assignPeacockSpot({
+  /// First empty seat for [lobbyId] / [gameName], or null when lobby
+  /// spots are unknown or full. Reuses [userId]'s existing seat.
+  int? nextFreeSpotIndex({
+    String? lobbyId,
+    String? gameName,
+    String? userId,
+  }) {
+    final lobbyState = state.valueOrNull;
+    if (lobbyState == null) return null;
+    return resolveNextFreeSpotFromLobbyState(
+      state: lobbyState,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      userId: userId,
+    );
+  }
+
+  /// Assign a peacock spot: repository [assignSpot] first when a seat
+  /// is known (explicit [spotIndex] or the next free seat from lobby
+  /// state), then reduce so a repo failure does not leave a phantom
+  /// phase. Returns the claimed index, or null for phase-only handoff.
+  Future<int?> assignPeacockSpot({
     required String userId,
     required String lobbyId,
     String? gameName,
@@ -489,8 +508,14 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     int? spotIndex,
   }) async {
     _bindPeacockQueueProcessor();
-    if (spotIndex != null) {
-      await assignSpot(lobbyId, spotIndex, userId);
+    final claimed = spotIndex ??
+        nextFreeSpotIndex(
+          lobbyId: lobbyId,
+          gameName: gameName,
+          userId: userId,
+        );
+    if (claimed != null) {
+      await assignSpot(lobbyId, claimed, userId);
     }
     _reducePeacock(
       userId: userId,
@@ -499,6 +524,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       gameName: gameName,
       notificationId: notificationId,
     );
+    return claimed;
   }
 
   /// Expire/cancel/timeout a peacock assignment.
@@ -1512,3 +1538,69 @@ final currentLobbyProvider = Provider<AsyncValue<Lobby?>>((ref) {
     error: (error, stack) => AsyncError(error, stack),
   );
 });
+
+bool _isSpotOccupied(String? uid) => uid != null && uid.isNotEmpty;
+
+bool _spotHeldBy(String? occupant, String userId) {
+  if (occupant == null || occupant.isEmpty) return false;
+  return occupant == userId || occupant == '${userId}_calling';
+}
+
+/// First empty seat, or the next index when [spots] is shorter than
+/// [maxSpots]. Reuses [userId]'s existing seat. Null when unknown/full.
+int? resolveNextFreeSpotIndex({
+  List<String?>? spots,
+  int? maxSpots,
+  String? userId,
+}) {
+  if (spots == null && maxSpots == null) return null;
+  final list = spots ?? const <String?>[];
+  if (userId != null && userId.isNotEmpty) {
+    final existing = list.indexWhere((uid) => _spotHeldBy(uid, userId));
+    if (existing >= 0) return existing;
+  }
+  final free = list.indexWhere((uid) => !_isSpotOccupied(uid));
+  if (free >= 0) return free;
+  final cap = maxSpots ?? list.length;
+  if (list.length < cap) return list.length;
+  return null;
+}
+
+Lobby? lobbyForSeatResolve(LobbyState state, String? lobbyId) {
+  if (lobbyId == null || lobbyId.isEmpty) return null;
+  final current = state.currentLobby;
+  if (current != null &&
+      (current.id == lobbyId || current.chatGroupId == lobbyId)) {
+    return current;
+  }
+  final byId = state.userLobbies[lobbyId];
+  if (byId != null) return byId;
+  for (final lobby in state.userLobbies.values) {
+    if (lobby.chatGroupId == lobbyId) return lobby;
+  }
+  return null;
+}
+
+/// Prefer [currentLobby] / [LobbyState.userLobbies], then game-scoped spots.
+int? resolveNextFreeSpotFromLobbyState({
+  required LobbyState state,
+  String? lobbyId,
+  String? gameName,
+  String? userId,
+}) {
+  final lobby = lobbyForSeatResolve(state, lobbyId);
+  if (lobby != null) {
+    return resolveNextFreeSpotIndex(
+      spots: lobby.spots,
+      maxSpots: lobby.maxSpots,
+      userId: userId,
+    );
+  }
+  if (gameName != null && gameName.isNotEmpty) {
+    final spots = state.gameLobbySpots[gameName];
+    if (spots != null) {
+      return resolveNextFreeSpotIndex(spots: spots, userId: userId);
+    }
+  }
+  return null;
+}

@@ -99,10 +99,11 @@ class ChatInfoActionsSection extends StatelessWidget {
 /// Looking for Squad — product matchmaking queue v1.
 ///
 /// Join/leave looking reduce on [MatchmakingQueueTracker] after the
-/// existing LFG notify succeeds. A matched lobby hands off to
-/// [LobbyNotifier.assignPeacockSpot] (peacock assign path), not a
-/// parallel XOR. Queue rows are in-memory until Spencer applies a
-/// `matchmaking_queue` migration.
+/// existing LFG notify succeeds. A matched lobby claims a seat through
+/// [LobbyNotifier.assignPeacockSpot] (single peacock reduce), then
+/// [MatchmakingQueueTracker.joinMatched] with `handoffToPeacock: false`
+/// so assign is never reduced twice. Queue rows are in-memory until
+/// Spencer applies a `matchmaking_queue` migration.
 class _LookingForSquadButton extends ConsumerStatefulWidget {
   final String squadId;
   final Color neonColor;
@@ -251,15 +252,19 @@ class _LookingForSquadButtonState
     setState(() => _isLoading = true);
     try {
       final lobbyId = entry.lobbyId;
+      int? claimedSpot;
+      var handedOff = false;
       if (lobbyId != null && lobbyId.isNotEmpty) {
-        await ref.read(lobbyNotifierProvider.notifier).assignPeacockSpot(
-              userId: userId,
-              lobbyId: lobbyId,
-              gameName: entry.gameName,
-              notificationId: entry.notificationId,
-            );
+        claimedSpot =
+            await ref.read(lobbyNotifierProvider.notifier).assignPeacockSpot(
+                  userId: userId,
+                  lobbyId: lobbyId,
+                  gameName: entry.gameName,
+                  notificationId: entry.notificationId,
+                );
+        handedOff = true;
       }
-      final handoff = _tracker.joinMatched(userId);
+      final handoff = _tracker.joinMatched(userId, handoffToPeacock: false);
       if (!mounted) return;
       if (handoff.state.hasJoinTarget) {
         NotificationRoutes.open({
@@ -269,13 +274,17 @@ class _LookingForSquadButtonState
             'game_name': handoff.state.gameName,
         });
       }
+      final String message;
+      if (claimedSpot != null) {
+        message = 'Joined ${handoff.state.gameName ?? 'squad'}';
+      } else if (handedOff) {
+        message = 'Handed off — claim spot in lobby';
+      } else {
+        message = 'Squad joined';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            handoff.handedOffToPeacock
-                ? 'Joined ${handoff.state.gameName ?? 'squad'}'
-                : 'Squad joined',
-          ),
+          content: Text(message),
           backgroundColor: Colors.green,
         ),
       );

@@ -6,8 +6,11 @@ import 'peacock_assignment_machine.dart';
 /// Product phases for the Looking-for-Squad matchmaking queue.
 ///
 /// idle → looking → matched → joined.
-/// Join with a lobby hands off to [PeacockAssignmentTracker.assignSpot]
+/// Join with a lobby may hand off to [PeacockAssignmentTracker.assignSpot]
 /// — this machine does not implement a parallel peacock notify XOR.
+/// LFG UI claims a seat via [LobbyNotifier.assignPeacockSpot] first, then
+/// [MatchmakingQueueTracker.joinMatched] with [handoffToPeacock] false
+/// so assign is a single reduce.
 enum MatchmakingQueuePhase {
   idle,
   looking,
@@ -138,8 +141,9 @@ MatchmakingQueueEntry reduceMatchmakingQueue({
 
 /// Result of [MatchmakingQueueTracker.joinMatched].
 ///
-/// [handedOffToPeacock] means the existing peacock assign path ran for
-/// this user — not a second notify XOR.
+/// [handedOffToPeacock] means peacock is assigned for this user (this
+/// call or a prior [LobbyNotifier.assignPeacockSpot]) — not a second
+/// notify XOR.
 class MatchmakingHandoff {
   const MatchmakingHandoff({
     required this.state,
@@ -157,7 +161,9 @@ class MatchmakingHandoff {
 ///
 /// Join/leave looking reduce **after** the matching remote write succeeds
 /// ([startLookingAfter] / [cancelLookingAfter]). Match-into-lobby hands
-/// off to [PeacockAssignmentTracker.assignSpot].
+/// off to [PeacockAssignmentTracker.assignSpot] unless the caller already
+/// assigned via [LobbyNotifier.assignPeacockSpot] ([handoffToPeacock]
+/// false, or peacock already assigned — never a second reduce).
 class MatchmakingQueueTracker extends ChangeNotifier {
   MatchmakingQueueTracker({PeacockAssignmentTracker? peacock})
       : _peacockOverride = peacock;
@@ -294,8 +300,16 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   }
 
   /// looking/matched → joined, then peacock [assignSpot] when a lobby
-  /// is present. Does not call [PeacockAssignmentTracker.notifySelf].
-  MatchmakingHandoff joinMatched(String userId) {
+  /// is present and [handoffToPeacock] is true.
+  ///
+  /// Pass [handoffToPeacock] false when the caller already assigned
+  /// through [LobbyNotifier.assignPeacockSpot] (single reduce). Already
+  /// assigned/notified peacock is never reduced again. Does not call
+  /// [PeacockAssignmentTracker.notifySelf].
+  MatchmakingHandoff joinMatched(
+    String userId, {
+    bool handoffToPeacock = true,
+  }) {
     final before = stateFor(userId);
     final after = apply(
       userId: userId,
@@ -304,6 +318,17 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     if (before.phase != MatchmakingQueuePhase.matched ||
         after.phase != MatchmakingQueuePhase.joined) {
       return MatchmakingHandoff(state: after, handedOffToPeacock: false);
+    }
+    final existingPeacock = _peacock.stateFor(userId);
+    final alreadyHandedOff =
+        existingPeacock.phase == PeacockAssignmentPhase.assigned ||
+            existingPeacock.phase == PeacockAssignmentPhase.notified;
+    if (alreadyHandedOff || !handoffToPeacock) {
+      return MatchmakingHandoff(
+        state: after,
+        handedOffToPeacock: alreadyHandedOff,
+        peacockState: alreadyHandedOff ? existingPeacock : null,
+      );
     }
     final lobbyId = after.lobbyId;
     if (lobbyId == null || lobbyId.isEmpty) {

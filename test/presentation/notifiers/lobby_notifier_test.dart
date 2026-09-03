@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:squad_sync/core/app_env.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
+import 'package:squad_sync/services/constitution_manager.dart';
 
 @GenerateMocks([LobbyRepository])
 import 'lobby_notifier_test.mocks.dart';
@@ -35,6 +36,8 @@ Lobby _lobby({
     chatGroupId: chatGroupId,
   );
 }
+
+class _FakeConstitutionManager extends Fake implements ConstitutionManager {}
 
 class _PassthroughErrorHandler extends Fake implements ErrorHandlingService {
   @override
@@ -115,6 +118,9 @@ void main() {
         lobbyRepositoryProvider.overrideWithValue(mockRepository),
         errorHandlingServiceProvider.overrideWithValue(
           _PassthroughErrorHandler(),
+        ),
+        constitutionManagerProvider.overrideWithValue(
+          _FakeConstitutionManager(),
         ),
       ],
     );

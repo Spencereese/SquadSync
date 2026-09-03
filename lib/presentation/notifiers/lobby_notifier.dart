@@ -43,7 +43,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     // Bind required deps BEFORE offline init / load so a swallowed failure
     // never leaves late fields unset (LateInitializationError on later calls).
     _repository = ref.read(lobbyRepositoryProvider);
-    _constitutionManager = ConstitutionManager();
+    _constitutionManager = ref.read(constitutionManagerProvider);
     _errorHandler = ref.read(errorHandlingServiceProvider);
 
     ref.onDispose(() {

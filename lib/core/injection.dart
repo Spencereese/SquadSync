@@ -18,6 +18,7 @@ import 'package:squad_sync/domain/repositories/game_repository.dart';
 import 'package:squad_sync/services/igdb_auth_service.dart';
 import 'package:squad_sync/services/friends_service.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
+import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/services/auto_merge_service.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 
@@ -199,6 +200,12 @@ final errorHandlingServiceProvider = Provider<ErrorHandlingService>((ref) {
   // Unit tests override this; fallback avoids GetIt NotRegisteredError when
   // a harness forgets the override.
   return ErrorHandlingService();
+});
+
+/// Constitution enforcement. Override in unit tests — default touches
+/// [Supabase.instance] and must not be constructed in a harness.
+final constitutionManagerProvider = Provider<ConstitutionManager>((ref) {
+  return ConstitutionManager();
 });
 
 // Notifier providers are defined in their respective files (Riverpod 3.0):

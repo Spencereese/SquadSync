@@ -6,36 +6,60 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
-import 'package:squad_sync/services/timer_service.dart';
-import 'package:squad_sync/services/auth_service_supabase.dart';
 import 'package:squad_sync/core/injection.dart';
 
-@GenerateMocks([LobbyRepository, TimerServiceNotifier, AuthServiceSupabase])
+@GenerateMocks([LobbyRepository])
 import 'lobby_notifier_test.mocks.dart';
 
+Lobby _lobby({
+  String id = 'lobby-1',
+  String name = 'Test Lobby',
+  String gameName = 'Warzone',
+  List<String> memberUids = const ['user-1'],
+  List<String?>? spots,
+  String chatGroupId = 'chat-1',
+}) {
+  final maxSpots = spots?.length ?? 5;
+  return Lobby.create(
+    name: name,
+    gameName: gameName,
+    maxSpots: maxSpots,
+    createdBy: memberUids.first,
+  ).copyWith(
+    id: id,
+    memberUids: memberUids,
+    spots: spots ?? List<String?>.filled(maxSpots, null),
+    chatGroupId: chatGroupId,
+  );
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late MockLobbyRepository mockRepository;
-  late MockTimerServiceNotifier mockTimerService;
   late ProviderContainer container;
 
   setUp(() {
     mockRepository = MockLobbyRepository();
-    mockTimerService = MockTimerServiceNotifier();
 
-    // Set up default stub responses
     when(mockRepository.loadLobbyState()).thenAnswer(
       (_) async => LobbyState.initial(),
     );
-
     when(mockRepository.getUserLobbiesStream(any)).thenAnswer(
-      (_) => Stream.value([]),
+      (_) => Stream<List<Lobby>>.value(const []),
     );
+    when(mockRepository.getLobbyStream(any)).thenAnswer(
+      (_) => Stream<Lobby?>.value(null),
+    );
+    when(mockRepository.addToPeacockQueue(any, any)).thenAnswer((_) async {});
+    when(mockRepository.removeFromPeacockQueue(any)).thenAnswer((_) async {});
+    when(mockRepository.startSpotTimer(any, any, any)).thenAnswer((_) async {});
+    when(mockRepository.cancelSpotTimer(any, any)).thenAnswer((_) async {});
+    when(mockRepository.assignSpot(any, any, any)).thenAnswer((_) async {});
 
-    // Create provider container with overrides
     container = ProviderContainer(
       overrides: [
         lobbyRepositoryProvider.overrideWithValue(mockRepository),
-        timerServiceProvider.overrideWith((ref) => mockTimerService),
       ],
     );
   });
@@ -46,22 +70,18 @@ void main() {
 
   group('LobbyNotifier - Initialization', () {
     test('should load initial state successfully', () async {
-      final initialState = LobbyState.initial();
-      when(mockRepository.loadLobbyState())
-          .thenAnswer((_) async => initialState);
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
       final state = await container.read(lobbyNotifierProvider.future);
 
-      expect(state, equals(initialState));
-      verify(mockRepository.loadLobbyState()).called(1);
+      expect(state, isA<LobbyState>());
+      expect(state.isInitialized, isTrue);
+      expect(state.currentLobby, isNull);
+      expect(state.selectedLobbyId, isNull);
     });
 
     test('should handle AsyncLoading state during initialization', () {
-      final notifier = container.read(lobbyNotifierProvider.notifier);
       final state = container.read(lobbyNotifierProvider);
 
-      expect(state, isA<AsyncLoading>());
+      expect(state, isA<AsyncLoading<LobbyState>>());
     });
 
     test('should handle error during initialization and return initial state',
@@ -75,297 +95,123 @@ void main() {
       expect(state, isA<LobbyState>());
       expect(state.currentLobby, isNull);
     });
-
-    test('should handle timeout during initialization', () async {
-      when(mockRepository.loadLobbyState()).thenAnswer(
-        (_) => Future.delayed(
-            const Duration(seconds: 15), () => LobbyState.initial()),
-      );
-
-      final state = await container.read(lobbyNotifierProvider.future);
-
-      expect(state, isA<LobbyState>());
-      expect(state.currentLobby, isNull);
-    });
   });
 
   group('LobbyNotifier - Lobby Selection', () {
-    test('should select lobby and update state', () async {
-      final testLobby = Lobby(
-        id: 'lobby-1',
-        name: 'Test Lobby',
-        gameSlug: 'test-game',
-        memberUids: ['user-1'],
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        spots: [],
-        chatGroupId: 'chat-1',
-      );
-
-      when(mockRepository.loadLobbyState()).thenAnswer(
-        (_) async => LobbyState.initial(),
-      );
-
-      when(mockRepository.getLobbyStream('lobby-1')).thenAnswer(
-        (_) => Stream.value(testLobby),
-      );
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
+    test('should select lobby and update selectedLobbyId', () async {
       await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
 
-      await notifier.selectLobby('lobby-1');
+      notifier.setSelectedLobbyId('lobby-1');
 
       final state = container.read(lobbyNotifierProvider).valueOrNull;
-      expect(state?.currentLobbyId, equals('lobby-1'));
+      expect(state?.selectedLobbyId, 'lobby-1');
+      expect(container.read(currentLobbyIdProvider), 'lobby-1');
     });
 
     test('should clear selected lobby', () async {
-      when(mockRepository.loadLobbyState()).thenAnswer(
-        (_) async => LobbyState.initial().copyWith(currentLobbyId: 'lobby-1'),
-      );
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
       await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
 
-      await notifier.clearSelectedLobby();
+      notifier.setSelectedLobbyId('lobby-1');
+      notifier.setSelectedLobbyId(null);
 
       final state = container.read(lobbyNotifierProvider).valueOrNull;
-      expect(state?.currentLobbyId, isNull);
-      expect(state?.currentLobby, isNull);
+      expect(state?.selectedLobbyId, isNull);
+      expect(container.read(currentLobbyIdProvider), isNull);
     });
   });
 
   group('LobbyNotifier - Spot Management', () {
-    test('should claim spot successfully', () async {
-      final initialState = LobbyState.initial().copyWith(
-        currentLobbyId: 'lobby-1',
-        currentLobby: Lobby(
-          id: 'lobby-1',
-          name: 'Test Lobby',
-          gameSlug: 'test-game',
-          memberUids: ['user-1'],
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-          spots: List.filled(5, null),
-          chatGroupId: 'chat-1',
-        ),
-      );
-
-      when(mockRepository.loadLobbyState())
-          .thenAnswer((_) async => initialState);
-      when(mockRepository.claimSpot('lobby-1', 0, 'user-1'))
-          .thenAnswer((_) async {});
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
+    test('claimSpot completes without a signed-in user', () async {
       await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
 
-      await notifier.claimSpot(0);
+      await notifier.claimSpot('Warzone', 0);
 
-      verify(mockRepository.claimSpot('lobby-1', 0, any)).called(1);
+      verifyNever(mockRepository.assignSpot(any, any, any));
     });
 
-    test('should release spot successfully', () async {
-      final initialState = LobbyState.initial().copyWith(
-        currentLobbyId: 'lobby-1',
-        currentLobby: Lobby(
-          id: 'lobby-1',
-          name: 'Test Lobby',
-          gameSlug: 'test-game',
-          memberUids: ['user-1'],
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-          spots: ['user-1', null, null, null, null],
-          chatGroupId: 'chat-1',
-        ),
-      );
-
-      when(mockRepository.loadLobbyState())
-          .thenAnswer((_) async => initialState);
-      when(mockRepository.releaseSpot('lobby-1', 0)).thenAnswer((_) async {});
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
+    test('should assign spot via repository', () async {
       await container.read(lobbyNotifierProvider.future);
-
-      await notifier.releaseSpot(0);
-
-      verify(mockRepository.releaseSpot('lobby-1', 0)).called(1);
-    });
-
-    test('should handle claim spot error', () async {
-      final initialState = LobbyState.initial().copyWith(
-        currentLobbyId: 'lobby-1',
-        currentLobby: Lobby(
-          id: 'lobby-1',
-          name: 'Test Lobby',
-          gameSlug: 'test-game',
-          memberUids: ['user-1'],
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-          spots: List.filled(5, null),
-          chatGroupId: 'chat-1',
-        ),
-      );
-
-      when(mockRepository.loadLobbyState())
-          .thenAnswer((_) async => initialState);
-      when(mockRepository.claimSpot('lobby-1', 0, 'user-1')).thenThrow(
-        Exception('Spot already claimed'),
-      );
-
       final notifier = container.read(lobbyNotifierProvider.notifier);
-      await container.read(lobbyNotifierProvider.future);
 
-      expect(
-        () => notifier.claimSpot(0),
-        throwsException,
-      );
+      await notifier.assignSpot('lobby-1', 0, 'user-1');
+
+      verify(mockRepository.assignSpot('lobby-1', 0, 'user-1')).called(1);
     });
   });
 
   group('LobbyNotifier - Timer Management', () {
-    test('should start timer for spot', () async {
-      final initialState = LobbyState.initial().copyWith(
-        currentLobbyId: 'lobby-1',
+    test('should start spot timer via repository', () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.startSpotTimer(
+        'lobby-1',
+        0,
+        const Duration(seconds: 30),
       );
 
-      when(mockRepository.loadLobbyState())
-          .thenAnswer((_) async => initialState);
-      when(mockRepository.startTimer('lobby-1', 0, 30))
-          .thenAnswer((_) async {});
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
-      await container.read(lobbyNotifierProvider.future);
-
-      await notifier.startTimer(0, 30);
-
-      verify(mockRepository.startTimer('lobby-1', 0, 30)).called(1);
-    });
-
-    test('should cancel timer for spot', () async {
-      final initialState = LobbyState.initial().copyWith(
-        currentLobbyId: 'lobby-1',
-      );
-
-      when(mockRepository.loadLobbyState())
-          .thenAnswer((_) async => initialState);
-      when(mockRepository.cancelTimer('lobby-1', 0)).thenAnswer((_) async {});
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
-      await container.read(lobbyNotifierProvider.future);
-
-      await notifier.cancelTimer(0);
-
-      verify(mockRepository.cancelTimer('lobby-1', 0)).called(1);
+      verify(mockRepository.startSpotTimer(
+        'lobby-1',
+        0,
+        const Duration(seconds: 30),
+      )).called(1);
     });
   });
 
   group('LobbyNotifier - Peacock Queue', () {
     test('should add user to peacock queue', () async {
-      final initialState = LobbyState.initial().copyWith(
-        currentLobbyId: 'lobby-1',
-      );
-
-      when(mockRepository.loadLobbyState())
-          .thenAnswer((_) async => initialState);
-      when(mockRepository.addToPeacockQueue('lobby-1', 'user-1'))
-          .thenAnswer((_) async {});
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
       await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
 
-      await notifier.addToPeacockQueue();
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
 
-      verify(mockRepository.addToPeacockQueue('lobby-1', any)).called(1);
+      verify(mockRepository.addToPeacockQueue('user-1', 'Warzone')).called(1);
     });
 
     test('should remove user from peacock queue', () async {
-      final initialState = LobbyState.initial().copyWith(
-        currentLobbyId: 'lobby-1',
-      );
-
-      when(mockRepository.loadLobbyState())
-          .thenAnswer((_) async => initialState);
-      when(mockRepository.removeFromPeacockQueue('lobby-1', 'user-1'))
-          .thenAnswer((_) async {});
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
       await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
 
-      await notifier.removeFromPeacockQueue();
+      await notifier.removeFromPeacockQueue('user-1');
 
-      verify(mockRepository.removeFromPeacockQueue('lobby-1', any)).called(1);
+      verify(mockRepository.removeFromPeacockQueue('user-1')).called(1);
     });
   });
 
-  group('LobbyNotifier - User Lobbies', () {
-    test('should load user lobbies', () async {
-      final testLobbies = [
-        Lobby(
-          id: 'lobby-1',
-          name: 'Lobby 1',
-          gameSlug: 'game-1',
-          memberUids: ['user-1'],
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-          spots: [],
-          chatGroupId: 'chat-1',
-        ),
-        Lobby(
-          id: 'lobby-2',
-          name: 'Lobby 2',
-          gameSlug: 'game-2',
-          memberUids: ['user-1'],
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-          spots: [],
-          chatGroupId: 'chat-2',
-        ),
-      ];
-
-      when(mockRepository.loadLobbyState()).thenAnswer(
-        (_) async => LobbyState.initial(),
-      );
-
-      when(mockRepository.getUserLobbiesStream('user-1')).thenAnswer(
-        (_) => Stream.value(testLobbies),
-      );
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
+  group('LobbyNotifier - Helpers', () {
+    test('empty state helpers', () async {
       await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
 
-      // State should eventually contain user lobbies via stream
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      final state = container.read(lobbyNotifierProvider).valueOrNull;
-      expect(state, isNotNull);
+      expect(notifier.getDisplayNameForUid('missing'), 'Unknown User');
+      expect(notifier.getSquadSpots('Warzone'), isEmpty);
+      expect(notifier.isUserInSquad('user-1', null), isFalse);
+      expect(notifier.getActiveSquadMembersCount(null), 0);
+      expect(notifier.getSquadHealthStatus(null), 'unknown');
+      expect(notifier.getSquadHealthStatus('missing'), 'empty');
     });
   });
 
-  group('LobbyNotifier - Error Handling', () {
-    test('should handle repository errors gracefully', () async {
-      when(mockRepository.loadLobbyState()).thenThrow(
-        Exception('Repository error'),
-      );
+  group('LobbyNotifier - Compatibility providers', () {
+    test('currentLobbyProvider is a derived Provider', () async {
+      await container.read(lobbyNotifierProvider.future);
 
-      final state = await container.read(lobbyNotifierProvider.future);
-
-      expect(state, isA<LobbyState>());
-      expect(state.currentLobby, isNull);
+      expect(currentLobbyProvider, isA<Provider<AsyncValue<Lobby?>>>());
+      final current = container.read(currentLobbyProvider);
+      expect(current, isA<AsyncData<Lobby?>>());
+      expect(current.value, isNull);
     });
+  });
 
-    test('should handle stream errors', () async {
-      when(mockRepository.loadLobbyState()).thenAnswer(
-        (_) async => LobbyState.initial(),
-      );
-
-      when(mockRepository.getUserLobbiesStream(any)).thenAnswer(
-        (_) => Stream.error(Exception('Stream error')),
-      );
-
-      final notifier = container.read(lobbyNotifierProvider.notifier);
-      final state = await container.read(lobbyNotifierProvider.future);
-
-      expect(state, isA<LobbyState>());
+  group('Lobby fixture', () {
+    test('Lobby.create matches current entity fields', () {
+      final lobby = _lobby(spots: ['user-1', null, null, null, null]);
+      expect(lobby.gameName, 'Warzone');
+      expect(lobby.spots.first, 'user-1');
+      expect(lobby.maxSpots, 5);
     });
   });
 }

@@ -59,6 +59,10 @@ ios/build/
 Runner.xcworkspace/xcuserdata/
 *.xcuserstate
 
+# Finder duplicate dart files pollute flutter analyze/test
+* - Copy.dart
+* Copy.dart
+
 # Node
 backend/node_modules/
 functions/node_modules/

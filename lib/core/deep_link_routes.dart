@@ -1,3 +1,6 @@
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
+
 import 'app_links_policy.dart';
 import 'lobby_chat_bind.dart';
 import 'notification_routes.dart';
@@ -44,6 +47,44 @@ void openPeacockCard({
   (go ?? NotificationRoutes.go)?.call(location);
 }
 
+/// Share/copy URI for this lobby. [locationForDeepLink] is the parse.
+String lobbyShareDeepLink({required String lobbyId}) {
+  final id = lobbyId.trim();
+  if (id.isEmpty) {
+    return Uri(scheme: kSimulatorDeepLinkScheme, host: 'lobby').toString();
+  }
+  return Uri(
+    scheme: kSimulatorDeepLinkScheme,
+    host: 'lobby',
+    pathSegments: [id],
+  ).toString();
+}
+
+/// Copy [lobbyShareDeepLink] then open the system share sheet.
+/// Live path: lobby header. Tests inject [copy] / [share].
+Future<String> shareLobbyLink({
+  required String lobbyId,
+  Future<void> Function(String link)? copy,
+  Future<void> Function(String link)? share,
+}) async {
+  final link = lobbyShareDeepLink(lobbyId: lobbyId);
+  await (copy ?? _copyLobbyLinkToClipboard)(link);
+  try {
+    await (share ?? _shareLobbyLinkSheet)(link);
+  } catch (_) {
+    // Clipboard already holds [link].
+  }
+  return link;
+}
+
+Future<void> _copyLobbyLinkToClipboard(String link) {
+  return Clipboard.setData(ClipboardData(text: link));
+}
+
+Future<void> _shareLobbyLinkSheet(String link) {
+  return SharePlus.instance.share(ShareParams(text: link));
+}
+
 /// Pure mapping from an App Link / custom-scheme URI to a go_router
 /// location. Returns null for auth callbacks and unknown URIs.
 ///
@@ -83,7 +124,9 @@ String? locationForDeepLinkUri(Uri uri) {
 
   final queryType = (query['type'] ?? '').toLowerCase();
   final queryScreen = (query['screen'] ?? '').toLowerCase();
-  final lobbyId = _nonEmpty(query['lobby_id']) ?? _nonEmpty(query['lobbyId']);
+  final lobbyId = _nonEmpty(query['lobby_id']) ??
+      _nonEmpty(query['lobbyId']) ??
+      _lobbyIdFromPath(host: host, segments: segments);
   var gameName = _nonEmpty(query['game_name']) ?? _nonEmpty(query['gameName']);
   gameName ??= _gameNameFromPath(host: host, segments: segments);
 
@@ -133,14 +176,43 @@ bool _matchesName(String host, List<String> segments, String name) {
   return segments.any((segment) => segment.toLowerCase() == name);
 }
 
+/// `codsquadapp://lobby/<id>` (and `/lobby/<id>` on https) — path is the
+/// lobby id, not a game name. Query `lobby_id` still wins when present.
+String? _lobbyIdFromPath({
+  required String host,
+  required List<String> segments,
+}) {
+  if (host == 'lobby') {
+    return _nonEmpty(segments.isNotEmpty ? segments.first : null);
+  }
+  final lobbyIndex =
+      segments.indexWhere((segment) => segment.toLowerCase() == 'lobby');
+  if (lobbyIndex >= 0 && lobbyIndex + 1 < segments.length) {
+    final next = segments[lobbyIndex + 1].toLowerCase();
+    const reserved = {
+      'squad',
+      'peacock',
+      'lfg_matched',
+      'lfg_alert',
+      'chat',
+      'join',
+    };
+    if (!reserved.contains(next)) {
+      return _nonEmpty(segments[lobbyIndex + 1]);
+    }
+  }
+  return null;
+}
+
 String? _gameNameFromPath({
   required String host,
   required List<String> segments,
 }) {
-  const markers = ['squad', 'lobby', 'peacock', 'lfg_matched'];
+  // Lobby path is the lobby id ([_lobbyIdFromPath]); game stays on query.
+  const markers = ['squad', 'peacock', 'lfg_matched'];
   if (markers.contains(host) && segments.isNotEmpty) {
     final first = segments.first.toLowerCase();
-    if (!markers.contains(first)) {
+    if (!markers.contains(first) && first != 'lobby') {
       return _nonEmpty(segments.first);
     }
   }

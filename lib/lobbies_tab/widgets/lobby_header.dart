@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import '../../core/deep_link_routes.dart';
 import '../dialogs/settings_dialog.dart';
 import '../../widgets/unified_game_selection_sheet.dart';
 import '../../domain/entities/game.dart';
@@ -93,6 +94,21 @@ class LobbyHeader extends ConsumerWidget {
                 ),
               ),
 
+              if (_nonEmptyLobbyId(lobbyId) != null)
+                Semantics(
+                  label: 'Share lobby link',
+                  child: IconButton(
+                    key: const Key('lobby-share-link'),
+                    icon: const Icon(
+                      Icons.share,
+                      color: Colors.cyanAccent,
+                      size: 26,
+                    ),
+                    onPressed: () => _shareLobbyLink(context, lobbyId!),
+                    tooltip: 'Share lobby',
+                  ),
+                ),
+
               // Settings button
               Semantics(
                 label: 'Open squad settings',
@@ -113,6 +129,28 @@ class LobbyHeader extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _shareLobbyLink(BuildContext context, String lobbyId) async {
+    HapticFeedback.lightImpact();
+    try {
+      await shareLobbyLink(lobbyId: lobbyId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lobby link copied'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not share lobby link: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _showGameSelectionDialog(BuildContext context, WidgetRef ref) async {
@@ -162,4 +200,10 @@ class LobbyHeader extends ConsumerWidget {
       },
     );
   }
+}
+
+String? _nonEmptyLobbyId(String? lobbyId) {
+  final id = lobbyId?.trim();
+  if (id == null || id.isEmpty) return null;
+  return id;
 }

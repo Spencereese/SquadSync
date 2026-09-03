@@ -237,6 +237,63 @@ void main() {
     });
   });
 
+  group('lobby share / copy URI', () {
+    test('lobbyShareDeepLink is codsquadapp://lobby/<id>', () {
+      expect(
+        lobbyShareDeepLink(lobbyId: 'lobby-9'),
+        'codsquadapp://lobby/lobby-9',
+      );
+      expect(
+        lobbyShareDeepLink(lobbyId: '  lobby-9  '),
+        'codsquadapp://lobby/lobby-9',
+      );
+    });
+
+    test('share URI parses through locationForDeepLink', () {
+      const lobbyId = 'lobby-9';
+      final link = lobbyShareDeepLink(lobbyId: lobbyId);
+      expect(link, 'codsquadapp://lobby/lobby-9');
+      expect(locationForDeepLink(link), '/squad?lobby_id=lobby-9');
+      expect(
+        locationForDeepLink('codsquadapp://lobby/$lobbyId'),
+        '/squad?lobby_id=lobby-9',
+      );
+      expect(
+        DeepLinkRouter.locationFor(link),
+        '/squad?lobby_id=lobby-9',
+      );
+      expect(
+        locationForDeepLink('https://lobbiesync.app/lobby/$lobbyId'),
+        '/squad?lobby_id=lobby-9',
+      );
+    });
+
+    test('path lobby id is not treated as a game name', () {
+      expect(
+        locationForDeepLink('codsquadapp://lobby/lobby-9'),
+        isNot('/squad/lobby-9'),
+      );
+      expect(
+        locationForDeepLink('codsquadapp://lobby/lobby-9?game_name=Warzone'),
+        '/squad/Warzone?lobby_id=lobby-9',
+      );
+    });
+
+    test('shareLobbyLink copies and shares the built URI', () async {
+      final copied = <String>[];
+      final shared = <String>[];
+      final link = await shareLobbyLink(
+        lobbyId: 'lobby-9',
+        copy: (text) async => copied.add(text),
+        share: (text) async => shared.add(text),
+      );
+      expect(link, 'codsquadapp://lobby/lobby-9');
+      expect(copied, [link]);
+      expect(shared, [link]);
+      expect(locationForDeepLink(link), '/squad?lobby_id=lobby-9');
+    });
+  });
+
   group('simulator Info.plist scheme (no SpringBoard)', () {
     test('Info.simulator.plist registers expected schemes', () {
       final plist = File('ios/Runner/Info.simulator.plist');

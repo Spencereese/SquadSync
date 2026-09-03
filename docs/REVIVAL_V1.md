@@ -12,9 +12,9 @@ Fill this block at freeze (and again if tip moves):
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-SHA:     84906d8bffcc3e09bbc019979bdb121d2cdd817a
-Short:   84906d8
-Version: 3.4.71+73
+SHA:     bb497fd294f841ccc98c47a658e27893bee7f0dc
+Short:   bb497fd
+Version: 3.4.72+74
 Date:    2026-09-03
 ```
 
@@ -42,6 +42,7 @@ Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. Do not apply Su
 | --- | --- | --- |
 | Matchmaking Queue v1 | **Landed** (`3.4.70+72`) | Product LFG queue: idle → looking → matched → joined. LFG join is a **single** peacock handoff: `LobbyNotifier.assignPeacockSpot` claims the next free seat when lobby state is available (else snackbar “Handed off — claim spot in lobby”), then `joinMatched(handoffToPeacock: false)` so assign is never reduced twice. In-memory tracker only. Not Grok `AiMatchmaking` (Phase E). |
 | Deep-link unify | **Landed** (`3.4.71+73`) | Chat peacock card, notification tap, and `lfg_matched` / `lfg_alert` / peacock / lobby URLs share `locationForDeepLink` + `NotificationRoutes.locationFor`. No ad-hoc `Navigator.push` for those taps. Universal Links / Open-in still Spencer-gated. |
+| Lobby share / copy | **Landed** (`3.4.72+74`) | Lobby header share copies and shares `codsquadapp://lobby/<id>`. Same parse as slice 2 (`locationForDeepLink`). No QR / SMS / Universal Links. |
 | Session ratings | Queued | Phase B remainder |
 | Availability pings | Queued | Phase B remainder |
 | Lobby polish | Queued | Phase B remainder |
@@ -103,6 +104,7 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Peacock product machine | 3.4.66–3.4.67 | Reducer **wired** into join/leave/assign/notify/expire. XOR still `planPeacockSelfNotify`. |
 | Matchmaking Queue v1 | 3.4.69–3.4.70 | Product LFG queue on chat info. Single peacock handoff + next-free-seat claim. In-memory only; persistence table still Spencer-gated. |
 | Deep-link unify | 3.4.71 | Peacock card / notification / LFG / lobby URLs share one go_router parse. |
+| Lobby share / copy | 3.4.72 | Lobby header share/copy of `codsquadapp://lobby/<id>` through `locationForDeepLink`. |
 
 ## Phase B+ parking lot (wishlist only)
 

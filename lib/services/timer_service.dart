@@ -223,7 +223,7 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
   final SQLiteHelper _sqliteHelper;
   final TimerOrchestrator _orchestrator = TimerOrchestrator();
   SharedPreferences? _prefs;
-  bool _isOfflineMode = false;
+  final bool _isOfflineMode = false;
 
   // Debouncing for UI updates
   Timer? _debounceTimer;
@@ -343,6 +343,7 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
   /// Peacock timer expiration handler
   void _onPeacockTimerExpire(String userId) {
     final lobbyNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
+    lobbyNotifier.expirePeacockAssignment(userId);
     final squadAsync = _ref.read(ln.lobbyNotifierProvider);
     if (squadAsync.hasValue) {
       final squadState = squadAsync.value!;

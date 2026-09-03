@@ -11,6 +11,7 @@ import 'package:squad_sync/core/app_env.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/services/constitution_manager.dart';
+import 'package:squad_sync/services/peacock_assignment_machine.dart';
 
 @GenerateMocks([LobbyRepository])
 import 'lobby_notifier_test.mocks.dart';
@@ -79,7 +80,7 @@ class _PassthroughErrorHandler extends Fake implements ErrorHandlingService {
 
   @override
   Future<void> logEvent(
-          String eventName, Map<String, dynamic> parameters) async {}
+      String eventName, Map<String, dynamic> parameters) async {}
 }
 
 void main() {
@@ -112,6 +113,9 @@ void main() {
     when(mockRepository.startSpotTimer(any, any, any)).thenAnswer((_) async {});
     when(mockRepository.cancelSpotTimer(any, any)).thenAnswer((_) async {});
     when(mockRepository.assignSpot(any, any, any)).thenAnswer((_) async {});
+    when(mockRepository.processPeacockQueue()).thenAnswer((_) async {});
+
+    PeacockAssignmentTracker.resetInstance();
 
     container = ProviderContainer(
       overrides: [
@@ -128,6 +132,7 @@ void main() {
 
   tearDown(() {
     container.dispose();
+    PeacockAssignmentTracker.resetInstance();
   });
 
   group('LobbyNotifier - Initialization', () {
@@ -231,15 +236,60 @@ void main() {
       await notifier.addToPeacockQueue('user-1', 'Warzone');
 
       verify(mockRepository.addToPeacockQueue('user-1', 'Warzone')).called(1);
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.queued,
+      );
     });
 
     test('should remove user from peacock queue', () async {
       await container.read(lobbyNotifierProvider.future);
       final notifier = container.read(lobbyNotifierProvider.notifier);
 
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
       await notifier.removeFromPeacockQueue('user-1');
 
       verify(mockRepository.removeFromPeacockQueue('user-1')).called(1);
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.idle,
+      );
+    });
+
+    test('processPeacockQueue assignSpot reduces assigned then repo', () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
+      await notifier.processPeacockQueue(
+        assignedUserId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+
+      verify(mockRepository.processPeacockQueue()).called(1);
+      final state = PeacockAssignmentTracker.instance.stateFor('user-1');
+      expect(state.phase, PeacockAssignmentPhase.assigned);
+      expect(state.lobbyId, 'lobby-9');
+      expect(state.notificationId, 'n1');
+    });
+
+    test('expirePeacockAssignment returns idle', () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
+      await notifier.processPeacockQueue(
+        assignedUserId: 'user-1',
+        lobbyId: 'lobby-9',
+      );
+      notifier.expirePeacockAssignment('user-1');
+
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.idle,
+      );
     });
   });
 

@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/managers/notification_manager.dart';
+import 'package:squad_sync/services/peacock_assignment_machine.dart';
 import 'package:squad_sync/services/peacock_notification_service.dart';
 
 void main() {
@@ -251,6 +252,29 @@ void main() {
       expect(second.local, isNotEmpty);
       expect(second.fcm, isEmpty);
       expect(second.sent, ['n1']);
+    });
+
+    test('handleNotification reduces assign+notifySelf on the tracker',
+        () async {
+      await runHandle(foreground: true);
+      final state = PeacockAssignmentTracker.instance.stateFor('uid-1');
+      expect(state.phase, PeacockAssignmentPhase.notified);
+      expect(state.lobbyId, 'lobby-9');
+      expect(state.gameName, 'Warzone');
+      expect(state.notificationId, 'n1');
+      expect(state.showedLocal, isTrue);
+      expect(state.sentFcmToSelf, isFalse);
+      expect(state.wouldDoubleNotifySelf, isFalse);
+    });
+
+    test('background handleNotification records FCM-to-self on the tracker',
+        () async {
+      await runHandle(foreground: false);
+      final state = PeacockAssignmentTracker.instance.stateFor('uid-1');
+      expect(state.phase, PeacockAssignmentPhase.notified);
+      expect(state.showedLocal, isFalse);
+      expect(state.sentFcmToSelf, isTrue);
+      expect(state.wouldDoubleNotifySelf, isFalse);
     });
   });
 }

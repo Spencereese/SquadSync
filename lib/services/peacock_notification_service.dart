@@ -7,6 +7,9 @@ import '../managers/notification_manager.dart';
 import '../notification_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
+import 'peacock_assignment_machine.dart';
+
+export 'peacock_self_notify.dart';
 
 /// Assignment-id dedup. Caps size and drops entries older than [ttl] so a
 /// long-lived process cannot grow unbounded.
@@ -55,76 +58,6 @@ class PeacockIdCache {
   }
 }
 
-/// Local XOR FCM-to-self for one peacock assignment.
-class PeacockSelfNotifyPlan {
-  const PeacockSelfNotifyPlan({
-    required this.showLocal,
-    required this.sendFcmToSelf,
-    required this.recipientUids,
-  });
-
-  final bool showLocal;
-  final bool sendFcmToSelf;
-  final List<String> recipientUids;
-
-  /// True if this plan would both present locally and FCM the same uid.
-  bool get wouldDoubleNotifySelf =>
-      showLocal && sendFcmToSelf && recipientUids.isNotEmpty;
-}
-
-/// Visible-enough for a local peacock banner. iOS Control Center and the app
-/// switcher use [AppLifecycleState.inactive] while the UI can still be on
-/// screen — FCM-to-self only when paused, hidden, or detached.
-bool peacockLifecycleIsForeground(AppLifecycleState? state) {
-  switch (state) {
-    case null:
-    case AppLifecycleState.resumed:
-    case AppLifecycleState.inactive:
-      return true;
-    case AppLifecycleState.paused:
-    case AppLifecycleState.hidden:
-    case AppLifecycleState.detached:
-      return false;
-  }
-}
-
-/// One alert per assignment: in-app Realtime shows local; FCM only when
-/// paused/hidden/detached and that [notificationId] was not already presented.
-PeacockSelfNotifyPlan planPeacockSelfNotify({
-  required String notificationId,
-  required String? currentUid,
-  required bool isForeground,
-  required Set<String> locallyPresentedIds,
-}) {
-  if (locallyPresentedIds.contains(notificationId)) {
-    return const PeacockSelfNotifyPlan(
-      showLocal: false,
-      sendFcmToSelf: false,
-      recipientUids: [],
-    );
-  }
-  if (isForeground) {
-    return const PeacockSelfNotifyPlan(
-      showLocal: true,
-      sendFcmToSelf: false,
-      recipientUids: [],
-    );
-  }
-  final uid = currentUid;
-  if (uid == null || uid.isEmpty) {
-    return const PeacockSelfNotifyPlan(
-      showLocal: false,
-      sendFcmToSelf: false,
-      recipientUids: [],
-    );
-  }
-  return PeacockSelfNotifyPlan(
-    showLocal: false,
-    sendFcmToSelf: true,
-    recipientUids: [uid],
-  );
-}
-
 /// Service for listening to peacock queue assignment notifications
 ///
 /// Subscribes to Realtime updates on peacock_notifications table
@@ -163,6 +96,7 @@ class PeacockNotificationService {
     markSentHook = null;
     _handledIds.clear();
     _locallyPresentedIds.clear();
+    PeacockAssignmentTracker.instance.clear();
   }
 
   /// Start listening for peacock queue notifications
@@ -230,12 +164,27 @@ class PeacockNotificationService {
 
       final currentUid =
           currentUidHook?.call() ?? AuthServiceSupabase().currentUser?.id;
-      final plan = planPeacockSelfNotify(
+      final isForeground = _isForeground();
+      final trackerUserId =
+          currentUid ?? _nonEmpty(record['user_uid']) ?? notificationId;
+
+      // Realtime insert is this client's assign event when the host
+      // processed the queue elsewhere. Then notifySelf — XOR via the
+      // reducer (planPeacockSelfNotify), never a parallel plan.
+      final tracker = PeacockAssignmentTracker.instance;
+      tracker.assignSpot(
+        trackerUserId,
+        lobbyId: lobbyId,
+        gameName: gameName,
         notificationId: notificationId,
-        currentUid: currentUid,
-        isForeground: _isForeground(),
-        locallyPresentedIds: _locallyPresentedIds.toSet(),
       );
+      final dispatch = tracker.notifySelf(
+        trackerUserId,
+        isForeground: isForeground,
+        currentUid: currentUid,
+        notificationId: notificationId,
+      );
+      final plan = dispatch.plan;
 
       if (plan.showLocal) {
         developer.log('📣 Showing notification: $title - $body');
@@ -316,6 +265,7 @@ class PeacockNotificationService {
       _channel = null;
       _handledIds.clear();
       _locallyPresentedIds.clear();
+      PeacockAssignmentTracker.instance.clear();
     }
   }
 

@@ -15,6 +15,7 @@ import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/domain/entities/constitution.dart';
 
 import '../../notification_service.dart';
+import '../../services/peacock_assignment_machine.dart';
 import 'offline_first_mixin.dart';
 import 'timer_management_notifier.dart';
 import 'game_state_notifier.dart';
@@ -397,19 +398,99 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
   }
 
+  PeacockAssignmentTracker get _peacock => PeacockAssignmentTracker.instance;
+
+  /// Reduce [event] for [userId] before the matching repository call.
+  PeacockAssignmentState _reducePeacock({
+    required String userId,
+    required PeacockAssignmentEvent event,
+    String? lobbyId,
+    String? gameName,
+    String? notificationId,
+  }) {
+    return _peacock.apply(
+      userId: userId,
+      event: event,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      notificationId: notificationId,
+    );
+  }
+
   Future<void> addToPeacockQueue(String userId, String gameName) async {
+    _reducePeacock(
+      userId: userId,
+      event: PeacockAssignmentEvent.joinQueue,
+    );
     await _repository.addToPeacockQueue(userId, gameName);
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
   }
 
   Future<void> removeFromPeacockQueue(String userId) async {
+    final phase = _peacock.stateFor(userId).phase;
+    if (phase == PeacockAssignmentPhase.queued) {
+      _reducePeacock(
+        userId: userId,
+        event: PeacockAssignmentEvent.leaveQueue,
+      );
+    } else if (phase == PeacockAssignmentPhase.assigned ||
+        phase == PeacockAssignmentPhase.notified) {
+      _reducePeacock(
+        userId: userId,
+        event: PeacockAssignmentEvent.expire,
+      );
+    }
     await _repository.removeFromPeacockQueue(userId);
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
   }
 
-  Future<void> processPeacockQueue() async {
+  /// Process the peacock queue. When a spot is assigned, reduce
+  /// [PeacockAssignmentEvent.assignSpot] first, then the repository.
+  Future<void> processPeacockQueue({
+    String? assignedUserId,
+    String? lobbyId,
+    String? gameName,
+    String? notificationId,
+  }) async {
+    if (assignedUserId != null) {
+      _reducePeacock(
+        userId: assignedUserId,
+        event: PeacockAssignmentEvent.assignSpot,
+        lobbyId: lobbyId ?? state.valueOrNull?.selectedLobbyId,
+        gameName: gameName,
+        notificationId: notificationId,
+      );
+    }
     await _repository.processPeacockQueue();
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
+  }
+
+  /// Assign a peacock spot: reduce assignSpot, then existing [assignSpot].
+  Future<void> assignPeacockSpot({
+    required String userId,
+    required String lobbyId,
+    String? gameName,
+    String? notificationId,
+    int? spotIndex,
+  }) async {
+    _reducePeacock(
+      userId: userId,
+      event: PeacockAssignmentEvent.assignSpot,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      notificationId: notificationId,
+    );
+    if (spotIndex != null) {
+      await assignSpot(lobbyId, spotIndex, userId);
+    }
+  }
+
+  /// Expire/cancel/timeout a peacock assignment.
+  void expirePeacockAssignment(String userId) {
+    _reducePeacock(
+      userId: userId,
+      event: PeacockAssignmentEvent.expire,
+    );
   }
 
   Future<void> updateMemberStatus(
@@ -1083,12 +1164,12 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   Future<void> claimPeacockSpot(
       String lobbyId, String userId, String gameName) async {
-    await _repository.addToPeacockQueue(userId, gameName);
+    await addToPeacockQueue(userId, gameName);
   }
 
   Future<void> lockPeacockSpot(
       String lobbyId, String userId, String gameName) async {
-    await _repository.removeFromPeacockQueue(userId);
+    await removeFromPeacockQueue(userId);
   }
 
   Future<List<Map<String, dynamic>>> getSquadAlerts(String squadId) async {
@@ -1392,8 +1473,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }
 }
 
-final lobbyNotifierProvider =
-    AsyncNotifierProvider<LobbyNotifier, LobbyState>(
+final lobbyNotifierProvider = AsyncNotifierProvider<LobbyNotifier, LobbyState>(
   LobbyNotifier.new,
 );
 

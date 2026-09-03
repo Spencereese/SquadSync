@@ -5,6 +5,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 import 'package:squad_sync/core/injection.dart';
 
+import '../../services/peacock_assignment_machine.dart';
 import '../../services/timer_service.dart';
 
 part 'timer_management_notifier.freezed.dart';
@@ -245,6 +246,13 @@ class TimerManagementNotifier
   /// Clean up expired peacock timers
   Future<void> cleanupExpiredPeacockTimers() async {
     try {
+      final timers = state.valueOrNull?.peacockTimerStates ?? {};
+      final tracker = PeacockAssignmentTracker.instance;
+      for (final entry in timers.entries) {
+        if (entry.value.inSeconds <= 0) {
+          tracker.expire(entry.key);
+        }
+      }
       await _repository.processPeacockQueue();
       debugPrint('✅ Cleaned up expired peacock timers');
     } catch (e) {
@@ -255,7 +263,7 @@ class TimerManagementNotifier
 
 // Backward compatibility alias (riverpod generates 'timerManagementProvider')
 final timerManagementNotifierProvider = AutoDisposeAsyncNotifierProvider<
-    TimerManagementNotifier, TimerManagementState>.new(
+    TimerManagementNotifier, TimerManagementState>(
   TimerManagementNotifier.new,
 );
 

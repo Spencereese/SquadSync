@@ -12,10 +12,10 @@ Fill this block at freeze (and again if tip moves):
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-SHA:     <git rev-parse HEAD>
-Short:   <git rev-parse --short HEAD>
-Version: <pubspec.yaml version, e.g. 3.4.63+65>
-Date:    <ISO date>
+SHA:     (this commit; filled after push)
+Short:   (this commit)
+Version: 3.4.67+69
+Date:    2026-09-02
 ```
 
 At introduction of this checklist: branch `cursor/revive-squadsync-be5c`, version in `pubspec.yaml`. Subsequent revival-v1 slices bump patch/build on the same branch.
@@ -28,6 +28,7 @@ These are revival-v1 quality gates, not new product:
 - **Simulator URL scheme:** `ios/Runner/Info.simulator.plist` registers `codsquadapp` (and `com.example.codSquadApp` for auth). Unit tests may read the plist; they must not require live SpringBoard.
 - **ConstitutionManager DI:** default Riverpod path injects `SupabaseClient` (from `supabaseClientProvider` / `SupabaseService.maybeClient`). Construction without a client fails with a clear `StateError`, not a raw global assert. Voting UI goes through the provider, not `Supabase.instance` / `ConstitutionManager()`.
 - **Peacock XOR (closed):** one assignment is local **or** FCM-to-self, never both. Do not reopen the closed XOR / Live Notifications / Stats slices except to keep them green.
+- **Peacock product machine (wired):** `reducePeacockAssignment` is production truth. `PeacockAssignmentTracker` is reduced on join/leave/assign/notify/expire. Notify uses `planPeacockSelfNotify` (no parallel XOR). Not a scaffold.
 - **Deep-link route coverage:** pure Dart parsers cover `codsquadapp` chat / join / squad / peacock / `screen=squad|lobby` / `lobby_id` without a simulator.
 - **Known human gates (not automatable here):**
   - iOS Simulator first custom-scheme open may show **"Open in Cod Squad?"** — Accept is a one-time SpringBoard tap.
@@ -61,7 +62,7 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 - [ ] `ios/Runner/Info.simulator.plist` registers `codsquadapp` (asserted by unit test, no SpringBoard)
 - [ ] Deep-link parser covers `lobby_id`, `screen=squad|lobby`, peacock / squad / chat / join
 - [ ] Peacock XOR: no local + FCM-to-self for the same assignment id
-- [ ] Peacock product machine: idle → queued → assigned → notified (unit-tested)
+- [ ] Peacock product machine: idle → queued → assigned → notified, **wired** into LobbyNotifier + peacock notification (not scaffold)
 - [ ] `.env` and `_test_shots/` untracked
 - [ ] Bundle ID still `com.example.codSquadApp`
 
@@ -88,6 +89,7 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Simulator `codsquadapp` scheme | 3.4.60 | `Info.simulator.plist` |
 | Lobby notifier LateInit / dotenv harness | 3.4.61 | Bind deps before swallowed offline init |
 | ConstitutionManager provider | 3.4.62 | Tests override; default must inject client (this freeze) |
+| Peacock product machine | 3.4.66–3.4.67 | Reducer **wired** into join/leave/assign/notify/expire. XOR still `planPeacockSelfNotify`. |
 
 ## Phase B+ parking lot (wishlist only)
 

@@ -12,8 +12,8 @@ Fill this block at freeze (and again if tip moves):
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-SHA:     (this commit; filled after push)
-Short:   (this commit)
+SHA:     84906d8bffcc3e09bbc019979bdb121d2cdd817a
+Short:   84906d8
 Version: 3.4.70+72
 Date:    2026-09-03
 ```

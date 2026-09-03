@@ -198,6 +198,26 @@ void main() {
       );
     });
 
+    test('availability_ping URLs share the squad parse', () {
+      const pingExpected = '/squad/Warzone?lobby_id=lobby-9';
+      const urls = [
+        'codsquadapp://notify?type=availability_ping&lobby_id=$lobbyId&game_name=$game',
+        'codsquadapp://availability_ping?lobby_id=$lobbyId&game_name=$game',
+      ];
+      for (final url in urls) {
+        expect(locationForDeepLink(url), pingExpected, reason: url);
+        expect(DeepLinkRouter.locationFor(url), pingExpected, reason: url);
+      }
+      expect(
+        NotificationRoutes.locationFor({
+          'type': 'availability_ping',
+          'lobby_id': lobbyId,
+          'game_name': game,
+        }),
+        pingExpected,
+      );
+    });
+
     test('lfg_alert URLs share the chat parse', () {
       const expectedChat = '/chat/squad-1';
       const urls = [

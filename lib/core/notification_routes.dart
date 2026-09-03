@@ -77,8 +77,20 @@ class NotificationRoutes {
       case 'peacock':
       case 'peacock_assigned':
       case 'lfg_matched':
+      case 'availability_ping':
       case 'lobby':
       case 'squad':
+        if (type == 'availability_ping' && lobbyId == null) {
+          final squadId = _firstNonEmpty(data, const [
+            'squad_id',
+            'squadId',
+            'chatGroupId',
+            'chat_group_id',
+            'groupId',
+            'group_id',
+          ]);
+          if (squadId != null) return '/chat/$squadId';
+        }
         return _squadLocation(gameName: gameName, lobbyId: lobbyId);
       case 'lfg_alert':
         final squadId = _firstNonEmpty(data, const [

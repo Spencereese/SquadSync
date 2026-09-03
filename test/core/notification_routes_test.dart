@@ -76,6 +76,31 @@ void main() {
     );
   });
 
+  test('availability_ping opens /squad with lobby, else chat via squad_id', () {
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'availability_ping',
+        'lobby_id': 'lobby-9',
+        'game_name': 'Warzone',
+      }),
+      '/squad/Warzone?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'availability_ping',
+        'lobby_id': 'lobby-9',
+      }),
+      '/squad?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'availability_ping',
+        'squad_id': 'squad-1',
+      }),
+      '/chat/squad-1',
+    );
+  });
+
   test('lfg_alert opens chat; lfg_matched opens /squad with lobby', () {
     expect(
       NotificationRoutes.locationFor({

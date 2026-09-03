@@ -5,6 +5,7 @@ import '../../../screens/voice_room_screen.dart';
 import '../../../screens/video_room_screen.dart';
 import 'chat_info_widgets.dart';
 import '../../../services/auth_service_supabase.dart';
+import '../../../services/availability_ping.dart';
 import '../../../services/friends_service.dart';
 import '../../../services/matchmaking_queue_machine.dart';
 import '../../../presentation/notifiers/lobby_notifier.dart';
@@ -91,6 +92,11 @@ class ChatInfoActionsSection extends StatelessWidget {
           squadId: squadId,
           neonColor: neonColor,
         ),
+        const SizedBox(height: 12),
+        _OnNowButton(
+          squadId: squadId,
+          neonColor: neonColor,
+        ),
       ],
     );
   }
@@ -129,8 +135,8 @@ class _LookingForSquadButtonState
       : _tracker.stateFor(uid);
 
   Future<void> _onPressed() async {
-    final user = AuthServiceSupabase().currentUser;
-    if (user == null) {
+    final uid = _currentUidOrNull();
+    if (uid == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -142,20 +148,20 @@ class _LookingForSquadButtonState
       return;
     }
 
-    final entry = _entryFor(user.id);
+    final entry = _entryFor(uid);
     switch (entry.phase) {
       case MatchmakingQueuePhase.idle:
       case MatchmakingQueuePhase.joined:
-        await _startLooking(user.id);
+        await _startLooking(uid);
         break;
       case MatchmakingQueuePhase.looking:
-        await _cancelLooking(user.id);
+        await _cancelLooking(uid);
         break;
       case MatchmakingQueuePhase.matched:
         if (entry.hasJoinTarget) {
-          await _joinMatched(user.id, entry);
+          await _joinMatched(uid, entry);
         } else {
-          await _cancelLooking(user.id);
+          await _cancelLooking(uid);
         }
         break;
     }
@@ -303,7 +309,7 @@ class _LookingForSquadButtonState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final uid = AuthServiceSupabase().currentUser?.id;
+    final uid = _currentUidOrNull();
 
     return ListenableBuilder(
       listenable: _tracker,
@@ -427,3 +433,135 @@ class _LookingForSquadButtonState
     );
   }
 }
+
+/// "I'm on now" — pings lobby members through [AvailabilityPing.dispatch]
+/// → [NotificationService.sendNotificationToUsers]. Same LFG chat-info
+/// entry as Looking for Squad. No second notification presenter.
+class _OnNowButton extends ConsumerStatefulWidget {
+  final String squadId;
+  final Color neonColor;
+
+  const _OnNowButton({
+    required this.squadId,
+    required this.neonColor,
+  });
+
+  @override
+  ConsumerState<_OnNowButton> createState() => _OnNowButtonState();
+}
+
+class _OnNowButtonState extends ConsumerState<_OnNowButton> {
+  bool _isLoading = false;
+
+  Future<void> _onPressed() async {
+    final uid = _currentUidOrNull();
+    if (uid == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sign in to ping your squad'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final state = ref.read(lobbyNotifierProvider).valueOrNull;
+      final result = await AvailabilityPing.dispatch(
+        senderUid: uid,
+        squadId: widget.squadId,
+        currentLobby: state?.currentLobby,
+        userLobbies: state?.userLobbies ?? const {},
+        lobbyMemberUids: state?.lobbyMemberUids ?? const [],
+        gameName: state?.currentGame?['name'] as String? ??
+            state?.currentLobby?.gameName,
+        senderName: state?.displayName,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.snackbarMessage),
+          backgroundColor: result.sent ? Colors.green : Colors.orange,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to ping: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    Color buttonColor = widget.neonColor;
+    if (widget.neonColor == Colors.white ||
+        widget.neonColor.computeLuminance() > 0.8) {
+      buttonColor = theme.colorScheme.primary;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          key: const Key('availability-on-now'),
+          onPressed: _isLoading ? null : _onPressed,
+          icon: _isLoading
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.colorScheme.onPrimary,
+                  ),
+                )
+              : const Icon(
+                  Icons.campaign,
+                  size: 20,
+                  color: Colors.black,
+                ),
+          label: const Text(
+            "I'm on now",
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: buttonColor,
+            foregroundColor: Colors.black,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 4,
+            shadowColor: buttonColor.withValues(alpha: 0.5),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// AuthService claims never-throw; dotenv can still assert in unit harnesses.
+String? _currentUidOrNull() {
+  try {
+    return AuthServiceSupabase().currentUser?.id;
+  } catch (_) {
+    return null;
+  }
+}
+
+

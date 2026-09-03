@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_app_bar.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_actions.dart';
@@ -50,12 +51,14 @@ void main() {
     testWidgets('renders all three action buttons',
         (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoActionsSection(
-              squadId: 'test-squad',
-              squadName: 'Test Squad',
-              neonColor: Colors.blue,
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatInfoActionsSection(
+                squadId: 'test-squad',
+                squadName: 'Test Squad',
+                neonColor: Colors.blue,
+              ),
             ),
           ),
         ),
@@ -64,17 +67,20 @@ void main() {
       expect(find.text('Voice Chat'), findsOneWidget);
       expect(find.text('Video Chat'), findsOneWidget);
       expect(find.text('Search'), findsOneWidget);
+      expect(find.text("I'm on now"), findsOneWidget);
     });
 
     testWidgets('displays Beta badge on Video Chat',
         (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoActionsSection(
-              squadId: 'test-squad',
-              squadName: 'Test Squad',
-              neonColor: Colors.blue,
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatInfoActionsSection(
+                squadId: 'test-squad',
+                squadName: 'Test Squad',
+                neonColor: Colors.blue,
+              ),
             ),
           ),
         ),
@@ -86,12 +92,14 @@ void main() {
     testWidgets('renders action buttons with correct layout',
         (WidgetTester tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoActionsSection(
-              squadId: 'test-squad',
-              squadName: 'Test Squad',
-              neonColor: Colors.blue,
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatInfoActionsSection(
+                squadId: 'test-squad',
+                squadName: 'Test Squad',
+                neonColor: Colors.blue,
+              ),
             ),
           ),
         ),

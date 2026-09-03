@@ -134,8 +134,9 @@ String? prepareLiveAppLink(
 /// Pure mapping from an App Link / custom-scheme URI to a go_router
 /// location. Returns null for auth callbacks and unknown URIs.
 ///
-/// Peacock card, notification, `lfg_matched` / `lfg_alert` / peacock /
-/// lobby URLs all go through here then [NotificationRoutes.locationFor].
+/// Peacock card, notification, `lfg_matched` / `lfg_alert` /
+/// `availability_ping` / peacock / lobby URLs all go through here then
+/// [NotificationRoutes.locationFor].
 String? locationForDeepLink(String link) {
   final trimmed = link.trim();
   if (trimmed.isEmpty) return null;
@@ -213,6 +214,9 @@ String? _mappedType({
   }
   if (_matchesName(host, segments, 'lfg_matched')) return 'lfg_matched';
   if (_matchesName(host, segments, 'lfg_alert')) return 'lfg_alert';
+  if (_matchesName(host, segments, 'availability_ping')) {
+    return 'availability_ping';
+  }
   if (_matchesName(host, segments, 'peacock')) return 'peacock_assigned';
   return null;
 }
@@ -240,6 +244,7 @@ String? _lobbyIdFromPath({
       'peacock',
       'lfg_matched',
       'lfg_alert',
+      'availability_ping',
       'chat',
       'join',
     };

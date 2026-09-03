@@ -19,6 +19,7 @@ import '../domain/entities/message.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'notification_routes.dart';
+import 'deep_link_routes.dart';
 import 'lobby_chat_bind.dart';
 import 'package:squad_sync/presentation/notifiers/notification_notifier.dart';
 
@@ -340,18 +341,6 @@ class DeepLinkRouter {
       } else {
         _showSnackBar(context, 'Please join a squad first');
       }
-    } else if (link.startsWith('codsquadapp://join/') ||
-        link.contains('/join/')) {
-      // Extract code from URL
-      final uri = Uri.parse(link);
-      final code = link.startsWith('codsquadapp://')
-          ? link.split('/').last
-          : uri.queryParameters['code'] ?? uri.pathSegments.last;
-
-      // Deferred navigation with addPostFrameCallback
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        router.go('/join/$code');
-      });
     } else if (link.startsWith('https://lobbiesync.app/join/')) {
       // Handle web deep links for group invites
       // Deferred navigation with addPostFrameCallback
@@ -361,8 +350,22 @@ class DeepLinkRouter {
           builder: (context) => const GroupActionsDialog(),
         );
       });
+    } else {
+      final location = locationForDeepLink(link);
+      if (location == null) return;
+      if ((location.startsWith('/chat') || location.startsWith('/squad')) &&
+          user == null) {
+        _showSnackBar(context, 'Please sign in first');
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        router.go(location);
+      });
     }
   }
+
+  /// Pure URI → go_router location. See [locationForDeepLink].
+  static String? locationFor(String link) => locationForDeepLink(link);
 
   static void _showSnackBar(BuildContext context, String message) {
     if (context.mounted) {

@@ -12,8 +12,8 @@ Fill this block at freeze (and again if tip moves):
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-SHA:     bd1850b691174910934f8b1da781d082a51efeaf
-Short:   bd1850b
+SHA:     527052f77ec1cac85b833d68e51c94273585cc19
+Short:   527052f
 Version: 3.4.74+76
 Date:    2026-09-03
 ```

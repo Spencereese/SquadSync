@@ -289,7 +289,6 @@ class DeepLinkRouter {
     WidgetRef ref,
     String link,
   ) async {
-    final router = GoRouter.of(context);
     final authService = AuthServiceSupabase();
     final user = authService.currentUser;
 
@@ -313,11 +312,22 @@ class DeepLinkRouter {
       return;
     }
 
-    final location = locationForDeepLink(link);
+    // Live AppLinks path: leftover sim UL dropped; unknown lobby ids
+    // still map to /squad?lobby_id= (existence is not required).
+    final location = locationForLiveAppLink(link);
     if (location == null) return;
+    debugPrint('DeepLinkRouter: $link -> $location');
 
-    if ((location.startsWith('/chat') || location.startsWith('/squad')) &&
-        user == null) {
+    // /squad?lobby_id= must still land even when the lobby does not exist
+    // and even if SquadSyncApp's context is above MaterialApp.router.
+    if (location.startsWith('/squad')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _go(location);
+      });
+      return;
+    }
+
+    if (location.startsWith('/chat') && user == null) {
       _showSnackBar(context, 'Please sign in first');
       return;
     }
@@ -325,7 +335,7 @@ class DeepLinkRouter {
     if (location == '/chat') {
       if (user != null && squadId != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          router.go('/chat');
+          _go('/chat');
         });
       } else if (user == null) {
         _showSnackBar(context, 'Please sign in first');
@@ -355,14 +365,36 @@ class DeepLinkRouter {
           debugPrint('DeepLinkRouter: chat bind skipped: $e');
         }
         debugPrint('DeepLinkRouter: Opening chat $openId');
-        router.go('/chat/$openId');
+        _go('/chat/$openId');
       });
       return;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      router.go(location);
+      _go(location);
     });
+  }
+
+  /// Prefer the bound GoRouter. [GoRouter.of] on SquadSyncApp's context
+  /// is above MaterialApp.router and would throw, leaving splash/black.
+  static void _go(String location) {
+    debugPrint('DeepLinkRouter: go $location');
+    final go = NotificationRoutes.go;
+    if (go != null) {
+      go(location);
+      return;
+    }
+    final stored = NotificationRoutes.router;
+    if (stored != null) {
+      stored.go(location);
+      return;
+    }
+    final navContext = NotificationRoutes.navigatorKey?.currentContext;
+    if (navContext != null && navContext.mounted) {
+      GoRouter.of(navContext).go(location);
+      return;
+    }
+    NotificationRoutes.navigate(location);
   }
 
   static String? _chatIdFromLocation(String location) {

@@ -249,6 +249,23 @@ void main() {
       );
     });
 
+    test('unknown lobby id still maps to /squad?lobby_id=', () {
+      const link =
+          'codsquadapp://lobby/smoke-no-such-lobby-20260903';
+      expect(
+        locationForDeepLink(link),
+        '/squad?lobby_id=smoke-no-such-lobby-20260903',
+      );
+      expect(
+        DeepLinkRouter.locationFor(link),
+        '/squad?lobby_id=smoke-no-such-lobby-20260903',
+      );
+      expect(
+        locationForLiveAppLink(link, isIosSimulator: true),
+        '/squad?lobby_id=smoke-no-such-lobby-20260903',
+      );
+    });
+
     test('share URI parses through locationForDeepLink', () {
       const lobbyId = 'lobby-9';
       final link = lobbyShareDeepLink(lobbyId: lobbyId);
@@ -291,6 +308,73 @@ void main() {
       expect(copied, [link]);
       expect(shared, [link]);
       expect(locationForDeepLink(link), '/squad?lobby_id=lobby-9');
+    });
+  });
+
+  group('live AppLinks path', () {
+    test('simulator leftover https is dropped; product lobby is not', () {
+      expect(
+        locationForLiveAppLink(
+          'https://lobbiesync.app/chat/leftover',
+          isIosSimulator: true,
+        ),
+        isNull,
+      );
+      expect(
+        locationForLiveAppLink(
+          'https://lobbiesync.app/chat/leftover',
+          isIosSimulator: false,
+        ),
+        '/chat/leftover',
+      );
+      expect(
+        locationForLiveAppLink(
+          'codsquadapp://lobby/smoke-no-such-lobby-20260903',
+          isIosSimulator: true,
+        ),
+        '/squad?lobby_id=smoke-no-such-lobby-20260903',
+      );
+    });
+
+    test('prepareLiveAppLink dismisses splash and logs lobby location', () {
+      var splashDismissed = false;
+      final logs = <String>[];
+      final location = prepareLiveAppLink(
+        'codsquadapp://lobby/smoke-no-such-lobby-20260903',
+        isIosSimulator: true,
+        dismissSplash: () => splashDismissed = true,
+        log: logs.add,
+      );
+      expect(location, '/squad?lobby_id=smoke-no-such-lobby-20260903');
+      expect(splashDismissed, isTrue);
+      expect(logs, isNotEmpty);
+      expect(logs.single, contains('lobby_id=smoke-no-such-lobby-20260903'));
+    });
+
+    test('prepareLiveAppLink does not dismiss splash for swallowed leftover',
+        () {
+      var splashDismissed = false;
+      final location = prepareLiveAppLink(
+        'https://lobbiesync.app/chat/leftover',
+        isIosSimulator: true,
+        dismissSplash: () => splashDismissed = true,
+      );
+      expect(location, isNull);
+      expect(splashDismissed, isFalse);
+    });
+
+    test('live lobby URL is what NotificationRoutes.go would open', () {
+      String? opened;
+      NotificationRoutes.go = (location) => opened = location;
+      final location = prepareLiveAppLink(
+        'codsquadapp://lobby/smoke-no-such-lobby-20260903',
+        isIosSimulator: true,
+        dismissSplash: () {},
+      );
+      expect(location, '/squad?lobby_id=smoke-no-such-lobby-20260903');
+      NotificationRoutes.go?.call(location!);
+      expect(opened, location);
+      NotificationRoutes.go = null;
     });
   });
 

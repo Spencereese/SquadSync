@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart';
 import 'core/injection.dart' as di;
 import 'core/app_router.dart';
 import 'core/app_links_policy.dart';
+import 'core/deep_link_routes.dart';
 import 'notification_service.dart';
 import 'widgets/app_widgets.dart';
 import 'services/supabase_service.dart';
@@ -241,7 +242,7 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
       }
     } else {
       debugPrint(
-          'AppLinks: skip getInitialLink on iOS simulator; uriLinkStream stays on');
+          'AppLinks: skip getInitialLink; uriLinkStream stays on');
     }
 
     if (!plan.subscribeUriLinkStream) return;
@@ -258,7 +259,14 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   void _handleDeepLink(String link) {
     if (!mounted) return;
 
-    // Use DeepLinkRouter for go_router integration
+    // Live path: leftover sim UL dropped; product custom-scheme lobby
+    // URLs resolve to /squad?lobby_id= and take splash down.
+    final location = prepareLiveAppLink(
+      link,
+      dismissSplash: FlutterNativeSplash.remove,
+    );
+    if (location == null) return;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         DeepLinkRouter.handleDeepLink(context, ref, link);

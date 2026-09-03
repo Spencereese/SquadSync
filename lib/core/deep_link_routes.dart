@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -83,6 +84,51 @@ Future<void> _copyLobbyLinkToClipboard(String link) {
 
 Future<void> _shareLobbyLinkSheet(String link) {
   return SharePlus.instance.share(ShareParams(text: link));
+}
+
+/// Live AppLinks gate used by [main] / [DeepLinkRouter.handleDeepLink].
+/// Simulator leftover https UL is dropped; product `codsquadapp://`
+/// URLs still map through [locationForDeepLink] (unknown lobby ids
+/// included).
+String? locationForLiveAppLink(
+  String link, {
+  bool? isIosSimulator,
+}) {
+  final trimmed = link.trim();
+  if (trimmed.isEmpty) return null;
+  Uri? uri;
+  try {
+    uri = Uri.parse(trimmed);
+  } catch (_) {
+    return locationForDeepLink(trimmed);
+  }
+  if ((isIosSimulator ?? detectIosSimulator()) &&
+      shouldSwallowSimulatorAppLink(uri)) {
+    return null;
+  }
+  return locationForDeepLink(trimmed);
+}
+
+/// Live-path helper: resolve [link], log, and dismiss splash when a
+/// product route is consumed. Call from AppLinks listen — not a scaffold.
+String? prepareLiveAppLink(
+  String link, {
+  bool? isIosSimulator,
+  void Function()? dismissSplash,
+  void Function(String message)? log,
+}) {
+  final logger = log ?? debugPrint;
+  final location = locationForLiveAppLink(
+    link,
+    isIosSimulator: isIosSimulator,
+  );
+  if (location == null) {
+    logger('AppLinks: drop $link');
+    return null;
+  }
+  logger('AppLinks: $link -> $location');
+  dismissSplash?.call();
+  return location;
 }
 
 /// Pure mapping from an App Link / custom-scheme URI to a go_router

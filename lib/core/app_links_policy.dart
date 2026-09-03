@@ -30,17 +30,24 @@ void logSimSceneHostedLine(
   (log ?? debugPrint)(text);
 }
 
-/// Whether to consume `getInitialLink()` at launch.
-/// iOS Simulator skips the leftover launch URL that shows
-/// "Open in Cod Squad?" over ChatScreen. Physical devices keep it.
-bool shouldConsumeLaunchAppLink({bool? isIosSimulator}) {
-  return !(isIosSimulator ?? detectIosSimulator());
+/// Whether to call `getInitialLink()` at launch.
+///
+/// Always read it. Simulator leftover https / bundle-id URLs are dropped
+/// later by [shouldSwallowSimulatorAppLink] on the live AppLinks path.
+/// Skipping the call entirely dropped `codsquadapp://lobby/<id>` before
+/// [locationForDeepLink] ran (cold `simctl openurl` stayed on splash).
+bool shouldConsumeLaunchAppLink({bool? isIosSimulator, Uri? url}) {
+  if (url != null && (isIosSimulator ?? detectIosSimulator())) {
+    return !shouldSwallowSimulatorAppLink(url);
+  }
+  return true;
 }
 
 /// Cold/warm AppLinks after launch. Always subscribe — do not black out Dart.
 bool shouldSubscribeUriLinkStream() => true;
 
-/// Simulator skips only the initial launch link; [uriLinkStream] stays on.
+/// Always read getInitialLink and subscribe. Simulator leftover https is
+/// filtered per-URL by [shouldSwallowSimulatorAppLink] on the live path.
 ({bool consumeInitialLink, bool subscribeUriLinkStream}) planAppLinkListen({
   bool? isIosSimulator,
 }) {
@@ -104,11 +111,21 @@ void bindRuntimeHostedLogHandler({MethodChannel? channel}) {
   });
 }
 
+/// Product custom scheme registered for simctl / share / lobby links.
+/// Must reach Dart — do not treat as leftover Launch Services UL.
+bool isProductCustomSchemeAppLink(Uri url) {
+  return url.scheme.toLowerCase() == 'codsquadapp';
+}
+
 /// Simulator swallow rules. Google / Supabase auth schemes stay open.
+/// `codsquadapp://` product URLs (lobby / squad / peacock / chat / join)
+/// are not swallowed so `simctl openurl` can route. Leftover https
+/// Universal Links and the bundle-id scheme (except auth) still drop.
 bool shouldSwallowSimulatorAppLink(Uri url) {
   if (isSimulatorAuthScheme(url)) return false;
+  if (isProductCustomSchemeAppLink(url)) return false;
   final scheme = url.scheme.toLowerCase();
-  if (scheme == 'codsquadapp' || scheme == 'com.example.codsquadapp') {
+  if (scheme == 'com.example.codsquadapp') {
     return true;
   }
   final host = url.host.toLowerCase();

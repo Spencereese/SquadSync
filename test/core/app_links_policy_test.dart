@@ -54,23 +54,57 @@ void main() {
     expect(simulatorEnvKeysPresent(const {}), isFalse);
   });
 
-  test('skip getInitialLink when channel says simulator', () {
+  test('simulator still reads getInitialLink; leftover filtered by swallow', () {
     debugSetIosSimulatorChannelValue(true);
     expect(detectIosSimulator(), isTrue);
     final plan = planAppLinkListen();
-    expect(plan.consumeInitialLink, isFalse);
+    expect(plan.consumeInitialLink, isTrue);
     expect(plan.subscribeUriLinkStream, isTrue);
-  });
-
-  test('sim swallows com.example.codsquadapp except auth schemes', () {
     expect(
-      shouldSwallowSimulatorAppLink(
-        Uri.parse('com.example.codsquadapp://chat/1766270568521'),
+      shouldConsumeLaunchAppLink(
+        isIosSimulator: true,
+        url: Uri.parse(
+          'codsquadapp://lobby/smoke-no-such-lobby-20260903',
+        ),
       ),
       isTrue,
     );
     expect(
+      shouldConsumeLaunchAppLink(
+        isIosSimulator: true,
+        url: Uri.parse('https://lobbiesync.app/chat/leftover'),
+      ),
+      isFalse,
+    );
+  });
+
+  test('sim does not swallow product custom-scheme lobby URLs', () {
+    expect(
+      isProductCustomSchemeAppLink(
+        Uri.parse('codsquadapp://lobby/smoke-no-such-lobby-20260903'),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(
+        Uri.parse('codsquadapp://lobby/smoke-no-such-lobby-20260903'),
+      ),
+      isFalse,
+    );
+    expect(
       shouldSwallowSimulatorAppLink(Uri.parse('codsquadapp://chat/1')),
+      isFalse,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(
+        Uri.parse('https://lobbiesync.app/chat/leftover'),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(
+        Uri.parse('com.example.codsquadapp://chat/1766270568521'),
+      ),
       isTrue,
     );
     expect(

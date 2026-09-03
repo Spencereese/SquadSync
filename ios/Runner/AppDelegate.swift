@@ -17,10 +17,17 @@ enum SimulatorAppLinks {
     return false
   }
 
+  static func isProductCustomScheme(_ url: URL) -> Bool {
+    (url.scheme?.lowercased() ?? "") == "codsquadapp"
+  }
+
   static func shouldSwallowSimulatorAppLink(_ url: URL) -> Bool {
     if isAuthScheme(url) { return false }
+    // Product custom-scheme (codsquadapp://lobby/<id> etc.) must reach
+    // Flutter. Leftover https UL and the bundle-id scheme still drop.
+    if isProductCustomScheme(url) { return false }
     let scheme = url.scheme?.lowercased() ?? ""
-    if scheme == "codsquadapp" || scheme == "com.example.codsquadapp" {
+    if scheme == "com.example.codsquadapp" {
       return true
     }
     let host = url.host?.lowercased() ?? ""
@@ -107,6 +114,17 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     }
     DispatchQueue.main.async {
       AppDelegate.bindRuntimeChannelFromScene(window: self.window)
+      // willConnect skips super.scene(willConnect) (second window).
+      // Forward product custom-scheme URLs so AppLinks sees them.
+      var remaining = Set<UIOpenURLContext>()
+      for context in connectionOptions.urlContexts {
+        if !SimulatorAppLinks.shouldSwallowSimulatorAppLink(context.url) {
+          remaining.insert(context)
+        }
+      }
+      if !remaining.isEmpty {
+        self.scene(scene, openURLContexts: remaining)
+      }
     }
   }
 
@@ -310,8 +328,9 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
     return config
   }
 
-  /// Consume leftover universal / custom-scheme chat links on Simulator so
-  /// iOS does not show "Open in Cod Squad?" over ChatScreen.
+  /// Consume leftover https Universal Links on Simulator so iOS does not
+  /// show "Open in Cod Squad?" over ChatScreen. Product `codsquadapp://`
+  /// URLs (lobby / squad / peacock / chat / join) are forwarded to Flutter.
   /// Google / Supabase auth schemes are not swallowed.
   /// Does not dismiss an already-presented SpringBoard sheet.
   override func application(

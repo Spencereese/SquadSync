@@ -301,21 +301,50 @@ class DeepLinkRouter {
       orElse: () => null,
     );
 
-    // Handle different deep link patterns
-    final appLinkChatId = chatIdFromAppLink(link);
-    if (appLinkChatId != null) {
-      if (user == null) {
+    // Web invite dialog stays on the HTTPS join URL. Lobby / peacock /
+    // LFG / notification taps share [locationForDeepLink] below.
+    if (link.startsWith('https://lobbiesync.app/join/')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showDialog(
+          context: context,
+          builder: (context) => const GroupActionsDialog(),
+        );
+      });
+      return;
+    }
+
+    final location = locationForDeepLink(link);
+    if (location == null) return;
+
+    if ((location.startsWith('/chat') || location.startsWith('/squad')) &&
+        user == null) {
+      _showSnackBar(context, 'Please sign in first');
+      return;
+    }
+
+    if (location == '/chat') {
+      if (user != null && squadId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          router.go('/chat');
+        });
+      } else if (user == null) {
         _showSnackBar(context, 'Please sign in first');
-        return;
+      } else {
+        _showSnackBar(context, 'Please join a squad first');
       }
+      return;
+    }
+
+    final parsedChatId = _chatIdFromLocation(location);
+    if (parsedChatId != null) {
       // Do not drop /chat/:id (1f580ae AppLinks overlay mentioned the
       // 46-row thread once and never opened it).
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        var openId = appLinkChatId;
+        var openId = parsedChatId;
         try {
-          final snapshot = await loadLobbyChatBindSnapshot(appLinkChatId);
+          final snapshot = await loadLobbyChatBindSnapshot(parsedChatId);
           final resolved = resolveActiveChatGroupId(
-            widgetChatGroupId: appLinkChatId,
+            widgetChatGroupId: parsedChatId,
             isSquad: false,
             lobbyChatGroupId: snapshot.lobbyChatGroupId,
             historyCounts: snapshot.historyCounts,
@@ -328,40 +357,21 @@ class DeepLinkRouter {
         debugPrint('DeepLinkRouter: Opening chat $openId');
         router.go('/chat/$openId');
       });
-    } else if (isChatListAppLink(link) ||
-        link == 'codsquadapp://chat' ||
-        (link.contains('/chat') && appLinkChatId == null)) {
-      if (user != null && squadId != null) {
-        // Deferred navigation with addPostFrameCallback
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          router.go('/chat');
-        });
-      } else if (user == null) {
-        _showSnackBar(context, 'Please sign in first');
-      } else {
-        _showSnackBar(context, 'Please join a squad first');
-      }
-    } else if (link.startsWith('https://lobbiesync.app/join/')) {
-      // Handle web deep links for group invites
-      // Deferred navigation with addPostFrameCallback
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        showDialog(
-          context: context,
-          builder: (context) => const GroupActionsDialog(),
-        );
-      });
-    } else {
-      final location = locationForDeepLink(link);
-      if (location == null) return;
-      if ((location.startsWith('/chat') || location.startsWith('/squad')) &&
-          user == null) {
-        _showSnackBar(context, 'Please sign in first');
-        return;
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        router.go(location);
-      });
+      return;
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      router.go(location);
+    });
+  }
+
+  static String? _chatIdFromLocation(String location) {
+    final uri = Uri.parse(location);
+    if (uri.pathSegments.length < 2 || uri.pathSegments.first != 'chat') {
+      return null;
+    }
+    final id = uri.pathSegments[1].trim();
+    return id.isEmpty ? null : id;
   }
 
   /// Pure URI → go_router location. See [locationForDeepLink].

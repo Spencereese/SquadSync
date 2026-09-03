@@ -15,8 +15,40 @@ const kSimulatorRegisteredUrlSchemes = [
   kSimulatorAuthCallbackScheme,
 ];
 
+/// URL the chat peacock card opens. [locationForDeepLink] is the parse.
+String peacockCardDeepLink({
+  String? lobbyId,
+  String? gameName,
+}) {
+  return Uri(
+    scheme: kSimulatorDeepLinkScheme,
+    host: 'peacock',
+    queryParameters: {
+      if (_nonEmpty(lobbyId) != null) 'lobby_id': lobbyId!.trim(),
+      if (_nonEmpty(gameName) != null) 'game_name': gameName!.trim(),
+    },
+  ).toString();
+}
+
+/// Chat peacock card tap. Same parse + [NotificationRoutes.go] as
+/// notification taps and App Links.
+void openPeacockCard({
+  String? lobbyId,
+  String? gameName,
+  void Function(String location)? go,
+}) {
+  final location = locationForDeepLink(
+    peacockCardDeepLink(lobbyId: lobbyId, gameName: gameName),
+  );
+  if (location == null) return;
+  (go ?? NotificationRoutes.go)?.call(location);
+}
+
 /// Pure mapping from an App Link / custom-scheme URI to a go_router
 /// location. Returns null for auth callbacks and unknown URIs.
+///
+/// Peacock card, notification, `lfg_matched` / `lfg_alert` / peacock /
+/// lobby URLs all go through here then [NotificationRoutes.locationFor].
 String? locationForDeepLink(String link) {
   final trimmed = link.trim();
   if (trimmed.isEmpty) return null;
@@ -49,42 +81,77 @@ String? locationForDeepLinkUri(Uri uri) {
     return '/join/${Uri.encodeComponent(joinCode)}';
   }
 
-  final screen = (query['screen'] ?? '').toLowerCase();
-  final type = (query['type'] ?? '').toLowerCase();
+  final queryType = (query['type'] ?? '').toLowerCase();
+  final queryScreen = (query['screen'] ?? '').toLowerCase();
   final lobbyId = _nonEmpty(query['lobby_id']) ?? _nonEmpty(query['lobbyId']);
   var gameName = _nonEmpty(query['game_name']) ?? _nonEmpty(query['gameName']);
+  gameName ??= _gameNameFromPath(host: host, segments: segments);
 
-  final hostIsSquad = host == 'squad' || host == 'lobby' || host == 'peacock';
-  final pathIsSquad = segments.contains('squad') ||
-      segments.contains('lobby') ||
-      segments.contains('peacock');
-  final queryIsSquad = screen == 'squad' ||
-      screen == 'lobby' ||
-      type == 'peacock_assigned';
-
-  if (!hostIsSquad && !pathIsSquad && !queryIsSquad) {
-    return null;
-  }
-
-  if (host == 'squad' && segments.isNotEmpty) {
-    gameName ??= _nonEmpty(segments.first);
-  } else if (segments.contains('squad')) {
-    final index = segments.indexOf('squad');
-    if (index + 1 < segments.length) {
-      gameName ??= _nonEmpty(segments[index + 1]);
+  final mappedType = _mappedType(
+    queryType: queryType,
+    host: host,
+    segments: segments,
+  );
+  var screen = queryScreen;
+  if (screen.isEmpty) {
+    if (_matchesName(host, segments, 'lobby')) {
+      screen = 'lobby';
+    } else if (_matchesName(host, segments, 'squad')) {
+      screen = 'squad';
     }
   }
 
-  final isPeacock = host == 'peacock' ||
-      segments.contains('peacock') ||
-      type == 'peacock_assigned';
+  if (mappedType == null && screen.isEmpty) {
+    return null;
+  }
 
   return NotificationRoutes.locationFor({
-    if (isPeacock) 'type': 'peacock_assigned',
-    if (!isPeacock) 'screen': screen.isNotEmpty ? screen : 'squad',
+    ...query,
+    if (mappedType != null) 'type': mappedType,
+    if (screen.isNotEmpty) 'screen': screen,
     if (lobbyId != null) 'lobby_id': lobbyId,
     if (gameName != null) 'game_name': gameName,
   });
+}
+
+String? _mappedType({
+  required String queryType,
+  required String host,
+  required List<String> segments,
+}) {
+  if (queryType.isNotEmpty) {
+    return queryType == 'peacock' ? 'peacock_assigned' : queryType;
+  }
+  if (_matchesName(host, segments, 'lfg_matched')) return 'lfg_matched';
+  if (_matchesName(host, segments, 'lfg_alert')) return 'lfg_alert';
+  if (_matchesName(host, segments, 'peacock')) return 'peacock_assigned';
+  return null;
+}
+
+bool _matchesName(String host, List<String> segments, String name) {
+  if (host == name) return true;
+  return segments.any((segment) => segment.toLowerCase() == name);
+}
+
+String? _gameNameFromPath({
+  required String host,
+  required List<String> segments,
+}) {
+  const markers = ['squad', 'lobby', 'peacock', 'lfg_matched'];
+  if (markers.contains(host) && segments.isNotEmpty) {
+    final first = segments.first.toLowerCase();
+    if (!markers.contains(first)) {
+      return _nonEmpty(segments.first);
+    }
+  }
+  for (final marker in markers) {
+    final index =
+        segments.indexWhere((segment) => segment.toLowerCase() == marker);
+    if (index >= 0 && index + 1 < segments.length) {
+      return _nonEmpty(segments[index + 1]);
+    }
+  }
+  return null;
 }
 
 String? _joinCode({

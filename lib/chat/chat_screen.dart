@@ -1967,7 +1967,16 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                   top: NeonChatAppBar.heightFor(context),
                   left: 0,
                   right: 0,
-                  child: _buildLobbySelector(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _uiManager.buildActiveLobbyHeader(
+                        context,
+                        chatGroupId: widget.chatGroupId,
+                      ),
+                      _buildLobbySelector(),
+                    ],
+                  ),
                 ),
               // App bar positioned at top of Stack
               Positioned(

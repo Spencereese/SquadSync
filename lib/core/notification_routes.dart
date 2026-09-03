@@ -74,8 +74,11 @@ class NotificationRoutes {
       case 'direct_invite':
       case 'momentum':
       case 'spot_available':
+      case 'peacock':
       case 'peacock_assigned':
       case 'lfg_matched':
+      case 'lobby':
+      case 'squad':
         return _squadLocation(gameName: gameName, lobbyId: lobbyId);
       case 'lfg_alert':
         final squadId = _firstNonEmpty(data, const [

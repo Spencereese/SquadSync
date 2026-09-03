@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import '../../core/deep_link_routes.dart';
+import '../../core/notification_routes.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' as r;
+import 'package:go_router/go_router.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../domain/entities/message.dart';
 import '../../domain/entities/chat_state.dart' as cn_state;
@@ -134,12 +137,12 @@ class ChatUIManager {
 
         return GestureDetector(
           onTap: () {
-            // Navigate directly to spots lobby for this game
-            Navigator.pushNamed(context, '/squad', arguments: {
-              'gameName': gameName,
-              'game': currentGame,
-              'chatGroupId': chatGroupId,
-            });
+            openPeacockCard(
+              lobbyId: squadState.selectedLobbyId,
+              gameName: gameName,
+              go: NotificationRoutes.go ??
+                  (location) => GoRouter.of(context).go(location),
+            );
           },
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

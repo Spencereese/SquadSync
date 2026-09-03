@@ -127,6 +127,31 @@ void main() {
     NotificationRoutes.go = null;
   });
 
+  test('lfg_matched and peacock notification taps share /squad + lobby_id', () {
+    String? opened;
+    NotificationRoutes.go = (location) => opened = location;
+    NotificationRoutes.open({
+      'type': 'lfg_matched',
+      'game_name': 'Warzone',
+      'lobby_id': 'lobby-9',
+    });
+    expect(opened, '/squad/Warzone?lobby_id=lobby-9');
+    opened = null;
+    NotificationRoutes.open({
+      'type': 'peacock',
+      'game_name': 'Warzone',
+      'lobby_id': 'lobby-9',
+    });
+    expect(opened, '/squad/Warzone?lobby_id=lobby-9');
+    opened = null;
+    NotificationRoutes.open({
+      'type': 'lobby',
+      'lobby_id': 'lobby-9',
+    });
+    expect(opened, '/squad?lobby_id=lobby-9');
+    NotificationRoutes.go = null;
+  });
+
   test('screen squad|lobby reuses lobby_id on /squad', () {
     expect(
       NotificationRoutes.locationFor({

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/notification_routes.dart';
+import '../../../core/deep_link_routes.dart';
 import '../../../screens/voice_room_screen.dart';
 import '../../../screens/video_room_screen.dart';
 import 'chat_info_widgets.dart';
@@ -267,12 +267,10 @@ class _LookingForSquadButtonState
       final handoff = _tracker.joinMatched(userId, handoffToPeacock: false);
       if (!mounted) return;
       if (handoff.state.hasJoinTarget) {
-        NotificationRoutes.open({
-          'type': 'lfg_matched',
-          'lobby_id': handoff.state.lobbyId,
-          if (handoff.state.gameName != null)
-            'game_name': handoff.state.gameName,
-        });
+        openPeacockCard(
+          lobbyId: handoff.state.lobbyId,
+          gameName: handoff.state.gameName,
+        );
       }
       final String message;
       if (claimedSpot != null) {

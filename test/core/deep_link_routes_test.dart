@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/core/app_router.dart';
 import 'package:squad_sync/core/deep_link_routes.dart';
+import 'package:squad_sync/core/notification_routes.dart';
 
 void main() {
   group('locationForDeepLink chat / join', () {
@@ -110,6 +111,129 @@ void main() {
     test('unknown URI does not invent a route', () {
       expect(locationForDeepLink('codsquadapp://unknown/path'), isNull);
       expect(locationForDeepLink(''), isNull);
+    });
+  });
+
+  group('shared parser: peacock card / notification / lfg / lobby', () {
+    const lobbyId = 'lobby-9';
+    const game = 'Warzone';
+    const expected = '/squad/Warzone?lobby_id=lobby-9';
+    const expectedLobbyOnly = '/squad?lobby_id=lobby-9';
+
+    test('peacock card URL parses through locationForDeepLink', () {
+      expect(
+        locationForDeepLink(
+          peacockCardDeepLink(lobbyId: lobbyId, gameName: game),
+        ),
+        expected,
+      );
+      expect(
+        DeepLinkRouter.locationFor(
+          peacockCardDeepLink(lobbyId: lobbyId, gameName: game),
+        ),
+        expected,
+      );
+    });
+
+    test('peacock card tap uses NotificationRoutes.go with shared parse', () {
+      String? opened;
+      openPeacockCard(
+        lobbyId: lobbyId,
+        gameName: game,
+        go: (location) => opened = location,
+      );
+      expect(opened, expected);
+    });
+
+    test(
+        'notification / lfg_matched / peacock / lobby URLs match peacock card',
+        () {
+      final fromCard = locationForDeepLink(
+        peacockCardDeepLink(lobbyId: lobbyId, gameName: game),
+      );
+      expect(fromCard, expected);
+
+      const urls = [
+        'codsquadapp://notify?type=peacock_assigned&lobby_id=$lobbyId&game_name=$game',
+        'codsquadapp://notify?type=lfg_matched&lobby_id=$lobbyId&game_name=$game',
+        'codsquadapp://lfg_matched?lobby_id=$lobbyId&game_name=$game',
+        'codsquadapp://peacock?lobby_id=$lobbyId&game_name=$game',
+        'codsquadapp://lobby?lobby_id=$lobbyId&game_name=$game',
+        'codsquadapp://open?screen=lobby&lobby_id=$lobbyId&game_name=$game',
+        'https://lobbiesync.app/lobby?lobby_id=$lobbyId&game_name=$game',
+        'https://lobbiesync.app/peacock?lobby_id=$lobbyId&game_name=$game',
+      ];
+      for (final url in urls) {
+        expect(
+          locationForDeepLink(url),
+          fromCard,
+          reason: url,
+        );
+        expect(DeepLinkRouter.locationFor(url), fromCard, reason: url);
+      }
+
+      expect(
+        NotificationRoutes.locationFor({
+          'type': 'peacock_assigned',
+          'lobby_id': lobbyId,
+          'game_name': game,
+        }),
+        fromCard,
+      );
+      expect(
+        NotificationRoutes.locationFor({
+          'type': 'lfg_matched',
+          'lobby_id': lobbyId,
+          'game_name': game,
+        }),
+        fromCard,
+      );
+      expect(
+        NotificationRoutes.locationFor({
+          'screen': 'lobby',
+          'lobby_id': lobbyId,
+          'game_name': game,
+        }),
+        fromCard,
+      );
+    });
+
+    test('lfg_alert URLs share the chat parse', () {
+      const expectedChat = '/chat/squad-1';
+      const urls = [
+        'codsquadapp://lfg_alert?squad_id=squad-1',
+        'codsquadapp://notify?type=lfg_alert&squad_id=squad-1',
+        'codsquadapp://open?type=lfg_alert&squad_id=squad-1',
+        'https://lobbiesync.app/lfg_alert?squad_id=squad-1',
+      ];
+      for (final url in urls) {
+        expect(locationForDeepLink(url), expectedChat, reason: url);
+        expect(DeepLinkRouter.locationFor(url), expectedChat, reason: url);
+      }
+      expect(
+        NotificationRoutes.locationFor({
+          'type': 'lfg_alert',
+          'squad_id': 'squad-1',
+        }),
+        expectedChat,
+      );
+    });
+
+    test('lobby_id without game still highlights the same lobby', () {
+      const urls = [
+        'codsquadapp://peacock?lobby_id=$lobbyId',
+        'codsquadapp://lobby?lobby_id=$lobbyId',
+        'codsquadapp://lfg_matched?lobby_id=$lobbyId',
+        'codsquadapp://notify?type=peacock_assigned&lobby_id=$lobbyId',
+        'codsquadapp://notify?type=lfg_matched&lobby_id=$lobbyId',
+      ];
+      for (final url in urls) {
+        expect(locationForDeepLink(url), expectedLobbyOnly, reason: url);
+      }
+      expect(
+        locationForDeepLink(peacockCardDeepLink(lobbyId: lobbyId)),
+        expectedLobbyOnly,
+      );
     });
   });
 

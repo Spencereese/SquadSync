@@ -115,6 +115,7 @@ class StatsDashboardSnapshot {
     required this.ratings,
     this.community = const CommunitySummary(),
     this.statsLobbyIds = const [],
+    this.lastFiveRatedSessions = const [],
   });
 
   final List<SquadMemberStreak> memberStreaks;
@@ -124,6 +125,9 @@ class StatsDashboardSnapshot {
 
   /// Lobby ids whose remote stats were aggregated into [winLoss].
   final List<String> statsLobbyIds;
+
+  /// Newest 5 rated sessions decoded from `match_history.notes`.
+  final List<SessionRatingState> lastFiveRatedSessions;
 
   bool get hasStreaks => memberStreaks.any((m) => m.streak > 0);
 
@@ -183,6 +187,7 @@ class StatsDashboardSnapshot {
       ratings: ratings,
       community: communitySummaryFrom(user),
       statsLobbyIds: statsLobbyIds,
+      lastFiveRatedSessions: lastFiveRatedSessionsFromHistory(history),
     );
   }
 }

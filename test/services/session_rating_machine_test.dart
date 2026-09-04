@@ -244,6 +244,142 @@ void main() {
     });
   });
 
+  group('lastFiveRatedSessionsFromHistory', () {
+    String notesFor(int stars, DateTime at, {String? game, String? result}) {
+      return encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: stars,
+          gameName: game,
+          result: result,
+          ratedAt: at,
+        ),
+      );
+    }
+
+    test('returns newest 5 rated sessions and skips unrated notes', () {
+      final rows = [
+        {
+          'id': 'm1',
+          'game_name': 'Warzone',
+          'result': 'win',
+          'notes': notesFor(
+            5,
+            DateTime.utc(2026, 9, 3, 12),
+            game: 'Warzone',
+            result: 'win',
+          ),
+        },
+        {
+          'id': 'm2',
+          'notes': 'plain text',
+        },
+        {
+          'id': 'm3',
+          'game_name': 'BF6',
+          'result': 'loss',
+          'notes': notesFor(
+            2,
+            DateTime.utc(2026, 9, 2, 12),
+            game: 'BF6',
+            result: 'loss',
+          ),
+        },
+        {
+          'id': 'm4',
+          'notes': notesFor(4, DateTime.utc(2026, 8, 30)),
+        },
+        {
+          'id': 'm5',
+          'notes': notesFor(3, DateTime.utc(2026, 8, 29)),
+        },
+        {
+          'id': 'm6',
+          'notes': notesFor(1, DateTime.utc(2026, 8, 28)),
+        },
+        {
+          'id': 'm7',
+          'notes': notesFor(5, DateTime.utc(2026, 8, 27)),
+        },
+        {
+          'id': 'm8',
+          'notes': notesFor(2, DateTime.utc(2026, 8, 1)),
+        },
+      ];
+      final lastFive = lastFiveRatedSessionsFromHistory(rows);
+      expect(lastFive, hasLength(5));
+      expect(lastFive.map((s) => s.stars).toList(), [5, 2, 4, 3, 1]);
+      expect(lastFive.first.gameName, 'Warzone');
+      expect(lastFive.first.result, 'win');
+      expect(lastFive[1].gameName, 'BF6');
+      expect(lastFive.map((s) => s.matchId).toList(), isNot(contains('m8')));
+    });
+
+    test('fills ratedAt from created_at when notes omit it', () {
+      final notes = encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 4,
+          ratedAt: DateTime.utc(2026, 9, 3),
+        ),
+      );
+      final decoded = jsonDecode(notes) as Map<String, dynamic>;
+      final inner = Map<String, dynamic>.from(
+        decoded[kSessionRatingNotesKey] as Map,
+      );
+      inner.remove('rated_at');
+      decoded[kSessionRatingNotesKey] = inner;
+      final lastFive = lastFiveRatedSessionsFromHistory([
+        {
+          'id': 'm1',
+          'created_at': '2026-09-01T18:00:00.000Z',
+          'notes': jsonEncode(decoded),
+        },
+      ]);
+      expect(lastFive, hasLength(1));
+      expect(lastFive.single.stars, 4);
+      expect(lastFive.single.ratedAt, DateTime.utc(2026, 9, 1, 18));
+    });
+
+    test('empty or unrated history is empty', () {
+      expect(lastFiveRatedSessionsFromHistory(const []), isEmpty);
+      expect(
+        lastFiveRatedSessionsFromHistory([
+          {'notes': 'gg'},
+          {'result': 'win'},
+        ]),
+        isEmpty,
+      );
+    });
+  });
+
+  group('lastFiveRatedSessionLabel', () {
+    test('joins stars, game, result, and date', () {
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        stars: 4,
+        gameName: 'Warzone',
+        result: 'win',
+        ratedAt: DateTime.utc(2026, 9, 3, 18),
+      );
+      expect(lastFiveRatedSessionLabel(rated), '4★ · Warzone · Win · Sep 3');
+    });
+
+    test('maps loss and omits missing fields', () {
+      const rated = SessionRatingState(
+        phase: SessionRatingPhase.rated,
+        stars: 2,
+        result: 'loss',
+      );
+      expect(lastFiveRatedSessionLabel(rated), '2★ · Loss');
+      expect(lastFiveRatedSessionResultLabel('l'), 'Loss');
+      expect(lastFiveRatedSessionDateLabel(null), isEmpty);
+    });
+  });
+
   group('sessionRecordedSnackbar', () {
     test('includes stars when rated', () {
       final rated = reduceSessionRating(

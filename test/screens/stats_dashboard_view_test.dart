@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/screens/performance_stats_screen.dart';
 import 'package:squad_sync/screens/stats_dashboard_data.dart';
+import 'package:squad_sync/services/session_rating_machine.dart';
 
 void main() {
   Widget wrap(Widget child) {
@@ -32,6 +33,20 @@ void main() {
         dailySampleSize: 2,
         allTimeSampleSize: 10,
       ),
+      lastFiveRatedSessions: [
+        SessionRatingState(
+          phase: SessionRatingPhase.rated,
+          stars: 5,
+          gameName: 'Warzone',
+          result: 'win',
+        ),
+        SessionRatingState(
+          phase: SessionRatingPhase.rated,
+          stars: 2,
+          gameName: 'BF6',
+          result: 'loss',
+        ),
+      ],
       community: CommunitySummary(
         complaints: 2,
         bans: 1,
@@ -48,12 +63,16 @@ void main() {
     expect(find.text('SQUAD STREAKS'), findsOneWidget);
     expect(find.text('SQUAD WINS / LOSSES'), findsOneWidget);
     expect(find.text('AVERAGE RATINGS'), findsOneWidget);
+    expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
+    expect(find.byKey(const Key('stats-last-five')), findsOneWidget);
+    expect(find.text('5★ · Warzone · Win'), findsOneWidget);
+    expect(find.text('2★ · BF6 · Loss'), findsOneWidget);
     expect(find.text('COMMUNITY'), findsOneWidget);
     expect(find.byKey(const Key('stats-community')), findsOneWidget);
     expect(find.text('Complaints'), findsOneWidget);
     expect(find.text('Bans'), findsOneWidget);
     expect(find.text('Friends'), findsOneWidget);
-    expect(find.text('Warzone'), findsOneWidget);
+    expect(find.text('Warzone'), findsWidgets);
     expect(find.text('4.0★'), findsOneWidget);
     expect(find.byKey(const Key('stats-streaks-chart')), findsOneWidget);
     expect(find.byKey(const Key('stats-win-loss-chart')), findsOneWidget);
@@ -90,6 +109,8 @@ void main() {
     );
     expect(find.text('—'), findsNWidgets(2));
     expect(find.text('No ratings yet'), findsNWidgets(2));
+    expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
+    expect(find.text('No rated sessions yet'), findsOneWidget);
   });
 
   testWidgets('titles W/L as All lobbies when aggregating multiple lobbies',

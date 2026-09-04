@@ -136,9 +136,8 @@ String encodeSessionRatingNotes(
     if (_nonEmpty(rating.gameName) != null) 'game_name': rating.gameName,
     if (_nonEmpty(rating.result) != null) 'result': rating.result,
     if (_nonEmpty(rating.comment) != null) 'comment': rating.comment,
-    'rated_at': (rating.ratedAt ?? DateTime.now().toUtc())
-        .toUtc()
-        .toIso8601String(),
+    'rated_at':
+        (rating.ratedAt ?? DateTime.now().toUtc()).toUtc().toIso8601String(),
   };
   return jsonEncode(payload);
 }
@@ -228,6 +227,96 @@ class SessionRatingAverages {
   final int allTimeSampleSize;
 
   bool get isEmpty => dailyAverage == null && allTimeAverage == null;
+}
+
+const kLastFiveRatedSessionsLimit = 5;
+
+const _kLastFiveMonthLabels = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// Newest [limit] rated sessions from `match_history` rows.
+///
+/// Skips unrated / skipped / plain-text notes. Sorts by `rated_at`, then
+/// row `created_at`. Live path: [StatsDashboardSnapshot.fromSources].
+List<SessionRatingState> lastFiveRatedSessionsFromHistory(
+  List<Map<String, dynamic>> rows, {
+  int limit = kLastFiveRatedSessionsLimit,
+}) {
+  final cap = limit < 0 ? 0 : limit;
+  if (cap == 0 || rows.isEmpty) return const [];
+
+  final rated = <SessionRatingState>[];
+  for (final row in rows) {
+    final rating = sessionRatingFromMatchRow(row);
+    if (rating == null || !rating.isRated) continue;
+    if (rating.ratedAt != null) {
+      rated.add(rating);
+      continue;
+    }
+    final when = _asDateTime(row['created_at'] ?? row['createdAt'])?.toUtc();
+    rated.add(when == null ? rating : rating.copyWith(ratedAt: when));
+  }
+  rated.sort((a, b) {
+    final aMs = a.ratedAt?.toUtc().millisecondsSinceEpoch ?? 0;
+    final bMs = b.ratedAt?.toUtc().millisecondsSinceEpoch ?? 0;
+    return bMs.compareTo(aMs);
+  });
+  if (rated.length <= cap) return List<SessionRatingState>.from(rated);
+  return rated.sublist(0, cap);
+}
+
+/// Compact You / stats line: `4★ · Warzone · Win · Sep 3`.
+String lastFiveRatedSessionLabel(SessionRatingState rating) {
+  final parts = <String>[];
+  if (isValidSessionStars(rating.stars)) {
+    parts.add('${rating.stars}★');
+  }
+  final game = rating.gameName?.trim();
+  if (game != null && game.isNotEmpty) parts.add(game);
+  final result = lastFiveRatedSessionResultLabel(rating.result);
+  if (result != null) parts.add(result);
+  final date = lastFiveRatedSessionDateLabel(rating.ratedAt);
+  if (date.isNotEmpty) parts.add(date);
+  return parts.join(' · ');
+}
+
+String? lastFiveRatedSessionResultLabel(String? result) {
+  switch (result?.toLowerCase().trim()) {
+    case 'win':
+    case 'won':
+    case 'victory':
+    case 'w':
+      return 'Win';
+    case 'loss':
+    case 'lost':
+    case 'defeat':
+    case 'l':
+      return 'Loss';
+    case 'draw':
+    case 'tie':
+    case 'd':
+      return 'Draw';
+    default:
+      return null;
+  }
+}
+
+String lastFiveRatedSessionDateLabel(DateTime? at) {
+  if (at == null) return '';
+  final utc = at.toUtc();
+  return '${_kLastFiveMonthLabels[utc.month - 1]} ${utc.day}';
 }
 
 /// Daily = rated in the last 24h; all-time = every decoded session rating.

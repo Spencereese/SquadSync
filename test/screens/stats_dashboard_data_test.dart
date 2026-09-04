@@ -436,6 +436,37 @@ void main() {
       expect(snap.ratings.dailySampleSize, 1);
       expect(snap.ratings.allTimeAverage, 4);
       expect(snap.ratings.allTimeSampleSize, 2);
+      expect(snap.lastFiveRatedSessions, hasLength(2));
+      expect(snap.lastFiveRatedSessions.map((s) => s.stars).toList(), [5, 3]);
+    });
+
+    test('caps last-five rated sessions at 5 newest notes', () {
+      final extraHistory = [
+        for (var i = 1; i <= 7; i++)
+          {
+            'id': 'm$i',
+            'game_name': 'Warzone',
+            'result': i.isOdd ? 'win' : 'loss',
+            'notes': encodeSessionRatingNotes(
+              reduceSessionRating(
+                current: SessionRatingState.unrated,
+                event: SessionRatingEvent.rate,
+                stars: (i % 5) + 1,
+                gameName: 'Warzone',
+                result: i.isOdd ? 'win' : 'loss',
+                ratedAt: DateTime.utc(2026, 8, i),
+              ),
+            ),
+          },
+      ];
+      final snap = StatsDashboardSnapshot.fromSources(
+        extraHistory: extraHistory,
+      );
+      expect(snap.lastFiveRatedSessions, hasLength(5));
+      expect(
+        snap.lastFiveRatedSessions.map((s) => s.matchId).toList(),
+        ['m7', 'm6', 'm5', 'm4', 'm3'],
+      );
     });
   });
 
@@ -531,7 +562,8 @@ void main() {
   });
 
   group('loadStatsDashboardSnapshot', () {
-    test('uses getLobbyStats W/L and match_history streaks, not empty gameHistory',
+    test(
+        'uses getLobbyStats W/L and match_history streaks, not empty gameHistory',
         () async {
       final fetchedIds = <String>[];
       final snap = await loadStatsDashboardSnapshot(

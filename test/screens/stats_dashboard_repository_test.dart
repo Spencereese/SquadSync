@@ -13,6 +13,7 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/presentation/notifiers/user_notifier.dart';
 import 'package:squad_sync/screens/performance_stats_screen.dart';
 import 'package:squad_sync/screens/stats_dashboard_data.dart';
+import 'package:squad_sync/services/session_rating_machine.dart';
 
 import '../mocks/mock_repositories.mocks.dart';
 
@@ -93,6 +94,16 @@ void main() {
             'player_uids': ['u1'],
             'created_at': '2026-09-01T12:00:00Z',
             'created_by': 'u1',
+            'notes': encodeSessionRatingNotes(
+              reduceSessionRating(
+                current: SessionRatingState.unrated,
+                event: SessionRatingEvent.rate,
+                stars: 5,
+                gameName: 'Warzone',
+                result: 'win',
+                ratedAt: DateTime.utc(2026, 9, 1, 12),
+              ),
+            ),
           },
           {
             'id': 'm2',
@@ -128,7 +139,8 @@ void main() {
           overrides: [
             lobbyRepositoryProvider.overrideWithValue(repo),
             userNotifierProvider.overrideWith(() => _SeededUserNotifier(user)),
-            lobbyNotifierProvider.overrideWith(() => _SeededLobbyNotifier(lobby)),
+            lobbyNotifierProvider
+                .overrideWith(() => _SeededLobbyNotifier(lobby)),
           ],
           child: const MaterialApp(
             home: PerformanceStatsScreen(),
@@ -146,6 +158,8 @@ void main() {
       expect(find.text('Sam'), findsWidgets);
       expect(find.text('Friends'), findsOneWidget);
       expect(find.text('2'), findsWidgets);
+      expect(find.byKey(const Key('stats-last-five')), findsOneWidget);
+      expect(find.text('5★ · Warzone · Win · Sep 1'), findsOneWidget);
 
       verify(repo.getLobbyStats('lobby-1')).called(1);
       verify(repo.getMatchHistory('lobby-1')).called(1);
@@ -193,7 +207,8 @@ void main() {
           overrides: [
             lobbyRepositoryProvider.overrideWithValue(repo),
             userNotifierProvider.overrideWith(() => _SeededUserNotifier(user)),
-            lobbyNotifierProvider.overrideWith(() => _SeededLobbyNotifier(lobby)),
+            lobbyNotifierProvider
+                .overrideWith(() => _SeededLobbyNotifier(lobby)),
           ],
           child: const MaterialApp(
             home: PerformanceStatsScreen(),
@@ -273,7 +288,8 @@ void main() {
           overrides: [
             lobbyRepositoryProvider.overrideWithValue(repo),
             userNotifierProvider.overrideWith(() => _SeededUserNotifier(user)),
-            lobbyNotifierProvider.overrideWith(() => _SeededLobbyNotifier(lobby)),
+            lobbyNotifierProvider
+                .overrideWith(() => _SeededLobbyNotifier(lobby)),
           ],
           child: const MaterialApp(
             home: PerformanceStatsScreen(),

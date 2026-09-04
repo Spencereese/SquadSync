@@ -1,0 +1,91 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/services/session_rating_machine.dart';
+import 'package:squad_sync/widgets/last_five_rated_sessions.dart';
+
+void main() {
+  Widget wrap(Widget child) {
+    return MaterialApp(
+      theme: ThemeData.dark().copyWith(
+        colorScheme: const ColorScheme.dark(primary: Colors.cyanAccent),
+      ),
+      home: Scaffold(body: child),
+    );
+  }
+
+  SessionRatingState rated({
+    required int stars,
+    String? game,
+    String? result,
+    DateTime? at,
+  }) {
+    return reduceSessionRating(
+      current: SessionRatingState.unrated,
+      event: SessionRatingEvent.rate,
+      stars: stars,
+      gameName: game,
+      result: result,
+      ratedAt: at,
+    );
+  }
+
+  testWidgets('lists last-5 labels newest-first', (tester) async {
+    final sessions = [
+      rated(
+        stars: 5,
+        game: 'Warzone',
+        result: 'win',
+        at: DateTime.utc(2026, 9, 3),
+      ),
+      rated(
+        stars: 2,
+        game: 'BF6',
+        result: 'loss',
+        at: DateTime.utc(2026, 9, 1),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      wrap(LastFiveRatedSessionsList(sessions: sessions)),
+    );
+
+    expect(find.byKey(const Key('last-five-rated-sessions')), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-row-0')), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-row-1')), findsOneWidget);
+    expect(find.text('5★ · Warzone · Win · Sep 3'), findsOneWidget);
+    expect(find.text('2★ · BF6 · Loss · Sep 1'), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-empty')), findsNothing);
+  });
+
+  testWidgets('empty list shows no rated sessions yet', (tester) async {
+    await tester.pumpWidget(
+      wrap(const LastFiveRatedSessionsList(sessions: [])),
+    );
+
+    expect(find.byKey(const Key('last-five-rated-empty')), findsOneWidget);
+    expect(find.text('No rated sessions yet'), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-sessions')), findsNothing);
+  });
+
+  testWidgets('You surface renders last-5 from match_history notes',
+      (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        YouLastFiveRatedSessions(
+          sessions: [
+            rated(
+              stars: 4,
+              game: 'Warzone',
+              result: 'win',
+              at: DateTime.utc(2026, 9, 3),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('you-last-five')), findsOneWidget);
+    expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
+    expect(find.text('4★ · Warzone · Win · Sep 3'), findsOneWidget);
+  });
+}

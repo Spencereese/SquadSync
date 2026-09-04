@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/core/notification_routes.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/managers/notification_manager.dart';
+import 'package:squad_sync/services/availability_on.dart';
 import 'package:squad_sync/services/availability_ping.dart';
 
 Lobby _lobby({
@@ -199,6 +200,7 @@ void main() {
       expect(result.sent, isFalse);
       expect(sent, isFalse);
       expect(result.snackbarMessage, 'No one else in this lobby');
+      expect(availabilityOnStore.isOn('u1'), isTrue);
     });
 
     test('second ping of the same lobby is cooldown', () async {
@@ -255,6 +257,7 @@ void main() {
       expect(result.status, AvailabilityPingStatus.sent);
       expect(sentUids, ['u2']);
       expect(loaded, isFalse);
+      expect(availabilityOnStore.isOn('u1'), isTrue);
     });
 
     test('dispatch loads members when lobby state is empty', () async {

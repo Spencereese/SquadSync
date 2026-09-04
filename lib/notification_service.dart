@@ -10,6 +10,7 @@ import 'core/notification_cooldowns.dart';
 import 'core/notification_routes.dart';
 import 'domain/entities/notification_priority.dart';
 import 'services/auth_service_supabase.dart';
+import 'services/availability_on.dart';
 import 'services/supabase_service.dart';
 
 /// Live notification service (imported from main + peacock).
@@ -110,6 +111,7 @@ class NotificationService {
 
   static void _handleMessage(RemoteMessage message) {
     developer.log('Handling message: ${message.data}');
+    observeAvailabilityPingPayload(message.data);
     NotificationRoutes.open(message.data);
   }
 
@@ -126,6 +128,7 @@ class NotificationService {
   static void _onForegroundMessage(RemoteMessage message) {
     developer.log(
         'Foreground message: ${message.notification?.title} - ${message.notification?.body}');
+    observeAvailabilityPingPayload(message.data);
     if (!shouldShowForegroundLocal(message)) return;
     _instance._showLocalNotification(
       title: message.notification?.title ?? 'Cod Squad',
@@ -269,6 +272,7 @@ class NotificationService {
     required Map<String, dynamic> payload,
     NotificationPriority priority = NotificationPriority.medium,
   }) async {
+    observeAvailabilityPingPayload(payload);
     final cooldownKey = NotificationCooldownStore.keyFor(payload);
     if (cooldownKey != null && _isOnCooldown(cooldownKey)) {
       developer.log('Notification on cooldown: $cooldownKey');

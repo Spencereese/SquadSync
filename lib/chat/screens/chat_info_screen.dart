@@ -15,6 +15,8 @@ import '../link_preview.dart';
 import '../../domain/entities/message.dart' hide MessageType;
 import '../models/message_data.dart' show MessageType;
 import '../../services/background_service.dart';
+import '../../services/presence_badges.dart';
+import '../../widgets/presence_badge_row.dart';
 import '../../core/utils/image_crop_helper.dart';
 import 'components/chat_info_widgets.dart';
 import 'components/chat_info_app_bar.dart';
@@ -1344,6 +1346,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
               final isOnline = member['isOnline'] as bool? ?? false;
               final role = member['role'] as String?;
               final spot = member['spot'] as String?;
+              final uid = presenceUserIdFrom(member);
 
               return Material(
                 color: Colors.transparent,
@@ -1445,6 +1448,10 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                                     color: neonColor.withOpacity(0.7),
                                   ),
                                 ),
+                              if (uid != null) ...[
+                                const SizedBox(height: 4),
+                                PresenceBadgesHost(userId: uid),
+                              ],
                             ],
                           ),
                         ),

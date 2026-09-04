@@ -5,6 +5,7 @@ import '../core/notification_cooldowns.dart';
 import '../domain/entities/lobby.dart';
 import '../managers/notification_manager.dart';
 import '../notification_service.dart';
+import 'availability_on.dart';
 import 'supabase_service.dart';
 
 /// Payload type for an "I'm on now" ping. Taps reuse [NotificationRoutes].
@@ -219,6 +220,7 @@ class AvailabilityPing {
     sendToUsersHook = null;
     loadMembersHook = null;
     _cooldowns = NotificationCooldownStore();
+    resetAvailabilityOnStore();
   }
 
   static Future<AvailabilityPingResult> send(
@@ -229,6 +231,8 @@ class AvailabilityPing {
         if (uid.trim().isNotEmpty) uid.trim(),
     ];
     final plan = planAvailabilityPing(target);
+    // I-am-on live path: sender is On even when nobody else is in the lobby.
+    availabilityOnStore.markOn(target.senderUid);
     if (plan.recipientUids.isEmpty) {
       final status = original.isEmpty
           ? AvailabilityPingStatus.noMembers

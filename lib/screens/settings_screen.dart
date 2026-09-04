@@ -10,6 +10,7 @@ import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/system_notifier.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
+import '../widgets/presence_badge_row.dart';
 
 /// Comprehensive settings screen for SquadSync
 /// Includes: Notifications, Theme, Privacy (Blocks & Friends)
@@ -548,6 +549,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 final friend = _friends[index];
                 final displayName = friend['display_name'] ?? 'Unknown';
                 final photoUrl = friend['photo_url'] as String?;
+                final friendUid =
+                    (friend['uid'] ?? friend['friend_uid']) as String?;
 
                 return ListTile(
                   leading: CircleAvatar(
@@ -565,6 +568,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       color: theme.colorScheme.onSurface,
                     ),
                   ),
+                  subtitle: friendUid == null
+                      ? null
+                      : PresenceBadgesHost(userId: friendUid),
                   trailing: IconButton(
                     icon: Icon(
                       Icons.person_remove,

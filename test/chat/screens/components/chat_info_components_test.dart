@@ -10,7 +10,12 @@ import 'package:squad_sync/chat/screens/components/chat_info_backgrounds.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_media.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_links_files.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
+import 'package:squad_sync/domain/entities/lobby_state.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
+import 'package:squad_sync/services/availability_on.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
+import 'package:squad_sync/services/presence_badges.dart';
+import 'package:squad_sync/widgets/presence_badge_row.dart';
 
 void main() {
   group('ChatInfoAppBar', () {
@@ -188,19 +193,47 @@ void main() {
   });
 
   group('ChatInfoMembersSection', () {
-    testWidgets('renders with empty member list', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoMembersSection(
-              squadId: 'test-squad',
-              members: const [],
-              neonColor: Colors.blue,
-              onAddMemberPressed: () {},
+    setUp(() {
+      MatchmakingQueueTracker.resetInstance();
+      resetAvailabilityOnStore();
+    });
+    tearDown(() {
+      MatchmakingQueueTracker.resetInstance();
+      resetAvailabilityOnStore();
+    });
+
+    Future<void> pumpMembers(
+      WidgetTester tester, {
+      required List<Map<String, dynamic>> members,
+      VoidCallback? onAdd,
+      LobbyState? lobbyState,
+    }) {
+      return tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            lobbyNotifierProvider.overrideWith(
+              () => _IdleLobbyNotifier(
+                lobbyState ?? LobbyState.initial(),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatInfoMembersSection(
+                squadId: 'test-squad',
+                members: members,
+                neonColor: Colors.blue,
+                onAddMemberPressed: onAdd ?? () {},
+              ),
             ),
           ),
         ),
       );
+    }
+
+    testWidgets('renders with empty member list', (WidgetTester tester) async {
+      await pumpMembers(tester, members: const []);
+      await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.person_add), findsOneWidget);
     });
@@ -211,18 +244,8 @@ void main() {
         {'id': '2', 'name': 'User 2', 'isOnline': false},
       ];
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoMembersSection(
-              squadId: 'test-squad',
-              members: members,
-              neonColor: Colors.blue,
-              onAddMemberPressed: () {},
-            ),
-          ),
-        ),
-      );
+      await pumpMembers(tester, members: members);
+      await tester.pumpAndSettle();
 
       expect(find.text('User 1'), findsOneWidget);
       expect(find.text('User 2'), findsOneWidget);
@@ -232,25 +255,53 @@ void main() {
         (WidgetTester tester) async {
       bool wasPressed = false;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoMembersSection(
-              squadId: 'test-squad',
-              members: const [],
-              neonColor: Colors.blue,
-              onAddMemberPressed: () {
-                wasPressed = true;
-              },
-            ),
-          ),
-        ),
+      await pumpMembers(
+        tester,
+        members: const [],
+        onAdd: () {
+          wasPressed = true;
+        },
       );
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.person_add));
       await tester.pump();
 
       expect(wasPressed, true);
+    });
+
+    testWidgets('shows On / Looking / In lobby from live sources',
+        (WidgetTester tester) async {
+      availabilityOnStore.markOn('u-on');
+      MatchmakingQueueTracker.instance.startLooking('u-look');
+      final lobby = Lobby.create(
+        name: 'Squad',
+        gameName: 'Warzone',
+        maxSpots: 8,
+        createdBy: 'u-in',
+      ).copyWith(id: 'lobby-1', memberUids: const ['u-in']);
+
+      await pumpMembers(
+        tester,
+        members: const [
+          {'uid': 'u-on', 'name': 'On User', 'isOnline': true},
+          {'uid': 'u-look', 'name': 'Looking User', 'isOnline': true},
+          {'uid': 'u-in', 'name': 'Lobby User', 'isOnline': true},
+        ],
+        lobbyState: LobbyState.initial().copyWith(
+          lobbyMemberUids: const ['u-in'],
+          currentLobby: lobby,
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('On'), findsOneWidget);
+      expect(find.text('Looking'), findsOneWidget);
+      expect(find.text('In lobby'), findsOneWidget);
+      expect(find.byKey(const Key('presence-badge-on')), findsOneWidget);
+      expect(find.byKey(const Key('presence-badge-looking')), findsOneWidget);
+      expect(find.byKey(const Key('presence-badge-in-lobby')), findsOneWidget);
     });
   });
 
@@ -394,6 +445,35 @@ void main() {
       expect(find.text('Admin User'), findsOneWidget);
       expect(find.byIcon(Icons.shield), findsOneWidget);
     });
+
+    testWidgets('displays On / Looking / In lobby presence badges',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: ChatInfoMemberAvatar(
+              name: 'Sam',
+              avatarUrl: null,
+              isOnline: true,
+              neonColor: Colors.blue,
+              presenceBadges: PresenceBadgeRow(
+                badges: PresenceBadges(
+                  isOn: true,
+                  isLooking: true,
+                  isInLobby: true,
+                ),
+                compact: true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Sam'), findsOneWidget);
+      expect(find.text('On'), findsOneWidget);
+      expect(find.text('Looking'), findsOneWidget);
+      expect(find.text('In lobby'), findsOneWidget);
+    });
   });
 
   group('Tab Wrapper Components', () {
@@ -485,4 +565,12 @@ void main() {
       expect(find.text('Links Content'), findsOneWidget);
     });
   });
+}
+
+class _IdleLobbyNotifier extends LobbyNotifier {
+  _IdleLobbyNotifier(this._state);
+  final LobbyState _state;
+
+  @override
+  Future<LobbyState> build() async => _state;
 }

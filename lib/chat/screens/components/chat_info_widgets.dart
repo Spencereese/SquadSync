@@ -66,6 +66,7 @@ class ChatInfoMemberAvatar extends StatelessWidget {
   final bool isOnline;
   final String? role;
   final Color neonColor;
+  final Widget? presenceBadges;
 
   const ChatInfoMemberAvatar({
     super.key,
@@ -74,6 +75,7 @@ class ChatInfoMemberAvatar extends StatelessWidget {
     required this.isOnline,
     this.role,
     required this.neonColor,
+    this.presenceBadges,
   });
 
   @override
@@ -81,6 +83,7 @@ class ChatInfoMemberAvatar extends StatelessWidget {
     return SizedBox(
       width: 70,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Stack(
             children: [
@@ -143,6 +146,10 @@ class ChatInfoMemberAvatar extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
           ),
+          if (presenceBadges != null) ...[
+            const SizedBox(height: 2),
+            presenceBadges!,
+          ],
         ],
       ),
     );

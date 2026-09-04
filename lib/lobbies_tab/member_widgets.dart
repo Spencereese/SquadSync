@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'package:squad_sync/widgets/presence_badge_row.dart';
 
 class MemberWidgets {
   static Widget buildPlayerStatusRow(
@@ -277,7 +278,14 @@ class MemberWidgets {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: _buildMemberSubtitle(context, ref, player),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildMemberSubtitle(context, ref, player),
+                PresenceBadgesHost(userId: player),
+              ],
+            ),
             trailing: _buildMemberActions(
                 context, ref, player, showComplaintDialog,
                 circle: circle, friends: friends),

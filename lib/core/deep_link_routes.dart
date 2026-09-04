@@ -217,6 +217,9 @@ String? _mappedType({
   if (_matchesName(host, segments, 'availability_ping')) {
     return 'availability_ping';
   }
+  if (_matchesName(host, segments, 'lobby_locked')) {
+    return 'lobby_locked';
+  }
   if (_matchesName(host, segments, 'peacock')) return 'peacock_assigned';
   return null;
 }

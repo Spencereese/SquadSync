@@ -233,8 +233,13 @@ String? occupantStatusForUser({
   final global = state.globalStatuses[userId];
   if (global != null && global.isNotEmpty) return global;
   final game = gameName ?? state.currentGame?['name'] as String?;
-  if (game == null || game.isEmpty) return null;
-  return state.gameStatuses[game]?[userId];
+  if (game != null && game.isNotEmpty) {
+    final fromGame = state.gameStatuses[game]?[userId];
+    if (fromGame != null && fromGame.isNotEmpty) return fromGame;
+  }
+  final fromLobby = state.currentLobby?.statuses[userId];
+  if (fromLobby != null && fromLobby.isNotEmpty) return fromLobby;
+  return null;
 }
 
 /// Live-path resolve: existing peacock + LFG trackers + lobby state.

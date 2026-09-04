@@ -264,6 +264,97 @@ class OfferedSpotPulse extends StatelessWidget {
   }
 }
 
+/// Ready toggle / Locked badge on a seated spot.
+class SeatedSpotReadyAffordance extends StatelessWidget {
+  const SeatedSpotReadyAffordance({
+    super.key,
+    required this.isReady,
+    required this.isLocked,
+    this.isOwnSeat = true,
+    this.onToggle,
+  });
+
+  final bool isReady;
+  final bool isLocked;
+  final bool isOwnSeat;
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLocked) {
+      return Chip(
+        key: const Key('seated-spot-locked-badge'),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        backgroundColor: Colors.amberAccent.withValues(alpha: 0.2),
+        label: const Text(
+          'Locked',
+          style: TextStyle(
+            color: Colors.amberAccent,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+    if (!isOwnSeat) {
+      if (!isReady) return const SizedBox.shrink();
+      return Chip(
+        key: const Key('seated-spot-ready-badge'),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        backgroundColor: Colors.greenAccent.withValues(alpha: 0.2),
+        label: const Text(
+          'Ready',
+          style: TextStyle(
+            color: Colors.greenAccent,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isReady
+              ? const [Colors.greenAccent, Colors.green]
+              : const [Colors.tealAccent, Colors.teal],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: (isReady ? Colors.greenAccent : Colors.tealAccent)
+                .withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ElevatedButton.icon(
+        key: const Key('seated-spot-ready-button'),
+        onPressed: onToggle,
+        icon: Icon(
+          isReady ? Icons.check_circle : Icons.radio_button_unchecked,
+          size: 16,
+        ),
+        label: const Text('Ready'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+}
+
 String? _currentUidOrNull() {
   try {
     return AuthServiceSupabase().currentUser?.id;

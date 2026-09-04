@@ -78,6 +78,7 @@ class NotificationRoutes {
       case 'peacock_assigned':
       case 'lfg_matched':
       case 'availability_ping':
+      case 'lobby_locked':
       case 'lobby':
       case 'squad':
         if (type == 'availability_ping' && lobbyId == null) {

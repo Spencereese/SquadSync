@@ -15,6 +15,7 @@ import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/domain/entities/constitution.dart';
 
 import '../../notification_service.dart';
+import '../../services/lobby_ready_lock.dart';
 import '../../services/peacock_assignment_machine.dart';
 import '../../services/session_rating_machine.dart';
 import 'offline_first_mixin.dart';
@@ -889,12 +890,135 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       final timerNotifier = ref.read(timerManagementNotifierProvider.notifier);
       await timerNotifier.stopSpotTimer(gameName, userId);
 
-      // Update status to Ready
-      await _repository.updateMemberStatus(
-          squadState.selectedLobbyId!, userId, 'Ready');
-      // Reload state
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      // Calling → Ready on this seated spot, then Lock if everyone is Ready.
+      await applySeatedReady(
+        userId: userId,
+        ready: true,
+        gameName: gameName,
+      );
     }
+  }
+
+  /// Toggle Ready on the caller's seated spot. When every seated member
+  /// is Ready, the lobby Locks and seated members are notified.
+  Future<SeatedReadyResult?> toggleSeatedReady({
+    required String userId,
+    String? gameName,
+    int? spotIndex,
+  }) async {
+    final squadState = state.valueOrNull;
+    if (squadState == null) return null;
+    final game = gameName ?? squadState.currentGame?['name'] as String? ?? '';
+    final spots = spotsForReadyLock(squadState, gameName: game);
+    final statuses = mergeLobbyMemberStatuses(squadState, gameName: game);
+    final snapshot = resolveLobbyReadyLock(spots: spots, statuses: statuses);
+    if (snapshot.isLocked) {
+      return SeatedReadyResult(
+        snapshot: snapshot,
+        justLocked: false,
+        changed: false,
+      );
+    }
+
+    final uid = userId.trim();
+    if (uid.isEmpty) return null;
+    if (spotIndex != null) {
+      if (spotIndex < 0 || spotIndex >= spots.length) return null;
+      if (seatedUidFromOccupant(spots[spotIndex]) != uid) return null;
+    }
+    if (!snapshot.seatedUids.contains(uid)) return null;
+
+    return applySeatedReady(
+      userId: uid,
+      ready: !snapshot.isReady(uid),
+      gameName: game,
+    );
+  }
+
+  /// Persist Ready / Occupied on a seated member, then Lock + notify
+  /// when all seated are Ready. Live path for [toggleSeatedReady] and
+  /// [lockSpot] (no scaffold).
+  Future<SeatedReadyResult?> applySeatedReady({
+    required String userId,
+    required bool ready,
+    String? gameName,
+  }) async {
+    final squadState = state.valueOrNull;
+    if (squadState == null) return null;
+    final lobbyId = squadState.selectedLobbyId ?? squadState.currentLobby?.id;
+    if (lobbyId == null || lobbyId.isEmpty) return null;
+
+    final game = gameName ?? squadState.currentGame?['name'] as String? ?? '';
+    final spots = spotsForReadyLock(squadState, gameName: game);
+    final statuses = mergeLobbyMemberStatuses(squadState, gameName: game);
+    final before = resolveLobbyReadyLock(spots: spots, statuses: statuses);
+    final status = ready ? kSeatedReadyStatus : kSeatedNotReadyStatus;
+    final patched = Map<String, String>.from(statuses)..[userId] = status;
+    final after = resolveLobbyReadyLock(spots: spots, statuses: patched);
+    final lockedNow = justLockedLobby(before: before, after: after);
+
+    try {
+      await _repository.updateMemberStatus(lobbyId, userId, status);
+    } catch (e) {
+      debugPrint('LobbyNotifier: failed to set seated Ready: $e');
+      rethrow;
+    }
+
+    _applyMemberStatusLocally(
+      userId: userId,
+      status: status,
+      gameName: game,
+    );
+
+    if (lockedNow) {
+      try {
+        await LobbyLockNotify.send(
+          planLobbyLockNotify(
+            seatedUids: after.seatedUids,
+            actorUid: userId,
+            lobbyId: lobbyId,
+            gameName: game.isEmpty ? null : game,
+          ),
+        );
+      } catch (e) {
+        debugPrint('LobbyNotifier: lobby lock notify failed: $e');
+      }
+    }
+
+    return SeatedReadyResult(
+      snapshot: after,
+      justLocked: lockedNow,
+    );
+  }
+
+  void _applyMemberStatusLocally({
+    required String userId,
+    required String status,
+    required String gameName,
+  }) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final global = Map<String, String>.from(current.globalStatuses);
+    global[userId] = status;
+    final gameStatuses =
+        Map<String, Map<String, String>>.from(current.gameStatuses);
+    if (gameName.isNotEmpty) {
+      final perGame = Map<String, String>.from(gameStatuses[gameName] ?? {});
+      perGame[userId] = status;
+      gameStatuses[gameName] = perGame;
+    }
+    final lobby = current.currentLobby;
+    state = AsyncData(
+      current.copyWith(
+        globalStatuses: global,
+        gameStatuses: gameStatuses,
+        currentLobby: lobby == null
+            ? lobby
+            : lobby.copyWith(
+                statuses: {...lobby.statuses, userId: status},
+              ),
+      ),
+    );
   }
 
   Future<void> removeSpot(String gameName, int spotIndex) async {

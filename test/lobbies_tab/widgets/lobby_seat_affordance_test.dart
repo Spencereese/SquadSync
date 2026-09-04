@@ -143,6 +143,67 @@ void main() {
     expect(find.text('spot-1'), findsOneWidget);
   });
 
+  testWidgets('own seated spot shows Ready toggle', (tester) async {
+    var toggled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SeatedSpotReadyAffordance(
+            isReady: false,
+            isLocked: false,
+            onToggle: () => toggled = true,
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('seated-spot-ready-button')), findsOneWidget);
+    expect(find.text('Ready'), findsOneWidget);
+    expect(find.byKey(const Key('seated-spot-locked-badge')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('seated-spot-ready-button')));
+    await tester.pump();
+    expect(toggled, isTrue);
+  });
+
+  testWidgets('all seated Ready shows Locked and hides Ready toggle',
+      (tester) async {
+    var toggled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SeatedSpotReadyAffordance(
+            isReady: true,
+            isLocked: true,
+            onToggle: () => toggled = true,
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('seated-spot-locked-badge')), findsOneWidget);
+    expect(find.text('Locked'), findsOneWidget);
+    expect(find.byKey(const Key('seated-spot-ready-button')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('seated-spot-locked-badge')));
+    await tester.pump();
+    expect(toggled, isFalse);
+  });
+
+  testWidgets('other seated Ready shows badge without toggle', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SeatedSpotReadyAffordance(
+            isReady: true,
+            isLocked: false,
+            isOwnSeat: false,
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('seated-spot-ready-badge')), findsOneWidget);
+    expect(find.byKey(const Key('seated-spot-ready-button')), findsNothing);
+  });
+
   test('banner Accept path is joinMatched with handoffToPeacock false', () {
     final peacock = PeacockAssignmentTracker();
     final lfg = MatchmakingQueueTracker(peacock: peacock);

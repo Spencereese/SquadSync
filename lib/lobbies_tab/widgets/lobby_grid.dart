@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/auth_service_supabase.dart';
+import '../../services/lobby_ready_lock.dart';
 import '../../services/lobby_seat_status.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../domain/entities/lobby_state.dart';
@@ -81,16 +82,30 @@ class SpotCard extends ConsumerWidget {
     final gameName = squadState.currentGame?['name'] ?? '';
     final squadSpots = squadState.gameLobbySpots[gameName] ?? [];
     final spotTimers = squadState.gameSpotTimers[gameName] ?? [];
-    final globalStatuses = squadState.globalStatuses;
 
     final spotName = index < squadSpots.length ? squadSpots[index] : null;
     // Strip _calling suffix before looking up display name
-    final cleanSpotName = spotName?.replaceAll('_calling', '');
+    final occupantUid = seatedUidFromOccupant(spotName);
+    final cleanSpotName = occupantUid ?? spotName?.replaceAll('_calling', '');
     final spotDisplayName = cleanSpotName != null
         ? squadState.memberDisplayNames[cleanSpotName] ?? cleanSpotName
         : null;
     final hasOccupant = spotName != null;
-    final isReady = globalStatuses[spotName] == 'Ready';
+    final occupantStatus = occupantUid == null
+        ? null
+        : occupantStatusForUser(
+            state: squadState,
+            userId: occupantUid,
+            gameName: gameName,
+          );
+    final readyLock = resolveLobbyReadyLockFromState(
+      squadState,
+      gameName: gameName,
+    );
+    final isReady = occupantUid != null && readyLock.isReady(occupantUid);
+    final isSeated = occupantIsSeated(spotName, occupantStatus);
+    final isOwnSeat = occupantUid != null && occupantUid == yourUid;
+    final lobbyLocked = readyLock.isLocked;
 
     final initial = spotDisplayName != null
         ? spotDisplayName[0].toUpperCase()
@@ -98,13 +113,14 @@ class SpotCard extends ConsumerWidget {
 
     // Check if any buttons will be shown
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
-    final isCalling = globalStatuses[spotName] == 'Calling';
+    final isCalling = occupantIsCallingSpot(spotName, occupantStatus);
     final hasCallButton = !hasOccupant;
-    final hasLockButton =
-        hasOccupant && hasTimer && isCalling && spotName == yourUid;
+    final hasLockButton = hasOccupant && hasTimer && isCalling && isOwnSeat;
     final hasWalkingButton =
-        hasOccupant && hasTimer && isReady && spotName == yourUid;
-    final hasAnyButton = hasCallButton || hasLockButton || hasWalkingButton;
+        hasOccupant && hasTimer && isReady && isOwnSeat && !isSeated;
+    final hasReadyButton = isSeated && (isOwnSeat || isReady || lobbyLocked);
+    final hasAnyButton =
+        hasCallButton || hasLockButton || hasWalkingButton || hasReadyButton;
 
     LobbySeatStatus? seatStatus;
     try {
@@ -138,13 +154,12 @@ class SpotCard extends ConsumerWidget {
                   ref
                       .read(ln.lobbyNotifierProvider.notifier)
                       .claimSpot(gameName, index);
-                } else if (hasOccupant && spotName == yourUid) {
-                  final status = globalStatuses[spotName];
-                  if (status == 'Ready') {
+                } else if (hasOccupant && isOwnSeat) {
+                  if (isReady) {
                     ref
                         .read(ln.lobbyNotifierProvider.notifier)
                         .lockSpot(gameName, index);
-                  } else if (status != 'Calling') {
+                  } else if (!isCalling) {
                     // Allow leaving spot by tapping when not ready and not calling
                     ref
                         .read(ln.lobbyNotifierProvider.notifier)
@@ -158,7 +173,7 @@ class SpotCard extends ConsumerWidget {
               },
         child: Semantics(
           label:
-              'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}${spotName == yourUid && !isReady ? ' (tap to leave)' : spotName == yourUid && isReady ? ' (ready to lock)' : ''}',
+              'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}${isOwnSeat && lobbyLocked ? ' (locked)' : isOwnSeat && isReady ? ' (ready)' : isOwnSeat && !isReady ? ' (tap Ready)' : ''}',
           child: Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             color: Colors.white.withValues(alpha: 0.1),
@@ -179,9 +194,29 @@ class SpotCard extends ConsumerWidget {
                     color: Colors.white, fontWeight: FontWeight.bold),
               ),
               subtitle: _buildSpotSubtitle(
-                  context, index, spotName, spotTimers, globalStatuses),
-              trailing: _buildSpotActions(context, index, hasOccupant, spotName,
-                  yourUid, spotTimers, globalStatuses, ref, gameName),
+                context,
+                index,
+                spotTimers,
+                occupantStatus: occupantStatus,
+                isSeated: isSeated,
+                isReady: isReady,
+                lobbyLocked: lobbyLocked,
+                hasOccupant: hasOccupant,
+              ),
+              trailing: _buildSpotActions(
+                context,
+                index,
+                hasOccupant,
+                yourUid,
+                spotTimers,
+                ref,
+                gameName,
+                isCalling: isCalling,
+                isReady: isReady,
+                isSeated: isSeated,
+                isOwnSeat: isOwnSeat,
+                lobbyLocked: lobbyLocked,
+              ),
             ),
           ),
         ),
@@ -190,15 +225,26 @@ class SpotCard extends ConsumerWidget {
   }
 
   Widget _buildSpotSubtitle(
-      BuildContext context,
-      int index,
-      String? spotName,
-      List<Map<String, dynamic>?> spotTimers,
-      Map<String, String> globalStatuses) {
+    BuildContext context,
+    int index,
+    List<Map<String, dynamic>?> spotTimers, {
+    required String? occupantStatus,
+    required bool isSeated,
+    required bool isReady,
+    required bool lobbyLocked,
+    required bool hasOccupant,
+  }) {
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
     final timerDisplay = hasTimer ? _getTimerDisplay(spotTimers[index]) : null;
-    final status =
-        spotName != null ? globalStatuses[spotName] ?? 'Occupied' : 'Open';
+    final status = !hasOccupant
+        ? 'Open'
+        : lobbyLocked && isSeated
+            ? 'Locked'
+            : isReady
+                ? 'Ready'
+                : occupantStatus == 'Calling'
+                    ? 'Calling'
+                    : 'Occupied';
     final statusColor = _getSpotStatusColor(status);
 
     return Row(
@@ -222,6 +268,8 @@ class SpotCard extends ConsumerWidget {
     switch (status) {
       case 'Ready':
         return Colors.greenAccent;
+      case 'Locked':
+        return Colors.amberAccent;
       case 'Calling':
         return Colors.orangeAccent;
       case 'Occupied':
@@ -247,18 +295,20 @@ class SpotCard extends ConsumerWidget {
   }
 
   Widget _buildSpotActions(
-      BuildContext context,
-      int index,
-      bool hasOccupant,
-      String? spotName,
-      String? yourUid,
-      List<Map<String, dynamic>?> spotTimers,
-      Map<String, String> globalStatuses,
-      WidgetRef ref,
-      String gameName) {
+    BuildContext context,
+    int index,
+    bool hasOccupant,
+    String? yourUid,
+    List<Map<String, dynamic>?> spotTimers,
+    WidgetRef ref,
+    String gameName, {
+    required bool isCalling,
+    required bool isReady,
+    required bool isSeated,
+    required bool isOwnSeat,
+    required bool lobbyLocked,
+  }) {
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
-    final isCalling = globalStatuses[spotName] == 'Calling';
-    final isReady = globalStatuses[spotName] == 'Ready';
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -297,7 +347,7 @@ class SpotCard extends ConsumerWidget {
               ),
             ),
           )
-        else if (hasOccupant && hasTimer && isCalling && spotName == yourUid)
+        else if (hasOccupant && hasTimer && isCalling && isOwnSeat)
           Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
@@ -331,7 +381,22 @@ class SpotCard extends ConsumerWidget {
               ),
             ),
           )
-        else if (hasOccupant && hasTimer && isReady && spotName == yourUid)
+        else if (isSeated)
+          SeatedSpotReadyAffordance(
+            isReady: isReady,
+            isLocked: lobbyLocked,
+            isOwnSeat: isOwnSeat,
+            onToggle: isOwnSeat && yourUid != null
+                ? () => _toggleSeatedReady(
+                      context,
+                      ref,
+                      userId: yourUid,
+                      gameName: gameName,
+                      spotIndex: index,
+                    )
+                : null,
+          )
+        else if (hasOccupant && hasTimer && isReady && isOwnSeat)
           Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
@@ -367,5 +432,26 @@ class SpotCard extends ConsumerWidget {
           ),
       ],
     );
+  }
+
+  Future<void> _toggleSeatedReady(
+    BuildContext context,
+    WidgetRef ref, {
+    required String userId,
+    required String gameName,
+    required int spotIndex,
+  }) async {
+    final result =
+        await ref.read(ln.lobbyNotifierProvider.notifier).toggleSeatedReady(
+              userId: userId,
+              gameName: gameName,
+              spotIndex: spotIndex,
+            );
+    final message = result?.snackbarMessage;
+    if (message != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
   }
 }

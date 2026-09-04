@@ -11,6 +11,7 @@ import 'package:squad_sync/core/app_env.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/services/constitution_manager.dart';
+import 'package:squad_sync/services/lobby_ready_lock.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
 import 'package:squad_sync/services/session_rating_machine.dart';
 
@@ -23,6 +24,7 @@ Lobby _lobby({
   String gameName = 'Warzone',
   List<String> memberUids = const ['user-1'],
   List<String?>? spots,
+  Map<String, String> statuses = const {},
   String chatGroupId = 'chat-1',
 }) {
   final maxSpots = spots?.length ?? 5;
@@ -35,6 +37,7 @@ Lobby _lobby({
     id: id,
     memberUids: memberUids,
     spots: spots ?? List<String?>.filled(maxSpots, null),
+    statuses: statuses,
     chatGroupId: chatGroupId,
   );
 }
@@ -114,9 +117,12 @@ void main() {
     when(mockRepository.startSpotTimer(any, any, any)).thenAnswer((_) async {});
     when(mockRepository.cancelSpotTimer(any, any)).thenAnswer((_) async {});
     when(mockRepository.assignSpot(any, any, any)).thenAnswer((_) async {});
+    when(mockRepository.updateMemberStatus(any, any, any))
+        .thenAnswer((_) async {});
     when(mockRepository.processPeacockQueue()).thenAnswer((_) async {});
 
     PeacockAssignmentTracker.resetInstance();
+    LobbyLockNotify.resetTestHooks();
 
     container = ProviderContainer(
       overrides: [
@@ -134,6 +140,7 @@ void main() {
   tearDown(() {
     container.dispose();
     PeacockAssignmentTracker.resetInstance();
+    LobbyLockNotify.resetTestHooks();
   });
 
   group('LobbyNotifier - Initialization', () {
@@ -449,6 +456,93 @@ void main() {
         PeacockAssignmentTracker.instance.stateFor('user-1').phase,
         PeacockAssignmentPhase.idle,
       );
+    });
+  });
+
+  group('seated Ready / lobby Lock', () {
+    Future<LobbyNotifier> pumpSeatedLobby({
+      Map<String, String> statuses = const {},
+    }) async {
+      final lobby = _lobby(
+        id: 'lobby-9',
+        memberUids: const ['user-1', 'user-2'],
+        spots: ['user-1', 'user-2', null],
+        statuses: statuses,
+      );
+      when(mockRepository.getLobbyStream('lobby-9')).thenAnswer(
+        (_) => Stream<Lobby?>.value(lobby),
+      );
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.setSelectedLobbyId('lobby-9');
+      await Future<void>.delayed(Duration.zero);
+      return notifier;
+    }
+
+    test('toggleSeatedReady writes Ready on the live path', () async {
+      final notifier = await pumpSeatedLobby();
+
+      final result = await notifier.toggleSeatedReady(
+        userId: 'user-1',
+        gameName: 'Warzone',
+        spotIndex: 0,
+      );
+
+      expect(result, isNotNull);
+      expect(result!.snapshot.isReady('user-1'), isTrue);
+      expect(result.snapshot.isLocked, isFalse);
+      expect(result.justLocked, isFalse);
+      verify(mockRepository.updateMemberStatus('lobby-9', 'user-1', 'Ready'))
+          .called(1);
+    });
+
+    test('all seated Ready locks and notifies seated members', () async {
+      List<String>? sentUids;
+      Map<String, dynamic>? sentData;
+      LobbyLockNotify.sendToUsersHook = ({
+        required title,
+        required body,
+        required recipientUids,
+        data,
+      }) async {
+        sentUids = recipientUids;
+        sentData = data;
+      };
+
+      final notifier = await pumpSeatedLobby(
+        statuses: const {'user-1': 'Ready'},
+      );
+
+      final result = await notifier.toggleSeatedReady(
+        userId: 'user-2',
+        gameName: 'Warzone',
+        spotIndex: 1,
+      );
+
+      expect(result!.justLocked, isTrue);
+      expect(result.snapshot.isLocked, isTrue);
+      expect(result.snackbarMessage, 'Squad locked — go in the game');
+      verify(mockRepository.updateMemberStatus('lobby-9', 'user-2', 'Ready'))
+          .called(1);
+      expect(sentUids, ['user-1']);
+      expect(sentData!['type'], kLobbyLockedType);
+      expect(sentData!['lobby_id'], 'lobby-9');
+    });
+
+    test('toggle is a no-op when the lobby is already locked', () async {
+      final notifier = await pumpSeatedLobby(
+        statuses: const {'user-1': 'Ready', 'user-2': 'Ready'},
+      );
+
+      final result = await notifier.toggleSeatedReady(
+        userId: 'user-1',
+        gameName: 'Warzone',
+        spotIndex: 0,
+      );
+
+      expect(result!.changed, isFalse);
+      expect(result.snapshot.isLocked, isTrue);
+      verifyNever(mockRepository.updateMemberStatus(any, any, any));
     });
   });
 

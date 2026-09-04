@@ -145,8 +145,7 @@ void main() {
       expect(opened, expected);
     });
 
-    test(
-        'notification / lfg_matched / peacock / lobby URLs match peacock card',
+    test('notification / lfg_matched / peacock / lobby URLs match peacock card',
         () {
       final fromCard = locationForDeepLink(
         peacockCardDeepLink(lobbyId: lobbyId, gameName: game),
@@ -218,6 +217,26 @@ void main() {
       );
     });
 
+    test('lobby_locked URLs share the squad parse', () {
+      const lockExpected = '/squad/Warzone?lobby_id=lobby-9';
+      const urls = [
+        'codsquadapp://notify?type=lobby_locked&lobby_id=$lobbyId&game_name=$game',
+        'codsquadapp://lobby_locked?lobby_id=$lobbyId&game_name=$game',
+      ];
+      for (final url in urls) {
+        expect(locationForDeepLink(url), lockExpected, reason: url);
+        expect(DeepLinkRouter.locationFor(url), lockExpected, reason: url);
+      }
+      expect(
+        NotificationRoutes.locationFor({
+          'type': 'lobby_locked',
+          'lobby_id': lobbyId,
+          'game_name': game,
+        }),
+        lockExpected,
+      );
+    });
+
     test('lfg_alert URLs share the chat parse', () {
       const expectedChat = '/chat/squad-1';
       const urls = [
@@ -270,8 +289,7 @@ void main() {
     });
 
     test('unknown lobby id still maps to /squad?lobby_id=', () {
-      const link =
-          'codsquadapp://lobby/smoke-no-such-lobby-20260903';
+      const link = 'codsquadapp://lobby/smoke-no-such-lobby-20260903';
       expect(
         locationForDeepLink(link),
         '/squad?lobby_id=smoke-no-such-lobby-20260903',

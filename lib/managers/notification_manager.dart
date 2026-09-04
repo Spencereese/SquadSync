@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 
+import '../core/notification_hygiene.dart';
 import '../notification_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
@@ -53,6 +54,10 @@ class NotificationManager {
         gameName: gameName,
         payload: payload,
       );
+      if (NotificationHygieneStore.instance.shouldSuppressShow(merged)) {
+        developer.log('Notification hygiene suppressed local show');
+        return;
+      }
       final hook = showLocal;
       if (hook != null) {
         await hook(title, body, merged);

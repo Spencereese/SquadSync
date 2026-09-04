@@ -11,6 +11,7 @@ import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/core/realtime_subscribe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/notification_hygiene.dart';
 import '../../services/supabase_service.dart';
 import '../../services/auth_service_supabase.dart';
 import 'message_notifier.dart';
@@ -683,6 +684,8 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       'is_muted': !currentlyMuted,
       'muted_at': !currentlyMuted ? DateTime.now().toIso8601String() : null,
     });
+    await NotificationHygieneStore.instance
+        .setSquadMuted(groupId, !currentlyMuted);
   }
 
   /// Toggle pin status for a group chat
@@ -718,6 +721,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       'is_muted': true,
       'ignored_at': DateTime.now().toIso8601String(),
     });
+    await NotificationHygieneStore.instance.setSquadMuted(groupId, true);
   }
 
   /// Delete a group chat (creator only)

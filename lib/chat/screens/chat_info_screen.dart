@@ -9,9 +9,11 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/app_theme.dart';
+import '../../core/notification_hygiene.dart';
 import '../models/message_data.dart';
 import '../widgets/clip_message_bubble.dart';
 import '../link_preview.dart';
+import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/message.dart' hide MessageType;
 import '../models/message_data.dart' show MessageType;
 import '../../services/background_service.dart';
@@ -29,7 +31,9 @@ import 'components/chat_info_links_files.dart';
 import '../../domain/entities/message.dart' show ChatType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/chat_notifier.dart' as cn;
+import '../../presentation/notifiers/lobby_notifier.dart';
 import '../../presentation/notifiers/user_notifier.dart';
+import '../../widgets/notification_hygiene_tiles.dart';
 import '../services/chat_message_search_delegate.dart';
 import '../widgets/background_preview_screen.dart';
 
@@ -65,7 +69,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _selectedSegment = 0;
-  bool _notificationsEnabled = true;
+  bool _squadMuted = false;
   bool _hideAlerts = false;
   late final BackgroundService _backgroundService;
 
@@ -81,6 +85,39 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
         });
       }
     });
+    _loadSquadMute();
+  }
+
+  Future<void> _loadSquadMute() async {
+    await NotificationHygieneStore.instance.load();
+    if (!mounted) return;
+    setState(() {
+      _squadMuted =
+          NotificationHygieneStore.instance.isSquadIdMuted(widget.squadId);
+    });
+  }
+
+  Future<void> _setSquadMuted(bool muted) async {
+    setState(() => _squadMuted = muted);
+    LobbyState? state;
+    try {
+      state = ref.read(lobbyNotifierProvider).valueOrNull;
+    } catch (_) {
+      state = null;
+    }
+    final lobbyId = resolveInviteLobbyId(
+      squadId: widget.squadId,
+      selectedLobbyId: state?.selectedLobbyId,
+      currentLobby: state?.currentLobby,
+      userLobbies: state?.userLobbies ?? const {},
+    );
+    await NotificationHygieneStore.instance.setSquadMuted(
+      widget.squadId,
+      muted,
+      aliases: [
+        if (lobbyId.isNotEmpty && lobbyId != widget.squadId) lobbyId,
+      ],
+    );
   }
 
   @override
@@ -274,50 +311,10 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
-        // Notifications toggle
-        _buildToggleCard(
-          context,
-          neonColor,
-          'Notifications',
-          Icons.notifications,
-          _notificationsEnabled,
-          (value) async {
-            setState(() {
-              _notificationsEnabled = value;
-            });
-
-            // Save to Supabase user_groups
-            try {
-              final currentUser = AuthServiceSupabase().currentUser;
-              if (currentUser != null) {
-                // Fetch current user_groups
-                final response = await SupabaseService.client
-                    .from('users')
-                    .select('user_groups')
-                    .eq('uid', currentUser.id)
-                    .maybeSingle();
-
-                if (response != null) {
-                  final userGroups = List<Map<String, dynamic>>.from(
-                      response['user_groups'] ?? []);
-
-                  // Find and update the specific group
-                  final groupIndex = userGroups
-                      .indexWhere((g) => g['chat_group_id'] == widget.squadId);
-
-                  if (groupIndex != -1) {
-                    userGroups[groupIndex]['notifications_enabled'] = value;
-
-                    await SupabaseService.client.from('users').update({
-                      'user_groups': userGroups,
-                    }).eq('uid', currentUser.id);
-                  }
-                }
-              }
-            } catch (e) {
-              debugPrint('Error saving notification setting: $e');
-            }
-          },
+        MuteThisSquadTile(
+          muted: _squadMuted,
+          neonColor: neonColor,
+          onChanged: _setSquadMuted,
         ),
         const SizedBox(height: 8),
 

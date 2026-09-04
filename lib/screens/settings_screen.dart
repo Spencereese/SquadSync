@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../core/app_theme.dart';
+import '../core/notification_hygiene.dart';
 import '../domain/entities/app_user.dart';
 import '../domain/entities/system_state.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/system_notifier.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
+import '../widgets/notification_hygiene_tiles.dart';
 import '../widgets/presence_badge_row.dart';
 
 /// Comprehensive settings screen for SquadSync
@@ -26,12 +28,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _isLoadingFriends = false;
   List<Map<String, dynamic>> _blockedUsers = [];
   List<Map<String, dynamic>> _friends = [];
+  bool _quietHoursEnabled = false;
+  int _quietStartMinutes = NotificationHygiene.defaultStartMinutes;
+  int _quietEndMinutes = NotificationHygiene.defaultEndMinutes;
 
   @override
   void initState() {
     super.initState();
     _loadBlockedUsers();
     _loadFriends();
+    _loadNotificationHygiene();
+  }
+
+  Future<void> _loadNotificationHygiene() async {
+    await NotificationHygieneStore.instance.load();
+    if (!mounted) return;
+    final snap = NotificationHygieneStore.instance.snapshot;
+    setState(() {
+      _quietHoursEnabled = snap.quietHoursEnabled;
+      _quietStartMinutes = snap.startMinutes;
+      _quietEndMinutes = snap.endMinutes;
+    });
   }
 
   Future<void> _loadBlockedUsers() async {
@@ -319,6 +336,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             Icons.emoji_events,
             notifSettings['achievementAlerts'] ?? true,
             (value) => _updateNotificationSetting('achievementAlerts', value),
+          ),
+          _buildDivider(theme),
+          QuietHoursSettings(
+            enabled: _quietHoursEnabled,
+            startMinutes: _quietStartMinutes,
+            endMinutes: _quietEndMinutes,
+            onEnabledChanged: (value) async {
+              setState(() => _quietHoursEnabled = value);
+              await NotificationHygieneStore.instance
+                  .setQuietHours(enabled: value);
+            },
+            onStartChanged: (minutes) async {
+              setState(() => _quietStartMinutes = minutes);
+              await NotificationHygieneStore.instance
+                  .setQuietHours(startMinutes: minutes);
+            },
+            onEndChanged: (minutes) async {
+              setState(() => _quietEndMinutes = minutes);
+              await NotificationHygieneStore.instance
+                  .setQuietHours(endMinutes: minutes);
+            },
           ),
         ],
       ),

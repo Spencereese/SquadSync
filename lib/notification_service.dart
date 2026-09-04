@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/io_platform.dart';
 import 'core/notification_cooldowns.dart';
+import 'core/notification_hygiene.dart';
 import 'core/notification_routes.dart';
 import 'domain/entities/notification_priority.dart';
 import 'services/auth_service_supabase.dart';
@@ -32,6 +33,9 @@ class NotificationService {
     'invites': 0,
   };
   bool _initialized = false;
+
+  /// Test hook. Production reads [AuthServiceSupabase.currentUser].
+  static String? Function()? currentUidForHygiene;
 
   static Future<void> initialize() => _instance._initialize();
 
@@ -106,7 +110,40 @@ class NotificationService {
     });
 
     await _instance._loadCooldowns();
+    await NotificationHygieneStore.instance.load();
     _initialized = true;
+  }
+
+  static String? _hygieneUid() {
+    final hooked = currentUidForHygiene?.call();
+    if (hooked != null && hooked.isNotEmpty) return hooked;
+    try {
+      return AuthServiceSupabase().currentUser?.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Local display gate used by [_showLocalNotification]. Same pipeline.
+  static bool shouldSuppressLocalShow(
+    Map<String, dynamic> payload, {
+    DateTime? now,
+  }) =>
+      NotificationHygieneStore.instance.shouldSuppressShow(payload, now: now);
+
+  /// FCM send gate used by [sendNotificationToUsers]. Same pipeline.
+  static List<String> recipientsAfterHygiene({
+    required List<String> recipientUids,
+    Map<String, dynamic>? data,
+    String? currentUid,
+    DateTime? now,
+  }) {
+    return NotificationHygieneStore.instance.recipientsForSend(
+      recipientUids: recipientUids,
+      data: data,
+      currentUid: currentUid ?? _hygieneUid(),
+      now: now,
+    );
   }
 
   static void _handleMessage(RemoteMessage message) {
@@ -178,8 +215,12 @@ class NotificationService {
     required List<String> recipientUids,
     Map<String, dynamic>? data,
   }) async {
-    if (recipientUids.isEmpty) {
-      developer.log('No recipients specified for notification');
+    final recipients = recipientsAfterHygiene(
+      recipientUids: recipientUids,
+      data: data,
+    );
+    if (recipients.isEmpty) {
+      developer.log('No recipients after notification hygiene');
       return;
     }
 
@@ -187,7 +228,7 @@ class NotificationService {
       final response = await SupabaseService.client
           .from('users')
           .select('uid, fcm_token')
-          .inFilter('uid', recipientUids);
+          .inFilter('uid', recipients);
 
       if (response.isEmpty) {
         developer.log('No FCM tokens found for recipients');
@@ -273,6 +314,10 @@ class NotificationService {
     NotificationPriority priority = NotificationPriority.medium,
   }) async {
     observeAvailabilityPingPayload(payload);
+    if (shouldSuppressLocalShow(payload)) {
+      developer.log('Notification hygiene suppressed local show');
+      return;
+    }
     final cooldownKey = NotificationCooldownStore.keyFor(payload);
     if (cooldownKey != null && _isOnCooldown(cooldownKey)) {
       developer.log('Notification on cooldown: $cooldownKey');

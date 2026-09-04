@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/deep_link_routes.dart';
@@ -11,6 +13,7 @@ import '../../../services/lobby_seat_status.dart';
 import '../../../services/matchmaking_queue_machine.dart';
 import '../../../services/peacock_assignment_machine.dart';
 import '../../../domain/entities/lobby.dart';
+import '../../../domain/entities/lobby_state.dart';
 import '../../../presentation/notifiers/lobby_notifier.dart';
 import '../../../notification_service.dart';
 
@@ -242,14 +245,15 @@ class ChatInfoActionsSection extends StatelessWidget {
   }
 }
 
-/// Looking for Squad — product matchmaking queue v1.
+/// Looking for Squad — product matchmaking queue.
 ///
 /// Join/leave looking reduce on [MatchmakingQueueTracker] after the
-/// existing LFG notify succeeds. A matched lobby claims a seat through
+/// existing LFG notify succeeds. Looking is persisted on
+/// `matchmaking_queue` (hydrate + Realtime) so app kill does not wipe
+/// it. A matched lobby claims a seat through
 /// [LobbyNotifier.assignPeacockSpot] (single peacock reduce), then
 /// [MatchmakingQueueTracker.joinMatched] with `handoffToPeacock: false`
-/// so assign is never reduced twice. Queue rows are in-memory until
-/// Spencer applies a `matchmaking_queue` migration.
+/// so assign is never reduced twice. XOR stays [planPeacockSelfNotify].
 class LookingForSquadButton extends ConsumerStatefulWidget {
   final String squadId;
   final Color neonColor;
@@ -272,6 +276,62 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
 
   MatchmakingQueueEntry _entryFor(String? uid) =>
       uid == null ? MatchmakingQueueEntry.idle : _tracker.stateFor(uid);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_hydrateLiveQueue());
+    });
+  }
+
+  Future<void> _hydrateLiveQueue() async {
+    await _tracker.ensureHydratedAndSubscribed();
+    if (!mounted) return;
+    await _processLobbyAwareQueue();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _processLobbyAwareQueue() async {
+    final args = _lobbyAwareQueueArgs();
+    await _tracker.processQueueAndPersist(
+      lobbyId: args.lobbyId,
+      gameName: args.gameName,
+      lobbyHasFreeSeat: args.hasFreeSeat,
+    );
+  }
+
+  ({String? lobbyId, String? gameName, bool hasFreeSeat})
+      _lobbyAwareQueueArgs() {
+    LobbyState? state;
+    try {
+      state = ref.read(lobbyNotifierProvider).valueOrNull;
+    } catch (_) {
+      state = null;
+    }
+    final lobbyId = resolveInviteLobbyId(
+      squadId: widget.squadId,
+      selectedLobbyId: state?.selectedLobbyId,
+      currentLobby: state?.currentLobby,
+      userLobbies: state?.userLobbies ?? const {},
+    );
+    final lobby =
+        state == null ? null : lobbyForSeatResolve(state, lobbyId);
+    final target = lobby ?? state?.currentLobby;
+    final hasFree = target == null
+        ? false
+        : lobbyHasFreeSeatForMatchmaking(
+            spots: target.spots,
+            maxSpots: target.maxSpots,
+            alreadyMatchedToLobby: _tracker.matchedCountForLobby(target.id),
+          );
+    final resolvedId = target?.id ?? (lobbyId.isEmpty ? null : lobbyId);
+    return (
+      lobbyId: resolvedId,
+      gameName: target?.gameName,
+      hasFreeSeat: hasFree,
+    );
+  }
 
   Future<void> _onPressed() async {
     final uid = _currentUidOrNull();
@@ -334,7 +394,7 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
         userId: userId,
         squadId: widget.squadId,
       );
-      _tracker.processQueue();
+      await _processLobbyAwareQueue();
 
       if (!mounted) return;
       final next = _entryFor(userId);
@@ -410,6 +470,7 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
         handedOff = true;
       }
       final handoff = _tracker.joinMatched(userId, handoffToPeacock: false);
+      await _tracker.persistCurrent(userId);
       if (!mounted) return;
       if (handoff.state.hasJoinTarget) {
         openPeacockCard(

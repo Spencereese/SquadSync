@@ -34,6 +34,7 @@ import 'package:squad_sync/domain/repositories/system_repository.dart';
 import 'package:squad_sync/data/datasources/lobby_local_datasource.dart';
 import 'package:squad_sync/data/datasources/lobby_remote_datasource.dart';
 import 'package:squad_sync/data/repositories/lobby_repository_impl.dart';
+import 'package:squad_sync/data/repositories/matchmaking_queue_repository.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 
 // Chat imports
@@ -185,6 +186,12 @@ final chatRepositoryProvider =
     Provider<ChatRepository>((ref) => getIt<ChatRepository>());
 final lobbyRepositoryProvider =
     Provider<LobbyRepository>((ref) => getIt<LobbyRepository>());
+final matchmakingQueueRepositoryProvider =
+    Provider<MatchmakingQueueRepository>(
+  (ref) => MatchmakingQueueRepositoryImpl(
+    client: SupabaseService.maybeClient,
+  ),
+);
 final systemRepositoryProvider =
     Provider<SystemRepository>((ref) => getIt<SystemRepository>());
 final gameRepositoryProvider =

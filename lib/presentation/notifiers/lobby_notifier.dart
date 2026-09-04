@@ -16,6 +16,7 @@ import 'package:squad_sync/domain/entities/constitution.dart';
 
 import '../../notification_service.dart';
 import '../../services/lobby_ready_lock.dart';
+import '../../services/matchmaking_queue_machine.dart';
 import '../../services/peacock_assignment_machine.dart';
 import '../../services/session_rating_machine.dart';
 import 'offline_first_mixin.dart';
@@ -50,6 +51,9 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     _errorHandler = ref.read(errorHandlingServiceProvider);
 
     _bindPeacockQueueProcessor();
+    final matchmakingRepo = ref.read(matchmakingQueueRepositoryProvider);
+    MatchmakingQueueTracker.instance.bindRepository(matchmakingRepo);
+    unawaited(_bindMatchmakingQueue());
     ref.onDispose(() {
       _currentLobbySubscription?.cancel();
       _userLobbiesSubscription?.cancel();
@@ -189,6 +193,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
         debugPrint(
             '📡 Current lobby updated: ${lobby.name} (${lobby.memberUids.length} members)');
+        unawaited(_processLobbyAwareMatchmaking(lobby));
       },
       onError: (error) {
         debugPrint('❌ Error in current lobby stream: $error');
@@ -408,6 +413,30 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   void _bindPeacockQueueProcessor() {
     _peacock.queueProcessor = processPeacockQueue;
+  }
+
+  /// Persist LFG looking + lobby-aware [processQueue]. Does not peacock-assign.
+  Future<void> _bindMatchmakingQueue() async {
+    final tracker = MatchmakingQueueTracker.instance;
+    await tracker.ensureHydratedAndSubscribed();
+    final lobby = state.valueOrNull?.currentLobby;
+    if (lobby != null) {
+      await _processLobbyAwareMatchmaking(lobby);
+    }
+  }
+
+  Future<void> _processLobbyAwareMatchmaking(Lobby lobby) async {
+    final tracker = MatchmakingQueueTracker.instance;
+    final hasFree = lobbyHasFreeSeatForMatchmaking(
+      spots: lobby.spots,
+      maxSpots: lobby.maxSpots,
+      alreadyMatchedToLobby: tracker.matchedCountForLobby(lobby.id),
+    );
+    await tracker.processQueueAndPersist(
+      lobbyId: lobby.id,
+      gameName: lobby.gameName,
+      lobbyHasFreeSeat: hasFree,
+    );
   }
 
   /// Reduce [event] for [userId] after the matching repository call succeeds.

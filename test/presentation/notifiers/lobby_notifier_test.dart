@@ -12,6 +12,7 @@ import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/services/lobby_ready_lock.dart';
+import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
 import 'package:squad_sync/services/session_rating_machine.dart';
 
@@ -122,6 +123,7 @@ void main() {
     when(mockRepository.processPeacockQueue()).thenAnswer((_) async {});
 
     PeacockAssignmentTracker.resetInstance();
+    MatchmakingQueueTracker.resetInstance();
     LobbyLockNotify.resetTestHooks();
 
     container = ProviderContainer(
@@ -140,6 +142,7 @@ void main() {
   tearDown(() {
     container.dispose();
     PeacockAssignmentTracker.resetInstance();
+    MatchmakingQueueTracker.resetInstance();
     LobbyLockNotify.resetTestHooks();
   });
 
@@ -382,6 +385,38 @@ void main() {
       expect(peacock.phase, PeacockAssignmentPhase.assigned);
       expect(peacock.lobbyId, 'lobby-9');
       expect(peacock.notificationId, 'n1');
+    });
+
+    test('lobby stream processQueue matches looking without peacock assign',
+        () async {
+      MatchmakingQueueTracker.instance.startLooking('user-1');
+      final lobby = _lobby(
+        id: 'lobby-9',
+        spots: [null, null],
+      );
+      when(mockRepository.getLobbyStream('lobby-9')).thenAnswer(
+        (_) => Stream<Lobby?>.value(lobby),
+      );
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.setSelectedLobbyId('lobby-9');
+      await Future<void>.delayed(Duration.zero);
+
+      final lfg = MatchmakingQueueTracker.instance.stateFor('user-1');
+      expect(lfg.phase, MatchmakingQueuePhase.matched);
+      expect(lfg.lobbyId, 'lobby-9');
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.idle,
+      );
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').showedLocal,
+        isFalse,
+      );
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').sentFcmToSelf,
+        isFalse,
+      );
     });
 
     test('assignPeacockSpot uses explicit spotIndex', () async {

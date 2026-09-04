@@ -1,6 +1,54 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/data/repositories/matchmaking_queue_repository.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
+
+class _MemoryQueueRepo implements MatchmakingQueueRepository {
+  final Map<String, MatchmakingQueueEntry> rows =
+      <String, MatchmakingQueueEntry>{};
+  final StreamController<MatchmakingQueueChange> controller =
+      StreamController<MatchmakingQueueChange>.broadcast();
+
+  @override
+  Future<void> upsert(String userId, MatchmakingQueueEntry entry) async {
+    if (entry.phase == MatchmakingQueuePhase.idle) {
+      await remove(userId);
+      return;
+    }
+    final stamped = entry.queuedAt == null
+        ? entry.copyWith(queuedAt: DateTime.now().toUtc())
+        : entry;
+    rows[userId] = stamped;
+    controller.add(MatchmakingQueueChange(userId: userId, entry: stamped));
+  }
+
+  @override
+  Future<void> remove(String userId) async {
+    rows.remove(userId);
+    controller.add(MatchmakingQueueChange(userId: userId));
+  }
+
+  @override
+  Future<Map<String, MatchmakingQueueEntry>> fetchActive() async {
+    final ordered = rows.entries.toList()
+      ..sort((a, b) {
+        final at = a.value.queuedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bt = b.value.queuedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return at.compareTo(bt);
+      });
+    return Map<String, MatchmakingQueueEntry>.fromEntries(ordered);
+  }
+
+  @override
+  Stream<MatchmakingQueueChange> watch() => controller.stream;
+
+  @override
+  Future<void> dispose() async {
+    await controller.close();
+  }
+}
 
 void main() {
   late MatchmakingQueueTracker tracker;
@@ -228,6 +276,159 @@ void main() {
         MatchmakingQueueTracker.instance.stateFor('u1').phase,
         MatchmakingQueuePhase.idle,
       );
+    });
+  });
+
+  group('persist + hydrate (app kill)', () {
+    late _MemoryQueueRepo repo;
+
+    setUp(() {
+      repo = _MemoryQueueRepo();
+      tracker = MatchmakingQueueTracker(peacock: peacock, repository: repo);
+    });
+
+    tearDown(() async {
+      await repo.dispose();
+    });
+
+    test('startLookingAfter writes looking; new tracker hydrates it', () async {
+      await tracker.startLookingAfter(
+        () async {},
+        userId: 'u1',
+        squadId: 'squad-1',
+        gameName: 'Warzone',
+      );
+      expect(repo.rows['u1']?.phase, MatchmakingQueuePhase.looking);
+      expect(repo.rows['u1']?.squadId, 'squad-1');
+
+      final revived = MatchmakingQueueTracker(
+        peacock: peacock,
+        repository: repo,
+      );
+      expect(revived.stateFor('u1').phase, MatchmakingQueuePhase.idle);
+      await revived.hydrateFromRepository();
+      expect(revived.stateFor('u1').phase, MatchmakingQueuePhase.looking);
+      expect(revived.stateFor('u1').squadId, 'squad-1');
+      expect(revived.stateFor('u1').gameName, 'Warzone');
+      expect(peacock.stateFor('u1').phase, PeacockAssignmentPhase.idle);
+    });
+
+    test('cancelLookingAfter removes the persisted row', () async {
+      await tracker.startLookingAfter(() async {}, userId: 'u1');
+      await tracker.cancelLookingAfter(() async {}, userId: 'u1');
+      expect(repo.rows.containsKey('u1'), isFalse);
+
+      final revived = MatchmakingQueueTracker(repository: repo);
+      await revived.hydrateFromRepository();
+      expect(revived.stateFor('u1').phase, MatchmakingQueuePhase.idle);
+    });
+
+    test('Realtime applyRemote does not peacock-assign', () {
+      tracker.applyRemote(
+        'u1',
+        const MatchmakingQueueEntry(
+          phase: MatchmakingQueuePhase.matched,
+          lobbyId: 'lobby-9',
+          gameName: 'Warzone',
+          notificationId: 'n1',
+        ),
+      );
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.matched);
+      expect(tracker.stateFor('u1').lobbyId, 'lobby-9');
+      expect(peacock.stateFor('u1').phase, PeacockAssignmentPhase.idle);
+      expect(peacock.stateFor('u1').showedLocal, isFalse);
+      expect(peacock.stateFor('u1').sentFcmToSelf, isFalse);
+    });
+
+    test('processQueueAndPersist writes matched rows', () async {
+      tracker.startLooking('u1');
+      tracker.startLooking('u2');
+      final matched = await tracker.processQueueAndPersist(
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        lobbyHasFreeSeat: true,
+      );
+      expect(matched, ['u1']);
+      expect(repo.rows['u1']?.phase, MatchmakingQueuePhase.matched);
+      expect(repo.rows['u1']?.lobbyId, 'lobby-9');
+      expect(repo.rows['u2']?.phase, MatchmakingQueuePhase.looking);
+    });
+  });
+
+  group('lobby-aware processQueue', () {
+    test('full lobby pairs looking users instead of seating', () {
+      tracker.startLooking('u1');
+      tracker.startLooking('u2');
+      final matched = tracker.processQueue(
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        lobbyHasFreeSeat: false,
+      );
+      expect(matched, ['u1', 'u2']);
+      expect(tracker.stateFor('u1').lobbyId, isNull);
+      expect(tracker.stateFor('u1').matchedUserId, 'u2');
+      expect(tracker.stateFor('u2').matchedUserId, 'u1');
+      expect(peacock.stateFor('u1').phase, PeacockAssignmentPhase.idle);
+    });
+
+    test('free seat matches FIFO looking user into the lobby', () {
+      tracker.startLooking('u1');
+      tracker.startLooking('u2');
+      final matched = tracker.processQueue(
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        lobbyHasFreeSeat: true,
+      );
+      expect(matched, ['u1']);
+      expect(tracker.stateFor('u1').lobbyId, 'lobby-9');
+      expect(tracker.stateFor('u2').phase, MatchmakingQueuePhase.looking);
+    });
+
+    test('lobbyHasFreeSeatForMatchmaking subtracts reserved matches', () {
+      expect(
+        lobbyHasFreeSeatForMatchmaking(
+          spots: [null, null],
+          maxSpots: 2,
+          alreadyMatchedToLobby: 0,
+        ),
+        isTrue,
+      );
+      expect(
+        lobbyHasFreeSeatForMatchmaking(
+          spots: [null, null],
+          maxSpots: 2,
+          alreadyMatchedToLobby: 2,
+        ),
+        isFalse,
+      );
+      expect(
+        countFreeLobbySpots(['taken', null, ''], maxSpots: 3),
+        2,
+      );
+    });
+
+    test('FIFO uses queuedAt after hydrate', () async {
+      final repo = _MemoryQueueRepo();
+      addTearDown(repo.dispose);
+      final older = MatchmakingQueueEntry(
+        phase: MatchmakingQueuePhase.looking,
+        queuedAt: DateTime.utc(2026, 9, 3, 10),
+      );
+      final newer = MatchmakingQueueEntry(
+        phase: MatchmakingQueuePhase.looking,
+        queuedAt: DateTime.utc(2026, 9, 3, 11),
+      );
+      await repo.upsert('u-new', newer);
+      await repo.upsert('u-old', older);
+      final hydrated = MatchmakingQueueTracker(
+        peacock: peacock,
+        repository: repo,
+      );
+      await hydrated.hydrateFromRepository();
+      expect(hydrated.nextLookingUserId(), 'u-old');
+      hydrated.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true);
+      expect(hydrated.stateFor('u-old').lobbyId, 'lobby-9');
+      expect(hydrated.stateFor('u-new').phase, MatchmakingQueuePhase.looking);
     });
   });
 }

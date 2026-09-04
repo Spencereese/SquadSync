@@ -12,9 +12,9 @@ Fill this block at freeze (and again if tip moves):
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-SHA:     71584253b83b11519567233415f9e3139b837afb
-Short:   7158425
-Version: 3.4.76+78
+SHA:     4c6e1172b9f4b58b0204a553357ed70d59e12d17
+Short:   4c6e117
+Version: 3.4.79+81
 Date:    2026-09-03
 ```
 
@@ -34,7 +34,7 @@ These are revival-v1 quality gates, not new product:
   - iOS Simulator first custom-scheme open may show **"Open in Cod Squad?"** — Accept is a one-time SpringBoard tap.
   - **Keychain sign-in** / session restore on device and simulator. Dead Keychain JWT should refresh or sign out (`SupabaseService.ensureFreshSession`); a human still has to sign in when there is no session.
 
-Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. Do not apply Supabase migrations from this freeze.
+Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. SQL for this LFG persist slice is granted (Spencer YES): `supabase/migrations/20260903_create_matchmaking_queue.sql`.
 
 ## Phase B status
 
@@ -48,8 +48,9 @@ Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. Do not apply Su
 | Lobby polish | **Landed** (`3.4.76+78`) | Tonight strip on chat-info / lobby actions: I am on, Looking for Squad, Invite. Voice + Video under More. Dead Search entry removed (coming-soon snackbar is not a feature). XOR still `planPeacockSelfNotify`. |
 | Lobby seat chip / offer | **Landed** (`3.4.77+79`) | Lobby status chip seated / peacock / lock mm:ss from existing peacock + LFG. Offered spot pulses. Copy “Claim seat N”. Offer banner Accept / Decline → `assignPeacockSpot` + `joinMatched(handoffToPeacock: false)` / expire. XOR still `planPeacockSelfNotify`. |
 | Ready / Lock | **Landed** (`3.4.78+80`) | Seated spots toggle Ready on the live lobby path. All seated Ready → lobby Locks. Seated members (minus actor) notified via `NotificationService.sendNotificationToUsers`. Taps reuse `NotificationRoutes` (`lobby_locked` → `/squad?lobby_id=`). XOR still `planPeacockSelfNotify`. |
+| LFG persist / matchmaking_queue | **Landed** (`3.4.79+81`) | Looking survives app kill via `matchmaking_queue` + Realtime hydrate. Lobby-aware `processQueueAndPersist` on LFG tap and lobby stream. Single peacock handoff (`assignPeacockSpot` then `joinMatched(handoffToPeacock: false)`). XOR still `planPeacockSelfNotify`. No second presenter. |
 
-**Parked Phase B follow-up (Spencer gate):** a shared `matchmaking_queue` (or equivalent) table plus lobby-aware `processQueue` so looking state is cross-device. v1 stays in-memory + existing `lfg_alert` / Looking-for-Squad notify. Do not apply SQL from this slice.
+**LFG persist SQL (this slice, Spencer YES):** file `supabase/migrations/20260903_create_matchmaking_queue.sql` (table `matchmaking_queue`). Live apply: REST GET `public.matchmaking_queue` on project `sfckxrnoiwetmzdycqaa` returned PGRST205 (table missing). `npx supabase projects list` failed (`LegacyPlatformAuthRequiredError` — no access token). No service_role / DB password in this environment. Migration file is the apply artifact.
 
 ## Out of scope / parked until later Phase B+ / E
 
@@ -90,7 +91,7 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 
 - [ ] Draft PR #1 updated; **not merged**
 - [ ] No commits on `~/projects/cod_squad_app` (lobby-inc3 stays dirty)
-- [ ] No Supabase SQL migrations applied from this work
+- [ ] LFG persist SQL applied: `20260903_create_matchmaking_queue.sql` (`matchmaking_queue`)
 - [ ] Tip SHA / version filled in the template above
 
 ## Closed on tip (do not reopen)
@@ -112,10 +113,11 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Lobby polish | 3.4.76 | Tonight strip regroup. Voice+Video under More. Search entry gone. |
 | Lobby seat chip / offer | 3.4.77 | Chip seated / peacock / lock mm:ss. Offered spot pulse. Claim seat N. Accept / Decline banner. |
 | Ready / Lock | 3.4.78 | Seated Ready toggle. All seated Ready locks the lobby. Notify via existing NotificationService / NotificationRoutes. |
+| LFG persist | 3.4.79 | `matchmaking_queue` + Realtime + lobby-aware `processQueue`. Looking survives app kill. |
 
 ## Phase B+ parking lot (wishlist only)
 
-1. ~~Matchmaking Queue~~ — v1 landed (`3.4.70+72`); persistence table + lobby-aware `processQueue` still Spencer-gated Phase B follow-up
+1. ~~Matchmaking Queue~~ — v1 landed (`3.4.70+72`); persist + lobby-aware `processQueue` landed (`3.4.79+81`)
 2. ~~Session ratings / lobby polish~~ — ratings `3.4.75+77`; Tonight strip `3.4.76+78`
 3. Performance Leaderboard
 4. Live Activities

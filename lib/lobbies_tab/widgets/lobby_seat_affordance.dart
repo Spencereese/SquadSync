@@ -166,6 +166,7 @@ class _LobbySeatOfferBannerHostState
       }
       if (entry.phase == MatchmakingQueuePhase.matched) {
         _lfg.joinMatched(uid, handoffToPeacock: false);
+        await _lfg.persistCurrent(uid);
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

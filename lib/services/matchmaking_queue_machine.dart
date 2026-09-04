@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../core/notification_routes.dart';
+import '../data/repositories/matchmaking_queue_repository.dart';
 import 'peacock_assignment_machine.dart';
+import 'supabase_service.dart';
 
 /// Product phases for the Looking-for-Squad matchmaking queue.
 ///
@@ -35,6 +39,7 @@ class MatchmakingQueueEntry {
     this.gameName,
     this.matchedUserId,
     this.notificationId,
+    this.queuedAt,
   });
 
   static const idle = MatchmakingQueueEntry();
@@ -45,6 +50,9 @@ class MatchmakingQueueEntry {
   final String? gameName;
   final String? matchedUserId;
   final String? notificationId;
+
+  /// FIFO stamp. Hydrate uses `matchmaking_queue.created_at`.
+  final DateTime? queuedAt;
 
   /// True once a match has a lobby the player can join / lock.
   bool get hasJoinTarget =>
@@ -71,6 +79,7 @@ class MatchmakingQueueEntry {
     String? gameName,
     String? matchedUserId,
     String? notificationId,
+    DateTime? queuedAt,
     bool clearMatch = false,
   }) {
     return MatchmakingQueueEntry(
@@ -81,6 +90,7 @@ class MatchmakingQueueEntry {
       matchedUserId: clearMatch ? null : (matchedUserId ?? this.matchedUserId),
       notificationId:
           clearMatch ? null : (notificationId ?? this.notificationId),
+      queuedAt: clearMatch ? null : (queuedAt ?? this.queuedAt),
     );
   }
 }
@@ -103,6 +113,7 @@ MatchmakingQueueEntry reduceMatchmakingQueue({
           phase: MatchmakingQueuePhase.looking,
           squadId: squadId ?? current.squadId,
           gameName: gameName ?? current.gameName,
+          queuedAt: DateTime.now().toUtc(),
         );
       }
       return current;
@@ -156,27 +167,42 @@ class MatchmakingHandoff {
   final PeacockAssignmentState? peacockState;
 }
 
-/// Owns per-user Looking-for-Squad phases. v1 is in-memory: a shared
-/// `matchmaking_queue` table is parked behind Spencer (no migrations here).
+/// Owns per-user Looking-for-Squad phases.
 ///
+/// Looking is persisted on [MatchmakingQueueRepository] (`matchmaking_queue`)
+/// so app kill does not wipe the queue. Realtime hydrates other sessions.
 /// Join/leave looking reduce **after** the matching remote write succeeds
 /// ([startLookingAfter] / [cancelLookingAfter]). Match-into-lobby hands
 /// off to [PeacockAssignmentTracker.assignSpot] unless the caller already
 /// assigned via [LobbyNotifier.assignPeacockSpot] ([handoffToPeacock]
 /// false, or peacock already assigned — never a second reduce).
 class MatchmakingQueueTracker extends ChangeNotifier {
-  MatchmakingQueueTracker({PeacockAssignmentTracker? peacock})
-      : _peacockOverride = peacock;
+  MatchmakingQueueTracker({
+    PeacockAssignmentTracker? peacock,
+    MatchmakingQueueRepository? repository,
+  })  : _peacockOverride = peacock,
+        _repository = repository;
 
   /// Shared by chat LFG and any lobby match handoff.
   static MatchmakingQueueTracker instance = MatchmakingQueueTracker();
 
   final PeacockAssignmentTracker? _peacockOverride;
+  MatchmakingQueueRepository? _repository;
   final Map<String, MatchmakingQueueEntry> _byUser =
       <String, MatchmakingQueueEntry>{};
+  StreamSubscription<MatchmakingQueueChange>? _watchSub;
+  bool _hydrated = false;
+  bool _hydrating = false;
+  bool _applyingRemote = false;
 
   PeacockAssignmentTracker get _peacock =>
       _peacockOverride ?? PeacockAssignmentTracker.instance;
+
+  MatchmakingQueueRepository? get repository => _repository;
+
+  void bindRepository(MatchmakingQueueRepository? repository) {
+    _repository = repository;
+  }
 
   /// Immutable view of tracked users. Idle users are omitted.
   Map<String, MatchmakingQueueEntry> get snapshot =>
@@ -185,14 +211,49 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   MatchmakingQueueEntry stateFor(String userId) =>
       _byUser[userId] ?? MatchmakingQueueEntry.idle;
 
-  /// First looking user in insertion order, or null if the queue is empty.
+  /// First looking user in FIFO ([queuedAt], then insertion).
   String? nextLookingUserId({String? except}) {
+    String? bestId;
+    DateTime? bestAt;
+    var index = 0;
+    var bestIndex = 0;
     for (final entry in _byUser.entries) {
+      final atIndex = index++;
       if (entry.value.phase != MatchmakingQueuePhase.looking) continue;
       if (except != null && entry.key == except) continue;
-      return entry.key;
+      final at = entry.value.queuedAt;
+      if (bestId == null) {
+        bestId = entry.key;
+        bestAt = at;
+        bestIndex = atIndex;
+        continue;
+      }
+      if (at != null && (bestAt == null || at.isBefore(bestAt))) {
+        bestId = entry.key;
+        bestAt = at;
+        bestIndex = atIndex;
+        continue;
+      }
+      if (at == null && bestAt == null && atIndex < bestIndex) {
+        bestId = entry.key;
+        bestIndex = atIndex;
+      }
     }
-    return null;
+    return bestId;
+  }
+
+  /// Users already matched/joined into [lobbyId] (seat reservation).
+  int matchedCountForLobby(String lobbyId) {
+    if (lobbyId.isEmpty) return 0;
+    var count = 0;
+    for (final entry in _byUser.values) {
+      if (entry.lobbyId != lobbyId) continue;
+      if (entry.phase == MatchmakingQueuePhase.matched ||
+          entry.phase == MatchmakingQueuePhase.joined) {
+        count++;
+      }
+    }
+    return count;
   }
 
   MatchmakingQueueEntry apply({
@@ -213,6 +274,14 @@ class MatchmakingQueueTracker extends ChangeNotifier {
       matchedUserId: matchedUserId,
       notificationId: notificationId,
     );
+    final installed = _install(userId, next);
+    if (!_applyingRemote) {
+      unawaited(persistCurrent(userId));
+    }
+    return installed;
+  }
+
+  MatchmakingQueueEntry _install(String userId, MatchmakingQueueEntry next) {
     if (next.phase == MatchmakingQueuePhase.idle) {
       _byUser.remove(userId);
     } else {
@@ -222,8 +291,68 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     return next;
   }
 
+  /// Apply a Realtime / hydrate row. Does not persist and does not peacock.
+  void applyRemote(String userId, MatchmakingQueueEntry? entry) {
+    _applyingRemote = true;
+    try {
+      _install(userId, entry ?? MatchmakingQueueEntry.idle);
+    } finally {
+      _applyingRemote = false;
+    }
+  }
+
+  Future<void> persistCurrent(String userId) async {
+    final repo = _repository;
+    if (repo == null || userId.isEmpty) return;
+    final entry = stateFor(userId);
+    if (entry.phase == MatchmakingQueuePhase.idle) {
+      await repo.remove(userId);
+      return;
+    }
+    await repo.upsert(userId, entry);
+  }
+
+  Future<void> persistUsers(Iterable<String> userIds) async {
+    for (final uid in userIds) {
+      await persistCurrent(uid);
+    }
+  }
+
+  /// Fetch persisted rows then subscribe. Idempotent. No peacock assign.
+  Future<void> ensureHydratedAndSubscribed() async {
+    _repository ??=
+        MatchmakingQueueRepositoryImpl(client: SupabaseService.maybeClient);
+    await hydrateFromRepository();
+    _bindRealtime();
+  }
+
+  Future<void> hydrateFromRepository() async {
+    final repo = _repository;
+    if (repo == null || _hydrated || _hydrating) return;
+    _hydrating = true;
+    try {
+      final rows = await repo.fetchActive();
+      _applyingRemote = true;
+      for (final entry in rows.entries) {
+        _install(entry.key, entry.value);
+      }
+      _hydrated = true;
+    } finally {
+      _applyingRemote = false;
+      _hydrating = false;
+    }
+  }
+
+  void _bindRealtime() {
+    final repo = _repository;
+    if (repo == null || _watchSub != null) return;
+    _watchSub = repo.watch().listen((change) {
+      applyRemote(change.userId, change.entry);
+    });
+  }
+
   /// Reduce [startLooking] after [remoteWrite] succeeds (notify friends,
-  /// or a no-op when there is no remote table yet).
+  /// then persist looking so app kill does not wipe the queue).
   Future<MatchmakingQueueEntry> startLookingAfter(
     Future<void> Function() remoteWrite, {
     required String userId,
@@ -231,7 +360,9 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     String? gameName,
   }) async {
     await remoteWrite();
-    return startLooking(userId, squadId: squadId, gameName: gameName);
+    final next = startLooking(userId, squadId: squadId, gameName: gameName);
+    await persistCurrent(userId);
+    return next;
   }
 
   MatchmakingQueueEntry startLooking(
@@ -253,7 +384,9 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     required String userId,
   }) async {
     await remoteWrite();
-    return cancelLooking(userId);
+    final next = cancelLooking(userId);
+    await persistCurrent(userId);
+    return next;
   }
 
   MatchmakingQueueEntry cancelLooking(String userId) => apply(
@@ -281,10 +414,17 @@ class MatchmakingQueueTracker extends ChangeNotifier {
 
   /// Pair looking users, or assign the next looking user into [lobbyId].
   ///
-  /// With a lobby: FIFO looking user → matched (join target set).
-  /// Without: two looking users pair on [matchedUserId] (no lobby yet).
-  List<String> processQueue({String? lobbyId, String? gameName}) {
-    if (lobbyId != null && lobbyId.isNotEmpty) {
+  /// Lobby-aware: only match into [lobbyId] when [lobbyHasFreeSeat] is true
+  /// (default true when a lobby id is passed, so existing callers keep
+  /// matching). A full lobby falls through to pairing. Never peacock-assigns.
+  List<String> processQueue({
+    String? lobbyId,
+    String? gameName,
+    bool? lobbyHasFreeSeat,
+  }) {
+    final hasLobby = lobbyId != null && lobbyId.isNotEmpty;
+    final canSeat = lobbyHasFreeSeat ?? hasLobby;
+    if (hasLobby && canSeat) {
       final uid = nextLookingUserId();
       if (uid == null) return const <String>[];
       matchFound(uid, lobbyId: lobbyId, gameName: gameName);
@@ -297,6 +437,21 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     matchFound(first, matchedUserId: second, gameName: gameName);
     matchFound(second, matchedUserId: first, gameName: gameName);
     return <String>[first, second];
+  }
+
+  /// Live-path process: [processQueue] then persist matched rows.
+  Future<List<String>> processQueueAndPersist({
+    String? lobbyId,
+    String? gameName,
+    bool? lobbyHasFreeSeat,
+  }) async {
+    final matched = processQueue(
+      lobbyId: lobbyId,
+      gameName: gameName,
+      lobbyHasFreeSeat: lobbyHasFreeSeat,
+    );
+    await persistUsers(matched);
+    return matched;
   }
 
   /// looking/matched → joined, then peacock [assignSpot] when a lobby
@@ -361,6 +516,28 @@ class MatchmakingQueueTracker extends ChangeNotifier {
 
   @visibleForTesting
   static void resetInstance() {
+    instance._watchSub?.cancel();
     instance = MatchmakingQueueTracker();
   }
+}
+
+/// Occupied seats (including `_calling`) do not count as free.
+int countFreeLobbySpots(List<String?> spots, {int? maxSpots}) {
+  final cap = maxSpots ?? spots.length;
+  var free = 0;
+  for (var i = 0; i < cap; i++) {
+    final uid = i < spots.length ? spots[i] : null;
+    if (uid == null || uid.isEmpty) free++;
+  }
+  return free;
+}
+
+/// True when the lobby has a seat that is not already reserved by a
+/// matched/joined queue row.
+bool lobbyHasFreeSeatForMatchmaking({
+  required List<String?> spots,
+  int? maxSpots,
+  required int alreadyMatchedToLobby,
+}) {
+  return countFreeLobbySpots(spots, maxSpots: maxSpots) > alreadyMatchedToLobby;
 }

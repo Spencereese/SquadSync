@@ -15,6 +15,7 @@ import 'lobby_dialogs.dart';
 import 'widgets/lobby_grid.dart';
 import 'widgets/lobby_controls.dart';
 import 'widgets/lobby_header.dart';
+import 'widgets/lobby_seat_affordance.dart';
 import 'widgets/game_alerts_display.dart';
 import 'widgets/peacock_queue_section.dart';
 
@@ -732,8 +733,10 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
           ),
         ),
 
+        const SliverToBoxAdapter(child: LobbySeatOfferBannerHost()),
+
         // Lobby spots grid
-        LobbyGrid(),
+        const LobbyGrid(),
 
         // Peacock members section (conditionally shown)
         SliverToBoxAdapter(
@@ -747,7 +750,7 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
         ),
 
         // Action buttons (Win/Loss)
-        LobbyControls(),
+        const LobbyControls(),
 
         // Game alerts display
         const GameAlertsDisplay(),

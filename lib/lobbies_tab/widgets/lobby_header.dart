@@ -6,6 +6,7 @@ import '../../core/deep_link_routes.dart';
 import '../dialogs/settings_dialog.dart';
 import '../../widgets/unified_game_selection_sheet.dart';
 import '../../domain/entities/game.dart';
+import 'lobby_seat_affordance.dart';
 import 'match_history_badge.dart';
 
 /// LobbyHeader component - handles navigation and game info display
@@ -87,6 +88,8 @@ class LobbyHeader extends ConsumerWidget {
                             const SizedBox(height: 4),
                             MatchHistoryBadge(lobbyId: lobbyId!),
                           ],
+                          const SizedBox(height: 4),
+                          const LobbySeatStatusChipHost(),
                         ],
                       );
                     },

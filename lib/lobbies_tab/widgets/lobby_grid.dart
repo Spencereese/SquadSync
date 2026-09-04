@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/auth_service_supabase.dart';
+import '../../services/lobby_seat_status.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../domain/entities/lobby_state.dart';
 import '../dialogs/spot_assignment_dialog.dart';
+import 'lobby_seat_affordance.dart';
 
 /// LobbyGrid component - handles the display of spot cards and assignment logic
 /// Extracted from the monolithic LobbyTab to improve maintainability
@@ -104,68 +106,83 @@ class SpotCard extends ConsumerWidget {
         hasOccupant && hasTimer && isReady && spotName == yourUid;
     final hasAnyButton = hasCallButton || hasLockButton || hasWalkingButton;
 
-    return GestureDetector(
-      onLongPress: () {
-        if (hasOccupant) {
-          ref
-              .read(ln.lobbyNotifierProvider.notifier)
-              .removeSpot(gameName, index);
-        } else {
-          SpotAssignmentDialog.show(context, ref, index);
-        }
-      },
-      onTap: hasAnyButton
-          ? null
-          : () {
-              if (!hasOccupant) {
-                // Claim the empty spot
-                ref
-                    .read(ln.lobbyNotifierProvider.notifier)
-                    .claimSpot(gameName, index);
-              } else if (hasOccupant && spotName == yourUid) {
-                final status = globalStatuses[spotName];
-                if (status == 'Ready') {
+    LobbySeatStatus? seatStatus;
+    try {
+      seatStatus = resolveLobbySeatStatusFromTrackers(
+        userId: yourUid,
+        lobbyState: squadState,
+      );
+    } catch (_) {
+      seatStatus = null;
+    }
+    final pulseOffered =
+        seatStatus?.pulseOfferedSpot == true && seatStatus?.seatIndex == index;
+
+    return OfferedSpotPulse(
+      pulse: pulseOffered,
+      child: GestureDetector(
+        onLongPress: () {
+          if (hasOccupant) {
+            ref
+                .read(ln.lobbyNotifierProvider.notifier)
+                .removeSpot(gameName, index);
+          } else {
+            SpotAssignmentDialog.show(context, ref, index);
+          }
+        },
+        onTap: hasAnyButton
+            ? null
+            : () {
+                if (!hasOccupant) {
+                  // Claim the empty spot
                   ref
                       .read(ln.lobbyNotifierProvider.notifier)
-                      .lockSpot(gameName, index);
-                } else if (status != 'Calling') {
-                  // Allow leaving spot by tapping when not ready and not calling
-                  ref
-                      .read(ln.lobbyNotifierProvider.notifier)
-                      .removeSpot(gameName, index);
+                      .claimSpot(gameName, index);
+                } else if (hasOccupant && spotName == yourUid) {
+                  final status = globalStatuses[spotName];
+                  if (status == 'Ready') {
+                    ref
+                        .read(ln.lobbyNotifierProvider.notifier)
+                        .lockSpot(gameName, index);
+                  } else if (status != 'Calling') {
+                    // Allow leaving spot by tapping when not ready and not calling
+                    ref
+                        .read(ln.lobbyNotifierProvider.notifier)
+                        .removeSpot(gameName, index);
+                  }
+                  // Don't remove spot when calling - let the Lock button handle it
+                } else if (hasOccupant && squadSpots.contains(yourUid)) {
+                  // You're already in a spot, allow assigning others
+                  SpotAssignmentDialog.show(context, ref, index);
                 }
-                // Don't remove spot when calling - let the Lock button handle it
-              } else if (hasOccupant && squadSpots.contains(yourUid)) {
-                // You're already in a spot, allow assigning others
-                SpotAssignmentDialog.show(context, ref, index);
-              }
-            },
-      child: Semantics(
-        label:
-            'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}${spotName == yourUid && !isReady ? ' (tap to leave)' : spotName == yourUid && isReady ? ' (ready to lock)' : ''}',
-        child: Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          color: Colors.white.withValues(alpha: 0.1),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor:
-                  hasOccupant ? Colors.cyanAccent : Colors.grey[600],
-              child: Text(
-                hasOccupant ? initial : '${index + 1}',
-                style: TextStyle(
-                    color: hasOccupant ? Colors.black : Colors.white,
-                    fontWeight: FontWeight.bold),
+              },
+        child: Semantics(
+          label:
+              'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}${spotName == yourUid && !isReady ? ' (tap to leave)' : spotName == yourUid && isReady ? ' (ready to lock)' : ''}',
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            color: Colors.white.withValues(alpha: 0.1),
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor:
+                    hasOccupant ? Colors.cyanAccent : Colors.grey[600],
+                child: Text(
+                  hasOccupant ? initial : '${index + 1}',
+                  style: TextStyle(
+                      color: hasOccupant ? Colors.black : Colors.white,
+                      fontWeight: FontWeight.bold),
+                ),
               ),
+              title: Text(
+                'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}',
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              subtitle: _buildSpotSubtitle(
+                  context, index, spotName, spotTimers, globalStatuses),
+              trailing: _buildSpotActions(context, index, hasOccupant, spotName,
+                  yourUid, spotTimers, globalStatuses, ref, gameName),
             ),
-            title: Text(
-              'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}',
-              style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-            subtitle: _buildSpotSubtitle(
-                context, index, spotName, spotTimers, globalStatuses),
-            trailing: _buildSpotActions(context, index, hasOccupant, spotName,
-                yourUid, spotTimers, globalStatuses, ref, gameName),
           ),
         ),
       ),

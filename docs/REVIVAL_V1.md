@@ -40,12 +40,13 @@ Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. Do not apply Su
 
 | Slice | Status | Note |
 | --- | --- | --- |
-| Matchmaking Queue v1 | **Landed** (`3.4.70+72`) | Product LFG queue: idle → looking → matched → joined. LFG join is a **single** peacock handoff: `LobbyNotifier.assignPeacockSpot` claims the next free seat when lobby state is available (else snackbar “Handed off — claim spot in lobby”), then `joinMatched(handoffToPeacock: false)` so assign is never reduced twice. In-memory tracker only. Not Grok `AiMatchmaking` (Phase E). |
+| Matchmaking Queue v1 | **Landed** (`3.4.70+72`) | Product LFG queue: idle → looking → matched → joined. LFG join is a **single** peacock handoff: `LobbyNotifier.assignPeacockSpot` claims the next free seat when lobby state is available (else snackbar “Claim seat N”), then `joinMatched(handoffToPeacock: false)` so assign is never reduced twice. In-memory tracker only. Not Grok `AiMatchmaking` (Phase E). |
 | Deep-link unify | **Landed** (`3.4.71+73`) | Chat peacock card, notification tap, and `lfg_matched` / `lfg_alert` / peacock / lobby URLs share `locationForDeepLink` + `NotificationRoutes.locationFor`. No ad-hoc `Navigator.push` for those taps. Universal Links / Open-in still Spencer-gated. |
 | Lobby share / copy | **Landed** (`3.4.72+74`) | Lobby header share copies and shares `codsquadapp://lobby/<id>`. Same parse as slice 2 (`locationForDeepLink`). No QR / SMS / Universal Links. |
 | Availability pings | **Landed** (`3.4.74+76`) | "I'm on now" from Looking-for-Squad chat info and lobby controls. Lobby members (minus sender) pinged via `NotificationService.sendNotificationToUsers`. Taps reuse `NotificationRoutes` (`availability_ping` → `/squad?lobby_id=`). No new table / screen / presenter. XOR still `planPeacockSelfNotify`. |
 | Session ratings | **Landed** (`3.4.75+77`) | Rate a squad session after Win/Loss on lobby controls and stats Record win/loss. Pure `reduceSessionRating`; persisted in existing `match_history.notes`. Average tiles read those notes. No new table / screen. XOR still `planPeacockSelfNotify`. |
 | Lobby polish | **Landed** (`3.4.76+78`) | Tonight strip on chat-info / lobby actions: I am on, Looking for Squad, Invite. Voice + Video under More. Dead Search entry removed (coming-soon snackbar is not a feature). XOR still `planPeacockSelfNotify`. |
+| Lobby seat chip / offer | **Landed** (`3.4.77+79`) | Lobby status chip seated / peacock / lock mm:ss from existing peacock + LFG. Offered spot pulses. Copy “Claim seat N”. Offer banner Accept / Decline → `assignPeacockSpot` + `joinMatched(handoffToPeacock: false)` / expire. XOR still `planPeacockSelfNotify`. |
 
 **Parked Phase B follow-up (Spencer gate):** a shared `matchmaking_queue` (or equivalent) table plus lobby-aware `processQueue` so looking state is cross-device. v1 stays in-memory + existing `lfg_alert` / Looking-for-Squad notify. Do not apply SQL from this slice.
 
@@ -108,6 +109,7 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Availability pings | 3.4.74 | "I'm on now" from LFG / lobby. Existing `NotificationService` / `NotificationManager` / `NotificationRoutes`. |
 | Session ratings | 3.4.75 | Rate ended session from lobby Win/Loss + stats Record. `match_history.notes` JSON. Reducer `reduceSessionRating`. |
 | Lobby polish | 3.4.76 | Tonight strip regroup. Voice+Video under More. Search entry gone. |
+| Lobby seat chip / offer | 3.4.77 | Chip seated / peacock / lock mm:ss. Offered spot pulse. Claim seat N. Accept / Decline banner. |
 
 ## Phase B+ parking lot (wishlist only)
 

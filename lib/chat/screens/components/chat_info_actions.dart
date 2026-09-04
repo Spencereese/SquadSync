@@ -7,7 +7,9 @@ import 'chat_info_widgets.dart';
 import '../../../services/auth_service_supabase.dart';
 import '../../../services/availability_ping.dart';
 import '../../../services/friends_service.dart';
+import '../../../services/lobby_seat_status.dart';
 import '../../../services/matchmaking_queue_machine.dart';
+import '../../../services/peacock_assignment_machine.dart';
 import '../../../domain/entities/lobby.dart';
 import '../../../presentation/notifiers/lobby_notifier.dart';
 import '../../../notification_service.dart';
@@ -415,14 +417,10 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
           gameName: handoff.state.gameName,
         );
       }
-      final String message;
-      if (claimedSpot != null) {
-        message = 'Joined ${handoff.state.gameName ?? 'squad'}';
-      } else if (handedOff) {
-        message = 'Handed off — claim spot in lobby';
-      } else {
-        message = 'Squad joined';
-      }
+      final message = lfgJoinSnackbarMessage(
+        claimedSpot: claimedSpot,
+        handedOff: handedOff,
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -497,6 +495,14 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
           icon = Icons.notifications_active;
         }
 
+        final seat = uid == null
+            ? null
+            : resolveLobbySeatStatus(
+                userId: uid,
+                peacock: PeacockAssignmentTracker.instance.stateFor(uid),
+                lfg: entry,
+              );
+
         String? status;
         if (looking) {
           status = 'In queue — looking for a squad';
@@ -505,7 +511,7 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
         } else if (matched) {
           status = 'Matched — waiting for a lobby';
         } else if (joined && entry.hasJoinTarget) {
-          status = 'Handed off to lobby';
+          status = claimSeatCopy(seat?.seatIndex);
         }
 
         return Padding(

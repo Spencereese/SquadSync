@@ -15,7 +15,8 @@
 	<!-- AASA appID must be TEAMID.com.example.codSquadApp (parked bundle ID).
 	     Supabase Auth redirect: com.example.codSquadApp://auth-callback
 	     Universal Links: https://codsquad.app/l/<id> → /squad?lobby_id=
-	     Prep file: ios/associated-domains/apple-app-site-association
+	     Prep: ios/associated-domains/apple-app-site-association
+	     Template: ios/associated-domains/associated-domains.entitlements
 	     Spencer: enable Associated Domains on App ID com.example.codSquadApp
 	     if not already; host AASA; replace TEAMID. Do not change bundle ID. -->
 	<key>com.apple.developer.associated-domains</key>

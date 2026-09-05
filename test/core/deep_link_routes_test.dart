@@ -552,6 +552,7 @@ void main() {
       final paths = [
         'ios/associated-domains/apple-app-site-association',
         'web/.well-known/apple-app-site-association',
+        'web/apple-app-site-association',
       ];
       for (final path in paths) {
         final file = File(path);
@@ -561,6 +562,17 @@ void main() {
         expect(text.contains('/l/*'), isTrue);
         expect(text.contains('"applinks"'), isTrue);
       }
+    });
+
+    test('associated-domains entitlements template claims codesquad.app', () {
+      final template =
+          File('ios/associated-domains/associated-domains.entitlements')
+              .readAsStringSync();
+      expect(template.contains('<string>applinks:codsquad.app</string>'), isTrue);
+      expect(
+        template.contains('<string>applinks:www.codsquad.app</string>'),
+        isTrue,
+      );
     });
 
     test('AppDelegate sim swallow list includes codesquad.app', () {

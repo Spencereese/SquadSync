@@ -74,4 +74,6 @@ jobs:
             test/core/app_router_squad_test.dart \
             test/core/layout_insets_test.dart \
             test/managers/notification_manager_test.dart \
-            test/widgets/email_auth_actions_test.dart
+            test/widgets/email_auth_actions_test.dart \
+            test/services/audio_service_test.dart \
+            test/chat/widgets/audio_message_test.dart

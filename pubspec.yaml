@@ -1,7 +1,7 @@
 name: squad_sync
 description: "SquadSync — lobby, chat, and squad coordination for gaming groups."
 publish_to: 'none'
-version: 3.4.105+107
+version: 3.4.106+108
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -45,7 +45,6 @@ dependencies:
   image_cropper: ^8.0.2
   image_picker: ^1.1.2
   intl: ^0.20.2
-  just_audio: ^0.10.5
   logger: ^2.6.2
   package_info_plus: ^9.0.0
   path: ^1.9.0

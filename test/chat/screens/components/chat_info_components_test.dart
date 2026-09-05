@@ -151,6 +151,18 @@ void main() {
       expect(find.text('Invite'), findsOneWidget);
     });
 
+    testWidgets('Grok concierge is three commands with no free-chat field',
+        (WidgetTester tester) async {
+      await pumpActions(tester);
+
+      expect(find.byKey(const Key('grok-concierge')), findsOneWidget);
+      expect(find.text("Who's free tonight?"), findsOneWidget);
+      expect(find.text('Summarize this lobby chat since 8pm'), findsOneWidget);
+      expect(find.text('Draft a peacock invite'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.byType(TextFormField), findsNothing);
+    });
+
     testWidgets('Search entry is gone (no coming-soon snackbar)',
         (WidgetTester tester) async {
       await pumpActions(tester);

@@ -9,10 +9,12 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/availability_ping.dart';
 import '../../services/session_rating_flow.dart';
 import '../../services/session_rating_machine.dart';
+import '../../widgets/grok_concierge.dart';
 import '../../widgets/lobby_surface_feedback.dart';
 
 /// LobbyControls — Tonight strip (I am on / Looking for Squad / Invite),
-/// Win/Loss, Voice under More. Search is not an entry.
+/// Grok concierge (three commands), Win/Loss, Voice under More.
+/// Search is not an entry. No free-chat field.
 class LobbyControls extends ConsumerWidget {
   const LobbyControls({super.key});
 
@@ -50,6 +52,13 @@ class LobbyControls extends ConsumerWidget {
             isEmpty: tonightPhase == LobbySurfacePhase.empty,
             error: tonightError,
             children: tonightChildren,
+          ),
+          const SizedBox(height: 16),
+          GrokConciergeSection(
+            squadId: lobbyAsync.valueOrNull?.currentLobby?.chatGroupId ??
+                lobbyAsync.valueOrNull?.selectedLobbyId ??
+                lobbyAsync.valueOrNull?.currentLobby?.id ??
+                '',
           ),
           MoreActionsBlock(
             children: [

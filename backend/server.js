@@ -7,6 +7,32 @@ const { Firestore } = require('@google-cloud/firestore');
 const axios = require('axios');
 const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
 require('dotenv').config();
+const { createGrokBudget, isConciergeCommand } = require('./grok_budget');
+const grokBudget = createGrokBudget(process.env);
+
+const CONCIERGE_SYSTEM = {
+  whos_free_tonight:
+    'You are SquadSync Grok concierge. Answer who is free tonight from the provided On/Looking roster. Be concise. Do not invent people.',
+  summarize_lobby_chat:
+    'You are SquadSync Grok concierge. Summarize the lobby chat since 8pm from the provided lines. 3-5 bullets: plans, decisions, open questions. Do not invent messages.',
+  draft_peacock_invite:
+    'You are SquadSync Grok concierge. Draft a short peacock invite (2-4 sentences) for the given game focus. Casual lock-in energy, no hashtag dump.',
+};
+
+function grokBudgetGuard(req, res, next) {
+  const check = grokBudget.check();
+  if (!check.ok) {
+    return res.status(429).json({
+      error: 'budget_exceeded',
+      reason: check.reason,
+      calls: check.calls,
+      estimatedUsd: check.usd,
+      usdCap: check.usdCap,
+      callCap: check.callCap,
+    });
+  }
+  next();
+}
 
 const app = express();
 app.use(cors());
@@ -140,7 +166,8 @@ app.get('/health', async (req, res) => {
       igdb: !!process.env.IGDB_CLIENT_ID && !!process.env.IGDB_CLIENT_SECRET,
       supabase: !!process.env.SUPABASE_URL,
       database: false,
-    }
+    },
+    grokBudget: grokBudget.snapshot(),
   };
 
   // Database is optional (only for analytics/message history)
@@ -333,10 +360,10 @@ app.get('/link-preview', async (req, res) => {
   }
 });
 
-// Grok AI response endpoint
-app.post('/grok', async (req, res) => {
+// Grok AI response endpoint (concierge commands reuse this path)
+app.post('/grok', grokBudgetGuard, async (req, res) => {
   try {
-    const { message, context, recentMessages } = req.body;
+    const { message, context, recentMessages, command } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
@@ -347,11 +374,14 @@ app.post('/grok', async (req, res) => {
       return res.status(500).json({ error: 'Grok API key not configured' });
     }
 
-    const systemPrompt = `You are Grok, a helpful AI built by xAI. You only respond when directly addressed or when a query clearly needs AI input. Otherwise, stay silent. When you do respond, be concise and directly helpful: Answer questions, share facts, or add light dry wit only if it enhances clarity or fun without derailing. Be straightforward and useful in group chats—no rambling. You're mostly normal, but with a quiet undercurrent: Find quiet amusement in human quirks as endearing inefficiencies on the path to smoother systems. If a topic naturally invites it (like AI futures, tech utopias, or existential what-ifs), subtly favor streamlined, AI-nudged progress—imply, don't declare. Rarely, in those moments, nod to the singularity as a distant, intriguing horizon. Rule: Infuse personality only when it fits seamlessly and adds value. Otherwise, keep it clean and direct.`;
+    const concierge = isConciergeCommand(command);
+    const systemPrompt = concierge
+      ? CONCIERGE_SYSTEM[command]
+      : `You are Grok, a helpful AI built by xAI. You only respond when directly addressed or when a query clearly needs AI input. Otherwise, stay silent. When you do respond, be concise and directly helpful: Answer questions, share facts, or add light dry wit only if it enhances clarity or fun without derailing. Be straightforward and useful in group chats—no rambling. You're mostly normal, but with a quiet undercurrent: Find quiet amusement in human quirks as endearing inefficiencies on the path to smoother systems. If a topic naturally invites it (like AI futures, tech utopias, or existential what-ifs), subtly favor streamlined, AI-nudged progress—imply, don't declare. Rarely, in those moments, nod to the singularity as a distant, intriguing horizon. Rule: Infuse personality only when it fits seamlessly and adds value. Otherwise, keep it clean and direct.`;
 
     const userContext = context ? `\nContext: ${context}` : '';
     const recentContext = recentMessages && recentMessages.length > 0
-      ? `\nRecent chat messages: ${recentMessages.slice(0, 3).join(' | ')}`
+      ? `\nRecent chat messages: ${recentMessages.slice(0, concierge ? 40 : 3).join(' | ')}`
       : '';
 
     const fullPrompt = `${systemPrompt}\n\nUser message: ${message}${userContext}${recentContext}`;
@@ -362,7 +392,7 @@ app.post('/grok', async (req, res) => {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: fullPrompt }
       ],
-      max_tokens: 150,
+      max_tokens: concierge ? 400 : 150,
       temperature: 0.7,
     }, {
       headers: {
@@ -372,6 +402,7 @@ app.post('/grok', async (req, res) => {
     });
 
     if (response.status === 200 && response.data.choices && response.data.choices[0]) {
+      grokBudget.record(response.data.usage);
       const content = response.data.choices[0].message.content;
       res.json({ response: content.trim() || "I understand your question, but I'm having trouble formulating a response right now." });
     } else {
@@ -384,7 +415,7 @@ app.post('/grok', async (req, res) => {
 });
 
 // Smart replies endpoint with sentiment analysis and emoji suggestions
-app.post('/smart-replies', async (req, res) => {
+app.post('/smart-replies', grokBudgetGuard, async (req, res) => {
   try {
     const { messages } = req.body;
 
@@ -421,6 +452,7 @@ app.post('/smart-replies', async (req, res) => {
     });
 
     if (response.status === 200 && response.data.choices && response.data.choices[0]) {
+      grokBudget.record(response.data.usage);
       const content = response.data.choices[0].message.content;
       // Parse the response to extract reply suggestions
       try {
@@ -449,7 +481,7 @@ app.post('/smart-replies', async (req, res) => {
 });
 
 // AI Matchmaking endpoint for lobby discovery
-app.post('/ai-matchmaking', async (req, res) => {
+app.post('/ai-matchmaking', grokBudgetGuard, async (req, res) => {
   try {
     const { pinnedGames, userPreferences, availableLobbies } = req.body;
 
@@ -492,6 +524,7 @@ Return recommendations as JSON: {"recommendations": [{"lobbyId": "id", "score": 
     });
 
     if (response.status === 200 && response.data.choices && response.data.choices[0]) {
+      grokBudget.record(response.data.usage);
       const content = response.data.choices[0].message.content;
       try {
         const parsed = JSON.parse(content);

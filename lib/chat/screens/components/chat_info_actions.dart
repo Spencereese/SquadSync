@@ -16,6 +16,7 @@ import '../../../domain/entities/lobby.dart';
 import '../../../domain/entities/lobby_state.dart';
 import '../../../presentation/notifiers/lobby_notifier.dart';
 import '../../../notification_service.dart';
+import '../../../widgets/grok_concierge.dart';
 import '../../../widgets/lobby_surface_feedback.dart';
 
 /// Product order for the Tonight strip. Search is omitted until it searches.
@@ -208,6 +209,8 @@ class ChatInfoActionsSection extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        GrokConciergeSection(squadId: squadId),
         const SizedBox(height: 8),
         MoreActionsBlock(
           children: [

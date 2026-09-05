@@ -11,4 +11,6 @@ export 'message_service.dart';
 export 'timer_service.dart';
 // export 'reaction_service.dart'; // File not found
 export 'grok_service.dart';
+export 'grok_concierge_machine.dart';
+export 'grok_concierge.dart';
 export 'voice_service.dart';

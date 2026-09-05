@@ -1264,7 +1264,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: Colors.white),
-            tooltip: 'Settings',
+            tooltip: 'Settings · quiet hours',
             onPressed: () {
               // Navigate to comprehensive settings screen
               Navigator.of(context).push(

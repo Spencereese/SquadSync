@@ -31,6 +31,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _quietHoursEnabled = false;
   int _quietStartMinutes = NotificationHygiene.defaultStartMinutes;
   int _quietEndMinutes = NotificationHygiene.defaultEndMinutes;
+  int _mutedSquadCount = 0;
 
   @override
   void initState() {
@@ -48,6 +49,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _quietHoursEnabled = snap.quietHoursEnabled;
       _quietStartMinutes = snap.startMinutes;
       _quietEndMinutes = snap.endMinutes;
+      _mutedSquadCount = snap.mutedSquadIds.length;
     });
   }
 
@@ -214,7 +216,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         // Notifications Section
-        _buildSectionHeader(theme, '🔔 Notifications'),
+        _buildSectionHeader(theme, '🔔 Notifications · quiet hours'),
         _buildNotificationsSection(theme, user),
         const SizedBox(height: 24),
 
@@ -266,6 +268,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       decoration: theme.glassyCard(),
       child: Column(
         children: [
+          const NotificationHygieneSettingsHeader(),
+          QuietHoursSettings(
+            enabled: _quietHoursEnabled,
+            startMinutes: _quietStartMinutes,
+            endMinutes: _quietEndMinutes,
+            onEnabledChanged: (value) async {
+              setState(() => _quietHoursEnabled = value);
+              await NotificationHygieneStore.instance
+                  .setQuietHours(enabled: value);
+            },
+            onStartChanged: (minutes) async {
+              setState(() => _quietStartMinutes = minutes);
+              await NotificationHygieneStore.instance
+                  .setQuietHours(startMinutes: minutes);
+            },
+            onEndChanged: (minutes) async {
+              setState(() => _quietEndMinutes = minutes);
+              await NotificationHygieneStore.instance
+                  .setQuietHours(endMinutes: minutes);
+            },
+          ),
+          MutedSquadsSettingsTile(mutedCount: _mutedSquadCount),
+          _buildDivider(theme),
           _buildSettingTile(
             theme,
             'Push Notifications',
@@ -336,27 +361,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             Icons.emoji_events,
             notifSettings['achievementAlerts'] ?? true,
             (value) => _updateNotificationSetting('achievementAlerts', value),
-          ),
-          _buildDivider(theme),
-          QuietHoursSettings(
-            enabled: _quietHoursEnabled,
-            startMinutes: _quietStartMinutes,
-            endMinutes: _quietEndMinutes,
-            onEnabledChanged: (value) async {
-              setState(() => _quietHoursEnabled = value);
-              await NotificationHygieneStore.instance
-                  .setQuietHours(enabled: value);
-            },
-            onStartChanged: (minutes) async {
-              setState(() => _quietStartMinutes = minutes);
-              await NotificationHygieneStore.instance
-                  .setQuietHours(startMinutes: minutes);
-            },
-            onEndChanged: (minutes) async {
-              setState(() => _quietEndMinutes = minutes);
-              await NotificationHygieneStore.instance
-                  .setQuietHours(endMinutes: minutes);
-            },
           ),
         ],
       ),

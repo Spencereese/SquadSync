@@ -34,6 +34,7 @@ import '../../presentation/notifiers/chat_notifier.dart' as cn;
 import '../../presentation/notifiers/lobby_notifier.dart';
 import '../../presentation/notifiers/user_notifier.dart';
 import '../../widgets/notification_hygiene_tiles.dart';
+import '../../screens/settings_screen.dart';
 import '../services/chat_message_search_delegate.dart';
 import '../widgets/background_preview_screen.dart';
 
@@ -311,10 +312,25 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
+        _buildSectionHeader(context, neonColor, 'Notifications'),
+        const SizedBox(height: 12),
         MuteThisSquadTile(
           muted: _squadMuted,
           neonColor: neonColor,
           onChanged: _setSquadMuted,
+        ),
+        const SizedBox(height: 8),
+        QuietHoursSettingsEntry(
+          neonColor: neonColor,
+          onOpen: () {
+            Navigator.of(context)
+                .push(
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                )
+                .then((_) => _loadSquadMute());
+          },
         ),
         const SizedBox(height: 8),
 

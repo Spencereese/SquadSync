@@ -10,6 +10,8 @@ class AppTheme {
   // Base colors
   static const Color _darkBackground = Color(0xFF0B0E14);
   static const Color _darkSurface = Color(0xFF14181F);
+  static const Color _lightBackground = Color(0xFFF4F6FA);
+  static const Color _lightSurface = Color(0xFFFFFFFF);
   static const Color _defaultNeon = Color(0xFF00F5FF); // Cyan neon default
 
   /// Creates a dark theme with dynamic color seed from game cover art
@@ -25,54 +27,17 @@ class AppTheme {
     bool neonGlowEnabled = true,
     bool highContrastMode = false,
   }) {
-    final seedColor = dynamicSeedColor ?? _defaultNeon;
-
-    // Use pre-generated ColorScheme if available, otherwise create from seed
-    final colorScheme = dynamicColorScheme ??
-        ColorScheme.fromSeed(
-          seedColor: seedColor,
-          brightness: Brightness.dark,
-          surface: _darkSurface,
-        );
-
-    return ThemeData(
-      useMaterial3: true,
+    return _buildTheme(
       brightness: Brightness.dark,
-      colorScheme: colorScheme,
-      scaffoldBackgroundColor: _darkBackground,
-
-      // Custom text theme with Orbitron for headings, Inter for body
-      textTheme: _buildTextTheme(colorScheme),
-
-      // Custom input decoration with glass style
-      inputDecorationTheme: _buildInputDecorationTheme(colorScheme),
-
-      // Elevated button with glass fill and neon border
-      elevatedButtonTheme: _buildElevatedButtonTheme(colorScheme),
-
-      // Card theme with glass effect
-      cardTheme: _buildCardTheme(colorScheme),
-
-      // App bar with glass background
-      appBarTheme: _buildAppBarTheme(colorScheme),
-
-      // Bottom navigation with glass effect
-      bottomNavigationBarTheme: _buildBottomNavTheme(colorScheme),
-
-      // Dialog theme with glassmorphic style
-      dialogTheme: _buildDialogTheme(colorScheme),
-
-      // Floating action button with neon glow
-      floatingActionButtonTheme: _buildFABTheme(colorScheme),
-      textSelectionTheme: TextSelectionThemeData(
-        cursorColor: seedColor,
-        selectionColor: seedColor.withValues(alpha: 0.35),
-        selectionHandleColor: seedColor,
-      ),
+      dynamicSeedColor: dynamicSeedColor,
+      dynamicColorScheme: dynamicColorScheme,
+      neonGlowEnabled: neonGlowEnabled,
+      highContrastMode: highContrastMode,
     );
   }
 
-  /// Light theme variant (for future use)
+  /// Light Material 3 variant — same tokens, typography, and component themes
+  /// as [dark], resolved against light surfaces.
   ///
   /// [dynamicSeedColor] - Color extracted from IGDB cover art
   /// [dynamicColorScheme] - Pre-generated ColorScheme from ColorScheme.fromImageProvider
@@ -84,19 +49,51 @@ class AppTheme {
     bool neonGlowEnabled = true,
     bool highContrastMode = false,
   }) {
-    final seedColor = dynamicSeedColor ?? _defaultNeon;
+    return _buildTheme(
+      brightness: Brightness.light,
+      dynamicSeedColor: dynamicSeedColor,
+      dynamicColorScheme: dynamicColorScheme,
+      neonGlowEnabled: neonGlowEnabled,
+      highContrastMode: highContrastMode,
+    );
+  }
 
-    // Use pre-generated ColorScheme if available, otherwise create from seed
-    final colorScheme = dynamicColorScheme ??
+  static ThemeData _buildTheme({
+    required Brightness brightness,
+    Color? dynamicSeedColor,
+    ColorScheme? dynamicColorScheme,
+    bool neonGlowEnabled = true,
+    bool highContrastMode = false,
+  }) {
+    final seedColor = dynamicSeedColor ?? _defaultNeon;
+    final fallbackSurface =
+        brightness == Brightness.dark ? _darkSurface : _lightSurface;
+
+    var colorScheme = dynamicColorScheme ??
         ColorScheme.fromSeed(
           seedColor: seedColor,
-          brightness: Brightness.light,
+          brightness: brightness,
+          surface: fallbackSurface,
         );
+
+    if (highContrastMode) {
+      final scaffold = brightness == Brightness.dark
+          ? _darkBackground
+          : _lightBackground;
+      colorScheme = colorScheme.copyWith(
+        primary: highContrast(colorScheme.primary, brightness),
+        onSurface: accessibleTextColor(scaffold),
+        onPrimary: accessibleTextColor(colorScheme.primary),
+      );
+    }
 
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
+      brightness: brightness,
       colorScheme: colorScheme,
+      scaffoldBackgroundColor: brightness == Brightness.dark
+          ? _darkBackground
+          : _lightBackground,
       textTheme: _buildTextTheme(colorScheme),
       inputDecorationTheme: _buildInputDecorationTheme(colorScheme),
       elevatedButtonTheme: _buildElevatedButtonTheme(colorScheme),
@@ -104,8 +101,25 @@ class AppTheme {
       appBarTheme: _buildAppBarTheme(colorScheme),
       bottomNavigationBarTheme: _buildBottomNavTheme(colorScheme),
       dialogTheme: _buildDialogTheme(colorScheme),
-      floatingActionButtonTheme: _buildFABTheme(colorScheme),
+      floatingActionButtonTheme: _buildFABTheme(
+        colorScheme,
+        neonGlowEnabled: neonGlowEnabled,
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: seedColor,
+        selectionColor: seedColor.withValues(alpha: 0.35),
+        selectionHandleColor: seedColor,
+      ),
     );
+  }
+
+  static bool _isLight(ColorScheme scheme) =>
+      scheme.brightness == Brightness.light;
+
+  static Color _glassFill(ColorScheme scheme, {required double darkAlpha}) {
+    return _isLight(scheme)
+        ? Colors.black.withValues(alpha: 0.04)
+        : Colors.white.withValues(alpha: darkAlpha);
   }
 
   // Text theme with Google Fonts
@@ -218,7 +232,7 @@ class AppTheme {
 
     return InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.05),
+      fillColor: _glassFill(colorScheme, darkAlpha: 0.05),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(
@@ -279,8 +293,9 @@ class AppTheme {
 
     return ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        foregroundColor: Colors.white,
-        backgroundColor: Colors.white.withValues(alpha: 0.08),
+        foregroundColor:
+            _isLight(colorScheme) ? colorScheme.onSurface : Colors.white,
+        backgroundColor: _glassFill(colorScheme, darkAlpha: 0.08),
         elevation: 0,
         shadowColor: Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -326,7 +341,7 @@ class AppTheme {
   static CardThemeData _buildCardTheme(ColorScheme colorScheme) {
     return CardThemeData(
       elevation: 0,
-      color: Colors.white.withValues(alpha: 0.08),
+      color: _glassFill(colorScheme, darkAlpha: 0.08),
       shadowColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
@@ -340,15 +355,17 @@ class AppTheme {
 
   // App bar with glass background
   static AppBarTheme _buildAppBarTheme(ColorScheme colorScheme) {
+    final light = _isLight(colorScheme);
     return AppBarTheme(
       elevation: 0,
       backgroundColor: Colors.transparent,
       foregroundColor: colorScheme.onSurface,
       centerTitle: true,
-      systemOverlayStyle: const SystemUiOverlayStyle(
+      systemOverlayStyle: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
+        statusBarIconBrightness:
+            light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: light ? Brightness.light : Brightness.dark,
       ),
       titleTextStyle: GoogleFonts.orbitron(
         fontSize: 20,
@@ -363,7 +380,7 @@ class AppTheme {
   static BottomNavigationBarThemeData _buildBottomNavTheme(
       ColorScheme colorScheme) {
     return BottomNavigationBarThemeData(
-      backgroundColor: Colors.white.withValues(alpha: 0.05),
+      backgroundColor: _glassFill(colorScheme, darkAlpha: 0.05),
       selectedItemColor: colorScheme.primary,
       unselectedItemColor: colorScheme.onSurface.withValues(alpha: 0.6),
       selectedLabelStyle: GoogleFonts.inter(
@@ -383,7 +400,8 @@ class AppTheme {
   static DialogThemeData _buildDialogTheme(ColorScheme colorScheme) {
     return DialogThemeData(
       elevation: 0,
-      backgroundColor: _darkSurface,
+      backgroundColor:
+          _isLight(colorScheme) ? _lightSurface : _darkSurface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
         side: BorderSide(
@@ -405,11 +423,14 @@ class AppTheme {
   }
 
   // Floating action button with neon glow
-  static FloatingActionButtonThemeData _buildFABTheme(ColorScheme colorScheme) {
+  static FloatingActionButtonThemeData _buildFABTheme(
+    ColorScheme colorScheme, {
+    bool neonGlowEnabled = true,
+  }) {
     return FloatingActionButtonThemeData(
       backgroundColor: colorScheme.primary,
       foregroundColor: Colors.black,
-      elevation: 8,
+      elevation: neonGlowEnabled ? 8 : 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
@@ -482,13 +503,13 @@ extension NeonGlow on Color {
   }) {
     return [
       BoxShadow(
-        color: withOpacity(opacity),
+        color: withValues(alpha: opacity),
         blurRadius: blur,
         spreadRadius: spread,
         offset: Offset.zero,
       ),
       BoxShadow(
-        color: withOpacity(opacity * 0.5),
+        color: withValues(alpha: opacity * 0.5),
         blurRadius: blur * 1.5,
         spreadRadius: spread * 1.5,
         offset: Offset.zero,

@@ -14,6 +14,7 @@ import '../services/supabase_service.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import '../core/app_env.dart';
 import '../core/app_router.dart';
+import '../core/app_theme.dart';
 import '../core/notification_routes.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
@@ -56,10 +57,19 @@ class SquadSyncMaterialApp extends ConsumerWidget {
     }
 
     return AnimatedThemeWrapper(
-      child: MaterialApp.router(
-        title: 'Cod Squad',
-        routerConfig: router,
-        debugShowCheckedModeBanner: false,
+      child: Builder(
+        builder: (context) {
+          final animated = Theme.of(context);
+          final isDark = animated.brightness == Brightness.dark;
+          return MaterialApp.router(
+            title: 'Cod Squad',
+            theme: isDark ? AppTheme.light() : animated,
+            darkTheme: isDark ? animated : AppTheme.dark(),
+            themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+            routerConfig: router,
+            debugShowCheckedModeBanner: false,
+          );
+        },
       ),
     );
   }

@@ -15,7 +15,10 @@ import 'lobby_spot_map_seat.dart';
 /// LobbyGrid component - handles the display of spot cards and assignment logic
 /// Extracted from the monolithic LobbyTab to improve maintainability
 class LobbyGrid extends ConsumerWidget {
-  const LobbyGrid({super.key});
+  const LobbyGrid({super.key, this.highlightSpotIndex});
+
+  /// Deep-link `spot_index` from chat peacock card / notification taps.
+  final int? highlightSpotIndex;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,6 +34,7 @@ class LobbyGrid extends ConsumerWidget {
             (context, index) => SpotCard(
               key: ValueKey('spot_$index'),
               index: index,
+              highlightSpotIndex: highlightSpotIndex,
             ),
             childCount: maxSpots,
           ),
@@ -49,10 +53,12 @@ class LobbyGrid extends ConsumerWidget {
 /// SpotCard - Individual spot card widget with optimized rebuilds
 class SpotCard extends ConsumerWidget {
   final int index;
+  final int? highlightSpotIndex;
 
   const SpotCard({
     super.key,
     required this.index,
+    this.highlightSpotIndex,
   });
 
   @override
@@ -135,8 +141,11 @@ class SpotCard extends ConsumerWidget {
     } catch (_) {
       seatStatus = null;
     }
-    final pulseOffered =
-        seatStatus?.pulseOfferedSpot == true && seatStatus?.seatIndex == index;
+    final pulseOffered = pulseOfferedSpotAt(
+      index: index,
+      status: seatStatus,
+      highlightSpotIndex: highlightSpotIndex,
+    );
     final kind = lobbySpotMapKindFor(
       hasOccupant: hasOccupant,
       peacockOffered: pulseOffered,

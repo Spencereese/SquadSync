@@ -154,9 +154,16 @@ class LobbyTab extends ConsumerStatefulWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? highlightSpotIndex;
 
-  const LobbyTab(
-      {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
+  const LobbyTab({
+    super.key,
+    this.lobbyId,
+    this.gameName,
+    this.game,
+    this.chatGroupId,
+    this.highlightSpotIndex,
+  });
 
   @override
   ConsumerState<LobbyTab> createState() => _LobbyTabState();
@@ -178,10 +185,12 @@ class _LobbyTabState extends ConsumerState<LobbyTab> {
   @override
   Widget build(BuildContext context) {
     return _LobbyTabContent(
-        lobbyId: widget.lobbyId,
-        gameName: widget.gameName,
-        game: widget.game,
-        chatGroupId: widget.chatGroupId);
+      lobbyId: widget.lobbyId,
+      gameName: widget.gameName,
+      game: widget.game,
+      chatGroupId: widget.chatGroupId,
+      highlightSpotIndex: widget.highlightSpotIndex,
+    );
   }
 }
 
@@ -190,9 +199,15 @@ class _LobbyTabContent extends ConsumerStatefulWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? highlightSpotIndex;
 
-  const _LobbyTabContent(
-      {this.lobbyId, this.gameName, this.game, this.chatGroupId});
+  const _LobbyTabContent({
+    this.lobbyId,
+    this.gameName,
+    this.game,
+    this.chatGroupId,
+    this.highlightSpotIndex,
+  });
 
   @override
   _LobbyTabContentState createState() => _LobbyTabContentState();
@@ -736,7 +751,7 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
         const SliverToBoxAdapter(child: LobbySeatOfferBannerHost()),
 
         // Lobby spots grid
-        const LobbyGrid(),
+        LobbyGrid(highlightSpotIndex: widget.highlightSpotIndex),
 
         // Peacock members section (conditionally shown)
         SliverToBoxAdapter(

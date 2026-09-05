@@ -172,8 +172,7 @@ void main() {
       );
       expect(
         NotificationRoutes.locationFor({
-          'payload':
-              '{"type":"availability_ping","lobby_id":"lobby-9"}',
+          'payload': '{"type":"availability_ping","lobby_id":"lobby-9"}',
         }),
         expected,
       );
@@ -318,7 +317,7 @@ void main() {
       expect(sent.containsKey('data'), isFalse);
       expect(
         NotificationRoutes.locationFor(sent),
-        expected,
+        '$expected&spot_index=2',
       );
     });
 

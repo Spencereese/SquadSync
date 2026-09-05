@@ -153,6 +153,7 @@ class NotificationRoutes {
     ]);
     final gameName = _firstNonEmpty(n, const ['gameName', 'game_name']);
     final lobbyId = lobbyIdFrom(n);
+    final spotIndex = spotIndexFrom(n);
 
     String? routed;
     switch (type) {
@@ -186,7 +187,11 @@ class NotificationRoutes {
             break;
           }
         }
-        routed = _squadLocation(gameName: gameName, lobbyId: lobbyId);
+        routed = _squadLocation(
+          gameName: gameName,
+          lobbyId: lobbyId,
+          spotIndex: spotIndex,
+        );
         break;
       case 'lfg_alert':
         final squadId = _firstNonEmpty(n, const [
@@ -206,7 +211,11 @@ class NotificationRoutes {
         if (screen == 'chat') {
           routed = chatId != null ? '/chat/$chatId' : '/chat';
         } else if (screen == 'squad' || screen == 'lobby') {
-          routed = _squadLocation(gameName: gameName, lobbyId: lobbyId);
+          routed = _squadLocation(
+            gameName: gameName,
+            lobbyId: lobbyId,
+            spotIndex: spotIndex,
+          );
         } else if (screen == 'stats') {
           routed = '/stats';
         }
@@ -216,7 +225,11 @@ class NotificationRoutes {
 
     // Real-device taps: if a lobby id is present, always open that lobby.
     if (lobbyId != null) {
-      return _squadLocation(gameName: gameName, lobbyId: lobbyId);
+      return _squadLocation(
+        gameName: gameName,
+        lobbyId: lobbyId,
+        spotIndex: spotIndex,
+      );
     }
 
     final link = _productLinkFrom(n);
@@ -279,18 +292,50 @@ class NotificationRoutes {
       'lobby',
       'game_name',
       'gameName',
+      'spot_index',
+      'seat_index',
     ];
     if (!keys.any(query.containsKey)) return null;
     return Map<String, dynamic>.from(query);
   }
 
+  /// 0-based offered seat from FCM / deep-link payloads. Honors
+  /// `spot_index` then `seat_index`. Negative / unparsable → null.
+  static int? spotIndexFrom(Map<String, dynamic> data) {
+    for (final key in const ['spot_index', 'seat_index']) {
+      final value = data[key];
+      if (value is int) return value >= 0 ? value : null;
+      if (value is num) {
+        final parsed = value.toInt();
+        return parsed >= 0 ? parsed : null;
+      }
+      final text = _nonEmpty(value);
+      if (text == null) continue;
+      final parsed = int.tryParse(text);
+      if (parsed != null && parsed >= 0) return parsed;
+    }
+    return null;
+  }
+
   /// Existing `/squad` routes only. [lobbyId] is a query param so
   /// the squad tab can select the lobby without a new path.
-  static String _squadLocation({String? gameName, String? lobbyId}) {
+  /// [spotIndex] highlights the offered seat (ticket 35).
+  static String _squadLocation({
+    String? gameName,
+    String? lobbyId,
+    int? spotIndex,
+  }) {
     final path =
         gameName != null ? '/squad/${Uri.encodeComponent(gameName)}' : '/squad';
-    if (lobbyId == null) return path;
-    return '$path?lobby_id=${Uri.encodeComponent(lobbyId)}';
+    final query = <String>[];
+    if (lobbyId != null) {
+      query.add('lobby_id=${Uri.encodeComponent(lobbyId)}');
+    }
+    if (spotIndex != null && spotIndex >= 0) {
+      query.add('spot_index=$spotIndex');
+    }
+    if (query.isEmpty) return path;
+    return '$path?${query.join('&')}';
   }
 
   static String? _firstNonEmpty(Map<String, dynamic> data, List<String> keys) {

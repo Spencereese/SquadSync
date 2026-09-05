@@ -156,7 +156,8 @@ class PeacockNotificationService {
       final lobbyId = _nonEmpty(data['lobby_id']) ?? _nonEmpty(data['lobbyId']);
       final gameName =
           _nonEmpty(data['game_name']) ?? _nonEmpty(data['gameName']);
-      final spotIndex = _nonEmpty(data['spot_index']) ?? '0';
+      final spotIndex = _nonEmpty(data['spot_index']);
+      final parsedSpot = spotIndex == null ? null : int.tryParse(spotIndex);
 
       final duplicate = _handledIds.contains(notificationId);
       _handledIds.add(notificationId);
@@ -180,6 +181,7 @@ class PeacockNotificationService {
         lobbyId: lobbyId,
         gameName: gameName,
         notificationId: notificationId,
+        spotIndex: parsedSpot != null && parsedSpot >= 0 ? parsedSpot : null,
       );
       if (!peacockOfferAllowed(
         gameName: gameName,
@@ -205,7 +207,7 @@ class PeacockNotificationService {
           lobbyId: lobbyId,
           gameName: gameName,
           payload: {
-            'spot_index': spotIndex,
+            if (spotIndex != null) 'spot_index': spotIndex,
           },
         );
         _locallyPresentedIds.add(notificationId);
@@ -226,7 +228,7 @@ class PeacockNotificationService {
             'type': type,
             if (lobbyId != null) 'lobby_id': lobbyId,
             if (gameName != null) 'game_name': gameName,
-            'spot_index': spotIndex,
+            if (spotIndex != null) 'spot_index': spotIndex,
           },
         );
       }

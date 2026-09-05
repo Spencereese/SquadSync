@@ -31,6 +31,7 @@ class PeacockAssignmentState {
     this.lobbyId,
     this.gameName,
     this.notificationId,
+    this.spotIndex,
     this.showedLocal = false,
     this.sentFcmToSelf = false,
   });
@@ -41,6 +42,9 @@ class PeacockAssignmentState {
   final String? lobbyId;
   final String? gameName;
   final String? notificationId;
+
+  /// 0-based offered seat. Carried on [routeLocation] as `spot_index`.
+  final int? spotIndex;
   final bool showedLocal;
   final bool sentFcmToSelf;
 
@@ -48,6 +52,8 @@ class PeacockAssignmentState {
   bool get wouldDoubleNotifySelf => showedLocal && sentFcmToSelf;
 
   /// `/squad` location once a lobby is assigned. Null while idle/queued.
+  /// Same table as chat peacock card / notification taps (ticket 33);
+  /// `spot_index` highlights the offered seat (ticket 35).
   String? get routeLocation {
     if (phase != PeacockAssignmentPhase.assigned &&
         phase != PeacockAssignmentPhase.notified) {
@@ -57,6 +63,7 @@ class PeacockAssignmentState {
       'type': 'peacock_assigned',
       if (lobbyId != null) 'lobby_id': lobbyId,
       if (gameName != null) 'game_name': gameName,
+      if (spotIndex != null) 'spot_index': spotIndex,
     });
   }
 
@@ -65,6 +72,7 @@ class PeacockAssignmentState {
     String? lobbyId,
     String? gameName,
     String? notificationId,
+    int? spotIndex,
     bool? showedLocal,
     bool? sentFcmToSelf,
     bool clearAssignment = false,
@@ -75,6 +83,7 @@ class PeacockAssignmentState {
       gameName: clearAssignment ? null : (gameName ?? this.gameName),
       notificationId:
           clearAssignment ? null : (notificationId ?? this.notificationId),
+      spotIndex: clearAssignment ? null : (spotIndex ?? this.spotIndex),
       showedLocal: clearAssignment ? false : (showedLocal ?? this.showedLocal),
       sentFcmToSelf:
           clearAssignment ? false : (sentFcmToSelf ?? this.sentFcmToSelf),
@@ -89,6 +98,7 @@ PeacockAssignmentState reducePeacockAssignment({
   String? lobbyId,
   String? gameName,
   String? notificationId,
+  int? spotIndex,
   bool isForeground = true,
   String? currentUid,
 }) {
@@ -118,6 +128,7 @@ PeacockAssignmentState reducePeacockAssignment({
         lobbyId: lobbyId ?? current.lobbyId,
         gameName: gameName ?? current.gameName,
         notificationId: notificationId ?? current.notificationId,
+        spotIndex: spotIndex ?? current.spotIndex,
       );
 
     case PeacockAssignmentEvent.notifySelf:
@@ -211,6 +222,7 @@ class PeacockAssignmentTracker {
     String? lobbyId,
     String? gameName,
     String? notificationId,
+    int? spotIndex,
     bool isForeground = true,
     String? currentUid,
   }) {
@@ -220,6 +232,7 @@ class PeacockAssignmentTracker {
       lobbyId: lobbyId,
       gameName: gameName,
       notificationId: notificationId,
+      spotIndex: spotIndex,
       isForeground: isForeground,
       currentUid: currentUid,
     );
@@ -246,6 +259,7 @@ class PeacockAssignmentTracker {
     String? lobbyId,
     String? gameName,
     String? notificationId,
+    int? spotIndex,
   }) =>
       apply(
         userId: userId,
@@ -253,6 +267,7 @@ class PeacockAssignmentTracker {
         lobbyId: lobbyId,
         gameName: gameName,
         notificationId: notificationId,
+        spotIndex: spotIndex,
       );
 
   /// Reduce [PeacockAssignmentEvent.notifySelf]. [plan] is the XOR result

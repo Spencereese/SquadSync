@@ -290,6 +290,44 @@ void main() {
       expect(opened, expected);
     });
 
+    test('peacock card tap with offered spot matches notification highlight',
+        () {
+      const highlighted = '/squad/Warzone?lobby_id=lobby-9&spot_index=2';
+      String? opened;
+      openPeacockCard(
+        lobbyId: lobbyId,
+        gameName: game,
+        spotIndex: 2,
+        go: (location) => opened = location,
+      );
+      expect(opened, highlighted);
+      expect(
+        locationForDeepLink(
+          peacockCardDeepLink(
+            lobbyId: lobbyId,
+            gameName: game,
+            spotIndex: 2,
+          ),
+        ),
+        highlighted,
+      );
+      expect(
+        NotificationRoutes.locationFor({
+          'type': 'peacock_assigned',
+          'lobby_id': lobbyId,
+          'game_name': game,
+          'spot_index': 2,
+        }),
+        highlighted,
+      );
+      expect(
+        locationForDeepLink(
+          'codsquadapp://notify?type=peacock_assigned&lobby_id=$lobbyId&game_name=$game&spot_index=2',
+        ),
+        highlighted,
+      );
+    });
+
     test('notification / lfg_matched / peacock / lobby URLs match peacock card',
         () {
       final fromCard = locationForDeepLink(
@@ -738,7 +776,8 @@ void main() {
       final template =
           File('ios/associated-domains/associated-domains.entitlements')
               .readAsStringSync();
-      expect(template.contains('<string>applinks:codsquad.app</string>'), isTrue);
+      expect(
+          template.contains('<string>applinks:codsquad.app</string>'), isTrue);
       expect(
         template.contains('<string>applinks:www.codsquad.app</string>'),
         isTrue,

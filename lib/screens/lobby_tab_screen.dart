@@ -18,9 +18,16 @@ class LobbyTabScreen extends StatelessWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? highlightSpotIndex;
 
-  const LobbyTabScreen(
-      {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
+  const LobbyTabScreen({
+    super.key,
+    this.lobbyId,
+    this.gameName,
+    this.game,
+    this.chatGroupId,
+    this.highlightSpotIndex,
+  });
 
   /// Deep links may send `lobby_id` without `gameName`. Honor the lobby id
   /// instead of falling through to Discovery.
@@ -34,10 +41,12 @@ class LobbyTabScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _LobbyTabScreenContent(
-        lobbyId: lobbyId,
-        gameName: gameName,
-        game: game,
-        chatGroupId: chatGroupId);
+      lobbyId: lobbyId,
+      gameName: gameName,
+      game: game,
+      chatGroupId: chatGroupId,
+      highlightSpotIndex: highlightSpotIndex,
+    );
   }
 }
 
@@ -46,9 +55,15 @@ class _LobbyTabScreenContent extends ConsumerStatefulWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? highlightSpotIndex;
 
-  const _LobbyTabScreenContent(
-      {this.lobbyId, this.gameName, this.game, this.chatGroupId});
+  const _LobbyTabScreenContent({
+    this.lobbyId,
+    this.gameName,
+    this.game,
+    this.chatGroupId,
+    this.highlightSpotIndex,
+  });
 
   @override
   ConsumerState<_LobbyTabScreenContent> createState() =>
@@ -146,10 +161,12 @@ class _LobbyTabScreenContentState
   Widget _buildFullSquadInterface(BuildContext context, LobbyState squadState) {
     // Import and use the original LobbyTab widget for full squad management
     return LobbyTab(
-        lobbyId: widget.lobbyId,
-        gameName: widget.gameName,
-        game: widget.game,
-        chatGroupId: widget.chatGroupId);
+      lobbyId: widget.lobbyId,
+      gameName: widget.gameName,
+      game: widget.game,
+      chatGroupId: widget.chatGroupId,
+      highlightSpotIndex: widget.highlightSpotIndex,
+    );
   }
 
   Widget _buildPinnedGamesCarousel(BuildContext context, WidgetRef ref) {
@@ -362,7 +379,6 @@ class _LobbyTabScreenContentState
       ),
     );
   }
-
 
   void _addGame(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);

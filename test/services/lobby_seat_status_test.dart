@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/services/lobby_seat_status.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
+import 'package:squad_sync/services/peacock_lifecycle_machine.dart';
 
 void main() {
   late PeacockAssignmentTracker peacock;
@@ -322,6 +323,41 @@ void main() {
         preferredPeacockGames: const {'Warzone'},
       );
       expect(status!.showOfferBanner, isTrue);
+    });
+  });
+
+  group('pulseOfferedSpotAt / resolvePeacockLifecycle', () {
+    test('deep-link highlight pulses that index even without seat status', () {
+      expect(
+        pulseOfferedSpotAt(index: 2, highlightSpotIndex: 2),
+        isTrue,
+      );
+      expect(
+        pulseOfferedSpotAt(index: 1, highlightSpotIndex: 2),
+        isFalse,
+      );
+    });
+
+    test('live offer pulse still wins when route highlight is absent', () {
+      final assigned = reducePeacockAssignment(
+        current: PeacockAssignmentState.idle,
+        event: PeacockAssignmentEvent.assignSpot,
+        lobbyId: 'lobby-9',
+        spotIndex: 0,
+      );
+      final status = resolveLobbySeatStatus(
+        userId: 'u1',
+        peacock: assigned,
+        lfg: MatchmakingQueueEntry.idle,
+        spots: [null, null],
+        maxSpots: 2,
+      );
+      expect(pulseOfferedSpotAt(index: 0, status: status), isTrue);
+      expect(pulseOfferedSpotAt(index: 1, status: status), isFalse);
+      expect(
+        resolvePeacockLifecycle(peacock: assigned, seat: status),
+        PeacockLifecyclePhase.offered,
+      );
     });
   });
 

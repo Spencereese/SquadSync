@@ -49,6 +49,7 @@ Bundle ID stays `com.example.codSquadApp`. Do not commit `.env`. SQL for this LF
 | Lobby seat chip / offer | **Landed** (`3.4.77+79`) | Lobby status chip seated / peacock / lock mm:ss from existing peacock + LFG. Offered spot pulses. Copy “Claim seat N”. Offer banner Accept / Decline → `assignPeacockSpot` + `joinMatched(handoffToPeacock: false)` / expire. XOR still `planPeacockSelfNotify`. |
 | Ready / Lock | **Landed** (`3.4.78+80`) | Seated spots toggle Ready on the live lobby path. All seated Ready → lobby Locks. Seated members (minus actor) notified via `NotificationService.sendNotificationToUsers`. Taps reuse `NotificationRoutes` (`lobby_locked` → `/squad?lobby_id=`). XOR still `planPeacockSelfNotify`. |
 | LFG persist / matchmaking_queue | **Landed** (`3.4.79+81`) | Looking survives app kill via `matchmaking_queue` + Realtime hydrate. Lobby-aware `processQueueAndPersist` on LFG tap and lobby stream. Single peacock handoff (`assignPeacockSpot` then `joinMatched(handoffToPeacock: false)`). XOR still `planPeacockSelfNotify`. No second presenter. |
+| Peacock lifecycle / card highlight | **Landed** (`3.4.109+111`) | Product journey Waiting → Offered → Lock-in → Seated → Expired/Declined (`reducePeacockLifecycle`). Chat peacock card taps reuse ticket 33 `locationForDeepLink` / `NotificationRoutes` and pass `spot_index` so the lobby pulses the offered seat. XOR still `planPeacockSelfNotify`. |
 
 **LFG persist SQL (this slice, Spencer YES):** file `supabase/migrations/20260903_create_matchmaking_queue.sql` (table `matchmaking_queue`). Live apply: REST GET `public.matchmaking_queue` on project `sfckxrnoiwetmzdycqaa` returned PGRST205 (table missing). `npx supabase projects list` failed (`LegacyPlatformAuthRequiredError` — no access token). No service_role / DB password in this environment. Migration file is the apply artifact.
 
@@ -114,6 +115,7 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Lobby seat chip / offer | 3.4.77 | Chip seated / peacock / lock mm:ss. Offered spot pulse. Claim seat N. Accept / Decline banner. |
 | Ready / Lock | 3.4.78 | Seated Ready toggle. All seated Ready locks the lobby. Notify via existing NotificationService / NotificationRoutes. |
 | LFG persist | 3.4.79 | `matchmaking_queue` + Realtime + lobby-aware `processQueue`. Looking survives app kill. |
+| Peacock lifecycle / card highlight | 3.4.109 | Waiting → Offered → Lock-in → Seated → Expired/Declined units. Card tap = notification parse + `spot_index` highlight. |
 
 ## Phase C prep
 

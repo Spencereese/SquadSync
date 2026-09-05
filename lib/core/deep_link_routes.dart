@@ -26,9 +26,12 @@ const kSimulatorRegisteredUrlSchemes = [
 const kLobbyUniversalLinkHost = 'codsquad.app';
 
 /// URL the chat peacock card opens. [locationForDeepLink] is the parse.
+/// [spotIndex] is the offered seat (0-based) — same `spot_index` query
+/// as notification `peacock_assigned` payloads.
 String peacockCardDeepLink({
   String? lobbyId,
   String? gameName,
+  int? spotIndex,
 }) {
   return Uri(
     scheme: kSimulatorDeepLinkScheme,
@@ -36,19 +39,26 @@ String peacockCardDeepLink({
     queryParameters: {
       if (_nonEmpty(lobbyId) != null) 'lobby_id': lobbyId!.trim(),
       if (_nonEmpty(gameName) != null) 'game_name': gameName!.trim(),
+      if (spotIndex != null && spotIndex >= 0) 'spot_index': '$spotIndex',
     },
   ).toString();
 }
 
 /// Chat peacock card tap. Same parse + [NotificationRoutes.go] as
-/// notification taps and App Links.
+/// notification taps and App Links. [spotIndex] highlights the offered
+/// spot on `/squad`.
 void openPeacockCard({
   String? lobbyId,
   String? gameName,
+  int? spotIndex,
   void Function(String location)? go,
 }) {
   final location = locationForDeepLink(
-    peacockCardDeepLink(lobbyId: lobbyId, gameName: gameName),
+    peacockCardDeepLink(
+      lobbyId: lobbyId,
+      gameName: gameName,
+      spotIndex: spotIndex,
+    ),
   );
   if (location == null) return;
   (go ?? NotificationRoutes.go)?.call(location);
@@ -328,9 +338,7 @@ String? _gameNameFromPath({
   const markers = ['squad', 'lfg_matched'];
   if (markers.contains(host) && segments.isNotEmpty) {
     final first = segments.first.toLowerCase();
-    if (!markers.contains(first) &&
-        first != 'lobby' &&
-        first != 'peacock') {
+    if (!markers.contains(first) && first != 'lobby' && first != 'peacock') {
       return _nonEmpty(segments.first);
     }
   }

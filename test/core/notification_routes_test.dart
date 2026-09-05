@@ -61,6 +61,23 @@ void main() {
     );
     expect(
       NotificationRoutes.locationFor({
+        'type': 'peacock_assigned',
+        'game_name': 'Warzone',
+        'lobby_id': 'lobby-9',
+        'spot_index': 2,
+      }),
+      '/squad/Warzone?lobby_id=lobby-9&spot_index=2',
+    );
+    expect(
+      NotificationRoutes.spotIndexFrom({'spot_index': '2'}),
+      2,
+    );
+    expect(
+      NotificationRoutes.spotIndexFrom({'seat_index': 0}),
+      0,
+    );
+    expect(
+      NotificationRoutes.locationFor({
         'type': 'spot_available',
         'game_name': 'MW3',
         'lobby_id': 'abc',

@@ -53,6 +53,25 @@ void main() {
       expect(next.routeLocation, '/squad/Warzone?lobby_id=lobby-9');
     });
 
+    test('assigned route includes spot_index when the offered seat is known',
+        () {
+      const queued = PeacockAssignmentState(
+        phase: PeacockAssignmentPhase.queued,
+      );
+      final next = reducePeacockAssignment(
+        current: queued,
+        event: PeacockAssignmentEvent.assignSpot,
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        spotIndex: 2,
+      );
+      expect(next.spotIndex, 2);
+      expect(
+        next.routeLocation,
+        '/squad/Warzone?lobby_id=lobby-9&spot_index=2',
+      );
+    });
+
     test('idle can assign directly (skip queue)', () {
       final next = reducePeacockAssignment(
         current: PeacockAssignmentState.idle,

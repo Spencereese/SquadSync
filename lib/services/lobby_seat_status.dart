@@ -3,6 +3,7 @@ import '../presentation/notifiers/lobby_notifier.dart'
     show lobbyForSeatResolve, resolveNextFreeSpotIndex;
 import 'matchmaking_queue_machine.dart';
 import 'peacock_assignment_machine.dart';
+import 'peacock_lifecycle_machine.dart';
 import 'preferred_peacock_games.dart';
 
 /// Lobby status chip: seated / peacock / lock mm:ss.
@@ -54,6 +55,48 @@ class LobbySeatStatus {
   bool get showOfferBanner => offerPending;
 
   bool get pulseOfferedSpot => offerPending && seatIndex != null;
+}
+
+/// Pulse this [index] from live offer status or a deep-link `spot_index`.
+/// Chat peacock card and notification taps share that query (ticket 35).
+bool pulseOfferedSpotAt({
+  required int index,
+  LobbySeatStatus? status,
+  int? highlightSpotIndex,
+}) {
+  if (highlightSpotIndex != null && highlightSpotIndex == index) return true;
+  return status?.pulseOfferedSpot == true && status?.seatIndex == index;
+}
+
+/// Product journey from existing assignment + seat chip (ticket 14).
+/// Idle with no chip is null — Expired / Declined are reducer terminals.
+PeacockLifecyclePhase? resolvePeacockLifecycle({
+  required PeacockAssignmentState peacock,
+  LobbySeatStatus? seat,
+}) {
+  if (seat != null) {
+    switch (seat.chip) {
+      case LobbySeatChipKind.seated:
+        return PeacockLifecyclePhase.seated;
+      case LobbySeatChipKind.lock:
+        if (timerRemainingIsExpired(seat.lockRemaining)) {
+          return PeacockLifecyclePhase.expired;
+        }
+        return PeacockLifecyclePhase.lockIn;
+      case LobbySeatChipKind.peacock:
+        if (seat.offerPending) return PeacockLifecyclePhase.offered;
+        return PeacockLifecyclePhase.waiting;
+    }
+  }
+  switch (peacock.phase) {
+    case PeacockAssignmentPhase.queued:
+      return PeacockLifecyclePhase.waiting;
+    case PeacockAssignmentPhase.assigned:
+    case PeacockAssignmentPhase.notified:
+      return PeacockLifecyclePhase.offered;
+    case PeacockAssignmentPhase.idle:
+      return null;
+  }
 }
 
 /// `Claim seat N` when [seatIndex] is known; otherwise `Claim seat`.

@@ -33,6 +33,7 @@ final abTestingServiceProvider = FutureProvider<ABTestingService>((ref) async {
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 /// `/squad` and `/squad/:gameName` extras plus `lobby_id` query.
+/// `spot_index` highlights the offered peacock seat (ticket 35).
 @visibleForTesting
 class SquadRouteArgs {
   const SquadRouteArgs({
@@ -40,22 +41,28 @@ class SquadRouteArgs {
     this.lobbyId,
     this.game,
     this.chatGroupId,
+    this.spotIndex,
   });
 
   final String? gameName;
   final String? lobbyId;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? spotIndex;
 
   factory SquadRouteArgs.fromState(GoRouterState state) {
     final extra = state.extra as Map<String, dynamic>?;
     final pathGame = state.pathParameters['gameName'];
+    final query = state.uri.queryParameters;
     return SquadRouteArgs(
       gameName: _nonEmpty(pathGame) ?? extra?['gameName'] as String?,
-      lobbyId: _nonEmpty(extra?['lobbyId']) ??
-          _nonEmpty(state.uri.queryParameters['lobby_id']),
+      lobbyId: _nonEmpty(extra?['lobbyId']) ?? _nonEmpty(query['lobby_id']),
       game: extra?['game'] as Map<String, dynamic>?,
       chatGroupId: extra?['chatGroupId'] as String?,
+      spotIndex: NotificationRoutes.spotIndexFrom({
+        ...query,
+        if (extra != null) ...extra,
+      }),
     );
   }
 
@@ -169,6 +176,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             lobbyId: args.lobbyId,
             game: args.game,
             chatGroupId: args.chatGroupId,
+            highlightSpotIndex: args.spotIndex,
           );
         },
       ),
@@ -182,6 +190,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             lobbyId: args.lobbyId,
             game: args.game,
             chatGroupId: args.chatGroupId,
+            highlightSpotIndex: args.spotIndex,
           );
         },
       ),

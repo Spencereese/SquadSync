@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/deep_link_routes.dart';
 import '../../core/notification_routes.dart';
 import '../../services/auth_service_supabase.dart';
+import '../../services/lobby_seat_status.dart';
 import '../../services/message_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -137,9 +138,15 @@ class ChatUIManager {
 
         return GestureDetector(
           onTap: () {
+            final uid = AuthServiceSupabase().currentUser?.id;
+            final status = resolveLobbySeatStatusFromTrackers(
+              userId: uid,
+              lobbyState: squadState,
+            );
             openPeacockCard(
               lobbyId: squadState.selectedLobbyId,
-              gameName: gameName,
+              gameName: gameName is String ? gameName : gameName?.toString(),
+              spotIndex: status?.seatIndex,
               go: NotificationRoutes.go ??
                   (location) => GoRouter.of(context).go(location),
             );

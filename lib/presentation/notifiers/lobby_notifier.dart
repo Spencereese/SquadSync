@@ -486,6 +486,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     String? lobbyId,
     String? gameName,
     String? notificationId,
+    int? spotIndex,
   }) {
     return _peacock.apply(
       userId: userId,
@@ -493,6 +494,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       lobbyId: lobbyId,
       gameName: gameName,
       notificationId: notificationId,
+      spotIndex: spotIndex,
     );
   }
 
@@ -604,6 +606,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       lobbyId: lobbyId,
       gameName: gameName,
       notificationId: notificationId,
+      spotIndex: claimed,
     );
     return claimed;
   }
@@ -1294,7 +1297,8 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   Duration? readyCheckRemaining({DateTime? now}) {
     final started = _readyCheckStartedAt;
     if (started == null) return null;
-    final left = started.add(kReadyCheckTimeout).difference(now ?? DateTime.now());
+    final left =
+        started.add(kReadyCheckTimeout).difference(now ?? DateTime.now());
     if (left.isNegative) return Duration.zero;
     return left;
   }

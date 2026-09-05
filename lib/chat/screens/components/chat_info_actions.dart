@@ -500,6 +500,7 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
         openPeacockCard(
           lobbyId: handoff.state.lobbyId,
           gameName: handoff.state.gameName,
+          spotIndex: claimedSpot,
         );
       }
       final message = lfgJoinSnackbarMessage(

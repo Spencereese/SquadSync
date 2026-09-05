@@ -68,3 +68,34 @@ backend/node_modules/
 functions/node_modules/
 node_modules/
 package-lock.json
+
+# Accidental command leftovers (empty/error blobs)
+/Get
+/Run
+/Process
+/git
+unmatched_uris.json
+
+# Android log dumps, Gradle reports, and accidental empty files
+android/logs.txt
+android/build_log.txt
+android/build/
+android/claimSpot(index)
+android/SquadQueuePage(yourName
+android/t
+
+# iOS / backend build caches that landed in the tree
+backend/build/
+
+# Editor / CocoaPods backups
+*.bak
+ios/Podfile.save
+
+# Supabase CLI temp
+supabase/.temp/
+
+# Root build dumps
+/build_output.txt
+
+# Apple / APNs private keys — never commit
+*.p8

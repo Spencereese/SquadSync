@@ -21,6 +21,7 @@ import '../../services/peacock_assignment_machine.dart';
 import '../../services/peacock_lock_live_activity.dart';
 import '../../services/preferred_peacock_games.dart';
 import '../../services/session_rating_machine.dart';
+import '../../services/squad_analytics.dart';
 import 'offline_first_mixin.dart';
 import 'timer_management_notifier.dart';
 import 'game_state_notifier.dart';
@@ -415,6 +416,10 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   Future<void> joinLobby(String squadId, String userId) async {
     await _repository.joinLobby(squadId, userId);
     state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+    unawaited(SquadAnalytics.logLobbyJoin(
+      source: 'code',
+      gameName: state.valueOrNull?.currentGame?['name'] as String?,
+    ));
   }
 
   Future<void> leaveSquad(String squadId, String userId) async {
@@ -533,13 +538,23 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     final uid = assignedUserId ?? _peacock.nextQueuedUserId();
     await _repository.processPeacockQueue();
     if (uid != null) {
+      final before = _peacock.stateFor(uid);
       _reducePeacock(
         userId: uid,
         event: PeacockAssignmentEvent.assignSpot,
         lobbyId: lobbyId ?? state.valueOrNull?.selectedLobbyId,
-        gameName: gameName ?? _peacock.stateFor(uid).gameName,
+        gameName: gameName ?? before.gameName,
         notificationId: notificationId,
       );
+      final after = _peacock.stateFor(uid);
+      if (after.phase == PeacockAssignmentPhase.assigned &&
+          before.phase != PeacockAssignmentPhase.assigned &&
+          before.phase != PeacockAssignmentPhase.notified) {
+        unawaited(SquadAnalytics.logPeacockOffer(
+          source: 'peacock_queue',
+          gameName: after.gameName,
+        ));
+      }
     }
     state = await AsyncValue.guard(() => _loadPersistedLobbyState());
     return uid;
@@ -1081,6 +1096,20 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       debugPrint('LobbyNotifier: peacock lock live activity failed: $e');
     }
 
+    if (ready) {
+      unawaited(SquadAnalytics.logReadyCheck(
+        seatedCount: after.seatedUids.length,
+        readyCount: after.readyUids.length,
+        outcome: lockedNow ? 'locked' : 'ready',
+      ));
+    }
+    if (lockedNow) {
+      unawaited(SquadAnalytics.logPeacockLock(
+        seatedCount: after.seatedUids.length,
+        readyCount: after.readyUids.length,
+      ));
+    }
+
     return SeatedReadyResult(
       snapshot: after,
       justLocked: lockedNow,
@@ -1166,6 +1195,12 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       debugPrint('LobbyNotifier: peacock lock live activity failed: $e');
     }
 
+    unawaited(SquadAnalytics.logReadyCheck(
+      seatedCount: after.seatedUids.length,
+      readyCount: after.readyUids.length,
+      outcome: 'timeout',
+    ));
+
     return SeatedReadyResult(
       snapshot: after,
       justLocked: false,
@@ -1239,6 +1274,13 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       } catch (e) {
         debugPrint('LobbyNotifier: peacock lock live activity failed: $e');
       }
+    }
+
+    if (lockedNow) {
+      unawaited(SquadAnalytics.logPeacockLock(
+        seatedCount: after.seatedUids.length,
+        readyCount: after.readyUids.length,
+      ));
     }
 
     return SeatedReadyResult(
@@ -1407,6 +1449,11 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         playerUids: lobby.memberUids,
         rating: rating,
       );
+      unawaited(SquadAnalytics.logSessionRate(
+        stars: rating.stars,
+        result: 'win',
+        skipped: !rating.isRated,
+      ));
 
       debugPrint('LobbyNotifier: ✅ Win recorded for lobby $lobbyId');
     } catch (e, stackTrace) {
@@ -1456,6 +1503,11 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         playerUids: lobby.memberUids,
         rating: rating,
       );
+      unawaited(SquadAnalytics.logSessionRate(
+        stars: rating.stars,
+        result: 'loss',
+        skipped: !rating.isRated,
+      ));
 
       debugPrint('LobbyNotifier: ✅ Loss recorded for lobby $lobbyId');
     } catch (e, stackTrace) {

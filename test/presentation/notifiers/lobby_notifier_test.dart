@@ -18,6 +18,7 @@ import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
 import 'package:squad_sync/services/peacock_lock_live_activity.dart';
 import 'package:squad_sync/services/session_rating_machine.dart';
+import 'package:squad_sync/services/squad_analytics.dart';
 
 @GenerateMocks([LobbyRepository])
 import 'lobby_notifier_test.mocks.dart';
@@ -129,6 +130,8 @@ void main() {
     MatchmakingQueueTracker.resetInstance();
     LobbyLockNotify.resetTestHooks();
     PeacockLockLiveActivity.resetTestHooks();
+    SquadAnalytics.resetTestHooks();
+    SquadAnalytics.logHook = (_, __) async {};
 
     container = ProviderContainer(
       overrides: [
@@ -149,6 +152,7 @@ void main() {
     MatchmakingQueueTracker.resetInstance();
     LobbyLockNotify.resetTestHooks();
     PeacockLockLiveActivity.resetTestHooks();
+    SquadAnalytics.resetTestHooks();
   });
 
   group('LobbyNotifier - Initialization', () {

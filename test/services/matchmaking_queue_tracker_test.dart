@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/data/repositories/matchmaking_queue_repository.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
+import 'package:squad_sync/services/squad_analytics.dart';
 
 class _MemoryQueueRepo implements MatchmakingQueueRepository {
   final Map<String, MatchmakingQueueEntry> rows =
@@ -59,11 +60,14 @@ void main() {
     tracker = MatchmakingQueueTracker(peacock: peacock);
     MatchmakingQueueTracker.resetInstance();
     PeacockAssignmentTracker.resetInstance();
+    SquadAnalytics.resetTestHooks();
+    SquadAnalytics.logHook = (_, __) async {};
   });
 
   tearDown(() {
     MatchmakingQueueTracker.resetInstance();
     PeacockAssignmentTracker.resetInstance();
+    SquadAnalytics.resetTestHooks();
   });
 
   group('MatchmakingQueueTracker', () {

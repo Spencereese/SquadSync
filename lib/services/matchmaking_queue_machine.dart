@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../core/notification_routes.dart';
 import '../data/repositories/matchmaking_queue_repository.dart';
 import 'peacock_assignment_machine.dart';
+import 'squad_analytics.dart';
 import 'supabase_service.dart';
 
 /// Product phases for the Looking-for-Squad matchmaking queue.
@@ -265,8 +266,9 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     String? matchedUserId,
     String? notificationId,
   }) {
+    final before = stateFor(userId);
     final next = reduceMatchmakingQueue(
-      current: stateFor(userId),
+      current: before,
       event: event,
       squadId: squadId,
       lobbyId: lobbyId,
@@ -277,6 +279,22 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     final installed = _install(userId, next);
     if (!_applyingRemote) {
       unawaited(persistCurrent(userId));
+      if (event == MatchmakingQueueEvent.matchFound &&
+          installed.phase == MatchmakingQueuePhase.matched &&
+          before.phase != MatchmakingQueuePhase.matched) {
+        unawaited(SquadAnalytics.logPeacockOffer(
+          source: 'lfg',
+          gameName: installed.gameName,
+        ));
+      }
+      if (event == MatchmakingQueueEvent.joinMatched &&
+          installed.phase == MatchmakingQueuePhase.joined &&
+          before.phase == MatchmakingQueuePhase.matched) {
+        unawaited(SquadAnalytics.logLobbyJoin(
+          source: 'lfg',
+          gameName: installed.gameName,
+        ));
+      }
     }
     return installed;
   }

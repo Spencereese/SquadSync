@@ -115,6 +115,17 @@ Also parked: reopening closed wishlist slices (Stats Dashboard, Live Notificatio
 | Ready / Lock | 3.4.78 | Seated Ready toggle. All seated Ready locks the lobby. Notify via existing NotificationService / NotificationRoutes. |
 | LFG persist | 3.4.79 | `matchmaking_queue` + Realtime + lobby-aware `processQueue`. Looking survives app kill. |
 
+## Phase C prep
+
+TestFlight is still a Spencer portal upload — this slice only landed the
+runbook and named Analytics events. Do not merge PR #1.
+
+- Checklist (App ID, APNs, Sign in with Apple, Associated Domains, Firebase
+  iOS, Google OAuth, Supabase redirect allow-list, privacy nutrition,
+  export compliance): `docs/TESTFLIGHT_CHECKLIST.md`
+- Events (no PII params): `lobby_join`, `peacock_offer`, `peacock_lock`,
+  `session_rate`, `ready_check` via `lib/services/squad_analytics.dart`
+
 ## Phase B+ parking lot (wishlist only)
 
 1. ~~Matchmaking Queue~~ — v1 landed (`3.4.70+72`); persist + lobby-aware `processQueue` landed (`3.4.79+81`)

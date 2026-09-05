@@ -11,6 +11,7 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
+import 'package:squad_sync/services/squad_analytics.dart';
 
 // Generate mocks with: flutter pub run build_runner build
 @GenerateMocks([LobbyRepository])
@@ -83,6 +84,8 @@ void main() {
       when(mockRepository.getLobbyStream(any)).thenAnswer(
         (_) => Stream<Lobby?>.value(null),
       );
+      SquadAnalytics.resetTestHooks();
+      SquadAnalytics.logHook = (_, __) async {};
 
       container = ProviderContainer(
         overrides: [
@@ -99,6 +102,7 @@ void main() {
 
     tearDown(() {
       container.dispose();
+      SquadAnalytics.resetTestHooks();
     });
 
     test('should initialize with default state', () async {

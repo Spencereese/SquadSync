@@ -7,6 +7,7 @@ import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../domain/entities/lobby_state.dart';
 import '../dialogs/spot_assignment_dialog.dart';
 import 'lobby_seat_affordance.dart';
+import 'lobby_spot_map_seat.dart';
 
 /// LobbyGrid component - handles the display of spot cards and assignment logic
 /// Extracted from the monolithic LobbyTab to improve maintainability
@@ -107,10 +108,6 @@ class SpotCard extends ConsumerWidget {
     final isOwnSeat = occupantUid != null && occupantUid == yourUid;
     final lobbyLocked = readyLock.isLocked;
 
-    final initial = spotDisplayName != null
-        ? spotDisplayName[0].toUpperCase()
-        : '${index + 1}';
-
     // Check if any buttons will be shown
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
     final isCalling = occupantIsCallingSpot(spotName, occupantStatus);
@@ -133,10 +130,34 @@ class SpotCard extends ConsumerWidget {
     }
     final pulseOffered =
         seatStatus?.pulseOfferedSpot == true && seatStatus?.seatIndex == index;
+    final kind = lobbySpotMapKindFor(
+      hasOccupant: hasOccupant,
+      peacockOffered: pulseOffered,
+    );
+    final timerDisplay =
+        hasTimer ? _getTimerDisplay(spotTimers[index]) : null;
+    final statusLabel = switch (kind) {
+      LobbySpotMapKind.peacock => 'Peacock',
+      LobbySpotMapKind.empty => 'Open',
+      LobbySpotMapKind.filled => lobbyLocked && isSeated
+          ? 'Locked'
+          : isReady
+              ? 'Ready'
+              : occupantStatus == 'Calling'
+                  ? 'Calling'
+                  : 'Occupied',
+    };
 
     return OfferedSpotPulse(
       pulse: pulseOffered,
-      child: GestureDetector(
+      child: LobbySpotMapSeat(
+        index: index,
+        kind: kind,
+        statusLabel: statusLabel,
+        displayName: spotDisplayName,
+        timerLabel: timerDisplay,
+        semanticLabel:
+            'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}${isOwnSeat && lobbyLocked ? ' (locked)' : isOwnSeat && isReady ? ' (ready)' : isOwnSeat && !isReady ? ' (tap Ready)' : ''}',
         onLongPress: () {
           if (hasOccupant) {
             ref
@@ -171,115 +192,23 @@ class SpotCard extends ConsumerWidget {
                   SpotAssignmentDialog.show(context, ref, index);
                 }
               },
-        child: Semantics(
-          label:
-              'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}${isOwnSeat && lobbyLocked ? ' (locked)' : isOwnSeat && isReady ? ' (ready)' : isOwnSeat && !isReady ? ' (tap Ready)' : ''}',
-          child: Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            color: Colors.white.withValues(alpha: 0.1),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor:
-                    hasOccupant ? Colors.cyanAccent : Colors.grey[600],
-                child: Text(
-                  hasOccupant ? initial : '${index + 1}',
-                  style: TextStyle(
-                      color: hasOccupant ? Colors.black : Colors.white,
-                      fontWeight: FontWeight.bold),
-                ),
-              ),
-              title: Text(
-                'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}',
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-              subtitle: _buildSpotSubtitle(
-                context,
-                index,
-                spotTimers,
-                occupantStatus: occupantStatus,
-                isSeated: isSeated,
-                isReady: isReady,
-                lobbyLocked: lobbyLocked,
-                hasOccupant: hasOccupant,
-              ),
-              trailing: _buildSpotActions(
-                context,
-                index,
-                hasOccupant,
-                yourUid,
-                spotTimers,
-                ref,
-                gameName,
-                isCalling: isCalling,
-                isReady: isReady,
-                isSeated: isSeated,
-                isOwnSeat: isOwnSeat,
-                lobbyLocked: lobbyLocked,
-                allowLateJoin: emptySpotAllowsLateJoin(readyLock),
-              ),
-            ),
-          ),
+        trailing: _buildSpotActions(
+          context,
+          index,
+          hasOccupant,
+          yourUid,
+          spotTimers,
+          ref,
+          gameName,
+          isCalling: isCalling,
+          isReady: isReady,
+          isSeated: isSeated,
+          isOwnSeat: isOwnSeat,
+          lobbyLocked: lobbyLocked,
+          allowLateJoin: emptySpotAllowsLateJoin(readyLock),
         ),
       ),
     );
-  }
-
-  Widget _buildSpotSubtitle(
-    BuildContext context,
-    int index,
-    List<Map<String, dynamic>?> spotTimers, {
-    required String? occupantStatus,
-    required bool isSeated,
-    required bool isReady,
-    required bool lobbyLocked,
-    required bool hasOccupant,
-  }) {
-    final hasTimer = index < spotTimers.length && spotTimers[index] != null;
-    final timerDisplay = hasTimer ? _getTimerDisplay(spotTimers[index]) : null;
-    final status = !hasOccupant
-        ? 'Open'
-        : lobbyLocked && isSeated
-            ? 'Locked'
-            : isReady
-                ? 'Ready'
-                : occupantStatus == 'Calling'
-                    ? 'Calling'
-                    : 'Occupied';
-    final statusColor = _getSpotStatusColor(status);
-
-    return Row(
-      children: [
-        Text(
-          status,
-          style: TextStyle(color: statusColor),
-        ),
-        if (timerDisplay != null && timerDisplay != '00:00') ...[
-          const SizedBox(width: 8),
-          Text(
-            '($timerDisplay)',
-            style: TextStyle(color: statusColor, fontSize: 12),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Color _getSpotStatusColor(String status) {
-    switch (status) {
-      case 'Ready':
-        return Colors.greenAccent;
-      case 'Locked':
-        return Colors.amberAccent;
-      case 'Calling':
-        return Colors.orangeAccent;
-      case 'Occupied':
-        return Colors.white70;
-      case 'Open':
-        return Colors.grey;
-      default:
-        return Colors.white70;
-    }
   }
 
   String? _getTimerDisplay(Map<String, dynamic>? timer) {

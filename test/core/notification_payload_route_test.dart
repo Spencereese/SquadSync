@@ -361,9 +361,13 @@ void main() {
         'codsquadapp://notify?type=lobby_locked&lobby_id=lobby-9',
         'codsquadapp://availability_ping?lobby_id=lobby-9',
         'codsquadapp://peacock?lobby_id=lobby-9',
+        'codsquadapp://peacock/lobby-9',
+        'codsquadapp://lobby/lobby-9',
         'codsquadapp://lobby_locked?lobby_id=lobby-9',
         'codsquadapp://notify?type=availability_ping&lobby=lobby-9',
         'https://codsquad.app/l/lobby-9',
+        'https://codsquad.app/lobby/lobby-9',
+        'https://codsquad.app/peacock/lobby-9',
       ];
       for (final url in urls) {
         expect(locationForDeepLink(url), expected, reason: url);
@@ -373,6 +377,31 @@ void main() {
           reason: 'payload $url',
         );
       }
+    });
+
+    test('chat and stats product URLs keep their own routes', () {
+      expect(
+        locationForDeepLink('codsquadapp://chat/1766270568521'),
+        '/chat/1766270568521',
+      );
+      expect(
+        locationForDeepLink('https://codsquad.app/chat/1766270568521'),
+        '/chat/1766270568521',
+      );
+      expect(locationForDeepLink('codsquadapp://stats'), '/stats');
+      expect(locationForDeepLink('https://codsquad.app/stats'), '/stats');
+      expect(
+        NotificationRoutes.locationFor({
+          'url': 'https://codsquad.app/stats',
+        }),
+        '/stats',
+      );
+      expect(
+        NotificationRoutes.locationFor({
+          'deep_link': 'codsquadapp://chat/1766270568521',
+        }),
+        '/chat/1766270568521',
+      );
     });
   });
 

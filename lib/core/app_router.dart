@@ -9,6 +9,7 @@ import '../chat/chat_groups_screen.dart';
 import '../chat/chat_screen.dart';
 import '../profile_tab.dart';
 import '../screens/clips_screen.dart';
+import '../screens/performance_stats_screen.dart';
 import '../join_lobby_screen.dart';
 import '../setup_screen.dart';
 import '../chat/dialogs/group_actions_dialog.dart';
@@ -223,6 +224,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/profile',
         name: 'profile',
         builder: (context, state) => const ProfileTab(),
+      ),
+      GoRoute(
+        path: '/stats',
+        name: 'stats',
+        builder: (context, state) => const PerformanceStatsScreen(),
       ),
       GoRoute(
         path: '/clips',

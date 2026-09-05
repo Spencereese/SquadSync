@@ -178,6 +178,17 @@ void main() {
     );
   });
 
+  test('stats payload routes to /stats', () {
+    expect(
+      NotificationRoutes.locationFor({'type': 'stats'}),
+      '/stats',
+    );
+    expect(
+      NotificationRoutes.locationFor({'screen': 'stats'}),
+      '/stats',
+    );
+  });
+
   test('unknown type does not invent a route', () {
     expect(NotificationRoutes.locationFor({'type': 'unknown'}), isNull);
   });

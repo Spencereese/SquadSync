@@ -220,6 +220,8 @@ String? locationForDeepLinkUri(Uri uri) {
       screen = 'lobby';
     } else if (_matchesName(host, segments, 'squad')) {
       screen = 'squad';
+    } else if (_matchesName(host, segments, 'stats')) {
+      screen = 'stats';
     }
   }
 
@@ -253,6 +255,7 @@ String? _mappedType({
     return 'lobby_locked';
   }
   if (_matchesName(host, segments, 'peacock')) return 'peacock_assigned';
+  if (_matchesName(host, segments, 'stats')) return 'stats';
   return null;
 }
 
@@ -261,14 +264,15 @@ bool _matchesName(String host, List<String> segments, String name) {
   return segments.any((segment) => segment.toLowerCase() == name);
 }
 
-/// `codsquadapp://lobby/<id>` (and `/lobby/<id>` or `/l/<id>` on https)
-/// — path is the lobby id, not a game name. Query `lobby_id` still wins
-/// when present. `https://codsquad.app/l/<id>` is the Universal Link.
+/// `codsquadapp://lobby/<id>` / `codsquadapp://peacock/<id>` (and
+/// `/lobby/<id>`, `/peacock/<id>`, or `/l/<id>` on https) — path is the
+/// lobby id, not a game name. Query `lobby_id` still wins when present.
+/// `https://codsquad.app/l/<id>` is the Universal Link.
 String? _lobbyIdFromPath({
   required String host,
   required List<String> segments,
 }) {
-  if (host == 'lobby' || host == 'l') {
+  if (host == 'lobby' || host == 'l' || host == 'peacock') {
     return _nonEmpty(segments.isNotEmpty ? segments.first : null);
   }
   if (_isShortLobbyLink(host: host, segments: segments) &&
@@ -278,12 +282,14 @@ String? _lobbyIdFromPath({
       return _nonEmpty(segments[1]);
     }
   }
-  final lobbyIndex =
-      segments.indexWhere((segment) => segment.toLowerCase() == 'lobby');
-  if (lobbyIndex >= 0 && lobbyIndex + 1 < segments.length) {
-    final next = segments[lobbyIndex + 1].toLowerCase();
-    if (!_reservedLobbyPathSegment(next)) {
-      return _nonEmpty(segments[lobbyIndex + 1]);
+  for (final marker in const ['lobby', 'peacock']) {
+    final index =
+        segments.indexWhere((segment) => segment.toLowerCase() == marker);
+    if (index >= 0 && index + 1 < segments.length) {
+      final next = segments[index + 1].toLowerCase();
+      if (!_reservedLobbyPathSegment(next)) {
+        return _nonEmpty(segments[index + 1]);
+      }
     }
   }
   return null;
@@ -317,11 +323,14 @@ String? _gameNameFromPath({
   required String host,
   required List<String> segments,
 }) {
-  // Lobby path is the lobby id ([_lobbyIdFromPath]); game stays on query.
-  const markers = ['squad', 'peacock', 'lfg_matched'];
+  // Lobby / peacock path is the lobby id ([_lobbyIdFromPath]); game stays
+  // on query.
+  const markers = ['squad', 'lfg_matched'];
   if (markers.contains(host) && segments.isNotEmpty) {
     final first = segments.first.toLowerCase();
-    if (!markers.contains(first) && first != 'lobby') {
+    if (!markers.contains(first) &&
+        first != 'lobby' &&
+        first != 'peacock') {
       return _nonEmpty(segments.first);
     }
   }

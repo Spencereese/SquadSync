@@ -129,6 +129,136 @@ void main() {
     });
   });
 
+  group('regression pack: /lobby/:id /chat/:id /peacock/:id /stats', () {
+    const lobbyId = 'lobby-9';
+    const chatId = '1766270568521';
+    const expectedLobby = '/squad?lobby_id=lobby-9';
+    const expectedChat = '/chat/1766270568521';
+    const expectedStats = '/stats';
+
+    void expectRoute(String url, String location) {
+      expect(locationForDeepLink(url), location, reason: url);
+      expect(DeepLinkRouter.locationFor(url), location, reason: url);
+    }
+
+    test('codsquadapp://lobby/:id and https /lobby/:id plus /l/:id', () {
+      const urls = [
+        'codsquadapp://lobby/$lobbyId',
+        'codsquadapp://lobby/$lobbyId/',
+        'https://codsquad.app/lobby/$lobbyId',
+        'https://www.codsquad.app/lobby/$lobbyId',
+        'https://codsquad.app/l/$lobbyId',
+        'https://www.codsquad.app/l/$lobbyId',
+        'https://codsquad.app/l/$lobbyId/',
+      ];
+      for (final url in urls) {
+        expectRoute(url, expectedLobby);
+      }
+      expect(
+        locationForDeepLink('codsquadapp://lobby/$lobbyId'),
+        isNot('/squad/$lobbyId'),
+      );
+    });
+
+    test('codsquadapp://chat/:id and https /chat/:id', () {
+      const urls = [
+        'codsquadapp://chat/$chatId',
+        'codsquadapp://chat/$chatId/',
+        'https://codsquad.app/chat/$chatId',
+        'https://www.codsquad.app/chat/$chatId',
+        'https://codsquad.app/chat/$chatId/',
+      ];
+      for (final url in urls) {
+        expectRoute(url, expectedChat);
+      }
+      expectRoute('codsquadapp://chat', '/chat');
+      expectRoute('https://codsquad.app/chat', '/chat');
+    });
+
+    test('codsquadapp://peacock/:id and https /peacock/:id', () {
+      const urls = [
+        'codsquadapp://peacock/$lobbyId',
+        'codsquadapp://peacock/$lobbyId/',
+        'https://codsquad.app/peacock/$lobbyId',
+        'https://www.codsquad.app/peacock/$lobbyId',
+        'https://codsquad.app/peacock/$lobbyId/',
+      ];
+      for (final url in urls) {
+        expectRoute(url, expectedLobby);
+      }
+      expect(
+        locationForDeepLink('codsquadapp://peacock/$lobbyId'),
+        isNot('/squad/$lobbyId'),
+      );
+      expectRoute(
+        'codsquadapp://peacock/$lobbyId?game_name=Warzone',
+        '/squad/Warzone?lobby_id=lobby-9',
+      );
+      expectRoute(
+        'https://codsquad.app/peacock/$lobbyId?game_name=Warzone',
+        '/squad/Warzone?lobby_id=lobby-9',
+      );
+    });
+
+    test('codsquadapp://stats and https /stats', () {
+      const urls = [
+        'codsquadapp://stats',
+        'codsquadapp://stats/',
+        'https://codsquad.app/stats',
+        'https://www.codsquad.app/stats',
+        'https://codsquad.app/stats/',
+      ];
+      for (final url in urls) {
+        expectRoute(url, expectedStats);
+      }
+      expectRoute('codsquadapp://open?screen=stats', expectedStats);
+      expect(
+        NotificationRoutes.locationFor({'type': 'stats'}),
+        expectedStats,
+      );
+      expect(
+        NotificationRoutes.locationFor({'screen': 'stats'}),
+        expectedStats,
+      );
+    });
+
+    test('live AppLinks: product scheme keeps these routes; sim https drops',
+        () {
+      const cases = {
+        'codsquadapp://lobby/$lobbyId': expectedLobby,
+        'codsquadapp://chat/$chatId': expectedChat,
+        'codsquadapp://peacock/$lobbyId': expectedLobby,
+        'codsquadapp://stats': expectedStats,
+      };
+      cases.forEach((url, location) {
+        expect(
+          locationForLiveAppLink(url, isIosSimulator: true),
+          location,
+          reason: url,
+        );
+      });
+      const httpsOnDevice = {
+        'https://codsquad.app/l/$lobbyId': expectedLobby,
+        'https://codsquad.app/lobby/$lobbyId': expectedLobby,
+        'https://codsquad.app/chat/$chatId': expectedChat,
+        'https://codsquad.app/peacock/$lobbyId': expectedLobby,
+        'https://codsquad.app/stats': expectedStats,
+      };
+      httpsOnDevice.forEach((url, location) {
+        expect(
+          locationForLiveAppLink(url, isIosSimulator: false),
+          location,
+          reason: url,
+        );
+        expect(
+          locationForLiveAppLink(url, isIosSimulator: true),
+          isNull,
+          reason: 'sim swallow $url',
+        );
+      });
+    });
+  });
+
   group('shared parser: peacock card / notification / lfg / lobby', () {
     const lobbyId = 'lobby-9';
     const game = 'Warzone';

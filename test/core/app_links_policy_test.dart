@@ -96,6 +96,14 @@ void main() {
       isFalse,
     );
     expect(
+      shouldSwallowSimulatorAppLink(Uri.parse('codsquadapp://peacock/lobby-9')),
+      isFalse,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(Uri.parse('codsquadapp://stats')),
+      isFalse,
+    );
+    expect(
       shouldSwallowSimulatorAppLink(
         Uri.parse('https://lobbiesync.app/chat/leftover'),
       ),

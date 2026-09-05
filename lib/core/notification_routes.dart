@@ -199,11 +199,16 @@ class NotificationRoutes {
         ]);
         routed = squadId != null ? '/chat/$squadId' : '/chat';
         break;
+      case 'stats':
+        routed = '/stats';
+        break;
       default:
         if (screen == 'chat') {
           routed = chatId != null ? '/chat/$chatId' : '/chat';
         } else if (screen == 'squad' || screen == 'lobby') {
           routed = _squadLocation(gameName: gameName, lobbyId: lobbyId);
+        } else if (screen == 'stats') {
+          routed = '/stats';
         }
     }
 
@@ -344,6 +349,8 @@ class NotificationRoutes {
     final v = value.trim().toLowerCase();
     if (v.startsWith('codsquadapp://')) return true;
     if (v.startsWith('/squad')) return true;
+    if (v.startsWith('/stats')) return true;
+    if (v.startsWith('/chat')) return true;
     if (v.startsWith('https://codsquad.app/')) return true;
     if (v.startsWith('https://www.codsquad.app/')) return true;
     if (v.startsWith('https://lobbiesync.app/')) return true;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/lobbies_tab/widgets/lobby_seat_affordance.dart';
+import 'package:squad_sync/services/lobby_ready_lock.dart';
 import 'package:squad_sync/services/lobby_seat_status.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
@@ -165,8 +166,7 @@ void main() {
     expect(toggled, isTrue);
   });
 
-  testWidgets('all seated Ready shows Locked and hides Ready toggle',
-      (tester) async {
+  testWidgets('other seated Locked shows badge without Unlock', (tester) async {
     var toggled = false;
     await tester.pumpWidget(
       MaterialApp(
@@ -174,6 +174,7 @@ void main() {
           body: SeatedSpotReadyAffordance(
             isReady: true,
             isLocked: true,
+            isOwnSeat: false,
             onToggle: () => toggled = true,
           ),
         ),
@@ -182,10 +183,86 @@ void main() {
     expect(find.byKey(const Key('seated-spot-locked-badge')), findsOneWidget);
     expect(find.text('Locked'), findsOneWidget);
     expect(find.byKey(const Key('seated-spot-ready-button')), findsNothing);
+    expect(find.byKey(const Key('seated-spot-unlock-button')), findsNothing);
 
     await tester.tap(find.byKey(const Key('seated-spot-locked-badge')));
     await tester.pump();
     expect(toggled, isFalse);
+  });
+
+  testWidgets('own locked seat shows Unlock and tap unlocks', (tester) async {
+    var unlocked = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SeatedSpotReadyAffordance(
+            isReady: true,
+            isLocked: true,
+            onToggle: () => unlocked = true,
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('seated-spot-unlock-button')), findsOneWidget);
+    expect(find.text('Unlock'), findsOneWidget);
+    expect(find.byKey(const Key('seated-spot-ready-button')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('seated-spot-unlock-button')));
+    await tester.pump();
+    expect(unlocked, isTrue);
+  });
+
+  testWidgets('Ready button shows remaining ready-check timeout',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SeatedSpotReadyAffordance(
+            isReady: true,
+            isLocked: false,
+            timeoutRemaining: Duration(seconds: 45),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('seated-spot-ready-button')), findsOneWidget);
+    expect(find.text('Ready 00:45'), findsOneWidget);
+  });
+
+  testWidgets('timeout expired chip shows Timed out', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SeatedSpotReadyAffordance(
+            isReady: false,
+            isLocked: false,
+            timeoutExpired: true,
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('seated-spot-timeout-chip')), findsOneWidget);
+    expect(find.text('Timed out'), findsOneWidget);
+    expect(find.byKey(const Key('seated-spot-ready-button')), findsNothing);
+  });
+
+  testWidgets('Call stays available for late join while locked', (tester) async {
+    const locked = LobbyReadyLockSnapshot(
+      phase: LobbyReadyLockPhase.locked,
+      seatedUids: ['u1', 'u2'],
+      readyUids: ['u1', 'u2'],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: emptySpotAllowsLateJoin(locked)
+              ? const Text('Call', key: Key('empty-spot-call-button'))
+              : const SizedBox.shrink(),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('empty-spot-call-button')), findsOneWidget);
+    expect(find.text('Call'), findsOneWidget);
   });
 
   testWidgets('other seated Ready shows badge without toggle', (tester) async {

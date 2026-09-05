@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
@@ -571,12 +573,30 @@ void main() {
       expect(sentData!['type'], kLobbyLockedType);
       expect(sentData!['lobby_id'], 'lobby-9');
       expect(livePlan, isNotNull);
-      expect(livePlan!.op, PeacockLockLiveActivityOp.start);
+      expect(
+        livePlan!.op,
+        anyOf(
+          PeacockLockLiveActivityOp.start,
+          PeacockLockLiveActivityOp.update,
+        ),
+      );
       expect(livePlan!.payload.phase, PeacockLockLiveActivityPhase.locked);
       expect(livePlan!.payload.lobbyId, 'lobby-9');
     });
 
-    test('toggle is a no-op when the lobby is already locked', () async {
+    test('toggle when locked unlocks and notifies seated members', () async {
+      List<String>? sentUids;
+      Map<String, dynamic>? sentData;
+      LobbyLockNotify.sendToUsersHook = ({
+        required title,
+        required body,
+        required recipientUids,
+        data,
+      }) async {
+        sentUids = recipientUids;
+        sentData = data;
+      };
+
       final notifier = await pumpSeatedLobby(
         statuses: const {'user-1': 'Ready', 'user-2': 'Ready'},
       );
@@ -587,9 +607,113 @@ void main() {
         spotIndex: 0,
       );
 
-      expect(result!.changed, isFalse);
-      expect(result.snapshot.isLocked, isTrue);
-      verifyNever(mockRepository.updateMemberStatus(any, any, any));
+      expect(result!.justUnlocked, isTrue);
+      expect(result.snapshot.isLocked, isFalse);
+      expect(result.snackbarMessage, 'Squad unlocked');
+      verify(mockRepository.updateMemberStatus('lobby-9', 'user-1', 'Occupied'))
+          .called(1);
+      expect(sentUids, ['user-2']);
+      expect(sentData!['type'], kLobbyUnlockedType);
+    });
+
+    test('timeoutReadyCheck clears Ready and notifies seated', () async {
+      List<String>? sentUids;
+      Map<String, dynamic>? sentData;
+      LobbyLockNotify.sendToUsersHook = ({
+        required title,
+        required body,
+        required recipientUids,
+        data,
+      }) async {
+        sentUids = recipientUids;
+        sentData = data;
+      };
+
+      final notifier = await pumpSeatedLobby();
+      await notifier.toggleSeatedReady(
+        userId: 'user-1',
+        gameName: 'Warzone',
+        spotIndex: 0,
+      );
+      reset(mockRepository);
+      when(mockRepository.updateMemberStatus(any, any, any))
+          .thenAnswer((_) async {});
+
+      final result = await notifier.timeoutReadyCheck(
+        now: DateTime.now().add(kReadyCheckTimeout),
+      );
+
+      expect(result!.timedOut, isTrue);
+      expect(result.snapshot.readyUids, isEmpty);
+      expect(result.snackbarMessage, 'Ready check timed out');
+      verify(mockRepository.updateMemberStatus('lobby-9', 'user-1', 'Occupied'))
+          .called(1);
+      expect(sentData!['type'], kLobbyReadyTimeoutType);
+      expect(sentUids, isNotEmpty);
+    });
+
+    test('late join seated Occupied unlocks a locked lobby', () async {
+      List<String>? sentUids;
+      Map<String, dynamic>? sentData;
+      LobbyLockNotify.sendToUsersHook = ({
+        required title,
+        required body,
+        required recipientUids,
+        data,
+      }) async {
+        sentUids = recipientUids;
+        sentData = data;
+      };
+
+      final locked = _lobby(
+        id: 'lobby-9',
+        memberUids: const ['user-1', 'user-2'],
+        spots: ['user-1', 'user-2', null],
+        statuses: const {'user-1': 'Ready', 'user-2': 'Ready'},
+      );
+      final withJoin = locked.copyWith(
+        memberUids: const ['user-1', 'user-2', 'user-3'],
+        spots: ['user-1', 'user-2', 'user-3'],
+      );
+      final controller = StreamController<Lobby?>.broadcast();
+      addTearDown(controller.close);
+      when(mockRepository.getLobbyStream('lobby-9')).thenAnswer(
+        (_) => controller.stream,
+      );
+
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.setSelectedLobbyId('lobby-9');
+      controller.add(locked);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        resolveLobbyReadyLockFromState(
+          container.read(lobbyNotifierProvider).value!,
+          gameName: 'Warzone',
+        ).isLocked,
+        isTrue,
+      );
+
+      when(mockRepository.loadLobbyState()).thenAnswer((_) async {
+        final current = container.read(lobbyNotifierProvider).value!;
+        return current.copyWith(
+          currentLobby: withJoin,
+          gameLobbySpots: {'Warzone': withJoin.spots},
+          gameStatuses: {'Warzone': withJoin.statuses},
+        );
+      });
+
+      await notifier.assignSpot('lobby-9', 2, 'user-3');
+
+      final snap = resolveLobbyReadyLockFromState(
+        container.read(lobbyNotifierProvider).value!,
+        gameName: 'Warzone',
+      );
+      expect(snap.isLocked, isFalse);
+      expect(snap.seatedUids, ['user-1', 'user-2', 'user-3']);
+      expect(sentUids, ['user-1', 'user-2']);
+      expect(sentData!['type'], kLobbyUnlockedType);
     });
   });
 

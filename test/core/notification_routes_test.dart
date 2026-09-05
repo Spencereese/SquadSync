@@ -76,6 +76,36 @@ void main() {
     );
   });
 
+  test('lobby_unlocked and ready-timeout open /squad with lobby_id', () {
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'lobby_unlocked',
+        'lobby_id': 'lobby-9',
+        'game_name': 'Warzone',
+      }),
+      '/squad/Warzone?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'lobby_unlock',
+        'lobby_id': 'lobby-9',
+      }),
+      '/squad?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.locationFor({
+        'type': 'lobby_ready_timeout',
+        'lobby_id': 'lobby-9',
+        'game_name': 'Warzone',
+      }),
+      '/squad/Warzone?lobby_id=lobby-9',
+    );
+    expect(
+      NotificationRoutes.canonicalType('ready_timeout'),
+      'lobby_ready_timeout',
+    );
+  });
+
   test('lobby_locked opens /squad with lobby_id', () {
     expect(
       NotificationRoutes.locationFor({

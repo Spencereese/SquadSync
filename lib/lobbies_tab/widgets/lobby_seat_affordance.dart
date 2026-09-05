@@ -324,6 +324,8 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
     this.onToggle,
     this.isLoading = false,
     this.error,
+    this.timeoutRemaining,
+    this.timeoutExpired = false,
   });
 
   final bool isReady;
@@ -332,6 +334,8 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
   final VoidCallback? onToggle;
   final bool isLoading;
   final Object? error;
+  final Duration? timeoutRemaining;
+  final bool timeoutExpired;
 
   @override
   Widget build(BuildContext context) {
@@ -350,7 +354,57 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
         compact: true,
       );
     }
+    if (timeoutExpired && !isLocked) {
+      return Chip(
+        key: const Key('seated-spot-timeout-chip'),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        backgroundColor: Colors.orangeAccent.withValues(alpha: 0.2),
+        label: const Text(
+          'Timed out',
+          style: TextStyle(
+            color: Colors.orangeAccent,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
     if (isLocked) {
+      if (isOwnSeat && onToggle != null) {
+        return Container(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Colors.amberAccent, Colors.orange],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.amberAccent.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ElevatedButton.icon(
+            key: const Key('seated-spot-unlock-button'),
+            onPressed: onToggle,
+            icon: const Icon(Icons.lock_open, size: 16),
+            label: const Text('Unlock'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              foregroundColor: Colors.black,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              textStyle:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+      }
       return Chip(
         key: const Key('seated-spot-locked-badge'),
         visualDensity: VisualDensity.compact,
@@ -417,7 +471,7 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
           isReady ? Icons.check_circle : Icons.radio_button_unchecked,
           size: 16,
         ),
-        label: const Text('Ready'),
+        label: Text(_readyButtonLabel),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
           foregroundColor: Colors.black,
@@ -427,6 +481,14 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String get _readyButtonLabel {
+    final remaining = timeoutRemaining;
+    if (isReady && remaining != null && remaining > Duration.zero) {
+      return 'Ready ${formatLockMmSs(remaining)}';
+    }
+    return 'Ready';
   }
 }
 

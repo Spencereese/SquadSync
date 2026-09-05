@@ -133,15 +133,28 @@ void main() {
       expect(next.isLocked, isTrue);
     });
 
-    test('does not toggle when already locked', () {
+    test('Ready true when already locked is a no-op', () {
+      final next = reduceLobbyReadyLock(
+        spots: ['u1', 'u2'],
+        statuses: const {'u1': 'Ready', 'u2': 'Ready'},
+        userId: 'u1',
+        ready: true,
+      );
+      expect(next.isLocked, isTrue);
+      expect(next.isReady('u1'), isTrue);
+    });
+
+    test('un-ready when locked unlocks', () {
       final next = reduceLobbyReadyLock(
         spots: ['u1', 'u2'],
         statuses: const {'u1': 'Ready', 'u2': 'Ready'},
         userId: 'u1',
         ready: false,
       );
-      expect(next.isLocked, isTrue);
-      expect(next.isReady('u1'), isTrue);
+      expect(next.isLocked, isFalse);
+      expect(next.canUnlock, isFalse);
+      expect(next.isReady('u1'), isFalse);
+      expect(next.isReady('u2'), isTrue);
     });
 
     test('calling user cannot toggle Ready', () {
@@ -172,6 +185,105 @@ void main() {
       expect(justLockedLobby(before: open, after: locked), isTrue);
       expect(justLockedLobby(before: locked, after: locked), isFalse);
       expect(justLockedLobby(before: locked, after: open), isFalse);
+      expect(justUnlockedLobby(before: locked, after: open), isTrue);
+      expect(justUnlockedLobby(before: open, after: locked), isFalse);
+      expect(justUnlockedLobby(before: locked, after: locked), isFalse);
+    });
+  });
+
+  group('ready-check timeout', () {
+    final started = DateTime.utc(2026, 9, 5, 12, 0, 0);
+
+    test('clears Ready when the window elapses while still open', () {
+      final next = reduceReadyCheckTimeout(
+        spots: ['u1', 'u2'],
+        statuses: const {'u1': 'Ready'},
+        now: started.add(kReadyCheckTimeout),
+        startedAt: started,
+      );
+      expect(next.isLocked, isFalse);
+      expect(next.readyUids, isEmpty);
+      expect(next.seatedUids, ['u1', 'u2']);
+    });
+
+    test('does not clear Ready before the deadline', () {
+      final next = reduceReadyCheckTimeout(
+        spots: ['u1', 'u2'],
+        statuses: const {'u1': 'Ready'},
+        now: started.add(kReadyCheckTimeout - const Duration(seconds: 1)),
+        startedAt: started,
+      );
+      expect(next.readyUids, ['u1']);
+    });
+
+    test('locked lobby ignores timeout', () {
+      final next = reduceReadyCheckTimeout(
+        spots: ['u1', 'u2'],
+        statuses: const {'u1': 'Ready', 'u2': 'Ready'},
+        now: started.add(const Duration(minutes: 5)),
+        startedAt: started,
+      );
+      expect(next.isLocked, isTrue);
+      expect(next.readyUids, ['u1', 'u2']);
+    });
+  });
+
+  group('late join', () {
+    const locked = LobbyReadyLockSnapshot(
+      phase: LobbyReadyLockPhase.locked,
+      seatedUids: ['u1', 'u2'],
+      readyUids: ['u1', 'u2'],
+    );
+
+    test('seated Occupied late join unlocks', () {
+      final after = resolveLobbyReadyLock(
+        spots: ['u1', 'u2', 'u3'],
+        statuses: const {'u1': 'Ready', 'u2': 'Ready'},
+      );
+      expect(after.isLocked, isFalse);
+      expect(after.seatedUids, ['u1', 'u2', 'u3']);
+      expect(lateJoinUnlocks(before: locked, after: after), isTrue);
+      expect(justUnlockedLobby(before: locked, after: after), isTrue);
+    });
+
+    test('calling late join does not unlock', () {
+      final after = resolveLobbyReadyLock(
+        spots: ['u1', 'u2', 'u3_calling'],
+        statuses: const {'u1': 'Ready', 'u2': 'Ready', 'u3': 'Calling'},
+      );
+      expect(after.isLocked, isTrue);
+      expect(after.seatedUids, ['u1', 'u2']);
+      expect(lateJoinUnlocks(before: locked, after: after), isFalse);
+    });
+
+    test('late join as Ready stays locked', () {
+      final after = resolveLobbyReadyLock(
+        spots: ['u1', 'u2', 'u3'],
+        statuses: const {'u1': 'Ready', 'u2': 'Ready', 'u3': 'Ready'},
+      );
+      expect(after.isLocked, isTrue);
+      expect(lateJoinUnlocks(before: locked, after: after), isFalse);
+    });
+
+    test('late join during an open ready-check stays open and includes them',
+        () {
+      const open = LobbyReadyLockSnapshot(
+        phase: LobbyReadyLockPhase.open,
+        seatedUids: ['u1', 'u2'],
+        readyUids: ['u1'],
+      );
+      final after = resolveLobbyReadyLock(
+        spots: ['u1', 'u2', 'u3'],
+        statuses: const {'u1': 'Ready'},
+      );
+      expect(after.isLocked, isFalse);
+      expect(after.seatedUids, ['u1', 'u2', 'u3']);
+      expect(lateJoinUnlocks(before: open, after: after), isFalse);
+    });
+
+    test('empty spots stay claimable while locked', () {
+      expect(emptySpotAllowsLateJoin(locked), isTrue);
+      expect(emptySpotAllowsLateJoin(LobbyReadyLockSnapshot.empty), isTrue);
     });
   });
 
@@ -259,6 +371,71 @@ void main() {
       expect(sentTitle, 'Squad locked');
       expect(sentUids, ['u2']);
       expect(sentData!['type'], kLobbyLockedType);
+      expect(
+        NotificationRoutes.locationFor(sentData!),
+        '/squad/Warzone?lobby_id=lobby-9',
+      );
+    });
+
+    test('unlock notify reuses sendToUsers and routes to /squad', () async {
+      List<String>? sentUids;
+      Map<String, dynamic>? sentData;
+      String? sentTitle;
+      LobbyLockNotify.sendToUsersHook = ({
+        required title,
+        required body,
+        required recipientUids,
+        data,
+      }) async {
+        sentTitle = title;
+        sentUids = recipientUids;
+        sentData = data;
+      };
+
+      final result = await LobbyLockNotify.send(
+        planLobbyUnlockNotify(
+          seatedUids: const ['u1', 'u2'],
+          actorUid: 'u1',
+          lobbyId: 'lobby-9',
+          gameName: 'Warzone',
+        ),
+      );
+
+      expect(result.status, LobbyLockNotifyStatus.sent);
+      expect(sentTitle, 'Squad unlocked');
+      expect(sentUids, ['u2']);
+      expect(sentData!['type'], kLobbyUnlockedType);
+      expect(
+        NotificationRoutes.locationFor(sentData!),
+        '/squad/Warzone?lobby_id=lobby-9',
+      );
+    });
+
+    test('timeout notify reuses sendToUsers and routes to /squad', () async {
+      List<String>? sentUids;
+      Map<String, dynamic>? sentData;
+      LobbyLockNotify.sendToUsersHook = ({
+        required title,
+        required body,
+        required recipientUids,
+        data,
+      }) async {
+        sentUids = recipientUids;
+        sentData = data;
+      };
+
+      final result = await LobbyLockNotify.send(
+        planLobbyReadyTimeoutNotify(
+          seatedUids: const ['u1', 'u2'],
+          actorUid: 'u1',
+          lobbyId: 'lobby-9',
+          gameName: 'Warzone',
+        ),
+      );
+
+      expect(result.status, LobbyLockNotifyStatus.sent);
+      expect(sentUids, ['u2']);
+      expect(sentData!['type'], kLobbyReadyTimeoutType);
       expect(
         NotificationRoutes.locationFor(sentData!),
         '/squad/Warzone?lobby_id=lobby-9',

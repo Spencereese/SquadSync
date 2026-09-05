@@ -112,6 +112,12 @@ class NotificationRoutes {
       case 'lobby_lock':
       case 'ready_lock':
         return 'lobby_locked';
+      case 'lobby_unlocked':
+      case 'lobby_unlock':
+        return 'lobby_unlocked';
+      case 'lobby_ready_timeout':
+      case 'ready_timeout':
+        return 'lobby_ready_timeout';
       default:
         return t;
     }
@@ -162,6 +168,8 @@ class NotificationRoutes {
       case 'lfg_matched':
       case 'availability_ping':
       case 'lobby_locked':
+      case 'lobby_unlocked':
+      case 'lobby_ready_timeout':
       case 'lobby':
       case 'squad':
         if (type == 'availability_ping' && lobbyId == null) {

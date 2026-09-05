@@ -216,6 +216,7 @@ class SpotCard extends ConsumerWidget {
                 isSeated: isSeated,
                 isOwnSeat: isOwnSeat,
                 lobbyLocked: lobbyLocked,
+                allowLateJoin: emptySpotAllowsLateJoin(readyLock),
               ),
             ),
           ),
@@ -307,14 +308,16 @@ class SpotCard extends ConsumerWidget {
     required bool isSeated,
     required bool isOwnSeat,
     required bool lobbyLocked,
+    required bool allowLateJoin,
   }) {
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!hasOccupant)
+        if (!hasOccupant && allowLateJoin)
           Container(
+            key: const Key('empty-spot-late-join-call'),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Colors.tealAccent, Colors.teal],
@@ -331,6 +334,7 @@ class SpotCard extends ConsumerWidget {
               ],
             ),
             child: ElevatedButton.icon(
+              key: const Key('empty-spot-call-button'),
               onPressed: () => ref
                   .read(ln.lobbyNotifierProvider.notifier)
                   .claimSpot(gameName, index),
@@ -386,6 +390,11 @@ class SpotCard extends ConsumerWidget {
             isReady: isReady,
             isLocked: lobbyLocked,
             isOwnSeat: isOwnSeat,
+            timeoutRemaining: isOwnSeat
+                ? ref
+                    .read(ln.lobbyNotifierProvider.notifier)
+                    .readyCheckRemaining()
+                : null,
             onToggle: isOwnSeat && yourUid != null
                 ? () => _toggleSeatedReady(
                       context,

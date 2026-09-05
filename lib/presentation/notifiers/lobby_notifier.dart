@@ -42,6 +42,9 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   StreamSubscription? _userLobbiesSubscription;
   int _lobbyChannelErrorRetries = 0;
   String? _currentSubscribedLobbyId;
+  Timer? _readyCheckTimer;
+  DateTime? _readyCheckStartedAt;
+  LobbyReadyLockSnapshot? _lastReadyLockSnapshot;
 
   @override
   Future<LobbyState> build() async {
@@ -58,6 +61,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     ref.onDispose(() {
       _currentLobbySubscription?.cancel();
       _userLobbiesSubscription?.cancel();
+      _disarmReadyCheckTimer();
       disposeOfflineFirst();
       if (identical(_peacock.queueProcessor, processPeacockQueue)) {
         _peacock.queueProcessor = null;
@@ -195,6 +199,9 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         debugPrint(
             '📡 Current lobby updated: ${lobby.name} (${lobby.memberUids.length} members)');
         unawaited(_processLobbyAwareMatchmaking(lobby));
+        // Stream is not the notify actor (the Ready/unlock/late-join
+        // writer already sent). Reconcile timer + live activity only.
+        unawaited(reconcileReadyLock(notify: false, gameName: lobby.gameName));
       },
       onError: (error) {
         debugPrint('❌ Error in current lobby stream: $error');
@@ -395,6 +402,10 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   Future<void> assignSpot(String squadId, int spotIndex, String? userId) async {
     await _repository.assignSpot(squadId, spotIndex, userId);
     state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    await reconcileReadyLock(
+      actorUid: userId ?? '',
+      notify: true,
+    );
   }
 
   Future<void> startSpotTimer(
@@ -931,6 +942,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   /// Toggle Ready on the caller's seated spot. When every seated member
   /// is Ready, the lobby Locks and seated members are notified.
+  /// While locked, the same tap unlocks (Ready → Occupied).
   Future<SeatedReadyResult?> toggleSeatedReady({
     required String userId,
     String? gameName,
@@ -941,14 +953,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     final game = gameName ?? squadState.currentGame?['name'] as String? ?? '';
     final spots = spotsForReadyLock(squadState, gameName: game);
     final statuses = mergeLobbyMemberStatuses(squadState, gameName: game);
-    final snapshot = resolveLobbyReadyLock(spots: spots, statuses: statuses);
-    if (snapshot.isLocked) {
-      return SeatedReadyResult(
-        snapshot: snapshot,
-        justLocked: false,
-        changed: false,
-      );
-    }
+    var snapshot = resolveLobbyReadyLock(spots: spots, statuses: statuses);
 
     final uid = userId.trim();
     if (uid.isEmpty) return null;
@@ -957,6 +962,23 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       if (seatedUidFromOccupant(spots[spotIndex]) != uid) return null;
     }
     if (!snapshot.seatedUids.contains(uid)) return null;
+
+    if (readyCheckTimedOut(
+      snapshot: snapshot,
+      now: DateTime.now(),
+      startedAt: _readyCheckStartedAt,
+    )) {
+      final timedOut = await timeoutReadyCheck();
+      if (timedOut != null) snapshot = timedOut.snapshot;
+    }
+
+    if (snapshot.isLocked) {
+      return applySeatedReady(
+        userId: uid,
+        ready: false,
+        gameName: game,
+      );
+    }
 
     return applySeatedReady(
       userId: uid,
@@ -986,6 +1008,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     final patched = Map<String, String>.from(statuses)..[userId] = status;
     final after = resolveLobbyReadyLock(spots: spots, statuses: patched);
     final lockedNow = justLockedLobby(before: before, after: after);
+    final unlockedNow = justUnlockedLobby(before: before, after: after);
 
     try {
       await _repository.updateMemberStatus(lobbyId, userId, status);
@@ -1000,15 +1023,25 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       gameName: game,
     );
 
-    if (lockedNow) {
+    _lastReadyLockSnapshot = after;
+    _syncReadyCheckTimer(after, armedByReady: ready && after.isReady(userId));
+
+    if (lockedNow || unlockedNow) {
       try {
         await LobbyLockNotify.send(
-          planLobbyLockNotify(
-            seatedUids: after.seatedUids,
-            actorUid: userId,
-            lobbyId: lobbyId,
-            gameName: game.isEmpty ? null : game,
-          ),
+          lockedNow
+              ? planLobbyLockNotify(
+                  seatedUids: after.seatedUids,
+                  actorUid: userId,
+                  lobbyId: lobbyId,
+                  gameName: game.isEmpty ? null : game,
+                )
+              : planLobbyUnlockNotify(
+                  seatedUids: after.seatedUids,
+                  actorUid: userId,
+                  lobbyId: lobbyId,
+                  gameName: game.isEmpty ? null : game,
+                ),
         );
       } catch (e) {
         debugPrint('LobbyNotifier: lobby lock notify failed: $e');
@@ -1028,6 +1061,234 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     return SeatedReadyResult(
       snapshot: after,
       justLocked: lockedNow,
+      justUnlocked: unlockedNow,
+    );
+  }
+
+  /// Clear Ready flags when the ready-check window elapses without a lock.
+  Future<SeatedReadyResult?> timeoutReadyCheck({
+    DateTime? now,
+    DateTime? startedAt,
+  }) async {
+    final squadState = state.valueOrNull;
+    if (squadState == null) return null;
+    final lobbyId = squadState.selectedLobbyId ?? squadState.currentLobby?.id;
+    if (lobbyId == null || lobbyId.isEmpty) return null;
+
+    final game = squadState.currentGame?['name'] as String? ?? '';
+    final spots = spotsForReadyLock(squadState, gameName: game);
+    final statuses = mergeLobbyMemberStatuses(squadState, gameName: game);
+    final before = resolveLobbyReadyLock(spots: spots, statuses: statuses);
+    final clock = now ?? DateTime.now();
+    final started = startedAt ?? _readyCheckStartedAt;
+    final after = reduceReadyCheckTimeout(
+      spots: spots,
+      statuses: statuses,
+      now: clock,
+      startedAt: started,
+    );
+    if (!readyCheckTimedOut(
+      snapshot: before,
+      now: clock,
+      startedAt: started,
+    )) {
+      return SeatedReadyResult(
+        snapshot: before,
+        justLocked: false,
+        changed: false,
+      );
+    }
+
+    for (final uid in before.readyUids) {
+      try {
+        await _repository.updateMemberStatus(
+          lobbyId,
+          uid,
+          kSeatedNotReadyStatus,
+        );
+      } catch (e) {
+        debugPrint('LobbyNotifier: failed to timeout Ready for $uid: $e');
+      }
+      _applyMemberStatusLocally(
+        userId: uid,
+        status: kSeatedNotReadyStatus,
+        gameName: game,
+      );
+    }
+
+    _lastReadyLockSnapshot = after;
+    _disarmReadyCheckTimer();
+
+    try {
+      final actor = AuthServiceSupabase().currentUser?.id ?? '';
+      await LobbyLockNotify.send(
+        planLobbyReadyTimeoutNotify(
+          seatedUids: after.seatedUids,
+          actorUid: actor,
+          lobbyId: lobbyId,
+          gameName: game.isEmpty ? null : game,
+        ),
+      );
+    } catch (e) {
+      debugPrint('LobbyNotifier: ready-check timeout notify failed: $e');
+    }
+
+    try {
+      await PeacockLockLiveActivity.syncFromReadyLock(
+        snapshot: after,
+        lobbyId: lobbyId,
+        gameName: game.isEmpty ? null : game,
+      );
+    } catch (e) {
+      debugPrint('LobbyNotifier: peacock lock live activity failed: $e');
+    }
+
+    return SeatedReadyResult(
+      snapshot: after,
+      justLocked: false,
+      timedOut: true,
+    );
+  }
+
+  /// Recompute Ready/Lock after seats change (late join / leave).
+  ///
+  /// [notify] is true on the acting client (assign / claim). Stream
+  /// updates pass false so seated FCM is not sent twice.
+  Future<SeatedReadyResult?> reconcileReadyLock({
+    String actorUid = '',
+    String? gameName,
+    bool notify = false,
+  }) async {
+    final squadState = state.valueOrNull;
+    if (squadState == null) return null;
+    final lobbyId = squadState.selectedLobbyId ?? squadState.currentLobby?.id;
+    final game = gameName ?? squadState.currentGame?['name'] as String? ?? '';
+    final after = resolveLobbyReadyLockFromState(squadState, gameName: game);
+    final before = _lastReadyLockSnapshot ?? after;
+    _lastReadyLockSnapshot = after;
+
+    if (readyCheckTimedOut(
+      snapshot: after,
+      now: DateTime.now(),
+      startedAt: _readyCheckStartedAt,
+    )) {
+      return timeoutReadyCheck();
+    }
+
+    _syncReadyCheckTimer(after);
+
+    final unlockedNow = justUnlockedLobby(before: before, after: after);
+    final lockedNow = justLockedLobby(before: before, after: after);
+    final lateJoin = lateJoinUnlocks(before: before, after: after);
+
+    if (notify &&
+        lobbyId != null &&
+        lobbyId.isNotEmpty &&
+        (unlockedNow || lockedNow)) {
+      try {
+        await LobbyLockNotify.send(
+          lockedNow
+              ? planLobbyLockNotify(
+                  seatedUids: after.seatedUids,
+                  actorUid: actorUid,
+                  lobbyId: lobbyId,
+                  gameName: game.isEmpty ? null : game,
+                )
+              : planLobbyUnlockNotify(
+                  seatedUids: after.seatedUids,
+                  actorUid: actorUid,
+                  lobbyId: lobbyId,
+                  gameName: game.isEmpty ? null : game,
+                ),
+        );
+      } catch (e) {
+        debugPrint('LobbyNotifier: ready-lock reconcile notify failed: $e');
+      }
+    }
+
+    if (lobbyId != null && lobbyId.isNotEmpty) {
+      try {
+        await PeacockLockLiveActivity.syncFromReadyLock(
+          snapshot: after,
+          lobbyId: lobbyId,
+          gameName: game.isEmpty ? null : game,
+        );
+      } catch (e) {
+        debugPrint('LobbyNotifier: peacock lock live activity failed: $e');
+      }
+    }
+
+    return SeatedReadyResult(
+      snapshot: after,
+      justLocked: lockedNow,
+      justUnlocked: unlockedNow,
+      changed: unlockedNow || lockedNow || lateJoin,
+    );
+  }
+
+  Duration? readyCheckRemaining({DateTime? now}) {
+    final started = _readyCheckStartedAt;
+    if (started == null) return null;
+    final left = started.add(kReadyCheckTimeout).difference(now ?? DateTime.now());
+    if (left.isNegative) return Duration.zero;
+    return left;
+  }
+
+  void _syncReadyCheckTimer(
+    LobbyReadyLockSnapshot snapshot, {
+    bool armedByReady = false,
+  }) {
+    if (snapshot.isLocked || snapshot.readyUids.isEmpty) {
+      _disarmReadyCheckTimer();
+      return;
+    }
+    if (armedByReady) {
+      _armReadyCheckTimer();
+    }
+  }
+
+  void _armReadyCheckTimer() {
+    if (_readyCheckTimer != null && _readyCheckTimer!.isActive) return;
+    _readyCheckStartedAt ??= DateTime.now();
+    final remaining = readyCheckRemaining() ?? kReadyCheckTimeout;
+    if (remaining <= Duration.zero) {
+      unawaited(timeoutReadyCheck());
+      return;
+    }
+    _readyCheckTimer = Timer(remaining, () {
+      unawaited(timeoutReadyCheck());
+    });
+  }
+
+  void _disarmReadyCheckTimer() {
+    _readyCheckTimer?.cancel();
+    _readyCheckTimer = null;
+    _readyCheckStartedAt = null;
+  }
+
+  Future<void> _patchSpotLocally({
+    required int spotIndex,
+    required String? occupant,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final lobby = current.currentLobby;
+    if (lobby == null) return;
+    final spots = List<String?>.from(lobby.spots);
+    while (spots.length <= spotIndex) {
+      spots.add(null);
+    }
+    spots[spotIndex] = occupant;
+    final game = lobby.gameName;
+    final gameSpots = Map<String, List<String?>>.from(current.gameLobbySpots);
+    if (game.isNotEmpty) {
+      gameSpots[game] = spots;
+    }
+    state = AsyncData(
+      current.copyWith(
+        currentLobby: lobby.copyWith(spots: spots),
+        gameLobbySpots: gameSpots,
+      ),
     );
   }
 
@@ -1486,6 +1747,8 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
     // Use repository to assign spot
     await _repository.assignSpot(lobby.id, spotIndex, uid);
+    await _patchSpotLocally(spotIndex: spotIndex, occupant: uid);
+    await reconcileReadyLock(actorUid: uid, notify: true);
   }
 
   /// Unclaim a spot in the current lobby (simplified version for CurrentLobbyNotifier compatibility)

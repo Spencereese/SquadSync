@@ -1,54 +1,77 @@
-name: CI/CD Pipeline
+name: PR
 
+# Linux-only PR checks. No macOS runner, no iOS simulator, no TestFlight.
 on:
-  push:
-    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    name: Analyze & unit tests
+  analyze-and-test:
+    name: Analyze & targeted unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        channel: 'stable'
-        cache: true
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
 
-    - name: Provide dummy .env for filesystem dotenv overlay
-      run: cp .env.example .env
+      # Dummy placeholders from .env.example only. Never inject repo secrets.
+      - name: Provide dummy .env for filesystem dotenv overlay
+        run: cp .env.example .env
 
-    - name: Install dependencies
-      run: flutter pub get
+      - name: Install dependencies
+        run: flutter pub get
 
-    # Fail only on analyzer errors. Leftover unused-import / unused-element
-    # warnings from the abandoned tree are tracked but not release-blocking.
-    - name: Analyze lib
-      run: flutter analyze lib --no-fatal-infos --no-fatal-warnings
+      # Fail on analyzer errors. Leftover infos/warnings are not release-blocking.
+      - name: Dart analyze
+        run: dart analyze --no-fatal-warnings lib
 
-    - name: Run unit tests
-      run: |
-        flutter test \
-          test/presentation/notifiers/game_notifier_test.dart \
-          test/presentation/notifiers/chat_badge_skip_test.dart \
-          test/core/email_auth_test.dart \
-          test/core/app_env_test.dart \
-          test/core/app_links_policy_test.dart \
-          test/core/session_guard_test.dart \
-          test/core/chat_messages_test.dart \
-          test/core/sqlite_cells_test.dart \
-          test/core/realtime_subscribe_test.dart \
-          test/core/google_auth_config_test.dart \
-          test/core/notification_routes_test.dart \
-          test/core/notification_cooldowns_test.dart \
-          test/core/app_router_squad_test.dart \
-          test/core/layout_insets_test.dart \
-          test/managers/notification_manager_test.dart \
-          test/services/peacock_notification_service_test.dart \
-          test/widgets/email_auth_actions_test.dart
+      # Curated subset that is stable without a device or iOS sim.
+      # Revival-v1 freeze: lobby harness, constitution DI, deep links,
+      # peacock XOR + assignment machine, notification routes.
+      # Plus prior green CI files and fast product-machine tests.
+      # Not the full flutter test suite.
+      - name: Targeted unit tests
+        run: |
+          flutter test \
+            test/presentation/notifiers/lobby_notifier_test.dart \
+            test/services/constitution_manager_test.dart \
+            test/core/deep_link_routes_test.dart \
+            test/services/peacock_assignment_machine_test.dart \
+            test/services/peacock_notification_service_test.dart \
+            test/core/notification_routes_test.dart \
+            test/core/notification_payload_route_test.dart \
+            test/services/matchmaking_queue_machine_test.dart \
+            test/services/session_rating_machine_test.dart \
+            test/services/lobby_ready_lock_test.dart \
+            test/services/squad_analytics_test.dart \
+            test/presentation/notifiers/game_notifier_test.dart \
+            test/presentation/notifiers/chat_badge_skip_test.dart \
+            test/core/email_auth_test.dart \
+            test/core/app_env_test.dart \
+            test/core/app_links_policy_test.dart \
+            test/core/session_guard_test.dart \
+            test/core/chat_messages_test.dart \
+            test/core/sqlite_cells_test.dart \
+            test/core/realtime_subscribe_test.dart \
+            test/core/google_auth_config_test.dart \
+            test/core/notification_cooldowns_test.dart \
+            test/core/app_router_squad_test.dart \
+            test/core/layout_insets_test.dart \
+            test/managers/notification_manager_test.dart \
+            test/widgets/email_auth_actions_test.dart

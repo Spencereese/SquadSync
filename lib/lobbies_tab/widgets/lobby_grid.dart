@@ -134,19 +134,26 @@ class SpotCard extends ConsumerWidget {
       hasOccupant: hasOccupant,
       peacockOffered: pulseOffered,
     );
-    final timerDisplay =
-        hasTimer ? _getTimerDisplay(spotTimers[index]) : null;
-    final statusLabel = switch (kind) {
-      LobbySpotMapKind.peacock => 'Peacock',
-      LobbySpotMapKind.empty => 'Open',
-      LobbySpotMapKind.filled => lobbyLocked && isSeated
-          ? 'Locked'
-          : isReady
-              ? 'Ready'
-              : occupantStatus == 'Calling'
-                  ? 'Calling'
-                  : 'Occupied',
-    };
+    final timerRemaining =
+        hasTimer ? remainingFromSpotTimer(spotTimers[index]) : null;
+    final queueAssigned = pulseOffered ||
+        (hasOccupant &&
+            isCalling &&
+            seatStatus?.offerPending == true &&
+            seatStatus?.seatIndex == index);
+    final timerDisplay = formatTimerExpiryLabel(
+      remaining: timerRemaining,
+      queueAssigned: queueAssigned,
+    );
+    final statusLabel = _spotStatusLabel(
+      kind: kind,
+      timerRemaining: timerRemaining,
+      queueAssigned: queueAssigned,
+      lobbyLocked: lobbyLocked,
+      isSeated: isSeated,
+      isReady: isReady,
+      occupantStatus: occupantStatus,
+    );
 
     return OfferedSpotPulse(
       pulse: pulseOffered,
@@ -211,17 +218,28 @@ class SpotCard extends ConsumerWidget {
     );
   }
 
-  String? _getTimerDisplay(Map<String, dynamic>? timer) {
-    if (timer == null) return null;
-    final remainingSeconds = timer['remaining'] as int?;
-    if (remainingSeconds != null) {
-      final remaining = Duration(seconds: remainingSeconds);
-      if (remaining.isNegative || remaining == Duration.zero) return 'Expired';
-      final minutes = remaining.inMinutes;
-      final seconds = remaining.inSeconds % 60;
-      return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  String _spotStatusLabel({
+    required LobbySpotMapKind kind,
+    required Duration? timerRemaining,
+    required bool queueAssigned,
+    required bool lobbyLocked,
+    required bool isSeated,
+    required bool isReady,
+    required String? occupantStatus,
+  }) {
+    if (timerRemainingIsExpired(timerRemaining)) return 'Expired';
+    if (queueAssigned) return 'Assigned';
+    switch (kind) {
+      case LobbySpotMapKind.peacock:
+        return 'Peacock';
+      case LobbySpotMapKind.empty:
+        return 'Open';
+      case LobbySpotMapKind.filled:
+        if (lobbyLocked && isSeated) return 'Locked';
+        if (isReady) return 'Ready';
+        if (occupantStatus == 'Calling') return 'Calling';
+        return 'Occupied';
     }
-    return 'Timer';
   }
 
   Widget _buildSpotActions(

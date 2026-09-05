@@ -197,6 +197,7 @@ class LobbySpotMapSeat extends StatelessWidget {
                                 const SizedBox(width: 8),
                                 Text(
                                   timerLabel!,
+                                  key: const Key('spot-map-timer'),
                                   style: TextStyle(
                                     color: statusColor,
                                     fontSize: 13,
@@ -268,6 +269,10 @@ class LobbySpotMapSeat extends StatelessWidget {
         return Colors.orangeAccent;
       case 'Peacock':
         return Colors.cyanAccent;
+      case 'Assigned':
+        return Colors.cyanAccent;
+      case 'Expired':
+        return Colors.orangeAccent;
       case 'Open':
         return Colors.tealAccent;
       case 'Occupied':

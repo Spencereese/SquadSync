@@ -172,4 +172,37 @@ void main() {
       LobbySpotMapSeat.borderWidthFor(LobbySpotMapKind.peacock),
     );
   });
+
+  testWidgets('expired timer label shows on filled seat', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        const LobbySpotMapSeat(
+          index: 0,
+          kind: LobbySpotMapKind.filled,
+          statusLabel: 'Expired',
+          displayName: 'Alice',
+          timerLabel: 'expired',
+        ),
+      ),
+    );
+    expect(find.text('Expired'), findsOneWidget);
+    expect(find.byKey(const Key('spot-map-timer')), findsOneWidget);
+    expect(find.text('expired'), findsOneWidget);
+  });
+
+  testWidgets('assigned timer label shows on peacock seat', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        const LobbySpotMapSeat(
+          index: 1,
+          kind: LobbySpotMapKind.peacock,
+          statusLabel: 'Assigned',
+          timerLabel: 'assigned 05:00',
+        ),
+      ),
+    );
+    expect(find.text('Assigned'), findsOneWidget);
+    expect(find.text('assigned 05:00'), findsOneWidget);
+    expect(find.text('PEACOCK'), findsOneWidget);
+  });
 }

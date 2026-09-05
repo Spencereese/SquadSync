@@ -17,7 +17,7 @@ LobbySeatStatus _peacockStatus() {
   return const LobbySeatStatus(
     chip: LobbySeatChipKind.peacock,
     seatIndex: 1,
-    offerPending: true,
+    offerPending: false,
   );
 }
 

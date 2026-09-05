@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../services/lobby_seat_status.dart';
+import '../services/peacock_assignment_machine.dart';
 import '../services/preferred_peacock_games.dart';
+import 'widgets/lobby_seat_affordance.dart';
 
 class PeacockTimerDisplay extends ConsumerStatefulWidget {
   final String player;
@@ -37,13 +40,12 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
         final interpolated = timerDuration;
         final progress = interpolated.inSeconds / _totalDuration.inSeconds;
 
-        // Update formatted time
-        final minutes = interpolated.inMinutes;
-        final seconds = interpolated.inSeconds % 60;
-        final formatted =
-            '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+        final queueAssigned = peacockPhaseIsAssigned(
+          PeacockAssignmentTracker.instance.stateFor(widget.player),
+        );
 
-        // Haptic feedback on expiration
+        // Haptic feedback on expiration. Server still assigns via
+        // process_expired_timers; this is display only.
         if (interpolated == Duration.zero && !_hasExpired) {
           _hasExpired = true;
           HapticFeedback.vibrate();
@@ -59,15 +61,9 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              formatted,
-              style: TextStyle(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
-                fontSize: 12,
-              ),
+            LockTimerReadout(
+              remaining: interpolated,
+              queueAssigned: queueAssigned,
             ),
             const SizedBox(height: 4),
             SizedBox(

@@ -325,30 +325,25 @@ class TimerServiceNotifier extends StateNotifier<AsyncValue<void>> {
     );
   }
 
-  /// Spot timer expiration handler
+  /// Spot timer expiration handler.
+  ///
+  /// Display-only: local persist cleanup. Server
+  /// [process_expired_timers] frees the spot and assigns the next queue
+  /// uid. Do not removeSpot here.
   void _onSpotTimerExpire(String gameName, String userId) {
-    final lobbyNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
-    final squadAsync = _ref.read(ln.lobbyNotifierProvider);
-    if (squadAsync.hasValue) {
-      final squadState = squadAsync.value!;
-      final gameLobbySpots = squadState.gameLobbySpots[gameName] ?? [];
-      final spotIndex = gameLobbySpots.indexOf(userId);
-      if (spotIndex != -1) {
-        lobbyNotifier.removeSpot(gameName, spotIndex);
-      }
-    }
     _removePersistedTimer('spot_${gameName}_$userId');
   }
 
-  /// Peacock timer expiration handler
+  /// Peacock timer expiration handler.
+  ///
+  /// Display-only: expire the tracker so the chip can read expired.
+  /// Server [process_expired_timers] still assigns.
   void _onPeacockTimerExpire(String userId) {
-    final lobbyNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
-    lobbyNotifier.expirePeacockAssignment(userId);
-    final squadAsync = _ref.read(ln.lobbyNotifierProvider);
-    if (squadAsync.hasValue) {
-      final squadState = squadAsync.value!;
-      final gameName = squadState.currentGame?['name'] ?? '';
-      lobbyNotifier.removeFromPeacock(gameName, userId);
+    try {
+      final lobbyNotifier = _ref.read(ln.lobbyNotifierProvider.notifier);
+      lobbyNotifier.expirePeacockAssignment(userId);
+    } catch (_) {
+      // Tracker expire is best-effort display.
     }
     _removePersistedTimer('peacock_$userId');
   }

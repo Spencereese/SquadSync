@@ -104,22 +104,23 @@ void main() {
       // - State updates when subscription emits new data
     });
 
-    test('cleanupExpiredPeacockTimers expires then process path assigns next',
+    test('cleanupExpiredPeacockTimers expires display; server assigns',
         () async {
       PeacockAssignmentTracker.resetInstance();
       addTearDown(PeacockAssignmentTracker.resetInstance);
+      when(mockRepository.processExpiredTimers()).thenAnswer((_) async {});
       final tracker = PeacockAssignmentTracker.instance;
       tracker.assignSpot('expired-user', lobbyId: 'lobby-9');
       tracker.joinQueue('next-user');
 
-      String? processedUid;
+      var processCalled = false;
       tracker.queueProcessor = ({
         String? assignedUserId,
         String? lobbyId,
         String? gameName,
         String? notificationId,
       }) async {
-        processedUid = assignedUserId;
+        processCalled = true;
         if (assignedUserId != null) {
           tracker.assignSpot(assignedUserId, lobbyId: lobbyId);
         }
@@ -139,18 +140,19 @@ void main() {
         tracker.stateFor('expired-user').phase,
         PeacockAssignmentPhase.idle,
       );
-      expect(processedUid, 'next-user');
+      expect(processCalled, isFalse);
       expect(
         tracker.stateFor('next-user').phase,
-        PeacockAssignmentPhase.assigned,
+        PeacockAssignmentPhase.queued,
       );
+      verify(mockRepository.processExpiredTimers()).called(1);
       verifyNever(mockRepository.processPeacockQueue());
     });
 
-    test('cleanupExpiredPeacockTimers assignSpot fallback without process path',
-        () async {
+    test('cleanupExpiredPeacockTimers does not assign next locally', () async {
       PeacockAssignmentTracker.resetInstance();
       addTearDown(PeacockAssignmentTracker.resetInstance);
+      when(mockRepository.processExpiredTimers()).thenAnswer((_) async {});
       final tracker = PeacockAssignmentTracker.instance;
       tracker.assignSpot('expired-user', lobbyId: 'lobby-9');
       tracker.joinQueue('next-user');
@@ -169,8 +171,9 @@ void main() {
       );
       expect(
         tracker.stateFor('next-user').phase,
-        PeacockAssignmentPhase.assigned,
+        PeacockAssignmentPhase.queued,
       );
+      verify(mockRepository.processExpiredTimers()).called(1);
       verifyNever(mockRepository.processPeacockQueue());
     });
 

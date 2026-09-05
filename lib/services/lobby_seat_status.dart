@@ -42,9 +42,12 @@ class LobbySeatStatus {
       case LobbySeatChipKind.seated:
         return 'seated';
       case LobbySeatChipKind.peacock:
-        return 'peacock';
+        return offerPending ? kTimerAssignedLabel : 'peacock';
       case LobbySeatChipKind.lock:
-        return 'lock ${formatLockMmSs(lockRemaining ?? Duration.zero)}';
+        return formatLockChipLabel(
+          remaining: lockRemaining,
+          queueAssigned: offerPending,
+        );
     }
   }
 
@@ -74,6 +77,58 @@ String formatLockMmSs(Duration remaining) {
   final minutes = clamped.inMinutes;
   final seconds = clamped.inSeconds % 60;
   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+}
+
+/// process_expired_timers: remaining <= 0 frees the spot (expired).
+/// Queue claim with a lock-in timer is assigned. Display only — server assigns.
+const kTimerExpiredLabel = 'expired';
+const kTimerAssignedLabel = 'assigned';
+
+bool timerRemainingIsExpired(Duration? remaining) =>
+    remaining != null && remaining <= Duration.zero;
+
+/// Next-in-queue claim from process_expired_timers / peacock assign.
+bool peacockPhaseIsAssigned(PeacockAssignmentState peacock) =>
+    peacock.phase == PeacockAssignmentPhase.assigned ||
+    peacock.phase == PeacockAssignmentPhase.notified;
+
+Duration? remainingFromSpotTimer(Map<String, dynamic>? timer) {
+  if (timer == null) return null;
+  final raw = timer['remaining'];
+  if (raw is int) return Duration(seconds: raw);
+  if (raw is num) return Duration(seconds: raw.toInt());
+  return null;
+}
+
+/// Client label aligned with process_expired_timers. Null when there is
+/// no timer and no queue assignment to show.
+String? formatTimerExpiryLabel({
+  Duration? remaining,
+  bool queueAssigned = false,
+}) {
+  if (timerRemainingIsExpired(remaining)) return kTimerExpiredLabel;
+  if (queueAssigned) {
+    if (remaining != null && remaining > Duration.zero) {
+      return '$kTimerAssignedLabel ${formatLockMmSs(remaining)}';
+    }
+    return kTimerAssignedLabel;
+  }
+  if (remaining == null) return null;
+  return formatLockMmSs(remaining);
+}
+
+String formatLockChipLabel({
+  Duration? remaining,
+  bool queueAssigned = false,
+}) {
+  if (timerRemainingIsExpired(remaining)) return kTimerExpiredLabel;
+  if (queueAssigned) {
+    if (remaining != null && remaining > Duration.zero) {
+      return '$kTimerAssignedLabel ${formatLockMmSs(remaining)}';
+    }
+    return kTimerAssignedLabel;
+  }
+  return 'lock ${formatLockMmSs(remaining ?? Duration.zero)}';
 }
 
 bool spotHeldByUser(String? occupant, String userId) {
@@ -108,10 +163,7 @@ bool _peacockOffered(
   PeacockAssignmentState peacock, {
   Set<String> preferredPeacockGames = const {},
 }) {
-  if (peacock.phase != PeacockAssignmentPhase.assigned &&
-      peacock.phase != PeacockAssignmentPhase.notified) {
-    return false;
-  }
+  if (!peacockPhaseIsAssigned(peacock)) return false;
   return peacockOfferAllowed(
     gameName: peacock.gameName,
     preferredPeacockGames: preferredPeacockGames,
@@ -162,8 +214,8 @@ LobbySeatStatus? resolveLobbySeatStatus({
   final occupying = held >= 0;
   final occupant = occupying ? spots[held] : null;
   final calling = occupying && occupantIsCalling(occupant, occupantStatus);
-  final lockTick = lockRemaining != null && lockRemaining > Duration.zero;
-  final showLock = lockTick && (calling || offered);
+  final hasLockClock = lockRemaining != null;
+  final showLock = hasLockClock && (calling || offered);
 
   final seatIndex = resolveOfferedSeatIndex(
     spots: spots,

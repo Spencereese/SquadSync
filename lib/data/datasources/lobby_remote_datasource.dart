@@ -375,9 +375,19 @@ class LobbyRemoteDataSourceImpl
 
   @override
   Future<void> processExpiredTimers() async {
-    // This would call a Supabase Edge Function to process expired timers server-side
-    // For now, we'll handle this locally in the repository implementation
-    // TODO: Implement Edge Function for timer processing
+    // Server assigns via process_expired_timers. Client display only.
+    // RPC / edge sketch may be unapplied (Spencer YES). Never throw.
+    try {
+      await _supabase.rpc('process_expired_timers');
+      return;
+    } catch (e) {
+      debugPrint('process_expired_timers RPC unavailable: $e');
+    }
+    try {
+      await _supabase.functions.invoke('process-timers');
+    } catch (e) {
+      debugPrint('process-timers edge sketch unavailable: $e');
+    }
   }
 
   @override

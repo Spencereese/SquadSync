@@ -492,6 +492,38 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
   }
 }
 
+/// Peacock / lock timer readout. Expired and assigned labels follow
+/// process_expired_timers; the client does not assign.
+class LockTimerReadout extends StatelessWidget {
+  const LockTimerReadout({
+    super.key,
+    required this.remaining,
+    this.queueAssigned = false,
+  });
+
+  final Duration remaining;
+  final bool queueAssigned;
+
+  String get label =>
+      formatTimerExpiryLabel(
+        remaining: remaining,
+        queueAssigned: queueAssigned,
+      ) ??
+      formatLockMmSs(remaining);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      key: const Key('lock-timer-readout'),
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+        fontSize: 12,
+      ),
+    );
+  }
+}
+
 String? _currentUidOrNull() {
   try {
     return AuthServiceSupabase().currentUser?.id;

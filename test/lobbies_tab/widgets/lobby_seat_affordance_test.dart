@@ -46,7 +46,10 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: LobbySeatStatusChip(
-            status: _status(chip: LobbySeatChipKind.peacock),
+            status: _status(
+              chip: LobbySeatChipKind.peacock,
+              offerPending: false,
+            ),
           ),
         ),
       ),
@@ -57,8 +60,20 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: LobbySeatStatusChip(
+            status: _status(chip: LobbySeatChipKind.peacock),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('assigned'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LobbySeatStatusChip(
             status: _status(
               chip: LobbySeatChipKind.lock,
+              offerPending: false,
               lockRemaining: const Duration(minutes: 3, seconds: 5),
             ),
           ),
@@ -66,6 +81,60 @@ void main() {
       ),
     );
     expect(find.text('lock 03:05'), findsOneWidget);
+  });
+
+  testWidgets('chip shows expired and assigned lock labels', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LobbySeatStatusChip(
+            status: _status(
+              chip: LobbySeatChipKind.lock,
+              lockRemaining: Duration.zero,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('expired'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LobbySeatStatusChip(
+            status: _status(
+              chip: LobbySeatChipKind.lock,
+              lockRemaining: const Duration(minutes: 4, seconds: 59),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('assigned 04:59'), findsOneWidget);
+  });
+
+  testWidgets('LockTimerReadout shows expired then assigned', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LockTimerReadout(remaining: Duration.zero),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('lock-timer-readout')), findsOneWidget);
+    expect(find.text('expired'), findsOneWidget);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LockTimerReadout(
+            remaining: Duration(minutes: 5),
+            queueAssigned: true,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('assigned 05:00'), findsOneWidget);
   });
 
   testWidgets('offer banner shows Claim seat N with Accept / Decline',

@@ -42,6 +42,56 @@ void main() {
     });
   });
 
+  group('formatTimerExpiryLabel / process_expired_timers display', () {
+    test('remaining <= 0 is expired (spot freed, server assigns)', () {
+      expect(
+        formatTimerExpiryLabel(remaining: Duration.zero),
+        kTimerExpiredLabel,
+      );
+      expect(
+        formatTimerExpiryLabel(
+          remaining: const Duration(seconds: -1),
+          queueAssigned: true,
+        ),
+        kTimerExpiredLabel,
+      );
+      expect(timerRemainingIsExpired(Duration.zero), isTrue);
+      expect(timerRemainingIsExpired(const Duration(seconds: 1)), isFalse);
+    });
+
+    test('queue claim with lock remaining is assigned', () {
+      expect(
+        formatTimerExpiryLabel(
+          remaining: const Duration(minutes: 5),
+          queueAssigned: true,
+        ),
+        'assigned 05:00',
+      );
+      expect(
+        formatTimerExpiryLabel(remaining: null, queueAssigned: true),
+        kTimerAssignedLabel,
+      );
+    });
+
+    test('ticking lock without assign is mm:ss, no timer is null', () {
+      expect(
+        formatTimerExpiryLabel(
+          remaining: const Duration(minutes: 2, seconds: 3),
+        ),
+        '02:03',
+      );
+      expect(formatTimerExpiryLabel(remaining: null), isNull);
+    });
+
+    test('remainingFromSpotTimer reads int remaining seconds', () {
+      expect(
+        remainingFromSpotTimer({'remaining': 12}),
+        const Duration(seconds: 12),
+      );
+      expect(remainingFromSpotTimer(null), isNull);
+    });
+  });
+
   group('resolveLobbySeatStatus chip / pulse / banner', () {
     test('idle user has no chip', () {
       expect(
@@ -99,7 +149,7 @@ void main() {
         spots: [null, null, 'taken'],
         maxSpots: 3,
       );
-      expect(status!.chipLabel, 'peacock');
+      expect(status!.chipLabel, 'assigned');
       expect(status.seatIndex, 0);
       expect(status.seatNumber, 1);
       expect(status.showOfferBanner, isTrue);
@@ -126,7 +176,7 @@ void main() {
       expect(status.pulseOfferedSpot, isFalse);
     });
 
-    test('calling with lock remaining is lock mm:ss and pulses', () {
+    test('calling with lock remaining is assigned mm:ss and pulses', () {
       final assigned = reducePeacockAssignment(
         current: PeacockAssignmentState.idle,
         event: PeacockAssignmentEvent.assignSpot,
@@ -141,11 +191,46 @@ void main() {
         lockRemaining: const Duration(minutes: 4, seconds: 59),
         occupantStatus: 'Calling',
       );
-      expect(status!.chipLabel, 'lock 04:59');
+      expect(status!.chipLabel, 'assigned 04:59');
       expect(status.chip, LobbySeatChipKind.lock);
       expect(status.seatIndex, 0);
       expect(status.showOfferBanner, isTrue);
       expect(status.pulseOfferedSpot, isTrue);
+    });
+
+    test('expired lock remaining displays expired, not lock 00:00', () {
+      final assigned = reducePeacockAssignment(
+        current: PeacockAssignmentState.idle,
+        event: PeacockAssignmentEvent.assignSpot,
+        lobbyId: 'lobby-9',
+      );
+      final status = resolveLobbySeatStatus(
+        userId: 'u1',
+        peacock: assigned,
+        lfg: MatchmakingQueueEntry.idle,
+        spots: ['u1_calling', null],
+        maxSpots: 2,
+        lockRemaining: Duration.zero,
+        occupantStatus: 'Calling',
+      );
+      expect(status!.chipLabel, 'expired');
+      expect(status.chip, LobbySeatChipKind.lock);
+      expect(status.showOfferBanner, isTrue);
+    });
+
+    test('manual calling lock without peacock assign stays lock mm:ss', () {
+      final status = resolveLobbySeatStatus(
+        userId: 'u1',
+        peacock: PeacockAssignmentState.idle,
+        lfg: MatchmakingQueueEntry.idle,
+        spots: ['u1_calling', null],
+        maxSpots: 2,
+        lockRemaining: const Duration(minutes: 3, seconds: 5),
+        occupantStatus: 'Calling',
+      );
+      expect(status!.chipLabel, 'lock 03:05');
+      expect(status.chip, LobbySeatChipKind.lock);
+      expect(status.showOfferBanner, isFalse);
     });
 
     test('LFG matched with lobby offers next free seat', () {
@@ -166,7 +251,7 @@ void main() {
         spots: ['other', null],
         maxSpots: 2,
       );
-      expect(status!.chipLabel, 'peacock');
+      expect(status!.chipLabel, 'assigned');
       expect(status.seatIndex, 1);
       expect(status.showOfferBanner, isTrue);
       expect(status.pulseOfferedSpot, isTrue);

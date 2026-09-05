@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../chat/screens/components/chat_info_actions.dart';
 import '../../core/deep_link_routes.dart';
+import '../../core/voice_room_join.dart';
 import '../../domain/entities/lobby.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../services/auth_service_supabase.dart';
 import '../../services/availability_ping.dart';
 import '../../services/session_rating_flow.dart';
 import '../../services/session_rating_machine.dart';
-import '../../screens/voice_room_screen.dart';
 
 /// LobbyControls — Tonight strip (I am on / Looking for Squad / Invite),
 /// Win/Loss, Voice under More. Search is not an entry.
@@ -375,15 +375,11 @@ class _VoiceRoomButton extends ConsumerWidget {
             return;
           }
 
-          // Navigate to voice room screen with lobby context
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => VoiceRoomScreen(
-                roomId: squadState.selectedLobbyId!,
-                squadName: 'Squad Voice',
-                isHost: false,
-              ),
-            ),
+          openVoiceRoom(
+            context: context,
+            roomId: squadState.selectedLobbyId!,
+            squadName: kDefaultVoiceSquadName,
+            isHost: false,
           );
         },
         icon: const Icon(Icons.mic),

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/deep_link_routes.dart';
-import '../../../screens/voice_room_screen.dart';
+import '../../../core/voice_room_join.dart';
 import '../../../screens/video_room_screen.dart';
 import 'chat_info_widgets.dart';
 import '../../../services/auth_service_supabase.dart';
@@ -148,6 +148,7 @@ class _MoreActionsBlockState extends State<MoreActionsBlock> {
 }
 
 /// Chat-info actions: Tonight strip first, Voice + Video under More.
+/// Voice join uses [openVoiceRoom] (same path as lobby header).
 /// Search is gone until it searches (coming-soon snackbar is not a feature).
 class ChatInfoActionsSection extends StatelessWidget {
   final String squadId;
@@ -201,14 +202,10 @@ class ChatInfoActionsSection extends StatelessWidget {
                         label: 'Voice Chat',
                         neonColor: neonColor,
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => VoiceRoomScreen(
-                                roomId: squadId,
-                                squadName: squadName,
-                              ),
-                            ),
+                          openVoiceRoom(
+                            context: context,
+                            roomId: squadId,
+                            squadName: squadName,
                           );
                         },
                       ),
@@ -315,8 +312,7 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
       currentLobby: state?.currentLobby,
       userLobbies: state?.userLobbies ?? const {},
     );
-    final lobby =
-        state == null ? null : lobbyForSeatResolve(state, lobbyId);
+    final lobby = state == null ? null : lobbyForSeatResolve(state, lobbyId);
     final target = lobby ?? state?.currentLobby;
     final hasFree = target == null
         ? false

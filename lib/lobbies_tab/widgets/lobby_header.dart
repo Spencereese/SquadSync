@@ -3,14 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../core/deep_link_routes.dart';
+import '../../core/voice_room_join.dart';
 import '../dialogs/settings_dialog.dart';
 import '../../widgets/unified_game_selection_sheet.dart';
 import '../../domain/entities/game.dart';
 import 'lobby_seat_affordance.dart';
 import 'match_history_badge.dart';
 
-/// LobbyHeader component - handles navigation and game info display
-/// Extracted from the monolithic LobbyTab to improve maintainability
+/// LobbyHeader — back, game, Voice join, share, settings.
+/// Voice join uses [openVoiceRoom] (existing VoiceRoomScreen, no restyle).
 class LobbyHeader extends ConsumerWidget {
   final String? lobbyId;
 
@@ -98,6 +99,11 @@ class LobbyHeader extends ConsumerWidget {
               ),
 
               if (_nonEmptyLobbyId(lobbyId) != null)
+                LobbyVoiceJoinButton(
+                  onPressed: () => _joinVoiceRoom(context, ref, lobbyId!),
+                ),
+
+              if (_nonEmptyLobbyId(lobbyId) != null)
                 Semantics(
                   label: 'Share lobby link',
                   child: IconButton(
@@ -131,6 +137,25 @@ class LobbyHeader extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _joinVoiceRoom(BuildContext context, WidgetRef ref, String lobbyId) {
+    HapticFeedback.lightImpact();
+    var squadName = kDefaultVoiceSquadName;
+    try {
+      final name = ref
+          .read(ln.lobbyNotifierProvider)
+          .valueOrNull
+          ?.currentLobby
+          ?.name
+          .trim();
+      if (name != null && name.isNotEmpty) squadName = name;
+    } catch (_) {}
+    openVoiceRoom(
+      context: context,
+      roomId: lobbyId,
+      squadName: squadName,
     );
   }
 
@@ -209,4 +234,31 @@ String? _nonEmptyLobbyId(String? lobbyId) {
   final id = lobbyId?.trim();
   if (id == null || id.isEmpty) return null;
   return id;
+}
+
+/// Lobby header Voice join. Live path calls [openVoiceRoom].
+class LobbyVoiceJoinButton extends StatelessWidget {
+  const LobbyVoiceJoinButton({
+    super.key,
+    required this.onPressed,
+  });
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Join voice room',
+      child: IconButton(
+        key: const Key('lobby-voice-join'),
+        icon: const Icon(
+          Icons.headset,
+          color: Colors.cyanAccent,
+          size: 26,
+        ),
+        onPressed: onPressed,
+        tooltip: 'Join voice',
+      ),
+    );
+  }
 }

@@ -2,7 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../screens/voice_room_screen.dart';
+import '../../core/voice_room_join.dart';
 
 /// Compact Load / Pending chip for the ChatScreen header.
 enum ChatHeaderStatus { idle, loading, pending }
@@ -51,7 +51,7 @@ class NeonChatAppBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final neonColor = Colors.white;
+    const neonColor = Colors.white;
     final topPadding = MediaQuery.of(context).padding.top;
 
     return SizedBox(
@@ -151,14 +151,10 @@ class NeonChatAppBar extends StatelessWidget {
                           _GlassCircleButton(
                             icon: Icons.headset,
                             onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => VoiceRoomScreen(
-                                    roomId: squadId,
-                                    squadName: squadName,
-                                  ),
-                                ),
+                              openVoiceRoom(
+                                context: context,
+                                roomId: squadId,
+                                squadName: squadName,
                               );
                             },
                             neonColor: neonColor,
@@ -554,9 +550,9 @@ class NeonChatAppBarPreferred extends StatelessWidget
 
   @override
   Widget build(BuildContext context) {
-    final neonColor = Colors.white;
+    const neonColor = Colors.white;
 
-    return Container(
+    return SizedBox(
       height: preferredSize.height + MediaQuery.of(context).padding.top,
       child: SafeArea(
         bottom: false,
@@ -586,14 +582,10 @@ class NeonChatAppBarPreferred extends StatelessWidget
               _GlassCircleButton(
                 icon: Icons.headset,
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => VoiceRoomScreen(
-                        roomId: squadId,
-                        squadName: squadName,
-                      ),
-                    ),
+                  openVoiceRoom(
+                    context: context,
+                    roomId: squadId,
+                    squadName: squadName,
                   );
                 },
                 neonColor: neonColor,

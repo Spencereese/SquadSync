@@ -32,10 +32,26 @@ class LastFiveRatedSessionsList extends StatelessWidget {
           Padding(
             key: Key('last-five-rated-row-$i'),
             padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(
-              lastFiveRatedSessionLabel(sessions[i]),
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-              overflow: TextOverflow.ellipsis,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    lastFiveRatedSessionLabel(sessions[i]),
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (sessions[i].hasClip)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Icon(
+                      Icons.movie,
+                      key: Key('last-five-rated-clip-$i'),
+                      size: 16,
+                      color: Colors.white54,
+                    ),
+                  ),
+              ],
             ),
           ),
       ],

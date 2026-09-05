@@ -16,6 +16,65 @@ enum SessionRatingEvent {
   clear,
 }
 
+/// Clip metadata attached to a rated session (`match_history.notes`).
+///
+/// Sibling of [kSessionRatingNotesKey] — not a new table. Media pick uses
+/// the existing gallery hook; this stores the metadata, not a clips product.
+class SessionClip {
+  const SessionClip({
+    this.clipId,
+    this.videoUrl,
+    this.thumbUrl,
+    this.durationMs,
+    this.title,
+    this.fileName,
+    this.source,
+    this.attachedAt,
+  });
+
+  static const empty = SessionClip();
+
+  final String? clipId;
+  final String? videoUrl;
+  final String? thumbUrl;
+  final int? durationMs;
+  final String? title;
+  final String? fileName;
+  final String? source;
+  final DateTime? attachedAt;
+
+  bool get isAttached => _nonEmpty(clipId) != null;
+
+  SessionClip copyWith({
+    String? clipId,
+    String? videoUrl,
+    String? thumbUrl,
+    int? durationMs,
+    String? title,
+    String? fileName,
+    String? source,
+    DateTime? attachedAt,
+    bool clear = false,
+  }) {
+    return SessionClip(
+      clipId: clear ? null : (clipId ?? this.clipId),
+      videoUrl: clear ? null : (videoUrl ?? this.videoUrl),
+      thumbUrl: clear ? null : (thumbUrl ?? this.thumbUrl),
+      durationMs: clear ? null : (durationMs ?? this.durationMs),
+      title: clear ? null : (title ?? this.title),
+      fileName: clear ? null : (fileName ?? this.fileName),
+      source: clear ? null : (source ?? this.source),
+      attachedAt: clear ? null : (attachedAt ?? this.attachedAt),
+    );
+  }
+}
+
+enum SessionClipEvent {
+  attach,
+  skip,
+  clear,
+}
+
 /// Snapshot of one user's rating of one ended squad session.
 class SessionRatingState {
   const SessionRatingState({
@@ -28,6 +87,7 @@ class SessionRatingState {
     this.result,
     this.comment,
     this.ratedAt,
+    this.clip,
   });
 
   static const unrated = SessionRatingState();
@@ -41,9 +101,12 @@ class SessionRatingState {
   final String? result;
   final String? comment;
   final DateTime? ratedAt;
+  final SessionClip? clip;
 
   bool get isRated =>
       phase == SessionRatingPhase.rated && isValidSessionStars(stars);
+
+  bool get hasClip => clip != null && clip!.isAttached;
 
   SessionRatingState copyWith({
     SessionRatingPhase? phase,
@@ -55,7 +118,9 @@ class SessionRatingState {
     String? result,
     String? comment,
     DateTime? ratedAt,
+    SessionClip? clip,
     bool clearRating = false,
+    bool clearClip = false,
   }) {
     return SessionRatingState(
       phase: phase ?? this.phase,
@@ -67,6 +132,7 @@ class SessionRatingState {
       result: clearRating ? null : (result ?? this.result),
       comment: clearRating ? null : (comment ?? this.comment),
       ratedAt: clearRating ? null : (ratedAt ?? this.ratedAt),
+      clip: clearRating || clearClip ? null : (clip ?? this.clip),
     );
   }
 }
@@ -86,6 +152,7 @@ SessionRatingState reduceSessionRating({
   String? result,
   String? comment,
   DateTime? ratedAt,
+  SessionClip? clip,
 }) {
   switch (event) {
     case SessionRatingEvent.rate:
@@ -100,6 +167,7 @@ SessionRatingState reduceSessionRating({
         result: result ?? current.result,
         comment: comment ?? current.comment,
         ratedAt: ratedAt ?? current.ratedAt ?? DateTime.now().toUtc(),
+        clip: clip ?? current.clip,
       );
 
     case SessionRatingEvent.skip:
@@ -118,10 +186,60 @@ SessionRatingState reduceSessionRating({
   }
 }
 
+/// Reduce a session-clip snapshot. Pure; no I/O. Attach requires a clip id.
+SessionClip reduceSessionClip({
+  required SessionClip current,
+  required SessionClipEvent event,
+  String? clipId,
+  String? videoUrl,
+  String? thumbUrl,
+  int? durationMs,
+  String? title,
+  String? fileName,
+  String? source,
+  DateTime? attachedAt,
+}) {
+  switch (event) {
+    case SessionClipEvent.attach:
+      final id = _nonEmpty(clipId) ?? _nonEmpty(current.clipId);
+      if (id == null) return current;
+      return SessionClip(
+        clipId: id,
+        videoUrl: _nonEmpty(videoUrl) ?? current.videoUrl,
+        thumbUrl: _nonEmpty(thumbUrl) ?? current.thumbUrl,
+        durationMs: durationMs ?? current.durationMs,
+        title: _nonEmpty(title) ?? current.title,
+        fileName: _nonEmpty(fileName) ?? current.fileName,
+        source: _nonEmpty(source) ?? current.source ?? kSessionClipGallerySource,
+        attachedAt: attachedAt ?? current.attachedAt ?? DateTime.now().toUtc(),
+      );
+
+    case SessionClipEvent.skip:
+      if (current.isAttached) return current;
+      return SessionClip.empty;
+
+    case SessionClipEvent.clear:
+      return SessionClip.empty;
+  }
+}
+
+/// Stamp [clip] onto a rated session. No-op unless the session is rated and
+/// the clip is attached. Live path: [promptAndRecordEndedSession].
+SessionRatingState attachClipToRatedSession(
+  SessionRatingState rating,
+  SessionClip clip,
+) {
+  if (!rating.isRated || !clip.isAttached) return rating;
+  return rating.copyWith(clip: clip);
+}
+
 const kSessionRatingNotesKey = 'session_rating';
+const kSessionClipNotesKey = 'session_clip';
+const kSessionClipGallerySource = 'gallery';
 
 /// JSON for `match_history.notes`. Keeps any prior plain-text notes under
-/// `text` so a rating write does not smash a human note.
+/// `text` so a rating write does not smash a human note. Clip metadata sits
+/// alongside [kSessionRatingNotesKey] when attached.
 String encodeSessionRatingNotes(
   SessionRatingState rating, {
   dynamic existingNotes,
@@ -139,7 +257,36 @@ String encodeSessionRatingNotes(
     'rated_at':
         (rating.ratedAt ?? DateTime.now().toUtc()).toUtc().toIso8601String(),
   };
+  if (rating.hasClip) {
+    return encodeSessionClipNotes(rating.clip!, existingNotes: payload);
+  }
   return jsonEncode(payload);
+}
+
+/// Merge clip metadata into `match_history.notes` without dropping a rating.
+String encodeSessionClipNotes(
+  SessionClip clip, {
+  dynamic existingNotes,
+}) {
+  final payload = _notesObject(existingNotes);
+  if (!clip.isAttached) return jsonEncode(payload);
+  payload[kSessionClipNotesKey] = sessionClipPayload(clip);
+  return jsonEncode(payload);
+}
+
+Map<String, dynamic> sessionClipPayload(SessionClip clip) {
+  return <String, dynamic>{
+    'v': 1,
+    'clip_id': clip.clipId,
+    if (_nonEmpty(clip.videoUrl) != null) 'video_url': clip.videoUrl,
+    if (_nonEmpty(clip.thumbUrl) != null) 'thumb_url': clip.thumbUrl,
+    if (clip.durationMs != null) 'duration_ms': clip.durationMs,
+    if (_nonEmpty(clip.title) != null) 'title': clip.title,
+    if (_nonEmpty(clip.fileName) != null) 'file_name': clip.fileName,
+    if (_nonEmpty(clip.source) != null) 'source': clip.source,
+    'attached_at':
+        (clip.attachedAt ?? DateTime.now().toUtc()).toUtc().toIso8601String(),
+  };
 }
 
 /// Null unless [rating] is a 1–5 star submit.
@@ -186,6 +333,35 @@ SessionRatingState? decodeSessionRatingFromNotes(
     result: _nonEmpty(nested['result']?.toString()) ?? result,
     comment: _nonEmpty(nested['comment']?.toString()),
     ratedAt: _asDateTime(nested['rated_at'] ?? nested['ratedAt']),
+    clip: decodeSessionClipFromNotes(payload),
+  );
+}
+
+/// Reads clip metadata out of `match_history.notes` (JSON or map).
+SessionClip? decodeSessionClipFromNotes(dynamic notes) {
+  final payload = notes is Map<String, dynamic>
+      ? notes
+      : _notesObject(notes);
+  if (payload.isEmpty) return null;
+  final raw = payload[kSessionClipNotesKey] ?? payload['sessionClip'];
+  if (raw is! Map) return null;
+  final nested = Map<String, dynamic>.from(raw);
+  final clipId = _nonEmpty(nested['clip_id']?.toString()) ??
+      _nonEmpty(nested['clipId']?.toString());
+  if (clipId == null) return null;
+  return SessionClip(
+    clipId: clipId,
+    videoUrl: _nonEmpty(nested['video_url']?.toString()) ??
+        _nonEmpty(nested['videoUrl']?.toString()),
+    thumbUrl: _nonEmpty(nested['thumb_url']?.toString()) ??
+        _nonEmpty(nested['thumbUrl']?.toString()) ??
+        _nonEmpty(nested['thumbnail_url']?.toString()),
+    durationMs: _asInt(nested['duration_ms'] ?? nested['durationMs'] ?? nested['duration']),
+    title: _nonEmpty(nested['title']?.toString()),
+    fileName: _nonEmpty(nested['file_name']?.toString()) ??
+        _nonEmpty(nested['fileName']?.toString()),
+    source: _nonEmpty(nested['source']?.toString()),
+    attachedAt: _asDateTime(nested['attached_at'] ?? nested['attachedAt']),
   );
 }
 
@@ -277,7 +453,7 @@ List<SessionRatingState> lastFiveRatedSessionsFromHistory(
   return rated.sublist(0, cap);
 }
 
-/// Compact You / stats line: `4★ · Warzone · Win · Sep 3`.
+/// Compact You / stats line: `4★ · Warzone · Win · Sep 3 · Clip`.
 String lastFiveRatedSessionLabel(SessionRatingState rating) {
   final parts = <String>[];
   if (isValidSessionStars(rating.stars)) {
@@ -289,6 +465,7 @@ String lastFiveRatedSessionLabel(SessionRatingState rating) {
   if (result != null) parts.add(result);
   final date = lastFiveRatedSessionDateLabel(rating.ratedAt);
   if (date.isNotEmpty) parts.add(date);
+  if (rating.hasClip) parts.add('Clip');
   return parts.join(' · ');
 }
 
@@ -392,7 +569,8 @@ DateTime? _asDateTime(Object? value) {
 String sessionRecordedSnackbar(String result, SessionRatingState rating) {
   final outcome = result == 'win' ? 'Win' : 'Loss';
   if (rating.isRated) {
-    return '$outcome recorded · ${rating.stars}★';
+    final clip = rating.hasClip ? ' · clip' : '';
+    return '$outcome recorded · ${rating.stars}★$clip';
   }
   return '$outcome recorded';
 }

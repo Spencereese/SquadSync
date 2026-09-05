@@ -378,6 +378,28 @@ void main() {
       expect(lastFiveRatedSessionResultLabel('l'), 'Loss');
       expect(lastFiveRatedSessionDateLabel(null), isEmpty);
     });
+
+    test('appends Clip when session has attached clip metadata', () {
+      final rated = attachClipToRatedSession(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 4,
+          gameName: 'Warzone',
+          result: 'win',
+          ratedAt: DateTime.utc(2026, 9, 5, 18),
+        ),
+        reduceSessionClip(
+          current: SessionClip.empty,
+          event: SessionClipEvent.attach,
+          clipId: 'clip-1',
+        ),
+      );
+      expect(
+        lastFiveRatedSessionLabel(rated),
+        '4★ · Warzone · Win · Sep 5 · Clip',
+      );
+    });
   });
 
   group('sessionRecordedSnackbar', () {
@@ -397,6 +419,164 @@ void main() {
         event: SessionRatingEvent.skip,
       );
       expect(sessionRecordedSnackbar('win', skipped), 'Win recorded');
+    });
+
+    test('includes clip when attached to a rated session', () {
+      final rated = attachClipToRatedSession(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 4,
+        ),
+        reduceSessionClip(
+          current: SessionClip.empty,
+          event: SessionClipEvent.attach,
+          clipId: 'clip-1',
+          fileName: 'clutch.mp4',
+        ),
+      );
+      expect(sessionRecordedSnackbar('win', rated), 'Win recorded · 4★ · clip');
+    });
+  });
+
+  group('reduceSessionClip', () {
+    test('unattached → attached on clip id', () {
+      final attachedAt = DateTime.utc(2026, 9, 5, 18);
+      final next = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+        fileName: 'clutch.mp4',
+        videoUrl: '/tmp/clutch.mp4',
+        source: kSessionClipGallerySource,
+        attachedAt: attachedAt,
+      );
+      expect(next.isAttached, isTrue);
+      expect(next.clipId, 'clip-1');
+      expect(next.fileName, 'clutch.mp4');
+      expect(next.videoUrl, '/tmp/clutch.mp4');
+      expect(next.source, kSessionClipGallerySource);
+      expect(next.attachedAt, attachedAt);
+    });
+
+    test('attach without clip id is a no-op', () {
+      final next = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        fileName: 'clutch.mp4',
+      );
+      expect(next.isAttached, isFalse);
+      expect(next.clipId, isNull);
+    });
+
+    test('skip does not clear an attached clip', () {
+      final attached = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+      );
+      final next = reduceSessionClip(
+        current: attached,
+        event: SessionClipEvent.skip,
+      );
+      expect(next.isAttached, isTrue);
+      expect(next.clipId, 'clip-1');
+    });
+
+    test('clear returns empty', () {
+      final attached = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+      );
+      final next = reduceSessionClip(
+        current: attached,
+        event: SessionClipEvent.clear,
+      );
+      expect(next.isAttached, isFalse);
+      expect(next.clipId, isNull);
+    });
+  });
+
+  group('attachClipToRatedSession', () {
+    test('stamps clip onto a rated snapshot for match_history notes', () {
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        stars: 5,
+        lobbyId: 'lobby-1',
+        result: 'win',
+        ratedAt: DateTime.utc(2026, 9, 5, 12),
+      );
+      final clip = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-9',
+        fileName: 'ace.mp4',
+        attachedAt: DateTime.utc(2026, 9, 5, 12, 1),
+      );
+      final next = attachClipToRatedSession(rated, clip);
+      expect(next.hasClip, isTrue);
+      expect(next.stars, 5);
+
+      final notes = notesForSessionRating(next);
+      expect(notes, isNotNull);
+      final decoded = jsonDecode(notes!) as Map<String, dynamic>;
+      expect(decoded[kSessionRatingNotesKey]['stars'], 5);
+      expect(decoded[kSessionClipNotesKey]['clip_id'], 'clip-9');
+      expect(decoded[kSessionClipNotesKey]['file_name'], 'ace.mp4');
+
+      final fromNotes = decodeSessionRatingFromNotes(notes);
+      expect(fromNotes?.stars, 5);
+      expect(fromNotes?.hasClip, isTrue);
+      expect(fromNotes?.clip?.clipId, 'clip-9');
+    });
+
+    test('does not attach to an unrated or skipped session', () {
+      final clip = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+      );
+      expect(
+        attachClipToRatedSession(SessionRatingState.unrated, clip).hasClip,
+        isFalse,
+      );
+      final skipped = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.skip,
+      );
+      expect(attachClipToRatedSession(skipped, clip).hasClip, isFalse);
+    });
+  });
+
+  group('session_clip notes codec', () {
+    test('encodeSessionClipNotes preserves an existing session_rating', () {
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        stars: 3,
+        ratedAt: DateTime.utc(2026, 9, 5),
+      );
+      final ratingNotes = encodeSessionRatingNotes(rated);
+      final clip = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-2',
+        fileName: 'nade.mp4',
+        attachedAt: DateTime.utc(2026, 9, 5, 1),
+      );
+      final merged = encodeSessionClipNotes(clip, existingNotes: ratingNotes);
+      final decoded = jsonDecode(merged) as Map<String, dynamic>;
+      expect(decoded[kSessionRatingNotesKey]['stars'], 3);
+      expect(decoded[kSessionClipNotesKey]['clip_id'], 'clip-2');
+      expect(decodeSessionClipFromNotes(merged)?.fileName, 'nade.mp4');
+    });
+
+    test('plain text notes are not a clip', () {
+      expect(decodeSessionClipFromNotes('great game'), isNull);
+      expect(decodeSessionClipFromNotes(''), isNull);
+      expect(decodeSessionClipFromNotes(null), isNull);
     });
   });
 }

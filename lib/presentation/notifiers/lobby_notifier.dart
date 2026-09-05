@@ -1195,6 +1195,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       result: result,
       comment: current.comment,
       ratedAt: current.ratedAt,
+      clip: current.clip,
     );
   }
 

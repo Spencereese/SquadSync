@@ -740,6 +740,63 @@ void main() {
       );
     });
 
+    test('recordWin encodes attached clip alongside session_rating notes',
+        () async {
+      final lobby = _lobby(id: 'lobby-1', memberUids: const ['user-1', 'u2']);
+      when(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).thenAnswer((_) async {});
+
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.state = AsyncData(
+        (notifier.state.value ?? LobbyState.initial()).copyWith(
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+      final rated = attachClipToRatedSession(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 5,
+          raterUid: 'user-1',
+          ratedAt: DateTime.utc(2026, 9, 5, 18),
+        ),
+        reduceSessionClip(
+          current: SessionClip.empty,
+          event: SessionClipEvent.attach,
+          clipId: 'clip-1',
+          fileName: 'clutch.mp4',
+          attachedAt: DateTime.utc(2026, 9, 5, 18, 1),
+        ),
+      );
+
+      await notifier.recordWin('lobby-1', sessionRating: rated);
+
+      final captured = verify(mockRepository.recordMatchResult(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'win',
+        playerUids: ['user-1', 'u2'],
+        notes: captureAnyNamed('notes'),
+      )).captured;
+      final notes = captured.single as String?;
+      expect(notes, isNotNull);
+      expect(decodeSessionRatingFromNotes(notes)?.stars, 5);
+      expect(decodeSessionClipFromNotes(notes)?.clipId, 'clip-1');
+      expect(decodeSessionClipFromNotes(notes)?.fileName, 'clutch.mp4');
+
+      final history = container.read(lobbyNotifierProvider).valueOrNull;
+      expect(
+        sessionRatingFromMatchRow(history!.gameHistory.first)?.hasClip,
+        isTrue,
+      );
+    });
+
     test('recordLoss skip leaves notes null', () async {
       final lobby = _lobby(id: 'lobby-1');
       when(mockRepository.recordMatchResult(

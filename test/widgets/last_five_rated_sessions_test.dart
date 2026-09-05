@@ -88,4 +88,30 @@ void main() {
     expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
     expect(find.text('4★ · Warzone · Win · Sep 3'), findsOneWidget);
   });
+
+  testWidgets('You / last-5 row shows clip marker when notes have a clip',
+      (tester) async {
+    final withClip = attachClipToRatedSession(
+      rated(
+        stars: 5,
+        game: 'Warzone',
+        result: 'win',
+        at: DateTime.utc(2026, 9, 5),
+      ),
+      reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+        fileName: 'clutch.mp4',
+      ),
+    );
+
+    await tester.pumpWidget(
+      wrap(LastFiveRatedSessionsList(sessions: [withClip])),
+    );
+
+    expect(find.text('5★ · Warzone · Win · Sep 5 · Clip'), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-clip-0')), findsOneWidget);
+    expect(find.byIcon(Icons.movie), findsOneWidget);
+  });
 }

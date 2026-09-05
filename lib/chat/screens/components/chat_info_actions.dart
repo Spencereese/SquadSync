@@ -16,6 +16,7 @@ import '../../../domain/entities/lobby.dart';
 import '../../../domain/entities/lobby_state.dart';
 import '../../../presentation/notifiers/lobby_notifier.dart';
 import '../../../notification_service.dart';
+import '../../../widgets/lobby_surface_feedback.dart';
 
 /// Product order for the Tonight strip. Search is omitted until it searches.
 const kTonightOnNowAction = 'on_now';
@@ -80,17 +81,33 @@ String resolveInviteLobbyId({
 }
 
 /// Primary Tonight block: I am on / Looking for Squad / Invite.
+///
+/// [isLoading] / [error] / [isEmpty] come from existing lobby [AsyncValue]
+/// (and whether a lobby id is present). No new fetch.
 class TonightActionsBlock extends StatelessWidget {
   const TonightActionsBlock({
     super.key,
     required this.children,
+    this.isLoading = false,
+    this.isEmpty = false,
+    this.error,
   });
 
   final List<Widget> children;
+  final bool isLoading;
+  final bool isEmpty;
+  final Object? error;
+
+  LobbySurfacePhase get phase => resolveLobbySurfacePhase(
+        isLoading: isLoading,
+        error: error,
+        isEmpty: isEmpty,
+      );
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final surfacePhase = phase;
     return Column(
       key: const Key('tonight-actions'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -104,9 +121,17 @@ class TonightActionsBlock extends StatelessWidget {
             ),
           ),
         ),
-        for (var i = 0; i < children.length; i++) ...[
-          if (i > 0) const SizedBox(height: 12),
-          children[i],
+        if (surfacePhase != LobbySurfacePhase.data)
+          LobbySurfaceFeedback(
+            kind: LobbySurfaceKind.tonight,
+            phase: surfacePhase,
+            error: error,
+          ),
+        if (children.isNotEmpty) ...[
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const SizedBox(height: 12),
+            children[i],
+          ],
         ],
       ],
     );

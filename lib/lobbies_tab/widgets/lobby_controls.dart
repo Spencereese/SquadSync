@@ -9,6 +9,7 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/availability_ping.dart';
 import '../../services/session_rating_flow.dart';
 import '../../services/session_rating_machine.dart';
+import '../../widgets/lobby_surface_feedback.dart';
 
 /// LobbyControls — Tonight strip (I am on / Looking for Squad / Invite),
 /// Win/Loss, Voice under More. Search is not an entry.
@@ -17,6 +18,20 @@ class LobbyControls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
+    final tonightPhase = lobbySurfacePhaseFromAsync(
+      lobbyAsync,
+      isEmpty: tonightLobbyMissing,
+    );
+    final tonightError = lobbyAsyncError(lobbyAsync);
+    final tonightChildren = tonightPhase == LobbySurfacePhase.data
+        ? tonightStripChildren(
+            onNow: const _OnNowButton(),
+            lookingForSquad: const _LobbyLookingForSquad(),
+            invite: const _LobbyInviteButton(),
+          )
+        : const <Widget>[];
+
     return SliverToBoxAdapter(
       child: Column(
         children: [
@@ -31,11 +46,10 @@ class LobbyControls extends ConsumerWidget {
             ),
           ),
           TonightActionsBlock(
-            children: tonightStripChildren(
-              onNow: const _OnNowButton(),
-              lookingForSquad: const _LobbyLookingForSquad(),
-              invite: const _LobbyInviteButton(),
-            ),
+            isLoading: tonightPhase == LobbySurfacePhase.loading,
+            isEmpty: tonightPhase == LobbySurfacePhase.empty,
+            error: tonightError,
+            children: tonightChildren,
           ),
           MoreActionsBlock(
             children: [

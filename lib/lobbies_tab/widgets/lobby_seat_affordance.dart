@@ -7,6 +7,7 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/lobby_seat_status.dart';
 import '../../services/matchmaking_queue_machine.dart';
 import '../../services/peacock_assignment_machine.dart';
+import '../../widgets/lobby_surface_feedback.dart';
 
 /// Compact seated / peacock / lock mm:ss chip.
 class LobbySeatStatusChip extends StatelessWidget {
@@ -46,22 +47,67 @@ class LobbySeatStatusChip extends StatelessWidget {
   }
 }
 
+/// Peacock / LFG / lock chip with empty, loading, and error from existing
+/// lobby [AsyncValue] + trackers. Idle (no seat) is an honest empty, not a
+/// silent shrink.
+class LobbySeatStatusChipSurface extends StatelessWidget {
+  const LobbySeatStatusChipSurface({
+    super.key,
+    this.status,
+    this.isLoading = false,
+    this.error,
+  });
+
+  final LobbySeatStatus? status;
+  final bool isLoading;
+  final Object? error;
+
+  LobbySurfacePhase get phase => resolveLobbySurfacePhase(
+        isLoading: isLoading,
+        error: error,
+        isEmpty: status == null,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final surfacePhase = phase;
+    if (surfacePhase != LobbySurfacePhase.data || status == null) {
+      return LobbySurfaceFeedback(
+        kind: LobbySurfaceKind.peacock,
+        phase: surfacePhase == LobbySurfacePhase.data
+            ? LobbySurfacePhase.empty
+            : surfacePhase,
+        error: error,
+        compact: true,
+      );
+    }
+    return LobbySeatStatusChip(status: status!);
+  }
+}
+
 /// Live chip: existing peacock + LFG trackers + lobby spots/timers.
 class LobbySeatStatusChipHost extends ConsumerWidget {
   const LobbySeatStatusChipHost({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lobbyState = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
+    final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
     return ListenableBuilder(
       listenable: MatchmakingQueueTracker.instance,
       builder: (context, _) {
-        final status = resolveLobbySeatStatusFromTrackers(
-          userId: _currentUidOrNull(),
-          lobbyState: lobbyState,
+        return lobbyAsync.when(
+          skipLoadingOnReload: true,
+          skipLoadingOnRefresh: true,
+          loading: () => const LobbySeatStatusChipSurface(isLoading: true),
+          error: (error, _) => LobbySeatStatusChipSurface(error: error),
+          data: (lobbyState) {
+            final status = resolveLobbySeatStatusFromTrackers(
+              userId: _currentUidOrNull(),
+              lobbyState: lobbyState,
+            );
+            return LobbySeatStatusChipSurface(status: status);
+          },
         );
-        if (status == null) return const SizedBox.shrink();
-        return LobbySeatStatusChip(status: status);
       },
     );
   }
@@ -266,6 +312,9 @@ class OfferedSpotPulse extends StatelessWidget {
 }
 
 /// Ready toggle / Locked badge on a seated spot.
+///
+/// Empty / loading / error come from existing lobby [AsyncValue] (or the
+/// seated-not-ready case). Locked and Ready stay the live path.
 class SeatedSpotReadyAffordance extends StatelessWidget {
   const SeatedSpotReadyAffordance({
     super.key,
@@ -273,15 +322,34 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
     required this.isLocked,
     this.isOwnSeat = true,
     this.onToggle,
+    this.isLoading = false,
+    this.error,
   });
 
   final bool isReady;
   final bool isLocked;
   final bool isOwnSeat;
   final VoidCallback? onToggle;
+  final bool isLoading;
+  final Object? error;
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const LobbySurfaceFeedback(
+        kind: LobbySurfaceKind.lock,
+        phase: LobbySurfacePhase.loading,
+        compact: true,
+      );
+    }
+    if (error != null) {
+      return LobbySurfaceFeedback(
+        kind: LobbySurfaceKind.lock,
+        phase: LobbySurfacePhase.error,
+        error: error,
+        compact: true,
+      );
+    }
     if (isLocked) {
       return Chip(
         key: const Key('seated-spot-locked-badge'),
@@ -300,7 +368,13 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
       );
     }
     if (!isOwnSeat) {
-      if (!isReady) return const SizedBox.shrink();
+      if (!isReady) {
+        return const LobbySurfaceFeedback(
+          kind: LobbySurfaceKind.lock,
+          phase: LobbySurfacePhase.empty,
+          compact: true,
+        );
+      }
       return Chip(
         key: const Key('seated-spot-ready-badge'),
         visualDensity: VisualDensity.compact,

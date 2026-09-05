@@ -38,6 +38,7 @@ class NotificationHygiene {
   static const _idKeys = <String>[
     'lobby_id',
     'lobbyId',
+    'lobby',
     'squad_id',
     'squadId',
     'chat_group_id',

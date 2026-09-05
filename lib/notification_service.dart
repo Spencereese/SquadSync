@@ -148,8 +148,35 @@ class NotificationService {
 
   static void _handleMessage(RemoteMessage message) {
     developer.log('Handling message: ${message.data}');
-    observeAvailabilityPingPayload(message.data);
-    NotificationRoutes.open(message.data);
+    handleOpenedData(message.data);
+  }
+
+  /// FCM tap / resume entry. Normalizes real-device payload shapes then
+  /// opens through [NotificationRoutes] (same pipeline as local taps).
+  static void handleOpenedData(Map<String, dynamic> data) {
+    final normalized = NotificationRoutes.normalize(data);
+    observeAvailabilityPingPayload(normalized);
+    NotificationRoutes.open(normalized);
+  }
+
+  /// FCM v1 `data` values must be strings. Nested maps flatten first so
+  /// `type` / `lobby_id` survive the wire.
+  static Map<String, String> stringDataForFcm(Map<String, dynamic>? data) {
+    if (data == null || data.isEmpty) return const <String, String>{};
+    final normalized = NotificationRoutes.normalize(data);
+    final out = <String, String>{};
+    normalized.forEach((key, value) {
+      if (value == null) return;
+      if (key == 'data' || key == 'payload') return;
+      if (value is Map || value is List) {
+        out[key] = jsonEncode(value);
+        return;
+      }
+      final text = value.toString();
+      if (text.isEmpty) return;
+      out[key] = text;
+    });
+    return out;
   }
 
   /// Android does not auto-display FCM while the app is in the foreground, so
@@ -165,12 +192,13 @@ class NotificationService {
   static void _onForegroundMessage(RemoteMessage message) {
     developer.log(
         'Foreground message: ${message.notification?.title} - ${message.notification?.body}');
-    observeAvailabilityPingPayload(message.data);
+    final payload = NotificationRoutes.normalize(message.data);
+    observeAvailabilityPingPayload(payload);
     if (!shouldShowForegroundLocal(message)) return;
     _instance._showLocalNotification(
       title: message.notification?.title ?? 'Cod Squad',
       body: message.notification?.body ?? '',
-      payload: message.data,
+      payload: payload,
     );
   }
 
@@ -199,7 +227,9 @@ class NotificationService {
     return _showLocalNotification(
       title: title,
       body: body,
-      payload: payload ?? const {'type': 'local'},
+      payload: NotificationRoutes.normalize(
+        payload ?? const {'type': 'local'},
+      ),
       priority: priority,
     );
   }
@@ -258,7 +288,7 @@ class NotificationService {
           'tokens': tokens,
           'title': title,
           'body': body,
-          'data': data ?? {},
+          'data': stringDataForFcm(data),
         },
       );
 
@@ -313,19 +343,20 @@ class NotificationService {
     required Map<String, dynamic> payload,
     NotificationPriority priority = NotificationPriority.medium,
   }) async {
-    observeAvailabilityPingPayload(payload);
-    if (shouldSuppressLocalShow(payload)) {
+    final normalized = NotificationRoutes.normalize(payload);
+    observeAvailabilityPingPayload(normalized);
+    if (shouldSuppressLocalShow(normalized)) {
       developer.log('Notification hygiene suppressed local show');
       return;
     }
-    final cooldownKey = NotificationCooldownStore.keyFor(payload);
+    final cooldownKey = NotificationCooldownStore.keyFor(normalized);
     if (cooldownKey != null && _isOnCooldown(cooldownKey)) {
       developer.log('Notification on cooldown: $cooldownKey');
       return;
     }
 
     if (priority == NotificationPriority.low) {
-      await _updateBadge(payload['type'] as String? ?? 'lobby');
+      await _updateBadge(normalized['type'] as String? ?? 'lobby');
       return;
     }
 
@@ -352,13 +383,13 @@ class NotificationService {
       title,
       body,
       notificationDetails,
-      payload: jsonEncode(payload),
+      payload: jsonEncode(normalized),
     );
 
     if (cooldownKey != null) {
       _setCooldown(
         cooldownKey,
-        payload['type'] == 'momentum'
+        normalized['type'] == 'momentum'
             ? NotificationCooldownStore.momentumDuration
             : NotificationCooldownStore.defaultDuration,
       );

@@ -179,6 +179,7 @@ String? locationForDeepLinkUri(Uri uri) {
   final queryScreen = (query['screen'] ?? '').toLowerCase();
   final lobbyId = _nonEmpty(query['lobby_id']) ??
       _nonEmpty(query['lobbyId']) ??
+      _nonEmpty(query['lobby']) ??
       _lobbyIdFromPath(host: host, segments: segments);
   var gameName = _nonEmpty(query['game_name']) ?? _nonEmpty(query['gameName']);
   gameName ??= _gameNameFromPath(host: host, segments: segments);
@@ -280,6 +281,7 @@ bool _reservedLobbyPathSegment(String segment) {
     'lfg_matched',
     'lfg_alert',
     'availability_ping',
+    'lobby_locked',
     'chat',
     'join',
     'l',

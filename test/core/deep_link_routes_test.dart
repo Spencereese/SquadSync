@@ -97,6 +97,21 @@ void main() {
       );
     });
 
+    test('lobby query alias maps to lobby_id', () {
+      expect(
+        locationForDeepLink(
+          'codsquadapp://notify?type=availability_ping&lobby=lobby-9',
+        ),
+        '/squad?lobby_id=lobby-9',
+      );
+      expect(
+        locationForDeepLink(
+          'codsquadapp://notify?type=lobby_locked&lobby=lobby-9',
+        ),
+        '/squad?lobby_id=lobby-9',
+      );
+    });
+
     test('empty lobby_id does not append a query', () {
       expect(locationForDeepLink('codsquadapp://squad?lobby_id='), '/squad');
     });

@@ -86,7 +86,8 @@ class NotificationManager {
     merged['type'] = _nonEmpty(type) ?? _nonEmpty(merged['type']) ?? 'local';
     final lobby = _nonEmpty(lobbyId) ??
         _nonEmpty(merged['lobby_id']) ??
-        _nonEmpty(merged['lobbyId']);
+        _nonEmpty(merged['lobbyId']) ??
+        _nonEmpty(merged['lobby']);
     final game = _nonEmpty(gameName) ??
         _nonEmpty(merged['game_name']) ??
         _nonEmpty(merged['gameName']);

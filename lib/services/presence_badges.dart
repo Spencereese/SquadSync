@@ -73,6 +73,20 @@ String? presenceUserIdFrom(Map<String, dynamic> row) {
   return null;
 }
 
+/// Friends / squad rows may pass a uid or a display name.
+String? resolvePresenceUserId({
+  required String? userId,
+  Map<String, String> memberDisplayNames = const {},
+}) {
+  final raw = userId?.trim();
+  if (raw == null || raw.isEmpty) return null;
+  if (memberDisplayNames.containsKey(raw)) return raw;
+  for (final entry in memberDisplayNames.entries) {
+    if (entry.value.trim() == raw) return entry.key;
+  }
+  return raw;
+}
+
 bool userIsInLobby({
   required String userId,
   Iterable<String> lobbyMemberUids = const [],
@@ -81,18 +95,26 @@ bool userIsInLobby({
 }) {
   final uid = userId.trim();
   if (uid.isEmpty) return false;
-  for (final raw in lobbyMemberUids) {
-    if (raw.trim() == uid) return true;
-  }
+
+  // Live currentLobby overlays a stale userLobbies copy of the same id
+  // and the flattened lobbyMemberUids cache.
+  final currentId = currentLobby?.id;
   if (currentLobby != null) {
     for (final raw in currentLobby.memberUids) {
       if (raw.trim() == uid) return true;
     }
   }
+  var sawLobbyObject = currentLobby != null;
   for (final lobby in userLobbies.values) {
+    sawLobbyObject = true;
+    if (currentId != null && lobby.id == currentId) continue;
     for (final raw in lobby.memberUids) {
       if (raw.trim() == uid) return true;
     }
+  }
+  if (sawLobbyObject) return false;
+  for (final raw in lobbyMemberUids) {
+    if (raw.trim() == uid) return true;
   }
   return false;
 }
@@ -130,7 +152,10 @@ PresenceBadges resolvePresenceBadgesFromTrackers({
   MatchmakingQueueTracker? lfg,
   AvailabilityOnStore? onStore,
 }) {
-  final uid = userId?.trim();
+  final uid = resolvePresenceUserId(
+    userId: userId,
+    memberDisplayNames: lobbyState?.memberDisplayNames ?? const {},
+  );
   if (uid == null || uid.isEmpty) return PresenceBadges.empty;
   final looking = (lfg ?? MatchmakingQueueTracker.instance).stateFor(uid);
   final on = (onStore ?? availabilityOnStore).isOn(uid);
@@ -142,4 +167,13 @@ PresenceBadges resolvePresenceBadgesFromTrackers({
     currentLobby: lobbyState?.currentLobby,
     userLobbies: lobbyState?.userLobbies ?? const {},
   );
+}
+
+/// Drop expired On windows and hydrate LFG looking. Reuses ticket 5 sources.
+Future<void> refreshPresenceSources({
+  MatchmakingQueueTracker? lfg,
+  AvailabilityOnStore? onStore,
+}) async {
+  (onStore ?? availabilityOnStore).sweepExpired();
+  await (lfg ?? MatchmakingQueueTracker.instance).ensureHydratedAndSubscribed();
 }

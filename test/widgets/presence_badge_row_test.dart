@@ -17,8 +17,60 @@ class _SeededLobbyNotifier extends LobbyNotifier {
   Future<LobbyState> build() async => _state;
 }
 
+class _MutableLobbyNotifier extends LobbyNotifier {
+  _MutableLobbyNotifier(this._state);
+  LobbyState _state;
+
+  @override
+  Future<LobbyState> build() async => _state;
+
+  void replace(LobbyState next) {
+    _state = next;
+    state = AsyncData(next);
+  }
+}
+
+Lobby _lobby({required String id, required List<String> members}) {
+  return Lobby.create(
+    name: 'Squad',
+    gameName: 'Warzone',
+    maxSpots: 8,
+    createdBy: members.first,
+  ).copyWith(id: id, memberUids: members);
+}
+
+Future<void> _pumpHosts(
+  WidgetTester tester, {
+  required List<String> userIds,
+  LobbyState? lobbyState,
+  LobbyNotifier? notifier,
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        lobbyNotifierProvider.overrideWith(
+          () => notifier ??
+              _SeededLobbyNotifier(lobbyState ?? LobbyState.initial()),
+        ),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              for (final uid in userIds) PresenceBadgesHost(userId: uid),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+}
+
 void main() {
   setUp(() {
+    AvailabilityOnStore.scheduleExpirySweeps = false;
     MatchmakingQueueTracker.resetInstance();
     resetAvailabilityOnStore();
   });
@@ -26,6 +78,7 @@ void main() {
   tearDown(() {
     MatchmakingQueueTracker.resetInstance();
     resetAvailabilityOnStore();
+    AvailabilityOnStore.scheduleExpirySweeps = true;
   });
 
   testWidgets('row shows On / Looking / In lobby chips', (tester) async {
@@ -68,38 +121,18 @@ void main() {
       (tester) async {
     availabilityOnStore.markOn('u-on');
     MatchmakingQueueTracker.instance.startLooking('u-look');
-    final lobby = Lobby.create(
-      name: 'Squad',
-      gameName: 'Warzone',
-      maxSpots: 8,
-      createdBy: 'u-in',
-    ).copyWith(id: 'lobby-1', memberUids: const ['u-in']);
+    final lobby = _lobby(id: 'lobby-1', members: const ['u-in']);
     final state = LobbyState.initial().copyWith(
       lobbyMemberUids: const ['u-in'],
       currentLobby: lobby,
       userLobbies: {'lobby-1': lobby},
     );
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          lobbyNotifierProvider.overrideWith(() => _SeededLobbyNotifier(state)),
-        ],
-        child: const MaterialApp(
-          home: Scaffold(
-            body: Column(
-              children: [
-                PresenceBadgesHost(userId: 'u-on'),
-                PresenceBadgesHost(userId: 'u-look'),
-                PresenceBadgesHost(userId: 'u-in'),
-                PresenceBadgesHost(userId: 'u-idle'),
-              ],
-            ),
-          ),
-        ),
-      ),
+    await _pumpHosts(
+      tester,
+      userIds: const ['u-on', 'u-look', 'u-in', 'u-idle'],
+      lobbyState: state,
     );
-    await tester.pumpAndSettle();
 
     expect(find.text('On'), findsOneWidget);
     expect(find.text('Looking'), findsOneWidget);
@@ -107,5 +140,60 @@ void main() {
     expect(find.byKey(const Key('presence-badge-on')), findsOneWidget);
     expect(find.byKey(const Key('presence-badge-looking')), findsOneWidget);
     expect(find.byKey(const Key('presence-badge-in-lobby')), findsOneWidget);
+  });
+
+  testWidgets('host refreshes On / Looking and drops stale windows',
+      (tester) async {
+    var now = DateTime.utc(2026, 9, 4, 12);
+    availabilityOnStore.cancelExpiryTimer();
+    availabilityOnStore = AvailabilityOnStore(clock: () => now);
+
+    await _pumpHosts(tester, userIds: const ['u1']);
+    expect(find.byKey(const Key('presence-badges')), findsNothing);
+
+    availabilityOnStore.markOn('u1');
+    await tester.pump();
+    expect(find.text('On'), findsOneWidget);
+
+    MatchmakingQueueTracker.instance.startLooking('u1');
+    await tester.pump();
+    expect(find.text('Looking'), findsOneWidget);
+
+    now = now.add(kAvailabilityOnDuration + const Duration(seconds: 1));
+    availabilityOnStore.sweepExpired();
+    await tester.pump();
+    expect(find.text('On'), findsNothing);
+    expect(find.text('Looking'), findsOneWidget);
+
+    MatchmakingQueueTracker.instance.cancelLooking('u1');
+    await tester.pump();
+    expect(find.text('Looking'), findsNothing);
+    expect(find.byKey(const Key('presence-badges')), findsNothing);
+  });
+
+  testWidgets('host drops In lobby when live membership refreshes',
+      (tester) async {
+    final live = _lobby(id: 'lobby-1', members: const ['u-in']);
+    final empty = _lobby(id: 'lobby-1', members: const ['host']);
+    final notifier = _MutableLobbyNotifier(
+      LobbyState.initial().copyWith(
+        lobbyMemberUids: const ['u-in'],
+        currentLobby: live,
+        userLobbies: {'lobby-1': live},
+      ),
+    );
+
+    await _pumpHosts(tester, userIds: const ['u-in'], notifier: notifier);
+    expect(find.text('In lobby'), findsOneWidget);
+
+    notifier.replace(
+      LobbyState.initial().copyWith(
+        lobbyMemberUids: const ['u-in'],
+        currentLobby: empty,
+        userLobbies: {'lobby-1': live},
+      ),
+    );
+    await tester.pump();
+    expect(find.text('In lobby'), findsNothing);
   });
 }

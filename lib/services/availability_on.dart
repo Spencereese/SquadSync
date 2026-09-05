@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 /// How long an "I'm on now" ping keeps the On badge.
@@ -14,27 +16,50 @@ class AvailabilityOnStore extends ChangeNotifier {
     this.duration = kAvailabilityOnDuration,
   }) : _clock = clock ?? DateTime.now;
 
+  /// Widget tests leave a pending [Timer] if this is true. Production keeps
+  /// it on so On badges drop when the window ends without a navigation.
+  static bool scheduleExpirySweeps = true;
+
   final DateTime Function() _clock;
   final Duration duration;
   final Map<String, DateTime> _expiryByUid = {};
+  Timer? _expiryTimer;
 
   void markOn(String userId) {
     final uid = userId.trim();
     if (uid.isEmpty) return;
     _expiryByUid[uid] = _clock().add(duration);
+    _scheduleExpirySweep();
     notifyListeners();
   }
 
+  /// Read-only. Does not prune or notify — call [sweepExpired] to drop stale On.
   bool isOn(String userId) {
     final uid = userId.trim();
     if (uid.isEmpty) return false;
     final expiry = _expiryByUid[uid];
     if (expiry == null) return false;
-    if (!_clock().isBefore(expiry)) {
-      _expiryByUid.remove(uid);
-      return false;
+    return _clock().isBefore(expiry);
+  }
+
+  /// Drop expired On windows and notify so glance badges do not stay stale.
+  /// Returns how many uids were removed.
+  int sweepExpired() {
+    final now = _clock();
+    final stale = <String>[];
+    _expiryByUid.forEach((uid, expiry) {
+      if (!now.isBefore(expiry)) stale.add(uid);
+    });
+    if (stale.isEmpty) {
+      _scheduleExpirySweep();
+      return 0;
     }
-    return true;
+    for (final uid in stale) {
+      _expiryByUid.remove(uid);
+    }
+    _scheduleExpirySweep();
+    notifyListeners();
+    return stale.length;
   }
 
   /// Incoming FCM / local payload. Only `type=availability_ping`.
@@ -48,9 +73,35 @@ class AvailabilityOnStore extends ChangeNotifier {
   }
 
   void clear() {
+    _cancelExpiryTimer();
     if (_expiryByUid.isEmpty) return;
     _expiryByUid.clear();
     notifyListeners();
+  }
+
+  void cancelExpiryTimer() => _cancelExpiryTimer();
+
+  void _cancelExpiryTimer() {
+    _expiryTimer?.cancel();
+    _expiryTimer = null;
+  }
+
+  void _scheduleExpirySweep() {
+    _cancelExpiryTimer();
+    if (!scheduleExpirySweeps) return;
+    DateTime? soonest;
+    final now = _clock();
+    _expiryByUid.forEach((_, expiry) {
+      if (!now.isBefore(expiry)) return;
+      if (soonest == null || expiry.isBefore(soonest!)) soonest = expiry;
+    });
+    final next = soonest;
+    if (next == null) return;
+    var wait = next.difference(now);
+    if (wait.isNegative) wait = Duration.zero;
+    _expiryTimer = Timer(wait, () {
+      sweepExpired();
+    });
   }
 }
 
@@ -66,6 +117,7 @@ String? _uidFromPayload(Map<String, dynamic> payload) {
 AvailabilityOnStore availabilityOnStore = AvailabilityOnStore();
 
 void resetAvailabilityOnStore() {
+  availabilityOnStore.cancelExpiryTimer();
   availabilityOnStore = AvailabilityOnStore();
 }
 

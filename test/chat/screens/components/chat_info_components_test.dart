@@ -194,12 +194,14 @@ void main() {
 
   group('ChatInfoMembersSection', () {
     setUp(() {
+      AvailabilityOnStore.scheduleExpirySweeps = false;
       MatchmakingQueueTracker.resetInstance();
       resetAvailabilityOnStore();
     });
     tearDown(() {
       MatchmakingQueueTracker.resetInstance();
       resetAvailabilityOnStore();
+      AvailabilityOnStore.scheduleExpirySweeps = true;
     });
 
     Future<void> pumpMembers(
@@ -294,7 +296,8 @@ void main() {
           userLobbies: {'lobby-1': lobby},
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump();
 
       expect(find.text('On'), findsOneWidget);
       expect(find.text('Looking'), findsOneWidget);

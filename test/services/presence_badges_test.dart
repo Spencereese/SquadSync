@@ -1,10 +1,42 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/data/repositories/matchmaking_queue_repository.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/services/availability_on.dart';
 import 'package:squad_sync/services/availability_ping.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/presence_badges.dart';
+
+class _MemoryQueueRepo implements MatchmakingQueueRepository {
+  final Map<String, MatchmakingQueueEntry> rows =
+      <String, MatchmakingQueueEntry>{};
+  final StreamController<MatchmakingQueueChange> controller =
+      StreamController<MatchmakingQueueChange>.broadcast();
+
+  @override
+  Future<void> upsert(String userId, MatchmakingQueueEntry entry) async {
+    rows[userId] = entry;
+  }
+
+  @override
+  Future<void> remove(String userId) async {
+    rows.remove(userId);
+  }
+
+  @override
+  Future<Map<String, MatchmakingQueueEntry>> fetchActive() async =>
+      Map<String, MatchmakingQueueEntry>.from(rows);
+
+  @override
+  Stream<MatchmakingQueueChange> watch() => controller.stream;
+
+  @override
+  Future<void> dispose() async {
+    await controller.close();
+  }
+}
 
 Lobby _lobby({
   required String id,
@@ -163,6 +195,117 @@ void main() {
         const PresenceBadges(isInLobby: true),
       );
     });
+
+    test('drops Looking after cancel / match so it does not stay stale', () {
+      lfg.startLooking('u-look');
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'u-look',
+          lfg: lfg,
+          onStore: onStore,
+        ).isLooking,
+        isTrue,
+      );
+      lfg.cancelLooking('u-look');
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'u-look',
+          lfg: lfg,
+          onStore: onStore,
+        ).isLooking,
+        isFalse,
+      );
+
+      lfg.startLooking('u-match');
+      lfg.matchFound('u-match', lobbyId: 'lobby-1');
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'u-match',
+          lfg: lfg,
+          onStore: onStore,
+        ).isLooking,
+        isFalse,
+      );
+    });
+
+    test('live currentLobby overlays stale membership caches', () {
+      final live = _lobby(id: 'lobby-1', members: ['u-in']);
+      final stale = _lobby(id: 'lobby-1', members: ['u-in', 'u-left']);
+      final other = _lobby(id: 'lobby-2', members: ['u-other']);
+      final state = LobbyState.initial().copyWith(
+        lobbyMemberUids: ['u-in', 'u-left', 'u-other'],
+        currentLobby: live,
+        userLobbies: {'lobby-1': stale, 'lobby-2': other},
+      );
+
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'u-in',
+          lobbyState: state,
+          lfg: lfg,
+          onStore: onStore,
+        ).isInLobby,
+        isTrue,
+      );
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'u-left',
+          lobbyState: state,
+          lfg: lfg,
+          onStore: onStore,
+        ).isInLobby,
+        isFalse,
+      );
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'u-other',
+          lobbyState: state,
+          lfg: lfg,
+          onStore: onStore,
+        ).isInLobby,
+        isTrue,
+      );
+    });
+
+    test('maps squad display name to uid for glance badges', () {
+      final lobby = _lobby(id: 'lobby-1', members: ['u-in']);
+      final state = LobbyState.initial().copyWith(
+        currentLobby: lobby,
+        memberDisplayNames: {'u-in': 'Sam'},
+      );
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'Sam',
+          lobbyState: state,
+          lfg: lfg,
+          onStore: onStore,
+        ).isInLobby,
+        isTrue,
+      );
+    });
+  });
+
+  group('refreshPresenceSources', () {
+    test('sweeps expired On and hydrates looking from the queue repo', () async {
+      var now = DateTime.utc(2026, 9, 4, 12);
+      final store = AvailabilityOnStore(clock: () => now);
+      store.markOn('u-on');
+      now = now.add(kAvailabilityOnDuration + const Duration(seconds: 1));
+
+      final repo = _MemoryQueueRepo();
+      await repo.upsert(
+        'u-look',
+        const MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+      );
+      final tracker = MatchmakingQueueTracker(repository: repo);
+
+      await refreshPresenceSources(lfg: tracker, onStore: store);
+
+      expect(store.isOn('u-on'), isFalse);
+      expect(tracker.stateFor('u-look').phase, MatchmakingQueuePhase.looking);
+
+      await repo.dispose();
+    });
   });
 
   group('AvailabilityOnStore', () {
@@ -175,6 +318,20 @@ void main() {
       expect(store.isOn('u1'), isTrue);
       now = now.add(const Duration(seconds: 2));
       expect(store.isOn('u1'), isFalse);
+    });
+
+    test('sweepExpired notifies so On does not stay stale', () {
+      var now = DateTime.utc(2026, 9, 4, 12);
+      var notified = 0;
+      final store = AvailabilityOnStore(clock: () => now);
+      store.addListener(() => notified++);
+      store.markOn('u1');
+      expect(notified, 1);
+      now = now.add(kAvailabilityOnDuration + const Duration(seconds: 1));
+      expect(store.isOn('u1'), isFalse);
+      expect(store.sweepExpired(), 1);
+      expect(notified, 2);
+      expect(store.sweepExpired(), 0);
     });
 
     test('observePayload marks from_uid on availability_ping only', () {
@@ -207,6 +364,27 @@ void main() {
       expect(presenceUserIdFrom({'id': 'b'}), 'b');
       expect(presenceUserIdFrom({'friend_uid': 'c'}), 'c');
       expect(presenceUserIdFrom({'name': 'Sam'}), isNull);
+    });
+  });
+
+  group('resolvePresenceUserId', () {
+    test('returns uid, or maps a display name', () {
+      expect(resolvePresenceUserId(userId: null), isNull);
+      expect(resolvePresenceUserId(userId: '  '), isNull);
+      expect(
+        resolvePresenceUserId(
+          userId: 'Sam',
+          memberDisplayNames: {'u-in': 'Sam'},
+        ),
+        'u-in',
+      );
+      expect(
+        resolvePresenceUserId(
+          userId: 'u-in',
+          memberDisplayNames: {'u-in': 'Sam'},
+        ),
+        'u-in',
+      );
     });
   });
 }

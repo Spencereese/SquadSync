@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -70,7 +72,7 @@ class PresenceBadgeRow extends StatelessWidget {
 }
 
 /// Live glance badges: availability pings + LFG tracker + lobby membership.
-class PresenceBadgesHost extends ConsumerWidget {
+class PresenceBadgesHost extends ConsumerStatefulWidget {
   const PresenceBadgesHost({
     super.key,
     required this.userId,
@@ -81,7 +83,41 @@ class PresenceBadgesHost extends ConsumerWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PresenceBadgesHost> createState() => _PresenceBadgesHostState();
+}
+
+class _PresenceBadgesHostState extends ConsumerState<PresenceBadgesHost>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_refresh());
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refresh());
+    }
+  }
+
+  Future<void> _refresh() async {
+    await refreshPresenceSources();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final lobbyState = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
     return ListenableBuilder(
       listenable: Listenable.merge([
@@ -90,11 +126,11 @@ class PresenceBadgesHost extends ConsumerWidget {
       ]),
       builder: (context, _) {
         final badges = resolvePresenceBadgesFromTrackers(
-          userId: userId,
+          userId: widget.userId,
           lobbyState: lobbyState,
         );
         if (badges.isEmpty) return const SizedBox.shrink();
-        return PresenceBadgeRow(badges: badges, compact: compact);
+        return PresenceBadgeRow(badges: badges, compact: widget.compact);
       },
     );
   }

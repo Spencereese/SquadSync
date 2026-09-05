@@ -13,6 +13,7 @@ import 'package:squad_sync/services/session_rating_machine.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../widgets/last_five_rated_sessions.dart';
 import '../widgets/session_clip_playback.dart';
+import '../widgets/weekly_squad_board.dart';
 import 'stats_dashboard_data.dart';
 
 /// Fetches `get_lobby_stats` + `match_history` once both user and lobby are ready.
@@ -175,6 +176,14 @@ class StatsDashboardView extends StatelessWidget {
           _DashboardCard(
             title: 'Average ratings',
             child: _RatingsRow(ratings: snapshot.ratings),
+          ),
+          const SizedBox(height: 16),
+          _DashboardCard(
+            title: 'This week',
+            child: WeeklySquadBoardView(
+              key: const Key('stats-weekly-board'),
+              board: snapshot.weeklyBoard,
+            ),
           ),
           const SizedBox(height: 16),
           _DashboardCard(

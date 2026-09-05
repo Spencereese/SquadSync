@@ -16,6 +16,7 @@ import 'screens/availability_settings_screen.dart';
 import 'screens/performance_stats_screen.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/last_five_rated_sessions.dart';
+import 'widgets/weekly_squad_board.dart';
 import 'domain/entities/lobby_state.dart';
 import 'domain/entities/app_user.dart';
 import 'core/app_theme.dart';
@@ -518,6 +519,16 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         data: (snapshot) => YouLastFiveRatedSessions(
           sessions: snapshot.lastFiveRatedSessions,
         ),
+        orElse: () => const SizedBox.shrink(),
+      ),
+    );
+  }
+
+  Widget _buildWeeklySquadBoard() {
+    final statsAsync = ref.watch(statsDashboardProvider);
+    return SliverToBoxAdapter(
+      child: statsAsync.maybeWhen(
+        data: (snapshot) => YouWeeklySquadBoard(board: snapshot.weeklyBoard),
         orElse: () => const SizedBox.shrink(),
       ),
     );
@@ -1288,6 +1299,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               slivers: [
                 _buildHeroHeader(),
                 _buildStatsCards(),
+                _buildWeeklySquadBoard(),
                 _buildLastFiveRatedSessions(),
                 _buildPinnedGamesSection(),
                 _buildQuickActionsSection(),

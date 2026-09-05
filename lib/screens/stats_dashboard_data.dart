@@ -5,6 +5,7 @@ import '../domain/entities/app_user.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/lobby_state.dart';
 import '../services/session_rating_machine.dart';
+import '../services/weekly_squad_board.dart';
 
 /// One squad member's current streak for the Stats dashboard bar chart.
 class SquadMemberStreak {
@@ -116,6 +117,7 @@ class StatsDashboardSnapshot {
     this.community = const CommunitySummary(),
     this.statsLobbyIds = const [],
     this.lastFiveRatedSessions = const [],
+    this.weeklyBoard = const WeeklySquadBoard.empty(),
   });
 
   final List<SquadMemberStreak> memberStreaks;
@@ -128,6 +130,9 @@ class StatsDashboardSnapshot {
 
   /// Newest 5 rated sessions decoded from `match_history.notes`.
   final List<SessionRatingState> lastFiveRatedSessions;
+
+  /// This-week nights / lock-in / comms / vibes from the same history.
+  final WeeklySquadBoard weeklyBoard;
 
   bool get hasStreaks => memberStreaks.any((m) => m.streak > 0);
 
@@ -174,10 +179,20 @@ class StatsDashboardSnapshot {
     final fromMaps = ratingSummaryFrom(daily, allTime);
     final ratings = fromSessions.isEmpty ? fromMaps : fromSessions;
 
+    final memberUids = squadMemberUids(lobbyState, currentUid: user?.uid);
+    final displayNames = <String, String>{
+      ...lobbyState.memberDisplayNames,
+      if (user != null &&
+          user.uid.isNotEmpty &&
+          user.displayName != null &&
+          user.displayName!.isNotEmpty)
+        user.uid: user.displayName!,
+    };
+
     return StatsDashboardSnapshot(
       memberStreaks: buildMemberStreaks(
-        memberUids: squadMemberUids(lobbyState, currentUid: user?.uid),
-        displayNames: lobbyState.memberDisplayNames,
+        memberUids: memberUids,
+        displayNames: displayNames,
         currentStreaks: streaks,
         gameHistory: history,
         currentUserId: user?.uid,
@@ -188,6 +203,16 @@ class StatsDashboardSnapshot {
       community: communitySummaryFrom(user),
       statsLobbyIds: statsLobbyIds,
       lastFiveRatedSessions: lastFiveRatedSessionsFromHistory(history),
+      weeklyBoard: weeklySquadBoardFromHistory(
+        history,
+        now: now,
+        memberUids: memberUids,
+        displayNames: displayNames,
+        categoryRatings: _mergeCategoryRatings(
+          lobbyState.dailyRatings,
+          lobbyState.allTimeRatings,
+        ),
+      ),
     );
   }
 }
@@ -621,6 +646,22 @@ RatingSummary ratingSummaryFromSessionHistory(
     dailySampleSize: avg.dailySampleSize,
     allTimeSampleSize: avg.allTimeSampleSize,
   );
+}
+
+Map<String, Map<String, int>> _mergeCategoryRatings(
+  Map<String, Map<String, int>> daily,
+  Map<String, Map<String, int>> allTime,
+) {
+  final merged = <String, Map<String, int>>{};
+  void add(Map<String, Map<String, int>> source) {
+    for (final entry in source.entries) {
+      merged.putIfAbsent(entry.key, () => <String, int>{}).addAll(entry.value);
+    }
+  }
+
+  add(allTime);
+  add(daily);
+  return merged;
 }
 
 RatingSummary ratingSummaryFrom(

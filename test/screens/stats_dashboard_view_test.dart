@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/screens/performance_stats_screen.dart';
 import 'package:squad_sync/screens/stats_dashboard_data.dart';
 import 'package:squad_sync/services/session_rating_machine.dart';
+import 'package:squad_sync/services/weekly_squad_board.dart';
 
 void main() {
   Widget wrap(Widget child) {
@@ -47,6 +48,22 @@ void main() {
           result: 'loss',
         ),
       ],
+      weeklyBoard: WeeklySquadBoard(
+        nightsPlayed: 3,
+        lockInRate: 0.67,
+        commsAverage: 4.5,
+        vibesAverage: 3.8,
+        rows: [
+          WeeklySquadBoardRow(
+            uid: 'u1',
+            label: 'Sam',
+            nightsPlayed: 3,
+            lockInRate: 1,
+            commsAverage: 4.5,
+            vibesAverage: 4.0,
+          ),
+        ],
+      ),
       community: CommunitySummary(
         complaints: 2,
         bans: 1,
@@ -63,6 +80,14 @@ void main() {
     expect(find.text('SQUAD STREAKS'), findsOneWidget);
     expect(find.text('SQUAD WINS / LOSSES'), findsOneWidget);
     expect(find.text('AVERAGE RATINGS'), findsOneWidget);
+    expect(find.text('THIS WEEK'), findsOneWidget);
+    expect(find.byKey(const Key('stats-weekly-board')), findsOneWidget);
+    expect(find.text('NIGHTS'), findsOneWidget);
+    expect(find.text('LOCK-IN'), findsOneWidget);
+    expect(find.text('COMMS'), findsOneWidget);
+    expect(find.text('VIBES'), findsOneWidget);
+    expect(find.text('67%'), findsOneWidget);
+    expect(find.text('Sam · 3n · 100% · C4.5 · V4.0'), findsOneWidget);
     expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
     expect(find.byKey(const Key('stats-last-five')), findsOneWidget);
     expect(find.text('5★ · Warzone · Win'), findsOneWidget);
@@ -131,6 +156,8 @@ void main() {
 
     expect(find.byKey(const Key('stats-last-five')), findsOneWidget);
     expect(find.byKey(const Key('last-five-rated-open-0')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('last-five-rated-open-0')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('last-five-rated-open-0')));
     await tester.pump();
 
@@ -162,6 +189,8 @@ void main() {
     expect(find.text('No ratings yet'), findsNWidgets(2));
     expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
     expect(find.text('No rated sessions yet'), findsOneWidget);
+    expect(find.text('THIS WEEK'), findsOneWidget);
+    expect(find.text(kWeeklySquadBoardEmptyCopy), findsOneWidget);
   });
 
   testWidgets('titles W/L as All lobbies when aggregating multiple lobbies',

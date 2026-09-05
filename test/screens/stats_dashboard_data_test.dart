@@ -510,6 +510,48 @@ void main() {
         '/tmp/ace.mp4',
       );
     });
+
+    test('weekly board aggregates nights, lock-in, comms, vibes', () {
+      final now = DateTime.utc(2026, 9, 5, 18);
+      final rated = encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 4,
+          ratedAt: DateTime.utc(2026, 9, 5),
+        ),
+      );
+      final snap = StatsDashboardSnapshot.fromSources(
+        lobby: LobbyState.initial().copyWith(
+          lobbyMemberUids: const ['u1', 'u2'],
+          memberDisplayNames: const {'u1': 'Sam', 'u2': 'Kit'},
+          dailyRatings: const {
+            'u1': {'Comms': 5, 'Vibes': 4},
+          },
+        ),
+        extraHistory: [
+          {
+            'result': 'win',
+            'created_at': '2026-09-05T12:00:00.000Z',
+            'player_uids': const ['u1', 'u2'],
+            'notes': rated,
+          },
+          {
+            'result': 'loss',
+            'created_at': '2026-09-04T12:00:00.000Z',
+            'player_uids': const ['u1'],
+          },
+        ],
+        now: now,
+      );
+      expect(snap.weeklyBoard.nightsPlayed, 2);
+      expect(snap.weeklyBoard.lockInRate, 0.5);
+      expect(snap.weeklyBoard.commsAverage, 5);
+      expect(snap.weeklyBoard.vibesAverage, 4);
+      expect(snap.weeklyBoard.rows, isNotEmpty);
+      expect(snap.weeklyBoard.rows.first.label, 'Sam');
+      expect(snap.weeklyBoard.rows.first.nightsPlayed, 2);
+    });
   });
 
   group('communitySummaryFrom', () {

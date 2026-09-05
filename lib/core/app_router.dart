@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../screens/discovery_swipe_screen.dart';
 import '../screens/lobby_tab_screen.dart';
 import '../chat/chat_groups_screen.dart';
 import '../chat/chat_screen.dart';
@@ -227,6 +228,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/clips',
         name: 'clips',
         builder: (context, state) => const ClipsScreen(),
+      ),
+      GoRoute(
+        path: '/discover-swipe',
+        name: 'discoverSwipe',
+        builder: (context, state) => const DiscoverySwipeScreen(),
       ),
       GoRoute(
         path: '/join',

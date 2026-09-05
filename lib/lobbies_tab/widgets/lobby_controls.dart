@@ -9,12 +9,14 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/availability_ping.dart';
 import '../../services/session_rating_flow.dart';
 import '../../services/session_rating_machine.dart';
+import '../../screens/discovery_swipe_screen.dart';
+import '../../widgets/discovery_swipe_gate.dart';
 import '../../widgets/grok_concierge.dart';
 import '../../widgets/lobby_surface_feedback.dart';
 
 /// LobbyControls — Tonight strip (I am on / Looking for Squad / Invite),
-/// Grok concierge (three commands), Win/Loss, Voice under More.
-/// Search is not an entry. No free-chat field.
+/// Grok concierge (three commands), gated fill swipe, Win/Loss, Voice under More.
+/// Search is not an entry. No free-chat field. No public Tinder launch.
 class LobbyControls extends ConsumerWidget {
   const LobbyControls({super.key});
 
@@ -59,6 +61,15 @@ class LobbyControls extends ConsumerWidget {
                 lobbyAsync.valueOrNull?.selectedLobbyId ??
                 lobbyAsync.valueOrNull?.currentLobby?.id ??
                 '',
+          ),
+          DiscoverySwipeEntryButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const DiscoverySwipeScreen(),
+                ),
+              );
+            },
           ),
           MoreActionsBlock(
             children: [

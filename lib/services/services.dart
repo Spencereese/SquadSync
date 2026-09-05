@@ -13,4 +13,5 @@ export 'timer_service.dart';
 export 'grok_service.dart';
 export 'grok_concierge_machine.dart';
 export 'grok_concierge.dart';
+export 'discovery_swipe_gate.dart';
 export 'voice_service.dart';

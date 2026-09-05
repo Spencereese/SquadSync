@@ -2,12 +2,83 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/deep_link_routes.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../services/auth_service_supabase.dart';
 import '../../services/lobby_seat_status.dart';
 import '../../services/matchmaking_queue_machine.dart';
 import '../../services/peacock_assignment_machine.dart';
 import '../../widgets/lobby_surface_feedback.dart';
+
+/// Open-spot fill actions. Invite shares the existing lobby link;
+/// Peacock claims the seat; Queue waits in the peacock queue.
+enum EmptySpotCtaKind {
+  invite,
+  peacock,
+  queue,
+}
+
+/// Peacock offer beats LFG / peacock queue; otherwise Invite.
+EmptySpotCtaKind emptySpotCtaKindFor({
+  bool peacockOffered = false,
+  bool queuePending = false,
+}) {
+  if (peacockOffered) return EmptySpotCtaKind.peacock;
+  if (queuePending) return EmptySpotCtaKind.queue;
+  return EmptySpotCtaKind.invite;
+}
+
+/// LFG looking/matched or peacock queued counts as Queue on an open seat.
+bool emptySpotQueuePending({
+  MatchmakingQueuePhase? lfgPhase,
+  PeacockAssignmentPhase? peacockPhase,
+  bool peacockQueueOccupied = false,
+}) {
+  if (lfgPhase == MatchmakingQueuePhase.looking ||
+      lfgPhase == MatchmakingQueuePhase.matched) {
+    return true;
+  }
+  if (peacockPhase == PeacockAssignmentPhase.queued) return true;
+  return peacockQueueOccupied;
+}
+
+bool emptySpotShowsCtas({
+  required bool hasOccupant,
+  required bool allowLateJoin,
+}) =>
+    !hasOccupant && allowLateJoin;
+
+String emptySpotCtaLabel(EmptySpotCtaKind kind) {
+  switch (kind) {
+    case EmptySpotCtaKind.invite:
+      return 'Invite';
+    case EmptySpotCtaKind.peacock:
+      return 'Peacock';
+    case EmptySpotCtaKind.queue:
+      return 'Queue';
+  }
+}
+
+Key emptySpotCtaKey(EmptySpotCtaKind kind) {
+  switch (kind) {
+    case EmptySpotCtaKind.invite:
+      return const Key('empty-spot-invite-button');
+    case EmptySpotCtaKind.peacock:
+      return const Key('empty-spot-peacock-button');
+    case EmptySpotCtaKind.queue:
+      return const Key('empty-spot-queue-button');
+  }
+}
+
+/// Empty-spot Invite uses the same [shareLobbyLink] path as the lobby
+/// header and Tonight Invite. Tests inject [copy] / [share].
+Future<String> shareEmptySpotInvite({
+  required String lobbyId,
+  Future<void> Function(String link)? copy,
+  Future<void> Function(String link)? share,
+}) {
+  return shareLobbyLink(lobbyId: lobbyId, copy: copy, share: share);
+}
 
 /// Compact seated / peacock / lock mm:ss chip.
 class LobbySeatStatusChip extends StatelessWidget {
@@ -520,6 +591,142 @@ class LockTimerReadout extends StatelessWidget {
         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
         fontSize: 12,
       ),
+    );
+  }
+}
+
+/// Invite / Peacock / Queue on an open seat. Primary kind is filled;
+/// the other two stay outlined so all three labels stay readable.
+class EmptySpotCtaBar extends StatelessWidget {
+  const EmptySpotCtaBar({
+    super.key,
+    this.primary = EmptySpotCtaKind.invite,
+    required this.onInvite,
+    required this.onPeacock,
+    required this.onQueue,
+  });
+
+  final EmptySpotCtaKind primary;
+  final VoidCallback onInvite;
+  final VoidCallback onPeacock;
+  final VoidCallback onQueue;
+
+  VoidCallback _onPressed(EmptySpotCtaKind kind) {
+    switch (kind) {
+      case EmptySpotCtaKind.invite:
+        return onInvite;
+      case EmptySpotCtaKind.peacock:
+        return onPeacock;
+      case EmptySpotCtaKind.queue:
+        return onQueue;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      key: const Key('empty-spot-cta-bar'),
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final kind in EmptySpotCtaKind.values)
+          _EmptySpotCtaButton(
+            kind: kind,
+            emphasized: kind == primary,
+            onPressed: _onPressed(kind),
+          ),
+      ],
+    );
+  }
+}
+
+class _EmptySpotCtaButton extends StatelessWidget {
+  const _EmptySpotCtaButton({
+    required this.kind,
+    required this.emphasized,
+    required this.onPressed,
+  });
+
+  final EmptySpotCtaKind kind;
+  final bool emphasized;
+  final VoidCallback onPressed;
+
+  Color get _accent {
+    switch (kind) {
+      case EmptySpotCtaKind.invite:
+        return Colors.tealAccent;
+      case EmptySpotCtaKind.peacock:
+        return Colors.cyanAccent;
+      case EmptySpotCtaKind.queue:
+        return Colors.orangeAccent;
+    }
+  }
+
+  List<Color> get _gradient {
+    switch (kind) {
+      case EmptySpotCtaKind.invite:
+        return const [Colors.tealAccent, Colors.teal];
+      case EmptySpotCtaKind.peacock:
+        return const [Colors.cyanAccent, Colors.cyan];
+      case EmptySpotCtaKind.queue:
+        return const [Colors.orangeAccent, Colors.orange];
+    }
+  }
+
+  IconData get _icon {
+    switch (kind) {
+      case EmptySpotCtaKind.invite:
+        return Icons.share;
+      case EmptySpotCtaKind.peacock:
+        return Icons.auto_awesome;
+      case EmptySpotCtaKind.queue:
+        return Icons.queue;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _accent;
+    final label = emptySpotCtaLabel(kind);
+    final button = ElevatedButton.icon(
+      key: emptySpotCtaKey(kind),
+      onPressed: onPressed,
+      icon: Icon(_icon, size: 16),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: emphasized ? Colors.transparent : Colors.black54,
+        foregroundColor: emphasized ? Colors.black : accent,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        side: emphasized
+            ? BorderSide.none
+            : BorderSide(color: accent.withValues(alpha: 0.85), width: 1.2),
+      ),
+    );
+    return Semantics(
+      button: true,
+      label: label,
+      child: emphasized
+          ? Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _gradient,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: button,
+            )
+          : button,
     );
   }
 }

@@ -41,6 +41,7 @@ class LobbySpotMapSeat extends StatelessWidget {
     this.displayName,
     this.timerLabel,
     this.trailing,
+    this.actions,
     this.onTap,
     this.onLongPress,
     this.semanticLabel,
@@ -52,6 +53,7 @@ class LobbySpotMapSeat extends StatelessWidget {
   final String? displayName;
   final String? timerLabel;
   final Widget? trailing;
+  final Widget? actions;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final String? semanticLabel;
@@ -168,9 +170,8 @@ class LobbySpotMapSeat extends StatelessWidget {
                                   : accent,
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
-                              letterSpacing: kind == LobbySpotMapKind.filled
-                                  ? 0.2
-                                  : 1.6,
+                              letterSpacing:
+                                  kind == LobbySpotMapKind.filled ? 0.2 : 1.6,
                               height: 1.1,
                             ),
                           ),
@@ -207,6 +208,10 @@ class LobbySpotMapSeat extends StatelessWidget {
                               ],
                             ],
                           ),
+                          if (actions != null) ...[
+                            const SizedBox(height: 8),
+                            actions!,
+                          ],
                         ],
                       ),
                     ),

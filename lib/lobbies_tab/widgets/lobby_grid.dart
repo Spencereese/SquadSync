@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../chat/screens/components/chat_info_actions.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/lobby_ready_lock.dart';
 import '../../services/lobby_seat_status.dart';
+import '../../services/matchmaking_queue_machine.dart';
+import '../../services/peacock_assignment_machine.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../domain/entities/lobby_state.dart';
 import '../dialogs/spot_assignment_dialog.dart';
@@ -111,13 +114,17 @@ class SpotCard extends ConsumerWidget {
     // Check if any buttons will be shown
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
     final isCalling = occupantIsCallingSpot(spotName, occupantStatus);
-    final hasCallButton = !hasOccupant;
+    final allowLateJoin = emptySpotAllowsLateJoin(readyLock);
+    final showEmptyCtas = emptySpotShowsCtas(
+      hasOccupant: hasOccupant,
+      allowLateJoin: allowLateJoin,
+    );
     final hasLockButton = hasOccupant && hasTimer && isCalling && isOwnSeat;
     final hasWalkingButton =
         hasOccupant && hasTimer && isReady && isOwnSeat && !isSeated;
     final hasReadyButton = isSeated && (isOwnSeat || isReady || lobbyLocked);
     final hasAnyButton =
-        hasCallButton || hasLockButton || hasWalkingButton || hasReadyButton;
+        showEmptyCtas || hasLockButton || hasWalkingButton || hasReadyButton;
 
     LobbySeatStatus? seatStatus;
     try {
@@ -154,6 +161,24 @@ class SpotCard extends ConsumerWidget {
       isReady: isReady,
       occupantStatus: occupantStatus,
     );
+    MatchmakingQueuePhase? lfgPhase;
+    PeacockAssignmentPhase? peacockPhase;
+    if (yourUid != null) {
+      try {
+        lfgPhase = MatchmakingQueueTracker.instance.stateFor(yourUid).phase;
+        peacockPhase =
+            PeacockAssignmentTracker.instance.stateFor(yourUid).phase;
+      } catch (_) {}
+    }
+    final queuePending = emptySpotQueuePending(
+      lfgPhase: lfgPhase,
+      peacockPhase: peacockPhase,
+      peacockQueueOccupied: squadState.peacockQueue.isNotEmpty,
+    );
+    final emptyCtaKind = emptySpotCtaKindFor(
+      peacockOffered: pulseOffered || kind == LobbySpotMapKind.peacock,
+      queuePending: queuePending,
+    );
 
     return OfferedSpotPulse(
       pulse: pulseOffered,
@@ -174,6 +199,26 @@ class SpotCard extends ConsumerWidget {
             SpotAssignmentDialog.show(context, ref, index);
           }
         },
+        actions: showEmptyCtas
+            ? EmptySpotCtaBar(
+                primary: emptyCtaKind,
+                onInvite: () => _inviteEmptySpot(context, squadState),
+                onPeacock: () => _peacockEmptySpot(
+                  context,
+                  ref,
+                  uid: yourUid,
+                  squadState: squadState,
+                  gameName: gameName,
+                  index: index,
+                ),
+                onQueue: () => _queueEmptySpot(
+                  context,
+                  ref,
+                  uid: yourUid,
+                  gameName: gameName,
+                ),
+              )
+            : null,
         onTap: hasAnyButton
             ? null
             : () {
@@ -199,21 +244,22 @@ class SpotCard extends ConsumerWidget {
                   SpotAssignmentDialog.show(context, ref, index);
                 }
               },
-        trailing: _buildSpotActions(
-          context,
-          index,
-          hasOccupant,
-          yourUid,
-          spotTimers,
-          ref,
-          gameName,
-          isCalling: isCalling,
-          isReady: isReady,
-          isSeated: isSeated,
-          isOwnSeat: isOwnSeat,
-          lobbyLocked: lobbyLocked,
-          allowLateJoin: emptySpotAllowsLateJoin(readyLock),
-        ),
+        trailing: hasOccupant
+            ? _buildSpotActions(
+                context,
+                index,
+                hasOccupant,
+                yourUid,
+                spotTimers,
+                ref,
+                gameName,
+                isCalling: isCalling,
+                isReady: isReady,
+                isSeated: isSeated,
+                isOwnSeat: isOwnSeat,
+                lobbyLocked: lobbyLocked,
+              )
+            : null,
       ),
     );
   }
@@ -255,50 +301,13 @@ class SpotCard extends ConsumerWidget {
     required bool isSeated,
     required bool isOwnSeat,
     required bool lobbyLocked,
-    required bool allowLateJoin,
   }) {
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!hasOccupant && allowLateJoin)
-          Container(
-            key: const Key('empty-spot-late-join-call'),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Colors.tealAccent, Colors.teal],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.tealAccent.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ElevatedButton.icon(
-              key: const Key('empty-spot-call-button'),
-              onPressed: () => ref
-                  .read(ln.lobbyNotifierProvider.notifier)
-                  .claimSpot(gameName, index),
-              icon: const Icon(Icons.call, size: 16),
-              label: const Text('Call'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.black,
-                elevation: 0,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                textStyle:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-            ),
-          )
-        else if (hasOccupant && hasTimer && isCalling && isOwnSeat)
+        if (hasOccupant && hasTimer && isCalling && isOwnSeat)
           Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
@@ -388,6 +397,131 @@ class SpotCard extends ConsumerWidget {
           ),
       ],
     );
+  }
+
+  Future<void> _inviteEmptySpot(
+    BuildContext context,
+    LobbyState squadState,
+  ) async {
+    final lobbyId = resolveInviteLobbyId(
+      squadId: squadState.selectedLobbyId ?? squadState.currentLobby?.id ?? '',
+      selectedLobbyId: squadState.selectedLobbyId,
+      currentLobby: squadState.currentLobby,
+      userLobbies: squadState.userLobbies,
+    );
+    if (lobbyId.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No lobby selected')),
+        );
+      }
+      return;
+    }
+    try {
+      await shareEmptySpotInvite(lobbyId: lobbyId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lobby link copied'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not share lobby link: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _peacockEmptySpot(
+    BuildContext context,
+    WidgetRef ref, {
+    required String? uid,
+    required LobbyState squadState,
+    required String gameName,
+    required int index,
+  }) async {
+    if (uid == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sign in to claim peacock')),
+        );
+      }
+      return;
+    }
+    final lobbyId = squadState.selectedLobbyId ?? squadState.currentLobby?.id;
+    if (lobbyId == null || lobbyId.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No lobby selected')),
+        );
+      }
+      return;
+    }
+    try {
+      final claimed =
+          await ref.read(ln.lobbyNotifierProvider.notifier).assignPeacockSpot(
+                userId: uid,
+                lobbyId: lobbyId,
+                gameName: gameName,
+                spotIndex: index,
+              );
+      final lfg = MatchmakingQueueTracker.instance.stateFor(uid);
+      if (lfg.phase == MatchmakingQueuePhase.matched) {
+        MatchmakingQueueTracker.instance
+            .joinMatched(uid, handoffToPeacock: false);
+        await MatchmakingQueueTracker.instance.persistCurrent(uid);
+      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(claimSeatCopy(claimed ?? index))),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to claim peacock: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _queueEmptySpot(
+    BuildContext context,
+    WidgetRef ref, {
+    required String? uid,
+    required String gameName,
+  }) async {
+    if (uid == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sign in to join the queue')),
+        );
+      }
+      return;
+    }
+    try {
+      await ref
+          .read(ln.lobbyNotifierProvider.notifier)
+          .addToPeacockQueue(uid, gameName);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Queued for a spot')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to join queue: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _toggleSeatedReady(

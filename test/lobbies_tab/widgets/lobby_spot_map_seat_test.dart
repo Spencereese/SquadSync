@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/lobbies_tab/widgets/lobby_seat_affordance.dart';
 import 'package:squad_sync/lobbies_tab/widgets/lobby_spot_map_seat.dart';
 
 Widget _wrap(Widget child) {
@@ -52,7 +53,8 @@ void main() {
     );
   });
 
-  testWidgets('empty seat reads OPEN at arm length and keeps Call CTA',
+  testWidgets(
+      'empty seat reads OPEN at arm length and shows Invite / Peacock / Queue',
       (tester) async {
     await tester.pumpWidget(
       _wrap(
@@ -60,11 +62,10 @@ void main() {
           index: 0,
           kind: LobbySpotMapKind.empty,
           statusLabel: 'Open',
-          trailing: ElevatedButton.icon(
-            key: const Key('empty-spot-call-button'),
-            onPressed: () {},
-            icon: const Icon(Icons.call, size: 16),
-            label: const Text('Call'),
+          actions: EmptySpotCtaBar(
+            onInvite: () {},
+            onPeacock: () {},
+            onQueue: () {},
           ),
         ),
       ),
@@ -77,8 +78,14 @@ void main() {
     expect(find.text('Open'), findsOneWidget);
     expect(find.text('PEACOCK'), findsNothing);
     expect(find.text('Spot 1'), findsOneWidget);
-    expect(find.byKey(const Key('empty-spot-call-button')), findsOneWidget);
-    expect(find.text('Call'), findsOneWidget);
+    expect(find.byKey(const Key('empty-spot-cta-bar')), findsOneWidget);
+    expect(find.byKey(const Key('empty-spot-invite-button')), findsOneWidget);
+    expect(find.byKey(const Key('empty-spot-peacock-button')), findsOneWidget);
+    expect(find.byKey(const Key('empty-spot-queue-button')), findsOneWidget);
+    expect(find.text('Invite'), findsOneWidget);
+    expect(find.text('Peacock'), findsOneWidget);
+    expect(find.text('Queue'), findsOneWidget);
+    expect(find.text('Call'), findsNothing);
 
     final primary =
         tester.widget<Text>(find.byKey(const Key('spot-map-primary')));
@@ -133,6 +140,30 @@ void main() {
       shape.side.width,
       LobbySpotMapSeat.borderWidthFor(LobbySpotMapKind.filled),
     );
+  });
+
+  testWidgets('peacock open seat keeps Invite / Peacock / Queue CTAs',
+      (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        LobbySpotMapSeat(
+          index: 2,
+          kind: LobbySpotMapKind.peacock,
+          statusLabel: 'Peacock',
+          actions: EmptySpotCtaBar(
+            primary: EmptySpotCtaKind.peacock,
+            onInvite: () {},
+            onPeacock: () {},
+            onQueue: () {},
+          ),
+        ),
+      ),
+    );
+    expect(find.text('PEACOCK'), findsOneWidget);
+    expect(find.text('Invite'), findsOneWidget);
+    expect(find.text('Peacock'), findsNWidgets(2));
+    expect(find.text('Queue'), findsOneWidget);
+    expect(find.byKey(const Key('empty-spot-peacock-button')), findsOneWidget);
   });
 
   testWidgets('peacock seat reads PEACOCK with cyan glow chrome',

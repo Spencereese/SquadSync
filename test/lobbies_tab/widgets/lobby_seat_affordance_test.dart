@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/core/deep_link_routes.dart';
 import 'package:squad_sync/lobbies_tab/widgets/lobby_seat_affordance.dart';
 import 'package:squad_sync/services/lobby_ready_lock.dart';
 import 'package:squad_sync/services/lobby_seat_status.dart';
@@ -315,7 +316,9 @@ void main() {
     expect(find.byKey(const Key('seated-spot-ready-button')), findsNothing);
   });
 
-  testWidgets('Call stays available for late join while locked', (tester) async {
+  testWidgets(
+      'Invite / Peacock / Queue stay available for late join while locked',
+      (tester) async {
     const locked = LobbyReadyLockSnapshot(
       phase: LobbyReadyLockPhase.locked,
       seatedUids: ['u1', 'u2'],
@@ -324,14 +327,146 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: emptySpotAllowsLateJoin(locked)
-              ? const Text('Call', key: Key('empty-spot-call-button'))
+          body: emptySpotShowsCtas(
+            hasOccupant: false,
+            allowLateJoin: emptySpotAllowsLateJoin(locked),
+          )
+              ? EmptySpotCtaBar(
+                  onInvite: () {},
+                  onPeacock: () {},
+                  onQueue: () {},
+                )
               : const SizedBox.shrink(),
         ),
       ),
     );
-    expect(find.byKey(const Key('empty-spot-call-button')), findsOneWidget);
-    expect(find.text('Call'), findsOneWidget);
+    expect(find.byKey(const Key('empty-spot-cta-bar')), findsOneWidget);
+    expect(find.text('Invite'), findsOneWidget);
+    expect(find.text('Peacock'), findsOneWidget);
+    expect(find.text('Queue'), findsOneWidget);
+    expect(find.text('Call'), findsNothing);
+  });
+
+  test('empty-spot CTA kind is Invite, then Queue, then Peacock', () {
+    expect(emptySpotCtaKindFor(), EmptySpotCtaKind.invite);
+    expect(
+      emptySpotCtaKindFor(queuePending: true),
+      EmptySpotCtaKind.queue,
+    );
+    expect(
+      emptySpotCtaKindFor(peacockOffered: true, queuePending: true),
+      EmptySpotCtaKind.peacock,
+    );
+    expect(emptySpotCtaLabel(EmptySpotCtaKind.invite), 'Invite');
+    expect(emptySpotCtaLabel(EmptySpotCtaKind.peacock), 'Peacock');
+    expect(emptySpotCtaLabel(EmptySpotCtaKind.queue), 'Queue');
+    expect(
+      emptySpotShowsCtas(hasOccupant: false, allowLateJoin: true),
+      isTrue,
+    );
+    expect(
+      emptySpotShowsCtas(hasOccupant: true, allowLateJoin: true),
+      isFalse,
+    );
+  });
+
+  test('empty-spot Queue pending from LFG looking or peacock queued', () {
+    expect(
+      emptySpotQueuePending(lfgPhase: MatchmakingQueuePhase.looking),
+      isTrue,
+    );
+    expect(
+      emptySpotQueuePending(lfgPhase: MatchmakingQueuePhase.matched),
+      isTrue,
+    );
+    expect(
+      emptySpotQueuePending(peacockPhase: PeacockAssignmentPhase.queued),
+      isTrue,
+    );
+    expect(emptySpotQueuePending(peacockQueueOccupied: true), isTrue);
+    expect(
+      emptySpotQueuePending(lfgPhase: MatchmakingQueuePhase.idle),
+      isFalse,
+    );
+  });
+
+  testWidgets('empty-spot CTA bar fires Invite / Peacock / Queue',
+      (tester) async {
+    var invited = false;
+    var peacocked = false;
+    var queued = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: EmptySpotCtaBar(
+            onInvite: () => invited = true,
+            onPeacock: () => peacocked = true,
+            onQueue: () => queued = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('empty-spot-invite-button')), findsOneWidget);
+    expect(find.byKey(const Key('empty-spot-peacock-button')), findsOneWidget);
+    expect(find.byKey(const Key('empty-spot-queue-button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('empty-spot-invite-button')));
+    await tester.pump();
+    expect(invited, isTrue);
+
+    await tester.tap(find.byKey(const Key('empty-spot-peacock-button')));
+    await tester.pump();
+    expect(peacocked, isTrue);
+
+    await tester.tap(find.byKey(const Key('empty-spot-queue-button')));
+    await tester.pump();
+    expect(queued, isTrue);
+  });
+
+  testWidgets('peacock-offered empty spot emphasizes Peacock over Invite',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: EmptySpotCtaBar(
+            primary: EmptySpotCtaKind.peacock,
+            onInvite: () {},
+            onPeacock: () {},
+            onQueue: () {},
+          ),
+        ),
+      ),
+    );
+    final peacock = tester.widget<ElevatedButton>(
+      find.byKey(const Key('empty-spot-peacock-button')),
+    );
+    final invite = tester.widget<ElevatedButton>(
+      find.byKey(const Key('empty-spot-invite-button')),
+    );
+    expect(peacock.style?.foregroundColor?.resolve({}), Colors.black);
+    expect(invite.style?.foregroundColor?.resolve({}), Colors.tealAccent);
+  });
+
+  test('empty-spot Invite reuses shareLobbyLink payload', () async {
+    String? copied;
+    String? shared;
+    final payload = await shareEmptySpotInvite(
+      lobbyId: 'lobby-9',
+      copy: (text) async => copied = text,
+      share: (text) async => shared = text,
+    );
+    expect(
+      payload,
+      'codsquadapp://lobby/lobby-9\nhttps://codsquad.app/l/lobby-9',
+    );
+    expect(copied, payload);
+    expect(shared, payload);
+    expect(copied, contains(lobbyShareDeepLink(lobbyId: 'lobby-9')));
+    expect(copied, contains(lobbyShareHttpsLink(lobbyId: 'lobby-9')));
+    for (final line in copied!.split('\n')) {
+      expect(locationForDeepLink(line), '/squad?lobby_id=lobby-9');
+    }
   });
 
   testWidgets('other seated Ready shows badge without toggle', (tester) async {

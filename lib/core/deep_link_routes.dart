@@ -67,29 +67,53 @@ String lobbyShareDeepLink({required String lobbyId}) {
   ).toString();
 }
 
-/// Copy [lobbyShareDeepLink] then open the system share sheet.
-/// Live path: lobby header. Tests inject [copy] / [share].
+/// HTTPS Universal Link fallback for this lobby. Same parse as
+/// [lobbyShareDeepLink] via [locationForDeepLink].
+String lobbyShareHttpsLink({required String lobbyId}) {
+  final id = lobbyId.trim();
+  if (id.isEmpty) {
+    return Uri(
+      scheme: 'https',
+      host: kLobbyUniversalLinkHost,
+      path: '/l',
+    ).toString();
+  }
+  return Uri(
+    scheme: 'https',
+    host: kLobbyUniversalLinkHost,
+    pathSegments: ['l', id],
+  ).toString();
+}
+
+/// Share-sheet text: app scheme plus https Universal Link fallback.
+String lobbySharePayload({required String lobbyId}) {
+  return '${lobbyShareDeepLink(lobbyId: lobbyId)}\n'
+      '${lobbyShareHttpsLink(lobbyId: lobbyId)}';
+}
+
+/// Copy [lobbySharePayload] then open the system share sheet.
+/// Live path: lobby header / Tonight Invite. Tests inject [copy] / [share].
 Future<String> shareLobbyLink({
   required String lobbyId,
   Future<void> Function(String link)? copy,
   Future<void> Function(String link)? share,
 }) async {
-  final link = lobbyShareDeepLink(lobbyId: lobbyId);
-  await (copy ?? _copyLobbyLinkToClipboard)(link);
+  final payload = lobbySharePayload(lobbyId: lobbyId);
+  await (copy ?? _copyLobbyLinkToClipboard)(payload);
   try {
-    await (share ?? _shareLobbyLinkSheet)(link);
+    await (share ?? _shareLobbyLinkSheet)(payload);
   } catch (_) {
-    // Clipboard already holds [link].
+    // Clipboard already holds [payload].
   }
-  return link;
+  return payload;
 }
 
-Future<void> _copyLobbyLinkToClipboard(String link) {
-  return Clipboard.setData(ClipboardData(text: link));
+Future<void> _copyLobbyLinkToClipboard(String payload) {
+  return Clipboard.setData(ClipboardData(text: payload));
 }
 
-Future<void> _shareLobbyLinkSheet(String link) {
-  return SharePlus.instance.share(ShareParams(text: link));
+Future<void> _shareLobbyLinkSheet(String payload) {
+  return SharePlus.instance.share(ShareParams(text: payload));
 }
 
 /// Live AppLinks gate used by [main] / [DeepLinkRouter.handleDeepLink].

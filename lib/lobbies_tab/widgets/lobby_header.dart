@@ -104,18 +104,8 @@ class LobbyHeader extends ConsumerWidget {
                 ),
 
               if (_nonEmptyLobbyId(lobbyId) != null)
-                Semantics(
-                  label: 'Share lobby link',
-                  child: IconButton(
-                    key: const Key('lobby-share-link'),
-                    icon: const Icon(
-                      Icons.share,
-                      color: Colors.cyanAccent,
-                      size: 26,
-                    ),
-                    onPressed: () => _shareLobbyLink(context, lobbyId!),
-                    tooltip: 'Share lobby',
-                  ),
+                LobbyShareButton(
+                  onPressed: () => _shareLobbyLink(context, lobbyId!),
                 ),
 
               // Settings button
@@ -234,6 +224,33 @@ String? _nonEmptyLobbyId(String? lobbyId) {
   final id = lobbyId?.trim();
   if (id == null || id.isEmpty) return null;
   return id;
+}
+
+/// Lobby header share. Live path calls [shareLobbyLink].
+class LobbyShareButton extends StatelessWidget {
+  const LobbyShareButton({
+    super.key,
+    required this.onPressed,
+  });
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Share lobby link',
+      child: IconButton(
+        key: const Key('lobby-share-link'),
+        icon: const Icon(
+          Icons.share,
+          color: Colors.cyanAccent,
+          size: 26,
+        ),
+        onPressed: onPressed,
+        tooltip: 'Share lobby',
+      ),
+    );
+  }
 }
 
 /// Lobby header Voice join. Live path calls [openVoiceRoom].

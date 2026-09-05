@@ -388,18 +388,58 @@ void main() {
       );
     });
 
-    test('shareLobbyLink copies and shares the built URI', () async {
+    test('lobbyShareHttpsLink is https://codsquad.app/l/<id>', () {
+      expect(
+        lobbyShareHttpsLink(lobbyId: 'lobby-9'),
+        'https://codsquad.app/l/lobby-9',
+      );
+      expect(
+        lobbyShareHttpsLink(lobbyId: '  lobby-9  '),
+        'https://$kLobbyUniversalLinkHost/l/lobby-9',
+      );
+    });
+
+    test('lobbySharePayload is app scheme plus https fallback', () {
+      const lobbyId = 'lobby-9';
+      final payload = lobbySharePayload(lobbyId: lobbyId);
+      expect(
+        payload.split('\n'),
+        [
+          'codsquadapp://lobby/lobby-9',
+          'https://codsquad.app/l/lobby-9',
+        ],
+      );
+      expect(payload, contains(lobbyShareDeepLink(lobbyId: lobbyId)));
+      expect(payload, contains(lobbyShareHttpsLink(lobbyId: lobbyId)));
+      for (final line in payload.split('\n')) {
+        expect(locationForDeepLink(line), '/squad?lobby_id=lobby-9');
+        expect(DeepLinkRouter.locationFor(line), '/squad?lobby_id=lobby-9');
+      }
+    });
+
+    test('shareLobbyLink copies and shares app scheme plus https fallback',
+        () async {
       final copied = <String>[];
       final shared = <String>[];
-      final link = await shareLobbyLink(
+      final payload = await shareLobbyLink(
         lobbyId: 'lobby-9',
         copy: (text) async => copied.add(text),
         share: (text) async => shared.add(text),
       );
-      expect(link, 'codsquadapp://lobby/lobby-9');
-      expect(copied, [link]);
-      expect(shared, [link]);
-      expect(locationForDeepLink(link), '/squad?lobby_id=lobby-9');
+      expect(
+        payload.split('\n'),
+        [
+          'codsquadapp://lobby/lobby-9',
+          'https://codsquad.app/l/lobby-9',
+        ],
+      );
+      expect(copied, [payload]);
+      expect(shared, [payload]);
+      expect(payload, contains('codsquadapp://lobby/lobby-9'));
+      expect(payload, contains('https://codsquad.app/l/lobby-9'));
+      for (final line in payload.split('\n')) {
+        expect(locationForDeepLink(line), '/squad?lobby_id=lobby-9');
+      }
     });
   });
 

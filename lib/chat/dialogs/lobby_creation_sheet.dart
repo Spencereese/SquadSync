@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:ui';
+import '../../core/injection.dart';
 import '../../domain/entities/game.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/user_notifier.dart';
 import '../../widgets/game_search_delegate.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 /// Glass-themed lobby creation sheet that slides over the chat screen
@@ -102,19 +102,14 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
     try {
       final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
-      // Create lobby with visibility
-      final lobbyId = await lobbyNotifier.createLobby(
+      // Create lobby with visibility + active constitution rules.
+      await lobbyNotifier.createLobbyWithConstitution(
         chatGroupId: widget.chatGroupId,
         gameName: _selectedGame!.name,
         maxSpots: _maxSpots,
-        isPublic: _visibility == 'public',
+        tags: const [],
+        visibility: _visibility,
       );
-
-      // Update lobby metadata (visibility, constitution will be auto-applied)
-      final supabase = Supabase.instance.client;
-      await supabase.from('lobbies').update({
-        'visibility': _visibility,
-      }).eq('id', lobbyId);
 
       HapticFeedback.mediumImpact();
       await _dismiss();
@@ -146,7 +141,7 @@ class _LobbyCreationSheetState extends ConsumerState<LobbyCreationSheet>
     setState(() => _isLoading = true);
 
     try {
-      final supabase = Supabase.instance.client;
+      final supabase = ref.read(supabaseClientProvider);
       final user = supabase.auth.currentUser;
       if (user == null) return;
 

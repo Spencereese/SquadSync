@@ -130,7 +130,13 @@ class JwtValidator {
     requireAuthentication();
 
     final userId = getCurrentUserId();
-    final supabase = Supabase.instance.client;
+    final supabase = SupabaseService.maybeClient;
+    if (supabase == null) {
+      throw UnauthorizedException(
+        'Supabase client is not initialized. '
+        'Override supabaseClientProvider or inject a client in tests.',
+      );
+    }
 
     try {
       final response = await supabase

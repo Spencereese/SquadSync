@@ -1932,7 +1932,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       );
 
       // Update lobby with tags, visibility, and constitution rules
-      await SupabaseService.client.from('lobbies').update({
+      await ref.read(supabaseClientProvider).from('lobbies').update({
         'tags': tags,
         'visibility': visibility,
         'constitution_rules': constitution?.rules ?? {},

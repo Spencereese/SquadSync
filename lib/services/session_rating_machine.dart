@@ -289,6 +289,46 @@ Map<String, dynamic> sessionClipPayload(SessionClip clip) {
   };
 }
 
+/// Stored gallery path / http URL You/stats can open. Null if missing.
+String? sessionClipMediaUrl(SessionClip? clip) {
+  if (clip == null || !clip.isAttached) return null;
+  return _nonEmpty(clip.videoUrl);
+}
+
+bool canOpenSessionClip(SessionClip? clip) =>
+    sessionClipMediaUrl(clip) != null;
+
+/// Parse ticket-9 `video_url` (gallery path or http) into a media URI.
+Uri? sessionClipMediaUri(SessionClip? clip) {
+  final url = sessionClipMediaUrl(clip);
+  if (url == null) return null;
+  return uriForSessionClipMedia(url);
+}
+
+Uri? uriForSessionClipMedia(String url) {
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) return null;
+  final parsed = Uri.tryParse(trimmed);
+  if (parsed != null && parsed.hasScheme) return parsed;
+  if (trimmed.startsWith('/')) {
+    return Uri(scheme: 'file', path: trimmed);
+  }
+  return parsed;
+}
+
+bool sessionClipIsNetworkMedia(SessionClip? clip) {
+  final uri = sessionClipMediaUri(clip);
+  if (uri == null) return false;
+  return uri.scheme == 'http' || uri.scheme == 'https';
+}
+
+/// Dialog / a11y title for an attached session clip.
+String sessionClipPlaybackTitle(SessionClip clip) {
+  return _nonEmpty(clip.title) ??
+      _nonEmpty(clip.fileName) ??
+      'Session clip';
+}
+
 /// Null unless [rating] is a 1–5 star submit.
 String? notesForSessionRating(
   SessionRatingState rating, {

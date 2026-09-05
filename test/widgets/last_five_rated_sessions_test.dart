@@ -113,5 +113,139 @@ void main() {
     expect(find.text('5★ · Warzone · Win · Sep 5 · Clip'), findsOneWidget);
     expect(find.byKey(const Key('last-five-rated-clip-0')), findsOneWidget);
     expect(find.byIcon(Icons.movie), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-open-0')), findsOneWidget);
+  });
+
+  testWidgets('tapping an openable last-5 clip opens existing media',
+      (tester) async {
+    SessionClip? opened;
+    final withClip = attachClipToRatedSession(
+      rated(
+        stars: 5,
+        game: 'Warzone',
+        result: 'win',
+        at: DateTime.utc(2026, 9, 5),
+      ),
+      reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+        fileName: 'clutch.mp4',
+        videoUrl: '/tmp/clutch.mp4',
+      ),
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        LastFiveRatedSessionsList(
+          sessions: [withClip],
+          onOpenClip: (context, clip) async {
+            opened = clip;
+            return true;
+          },
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.play_circle_outline), findsOneWidget);
+    await tester.tap(find.byKey(const Key('last-five-rated-open-0')));
+    await tester.pump();
+
+    expect(opened?.clipId, 'clip-1');
+    expect(opened?.videoUrl, '/tmp/clutch.mp4');
+    expect(opened?.fileName, 'clutch.mp4');
+  });
+
+  testWidgets('tapping a clip without video_url shows unavailable',
+      (tester) async {
+    var openCalls = 0;
+    final withClip = attachClipToRatedSession(
+      rated(
+        stars: 4,
+        game: 'Warzone',
+        result: 'win',
+        at: DateTime.utc(2026, 9, 5),
+      ),
+      reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+      ),
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        LastFiveRatedSessionsList(
+          sessions: [withClip],
+          onOpenClip: (context, clip) async {
+            openCalls++;
+            return false;
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('last-five-rated-open-0')));
+    await tester.pump();
+
+    expect(openCalls, 1);
+    expect(find.byKey(const Key('session-clip-unavailable')), findsOneWidget);
+    expect(find.text('Clip media is unavailable'), findsOneWidget);
+  });
+
+  testWidgets('You surface tap opens the attached clip', (tester) async {
+    SessionClip? opened;
+    final withClip = attachClipToRatedSession(
+      rated(
+        stars: 4,
+        game: 'Warzone',
+        result: 'win',
+        at: DateTime.utc(2026, 9, 3),
+      ),
+      reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-you',
+        videoUrl: 'https://cdn.example/you.mp4',
+      ),
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        YouLastFiveRatedSessions(
+          sessions: [withClip],
+          onOpenClip: (context, clip) async {
+            opened = clip;
+            return true;
+          },
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('you-last-five')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('last-five-rated-open-0')));
+    await tester.pump();
+    expect(opened?.clipId, 'clip-you');
+    expect(opened?.videoUrl, 'https://cdn.example/you.mp4');
+  });
+
+  testWidgets('rows without a clip are not an open control', (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        LastFiveRatedSessionsList(
+          sessions: [
+            rated(
+              stars: 5,
+              game: 'Warzone',
+              result: 'win',
+              at: DateTime.utc(2026, 9, 3),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('last-five-rated-open-0')), findsNothing);
+    expect(find.byKey(const Key('last-five-rated-clip-0')), findsNothing);
   });
 }

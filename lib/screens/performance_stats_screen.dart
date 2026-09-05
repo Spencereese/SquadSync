@@ -12,6 +12,7 @@ import 'package:squad_sync/services/session_rating_machine.dart';
 
 import '../presentation/notifiers/user_notifier.dart';
 import '../widgets/last_five_rated_sessions.dart';
+import '../widgets/session_clip_playback.dart';
 import 'stats_dashboard_data.dart';
 
 /// Fetches `get_lobby_stats` + `match_history` once both user and lobby are ready.
@@ -139,12 +140,14 @@ class StatsDashboardView extends StatelessWidget {
     this.onRecordWin,
     this.onRecordLoss,
     this.onSeedSmokeHistory,
+    this.onOpenClip,
   });
 
   final StatsDashboardSnapshot snapshot;
   final Future<void> Function()? onRecordWin;
   final Future<void> Function()? onRecordLoss;
   final Future<void> Function()? onSeedSmokeHistory;
+  final OpenSessionClip? onOpenClip;
 
   @override
   Widget build(BuildContext context) {
@@ -179,6 +182,7 @@ class StatsDashboardView extends StatelessWidget {
             child: LastFiveRatedSessionsList(
               key: const Key('stats-last-five'),
               sessions: snapshot.lastFiveRatedSessions,
+              onOpenClip: onOpenClip,
             ),
           ),
           const SizedBox(height: 16),

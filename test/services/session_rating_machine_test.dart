@@ -579,4 +579,92 @@ void main() {
       expect(decodeSessionClipFromNotes(null), isNull);
     });
   });
+
+  group('session clip You/stats open target', () {
+    test('gallery path and http video_url become openable media URIs', () {
+      final gallery = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+        videoUrl: '/tmp/clutch.mp4',
+      );
+      expect(canOpenSessionClip(gallery), isTrue);
+      expect(sessionClipMediaUrl(gallery), '/tmp/clutch.mp4');
+      expect(sessionClipMediaUri(gallery), Uri(scheme: 'file', path: '/tmp/clutch.mp4'));
+      expect(sessionClipIsNetworkMedia(gallery), isFalse);
+      expect(sessionClipPlaybackTitle(gallery), 'Session clip');
+
+      final named = reduceSessionClip(
+        current: gallery,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+        fileName: 'clutch.mp4',
+      );
+      expect(sessionClipPlaybackTitle(named), 'clutch.mp4');
+
+      final http = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-2',
+        videoUrl: 'https://cdn.example/ace.mp4',
+        title: 'Ace',
+      );
+      expect(canOpenSessionClip(http), isTrue);
+      expect(
+        sessionClipMediaUri(http),
+        Uri.parse('https://cdn.example/ace.mp4'),
+      );
+      expect(sessionClipIsNetworkMedia(http), isTrue);
+      expect(sessionClipPlaybackTitle(http), 'Ace');
+    });
+
+    test('attached clip without video_url cannot open', () {
+      final clip = reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-1',
+        fileName: 'clutch.mp4',
+      );
+      expect(clip.isAttached, isTrue);
+      expect(canOpenSessionClip(clip), isFalse);
+      expect(sessionClipMediaUri(clip), isNull);
+    });
+
+    test('match_history notes round-trip to an openable You/stats target', () {
+      final rated = attachClipToRatedSession(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 5,
+          gameName: 'Warzone',
+          result: 'win',
+          ratedAt: DateTime.utc(2026, 9, 5, 12),
+        ),
+        reduceSessionClip(
+          current: SessionClip.empty,
+          event: SessionClipEvent.attach,
+          clipId: 'clip-loop',
+          fileName: 'ace.mp4',
+          videoUrl: '/tmp/ace.mp4',
+        ),
+      );
+      final notes = notesForSessionRating(rated);
+      final lastFive = lastFiveRatedSessionsFromHistory([
+        {
+          'id': 'm1',
+          'game_name': 'Warzone',
+          'result': 'win',
+          'notes': notes,
+        },
+      ]);
+      expect(lastFive, hasLength(1));
+      expect(lastFive.single.hasClip, isTrue);
+      expect(canOpenSessionClip(lastFive.single.clip), isTrue);
+      expect(sessionClipMediaUrl(lastFive.single.clip), '/tmp/ace.mp4');
+      expect(
+        sessionClipMediaUri(lastFive.single.clip),
+        Uri(scheme: 'file', path: '/tmp/ace.mp4'),
+      );
+    });
+  });
 }

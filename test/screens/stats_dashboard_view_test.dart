@@ -87,6 +87,57 @@ void main() {
     expect(find.text('3.8★'), findsOneWidget);
   });
 
+  testWidgets('stats last-5 clip tap opens existing media', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SessionClip? opened;
+    final withClip = attachClipToRatedSession(
+      const SessionRatingState(
+        phase: SessionRatingPhase.rated,
+        stars: 5,
+        gameName: 'Warzone',
+        result: 'win',
+      ),
+      reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: 'clip-stats',
+        fileName: 'ace.mp4',
+        videoUrl: '/tmp/ace.mp4',
+      ),
+    );
+    final snapshot = StatsDashboardSnapshot(
+      memberStreaks: const [],
+      winLoss: const WinLossSummary(wins: 1),
+      ratings: const RatingSummary(allTimeAverage: 5, allTimeSampleSize: 1),
+      lastFiveRatedSessions: [withClip],
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        StatsDashboardView(
+          snapshot: snapshot,
+          onOpenClip: (context, clip) async {
+            opened = clip;
+            return true;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('stats-last-five')), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-open-0')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('last-five-rated-open-0')));
+    await tester.pump();
+
+    expect(opened?.clipId, 'clip-stats');
+    expect(opened?.videoUrl, '/tmp/ace.mp4');
+  });
+
   testWidgets('shows empty hints when snapshot has no data', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;

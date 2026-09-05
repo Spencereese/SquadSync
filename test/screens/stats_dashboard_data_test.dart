@@ -468,6 +468,48 @@ void main() {
         ['m7', 'm6', 'm5', 'm4', 'm3'],
       );
     });
+
+    test('last-five keeps clip video_url for You/stats open', () {
+      final notes = notesForSessionRating(
+        attachClipToRatedSession(
+          reduceSessionRating(
+            current: SessionRatingState.unrated,
+            event: SessionRatingEvent.rate,
+            stars: 5,
+            gameName: 'Warzone',
+            result: 'win',
+            ratedAt: DateTime.utc(2026, 9, 5),
+          ),
+          reduceSessionClip(
+            current: SessionClip.empty,
+            event: SessionClipEvent.attach,
+            clipId: 'clip-dash',
+            videoUrl: '/tmp/ace.mp4',
+            fileName: 'ace.mp4',
+          ),
+        ),
+      );
+      final snap = StatsDashboardSnapshot.fromSources(
+        extraHistory: [
+          {
+            'id': 'm1',
+            'game_name': 'Warzone',
+            'result': 'win',
+            'notes': notes,
+          },
+        ],
+      );
+      expect(snap.lastFiveRatedSessions, hasLength(1));
+      expect(snap.lastFiveRatedSessions.single.hasClip, isTrue);
+      expect(
+        canOpenSessionClip(snap.lastFiveRatedSessions.single.clip),
+        isTrue,
+      );
+      expect(
+        sessionClipMediaUrl(snap.lastFiveRatedSessions.single.clip),
+        '/tmp/ace.mp4',
+      );
+    });
   });
 
   group('communitySummaryFrom', () {

@@ -19,6 +19,7 @@ import '../../services/lobby_ready_lock.dart';
 import '../../services/matchmaking_queue_machine.dart';
 import '../../services/peacock_assignment_machine.dart';
 import '../../services/peacock_lock_live_activity.dart';
+import '../../services/preferred_peacock_games.dart';
 import '../../services/session_rating_machine.dart';
 import 'offline_first_mixin.dart';
 import 'timer_management_notifier.dart';
@@ -55,6 +56,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     _errorHandler = ref.read(errorHandlingServiceProvider);
 
     _bindPeacockQueueProcessor();
+    await PreferredPeacockGamesStore.instance.load();
     final matchmakingRepo = ref.read(matchmakingQueueRepositoryProvider);
     MatchmakingQueueTracker.instance.bindRepository(matchmakingRepo);
     unawaited(_bindMatchmakingQueue());
@@ -84,7 +86,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
       // Load state with performance monitoring and retry logic
       final initialState = await _errorHandler.withRetryAndMonitoring(
-        operation: () => _repository.loadLobbyState().timeout(
+        operation: () => _loadPersistedLobbyState().timeout(
           const Duration(seconds: 10),
           onTimeout: () {
             debugPrint(
@@ -102,7 +104,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       // Set up real-time subscriptions
       _setupSubscriptions(initialState);
 
-      return initialState;
+      return await syncPreferredPeacockGames(initialState);
     } catch (e, stackTrace) {
       await _errorHandler.handleError(
         error: e,
@@ -111,6 +113,27 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         showSnackBar: false, // Don't show error on initial load
       );
       return LobbyState.initial();
+    }
+  }
+
+  Future<LobbyState> _loadPersistedLobbyState() async {
+    final loaded = await _repository.loadLobbyState();
+    return syncPreferredPeacockGames(loaded);
+  }
+
+  /// Toggle a Preferred Peacock Game chip. Persists across sessions.
+  Future<void> togglePreferredPeacockGame(String gameName) async {
+    await PreferredPeacockGamesStore.instance.toggle(gameName);
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final next = current.copyWith(
+      preferredPeacockGames: PreferredPeacockGamesStore.instance.snapshot,
+    );
+    state = AsyncData(next);
+    try {
+      await _repository.saveLobbyState(next);
+    } catch (e) {
+      debugPrint('preferred peacock games save skipped: $e');
     }
   }
 
@@ -336,7 +359,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       }
 
       // Reload state to include new lobby
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      state = await AsyncValue.guard(() => _loadPersistedLobbyState());
 
       return lobbyId;
     } catch (e, stackTrace) {
@@ -375,7 +398,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       debugPrint('✅ Public lobby created: $lobbyId');
 
       // Reload state to include new lobby
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      state = await AsyncValue.guard(() => _loadPersistedLobbyState());
 
       return lobbyId;
     } catch (e, stackTrace) {
@@ -391,17 +414,17 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   Future<void> joinLobby(String squadId, String userId) async {
     await _repository.joinLobby(squadId, userId);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> leaveSquad(String squadId, String userId) async {
     await _repository.leaveLobby(squadId, userId);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> assignSpot(String squadId, int spotIndex, String? userId) async {
     await _repository.assignSpot(squadId, spotIndex, userId);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
     await reconcileReadyLock(
       actorUid: userId ?? '',
       notify: true,
@@ -411,14 +434,14 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   Future<void> startSpotTimer(
       String squadId, int spotIndex, Duration duration) async {
     await _repository.startSpotTimer(squadId, spotIndex, duration);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> processExpiredTimers() async {
     // Delegate to TimerManagementNotifier
     final timerNotifier = ref.read(timerManagementNotifierProvider.notifier);
     await timerNotifier.processExpiredTimers();
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   PeacockAssignmentTracker get _peacock => PeacockAssignmentTracker.instance;
@@ -475,7 +498,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       userId: userId,
       event: PeacockAssignmentEvent.joinQueue,
     );
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> removeFromPeacockQueue(String userId) async {
@@ -494,7 +517,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         event: PeacockAssignmentEvent.expire,
       );
     }
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   /// Process the peacock queue. Selects the next queued uid when one is not
@@ -518,7 +541,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         notificationId: notificationId,
       );
     }
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
     return uid;
   }
 
@@ -581,12 +604,12 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   Future<void> updateMemberStatus(
       String squadId, String userId, String status) async {
     await _repository.updateMemberStatus(squadId, userId, status);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> syncSquadData() async {
     await _repository.syncLobbyData();
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> setCurrentGame(Map<String, dynamic>? game) async {
@@ -797,7 +820,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
           debugPrint('✅ Created and selected new lobby: $squadId');
 
           // Reload the lobby data to reflect the new lobby
-          state = await AsyncValue.guard(() => _repository.loadLobbyState());
+          state = await AsyncValue.guard(() => _loadPersistedLobbyState());
         } catch (e) {
           debugPrint('❌ Error creating lobby: $e');
           return;
@@ -909,7 +932,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         } catch (e) {
           debugPrint('Error claiming spot: $e');
           // Reload state to reflect actual state if error occurred
-          state = await AsyncValue.guard(() => _repository.loadLobbyState());
+          state = await AsyncValue.guard(() => _loadPersistedLobbyState());
         }
       } else {
         debugPrint('Cannot claim spot: squadId or userId is null');
@@ -1340,7 +1363,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
           await timerNotifier.stopSpotTimer(gameName, userId);
         }
         // Reload state
-        state = await AsyncValue.guard(() => _repository.loadLobbyState());
+        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
       }
     }
   }
@@ -1550,7 +1573,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         }
 
         // Reload state
-        state = await AsyncValue.guard(() => _repository.loadLobbyState());
+        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
       } catch (e) {
         debugPrint('Error clearing all spots: $e');
       }
@@ -1571,7 +1594,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
             gameName, squadState.gameLobbySpots);
 
         // Reload state
-        state = await AsyncValue.guard(() => _repository.loadLobbyState());
+        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
       } catch (e) {
         debugPrint('Error resetting timers: $e');
       }
@@ -1679,7 +1702,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
             squadId, gameName, spotIndex, userId, const Duration(minutes: 5));
 
         // Reload state
-        state = await AsyncValue.guard(() => _repository.loadLobbyState());
+        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
       }
     }
   }
@@ -1818,7 +1841,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       await _repository.deleteLobby(lobbyId);
 
       // Reload state to remove deleted lobby
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      state = await AsyncValue.guard(() => _loadPersistedLobbyState());
 
       debugPrint('✅ Lobby $lobbyId deleted successfully');
     } catch (e, stackTrace) {
@@ -1868,7 +1891,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       debugPrint('✅ Lobby created with constitution: $lobbyId');
 
       // Reload state
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      state = await AsyncValue.guard(() => _loadPersistedLobbyState());
 
       return lobbyId;
     } catch (e, stackTrace) {

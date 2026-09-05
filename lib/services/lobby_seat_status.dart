@@ -3,6 +3,7 @@ import '../presentation/notifiers/lobby_notifier.dart'
     show lobbyForSeatResolve, resolveNextFreeSpotIndex;
 import 'matchmaking_queue_machine.dart';
 import 'peacock_assignment_machine.dart';
+import 'preferred_peacock_games.dart';
 
 /// Lobby status chip: seated / peacock / lock mm:ss.
 ///
@@ -103,9 +104,19 @@ int? resolveOfferedSeatIndex({
   );
 }
 
-bool _peacockOffered(PeacockAssignmentState peacock) =>
-    peacock.phase == PeacockAssignmentPhase.assigned ||
-    peacock.phase == PeacockAssignmentPhase.notified;
+bool _peacockOffered(
+  PeacockAssignmentState peacock, {
+  Set<String> preferredPeacockGames = const {},
+}) {
+  if (peacock.phase != PeacockAssignmentPhase.assigned &&
+      peacock.phase != PeacockAssignmentPhase.notified) {
+    return false;
+  }
+  return peacockOfferAllowed(
+    gameName: peacock.gameName,
+    preferredPeacockGames: preferredPeacockGames,
+  );
+}
 
 bool _lfgOffered(MatchmakingQueueEntry lfg) =>
     lfg.phase == MatchmakingQueuePhase.matched && lfg.hasJoinTarget;
@@ -126,6 +137,9 @@ bool _inPeacockOrLfg(
 
 /// Chip + pulse + banner flags from existing peacock + LFG + spots.
 ///
+/// Peacock offers (banner / pulse) honor [preferredPeacockGames]. Empty
+/// preference is unfiltered. LFG offers are unchanged.
+///
 /// Returns null when the user is idle (no chip).
 LobbySeatStatus? resolveLobbySeatStatus({
   required String? userId,
@@ -135,10 +149,15 @@ LobbySeatStatus? resolveLobbySeatStatus({
   int? maxSpots,
   Duration? lockRemaining,
   String? occupantStatus,
+  Set<String> preferredPeacockGames = const {},
 }) {
   if (userId == null || userId.isEmpty) return null;
 
-  final offered = _peacockOffered(peacock) || _lfgOffered(lfg);
+  final offered = _peacockOffered(
+        peacock,
+        preferredPeacockGames: preferredPeacockGames,
+      ) ||
+      _lfgOffered(lfg);
   final held = spots.indexWhere((uid) => spotHeldByUser(uid, userId));
   final occupying = held >= 0;
   final occupant = occupying ? spots[held] : null;
@@ -255,6 +274,9 @@ LobbySeatStatus? resolveLobbySeatStatusFromTrackers({
   final peacockState =
       (peacock ?? PeacockAssignmentTracker.instance).stateFor(userId);
   final lfgState = (lfg ?? MatchmakingQueueTracker.instance).stateFor(userId);
+  final preferred = lobbyState?.preferredPeacockGames.isNotEmpty == true
+      ? lobbyState!.preferredPeacockGames
+      : PreferredPeacockGamesStore.instance.snapshot;
   final spots = spotsForSeatStatus(
     lobbyState,
     lobbyId: lobbyId ?? peacockState.lobbyId ?? lfgState.lobbyId,
@@ -288,6 +310,7 @@ LobbySeatStatus? resolveLobbySeatStatusFromTrackers({
     maxSpots: maxSpots,
     lockRemaining: lockRemaining,
     occupantStatus: occupantStatus,
+    preferredPeacockGames: preferred,
   );
 }
 

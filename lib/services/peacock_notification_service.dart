@@ -8,6 +8,7 @@ import '../notification_service.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
 import 'peacock_assignment_machine.dart';
+import 'preferred_peacock_games.dart';
 
 export 'peacock_self_notify.dart';
 
@@ -97,6 +98,7 @@ class PeacockNotificationService {
     _handledIds.clear();
     _locallyPresentedIds.clear();
     PeacockAssignmentTracker.instance.clear();
+    PreferredPeacockGamesStore.instance.games.clear();
   }
 
   /// Start listening for peacock queue notifications
@@ -109,6 +111,7 @@ class PeacockNotificationService {
       return;
     }
 
+    await PreferredPeacockGamesStore.instance.load();
     developer.log(
         '🦚 Initializing peacock notification listener for user ${user.id}');
 
@@ -178,6 +181,13 @@ class PeacockNotificationService {
         gameName: gameName,
         notificationId: notificationId,
       );
+      if (!peacockOfferAllowed(
+        gameName: gameName,
+        preferredPeacockGames: PreferredPeacockGamesStore.instance.snapshot,
+      )) {
+        await _markSent(notificationId);
+        return;
+      }
       final dispatch = tracker.notifySelf(
         trackerUserId,
         isForeground: isForeground,

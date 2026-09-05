@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../services/preferred_peacock_games.dart';
 
 class PeacockTimerDisplay extends ConsumerStatefulWidget {
   final String player;
@@ -210,50 +211,7 @@ class PeacockWidgets {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Column(
         children: [
-          // Preferred Games Section
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              border:
-                  Border(bottom: BorderSide(color: Colors.grey, width: 0.5)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Preferred Peacock Games',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.cyanAccent,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [].map((game) {
-                    // squadState.availableGames
-                    final gameName = game['name'] as String;
-                    const isPreferred =
-                        false; // squadState.preferredPeacockGames.contains(gameName)
-                    return FilterChip(
-                      label: Text(gameName),
-                      selected: isPreferred,
-                      onSelected: (selected) {
-                        // if (selected) {
-                        //   squadState.addPreferredPeacockGame(gameName);
-                        // } else {
-                        //   squadState.removePreferredPeacockGame(gameName);
-                        // }
-                      },
-                      backgroundColor: Colors.grey[800],
-                      selectedColor: Colors.cyanAccent.withValues(alpha: 0.3),
-                      checkmarkColor: Colors.cyanAccent,
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ),
+          const PreferredPeacockGamesSection(),
           // Members List
           ListView.builder(
             shrinkWrap: true,
@@ -261,6 +219,90 @@ class PeacockWidgets {
             itemCount: 0, // squadState.getFilteredMembers.length
             itemBuilder: (context, index) => Container(),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Existing Preferred Peacock Games chips. Persist + filter only.
+class PreferredPeacockGamesSection extends ConsumerWidget {
+  const PreferredPeacockGamesSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final squadState = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
+    final games = preferredPeacockGameChoices(squadState);
+    final preferred = squadState?.preferredPeacockGames ??
+        PreferredPeacockGamesStore.instance.snapshot;
+    return PreferredPeacockGamesChips(
+      games: games,
+      preferred: preferred,
+      onToggle: (gameName) {
+        ref
+            .read(ln.lobbyNotifierProvider.notifier)
+            .togglePreferredPeacockGame(gameName);
+      },
+    );
+  }
+}
+
+class PreferredPeacockGamesChips extends StatelessWidget {
+  const PreferredPeacockGamesChips({
+    super.key,
+    required this.games,
+    required this.preferred,
+    required this.onToggle,
+  });
+
+  static const titleLabel = 'Preferred Peacock Games';
+  static const emptyLabel = 'No games yet — add one to filter peacock offers';
+
+  final List<String> games;
+  final Set<String> preferred;
+  final ValueChanged<String> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('preferred-peacock-games'),
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey, width: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            titleLabel,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.cyanAccent,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (games.isEmpty)
+            const Text(
+              emptyLabel,
+              key: Key('preferred-peacock-games-empty'),
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final gameName in games)
+                  FilterChip(
+                    key: Key('preferred-peacock-game-$gameName'),
+                    label: Text(gameName),
+                    selected: preferred.contains(gameName),
+                    onSelected: (_) => onToggle(gameName),
+                    backgroundColor: Colors.grey[800],
+                    selectedColor: Colors.cyanAccent.withValues(alpha: 0.3),
+                    checkmarkColor: Colors.cyanAccent,
+                  ),
+              ],
+            ),
         ],
       ),
     );

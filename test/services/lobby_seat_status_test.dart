@@ -172,6 +172,72 @@ void main() {
       expect(status.pulseOfferedSpot, isTrue);
       expect(claimSeatCopy(status.seatIndex), 'Claim seat 2');
     });
+
+    test('preferred games hide peacock offers for other titles', () {
+      final assigned = reducePeacockAssignment(
+        current: reducePeacockAssignment(
+          current: PeacockAssignmentState.idle,
+          event: PeacockAssignmentEvent.joinQueue,
+        ),
+        event: PeacockAssignmentEvent.assignSpot,
+        lobbyId: 'lobby-9',
+        gameName: 'Fortnite',
+      );
+      final status = resolveLobbySeatStatus(
+        userId: 'u1',
+        peacock: assigned,
+        lfg: MatchmakingQueueEntry.idle,
+        spots: [null, null],
+        maxSpots: 2,
+        preferredPeacockGames: const {'Warzone'},
+      );
+      expect(status!.chipLabel, 'peacock');
+      expect(status.showOfferBanner, isFalse);
+      expect(status.pulseOfferedSpot, isFalse);
+    });
+
+    test('preferred games keep matching peacock offers', () {
+      final assigned = reducePeacockAssignment(
+        current: reducePeacockAssignment(
+          current: PeacockAssignmentState.idle,
+          event: PeacockAssignmentEvent.joinQueue,
+        ),
+        event: PeacockAssignmentEvent.assignSpot,
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+      );
+      final status = resolveLobbySeatStatus(
+        userId: 'u1',
+        peacock: assigned,
+        lfg: MatchmakingQueueEntry.idle,
+        spots: [null, null],
+        maxSpots: 2,
+        preferredPeacockGames: const {'Warzone'},
+      );
+      expect(status!.showOfferBanner, isTrue);
+      expect(status.pulseOfferedSpot, isTrue);
+    });
+
+    test('LFG offers are not filtered by preferred peacock games', () {
+      final matched = reduceMatchmakingQueue(
+        current: reduceMatchmakingQueue(
+          current: MatchmakingQueueEntry.idle,
+          event: MatchmakingQueueEvent.startLooking,
+        ),
+        event: MatchmakingQueueEvent.matchFound,
+        lobbyId: 'lobby-9',
+        gameName: 'Fortnite',
+      );
+      final status = resolveLobbySeatStatus(
+        userId: 'u1',
+        peacock: PeacockAssignmentState.idle,
+        lfg: matched,
+        spots: [null, null],
+        maxSpots: 2,
+        preferredPeacockGames: const {'Warzone'},
+      );
+      expect(status!.showOfferBanner, isTrue);
+    });
   });
 
   group('declineOfferedSeat uses existing LFG + peacock expire (no XOR notify)',

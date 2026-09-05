@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/managers/notification_manager.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
 import 'package:squad_sync/services/peacock_notification_service.dart';
+import 'package:squad_sync/services/preferred_peacock_games.dart';
 
 void main() {
   tearDown(() {
@@ -197,6 +198,18 @@ void main() {
       await PeacockNotificationService.handleNotification(payload ?? record());
       return (local: local, fcm: fcm, sent: sent);
     }
+
+    test('skips notify when preferred games exclude the offer', () async {
+      PreferredPeacockGamesStore.instance.games.add('MW2');
+      final result = await runHandle(foreground: true);
+      expect(result.local, isEmpty);
+      expect(result.fcm, isEmpty);
+      expect(result.sent, ['n1']);
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('uid-1').phase,
+        PeacockAssignmentPhase.assigned,
+      );
+    });
 
     test('foreground handle shows local and does not FCM same uid', () async {
       final result = await runHandle(foreground: true);

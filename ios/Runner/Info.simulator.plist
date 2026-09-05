@@ -175,6 +175,11 @@
 					<key>NSIncludesSubdomains</key>
 					<true/>
 				</dict>
+				<key>codsquad.app</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
 				<key>youtube.com</key>
 				<dict>
 					<key>NSIncludesSubdomains</key>

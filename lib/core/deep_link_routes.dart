@@ -19,6 +19,12 @@ const kSimulatorRegisteredUrlSchemes = [
   kSimulatorAuthCallbackScheme,
 ];
 
+/// HTTPS Universal Link host. [locationForDeepLink] maps
+/// `https://codsquad.app/l/<id>` to the same `/squad?lobby_id=` path as
+/// `codsquadapp://lobby/<id>`. Device entitlements claim applinks; AASA
+/// hosting / Apple portal still need Spencer.
+const kLobbyUniversalLinkHost = 'codsquad.app';
+
 /// URL the chat peacock card opens. [locationForDeepLink] is the parse.
 String peacockCardDeepLink({
   String? lobbyId,
@@ -184,7 +190,8 @@ String? locationForDeepLinkUri(Uri uri) {
   );
   var screen = queryScreen;
   if (screen.isEmpty) {
-    if (_matchesName(host, segments, 'lobby')) {
+    if (_matchesName(host, segments, 'lobby') ||
+        _isShortLobbyLink(host: host, segments: segments)) {
       screen = 'lobby';
     } else if (_matchesName(host, segments, 'squad')) {
       screen = 'squad';
@@ -229,33 +236,55 @@ bool _matchesName(String host, List<String> segments, String name) {
   return segments.any((segment) => segment.toLowerCase() == name);
 }
 
-/// `codsquadapp://lobby/<id>` (and `/lobby/<id>` on https) — path is the
-/// lobby id, not a game name. Query `lobby_id` still wins when present.
+/// `codsquadapp://lobby/<id>` (and `/lobby/<id>` or `/l/<id>` on https)
+/// — path is the lobby id, not a game name. Query `lobby_id` still wins
+/// when present. `https://codsquad.app/l/<id>` is the Universal Link.
 String? _lobbyIdFromPath({
   required String host,
   required List<String> segments,
 }) {
-  if (host == 'lobby') {
+  if (host == 'lobby' || host == 'l') {
     return _nonEmpty(segments.isNotEmpty ? segments.first : null);
+  }
+  if (_isShortLobbyLink(host: host, segments: segments) &&
+      segments.length >= 2) {
+    final next = segments[1].toLowerCase();
+    if (!_reservedLobbyPathSegment(next)) {
+      return _nonEmpty(segments[1]);
+    }
   }
   final lobbyIndex =
       segments.indexWhere((segment) => segment.toLowerCase() == 'lobby');
   if (lobbyIndex >= 0 && lobbyIndex + 1 < segments.length) {
     final next = segments[lobbyIndex + 1].toLowerCase();
-    const reserved = {
-      'squad',
-      'peacock',
-      'lfg_matched',
-      'lfg_alert',
-      'availability_ping',
-      'chat',
-      'join',
-    };
-    if (!reserved.contains(next)) {
+    if (!_reservedLobbyPathSegment(next)) {
       return _nonEmpty(segments[lobbyIndex + 1]);
     }
   }
   return null;
+}
+
+/// HTTPS `/l/<id>` (or custom-scheme host `l`) is the short lobby path.
+bool _isShortLobbyLink({
+  required String host,
+  required List<String> segments,
+}) {
+  if (host == 'l') return true;
+  return segments.isNotEmpty && segments.first.toLowerCase() == 'l';
+}
+
+bool _reservedLobbyPathSegment(String segment) {
+  const reserved = {
+    'squad',
+    'peacock',
+    'lfg_matched',
+    'lfg_alert',
+    'availability_ping',
+    'chat',
+    'join',
+    'l',
+  };
+  return reserved.contains(segment);
 }
 
 String? _gameNameFromPath({

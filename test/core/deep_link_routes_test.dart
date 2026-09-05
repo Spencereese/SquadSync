@@ -323,6 +323,45 @@ void main() {
       );
     });
 
+    test('https://codsquad.app/l/<id> maps to the same lobby route', () {
+      const lobbyId = 'lobby-9';
+      const custom = 'codsquadapp://lobby/$lobbyId';
+      const httpsShort = 'https://$kLobbyUniversalLinkHost/l/$lobbyId';
+      const expected = '/squad?lobby_id=lobby-9';
+      expect(locationForDeepLink(custom), expected);
+      expect(locationForDeepLink(httpsShort), expected);
+      expect(
+        locationForDeepLink('https://www.codsquad.app/l/$lobbyId'),
+        expected,
+      );
+      expect(DeepLinkRouter.locationFor(httpsShort), expected);
+      expect(
+        locationForDeepLink('https://codsquad.app/l/$lobbyId/'),
+        expected,
+      );
+      expect(
+        locationForDeepLink(
+          'https://codsquad.app/l/$lobbyId?game_name=Warzone',
+        ),
+        '/squad/Warzone?lobby_id=lobby-9',
+      );
+      expect(
+        locationForDeepLink('codsquadapp://l/$lobbyId'),
+        expected,
+      );
+    });
+
+    test('https short lobby id is not treated as a game name', () {
+      expect(
+        locationForDeepLink('https://codsquad.app/l/lobby-9'),
+        isNot('/squad/lobby-9'),
+      );
+      expect(
+        locationForDeepLink('https://codsquad.app/l/lobby-9'),
+        '/squad?lobby_id=lobby-9',
+      );
+    });
+
     test('path lobby id is not treated as a game name', () {
       expect(
         locationForDeepLink('codsquadapp://lobby/lobby-9'),
@@ -367,11 +406,45 @@ void main() {
       );
       expect(
         locationForLiveAppLink(
+          'https://codsquad.app/l/lobby-9',
+          isIosSimulator: true,
+        ),
+        isNull,
+      );
+      expect(
+        locationForLiveAppLink(
+          'https://codsquad.app/l/lobby-9',
+          isIosSimulator: false,
+        ),
+        '/squad?lobby_id=lobby-9',
+      );
+      expect(
+        locationForLiveAppLink(
           'codsquadapp://lobby/smoke-no-such-lobby-20260903',
           isIosSimulator: true,
         ),
         '/squad?lobby_id=smoke-no-such-lobby-20260903',
       );
+    });
+
+    test('device live path routes https://codsquad.app/l/<id> to lobby', () {
+      var splashDismissed = false;
+      final logs = <String>[];
+      final location = prepareLiveAppLink(
+        'https://codsquad.app/l/lobby-9',
+        isIosSimulator: false,
+        dismissSplash: () => splashDismissed = true,
+        log: logs.add,
+      );
+      expect(location, '/squad?lobby_id=lobby-9');
+      expect(splashDismissed, isTrue);
+      expect(logs.single, contains('lobby_id=lobby-9'));
+
+      String? opened;
+      NotificationRoutes.go = (loc) => opened = loc;
+      NotificationRoutes.go?.call(location!);
+      expect(opened, location);
+      NotificationRoutes.go = null;
     });
 
     test('prepareLiveAppLink dismisses splash and logs lobby location', () {
@@ -440,6 +513,45 @@ void main() {
         text.contains('<string>com.example.codSquadApp</string>'),
         isTrue,
       );
+    });
+  });
+
+  group('Universal Links AASA / associated-domains prep', () {
+    test('device entitlements claim applinks:codsquad.app; sim does not', () {
+      final device = File('ios/Runner/Runner.entitlements').readAsStringSync();
+      expect(device.contains('<string>applinks:codsquad.app</string>'), isTrue);
+      expect(
+        device.contains('<string>applinks:www.codsquad.app</string>'),
+        isTrue,
+      );
+      expect(device.contains('com.example.codSquadApp'), isTrue);
+      final sim =
+          File('ios/Runner/Runner.simulator.entitlements').readAsStringSync();
+      expect(
+        sim.contains('<key>com.apple.developer.associated-domains</key>'),
+        isFalse,
+      );
+    });
+
+    test('AASA prep files claim /l/* for parked bundle ID', () {
+      final paths = [
+        'ios/associated-domains/apple-app-site-association',
+        'web/.well-known/apple-app-site-association',
+      ];
+      for (final path in paths) {
+        final file = File(path);
+        expect(file.existsSync(), isTrue, reason: '$path missing');
+        final text = file.readAsStringSync();
+        expect(text.contains('TEAMID.com.example.codSquadApp'), isTrue);
+        expect(text.contains('/l/*'), isTrue);
+        expect(text.contains('"applinks"'), isTrue);
+      }
+    });
+
+    test('AppDelegate sim swallow list includes codesquad.app', () {
+      final text = File('ios/Runner/AppDelegate.swift').readAsStringSync();
+      expect(text.contains('codsquad.app'), isTrue);
+      expect(text.contains('isProductCustomScheme'), isTrue);
     });
   });
 }

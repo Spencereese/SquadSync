@@ -13,12 +13,18 @@
 		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	</array>
 	<!-- AASA appID must be TEAMID.com.example.codSquadApp (parked bundle ID).
-	     Supabase Auth redirect: com.example.codSquadApp://auth-callback -->
+	     Supabase Auth redirect: com.example.codSquadApp://auth-callback
+	     Universal Links: https://codsquad.app/l/<id> → /squad?lobby_id=
+	     Prep file: ios/associated-domains/apple-app-site-association
+	     Spencer: enable Associated Domains on App ID com.example.codSquadApp
+	     if not already; host AASA; replace TEAMID. Do not change bundle ID. -->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:sfckxrnoiwetmzdycqaa.supabase.co</string>
 		<string>applinks:lobbiesync.app</string>
 		<string>applinks:www.lobbiesync.app</string>
+		<string>applinks:codsquad.app</string>
+		<string>applinks:www.codsquad.app</string>
 	</array>
 </dict>
 </plist>

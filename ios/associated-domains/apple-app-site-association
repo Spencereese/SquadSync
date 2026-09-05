@@ -1,0 +1,22 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.com.example.codSquadApp",
+        "paths": [
+          "/l/*"
+        ],
+        "appIDs": [
+          "TEAMID.com.example.codSquadApp"
+        ],
+        "components": [
+          {
+            "/": "/l/*",
+            "comment": "Lobby Universal Link https://codsquad.app/l/<id>"
+          }
+        ]
+      }
+    ]
+  }
+}

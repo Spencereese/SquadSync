@@ -1,0 +1,34 @@
+BLOCKED — Spencer / Apple Developer portal + AASA hosting
+
+Code scaffolding is on branch cursor/revive-squadsync-be5c.
+https://codsquad.app/l/<id> already parses in Dart to the same
+/squad?lobby_id=<id> route as codsquadapp://lobby/<id>.
+Custom scheme is unchanged. Simulator entitlements still have no applinks.
+
+Universal Links will not open the app on a signed device until Spencer:
+
+1. Apple Developer → Identifiers → App ID com.example.codSquadApp
+   - Enable capability "Associated Domains" if it is not already on
+     (device entitlements already list applinks: for supabase +
+     lobbiesync.app; this slice adds applinks:codsquad.app and
+     applinks:www.codsquad.app).
+   - Do NOT change the bundle ID. It stays com.example.codSquadApp.
+   - Copy the 10-character Team ID and replace TEAMID in
+     ios/associated-domains/apple-app-site-association
+     (and the copy at web/.well-known/apple-app-site-association).
+
+2. Host the AASA file (DNS / HTTPS — not done in this slice;
+   codesquad.app currently has no DNS):
+   - https://codsquad.app/.well-known/apple-app-site-association
+   - https://www.codsquad.app/.well-known/apple-app-site-association
+     (if www is used)
+   - Serve the file at ios/associated-domains/apple-app-site-association
+   - HTTPS, Content-Type: application/json
+   - No redirects, no .json extension
+   - Path claimed: /l/*
+
+3. Not this slice: TestFlight, new bundle ID, buying the domain,
+   Android/Windows App Links.
+
+Until 1–2 are done, Safari opens https://codsquad.app/l/<id> in the
+browser. The custom scheme codsquadapp://lobby/<id> still works.

@@ -133,6 +133,9 @@ bool shouldSwallowSimulatorAppLink(Uri url) {
     if (host == 'lobbiesync.app' || host.endsWith('.lobbiesync.app')) {
       return true;
     }
+    if (host == 'codsquad.app' || host.endsWith('.codsquad.app')) {
+      return true;
+    }
     if (host.contains('supabase.co')) return true;
   }
   return false;

@@ -103,6 +103,32 @@ void main() {
     );
     expect(
       shouldSwallowSimulatorAppLink(
+        Uri.parse('https://codsquad.app/l/lobby-9'),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(
+        Uri.parse('https://www.codsquad.app/l/lobby-9'),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldConsumeLaunchAppLink(
+        isIosSimulator: false,
+        url: Uri.parse('https://codsquad.app/l/lobby-9'),
+      ),
+      isTrue,
+    );
+    expect(
+      shouldConsumeLaunchAppLink(
+        isIosSimulator: true,
+        url: Uri.parse('https://codsquad.app/l/lobby-9'),
+      ),
+      isFalse,
+    );
+    expect(
+      shouldSwallowSimulatorAppLink(
         Uri.parse('com.example.codsquadapp://chat/1766270568521'),
       ),
       isTrue,

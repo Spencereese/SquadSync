@@ -1,8 +1,9 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// iOS Live Activities integration for Dynamic Island and Lock Screen widgets
-/// Requires native Swift implementation in ios/Runner/LiveActivityManager.swift
+/// iOS Live Activities integration for Dynamic Island and Lock Screen widgets.
+/// Native start/update/end: [ios/Runner/PeacockLockLiveActivity.swift].
 class LiveActivityManager {
   static const MethodChannel _channel =
       MethodChannel('com.squadsync/live_activities');
@@ -22,7 +23,7 @@ class LiveActivityManager {
       _isSupported = result ?? false;
       return _isSupported;
     } catch (e) {
-      print('⚠️ Live Activities not supported: $e');
+      debugPrint('⚠️ Live Activities not supported: $e');
       return false;
     }
   }
@@ -51,10 +52,10 @@ class LiveActivityManager {
         },
       );
 
-      print('🎭 Started Live Activity: $activityId');
+      debugPrint('🎭 Started Live Activity: $activityId');
       return activityId;
     } catch (e) {
-      print('❌ Failed to start Live Activity: $e');
+      debugPrint('❌ Failed to start Live Activity: $e');
       return null;
     }
   }
@@ -76,7 +77,7 @@ class LiveActivityManager {
 
       return true;
     } catch (e) {
-      print('❌ Failed to update Live Activity: $e');
+      debugPrint('❌ Failed to update Live Activity: $e');
       return false;
     }
   }
@@ -101,10 +102,10 @@ class LiveActivityManager {
         },
       );
 
-      print('⏱️ Started Timer Activity: $activityId');
+      debugPrint('⏱️ Started Timer Activity: $activityId');
       return activityId;
     } catch (e) {
-      print('❌ Failed to start Timer Activity: $e');
+      debugPrint('❌ Failed to start Timer Activity: $e');
       return null;
     }
   }
@@ -115,9 +116,9 @@ class LiveActivityManager {
 
     try {
       await _channel.invokeMethod('endActivity', {'activityId': activityId});
-      print('✅ Ended Live Activity: $activityId');
+      debugPrint('✅ Ended Live Activity: $activityId');
     } catch (e) {
-      print('❌ Failed to end Live Activity: $e');
+      debugPrint('❌ Failed to end Live Activity: $e');
     }
   }
 
@@ -127,9 +128,46 @@ class LiveActivityManager {
 
     try {
       await _channel.invokeMethod('endAllActivities');
-      print('✅ Ended all Live Activities');
+      debugPrint('✅ Ended all Live Activities');
     } catch (e) {
-      print('❌ Failed to end all Live Activities: $e');
+      debugPrint('❌ Failed to end all Live Activities: $e');
+    }
+  }
+
+  /// Start a peacock-lock Live Activity / home-widget payload on iOS.
+  /// No-op off iOS. Native lives on the existing Runner target.
+  Future<String?> startPeacockLockActivity(Map<String, dynamic> args) async {
+    if (!await isSupported()) return null;
+
+    try {
+      final activityId = await _channel.invokeMethod<String>(
+        'startPeacockLockActivity',
+        args,
+      );
+      debugPrint('🎭 Started peacock lock Live Activity: $activityId');
+      return activityId;
+    } catch (e) {
+      debugPrint('❌ Failed to start peacock lock Live Activity: $e');
+      return null;
+    }
+  }
+
+  /// Update the peacock-lock Live Activity / home-widget payload.
+  Future<bool> updatePeacockLockActivity({
+    required String activityId,
+    required Map<String, dynamic> args,
+  }) async {
+    if (!await isSupported()) return false;
+
+    try {
+      await _channel.invokeMethod('updatePeacockLockActivity', {
+        ...args,
+        'activityId': activityId,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('❌ Failed to update peacock lock Live Activity: $e');
+      return false;
     }
   }
 }

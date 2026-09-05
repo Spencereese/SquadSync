@@ -187,6 +187,8 @@
 				</dict>
 			</dict>
 		</dict>
+		<key>NSSupportsLiveActivities</key>
+		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
 		<key>UIViewControllerBasedStatusBarAppearance</key>

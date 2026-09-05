@@ -439,6 +439,7 @@ class RunnerSceneDelegate: FlutterSceneDelegate {
   }
 
   private func bindRuntimeChannel(on messenger: FlutterBinaryMessenger, source: String) {
+    PeacockLockLiveActivityBridge.register(on: messenger)
     if runtimeChannel != nil { return }
     let channel = FlutterMethodChannel(
       name: "com.example.codSquadApp/runtime",

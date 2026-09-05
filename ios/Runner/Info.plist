@@ -191,6 +191,10 @@
 				</dict>
 			</dict>
 		</dict>
+		<!-- Local Live Activities (iOS 16.1+). Not an entitlement.
+		     Lock Screen UI still needs a Widget Extension (new App ID). -->
+		<key>NSSupportsLiveActivities</key>
+		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
 		<key>UIViewControllerBasedStatusBarAppearance</key>

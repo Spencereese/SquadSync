@@ -18,6 +18,7 @@ import '../../notification_service.dart';
 import '../../services/lobby_ready_lock.dart';
 import '../../services/matchmaking_queue_machine.dart';
 import '../../services/peacock_assignment_machine.dart';
+import '../../services/peacock_lock_live_activity.dart';
 import '../../services/session_rating_machine.dart';
 import 'offline_first_mixin.dart';
 import 'timer_management_notifier.dart';
@@ -1012,6 +1013,16 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       } catch (e) {
         debugPrint('LobbyNotifier: lobby lock notify failed: $e');
       }
+    }
+
+    try {
+      await PeacockLockLiveActivity.syncFromReadyLock(
+        snapshot: after,
+        lobbyId: lobbyId,
+        gameName: game.isEmpty ? null : game,
+      );
+    } catch (e) {
+      debugPrint('LobbyNotifier: peacock lock live activity failed: $e');
     }
 
     return SeatedReadyResult(

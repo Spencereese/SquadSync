@@ -14,6 +14,7 @@ import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/services/lobby_ready_lock.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
+import 'package:squad_sync/services/peacock_lock_live_activity.dart';
 import 'package:squad_sync/services/session_rating_machine.dart';
 
 @GenerateMocks([LobbyRepository])
@@ -125,6 +126,7 @@ void main() {
     PeacockAssignmentTracker.resetInstance();
     MatchmakingQueueTracker.resetInstance();
     LobbyLockNotify.resetTestHooks();
+    PeacockLockLiveActivity.resetTestHooks();
 
     container = ProviderContainer(
       overrides: [
@@ -144,6 +146,7 @@ void main() {
     PeacockAssignmentTracker.resetInstance();
     MatchmakingQueueTracker.resetInstance();
     LobbyLockNotify.resetTestHooks();
+    PeacockLockLiveActivity.resetTestHooks();
   });
 
   group('LobbyNotifier - Initialization', () {
@@ -543,6 +546,11 @@ void main() {
         sentUids = recipientUids;
         sentData = data;
       };
+      PeacockLockLiveActivityPlan? livePlan;
+      PeacockLockLiveActivity.invokeHook = (plan) async {
+        livePlan = plan;
+        return 'act-lock';
+      };
 
       final notifier = await pumpSeatedLobby(
         statuses: const {'user-1': 'Ready'},
@@ -562,6 +570,10 @@ void main() {
       expect(sentUids, ['user-1']);
       expect(sentData!['type'], kLobbyLockedType);
       expect(sentData!['lobby_id'], 'lobby-9');
+      expect(livePlan, isNotNull);
+      expect(livePlan!.op, PeacockLockLiveActivityOp.start);
+      expect(livePlan!.payload.phase, PeacockLockLiveActivityPhase.locked);
+      expect(livePlan!.payload.lobbyId, 'lobby-9');
     });
 
     test('toggle is a no-op when the lobby is already locked', () async {

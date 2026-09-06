@@ -191,6 +191,33 @@ void main() {
       expect(view.phase, LfgListPhase.stale);
       expect(view.lookingUserIds, ['u-look']);
     });
+
+    test('matched-only snapshot after last dequeue is empty, not data', () {
+      final view = resolveLfgList(
+        snapshot: {
+          'u-match': const MatchmakingQueueEntry(
+            phase: MatchmakingQueuePhase.matched,
+            lobbyId: 'lobby-9',
+          ),
+        },
+        isHydrating: false,
+        isHydrated: true,
+      );
+      expect(view.phase, LfgListPhase.empty);
+      expect(view.lookingUserIds, isEmpty);
+      expect(lfgListMessage(view.phase), kLfgListEmptyCopy);
+    });
+
+    test('empty snapshot after stale cleanup is empty, not stale', () {
+      final view = resolveLfgList(
+        snapshot: const {},
+        isHydrating: false,
+        isHydrated: true,
+        isStale: true,
+      );
+      expect(view.phase, LfgListPhase.empty);
+      expect(lfgListHint(view.phase), kLfgListEmptyHint);
+    });
   });
 
   group('MatchmakingQueueTracker hydrate', () {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
+import 'package:squad_sync/services/squad_analytics.dart';
 import 'package:squad_sync/widgets/lfg_queue_status_row.dart';
 
 Widget _wrap(Widget child) {
@@ -8,6 +9,12 @@ Widget _wrap(Widget child) {
 }
 
 void main() {
+  setUp(() {
+    SquadAnalytics.resetTestHooks();
+    SquadAnalytics.logHook = (_, __) async {};
+  });
+  tearDown(SquadAnalytics.resetTestHooks);
+
   testWidgets('empty copy is arm length with no spinner', (tester) async {
     await tester.pumpWidget(
       _wrap(const LfgQueueStatusRow(view: LfgListView.empty)),
@@ -68,6 +75,36 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pump();
     expect(retried, isTrue);
+  });
+
+  testWidgets('last dequeue paints empty copy, not error or spinner',
+      (tester) async {
+    final tracker = MatchmakingQueueTracker();
+    tracker.startLooking('u1');
+    tracker.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true);
+
+    await tester.pumpWidget(
+      _wrap(LfgQueueStatusRow(view: resolveLfgListFromTracker(tracker))),
+    );
+
+    expect(find.byKey(const Key('lfg-queue-empty')), findsOneWidget);
+    expect(find.text(kLfgListEmptyCopy), findsOneWidget);
+    expect(find.text(kLfgListEmptyHint), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byKey(const Key('lfg-queue-error')), findsNothing);
+  });
+
+  testWidgets('dequeue while empty stays empty copy', (tester) async {
+    final tracker = MatchmakingQueueTracker();
+    expect(tracker.processQueue(lobbyId: 'lobby-9'), isEmpty);
+
+    await tester.pumpWidget(
+      _wrap(LfgQueueStatusRow(view: resolveLfgListFromTracker(tracker))),
+    );
+
+    expect(find.byKey(const Key('lfg-queue-empty')), findsOneWidget);
+    expect(find.text(kLfgListEmptyCopy), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
   testWidgets('reconnecting is copy, not a dead spinner', (tester) async {

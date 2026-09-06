@@ -45,9 +45,11 @@ void main() {
     });
 
     test('looking → matched on matchFound with lobby', () {
-      const looking = MatchmakingQueueEntry(
+      final queuedAt = DateTime.utc(2026, 9, 6, 12);
+      final looking = MatchmakingQueueEntry(
         phase: MatchmakingQueuePhase.looking,
         squadId: 'squad-1',
+        queuedAt: queuedAt,
       );
       final next = reduceMatchmakingQueue(
         current: looking,
@@ -62,6 +64,7 @@ void main() {
       expect(next.gameName, 'Warzone');
       expect(next.matchedUserId, 'u2');
       expect(next.notificationId, 'n1');
+      expect(next.queuedAt, queuedAt);
       expect(next.hasJoinTarget, isTrue);
       expect(next.routeLocation, '/squad/Warzone?lobby_id=lobby-9');
     });
@@ -202,5 +205,116 @@ void main() {
     );
     expect(state.phase, MatchmakingQueuePhase.joined);
     expect(state.hasJoinTarget, isTrue);
+  });
+
+  group('shouldApplyRemoteQueueEntry', () {
+    test('late looking does not undo a local dequeue', () {
+      const matched = MatchmakingQueueEntry(
+        phase: MatchmakingQueuePhase.matched,
+        lobbyId: 'lobby-9',
+      );
+      const looking = MatchmakingQueueEntry(
+        phase: MatchmakingQueuePhase.looking,
+      );
+      expect(
+        shouldApplyRemoteQueueEntry(local: matched, remote: looking),
+        isFalse,
+      );
+      expect(
+        shouldApplyRemoteQueueEntry(
+          local: const MatchmakingQueueEntry(
+            phase: MatchmakingQueuePhase.joined,
+            lobbyId: 'lobby-9',
+          ),
+          remote: looking,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldApplyRemoteQueueEntry(local: matched, remote: null),
+        isFalse,
+      );
+    });
+
+    test('remote dequeue still applies over local looking', () {
+      const looking = MatchmakingQueueEntry(
+        phase: MatchmakingQueuePhase.looking,
+      );
+      const matched = MatchmakingQueueEntry(
+        phase: MatchmakingQueuePhase.matched,
+        lobbyId: 'lobby-9',
+      );
+      expect(
+        shouldApplyRemoteQueueEntry(local: looking, remote: matched),
+        isTrue,
+      );
+      expect(
+        shouldApplyRemoteQueueEntry(
+          local: MatchmakingQueueEntry.idle,
+          remote: looking,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldApplyRemoteQueueEntry(local: looking, remote: null),
+        isTrue,
+      );
+    });
+  });
+
+  group('stale looking cleanup stubs', () {
+    test('looking older than TTL is stale; matched and unstamped are not', () {
+      final now = DateTime.utc(2026, 9, 6, 12);
+      expect(
+        isStaleMatchmakingEntry(
+          MatchmakingQueueEntry(
+            phase: MatchmakingQueuePhase.looking,
+            queuedAt: now.subtract(kLfgStaleEntryAfter),
+          ),
+          now: now,
+        ),
+        isTrue,
+      );
+      expect(
+        isStaleMatchmakingEntry(
+          MatchmakingQueueEntry(
+            phase: MatchmakingQueuePhase.looking,
+            queuedAt: now.subtract(
+              kLfgStaleEntryAfter - const Duration(seconds: 1),
+            ),
+          ),
+          now: now,
+        ),
+        isFalse,
+      );
+      expect(
+        isStaleMatchmakingEntry(
+          const MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+          now: now,
+        ),
+        isFalse,
+      );
+      expect(
+        isStaleMatchmakingEntry(
+          MatchmakingQueueEntry(
+            phase: MatchmakingQueuePhase.matched,
+            lobbyId: 'lobby-9',
+            queuedAt: now.subtract(kLfgStaleEntryAfter * 2),
+          ),
+          now: now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('empty snapshot has no stale ids', () {
+      expect(
+        staleMatchmakingUserIds(
+          const {},
+          now: DateTime.utc(2026, 9, 6, 12),
+        ),
+        isEmpty,
+      );
+    });
   });
 }

@@ -138,6 +138,7 @@ MatchmakingQueueEntry reduceMatchmakingQueue({
         gameName: gameName ?? current.gameName,
         matchedUserId: matchedUserId ?? current.matchedUserId,
         notificationId: notificationId ?? current.notificationId,
+        queuedAt: current.queuedAt,
       );
 
     case MatchmakingQueueEvent.joinMatched:
@@ -197,6 +198,8 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   bool _applyingRemote = false;
   Object? _hydrateError;
   DateTime? _lastHydratedAt;
+  final Map<String, int> _persistGen = <String, int>{};
+  final Map<String, Future<void>> _persistTail = <String, Future<void>>{};
 
   PeacockAssignmentTracker get _peacock =>
       _peacockOverride ?? PeacockAssignmentTracker.instance;
@@ -305,7 +308,7 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     );
     final installed = _install(userId, next);
     if (!_applyingRemote) {
-      unawaited(persistCurrent(userId));
+      unawaited(_persistQuietly(userId));
       if (event == MatchmakingQueueEvent.startLooking &&
           installed.phase == MatchmakingQueuePhase.looking &&
           before.phase != MatchmakingQueuePhase.looking) {
@@ -344,24 +347,62 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   }
 
   /// Apply a Realtime / hydrate row. Does not persist and does not peacock.
+  /// Stale looking after a local dequeue is ignored (enqueue→dequeue race).
   void applyRemote(String userId, MatchmakingQueueEntry? entry) {
+    final already = _applyingRemote;
     _applyingRemote = true;
     try {
+      if (!shouldApplyRemoteQueueEntry(
+        local: stateFor(userId),
+        remote: entry,
+      )) {
+        return;
+      }
       _install(userId, entry ?? MatchmakingQueueEntry.idle);
     } finally {
-      _applyingRemote = false;
+      if (!already) _applyingRemote = false;
     }
   }
 
-  Future<void> persistCurrent(String userId) async {
+  /// Serialize per-user writes so a late looking upsert cannot overwrite
+  /// a dequeue. Reads the live row immediately before the remote write.
+  Future<void> persistCurrent(String userId) {
     final repo = _repository;
-    if (repo == null || userId.isEmpty) return;
-    final entry = stateFor(userId);
-    if (entry.phase == MatchmakingQueuePhase.idle) {
-      await repo.remove(userId);
-      return;
+    if (repo == null || userId.isEmpty) return Future<void>.value();
+    final gen = (_persistGen[userId] ?? 0) + 1;
+    _persistGen[userId] = gen;
+    final previous = _persistTail[userId] ?? Future<void>.value();
+    final done = () async {
+      try {
+        await previous;
+      } catch (_) {}
+      if (_persistGen[userId] != gen) return;
+      final entry = stateFor(userId);
+      if (entry.phase == MatchmakingQueuePhase.idle) {
+        await repo.remove(userId);
+        return;
+      }
+      await repo.upsert(userId, entry);
+    }();
+    _persistTail[userId] = done;
+    return done;
+  }
+
+  Future<void> _persistQuietly(String userId) async {
+    try {
+      await persistCurrent(userId);
+    } catch (_) {}
+  }
+
+  /// Flush in-flight looking / matched / idle writes. Tests only.
+  @visibleForTesting
+  Future<void> waitForPendingPersists() async {
+    final pending = _persistTail.values.toList(growable: false);
+    for (final future in pending) {
+      try {
+        await future;
+      } catch (_) {}
     }
-    await repo.upsert(userId, entry);
   }
 
   Future<void> persistUsers(Iterable<String> userIds) async {
@@ -376,6 +417,7 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     _repository ??=
         MatchmakingQueueRepositoryImpl(client: SupabaseService.maybeClient);
     await hydrateFromRepository(force: force);
+    cleanupStaleEntries();
     _bindRealtime();
   }
 
@@ -388,9 +430,8 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     notifyListeners();
     try {
       final rows = await repo.fetchActive();
-      _applyingRemote = true;
       for (final entry in rows.entries) {
-        _install(entry.key, entry.value);
+        applyRemote(entry.key, entry.value);
       }
       _hydrated = true;
       _lastHydratedAt = DateTime.now().toUtc();
@@ -398,7 +439,6 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     } catch (e) {
       _hydrateError = e;
     } finally {
-      _applyingRemote = false;
       _hydrating = false;
       notifyListeners();
     }
@@ -478,6 +518,7 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   /// Lobby-aware: only match into [lobbyId] when [lobbyHasFreeSeat] is true
   /// (default true when a lobby id is passed, so existing callers keep
   /// matching). A full lobby falls through to pairing. Never peacock-assigns.
+  /// Empty queue is a no-op (no match, no persist, no error).
   List<String> processQueue({
     String? lobbyId,
     String? gameName,
@@ -570,8 +611,29 @@ class MatchmakingQueueTracker extends ChangeNotifier {
         event: MatchmakingQueueEvent.expire,
       );
 
+  /// In-memory expire of stale looking rows, then persist remove.
+  /// Stub: no sweeper table. Empty queue is a no-op.
+  List<String> cleanupStaleEntries({
+    DateTime? now,
+    Duration? after,
+  }) {
+    final at = now ?? DateTime.now().toUtc();
+    final ttl = after ?? kLfgStaleEntryAfter;
+    final ids = staleMatchmakingUserIds(
+      snapshot,
+      now: at,
+      after: ttl,
+    );
+    for (final id in ids) {
+      expire(id);
+    }
+    return ids;
+  }
+
   void clear() {
     _byUser.clear();
+    _persistGen.clear();
+    _persistTail.clear();
     notifyListeners();
   }
 
@@ -584,6 +646,10 @@ class MatchmakingQueueTracker extends ChangeNotifier {
 
 /// How long a successful LFG hydrate stays "live" before the row is stale.
 const kLfgListStaleAfter = Duration(minutes: 2);
+
+/// How long a looking row may sit before [cleanupStaleEntries] expires it.
+/// Stub: in-memory expire + existing persist remove. No sweeper table.
+const kLfgStaleEntryAfter = Duration(minutes: 15);
 
 const kLfgListEmptyCopy = 'No one looking right now';
 const kLfgListEmptyHint = 'Tap Looking for Squad to join the queue.';
@@ -720,6 +786,65 @@ String? lfgListHint(LfgListPhase phase) {
     case LfgListPhase.data:
       return null;
   }
+}
+
+/// idle < looking < matched < joined. Used to drop stale enqueue echoes.
+int matchmakingPhaseRank(MatchmakingQueuePhase phase) {
+  switch (phase) {
+    case MatchmakingQueuePhase.idle:
+      return 0;
+    case MatchmakingQueuePhase.looking:
+      return 1;
+    case MatchmakingQueuePhase.matched:
+      return 2;
+    case MatchmakingQueuePhase.joined:
+      return 3;
+  }
+}
+
+/// True when a Realtime / hydrate row should replace [local].
+///
+/// A looking (or idle-delete) echo after a local dequeue is ignored so a
+/// late enqueue persist cannot undo match/join. Remote rows that are
+/// further along still apply (other-session dequeue).
+bool shouldApplyRemoteQueueEntry({
+  required MatchmakingQueueEntry local,
+  MatchmakingQueueEntry? remote,
+}) {
+  if (remote == null || remote.phase == MatchmakingQueuePhase.idle) {
+    return local.phase != MatchmakingQueuePhase.matched &&
+        local.phase != MatchmakingQueuePhase.joined;
+  }
+  if (local.phase == MatchmakingQueuePhase.idle) return true;
+  return matchmakingPhaseRank(remote.phase) >=
+      matchmakingPhaseRank(local.phase);
+}
+
+/// Looking rows older than [after] are stale. Matched/joined/idle are not.
+bool isStaleMatchmakingEntry(
+  MatchmakingQueueEntry entry, {
+  required DateTime now,
+  Duration after = kLfgStaleEntryAfter,
+}) {
+  if (entry.phase != MatchmakingQueuePhase.looking) return false;
+  final queuedAt = entry.queuedAt;
+  if (queuedAt == null) return false;
+  return now.toUtc().difference(queuedAt.toUtc()) >= after;
+}
+
+/// User ids whose looking row is past [after]. Empty snapshot is empty.
+List<String> staleMatchmakingUserIds(
+  Map<String, MatchmakingQueueEntry> snapshot, {
+  required DateTime now,
+  Duration after = kLfgStaleEntryAfter,
+}) {
+  final ids = <String>[];
+  for (final entry in snapshot.entries) {
+    if (isStaleMatchmakingEntry(entry.value, now: now, after: after)) {
+      ids.add(entry.key);
+    }
+  }
+  return ids;
 }
 
 /// Occupied seats (including `_calling`) do not count as free.

@@ -7,13 +7,20 @@ import 'package:squad_sync/services/peacock_assignment_machine.dart';
 import 'package:squad_sync/services/squad_analytics.dart';
 
 class _MemoryQueueRepo implements MatchmakingQueueRepository {
+  _MemoryQueueRepo({this.onUpsert});
+
   final Map<String, MatchmakingQueueEntry> rows =
       <String, MatchmakingQueueEntry>{};
   final StreamController<MatchmakingQueueChange> controller =
       StreamController<MatchmakingQueueChange>.broadcast();
+  final List<String> upsertPhases = <String>[];
+  Future<void> Function(String userId, MatchmakingQueueEntry entry)? onUpsert;
+  Object? upsertError;
 
   @override
   Future<void> upsert(String userId, MatchmakingQueueEntry entry) async {
+    if (onUpsert != null) await onUpsert!(userId, entry);
+    if (upsertError != null) throw upsertError!;
     if (entry.phase == MatchmakingQueuePhase.idle) {
       await remove(userId);
       return;
@@ -21,6 +28,7 @@ class _MemoryQueueRepo implements MatchmakingQueueRepository {
     final stamped = entry.queuedAt == null
         ? entry.copyWith(queuedAt: DateTime.now().toUtc())
         : entry;
+    upsertPhases.add(stamped.phase.name);
     rows[userId] = stamped;
     controller.add(MatchmakingQueueChange(userId: userId, entry: stamped));
   }
@@ -529,6 +537,215 @@ void main() {
       hydrated.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true);
       expect(hydrated.stateFor('u-old').lobbyId, 'lobby-9');
       expect(hydrated.stateFor('u-new').phase, MatchmakingQueuePhase.looking);
+    });
+  });
+
+  group('enqueue success / fail', () {
+    test('enqueue persist success keeps looking', () async {
+      final repo = _MemoryQueueRepo();
+      addTearDown(repo.dispose);
+      tracker = MatchmakingQueueTracker(peacock: peacock, repository: repo);
+
+      final next = await tracker.startLookingAfter(
+        () async {},
+        userId: 'u1',
+        gameName: 'Warzone',
+      );
+
+      expect(next.phase, MatchmakingQueuePhase.looking);
+      expect(repo.rows['u1']?.phase, MatchmakingQueuePhase.looking);
+      expect(repo.rows['u1']?.gameName, 'Warzone');
+    });
+
+    test('enqueue persist fail still looks locally', () async {
+      final repo = _MemoryQueueRepo()..upsertError = Exception('persist down');
+      addTearDown(repo.dispose);
+      tracker = MatchmakingQueueTracker(peacock: peacock, repository: repo);
+
+      await expectLater(
+        tracker.startLookingAfter(() async {}, userId: 'u1'),
+        throwsA(isA<Exception>()),
+      );
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.looking);
+      expect(repo.rows.containsKey('u1'), isFalse);
+    });
+
+    test('enqueue remote fail does not look', () async {
+      await expectLater(
+        tracker.startLookingAfter(
+          () async {
+            throw Exception('notify down');
+          },
+          userId: 'u1',
+        ),
+        throwsA(isA<Exception>()),
+      );
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.idle);
+    });
+  });
+
+  group('enqueue → dequeue races', () {
+    test('late looking persist does not overwrite matched dequeue', () async {
+      final gate = Completer<void>();
+      var started = 0;
+      final repo = _MemoryQueueRepo(
+        onUpsert: (userId, entry) async {
+          started++;
+          if (started == 1) await gate.future;
+        },
+      );
+      addTearDown(repo.dispose);
+      tracker = MatchmakingQueueTracker(peacock: peacock, repository: repo);
+
+      tracker.startLooking('u1');
+      await Future<void>.delayed(Duration.zero);
+      expect(started, 1);
+
+      tracker.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true);
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.matched);
+
+      gate.complete();
+      await tracker.waitForPendingPersists();
+
+      expect(repo.rows['u1']?.phase, MatchmakingQueuePhase.matched);
+      expect(repo.rows['u1']?.lobbyId, 'lobby-9');
+    });
+
+    test('Realtime looking echo is ignored after local match', () {
+      tracker.startLooking('u1');
+      tracker.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true);
+      tracker.applyRemote(
+        'u1',
+        const MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+      );
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.matched);
+      expect(tracker.stateFor('u1').lobbyId, 'lobby-9');
+    });
+
+    test('hydrate looking does not undo a local dequeue', () async {
+      final repo = _MemoryQueueRepo();
+      addTearDown(repo.dispose);
+      tracker = MatchmakingQueueTracker(peacock: peacock, repository: repo);
+      tracker.startLooking('u1');
+      tracker.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true);
+      await tracker.waitForPendingPersists();
+      await repo.upsert(
+        'u1',
+        const MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+      );
+
+      await tracker.hydrateFromRepository(force: true);
+
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.matched);
+      expect(tracker.stateFor('u1').lobbyId, 'lobby-9');
+    });
+
+    test('processQueue of two looking users matches each once', () {
+      tracker.startLooking('u1');
+      tracker.startLooking('u2');
+      expect(
+        tracker.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true),
+        ['u1'],
+      );
+      expect(
+        tracker.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true),
+        ['u2'],
+      );
+      expect(
+        tracker.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true),
+        isEmpty,
+      );
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.matched);
+      expect(tracker.stateFor('u2').phase, MatchmakingQueuePhase.matched);
+    });
+  });
+
+  group('dequeue while empty', () {
+    test('processQueue while empty is a no-op', () {
+      expect(tracker.processQueue(lobbyId: 'lobby-9'), isEmpty);
+      expect(tracker.processQueue(), isEmpty);
+      expect(tracker.snapshot, isEmpty);
+      expect(tracker.nextLookingUserId(), isNull);
+    });
+
+    test('processQueueAndPersist while empty does not write', () async {
+      final repo = _MemoryQueueRepo();
+      addTearDown(repo.dispose);
+      tracker = MatchmakingQueueTracker(peacock: peacock, repository: repo);
+
+      expect(
+        await tracker.processQueueAndPersist(
+          lobbyId: 'lobby-9',
+          lobbyHasFreeSeat: true,
+        ),
+        isEmpty,
+      );
+      expect(repo.rows, isEmpty);
+      expect(repo.upsertPhases, isEmpty);
+      expect(
+        resolveLfgListFromTracker(tracker).phase,
+        LfgListPhase.empty,
+      );
+    });
+
+    test('dequeue of last looking user yields empty queue UI', () {
+      tracker.startLooking('u1');
+      expect(resolveLfgListFromTracker(tracker).phase, LfgListPhase.data);
+      tracker.processQueue(lobbyId: 'lobby-9', lobbyHasFreeSeat: true);
+      expect(tracker.lookingUserIds, isEmpty);
+      expect(
+        resolveLfgListFromTracker(tracker).phase,
+        LfgListPhase.empty,
+      );
+    });
+  });
+
+  group('stale entry cleanup stubs', () {
+    test('expires looking past TTL and leaves the queue empty', () {
+      final now = DateTime.utc(2026, 9, 6, 12);
+      tracker.applyRemote(
+        'u-old',
+        MatchmakingQueueEntry(
+          phase: MatchmakingQueuePhase.looking,
+          queuedAt: now.subtract(kLfgStaleEntryAfter),
+        ),
+      );
+      tracker.applyRemote(
+        'u-fresh',
+        MatchmakingQueueEntry(
+          phase: MatchmakingQueuePhase.looking,
+          queuedAt: now.subtract(const Duration(minutes: 1)),
+        ),
+      );
+
+      expect(tracker.cleanupStaleEntries(now: now), ['u-old']);
+      expect(tracker.stateFor('u-old').phase, MatchmakingQueuePhase.idle);
+      expect(tracker.stateFor('u-fresh').phase, MatchmakingQueuePhase.looking);
+      expect(tracker.lookingUserIds, ['u-fresh']);
+    });
+
+    test('empty queue cleanup is a no-op', () {
+      expect(tracker.cleanupStaleEntries(), isEmpty);
+      expect(tracker.snapshot, isEmpty);
+      expect(
+        resolveLfgListFromTracker(tracker).phase,
+        LfgListPhase.empty,
+      );
+    });
+
+    test('cleanup of last stale looking row is empty copy, not stale', () {
+      final now = DateTime.utc(2026, 9, 6, 12);
+      tracker.applyRemote(
+        'u-old',
+        MatchmakingQueueEntry(
+          phase: MatchmakingQueuePhase.looking,
+          queuedAt: now.subtract(kLfgStaleEntryAfter * 2),
+        ),
+      );
+      tracker.cleanupStaleEntries(now: now);
+      final view = resolveLfgListFromTracker(tracker);
+      expect(view.phase, LfgListPhase.empty);
+      expect(view.lookingCount, 0);
     });
   });
 }

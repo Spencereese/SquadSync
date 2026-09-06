@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Slice G lease tests `git diff` against Slice F (0712929).
+          # Default fetch-depth: 1 makes that SHA missing (git exit 128).
+          fetch-depth: 0
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2

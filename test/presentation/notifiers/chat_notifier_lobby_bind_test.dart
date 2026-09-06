@@ -16,6 +16,8 @@ import 'package:squad_sync/core/injection.dart';
 /// then initializes the new thread. No chat_info_screen / message_bubble
 /// rewrite. chat_screen.dart ≤40 lines if touched at all.
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late ProviderContainer container;
 
   setUp(() {
@@ -26,12 +28,11 @@ void main() {
     );
   });
 
-  tearDown(container.dispose);
+  tearDown(() => container.dispose());
 
   test(
     'ChatNotifier.bindActiveLobbyChat is the sole notifier writer of the bind',
     () async {
-      await container.read(chatNotifierProvider.future);
       final notifier = container.read(chatNotifierProvider.notifier);
 
       notifier.bindActiveLobbyChat(

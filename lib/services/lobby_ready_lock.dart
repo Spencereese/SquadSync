@@ -615,6 +615,44 @@ LobbyLockNotifyPlan planLobbyReadyTimeoutNotify({
   );
 }
 
+/// One notify pipeline: plan lock / unlock / timeout from a snapshot.
+/// Callers send through a single [LobbyLockNotify.send] site.
+LobbyLockNotifyPlan? planNotifyFromReadyLockSnapshot({
+  required LobbyReadyLockSnapshot snapshot,
+  required String actorUid,
+  String? lobbyId,
+  String? gameName,
+  required bool lockedNow,
+  required bool unlockedNow,
+  bool timedOut = false,
+}) {
+  if (timedOut) {
+    return planLobbyReadyTimeoutNotify(
+      seatedUids: snapshot.seatedUids,
+      actorUid: actorUid,
+      lobbyId: lobbyId,
+      gameName: gameName,
+    );
+  }
+  if (lockedNow) {
+    return planLobbyLockNotify(
+      seatedUids: snapshot.seatedUids,
+      actorUid: actorUid,
+      lobbyId: lobbyId,
+      gameName: gameName,
+    );
+  }
+  if (unlockedNow) {
+    return planLobbyUnlockNotify(
+      seatedUids: snapshot.seatedUids,
+      actorUid: actorUid,
+      lobbyId: lobbyId,
+      gameName: gameName,
+    );
+  }
+  return null;
+}
+
 LobbyLockNotifyPlan planLobbyReadyLockNotify({
   required String type,
   required String title,

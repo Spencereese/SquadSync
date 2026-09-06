@@ -304,6 +304,27 @@ void main() {
       expect(status.pulseOfferedSpot, isTrue);
     });
 
+    test('preferred games match offer titles case-insensitively', () {
+      final assigned = reducePeacockAssignment(
+        current: reducePeacockAssignment(
+          current: PeacockAssignmentState.idle,
+          event: PeacockAssignmentEvent.joinQueue,
+        ),
+        event: PeacockAssignmentEvent.assignSpot,
+        lobbyId: 'lobby-9',
+        gameName: 'warzone',
+      );
+      final status = resolveLobbySeatStatus(
+        userId: 'u1',
+        peacock: assigned,
+        lfg: MatchmakingQueueEntry.idle,
+        spots: [null, null],
+        maxSpots: 2,
+        preferredPeacockGames: const {'Warzone'},
+      );
+      expect(status!.showOfferBanner, isTrue);
+    });
+
     test('LFG offers are not filtered by preferred peacock games', () {
       final matched = reduceMatchmakingQueue(
         current: reduceMatchmakingQueue(

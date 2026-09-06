@@ -15,8 +15,10 @@ import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/services/lobby_ready_lock.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:squad_sync/services/peacock_assignment_machine.dart';
 import 'package:squad_sync/services/peacock_lock_live_activity.dart';
+import 'package:squad_sync/services/preferred_peacock_games.dart';
 import 'package:squad_sync/services/session_rating_machine.dart';
 import 'package:squad_sync/services/squad_analytics.dart';
 
@@ -125,7 +127,10 @@ void main() {
     when(mockRepository.updateMemberStatus(any, any, any))
         .thenAnswer((_) async {});
     when(mockRepository.processPeacockQueue()).thenAnswer((_) async {});
+    when(mockRepository.saveLobbyState(any)).thenAnswer((_) async {});
 
+    SharedPreferences.setMockInitialValues({});
+    PreferredPeacockGamesStore.instance.reset();
     PeacockAssignmentTracker.resetInstance();
     MatchmakingQueueTracker.resetInstance();
     LobbyLockNotify.resetTestHooks();
@@ -148,6 +153,7 @@ void main() {
 
   tearDown(() {
     container.dispose();
+    PreferredPeacockGamesStore.instance.reset();
     PeacockAssignmentTracker.resetInstance();
     MatchmakingQueueTracker.resetInstance();
     LobbyLockNotify.resetTestHooks();
@@ -482,6 +488,102 @@ void main() {
       expect(
         PeacockAssignmentTracker.instance.stateFor('user-1').phase,
         PeacockAssignmentPhase.idle,
+      );
+    });
+
+    test('togglePreferredPeacockGame persists across notifier rebuild',
+        () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.togglePreferredPeacockGame('Warzone');
+      expect(
+        container.read(lobbyNotifierProvider).valueOrNull?.preferredPeacockGames,
+        {'Warzone'},
+      );
+      expect(PreferredPeacockGamesStore.instance.snapshot, {'Warzone'});
+      verify(mockRepository.saveLobbyState(any)).called(1);
+
+      PreferredPeacockGamesStore.instance.reset();
+      expect(PreferredPeacockGamesStore.instance.contains('Warzone'), isFalse);
+
+      container.dispose();
+      container = ProviderContainer(
+        overrides: [
+          lobbyRepositoryProvider.overrideWithValue(mockRepository),
+          errorHandlingServiceProvider.overrideWithValue(
+            _PassthroughErrorHandler(),
+          ),
+          constitutionManagerProvider.overrideWithValue(
+            _FakeConstitutionManager(),
+          ),
+        ],
+      );
+      final reloaded = await container.read(lobbyNotifierProvider.future);
+      expect(reloaded.preferredPeacockGames, {'Warzone'});
+      expect(PreferredPeacockGamesStore.instance.snapshot, {'Warzone'});
+    });
+
+    test('processPeacockQueue skips assign when preferred games exclude title',
+        () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      await notifier.togglePreferredPeacockGame('Warzone');
+
+      await notifier.addToPeacockQueue('user-1', 'Fortnite');
+      final assigned = await notifier.processPeacockQueue(
+        assignedUserId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Fortnite',
+        notificationId: 'n1',
+      );
+
+      expect(assigned, isNull);
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.queued,
+      );
+    });
+
+    test('processPeacockQueue assigns when preferred games include title',
+        () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      await notifier.togglePreferredPeacockGame('Warzone');
+
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
+      final assigned = await notifier.processPeacockQueue(
+        assignedUserId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+
+      expect(assigned, 'user-1');
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.assigned,
+      );
+    });
+
+    test('processPeacockQueue selects next queued user whose game is preferred',
+        () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      await notifier.togglePreferredPeacockGame('Warzone');
+
+      await notifier.addToPeacockQueue('user-1', 'Fortnite');
+      await notifier.addToPeacockQueue('user-2', 'Warzone');
+      final assigned = await notifier.processPeacockQueue(lobbyId: 'lobby-9');
+
+      expect(assigned, 'user-2');
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-1').phase,
+        PeacockAssignmentPhase.queued,
+      );
+      expect(
+        PeacockAssignmentTracker.instance.stateFor('user-2').phase,
+        PeacockAssignmentPhase.assigned,
       );
     });
 

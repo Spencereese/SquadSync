@@ -7,8 +7,10 @@ void main() {
       final next = reducePeacockAssignment(
         current: PeacockAssignmentState.idle,
         event: PeacockAssignmentEvent.joinQueue,
+        gameName: 'Warzone',
       );
       expect(next.phase, PeacockAssignmentPhase.queued);
+      expect(next.gameName, 'Warzone');
       expect(next.routeLocation, isNull);
     });
 

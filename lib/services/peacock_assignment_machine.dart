@@ -106,8 +106,10 @@ PeacockAssignmentState reducePeacockAssignment({
     case PeacockAssignmentEvent.joinQueue:
       if (current.phase == PeacockAssignmentPhase.idle ||
           current.phase == PeacockAssignmentPhase.notified) {
-        return const PeacockAssignmentState(
+        final name = (gameName ?? current.gameName)?.trim();
+        return PeacockAssignmentState(
           phase: PeacockAssignmentPhase.queued,
+          gameName: (name != null && name.isNotEmpty) ? name : null,
         );
       }
       return current;
@@ -245,9 +247,10 @@ class PeacockAssignmentTracker {
     return next;
   }
 
-  PeacockAssignmentState joinQueue(String userId) => apply(
+  PeacockAssignmentState joinQueue(String userId, {String? gameName}) => apply(
         userId: userId,
         event: PeacockAssignmentEvent.joinQueue,
+        gameName: gameName,
       );
 
   PeacockAssignmentState leaveQueue(String userId) => apply(

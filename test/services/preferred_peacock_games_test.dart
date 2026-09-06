@@ -65,6 +65,24 @@ void main() {
         isFalse,
       );
     });
+
+    test('matching is case-insensitive', () {
+      const preferred = {'Warzone'};
+      expect(
+        peacockOfferAllowed(
+          gameName: 'warzone',
+          preferredPeacockGames: preferred,
+        ),
+        isTrue,
+      );
+      expect(
+        peacockOfferAllowed(
+          gameName: 'WARZONE',
+          preferredPeacockGames: preferred,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('PreferredPeacockGamesStore persist', () {
@@ -100,6 +118,55 @@ void main() {
       expect(store.snapshot, {'Warzone'});
       await store.seedIfEmpty({'MW2'});
       expect(store.snapshot, {'Warzone'});
+    });
+
+    test('empty saved prefs are not re-seeded from LobbyState', () async {
+      final store = PreferredPeacockGamesStore.instance;
+      await store.toggle('Warzone');
+      await store.toggle('Warzone');
+      expect(store.snapshot, isEmpty);
+      expect(store.hasStoredPreference, isTrue);
+
+      store.reset();
+      expect(store.contains('Warzone'), isFalse);
+
+      final loaded = LobbyState.initial().copyWith(
+        preferredPeacockGames: {'Warzone'},
+      );
+      final next = await syncPreferredPeacockGames(loaded);
+      expect(store.snapshot, isEmpty);
+      expect(next.preferredPeacockGames, isEmpty);
+    });
+
+    test('sync loads prefs after in-memory reset (app relaunch)', () async {
+      final store = PreferredPeacockGamesStore.instance;
+      await store.toggle('Warzone');
+      store.reset();
+      expect(store.contains('Warzone'), isFalse);
+
+      final next = await syncPreferredPeacockGames(LobbyState.initial());
+      expect(store.contains('Warzone'), isTrue);
+      expect(next.preferredPeacockGames, {'Warzone'});
+    });
+
+    test('missing prefs key still seeds from LobbyState', () async {
+      final loaded = LobbyState.initial().copyWith(
+        preferredPeacockGames: {'MW2'},
+      );
+      final next = await syncPreferredPeacockGames(loaded);
+      expect(PreferredPeacockGamesStore.instance.snapshot, {'MW2'});
+      expect(next.preferredPeacockGames, {'MW2'});
+    });
+
+    test('resolvedPreferredPeacockGames uses empty stored prefs over stale state',
+        () async {
+      final store = PreferredPeacockGamesStore.instance;
+      await store.replaceAll(const []);
+      expect(store.hasStoredPreference, isTrue);
+      final resolved = resolvedPreferredPeacockGames(
+        LobbyState.initial().copyWith(preferredPeacockGames: {'Warzone'}),
+      );
+      expect(resolved, isEmpty);
     });
   });
 

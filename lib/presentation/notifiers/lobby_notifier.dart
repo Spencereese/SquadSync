@@ -77,7 +77,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     } catch (e) {
       debugPrint('Error initializing lobby notifier: $e');
       // Deps are already bound; return a safe default state.
-      return LobbyState.initial();
+      return overlayPreferredPeacockGames(LobbyState.initial());
     }
   }
 
@@ -113,7 +113,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         stackTrace: stackTrace,
         showSnackBar: false, // Don't show error on initial load
       );
-      return LobbyState.initial();
+      return overlayPreferredPeacockGames(LobbyState.initial());
     }
   }
 
@@ -504,6 +504,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     _reducePeacock(
       userId: userId,
       event: PeacockAssignmentEvent.joinQueue,
+      gameName: gameName,
     );
     state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
@@ -530,6 +531,9 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   /// Process the peacock queue. Selects the next queued uid when one is not
   /// passed, persists via the repository, then [assignSpot] on the tracker
   /// so product phase never lags on a bare stub call.
+  ///
+  /// Preferred peacock games filter the offer: a non-empty preference set
+  /// skips assign + peacock_offer for other titles. Empty set is unfiltered.
   Future<String?> processPeacockQueue({
     String? assignedUserId,
     String? lobbyId,
@@ -537,15 +541,30 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     String? notificationId,
   }) async {
     _bindPeacockQueueProcessor();
-    final uid = assignedUserId ?? _peacock.nextQueuedUserId();
+    final preferred = PreferredPeacockGamesStore.instance.snapshot;
+    final uid = assignedUserId ??
+        _nextPreferredQueuedUser(
+          gameName: gameName,
+          preferred: preferred,
+        );
     await _repository.processPeacockQueue();
     if (uid != null) {
       final before = _peacock.stateFor(uid);
+      final resolvedGame = gameName ??
+          before.gameName ??
+          state.valueOrNull?.currentGame?['name'] as String?;
+      if (!peacockOfferAllowed(
+        gameName: resolvedGame,
+        preferredPeacockGames: preferred,
+      )) {
+        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+        return null;
+      }
       _reducePeacock(
         userId: uid,
         event: PeacockAssignmentEvent.assignSpot,
         lobbyId: lobbyId ?? state.valueOrNull?.selectedLobbyId,
-        gameName: gameName ?? before.gameName,
+        gameName: resolvedGame,
         notificationId: notificationId,
       );
       final after = _peacock.stateFor(uid);
@@ -560,6 +579,23 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
     state = await AsyncValue.guard(() => _loadPersistedLobbyState());
     return uid;
+  }
+
+  String? _nextPreferredQueuedUser({
+    String? gameName,
+    required Set<String> preferred,
+  }) {
+    for (final entry in _peacock.snapshot.entries) {
+      if (entry.value.phase != PeacockAssignmentPhase.queued) continue;
+      final game = gameName ?? entry.value.gameName;
+      if (peacockOfferAllowed(
+        gameName: game,
+        preferredPeacockGames: preferred,
+      )) {
+        return entry.key;
+      }
+    }
+    return null;
   }
 
   /// First empty seat for [lobbyId] / [gameName], or null when lobby

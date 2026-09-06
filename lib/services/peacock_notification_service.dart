@@ -98,7 +98,7 @@ class PeacockNotificationService {
     _handledIds.clear();
     _locallyPresentedIds.clear();
     PeacockAssignmentTracker.instance.clear();
-    PreferredPeacockGamesStore.instance.games.clear();
+    PreferredPeacockGamesStore.instance.reset();
   }
 
   /// Start listening for peacock queue notifications

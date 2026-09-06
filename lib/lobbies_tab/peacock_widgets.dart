@@ -229,8 +229,7 @@ class PreferredPeacockGamesSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final squadState = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
     final games = preferredPeacockGameChoices(squadState);
-    final preferred = squadState?.preferredPeacockGames ??
-        PreferredPeacockGamesStore.instance.snapshot;
+    final preferred = resolvedPreferredPeacockGames(squadState);
     return PreferredPeacockGamesChips(
       games: games,
       preferred: preferred,

@@ -369,9 +369,7 @@ LobbySeatStatus? resolveLobbySeatStatusFromTrackers({
   final peacockState =
       (peacock ?? PeacockAssignmentTracker.instance).stateFor(userId);
   final lfgState = (lfg ?? MatchmakingQueueTracker.instance).stateFor(userId);
-  final preferred = lobbyState?.preferredPeacockGames.isNotEmpty == true
-      ? lobbyState!.preferredPeacockGames
-      : PreferredPeacockGamesStore.instance.snapshot;
+  final preferred = resolvedPreferredPeacockGames(lobbyState);
   final spots = spotsForSeatStatus(
     lobbyState,
     lobbyId: lobbyId ?? peacockState.lobbyId ?? lfgState.lobbyId,

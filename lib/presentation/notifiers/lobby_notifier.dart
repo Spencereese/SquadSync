@@ -48,6 +48,13 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   DateTime? _readyCheckStartedAt;
   LobbyReadyLockSnapshot? _lastReadyLockSnapshot;
 
+  /// Test seam: `(column, value) → users row`. When set, skips live SQL.
+  Future<Map<String, dynamic>?> Function(String column, String value)?
+      debugUsersLookup;
+
+  /// Test seam: current-user key for the self "Unknown User" guard.
+  String? debugCurrentUserId;
+
   @override
   Future<LobbyState> build() async {
     // Bind required deps BEFORE offline init / load so a swallowed failure
@@ -269,6 +276,67 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     );
   }
 
+  bool _isCurrentUserKey(String key) {
+    final debugId = debugCurrentUserId;
+    if (debugId != null && debugId.isNotEmpty) return debugId == key;
+    return AuthServiceSupabase().currentUser?.id == key;
+  }
+
+  /// Prefer `users.id`, then `users.uid`. Uses [debugUsersLookup] when bound.
+  Future<Map<String, dynamic>?> _lookupUserByIdThenUid(String key) async {
+    final debugLookup = debugUsersLookup;
+    if (debugLookup != null) {
+      return await debugLookup('id', key) ?? await debugLookup('uid', key);
+    }
+    try {
+      final byId = await SupabaseService.client
+          .from('users')
+          .select('display_name, photo_url')
+          .eq('id', key)
+          .maybeSingle();
+      if (byId != null) return byId;
+    } catch (e) {
+      debugPrint('Error looking up user by id $key: $e');
+    }
+    try {
+      return await SupabaseService.client
+          .from('users')
+          .select('display_name, photo_url')
+          .eq('uid', key)
+          .maybeSingle();
+    } catch (e) {
+      debugPrint('Error looking up user by uid $key: $e');
+      return null;
+    }
+  }
+
+  /// Name from a users row. Never returns literal `Unknown User` for self
+  /// when a row exists (null means caller must not persist that fallback).
+  String? _displayNameFromRow(String key, Map<String, dynamic> row) {
+    final name = row['display_name'] as String?;
+    if (name != null && name.isNotEmpty) return name;
+    if (_isCurrentUserKey(key)) return null;
+    return 'Unknown User';
+  }
+
+  void _persistLookedUpName({
+    required Map<String, String> displayNames,
+    required String key,
+    required Map<String, dynamic>? row,
+    required void Function(String fallback) onMiss,
+  }) {
+    if (row != null) {
+      final name = _displayNameFromRow(key, row);
+      if (name != null) {
+        displayNames[key] = name;
+      }
+      // Current user + row + no usable name: do not persist Unknown User.
+      return;
+    }
+    if (_isCurrentUserKey(key)) return;
+    onMiss('Unknown User');
+  }
+
   /// Fetch display names and profile images for members and update state (private internal method)
   Future<void> _fetchDisplayNamesForMembers(List<String> memberUids) async {
     final currentState = state.valueOrNull;
@@ -283,23 +351,25 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     for (final uid in memberUids) {
       if (!displayNames.containsKey(uid)) {
         try {
-          final userResponse = await SupabaseService.client
-              .from('users')
-              .select('display_name, photo_url')
-              .eq('uid', uid)
-              .maybeSingle();
+          final userResponse = await _lookupUserByIdThenUid(uid);
 
           if (userResponse != null) {
-            displayNames[uid] =
-                userResponse['display_name'] as String? ?? 'Unknown User';
+            _persistLookedUpName(
+              displayNames: displayNames,
+              key: uid,
+              row: userResponse,
+              onMiss: (fallback) => displayNames[uid] = fallback,
+            );
             profileImages[uid] = userResponse['photo_url'] as String?;
             hasUpdates = true;
           }
         } catch (e) {
           debugPrint('Error fetching display name for $uid: $e');
-          displayNames[uid] = 'Unknown User';
-          profileImages[uid] = null;
-          hasUpdates = true;
+          if (!_isCurrentUserKey(uid)) {
+            displayNames[uid] = 'Unknown User';
+            profileImages[uid] = null;
+            hasUpdates = true;
+          }
         }
       }
     }
@@ -812,27 +882,28 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     final currentState = state;
     if (currentState is AsyncData && currentState.value != null) {
       try {
-        // Fetch display names from Supabase users table
+        // Fetch display names: users.id first, then users.uid
         final Map<String, String> displayNames = {};
 
-        for (final uid in memberUids) {
+        Future<void> resolveMemberName(String uid) async {
           try {
-            final userResponse = await SupabaseService.client
-                .from('users')
-                .select('display_name')
-                .eq('uid', uid)
-                .maybeSingle();
-
-            if (userResponse != null) {
-              displayNames[uid] =
-                  userResponse['display_name'] as String? ?? 'Unknown User';
-            } else {
-              displayNames[uid] = 'Unknown User';
-            }
+            final userResponse = await _lookupUserByIdThenUid(uid);
+            _persistLookedUpName(
+              displayNames: displayNames,
+              key: uid,
+              row: userResponse,
+              onMiss: (fallback) => displayNames[uid] = fallback,
+            );
           } catch (e) {
             debugPrint('Error fetching display name for $uid: $e');
-            displayNames[uid] = 'Unknown User';
+            if (!_isCurrentUserKey(uid)) {
+              displayNames[uid] = 'Unknown User';
+            }
           }
+        }
+
+        for (final uid in memberUids) {
+          await resolveMemberName(uid);
         }
 
         // Also fetch display names for any spot claimants
@@ -841,23 +912,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
           for (final spotUid in gameSpots) {
             if (spotUid != null && !displayNames.containsKey(spotUid)) {
               final cleanUid = spotUid.replaceAll('_calling', '');
-              try {
-                final userResponse = await SupabaseService.client
-                    .from('users')
-                    .select('display_name')
-                    .eq('uid', cleanUid)
-                    .maybeSingle();
-
-                if (userResponse != null) {
-                  displayNames[cleanUid] =
-                      userResponse['display_name'] as String? ?? 'Unknown User';
-                } else {
-                  displayNames[cleanUid] = 'Unknown User';
-                }
-              } catch (e) {
-                debugPrint('Error fetching display name for $cleanUid: $e');
-                displayNames[cleanUid] = 'Unknown User';
-              }
+              await resolveMemberName(cleanUid);
             }
           }
         }

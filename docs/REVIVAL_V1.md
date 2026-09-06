@@ -127,6 +127,8 @@ runbook and named Analytics events. Do not merge PR #1.
   export compliance): `docs/TESTFLIGHT_CHECKLIST.md`
 - Events (no PII params): `lobby_join`, `peacock_offer`, `peacock_lock`,
   `session_rate`, `ready_check` via `lib/services/squad_analytics.dart`
+  fire on the core-loop happy path (lobby join, peacock offer/lock,
+  session rate, ready check).
 
 ## Phase B+ parking lot (wishlist only)
 

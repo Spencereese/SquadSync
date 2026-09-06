@@ -1186,4 +1186,282 @@ void main() {
       )).called(1);
     });
   });
+
+  group('core-loop analytics (mocked)', () {
+    late List<({String name, Map<String, Object> params})> logged;
+
+    setUp(() {
+      logged = SquadAnalytics.captureLogs();
+    });
+
+    Future<void> flushAnalytics() => Future<void>.delayed(Duration.zero);
+
+    void expectNoPii() {
+      for (final event in logged) {
+        for (final key in event.params.keys) {
+          expect(
+            isAnalyticsPiiKey(key),
+            isFalse,
+            reason: '${event.name}.$key',
+          );
+        }
+      }
+    }
+
+    Future<LobbyNotifier> pumpSeatedLobby({
+      Map<String, String> statuses = const {},
+    }) async {
+      final lobby = _lobby(
+        id: 'lobby-9',
+        memberUids: const ['user-1', 'user-2'],
+        spots: ['user-1', 'user-2', null],
+        statuses: statuses,
+      );
+      when(mockRepository.getLobbyStream('lobby-9')).thenAnswer(
+        (_) => Stream<Lobby?>.value(lobby),
+      );
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.setSelectedLobbyId('lobby-9');
+      await Future<void>.delayed(Duration.zero);
+      return notifier;
+    }
+
+    test('joinLobby fires lobby_join with source and game only', () async {
+      when(mockRepository.loadLobbyState()).thenAnswer(
+        (_) async => LobbyState.initial().copyWith(
+          currentGame: const {'name': 'Warzone'},
+        ),
+      );
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.joinLobby('lobby-9', 'user-1');
+      await flushAnalytics();
+
+      expect(logged.map((e) => e.name), [kAnalyticsLobbyJoin]);
+      expect(logged.single.params, {
+        'source': 'code',
+        'game_name': 'Warzone',
+      });
+      expectNoPii();
+      verify(mockRepository.joinLobby('lobby-9', 'user-1')).called(1);
+    });
+
+    test('processPeacockQueue fires peacock_offer without ids', () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
+      await notifier.processPeacockQueue(
+        assignedUserId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+      await flushAnalytics();
+
+      final offers =
+          logged.where((e) => e.name == kAnalyticsPeacockOffer).toList();
+      expect(offers, hasLength(1));
+      expect(offers.single.params['source'], 'peacock_queue');
+      expect(offers.single.params['game_name'], 'Warzone');
+      expect(offers.single.params.containsKey('lobby_id'), isFalse);
+      expect(offers.single.params.containsKey('notification_id'), isFalse);
+      expect(offers.single.params.containsKey('user_id'), isFalse);
+      expectNoPii();
+    });
+
+    test('preferred-game skip does not fire peacock_offer', () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      await notifier.togglePreferredPeacockGame('Warzone');
+
+      await notifier.addToPeacockQueue('user-1', 'Fortnite');
+      final assigned = await notifier.processPeacockQueue(
+        assignedUserId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Fortnite',
+        notificationId: 'n1',
+      );
+      await flushAnalytics();
+
+      expect(assigned, isNull);
+      expect(
+        logged.where((e) => e.name == kAnalyticsPeacockOffer),
+        isEmpty,
+      );
+    });
+
+    test('assignPeacockSpot fires peacock_offer with seat_index', () async {
+      final lobby = _lobby(
+        id: 'lobby-9',
+        spots: ['taken', null, null],
+      );
+      when(mockRepository.getLobbyStream('lobby-9')).thenAnswer(
+        (_) => Stream<Lobby?>.value(lobby),
+      );
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.setSelectedLobbyId('lobby-9');
+      await Future<void>.delayed(Duration.zero);
+
+      await notifier.assignPeacockSpot(
+        userId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+      await flushAnalytics();
+
+      final offers =
+          logged.where((e) => e.name == kAnalyticsPeacockOffer).toList();
+      expect(offers, hasLength(1));
+      expect(offers.single.params, {
+        'source': 'peacock_queue',
+        'game_name': 'Warzone',
+        'seat_index': 1,
+      });
+      expectNoPii();
+    });
+
+    test('toggleSeatedReady fires ready_check', () async {
+      final notifier = await pumpSeatedLobby();
+
+      await notifier.toggleSeatedReady(
+        userId: 'user-1',
+        gameName: 'Warzone',
+        spotIndex: 0,
+      );
+      await flushAnalytics();
+
+      expect(logged.map((e) => e.name), [kAnalyticsReadyCheck]);
+      expect(logged.single.params['outcome'], 'ready');
+      expect(logged.single.params['seated_count'], 2);
+      expect(logged.single.params['ready_count'], 1);
+      expectNoPii();
+    });
+
+    test('all seated Ready fires ready_check locked and peacock_lock',
+        () async {
+      final notifier = await pumpSeatedLobby(
+        statuses: const {'user-1': 'Ready'},
+      );
+
+      await notifier.toggleSeatedReady(
+        userId: 'user-2',
+        gameName: 'Warzone',
+        spotIndex: 1,
+      );
+      await flushAnalytics();
+
+      expect(logged.map((e) => e.name), [
+        kAnalyticsReadyCheck,
+        kAnalyticsPeacockLock,
+      ]);
+      expect(logged[0].params['outcome'], 'locked');
+      expect(logged[0].params['seated_count'], 2);
+      expect(logged[0].params['ready_count'], 2);
+      expect(logged[1].params, {
+        'seated_count': 2,
+        'ready_count': 2,
+      });
+      expectNoPii();
+    });
+
+    test('timeoutReadyCheck fires ready_check timeout', () async {
+      final notifier = await pumpSeatedLobby();
+      await notifier.toggleSeatedReady(
+        userId: 'user-1',
+        gameName: 'Warzone',
+        spotIndex: 0,
+      );
+      await flushAnalytics();
+      logged.clear();
+
+      await notifier.timeoutReadyCheck(
+        now: DateTime.now().add(kReadyCheckTimeout),
+      );
+      await flushAnalytics();
+
+      expect(logged.map((e) => e.name), [kAnalyticsReadyCheck]);
+      expect(logged.single.params['outcome'], 'timeout');
+      expect(logged.single.params.containsKey('lobby_id'), isFalse);
+      expectNoPii();
+    });
+
+    test('recordWin fires session_rate without rater or lobby id', () async {
+      final lobby = _lobby(id: 'lobby-1', memberUids: const ['user-1', 'u2']);
+      when(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).thenAnswer((_) async {});
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.state = AsyncData(
+        (notifier.state.value ?? LobbyState.initial()).copyWith(
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        stars: 4,
+        raterUid: 'user-1',
+        comment: 'locked in',
+        ratedAt: DateTime.utc(2026, 9, 3, 18),
+      );
+
+      await notifier.recordWin('lobby-1', sessionRating: rated);
+      await flushAnalytics();
+
+      expect(logged.map((e) => e.name), [kAnalyticsSessionRate]);
+      expect(logged.single.params, {
+        'stars': 4,
+        'result': 'win',
+        'skipped': 0,
+      });
+      expect(logged.single.params.containsKey('rater_uid'), isFalse);
+      expect(logged.single.params.containsKey('lobby_id'), isFalse);
+      expect(logged.single.params.containsKey('comment'), isFalse);
+      expectNoPii();
+    });
+
+    test('recordLoss skip fires session_rate skipped', () async {
+      final lobby = _lobby(id: 'lobby-1');
+      when(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).thenAnswer((_) async {});
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.state = AsyncData(
+        (notifier.state.value ?? LobbyState.initial()).copyWith(
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+
+      await notifier.recordLoss(
+        'lobby-1',
+        sessionRating: reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.skip,
+        ),
+      );
+      await flushAnalytics();
+
+      expect(logged.map((e) => e.name), [kAnalyticsSessionRate]);
+      expect(logged.single.params, {
+        'result': 'loss',
+        'skipped': 1,
+      });
+      expectNoPii();
+    });
+  });
 }

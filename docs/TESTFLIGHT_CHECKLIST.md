@@ -332,5 +332,8 @@ Logged through existing `FirebaseAnalytics.instance`. Helpers:
 | `session_rate` | Win/Loss rating persist | `stars`, `result`, `skipped` |
 | `ready_check` | Seated Ready / timeout | `seated_count`, `ready_count`, `outcome` |
 
-Verify in Firebase DebugView on a device build. Unit coverage is the
-helper tests under `test/services/squad_analytics_test.dart`.
+Verify in Firebase DebugView on a device build. Units mock analytics
+(`SquadAnalytics.logHook`) and cover helper + happy-path call sites:
+`test/services/squad_analytics_test.dart`,
+`test/presentation/notifiers/lobby_notifier_test.dart`,
+`test/services/matchmaking_queue_tracker_test.dart`.

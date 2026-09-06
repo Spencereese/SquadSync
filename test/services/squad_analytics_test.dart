@@ -178,5 +178,29 @@ void main() {
       SquadAnalytics.resetTestHooks();
       await SquadAnalytics.logLobbyJoin(source: 'code');
     });
+
+    test('captureLogs mocks Firebase and records sanitized events', () async {
+      final logged = SquadAnalytics.captureLogs();
+      await SquadAnalytics.logLobbyJoin(
+        source: 'code',
+        gameName: 'Warzone',
+      );
+      await SquadAnalytics.log(kAnalyticsLobbyJoin, {
+        'source': 'lfg',
+        'user_id': 'drop-me',
+        'lobby_id': 'lobby-9',
+      });
+      expect(logged.map((e) => e.name), [
+        kAnalyticsLobbyJoin,
+        kAnalyticsLobbyJoin,
+      ]);
+      expect(logged.first.params, {
+        'source': 'code',
+        'game_name': 'Warzone',
+      });
+      expect(logged.last.params, {'source': 'lfg'});
+      expect(logged.last.params.containsKey('user_id'), isFalse);
+      expect(logged.last.params.containsKey('lobby_id'), isFalse);
+    });
   });
 }

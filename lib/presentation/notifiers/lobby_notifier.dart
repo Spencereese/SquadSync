@@ -568,14 +568,11 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         notificationId: notificationId,
       );
       final after = _peacock.stateFor(uid);
-      if (after.phase == PeacockAssignmentPhase.assigned &&
-          before.phase != PeacockAssignmentPhase.assigned &&
-          before.phase != PeacockAssignmentPhase.notified) {
-        unawaited(SquadAnalytics.logPeacockOffer(
-          source: 'peacock_queue',
-          gameName: after.gameName,
-        ));
-      }
+      _logPeacockOfferIfNew(
+        before: before,
+        after: after,
+        source: 'peacock_queue',
+      );
     }
     state = await AsyncValue.guard(() => _loadPersistedLobbyState());
     return uid;
@@ -627,6 +624,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     int? spotIndex,
   }) async {
     _bindPeacockQueueProcessor();
+    final before = _peacock.stateFor(userId);
     final claimed = spotIndex ??
         nextFreeSpotIndex(
           lobbyId: lobbyId,
@@ -644,7 +642,32 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       notificationId: notificationId,
       spotIndex: claimed,
     );
+    final after = _peacock.stateFor(userId);
+    _logPeacockOfferIfNew(
+      before: before,
+      after: after,
+      source: 'peacock_queue',
+      seatIndex: claimed,
+    );
     return claimed;
+  }
+
+  void _logPeacockOfferIfNew({
+    required PeacockAssignmentState before,
+    required PeacockAssignmentState after,
+    required String source,
+    int? seatIndex,
+  }) {
+    if (after.phase != PeacockAssignmentPhase.assigned) return;
+    if (before.phase == PeacockAssignmentPhase.assigned ||
+        before.phase == PeacockAssignmentPhase.notified) {
+      return;
+    }
+    unawaited(SquadAnalytics.logPeacockOffer(
+      source: source,
+      gameName: after.gameName,
+      seatIndex: seatIndex ?? after.spotIndex,
+    ));
   }
 
   /// Expire/cancel/timeout a peacock assignment.

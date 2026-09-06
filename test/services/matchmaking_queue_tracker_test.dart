@@ -269,6 +269,59 @@ void main() {
       expect(tracker.snapshot.containsKey('u1'), isFalse);
     });
 
+    test('matchFound fires peacock_offer without PII', () async {
+      final logged = SquadAnalytics.captureLogs();
+      tracker.startLooking('u1');
+      tracker.matchFound(
+        'u1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        matchedUserId: 'u2',
+        notificationId: 'n1',
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(logged.map((e) => e.name), [kAnalyticsPeacockOffer]);
+      expect(logged.single.params, {
+        'source': 'lfg',
+        'game_name': 'Warzone',
+      });
+      expect(logged.single.params.containsKey('lobby_id'), isFalse);
+      expect(logged.single.params.containsKey('matched_user_id'), isFalse);
+      expect(logged.single.params.containsKey('notification_id'), isFalse);
+    });
+
+    test('joinMatched fires lobby_join without PII', () async {
+      final logged = SquadAnalytics.captureLogs();
+      tracker.startLooking('u1');
+      tracker.matchFound(
+        'u1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+      );
+      await Future<void>.delayed(Duration.zero);
+      logged.clear();
+
+      tracker.joinMatched('u1', handoffToPeacock: false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(logged.map((e) => e.name), [kAnalyticsLobbyJoin]);
+      expect(logged.single.params, {
+        'source': 'lfg',
+        'game_name': 'Warzone',
+      });
+      expect(logged.single.params.containsKey('user_id'), isFalse);
+      expect(logged.single.params.containsKey('lobby_id'), isFalse);
+    });
+
+    test('joinMatched from looking does not fire lobby_join', () async {
+      final logged = SquadAnalytics.captureLogs();
+      tracker.startLooking('u1');
+      tracker.joinMatched('u1');
+      await Future<void>.delayed(Duration.zero);
+      expect(logged, isEmpty);
+    });
+
     test('production singleton is shared across reset until resetInstance', () {
       MatchmakingQueueTracker.instance.startLooking('u1');
       expect(

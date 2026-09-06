@@ -175,6 +175,16 @@ class SquadAnalytics {
     logHook = null;
   }
 
+  /// Intercepts [log] into a list so unit tests mock Firebase.
+  @visibleForTesting
+  static List<({String name, Map<String, Object> params})> captureLogs() {
+    final logs = <({String name, Map<String, Object> params})>[];
+    logHook = (name, params) async {
+      logs.add((name: name, params: Map<String, Object>.from(params)));
+    };
+    return logs;
+  }
+
   static Future<void> log(
     String name, [
     Map<String, Object?>? parameters,

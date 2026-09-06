@@ -1,11 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart' as sqlcipher;
-import 'package:path/path.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:async';
 import 'package:squad_sync/core/sqlite_cells.dart';
 
 class SQLiteHelper {
@@ -29,12 +31,10 @@ class SQLiteHelper {
   /// Get or generate encryption key for SQLite database
   Future<String> _getEncryptionKey() async {
     try {
-      // Try to read existing key
       String? key = await _secureStorage.read(key: _encryptionKeyName);
 
       if (key == null) {
-        // Generate new 256-bit key (64 hex characters)
-        key = _generateSecureKey();
+        key = generateSecureKey();
         await _secureStorage.write(key: _encryptionKeyName, value: key);
         debugPrint('🔐 Generated new SQLite encryption key');
       }
@@ -42,21 +42,33 @@ class SQLiteHelper {
       return key;
     } catch (e) {
       debugPrint('⚠️  Failed to get encryption key: $e');
-      // Fallback to a deterministic key (less secure but ensures app works)
-      return 'fallback_key_${Platform.operatingSystem}_${Platform.localeName}';
+      // Deterministic OS/locale fallback removed. Friends/release never use it.
+      if (kDebugMode) {
+        debugPrint(
+          'SECURITY: sqlite key storage failed; minting ephemeral CSPRNG key. '
+          'NOT a deterministic OS/locale fallback. Debug only — release rethrows.',
+        );
+        return generateSecureKey();
+      }
+      rethrow;
     }
   }
 
-  /// Generate cryptographically secure random key
-  String _generateSecureKey() {
-    final random = DateTime.now().millisecondsSinceEpoch;
-    final chars = 'abcdef0123456789';
-    final key = List.generate(64, (index) {
-      final charIndex = (random + index) % chars.length;
-      return chars[charIndex];
-    }).join();
-    return key;
+  /// 256-bit hex key from CSPRNG. Not derived from clock, OS, or locale.
+  @visibleForTesting
+  static String generateSecureKey() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+    final buffer = StringBuffer();
+    for (final b in bytes) {
+      buffer.write(b.toRadixString(16).padLeft(2, '0'));
+    }
+    return buffer.toString();
   }
+
+  /// Old deterministic OS/locale fallback path is gone.
+  @visibleForTesting
+  static bool get usesDeterministicFallback => false;
 
   /// Full v16 schema. Used by first open and cipher-recovery recreate.
   static Future<void> createFullSchema(Database db) async {

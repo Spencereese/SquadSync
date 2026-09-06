@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/chat/sqlite_helper.dart';
 import 'package:squad_sync/core/sqlite_cells.dart';
 
 void main() {
@@ -48,5 +51,26 @@ void main() {
     expect(isSqliteCipherOpenFailure('BEGIN EXCLUSIVE'), isTrue);
     expect(isSqliteCipherOpenFailure('file is not a database'), isTrue);
     expect(isSqliteCipherOpenFailure('network timeout'), isFalse);
+  });
+
+  test('sqlite chat key is CSPRNG and non-deterministic across calls', () {
+    final a = SQLiteHelper.generateSecureKey();
+    final b = SQLiteHelper.generateSecureKey();
+    final hex64 = RegExp(r'^[0-9a-f]{64}$');
+    expect(hex64.hasMatch(a), isTrue);
+    expect(hex64.hasMatch(b), isTrue);
+    expect(a, isNot(b));
+    expect(a.contains('fallback_key_'), isFalse);
+    expect(b.contains('fallback_key_'), isFalse);
+  });
+
+  test('deterministic OS/locale sqlite fallback is absent in release', () {
+    expect(SQLiteHelper.usesDeterministicFallback, isFalse);
+    if (kReleaseMode) {
+      expect(SQLiteHelper.usesDeterministicFallback, isFalse);
+    }
+    final key = SQLiteHelper.generateSecureKey();
+    expect(key.contains('fallback_key_'), isFalse);
+    expect(key.contains(Platform.operatingSystem), isFalse);
   });
 }

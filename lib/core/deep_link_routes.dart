@@ -692,6 +692,139 @@ String? _nonEmpty(String? value) {
   return text;
 }
 
+/// After-route result for [applyLobbyDeepLink]. Parse stays on
+/// [locationForDeepLink] / [NotificationRoutes] — this only applies
+/// THAT lobby. Malformed / missing id stays put (no splash hang).
+class LobbyDeepLinkApply {
+  const LobbyDeepLinkApply({
+    this.location,
+    this.selectedLobbyId,
+    this.chatBind = ActiveLobbyChatBind.empty,
+    this.subscribed = false,
+    this.splashDown = false,
+    this.stayedPut = false,
+  });
+
+  final String? location;
+  final String? selectedLobbyId;
+  final ActiveLobbyChatBind chatBind;
+  final bool subscribed;
+  final bool splashDown;
+
+  /// Missing / malformed lobby id — stay put, do not hang on splash.
+  final bool stayedPut;
+}
+
+/// Live hooks for [applyLobbyDeepLink] (wired from GoRouter / DeepLinkRouter).
+class LobbyDeepLinkHooks {
+  const LobbyDeepLinkHooks({
+    this.selectLobby,
+    this.subscribe,
+    this.bindChat,
+    this.dismissSplash,
+  });
+
+  final void Function(String selectedLobbyId)? selectLobby;
+
+  /// After route: selectedLobbyId + _subscribeToCurrentLobby.
+  final void Function(String selectedLobbyId)? subscribe;
+  final void Function(String selectedLobbyId, {String? lobbyChatGroupId})?
+      bindChat;
+  final void Function()? dismissSplash;
+}
+
+LobbyDeepLinkHooks lobbyDeepLinkHooks = const LobbyDeepLinkHooks();
+
+void bindLobbyDeepLinkHooks({
+  void Function(String selectedLobbyId)? selectLobby,
+  void Function(String selectedLobbyId)? subscribe,
+  void Function(String selectedLobbyId, {String? lobbyChatGroupId})? bindChat,
+  void Function()? dismissSplash,
+}) {
+  lobbyDeepLinkHooks = LobbyDeepLinkHooks(
+    selectLobby: selectLobby,
+    subscribe: subscribe,
+    bindChat: bindChat,
+    dismissSplash: dismissSplash,
+  );
+}
+
+String? lobbyIdFromRoutedLocation(String? location) {
+  if (location == null || location.isEmpty) return null;
+  final uri = Uri.tryParse(location);
+  if (uri == null) return null;
+  return NotificationRoutes.lobbyIdFrom(
+    Map<String, dynamic>.from(uri.queryParameters),
+  );
+}
+
+String? _locationFromApplyRaw(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  if (raw.startsWith('/')) return raw;
+  return locationForDeepLink(raw);
+}
+
+/// Single after-route apply used by notify tap, AppLinks, cold start, and
+/// resume. FriendsMode still `/squad?lobby_id=`. Does not navigate — callers
+/// go once.
+LobbyDeepLinkApply applyLobbyDeepLink(
+  String? raw, {
+  Map<String, dynamic>? payload,
+  ActiveLobbyChatBind currentBind = ActiveLobbyChatBind.empty,
+  String? lobbyChatGroupId,
+  void Function(String selectedLobbyId)? selectLobby,
+  void Function(String selectedLobbyId)? subscribe,
+  void Function()? dismissSplash,
+}) {
+  final trimmed = raw?.trim();
+  if (payload == null && (trimmed == null || trimmed.isEmpty)) {
+    return const LobbyDeepLinkApply(stayedPut: true);
+  }
+  if (trimmed != null &&
+      trimmed.isNotEmpty &&
+      !trimmed.startsWith('/') &&
+      isMalformedAppLink(trimmed)) {
+    return const LobbyDeepLinkApply(stayedPut: true);
+  }
+
+  String? location;
+  String? lobbyId;
+  if (payload != null) {
+    final normalized = NotificationRoutes.normalize(payload);
+    location = NotificationRoutes.locationFor(normalized);
+    lobbyId = NotificationRoutes.lobbyIdFrom(normalized);
+  }
+  location ??= _locationFromApplyRaw(trimmed);
+  lobbyId ??= lobbyIdFromRoutedLocation(location);
+
+  if (lobbyId == null) {
+    return LobbyDeepLinkApply(location: location, stayedPut: true);
+  }
+
+  final select = selectLobby ?? lobbyDeepLinkHooks.selectLobby;
+  final sub = subscribe ?? lobbyDeepLinkHooks.subscribe;
+  final splash = dismissSplash ?? lobbyDeepLinkHooks.dismissSplash;
+  select?.call(lobbyId);
+  sub?.call(lobbyId);
+  lobbyDeepLinkHooks.bindChat?.call(
+    lobbyId,
+    lobbyChatGroupId: lobbyChatGroupId,
+  );
+  final chatBind = switchActiveLobbyChatBind(
+    current: currentBind,
+    nextLobbyId: lobbyId,
+    nextLobbyChatGroupId: lobbyChatGroupId ?? '',
+  );
+  splash?.call();
+  return LobbyDeepLinkApply(
+    location: location,
+    selectedLobbyId: lobbyId,
+    chatBind: chatBind,
+    subscribed: true,
+    splashDown: true,
+  );
+}
+
 /// How a product link arrived. Stubs AppLinks / FCM without a device.
 enum PendingLinkSource {
   /// App was killed; user opened a URL or tapped a notification.
@@ -717,6 +850,7 @@ class PendingLinkQueue {
   void clear() {
     _location = null;
     _source = null;
+    NotificationRoutes.resetPendingFlush();
   }
 
   /// Keep [location] until [flush]. Null / unknown is ignored so a later
@@ -738,13 +872,16 @@ class PendingLinkQueue {
   }
 
   /// Open the pending location through [go] or [NotificationRoutes.go].
-  /// Leaves it pending when no opener is bound yet.
+  /// Leaves it pending when no opener is bound yet. Applies THAT lobby
+  /// once — AppLinks + queue + GoRouter must not double-go.
   String? flush({void Function(String location)? go}) {
     final location = _location;
     if (location == null) return null;
     final opener = go ?? NotificationRoutes.go;
     if (opener == null) return location;
     clear();
+    NotificationRoutes.markPendingFlush(location);
+    applyLobbyDeepLink(location);
     opener(location);
     return location;
   }

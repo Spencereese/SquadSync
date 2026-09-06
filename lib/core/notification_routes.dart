@@ -12,6 +12,23 @@ class NotificationRoutes {
   static void Function(String location)? go;
   static GoRouter? router;
   static GlobalKey<NavigatorState>? navigatorKey;
+  static String? _pendingFlushLocation;
+
+  /// Last location flushed from [pendingLinkQueue]. [open] / [openRaw]
+  /// consume it so AppLinks + queue + GoRouter do not double-go.
+  static void markPendingFlush(String location) {
+    _pendingFlushLocation = location;
+  }
+
+  static bool consumePendingFlush(String location) {
+    if (_pendingFlushLocation != location) return false;
+    _pendingFlushLocation = null;
+    return true;
+  }
+
+  static void resetPendingFlush() {
+    _pendingFlushLocation = null;
+  }
 
   /// Wire taps after GoRouter is built. Prefers the live navigator; falls
   /// back to the stored [GoRouter] and one post-frame retry so
@@ -21,6 +38,7 @@ class NotificationRoutes {
     router = goRouter;
     navigatorKey = key;
     go = navigate;
+    resetPendingFlush();
     pendingLinkQueue.flush();
   }
 
@@ -121,6 +139,8 @@ class NotificationRoutes {
       case 'lobby_ready_timeout':
       case 'ready_timeout':
         return 'lobby_ready_timeout';
+      case 'lobby_created':
+        return 'lobby_created';
       default:
         return t;
     }
@@ -172,6 +192,8 @@ class NotificationRoutes {
       case 'lfg_matched':
       case 'availability_ping':
       case 'lobby_locked':
+      case 'lobby_lock':
+      case 'lobby_created':
       case 'lobby_unlocked':
       case 'lobby_ready_timeout':
       case 'lobby':
@@ -265,7 +287,13 @@ class NotificationRoutes {
   }
 
   /// Immediate go when bound; otherwise hold for [bindRouter] flush.
+  /// [applyLobbyDeepLink] selects + binds THAT lobby. A matching pending
+  /// flush already went — do not double-go.
   static void _deliver(String location) {
+    applyLobbyDeepLink(location);
+    if (consumePendingFlush(location)) {
+      return;
+    }
     if (go != null) {
       go!(location);
       return;

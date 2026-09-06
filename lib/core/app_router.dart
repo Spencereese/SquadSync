@@ -21,6 +21,7 @@ import 'app_env.dart';
 import 'session_guard.dart';
 import '../domain/entities/message.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'package:squad_sync/presentation/notifiers/chat_notifier.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'notification_routes.dart';
 import 'deep_link_routes.dart';
@@ -404,8 +405,48 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
   NotificationRoutes.bindRouter(router, rootNavigatorKey);
+  bindLobbyDeepLinkHooks(
+    selectLobby: (id) {
+      ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(id);
+    },
+    subscribe: (id) {
+      // setSelectedLobbyId already _subscribeToCurrentLobby
+      ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(id);
+    },
+    bindChat: (id, {lobbyChatGroupId}) {
+      _bindLobbyChatFromDeepLink(ref, id, lobbyChatGroupId);
+    },
+  );
   return router;
 });
+
+void _bindLobbyChatFromDeepLink(
+  Ref ref,
+  String lobbyId,
+  String? lobbyChatGroupId,
+) {
+  final known = lobbyChatGroupId?.trim();
+  if (known != null && known.isNotEmpty) {
+    ref.read(chatNotifierProvider.notifier).bindActiveLobbyChat(
+          lobbyId: lobbyId,
+          lobbyChatGroupId: known,
+        );
+    return;
+  }
+  Future<void>(() async {
+    try {
+      final snapshot = await loadLobbyChatBindSnapshot(lobbyId);
+      final thread = snapshot.lobbyChatGroupId;
+      if (thread == null || thread.isEmpty) return;
+      ref.read(chatNotifierProvider.notifier).bindActiveLobbyChat(
+            lobbyId: lobbyId,
+            lobbyChatGroupId: thread,
+          );
+    } catch (e) {
+      debugPrint('DeepLinkRouter: lobby chat bind skipped: $e');
+    }
+  });
+}
 
 /// Deep link router - handles universal links and app links
 class DeepLinkRouter {
@@ -442,6 +483,15 @@ class DeepLinkRouter {
     final location = locationForLiveAppLink(link);
     if (location == null) return;
     debugPrint('DeepLinkRouter: $link -> $location');
+    applyLobbyDeepLink(
+      location,
+      selectLobby: (id) {
+        ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(id);
+      },
+      subscribe: (id) {
+        ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(id);
+      },
+    );
 
     // /squad?lobby_id= must still land even when the lobby does not exist
     // and even if SquadSyncApp's context is above MaterialApp.router.

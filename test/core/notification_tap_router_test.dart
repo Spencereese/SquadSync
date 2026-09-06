@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:squad_sync/core/app_env.dart';
 import 'package:squad_sync/core/app_router.dart';
 import 'package:squad_sync/core/deep_link_routes.dart';
+import 'package:squad_sync/core/lobby_chat_bind.dart';
 import 'package:squad_sync/core/notification_routes.dart';
 import 'package:squad_sync/notification_service.dart';
 import 'package:squad_sync/screens/lobby_tab_screen.dart';
+import 'package:squad_sync/services/peacock_self_notify.dart';
 
 /// Ticket 42: notification tap → bound [GoRouter] → lobby / peacock / chat /
 /// deep-link screens already in the tree. No second presenter.
@@ -673,6 +678,149 @@ void main() {
       );
       expect(find.text('screen:lobby-empty'), findsOneWidget);
       expect(find.textContaining('screen:error'), findsNothing);
+    });
+  });
+
+  group('Slice I — notification tap apply THAT lobby', () {
+    testWidgets(
+      'peacock_assigned | lobby_lock | lobby_created with lobby_id '
+      'open THAT lobby not empty /squad',
+      (tester) async {
+        await pumpApp(tester);
+        for (final type in [
+          'peacock_assigned',
+          'lobby_lock',
+          'lobby_created',
+        ]) {
+          NotificationRoutes.open({
+            'type': type,
+            'lobby_id': 'lobby-9',
+          });
+          await tester.pumpAndSettle();
+          expect(
+            find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
+            findsOneWidget,
+            reason: type,
+          );
+          expect(find.text('screen:lobby-empty'), findsNothing, reason: type);
+          expect(find.text('screen:home'), findsNothing, reason: type);
+        }
+        expect(
+          File('lib/core/notification_routes.dart').readAsStringSync(),
+          contains('applyLobbyDeepLink'),
+          reason: 'tap must apply selectedLobbyId + Slice G bind, not go-only',
+        );
+      },
+    );
+
+    testWidgets(
+      'custom scheme and https /l/:id tap the same apply helper',
+      (tester) async {
+        await pumpApp(tester);
+        for (final url in [
+          'codsquadapp://lobby/lobby-9',
+          'https://codsquad.app/l/lobby-9',
+        ]) {
+          NotificationRoutes.openRaw(url);
+          await tester.pumpAndSettle();
+          expect(
+            find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
+            findsOneWidget,
+            reason: url,
+          );
+        }
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('LobbyDeepLinkApply applyLobbyDeepLink'),
+        );
+      },
+    );
+
+    testWidgets(
+      'friendsMode tap still /squad?lobby_id= not Discovery',
+      (tester) async {
+        AppEnv.debugReplaceForTest({'FRIENDS_MODE': 'true'});
+        addTearDown(() => AppEnv.debugReplaceForTest({}));
+        await pumpApp(tester);
+        await tap(
+          tester,
+          () => NotificationRoutes.open({
+            'type': 'lobby_created',
+            'lobby_id': 'lobby-9',
+          }),
+        );
+        expect(
+          NotificationRoutes.locationFor({
+            'type': 'lobby_created',
+            'lobby_id': 'lobby-9',
+          }),
+          '/squad?lobby_id=lobby-9',
+        );
+        expect(
+          friendsRootAllowsLocation(
+            '/squad?lobby_id=lobby-9',
+            friendsMode: true,
+          ),
+          isTrue,
+        );
+        expect(find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
+            findsOneWidget);
+        expect(
+          File('lib/core/notification_routes.dart').readAsStringSync(),
+          contains('applyLobbyDeepLink'),
+        );
+      },
+    );
+
+    test(
+      'after tap: selectedLobbyId, subscribe, Slice G bind, splash down',
+      () {
+        final routes =
+            File('lib/core/notification_routes.dart').readAsStringSync();
+        final apply =
+            File('lib/core/deep_link_routes.dart').readAsStringSync();
+        expect(routes, contains('applyLobbyDeepLink'));
+        expect(apply, contains('selectedLobbyId'));
+        expect(apply, contains('switchActiveLobbyChatBind'));
+        expect(apply, contains('dismissSplash'));
+        expect(
+          ActiveLobbyChatBind.empty.isBound,
+          isFalse,
+          reason: 'must not keep the last random thread',
+        );
+      },
+    );
+
+    test(
+      'malformed / missing id tap drops, stays put, no hang',
+      () {
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('stayedPut'),
+        );
+      },
+    );
+
+    test('do not double-go AppLinks + pending + GoRouter on tap', () {
+      final opened = <String>[];
+      NotificationRoutes.go = opened.add;
+      const url = 'codsquadapp://lobby/lobby-9';
+      pendingLinkQueue.offerColdStartUrl(url, isIosSimulator: true);
+      pendingLinkQueue.flush();
+      NotificationRoutes.openRaw(url);
+      expect(opened, ['/squad?lobby_id=lobby-9']);
+    });
+
+    test('XOR still planPeacockSelfNotify after tap apply', () {
+      expect(
+        planPeacockSelfNotify(
+          notificationId: 'tap-1',
+          currentUid: 'me',
+          isForeground: false,
+          locallyPresentedIds: {'tap-1'},
+        ).sendFcmToSelf,
+        isFalse,
+      );
     });
   });
 }

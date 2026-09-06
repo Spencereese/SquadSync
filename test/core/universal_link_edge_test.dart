@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/core/app_env.dart';
 import 'package:squad_sync/core/app_links_policy.dart';
 import 'package:squad_sync/core/app_router.dart';
 import 'package:squad_sync/core/deep_link_routes.dart';
+import 'package:squad_sync/core/notification_routes.dart';
 
 /// Ticket 61: remaining Universal Links / Associated Domains edge units.
 /// Pairs with tickets 12/15. AASA hosting / Apple portal stay a human gate.
@@ -518,6 +520,112 @@ void main() {
       expect(outcome.kind, AppLinkAcceptKind.malformed);
       expect(outcome.presentedPrompt, isFalse);
       expect(outcome.location, isNull);
+    });
+  });
+
+  group('Slice I — universal link parse then apply THAT lobby', () {
+    test(
+      'https://codsquad.app/l/:id parse only — no portal — then apply',
+      () {
+        expect(locationForDeepLink(lobbyHttps), expectedLobby);
+        expect(locationForUniversalLink(lobbyHttps, isIosSimulator: false),
+            expectedLobby);
+        expect(isLobbyUniversalLink(lobbyHttps), isTrue);
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('LobbyDeepLinkApply applyLobbyDeepLink'),
+          reason: 'parse stays on locationForDeepLink; apply is a second step',
+        );
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          isNot(contains('portal.apple.com')),
+        );
+      },
+    );
+
+    test(
+      'custom scheme and UL share apply: selectedLobbyId + Slice G + splash',
+      () {
+        expect(locationForDeepLink(lobbyCustom), expectedLobby);
+        expect(locationForDeepLink(lobbyHttps), expectedLobby);
+        final src = File('lib/core/deep_link_routes.dart').readAsStringSync();
+        expect(src, contains('applyLobbyDeepLink'));
+        expect(src, contains('selectedLobbyId'));
+        expect(src, contains('switchActiveLobbyChatBind'));
+        expect(src, contains('dismissSplash'));
+      },
+    );
+
+    test('cold start vs resume UL PendingLinkSource then one apply', () {
+      final gate = AppLinkAcceptGate.deviceReady();
+      expect(
+        queue.offerColdStartUrl(
+          lobbyHttps,
+          isIosSimulator: false,
+          acceptGate: gate,
+        ),
+        expectedLobby,
+      );
+      expect(queue.source, PendingLinkSource.coldStart);
+      queue.clear();
+      expect(
+        queue.offerResumeUrl(
+          lobbyHttps,
+          isIosSimulator: false,
+          acceptGate: gate,
+        ),
+        expectedLobby,
+      );
+      expect(queue.source, PendingLinkSource.resume);
+      expect(
+        File('lib/core/deep_link_routes.dart').readAsStringSync(),
+        contains('applyLobbyDeepLink'),
+      );
+    });
+
+    test(
+      'friendsMode UL still /squad?lobby_id= not Discovery',
+      () {
+        AppEnv.debugReplaceForTest({'FRIENDS_MODE': 'true'});
+        addTearDown(() => AppEnv.debugReplaceForTest({}));
+        expect(AppEnv.friendsMode, isTrue);
+        expect(locationForDeepLink(lobbyHttps), expectedLobby);
+        expect(
+          friendsRootAllowsLocation(expectedLobby, friendsMode: true),
+          isTrue,
+        );
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('applyLobbyDeepLink'),
+        );
+      },
+    );
+
+    test('malformed UL drops, stay put, no hang', () {
+      expect(
+        locationForUniversalLink('https://codsquad.app/l/lobby 9'),
+        isNull,
+      );
+      expect(
+        File('lib/core/deep_link_routes.dart').readAsStringSync(),
+        contains('stayedPut'),
+      );
+    });
+
+    test('AppLinks + pending + GoRouter do not double-go the UL', () {
+      final opened = <String>[];
+      NotificationRoutes.go = opened.add;
+      addTearDown(() {
+        NotificationRoutes.go = null;
+        pendingLinkQueue.clear();
+      });
+      pendingLinkQueue.offerColdStartUrl(
+        lobbyHttps,
+        isIosSimulator: false,
+      );
+      pendingLinkQueue.flush();
+      NotificationRoutes.openRaw(lobbyHttps);
+      expect(opened, [expectedLobby]);
     });
   });
 }

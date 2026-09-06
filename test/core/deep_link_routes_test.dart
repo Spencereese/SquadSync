@@ -1,9 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/core/app_env.dart';
+import 'package:squad_sync/core/app_links_policy.dart';
 import 'package:squad_sync/core/app_router.dart';
 import 'package:squad_sync/core/deep_link_routes.dart';
 import 'package:squad_sync/core/notification_routes.dart';
+import 'package:squad_sync/services/peacock_self_notify.dart';
 
 void main() {
   group('locationForDeepLink chat / join', () {
@@ -935,6 +938,151 @@ void main() {
       final text = File('ios/Runner/AppDelegate.swift').readAsStringSync();
       expect(text.contains('codsquad.app'), isTrue);
       expect(text.contains('isProductCustomScheme'), isTrue);
+    });
+  });
+
+  group('Slice I — after-route applyLobbyDeepLink (same helper, all vectors)',
+      () {
+    const lobbyId = 'lobby-9';
+    const expected = '/squad?lobby_id=lobby-9';
+
+    setUp(() {
+      AppEnv.debugReplaceForTest({});
+      pendingLinkQueue.clear();
+      NotificationRoutes.go = null;
+      NotificationRoutes.router = null;
+      NotificationRoutes.navigatorKey = null;
+    });
+    tearDown(() {
+      AppEnv.debugReplaceForTest({});
+      pendingLinkQueue.clear();
+      NotificationRoutes.go = null;
+    });
+
+    test(
+      'locationForDeepLink / NotificationRoutes stay the single table',
+      () {
+        expect(
+          locationForDeepLink('codsquadapp://lobby/$lobbyId'),
+          expected,
+        );
+        expect(
+          locationForDeepLink('https://codsquad.app/l/$lobbyId'),
+          expected,
+        );
+        expect(
+          NotificationRoutes.locationFor({
+            'type': 'peacock_assigned',
+            'lobby_id': lobbyId,
+          }),
+          expected,
+        );
+        expect(
+          NotificationRoutes.locationFor({
+            'type': 'lobby_lock',
+            'lobby_id': lobbyId,
+          }),
+          expected,
+        );
+        expect(
+          NotificationRoutes.locationFor({
+            'type': 'lobby_created',
+            'lobby_id': lobbyId,
+          }),
+          expected,
+        );
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('LobbyDeepLinkApply applyLobbyDeepLink'),
+          reason: 'Loop must add applyLobbyDeepLink; do not add a second parser',
+        );
+      },
+    );
+
+    test(
+      'applyLobbyDeepLink after route: selectedLobbyId, subscribe, '
+      'Slice G chat bind, splash down',
+      () {
+        final src = File('lib/core/deep_link_routes.dart').readAsStringSync();
+        expect(src, contains('LobbyDeepLinkApply applyLobbyDeepLink'));
+        expect(src, contains('selectedLobbyId'));
+        expect(src, contains('switchActiveLobbyChatBind'));
+        expect(src, contains('dismissSplash'));
+        expect(
+          src.contains('_subscribeToCurrentLobby') || src.contains('subscribe'),
+          isTrue,
+          reason: 'after route must subscribe to THAT lobby',
+        );
+      },
+    );
+
+    test(
+      'friendsMode on still /squad?lobby_id= not Discovery',
+      () {
+        AppEnv.debugReplaceForTest({'FRIENDS_MODE': 'true'});
+        expect(AppEnv.friendsMode, isTrue);
+        expect(
+          locationForDeepLink('codsquadapp://lobby/$lobbyId'),
+          expected,
+        );
+        expect(
+          friendsRootAllowsLocation(expected, friendsMode: true),
+          isTrue,
+        );
+        expect(
+          friendsRootAllowsLocation('/discover-swipe', friendsMode: true),
+          isFalse,
+        );
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('applyLobbyDeepLink'),
+          reason: 'friendsMode apply still goes through the same helper',
+        );
+      },
+    );
+
+    test(
+      'malformed / missing id: apply drops, stay put, no hang',
+      () {
+        expect(locationForDeepLink('codsquadapp://lobby/'), isNot(expected));
+        expect(isMalformedAppLink('https://codsquad.app/l/lobby 9'), isTrue);
+        final src = File('lib/core/deep_link_routes.dart').readAsStringSync();
+        expect(src, contains('applyLobbyDeepLink'));
+        expect(
+          src.contains('stayedPut') || src.contains('stay put'),
+          isTrue,
+          reason: 'missing id must drop and stay put — not hang on splash',
+        );
+      },
+    );
+
+    test('stream ready-lock stays notify:false', () {
+      expect(
+        File('lib/presentation/notifiers/lobby_notifier.dart')
+            .readAsStringSync(),
+        contains('reconcileReadyLock(notify: false'),
+      );
+    });
+
+    test('XOR still planPeacockSelfNotify', () {
+      expect(
+        planPeacockSelfNotify(
+          notificationId: 'n1',
+          currentUid: 'me',
+          isForeground: true,
+          locallyPresentedIds: {},
+        ).wouldDoubleNotifySelf,
+        isFalse,
+      );
+      expect(
+        planPeacockSelfNotify(
+          notificationId: 'evt-1',
+          currentUid: 'me',
+          isForeground: false,
+          locallyPresentedIds: {'evt-1'},
+        ).sendFcmToSelf,
+        isFalse,
+      );
     });
   });
 }

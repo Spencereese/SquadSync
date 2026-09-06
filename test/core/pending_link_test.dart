@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/core/app_links_policy.dart';
 import 'package:squad_sync/core/app_router.dart';
 import 'package:squad_sync/core/deep_link_routes.dart';
+import 'package:squad_sync/core/lobby_chat_bind.dart';
 import 'package:squad_sync/core/notification_routes.dart';
 import 'package:squad_sync/notification_service.dart';
 
@@ -333,5 +336,120 @@ void main() {
       expect(opened, ['/chat/1766270568521']);
       expect(pendingLinkQueue.isPending, isFalse);
     });
+  });
+
+  group('Slice I — cold start vs resume apply THAT lobby', () {
+    const lobbyId = 'lobby-9';
+    const expected = '/squad?lobby_id=lobby-9';
+
+    test(
+      'peacock_assigned / lobby_lock / lobby_created hold THAT lobby '
+      'and applyLobbyDeepLink selects + binds',
+      () {
+        for (final type in [
+          'peacock_assigned',
+          'lobby_lock',
+          'lobby_created',
+        ]) {
+          expect(
+            queue.offerColdStartPayload({
+              'type': type,
+              'lobby_id': lobbyId,
+            }),
+            expected,
+            reason: type,
+          );
+          expect(queue.source, PendingLinkSource.coldStart, reason: type);
+          queue.clear();
+        }
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('applyLobbyDeepLink'),
+          reason: 'same helper after pending hold — selectedLobbyId + Slice G',
+        );
+      },
+    );
+
+    test(
+      'cold start vs resume PendingLinkSource then apply once',
+      () {
+        expect(
+          queue.offerColdStartUrl(
+            'codsquadapp://lobby/$lobbyId',
+            isIosSimulator: true,
+          ),
+          expected,
+        );
+        expect(queue.source, PendingLinkSource.coldStart);
+        queue.clear();
+        expect(
+          queue.offerResumeUrl(
+            'codsquadapp://lobby/$lobbyId',
+            isIosSimulator: true,
+          ),
+          expected,
+        );
+        expect(queue.source, PendingLinkSource.resume);
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('LobbyDeepLinkApply applyLobbyDeepLink'),
+        );
+      },
+    );
+
+    test(
+      'AppLinks + pending queue + GoRouter do not double-go',
+      () {
+        final opened = <String>[];
+        NotificationRoutes.go = opened.add;
+        const url = 'codsquadapp://lobby/$lobbyId';
+        pendingLinkQueue.offerColdStartUrl(url, isIosSimulator: true);
+        pendingLinkQueue.flush();
+        NotificationRoutes.openRaw(url);
+        pendingLinkQueue.flush();
+        expect(
+          opened,
+          [expected],
+          reason: 'one apply — not AppLinks then queue then go',
+        );
+      },
+    );
+
+    test(
+      'flush apply: selectedLobbyId, subscribe, Slice G bind, splash down',
+      () {
+        var splash = 0;
+        queue.offerColdStartUrl(
+          'codsquadapp://lobby/$lobbyId',
+          isIosSimulator: true,
+          dismissSplash: () => splash++,
+        );
+        expect(splash, 1);
+        final src = File('lib/core/deep_link_routes.dart').readAsStringSync();
+        expect(src, contains('applyLobbyDeepLink'));
+        expect(src, contains('selectedLobbyId'));
+        expect(src, contains('switchActiveLobbyChatBind'));
+        expect(
+          ActiveLobbyChatBind.empty.chatGroupId,
+          isNull,
+          reason: 'prior leftover thread is not the apply target',
+        );
+      },
+    );
+
+    test(
+      'malformed / missing id drops, stays put, no hang',
+      () {
+        expect(
+          queue.offerColdStartPayload({'type': 'peacock_assigned'}),
+          isNot(expected),
+        );
+        expect(
+          File('lib/core/deep_link_routes.dart').readAsStringSync(),
+          contains('stayedPut'),
+          reason: 'apply must stay put when lobby_id is missing — no splash hang',
+        );
+      },
+    );
   });
 }

@@ -7,6 +7,7 @@ import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 import 'package:squad_sync/core/injection.dart';
+import 'package:squad_sync/core/user_display_names.dart';
 import 'package:squad_sync/services/auth_service_supabase.dart';
 import 'package:squad_sync/services/supabase_service.dart';
 import 'package:squad_sync/core/realtime_subscribe.dart';
@@ -276,47 +277,27 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     );
   }
 
-  bool _isCurrentUserKey(String key) {
+  String? get _resolvedCurrentUserId {
     final debugId = debugCurrentUserId;
-    if (debugId != null && debugId.isNotEmpty) return debugId == key;
-    return AuthServiceSupabase().currentUser?.id == key;
+    if (debugId != null && debugId.isNotEmpty) return debugId;
+    return AuthServiceSupabase().currentUser?.id;
   }
+
+  bool _isCurrentUserKey(String key) =>
+      isCurrentUserKey(key, currentUserId: _resolvedCurrentUserId);
 
   /// Prefer `users.id`, then `users.uid`. Uses [debugUsersLookup] when bound.
-  Future<Map<String, dynamic>?> _lookupUserByIdThenUid(String key) async {
+  Future<Map<String, dynamic>?> _lookupUserByIdThenUid(String key) {
     final debugLookup = debugUsersLookup;
-    if (debugLookup != null) {
-      return await debugLookup('id', key) ?? await debugLookup('uid', key);
-    }
-    try {
-      final byId = await SupabaseService.client
-          .from('users')
-          .select('display_name, photo_url')
-          .eq('id', key)
-          .maybeSingle();
-      if (byId != null) return byId;
-    } catch (e) {
-      debugPrint('Error looking up user by id $key: $e');
-    }
-    try {
-      return await SupabaseService.client
-          .from('users')
-          .select('display_name, photo_url')
-          .eq('uid', key)
-          .maybeSingle();
-    } catch (e) {
-      debugPrint('Error looking up user by uid $key: $e');
-      return null;
-    }
-  }
-
-  /// Name from a users row. Never returns literal `Unknown User` for self
-  /// when a row exists (null means caller must not persist that fallback).
-  String? _displayNameFromRow(String key, Map<String, dynamic> row) {
-    final name = row['display_name'] as String?;
-    if (name != null && name.isNotEmpty) return name;
-    if (_isCurrentUserKey(key)) return null;
-    return 'Unknown User';
+    final lookup = debugLookup ??
+        supabaseUsersLookup((column, value) {
+          return SupabaseService.client
+              .from('users')
+              .select('display_name, photo_url')
+              .eq(column, value)
+              .maybeSingle();
+        });
+    return lookupUserByIdThenUid(key: key, lookup: lookup);
   }
 
   void _persistLookedUpName({
@@ -325,16 +306,13 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     required Map<String, dynamic>? row,
     required void Function(String fallback) onMiss,
   }) {
-    if (row != null) {
-      final name = _displayNameFromRow(key, row);
-      if (name != null) {
-        displayNames[key] = name;
-      }
-      // Current user + row + no usable name: do not persist Unknown User.
-      return;
-    }
-    if (_isCurrentUserKey(key)) return;
-    onMiss('Unknown User');
+    persistLookedUpDisplayName(
+      displayNames: displayNames,
+      key: key,
+      row: row,
+      currentUserId: _resolvedCurrentUserId,
+      onMiss: onMiss,
+    );
   }
 
   /// Fetch display names and profile images for members and update state (private internal method)
@@ -366,7 +344,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         } catch (e) {
           debugPrint('Error fetching display name for $uid: $e');
           if (!_isCurrentUserKey(uid)) {
-            displayNames[uid] = 'Unknown User';
+            displayNames[uid] = unknownUserLabel;
             profileImages[uid] = null;
             hasUpdates = true;
           }
@@ -897,7 +875,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
           } catch (e) {
             debugPrint('Error fetching display name for $uid: $e');
             if (!_isCurrentUserKey(uid)) {
-              displayNames[uid] = 'Unknown User';
+              displayNames[uid] = unknownUserLabel;
             }
           }
         }

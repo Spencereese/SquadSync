@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/core/app_env.dart';
+import 'package:squad_sync/services/agora_config.dart';
+import 'package:squad_sync/services/voice_service.dart';
 
 void main() {
   test('placeholder SUPABASE_URL is rejected', () {
@@ -76,5 +78,79 @@ void main() {
     );
 
     expect(merged['SUPABASE_URL'], 'https://from-file.supabase.co');
+  });
+
+  test('unset client secrets do not throw on cold path', () async {
+    AppEnv.debugReplaceForTest({});
+    addTearDown(() => AppEnv.debugReplaceForTest({}));
+
+    expect(() => AppEnv.get('TWITCH_CLIENT_SECRET'), returnsNormally);
+    expect(() => AppEnv.get('IGDB_CLIENT_SECRET'), returnsNormally);
+    expect(() => AppEnv.get('AGORA_APP_CERTIFICATE'), returnsNormally);
+    expect(() => AppEnv.get('XAI_API_KEY'), returnsNormally);
+    expect(() => AppEnv.dartDefineOverlay(), returnsNormally);
+
+    expect(AppEnv.get('TWITCH_CLIENT_SECRET'), isNull);
+    expect(AppEnv.get('IGDB_CLIENT_SECRET'), isNull);
+    expect(AppEnv.get('AGORA_APP_CERTIFICATE'), isNull);
+    expect(AppEnv.get('XAI_API_KEY'), isNull);
+    expect(AppEnv.twitchClientSecret, isNull);
+    expect(AppEnv.igdbClientSecret, isNull);
+    expect(AppEnv.agoraAppCertificate, isNull);
+    expect(AppEnv.xaiApiKey, isNull);
+    expect(AppEnv.isTwitchSecretConfigured, isFalse);
+    expect(AppEnv.isIgdbSecretConfigured, isFalse);
+    expect(AppEnv.isAgoraConfigured, isFalse);
+    expect(AppEnv.isAgoraCertificateConfigured, isFalse);
+    expect(AppEnv.isXaiConfigured, isFalse);
+
+    await AppEnv.load();
+    expect(AppEnv.isTwitchSecretConfigured, isFalse);
+    expect(AppEnv.isIgdbSecretConfigured, isFalse);
+    expect(AppEnv.isAgoraCertificateConfigured, isFalse);
+    expect(AppEnv.isXaiConfigured, isFalse);
+  });
+
+  test('placeholder client secrets are treated as unset', () {
+    AppEnv.debugReplaceForTest({
+      'TWITCH_CLIENT_SECRET': 'YOUR_TWITCH_CLIENT_SECRET',
+      'IGDB_CLIENT_SECRET': 'your_igdb_client_secret',
+      'AGORA_APP_ID': 'YOUR_AGORA_APP_ID',
+      'AGORA_APP_CERTIFICATE': 'YOUR_AGORA_APP_CERTIFICATE',
+      'XAI_API_KEY': 'xai-YOUR_ACTUAL_XAI_API_KEY_HERE',
+    });
+    addTearDown(() => AppEnv.debugReplaceForTest({}));
+
+    expect(AppEnv.twitchClientSecret, isNull);
+    expect(AppEnv.igdbClientSecret, isNull);
+    expect(AppEnv.agoraAppId, isNull);
+    expect(AppEnv.agoraAppCertificate, isNull);
+    expect(AppEnv.xaiApiKey, isNull);
+    expect(AppEnv.isTwitchSecretConfigured, isFalse);
+    expect(AppEnv.isIgdbSecretConfigured, isFalse);
+    expect(AppEnv.isAgoraConfigured, isFalse);
+    expect(AppEnv.isAgoraCertificateConfigured, isFalse);
+    expect(AppEnv.isXaiConfigured, isFalse);
+  });
+
+  test('AgoraConfig unset secrets fail soft (no throw)', () {
+    AppEnv.debugReplaceForTest({});
+    addTearDown(() => AppEnv.debugReplaceForTest({}));
+
+    expect(() => AgoraConfig.appId, returnsNormally);
+    expect(() => AgoraConfig.appCertificate, returnsNormally);
+    expect(AgoraConfig.appId, isEmpty);
+    expect(AgoraConfig.appCertificate, isEmpty);
+    expect(AgoraConfig.isConfigured, isFalse);
+    expect(AgoraConfig.isCertificateConfigured, isFalse);
+
+    expect(() => AgoraConfigEnhanced.getValidatedAppId(), returnsNormally);
+    expect(() => AgoraConfigEnhanced.getValidatedCertificate(), returnsNormally);
+    final appId = AgoraConfigEnhanced.getValidatedAppId();
+    expect(appId.isFailure, isTrue);
+    expect(appId.error, VoiceServiceError.configMissing);
+    final cert = AgoraConfigEnhanced.getValidatedCertificate();
+    expect(cert.isSuccess, isTrue);
+    expect(cert.data, isEmpty);
   });
 }

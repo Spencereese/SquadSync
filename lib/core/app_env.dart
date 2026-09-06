@@ -23,9 +23,21 @@ class AppEnv {
   static String? get(String key) {
     final resolved = _values[key];
     if (resolved != null && resolved.isNotEmpty) return resolved;
-    final fromDotenv = dotenv.env[key];
-    if (fromDotenv != null && fromDotenv.isNotEmpty) return fromDotenv;
+    try {
+      final fromDotenv = dotenv.env[key];
+      if (fromDotenv != null && fromDotenv.isNotEmpty) return fromDotenv;
+    } catch (_) {
+      // dotenv not initialized — treat as unset. Friends IPA must not
+      // throw on cold start when client secrets are missing.
+    }
     return null;
+  }
+
+  /// Null when missing, empty, or a YOUR_ / your_ placeholder.
+  static String? configured(String key) {
+    final value = get(key);
+    if (isPlaceholderEnvValue(key, value)) return null;
+    return value;
   }
 
   static String? get supabaseUrl => get('SUPABASE_URL');
@@ -35,6 +47,28 @@ class AppEnv {
   static bool get isSupabaseConfigured =>
       !isPlaceholderEnvValue('SUPABASE_URL', supabaseUrl) &&
       !isPlaceholderEnvValue('SUPABASE_ANON_KEY', supabaseAnonKey);
+
+  static String? get twitchClientId => configured('TWITCH_CLIENT_ID');
+  static String? get twitchClientSecret => configured('TWITCH_CLIENT_SECRET');
+  static String? get igdbClientId => configured('IGDB_CLIENT_ID');
+  static String? get igdbClientSecret => configured('IGDB_CLIENT_SECRET');
+  static String? get agoraAppId => configured('AGORA_APP_ID');
+  static String? get agoraAppCertificate => configured('AGORA_APP_CERTIFICATE');
+  static String? get xaiApiKey => configured('XAI_API_KEY');
+
+  static bool get isTwitchSecretConfigured => twitchClientSecret != null;
+  static bool get isIgdbSecretConfigured => igdbClientSecret != null;
+  static bool get isAgoraConfigured => agoraAppId != null;
+  static bool get isAgoraCertificateConfigured => agoraAppCertificate != null;
+  static bool get isXaiConfigured => xaiApiKey != null;
+
+  /// Secrets the Friends IPA must tolerate unset at cold start.
+  static const clientSecretKeys = <String>[
+    'TWITCH_CLIENT_SECRET',
+    'IGDB_CLIENT_SECRET',
+    'AGORA_APP_CERTIFICATE',
+    'XAI_API_KEY',
+  ];
 
   /// Test hook. Does not load assets or dart-defines.
   @visibleForTesting
@@ -52,19 +86,29 @@ class AppEnv {
       debugPrint('dotenv asset load failed: $e');
     }
 
-    final merged = mergeEnvLayers(
-      asset: asset,
-      file: _fileOverlay(),
-      dartDefines: dartDefineOverlay(),
-    );
-    _values = merged;
-    _syncDotenv(merged);
+    try {
+      final merged = mergeEnvLayers(
+        asset: asset,
+        file: _fileOverlay(),
+        dartDefines: dartDefineOverlay(),
+      );
+      _values = merged;
+      _syncDotenv(merged);
+    } catch (e) {
+      debugPrint('AppEnv merge/sync parked: $e');
+      _values = {};
+    }
 
     if (!isSupabaseConfigured) {
       debugPrint(
         'AppEnv: SUPABASE_URL parked (${supabaseUrl ?? '(empty)'}). '
         'No network. flutter run --dart-define-from-file=.env',
       );
+    }
+    for (final key in clientSecretKeys) {
+      if (configured(key) == null) {
+        debugPrint('AppEnv: $key unset — feature parked (no throw).');
+      }
     }
   }
 

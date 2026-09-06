@@ -32,6 +32,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _quietStartMinutes = NotificationHygiene.defaultStartMinutes;
   int _quietEndMinutes = NotificationHygiene.defaultEndMinutes;
   int _mutedSquadCount = 0;
+  Object? _hygieneError;
 
   @override
   void initState() {
@@ -42,7 +43,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _loadNotificationHygiene() async {
-    await NotificationHygieneStore.instance.load();
+    final result = await NotificationHygieneStore.instance.load();
     if (!mounted) return;
     final snap = NotificationHygieneStore.instance.snapshot;
     setState(() {
@@ -50,7 +51,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _quietStartMinutes = snap.startMinutes;
       _quietEndMinutes = snap.endMinutes;
       _mutedSquadCount = snap.mutedSquadIds.length;
+      _hygieneError = result.error;
     });
+  }
+
+  Future<void> _retryNotificationHygiene() async {
+    final result = await NotificationHygieneStore.instance.retry();
+    if (!mounted) return;
+    final snap = NotificationHygieneStore.instance.snapshot;
+    setState(() {
+      _quietHoursEnabled = snap.quietHoursEnabled;
+      _quietStartMinutes = snap.startMinutes;
+      _quietEndMinutes = snap.endMinutes;
+      _mutedSquadCount = snap.mutedSquadIds.length;
+      _hygieneError = result.error;
+    });
+  }
+
+  Future<void> _writeQuietHours({
+    bool? enabled,
+    int? startMinutes,
+    int? endMinutes,
+  }) async {
+    if (enabled != null) _quietHoursEnabled = enabled;
+    if (startMinutes != null) _quietStartMinutes = startMinutes;
+    if (endMinutes != null) _quietEndMinutes = endMinutes;
+    setState(() => _hygieneError = null);
+    final result = await NotificationHygieneStore.instance.setQuietHours(
+      enabled: enabled,
+      startMinutes: startMinutes,
+      endMinutes: endMinutes,
+    );
+    if (!mounted) return;
+    setState(() => _hygieneError = result.error);
   }
 
   Future<void> _loadBlockedUsers() async {
@@ -273,21 +306,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             enabled: _quietHoursEnabled,
             startMinutes: _quietStartMinutes,
             endMinutes: _quietEndMinutes,
-            onEnabledChanged: (value) async {
-              setState(() => _quietHoursEnabled = value);
-              await NotificationHygieneStore.instance
-                  .setQuietHours(enabled: value);
-            },
-            onStartChanged: (minutes) async {
-              setState(() => _quietStartMinutes = minutes);
-              await NotificationHygieneStore.instance
-                  .setQuietHours(startMinutes: minutes);
-            },
-            onEndChanged: (minutes) async {
-              setState(() => _quietEndMinutes = minutes);
-              await NotificationHygieneStore.instance
-                  .setQuietHours(endMinutes: minutes);
-            },
+            error: _hygieneError,
+            onRetry: _retryNotificationHygiene,
+            onEnabledChanged: (value) => _writeQuietHours(enabled: value),
+            onStartChanged: (minutes) =>
+                _writeQuietHours(startMinutes: minutes),
+            onEndChanged: (minutes) => _writeQuietHours(endMinutes: minutes),
           ),
           MutedSquadsSettingsTile(mutedCount: _mutedSquadCount),
           _buildDivider(theme),

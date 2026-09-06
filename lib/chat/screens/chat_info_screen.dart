@@ -71,6 +71,8 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
   late TabController _tabController;
   int _selectedSegment = 0;
   bool _squadMuted = false;
+  Object? _muteError;
+  bool? _pendingMute;
   bool _hideAlerts = false;
   late final BackgroundService _backgroundService;
 
@@ -90,16 +92,31 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
   }
 
   Future<void> _loadSquadMute() async {
-    await NotificationHygieneStore.instance.load();
+    final result = await NotificationHygieneStore.instance.load();
     if (!mounted) return;
     setState(() {
       _squadMuted =
           NotificationHygieneStore.instance.isSquadIdMuted(widget.squadId);
+      _muteError = result.error;
+      if (result.isOk) _pendingMute = null;
     });
   }
 
+  Future<void> _retrySquadMute() async {
+    final pending = _pendingMute;
+    if (pending != null) {
+      await _setSquadMuted(pending);
+      return;
+    }
+    await _loadSquadMute();
+  }
+
   Future<void> _setSquadMuted(bool muted) async {
-    setState(() => _squadMuted = muted);
+    setState(() {
+      _squadMuted = muted;
+      _pendingMute = muted;
+      _muteError = null;
+    });
     LobbyState? state;
     try {
       state = ref.read(lobbyNotifierProvider).valueOrNull;
@@ -112,13 +129,15 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
       currentLobby: state?.currentLobby,
       userLobbies: state?.userLobbies ?? const {},
     );
-    await NotificationHygieneStore.instance.setSquadMuted(
+    final result = await NotificationHygieneStore.instance.setSquadMuted(
       widget.squadId,
       muted,
       aliases: [
         if (lobbyId.isNotEmpty && lobbyId != widget.squadId) lobbyId,
       ],
     );
+    if (!mounted) return;
+    setState(() => _muteError = result.error);
   }
 
   @override
@@ -317,6 +336,8 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
         MuteThisSquadTile(
           muted: _squadMuted,
           neonColor: neonColor,
+          error: _muteError,
+          onRetry: _retrySquadMute,
           onChanged: _setSquadMuted,
         ),
         const SizedBox(height: 8),

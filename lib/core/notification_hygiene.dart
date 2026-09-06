@@ -51,14 +51,21 @@ class NotificationHygiene {
   static int minutesOfDay(DateTime now) => now.hour * 60 + now.minute;
 
   static String formatMinutes(int minutes) {
-    final wrapped = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+    final wrapped = clampMinutes(minutes);
     final hour = wrapped ~/ 60;
     final minute = wrapped % 60;
     return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
   }
 
+  /// Minutes from midnight in `0..1439`. Negative and overflow wrap the day.
+  static int clampMinutes(int minutes) =>
+      ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+
   /// Start inclusive, end exclusive. Overnight windows (start > end) wrap
   /// midnight. Equal start/end is not a window.
+  ///
+  /// Toggle off while the window is active immediately resumes — [enabled]
+  /// false never suppresses, even at 23:00 in an overnight window.
   static bool isInQuietHours({
     required bool enabled,
     required int startMinutes,
@@ -66,9 +73,9 @@ class NotificationHygiene {
     DateTime? now,
   }) {
     if (!enabled) return false;
-    final start = _clampMinutes(startMinutes);
-    final end = _clampMinutes(endMinutes);
-    if (start == end) return false;
+    if (!hasQuietWindow(startMinutes, endMinutes)) return false;
+    final start = clampMinutes(startMinutes);
+    final end = clampMinutes(endMinutes);
     final minutes = minutesOfDay(now ?? DateTime.now());
     if (start < end) {
       return minutes >= start && minutes < end;
@@ -139,9 +146,6 @@ class NotificationHygiene {
     ];
   }
 
-  static int _clampMinutes(int minutes) =>
-      ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60);
-
   static String? _nonEmpty(dynamic value) {
     final text = value?.toString().trim();
     if (text == null || text.isEmpty || text == 'null') return null;
@@ -166,6 +170,8 @@ class NotificationHygieneStore {
   bool quietHoursEnabled = false;
   int startMinutes = NotificationHygiene.defaultStartMinutes;
   int endMinutes = NotificationHygiene.defaultEndMinutes;
+  Object? lastError;
+  bool _lastPersistWasSave = false;
 
   NotificationHygieneSnapshot get snapshot => NotificationHygieneSnapshot(
         mutedSquadIds: Set<String>.from(mutedSquadIds),
@@ -203,7 +209,7 @@ class NotificationHygieneStore {
     );
   }
 
-  Future<void> setSquadMuted(
+  Future<HygienePersistResult> setSquadMuted(
     String squadId,
     bool muted, {
     Iterable<String> aliases = const [],
@@ -213,32 +219,33 @@ class NotificationHygieneStore {
       for (final alias in aliases)
         if (NotificationHygiene._nonEmpty(alias) != null) alias.trim(),
     };
-    if (ids.isEmpty) return;
+    if (ids.isEmpty) return const HygienePersistResult.ok();
     if (muted) {
       mutedSquadIds.addAll(ids);
     } else {
       mutedSquadIds.removeAll(ids);
     }
-    await save();
+    return save();
   }
 
-  Future<void> setQuietHours({
+  Future<HygienePersistResult> setQuietHours({
     bool? enabled,
     int? startMinutes,
     int? endMinutes,
   }) async {
     if (enabled != null) quietHoursEnabled = enabled;
     if (startMinutes != null) {
-      this.startMinutes = NotificationHygiene._clampMinutes(startMinutes);
+      this.startMinutes = NotificationHygiene.clampMinutes(startMinutes);
     }
     if (endMinutes != null) {
-      this.endMinutes = NotificationHygiene._clampMinutes(endMinutes);
+      this.endMinutes = NotificationHygiene.clampMinutes(endMinutes);
     }
-    await save();
+    return save();
   }
 
-  Future<void> load() async {
-    try {
+  Future<HygienePersistResult> load() async {
+    _lastPersistWasSave = false;
+    final result = await runHygienePersist(() async {
       final prefs = await SharedPreferences.getInstance();
       final stored = prefs.getStringList(mutedPrefsKey);
       if (stored != null) {
@@ -257,13 +264,17 @@ class NotificationHygieneStore {
           NotificationHygiene.defaultStartMinutes;
       endMinutes = prefs.getInt(quietEndPrefsKey) ??
           NotificationHygiene.defaultEndMinutes;
-    } catch (e) {
-      debugPrint('NotificationHygieneStore.load failed: $e');
+    });
+    lastError = result.error;
+    if (!result.isOk) {
+      debugPrint('NotificationHygieneStore.load failed: ${result.error}');
     }
+    return result;
   }
 
-  Future<void> save() async {
-    try {
+  Future<HygienePersistResult> save() async {
+    _lastPersistWasSave = true;
+    final result = await runHygienePersist(() async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(mutedPrefsKey, mutedSquadIds.toList());
       await prefs.setBool(quietEnabledPrefsKey, quietHoursEnabled);
@@ -272,10 +283,17 @@ class NotificationHygieneStore {
       for (final id in mutedSquadIds) {
         await prefs.setBool('chat_muted_$id', true);
       }
-    } catch (e) {
-      debugPrint('NotificationHygieneStore.save failed: $e');
+    });
+    lastError = result.error;
+    if (!result.isOk) {
+      debugPrint('NotificationHygieneStore.save failed: ${result.error}');
     }
+    return result;
   }
+
+  /// Re-run the last persist. Failed writes save current memory; otherwise
+  /// reload from disk.
+  Future<HygienePersistResult> retry() => _lastPersistWasSave ? save() : load();
 
   @visibleForTesting
   void reset() {
@@ -284,5 +302,196 @@ class NotificationHygieneStore {
     startMinutes = NotificationHygiene.defaultStartMinutes;
     endMinutes = NotificationHygiene.defaultEndMinutes;
     clock = DateTime.now;
+    lastError = null;
+    _lastPersistWasSave = false;
   }
 }
+
+/// Settings copy + persist mapper. Same [NotificationHygiene] gate — no
+/// second presenter.
+enum QuietHoursPhase { off, emptySchedule, on, error }
+
+enum MuteThisSquadPhase { off, on, error }
+
+const kQuietHoursRetryLabel = 'Retry';
+const kMuteThisSquadRetryLabel = 'Retry';
+
+const kQuietHoursErrorCopy = "Couldn't update quiet hours";
+const kQuietHoursErrorHint = 'Check your connection and try again.';
+const kQuietHoursEmptyScheduleCopy =
+    'No quiet window — start and end are the same.';
+const kQuietHoursEmptyScheduleHint =
+    'Notifications stay on until you pick different times.';
+const kQuietHoursActiveNowHint = 'Turn off to resume pings.';
+const kQuietHoursOffEmptyWindowCopy =
+    'Off — pick a start and end to pause notification sends.';
+
+const kMuteThisSquadTitle = 'Mute this squad';
+const kMuteThisSquadEmptyCopy = 'Notifications from this squad stay on';
+const kMuteThisSquadOnCopy = 'No pings from this squad until you unmute';
+const kMuteThisSquadErrorCopy = "Couldn't update mute";
+const kMuteThisSquadErrorHint = 'Check your connection and try again.';
+
+class HygienePersistResult {
+  const HygienePersistResult.ok() : error = null;
+  const HygienePersistResult.error(this.error);
+
+  final Object? error;
+
+  bool get isOk => error == null;
+}
+
+/// Equal start/end (after wrap) is not a window — empty schedule.
+bool hasQuietWindow(int startMinutes, int endMinutes) {
+  return NotificationHygiene.clampMinutes(startMinutes) !=
+      NotificationHygiene.clampMinutes(endMinutes);
+}
+
+/// Start after end in the same calendar day — wraps past midnight.
+bool isOvernightQuietWindow(int startMinutes, int endMinutes) {
+  if (!hasQuietWindow(startMinutes, endMinutes)) return false;
+  return NotificationHygiene.clampMinutes(startMinutes) >
+      NotificationHygiene.clampMinutes(endMinutes);
+}
+
+String quietHoursWindowLabel(int startMinutes, int endMinutes) {
+  final start = NotificationHygiene.formatMinutes(startMinutes);
+  final end = NotificationHygiene.formatMinutes(endMinutes);
+  if (isOvernightQuietWindow(startMinutes, endMinutes)) {
+    return '$start – $end overnight';
+  }
+  return '$start – $end';
+}
+
+QuietHoursPhase resolveQuietHoursPhase({
+  required bool enabled,
+  required int startMinutes,
+  required int endMinutes,
+  Object? error,
+}) {
+  if (error != null) return QuietHoursPhase.error;
+  if (!enabled) return QuietHoursPhase.off;
+  if (!hasQuietWindow(startMinutes, endMinutes)) {
+    return QuietHoursPhase.emptySchedule;
+  }
+  return QuietHoursPhase.on;
+}
+
+Key quietHoursPhaseKey(QuietHoursPhase phase, {bool activeNow = false}) {
+  switch (phase) {
+    case QuietHoursPhase.off:
+      return const Key('quiet-hours-empty');
+    case QuietHoursPhase.emptySchedule:
+      return const Key('quiet-hours-empty-schedule');
+    case QuietHoursPhase.error:
+      return const Key('quiet-hours-error');
+    case QuietHoursPhase.on:
+      return activeNow
+          ? const Key('quiet-hours-active-now')
+          : const Key('quiet-hours-on');
+  }
+}
+
+Key quietHoursHintKey(QuietHoursPhase phase) {
+  return phase == QuietHoursPhase.error
+      ? const Key('quiet-hours-error-hint')
+      : const Key('quiet-hours-empty-schedule-hint');
+}
+
+String quietHoursMessage({
+  required QuietHoursPhase phase,
+  required int startMinutes,
+  required int endMinutes,
+  bool activeNow = false,
+}) {
+  switch (phase) {
+    case QuietHoursPhase.error:
+      return kQuietHoursErrorCopy;
+    case QuietHoursPhase.emptySchedule:
+      return kQuietHoursEmptyScheduleCopy;
+    case QuietHoursPhase.off:
+      if (!hasQuietWindow(startMinutes, endMinutes)) {
+        return kQuietHoursOffEmptyWindowCopy;
+      }
+      return 'Off — pause all notification sends ${quietHoursWindowLabel(startMinutes, endMinutes)}';
+    case QuietHoursPhase.on:
+      if (activeNow) {
+        return 'Pausing now through ${NotificationHygiene.formatMinutes(endMinutes)}. $kQuietHoursActiveNowHint';
+      }
+      return 'Pausing all notification sends ${quietHoursWindowLabel(startMinutes, endMinutes)}';
+  }
+}
+
+String? quietHoursHint(QuietHoursPhase phase) {
+  switch (phase) {
+    case QuietHoursPhase.error:
+      return kQuietHoursErrorHint;
+    case QuietHoursPhase.emptySchedule:
+      return kQuietHoursEmptyScheduleHint;
+    case QuietHoursPhase.off:
+    case QuietHoursPhase.on:
+      return null;
+  }
+}
+
+MuteThisSquadPhase resolveMuteThisSquadPhase({
+  required bool muted,
+  Object? error,
+}) {
+  if (error != null) return MuteThisSquadPhase.error;
+  return muted ? MuteThisSquadPhase.on : MuteThisSquadPhase.off;
+}
+
+Key muteThisSquadPhaseKey(MuteThisSquadPhase phase) {
+  switch (phase) {
+    case MuteThisSquadPhase.off:
+      return const Key('mute-this-squad-empty');
+    case MuteThisSquadPhase.on:
+      return const Key('mute-this-squad-on');
+    case MuteThisSquadPhase.error:
+      return const Key('mute-this-squad-error');
+  }
+}
+
+String muteThisSquadMessage(MuteThisSquadPhase phase) {
+  switch (phase) {
+    case MuteThisSquadPhase.error:
+      return kMuteThisSquadErrorCopy;
+    case MuteThisSquadPhase.on:
+      return kMuteThisSquadOnCopy;
+    case MuteThisSquadPhase.off:
+      return kMuteThisSquadEmptyCopy;
+  }
+}
+
+String? muteThisSquadHint(MuteThisSquadPhase phase) {
+  return phase == MuteThisSquadPhase.error ? kMuteThisSquadErrorHint : null;
+}
+
+String? hygieneErrorDetail(Object? error) {
+  if (error == null) return null;
+  final text = error.toString().trim();
+  if (text.isEmpty) return null;
+  const prefix = 'Exception: ';
+  if (text.startsWith(prefix) && text.length > prefix.length) {
+    return text.substring(prefix.length);
+  }
+  return text;
+}
+
+/// Map a persist attempt. Thrown write is error. Retry is calling this again.
+Future<HygienePersistResult> runHygienePersist(
+  Future<void> Function() persist,
+) async {
+  try {
+    await persist();
+    return const HygienePersistResult.ok();
+  } catch (e) {
+    return HygienePersistResult.error(e);
+  }
+}
+
+Future<HygienePersistResult> retryHygienePersist(
+  Future<void> Function() persist,
+) =>
+    runHygienePersist(persist);

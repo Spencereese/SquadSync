@@ -98,7 +98,7 @@ void main() {
 
     expect(find.byKey(const Key('quiet-hours-empty')), findsOneWidget);
     expect(
-      find.text('Off — pause all notification sends 22:00 – 08:00'),
+      find.text('Off — pause all notification sends 22:00 – 08:00 overnight'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('quiet-hours-on')), findsNothing);
@@ -112,6 +112,7 @@ void main() {
           enabled: enabled,
           startMinutes: 22 * 60,
           endMinutes: 8 * 60,
+          now: DateTime(2026, 1, 1, 12),
           onEnabledChanged: (value) => enabled = value,
           onStartChanged: (_) {},
           onEndChanged: (_) {},
@@ -121,7 +122,7 @@ void main() {
 
     expect(find.byKey(const Key('quiet-hours-on')), findsOneWidget);
     expect(
-      find.text('Pausing all notification sends 22:00 – 08:00'),
+      find.text('Pausing all notification sends 22:00 – 08:00 overnight'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('quiet-hours-start')), findsOneWidget);
@@ -184,5 +185,144 @@ void main() {
     expect(find.text('2 muted squads. Unmute from that squad\'s info.'),
         findsOneWidget);
     expect(find.byKey(const Key('muted-squads-empty')), findsNothing);
+  });
+
+  testWidgets('quiet hours empty schedule shows copy and start/end',
+      (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        QuietHoursSettings(
+          enabled: true,
+          startMinutes: 12 * 60,
+          endMinutes: 12 * 60,
+          onEnabledChanged: (_) {},
+          onStartChanged: (_) {},
+          onEndChanged: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('quiet-hours-empty-schedule')), findsOneWidget);
+    expect(find.text(kQuietHoursEmptyScheduleCopy), findsOneWidget);
+    expect(find.text(kQuietHoursEmptyScheduleHint), findsOneWidget);
+    expect(find.byKey(const Key('quiet-hours-start')), findsOneWidget);
+    expect(find.byKey(const Key('quiet-hours-end')), findsOneWidget);
+    expect(find.byKey(const Key('quiet-hours-on')), findsNothing);
+  });
+
+  testWidgets('quiet hours midnight wrap names overnight window',
+      (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        QuietHoursSettings(
+          enabled: true,
+          startMinutes: 22 * 60,
+          endMinutes: 0,
+          now: DateTime(2026, 1, 1, 12),
+          onEnabledChanged: (_) {},
+          onStartChanged: (_) {},
+          onEndChanged: (_) {},
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Pausing all notification sends 22:00 – 00:00 overnight'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('toggle off while window active shows off copy', (tester) async {
+    var enabled = true;
+    final now = DateTime(2026, 1, 1, 23, 15);
+
+    await tester.pumpWidget(
+      wrap(
+        StatefulBuilder(
+          builder: (context, setState) {
+            return QuietHoursSettings(
+              enabled: enabled,
+              startMinutes: 22 * 60,
+              endMinutes: 8 * 60,
+              now: now,
+              onEnabledChanged: (value) => setState(() => enabled = value),
+              onStartChanged: (_) {},
+              onEndChanged: (_) {},
+            );
+          },
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('quiet-hours-active-now')), findsOneWidget);
+    expect(
+      find.text('Pausing now through 08:00. $kQuietHoursActiveNowHint'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('quiet-hours-toggle')));
+    await tester.pump();
+
+    expect(enabled, isFalse);
+    expect(find.byKey(const Key('quiet-hours-empty')), findsOneWidget);
+    expect(find.byKey(const Key('quiet-hours-active-now')), findsNothing);
+    expect(find.byKey(const Key('quiet-hours-start')), findsNothing);
+  });
+
+  testWidgets('quiet hours error copy offers Retry and never a spinner',
+      (tester) async {
+    var retried = false;
+    await tester.pumpWidget(
+      wrap(
+        QuietHoursSettings(
+          enabled: true,
+          startMinutes: 22 * 60,
+          endMinutes: 8 * 60,
+          now: DateTime(2026, 1, 1, 12),
+          error: 'offline',
+          onRetry: () => retried = true,
+          onEnabledChanged: (_) {},
+          onStartChanged: (_) {},
+          onEndChanged: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('quiet-hours-error')), findsOneWidget);
+    expect(find.text(kQuietHoursErrorCopy), findsOneWidget);
+    expect(find.text(kQuietHoursErrorHint), findsOneWidget);
+    expect(find.byKey(const Key('quiet-hours-retry')), findsOneWidget);
+    expect(find.text(kQuietHoursRetryLabel), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.tap(find.byKey(const Key('quiet-hours-retry')));
+    await tester.pump();
+    expect(retried, isTrue);
+  });
+
+  testWidgets('mute error copy offers Retry and never a spinner',
+      (tester) async {
+    var retried = false;
+    await tester.pumpWidget(
+      wrap(
+        MuteThisSquadTile(
+          muted: true,
+          error: 'denied',
+          onRetry: () => retried = true,
+          onChanged: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('mute-this-squad-error')), findsOneWidget);
+    expect(find.text(kMuteThisSquadErrorCopy), findsOneWidget);
+    expect(find.text(kMuteThisSquadErrorHint), findsOneWidget);
+    expect(find.byKey(const Key('mute-this-squad-retry')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byKey(const Key('mute-this-squad-on')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('mute-this-squad-retry')));
+    await tester.pump();
+    expect(retried, isTrue);
   });
 }

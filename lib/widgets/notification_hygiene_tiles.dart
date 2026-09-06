@@ -13,19 +13,29 @@ class MuteThisSquadTile extends StatelessWidget {
     required this.muted,
     required this.onChanged,
     this.neonColor = Colors.white,
+    this.error,
+    this.onRetry,
   });
 
-  static const titleLabel = 'Mute this squad';
-  static const emptyLabel = 'Notifications from this squad stay on';
-  static const mutedLabel = 'No pings from this squad until you unmute';
+  static const titleLabel = kMuteThisSquadTitle;
+  static const emptyLabel = kMuteThisSquadEmptyCopy;
+  static const mutedLabel = kMuteThisSquadOnCopy;
 
   final bool muted;
   final ValueChanged<bool> onChanged;
   final Color neonColor;
+  final Object? error;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final onSurface = Theme.of(context).colorScheme.onSurface;
+    final phase = resolveMuteThisSquadPhase(muted: muted, error: error);
+    final hint = muteThisSquadHint(phase);
+    final showRetry = phase == MuteThisSquadPhase.error && onRetry != null;
+    final subtitleColor = phase == MuteThisSquadPhase.error
+        ? Theme.of(context).colorScheme.error
+        : onSurface.withOpacity(0.7);
     return ClipRRect(
       key: const Key('mute-this-squad'),
       borderRadius: BorderRadius.circular(16),
@@ -63,16 +73,42 @@ class MuteThisSquadTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      muted ? mutedLabel : emptyLabel,
-                      key: muted
-                          ? const Key('mute-this-squad-on')
-                          : const Key('mute-this-squad-empty'),
+                      muteThisSquadMessage(phase),
+                      key: muteThisSquadPhaseKey(phase),
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w400,
-                        color: onSurface.withOpacity(0.7),
+                        color: subtitleColor,
                       ),
                     ),
+                    if (hint != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        hint,
+                        key: const Key('mute-this-squad-error-hint'),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: subtitleColor.withOpacity(0.85),
+                        ),
+                      ),
+                    ],
+                    if (showRetry)
+                      TextButton(
+                        key: const Key('mute-this-squad-retry'),
+                        onPressed: onRetry,
+                        style: TextButton.styleFrom(
+                          foregroundColor: subtitleColor,
+                          minimumSize: const Size(88, 44),
+                          padding: EdgeInsets.zero,
+                          alignment: Alignment.centerLeft,
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        child: const Text(kMuteThisSquadRetryLabel),
+                      ),
                   ],
                 ),
               ),
@@ -203,6 +239,9 @@ class QuietHoursSettings extends StatelessWidget {
     required this.onEnabledChanged,
     required this.onStartChanged,
     required this.onEndChanged,
+    this.error,
+    this.onRetry,
+    this.now,
   });
 
   static const titleLabel = 'Quiet hours';
@@ -213,17 +252,53 @@ class QuietHoursSettings extends StatelessWidget {
   final ValueChanged<bool> onEnabledChanged;
   final ValueChanged<int> onStartChanged;
   final ValueChanged<int> onEndChanged;
+  final Object? error;
+  final VoidCallback? onRetry;
+  final DateTime? now;
 
-  String get windowLabel =>
-      '${NotificationHygiene.formatMinutes(startMinutes)} – ${NotificationHygiene.formatMinutes(endMinutes)}';
+  QuietHoursPhase get phase => resolveQuietHoursPhase(
+        enabled: enabled,
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        error: error,
+      );
 
-  String get emptyLabel =>
-      'Off — pause all notification sends $windowLabel';
+  bool get activeNow =>
+      phase == QuietHoursPhase.on &&
+      NotificationHygiene.isInQuietHours(
+        enabled: true,
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        now: now,
+      );
 
-  String get onLabel => 'Pausing all notification sends $windowLabel';
+  String get windowLabel => quietHoursWindowLabel(startMinutes, endMinutes);
+
+  String get emptyLabel => quietHoursMessage(
+        phase: QuietHoursPhase.off,
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+      );
+
+  String get onLabel => quietHoursMessage(
+        phase: QuietHoursPhase.on,
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        activeNow: activeNow,
+      );
 
   @override
   Widget build(BuildContext context) {
+    final resolved = phase;
+    final subtitle = quietHoursMessage(
+      phase: resolved,
+      startMinutes: startMinutes,
+      endMinutes: endMinutes,
+      activeNow: activeNow,
+    );
+    final hint = quietHoursHint(resolved);
+    final showRetry = resolved == QuietHoursPhase.error && onRetry != null;
+    final errorColor = Theme.of(context).colorScheme.error;
     return Column(
       key: const Key('quiet-hours-settings'),
       children: [
@@ -235,15 +310,56 @@ class QuietHoursSettings extends StatelessWidget {
           ),
           title: Text(titleLabel, style: GoogleFonts.robotoMono()),
           subtitle: Text(
-            enabled ? onLabel : emptyLabel,
-            key: enabled
-                ? const Key('quiet-hours-on')
-                : const Key('quiet-hours-empty'),
-            style: GoogleFonts.robotoMono(fontSize: 12),
+            subtitle,
+            key: quietHoursPhaseKey(resolved, activeNow: activeNow),
+            style: GoogleFonts.robotoMono(
+              fontSize: 12,
+              color: resolved == QuietHoursPhase.error ? errorColor : null,
+            ),
           ),
           value: enabled,
           onChanged: onEnabledChanged,
         ),
+        if (hint != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                hint,
+                key: quietHoursHintKey(resolved),
+                style: GoogleFonts.robotoMono(
+                  fontSize: 12,
+                  color: resolved == QuietHoursPhase.error
+                      ? errorColor
+                      : Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.7),
+                ),
+              ),
+            ),
+          ),
+        if (showRetry)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(56, 0, 16, 4),
+              child: TextButton(
+                key: const Key('quiet-hours-retry'),
+                onPressed: onRetry,
+                style: TextButton.styleFrom(
+                  foregroundColor: errorColor,
+                  minimumSize: const Size(88, 44),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                child: const Text(kQuietHoursRetryLabel),
+              ),
+            ),
+          ),
         if (enabled) ...[
           ListTile(
             key: const Key('quiet-hours-start'),
@@ -281,7 +397,7 @@ class QuietHoursSettings extends StatelessWidget {
     int currentMinutes,
     ValueChanged<int> onChanged,
   ) async {
-    final clamped = ((currentMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+    final clamped = NotificationHygiene.clampMinutes(currentMinutes);
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: clamped ~/ 60, minute: clamped % 60),

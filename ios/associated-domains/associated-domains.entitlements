@@ -3,6 +3,9 @@
 <plist version="1.0">
 <dict>
 	<!-- Associated Domains template for com.example.codSquadApp.
+	     AASA appID stays TEAMID.com.example.codSquadApp until Spencer
+	     pastes the real 10-char Team ID (portal Membership). Do not
+	     invent a Team ID in this repo.
 	     Live device file: ios/Runner/Runner.entitlements (already includes
 	     these applinks plus existing supabase / lobbiesync.app entries).
 	     Simulator: ios/Runner/Runner.simulator.entitlements must NOT claim

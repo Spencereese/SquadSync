@@ -1,136 +1,88 @@
-# TestFlight checklist (Spencer)
+# TestFlight checklist (P5 Cod Flight)
 
-Phase C prep. **Do not merge PR #1.** This file is the portal / App Store
-Connect runbook — the slice that added it did **not** click Apple Developer,
-Firebase, Supabase, or App Store Connect.
+Friends follow this file. **Nobody on this slice logs into Apple, Firebase,
+Supabase, or App Store Connect.** Spencer clicks the portal. This agent
+does not.
 
-Bundle ID stays **`com.example.codSquadApp`**. Do not rename. Do not commit
-`.env`. Do not apply Supabase migrations from this checklist.
-
-Branch: `cursor/revive-squadsync-be5c`
+Bundle ID stays **`com.example.codSquadApp`**. Do not rename. Do not merge
+or retarget PR #1. Do not commit secrets.
 
 ```
-Tip (at this slice): 3.4.100+102
-PR: https://github.com/Spencereese/SquadSync/pull/1 — do not merge
-Upload / TestFlight: Spencer (not this slice)
+Branch:  cursor/revive-squadsync-be5c
+Tip:     3.4.136+138 (docs slice on that tip — pubspec not bumped)
+PR #1:   do not merge / do not retarget
+Upload:  Spencer (not this slice)
 ```
 
-Repo already has the iOS target, entitlements, URL schemes, and Firebase
-Analytics wiring. What is left is portal + Connect work, then an archive.
+---
+
+## 1. `aps-environment` is a flavor — never a silent flip
+
+Push uses **`development`** or **`production`** depending on the Xcode
+SDK + configuration. **Do not edit the committed `development` strings
+in place** to ship TestFlight. That silent flip is what breaks the
+simulator (and can leak device applinks into Launch Services).
+
+| Flavor | When | Entitlements file | `aps-environment` | Associated Domains |
+| --- | --- | --- | --- | --- |
+| **Simulator** | `iphonesimulator*` (Debug or Release) | `ios/Runner/Runner.simulator.entitlements` | **`development`** | **Off** (must stay off) |
+| **Device Debug** | `iphoneos*` + Debug | `ios/Runner/Runner.entitlements` | **`development`** (sandbox APNs) | On (device file) |
+| **Device Release / Archive / TestFlight / App Store** | `iphoneos*` + Release / Profile / Archive | Release-only overlay — **not** the simulator file | **`production`** | On (device file) |
+
+Wiring already in the repo (do not change it this week):
+
+- Default `CODE_SIGN_ENTITLEMENTS` = `Runner/Runner.simulator.entitlements`
+- `CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]` = simulator file (`development`, no applinks)
+- `CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]` = `Runner/Runner.entitlements`
+
+### How friends apply `production` without breaking sim
+
+1. Leave **`Runner.simulator.entitlements`** at `development`. Never set
+   production there.
+2. Leave the committed **`Runner.entitlements`** `aps-environment` at
+   `development` so Debug device + any leaked default stay sandbox-safe.
+3. For the **TestFlight / App Store archive only**, point the
+   **Release** (and Profile) *iphoneos* configuration at a
+   **Release-only** entitlements copy that has `aps-environment` =
+   `production`. Do that in Xcode:
+   - Open `ios/Runner.xcworkspace` (not `.xcodeproj`)
+   - Select the **Runner** target → **Signing & Capabilities**
+   - In the configuration picker, choose **Release** (not Debug)
+   - Push Notifications environment for that Release configuration =
+     **Production**
+   - Or: duplicate `Runner.entitlements` locally as a Release overlay
+     and set `CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]` on **Release /
+     Profile only** to that overlay
+4. Confirm Debug + Simulator still read `development`.
+5. Do **not** commit a flip of the simulator file. Do **not** change the
+   shared Debug value and push it as the new default.
+
+`flutter run` / Simulator = **development**. `flutter build ipa` /
+Xcode **Product → Archive** = **production** on the Release overlay.
 
 ---
 
-## 0. Before you start
+## 2. AASA / Associated Domains — `TEAMID` stays a placeholder
 
-- [ ] Apple Developer account with a team (export_options currently lists
-      Team ID `K4ZTXPQ8J9` — confirm this is the live team; paste the
-      10-character Team ID into AASA files if it differs)
-- [ ] App Store Connect access for that team
-- [ ] Firebase project `cod-squad-a4c62` (GCP number `756172684661`)
-- [ ] Supabase project `sfckxrnoiwetmzdycqaa`
-- [ ] A real `ios/Runner/GoogleService-Info.plist` on disk (gitignored).
-      `GoogleService-Info.plist.example` is placeholders only — device
-      APNs/FCM will not register against `YOUR_` values
-- [ ] Do **not** change `PRODUCT_BUNDLE_IDENTIFIER` in
-      `ios/Runner.xcodeproj/project.pbxproj` (must stay
-      `com.example.codSquadApp`)
+Repo AASA `appID` / `appIDs` stay:
 
----
+```
+TEAMID.com.example.codSquadApp
+```
 
-## 1. App ID
+Do **not** invent a Team ID in git. Spencer pastes the real
+**10-character Team ID** from the portal (step 2 of the runbook below).
+After that replace, the live value is `<TEAMID>.com.example.codSquadApp`
+(example shape only: `ABCD1234XY.com.example.codSquadApp`).
 
-Identifiers → App IDs. Use the **existing** App ID. Do not create a new one.
+Files Spencer edits **locally** after copying Team ID (same string in all
+three):
 
-| Field | Value |
-| --- | --- |
-| Bundle ID | `com.example.codSquadApp` (Explicit) |
-| Display name in repo | Cod Squad |
-| Team ID (export_options) | `K4ZTXPQ8J9` — confirm in Membership |
+- `ios/associated-domains/apple-app-site-association`
+- `web/.well-known/apple-app-site-association`
+- `web/apple-app-site-association`
 
-Capabilities to have **on** this App ID (repo entitlements already claim them):
-
-- [ ] Push Notifications
-- [ ] Sign In with Apple
-- [ ] Associated Domains
-- [ ] Keychain Sharing (entitlements use
-      `$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)`)
-
-Do **not** enable a second bundle ID. Do **not** rename to `com.squadsync.app`
-or `com.codsquad.app`.
-
----
-
-## 2. Push / APNs
-
-Repo:
-
-- `ios/Runner/Runner.entitlements` → `aps-environment` is currently
-  **`development`**. A TestFlight / App Store archive needs **`production`**.
-- `UIBackgroundModes` includes `remote-notification`
-- `AppDelegate` skips `registerForRemoteNotifications()` when the plist
-  still has `YOUR_` placeholders
-- FCM lives on `firebase_messaging`; database stays on Supabase
-
-Portal:
-
-- [ ] Certificates, Identifiers & Profiles → Keys → create (or reuse) an
-      **APNs Auth Key** (`.p8`). One key per team is enough
-- [ ] Note Key ID + Team ID. Upload that key to **Firebase Console →
-      Project settings → Cloud Messaging → Apple app configuration**
-      (not the old `.cer`/CSR flow unless you already use it)
-- [ ] Confirm the iOS app in Firebase uses bundle ID
-      `com.example.codSquadApp`
-- [ ] For the TestFlight archive, set `aps-environment` to `production`
-      on the device entitlements (`ios/Runner/Runner.entitlements`).
-      Simulator entitlements stay without production APNs / applinks
-- [ ] Put the **real** `GoogleService-Info.plist` at
-      `ios/Runner/GoogleService-Info.plist` (gitignored). Do not commit it
-- [ ] After a signed device build: grant notification permission in-app,
-      then confirm an FCM token is minted (peacock / lobby lock / chat
-      already use `NotificationService`)
-
----
-
-## 3. Sign in with Apple
-
-Repo:
-
-- Entitlement: `com.apple.developer.applesignin` = `Default`
-- Live path: `AuthServiceSupabase.signInWithApple()` → Supabase OAuth
-  with `redirectTo: kSupabaseAuthRedirect`
-  (`com.example.codSquadApp://auth-callback`)
-- Info.plist URL scheme: `com.example.codSquadApp`
-
-Portal / Supabase (you click; this slice did not):
-
-- [ ] App ID has **Sign In with Apple** enabled
-- [ ] Supabase Authentication → Providers → Apple:
-      - Service ID / client: `com.example.codSquadApp` (or the Services ID
-        you create **without** changing the app bundle ID)
-      - Team ID, Key ID, and the `.p8` (repo has
-        `backend/AuthKey_X3W3HSAXZF.p8` for Key ID `X3W3HSAXZF` — rotate
-        if that key is retired)
-- [ ] Redirect URL on the Apple provider and in Supabase URL config:
-      `com.example.codSquadApp://auth-callback`
-- [ ] Device test: Sign in with Apple returns to the app, session restores
-      after cold start (`SupabaseService.ensureFreshSession`)
-
----
-
-## 4. Associated Domains
-
-Repo prep is already on tip (do not invent a second parser):
-
-| Piece | Path |
-| --- | --- |
-| Entitlements (device) | `ios/Runner/Runner.entitlements` |
-| Template | `ios/associated-domains/associated-domains.entitlements` |
-| AASA | `ios/associated-domains/apple-app-site-association` |
-| Host copies | `web/.well-known/apple-app-site-association`, `web/apple-app-site-association` |
-| Portal/DNS steps | `ios/associated-domains/SPENCER.txt` |
-| Dart route | `locationForDeepLink` → `/squad?lobby_id=` |
-
-Device applinks already listed:
+Device applinks already listed on `ios/Runner/Runner.entitlements`:
 
 ```
 applinks:sfckxrnoiwetmzdycqaa.supabase.co
@@ -141,201 +93,164 @@ applinks:www.codsquad.app
 ```
 
 Simulator entitlements must **not** claim `associated-domains`.
-
-Spencer:
-
-- [ ] Enable Associated Domains on App ID `com.example.codSquadApp`
-- [ ] Replace `TEAMID` in all three AASA files with the 10-character Team ID
-      → `TEAMID.com.example.codSquadApp` becomes
-      `<TEAMID>.com.example.codSquadApp`
-- [ ] Host AASA at `https://codsquad.app/.well-known/apple-app-site-association`
-      (HTTPS 200, `Content-Type: application/json`, no redirect, no `.json`)
-- [ ] Reinstall a device-signed build, then tap `https://codsquad.app/l/<id>`
-- [ ] Until DNS/AASA are live, `codsquadapp://lobby/<id>` still works
+Host AASA at `https://codsquad.app/.well-known/apple-app-site-association`
+(HTTPS 200, `Content-Type: application/json`, no redirect, no `.json`).
+Path claimed: `/l/*`.
 
 ---
 
-## 5. Firebase iOS
+## 3. Friend build recipe (local Mac — no portal login from a bot)
 
-Repo:
+### Files that must exist on disk and must **never** be committed
 
-- `lib/firebase_options.dart` iOS:
-  - project `cod-squad-a4c62`
-  - appId `1:756172684661:ios:99ecq9sd74qvt9ufs28os52j9g33h1v9`
-  - `iosBundleId: com.example.codSquadApp`
-- `Firebase.initializeApp` + `setAnalyticsCollectionEnabled(true)` in
-  `lib/main.dart`
-- Analytics is **Analytics + FCM only**. No Firebase database
+Copy / download these locally. `.gitignore` already blocks them.
 
-Console (you click):
+| Path | How you get it | Why |
+| --- | --- | --- |
+| `.env` | Copy `.env.example` → `.env` and fill real values | `--dart-define-from-file=.env` (not a Flutter asset) |
+| `ios/Runner/GoogleService-Info.plist` | Firebase Console → iOS app `com.example.codSquadApp` → download | Real FCM / Analytics. Example plist is `YOUR_` placeholders only |
+| `android/app/google-services.json` | Firebase Android app (if you also run Android) | Gitignored. Not this week's iOS archive |
+| `*.p8` (APNs Auth Key) | Apple Developer → Keys (step 9) | Upload to Firebase Cloud Messaging. Never commit |
+| `backend/.env` | Local backend only | Not required for the IPA |
+| `backend/service-account.json` / `service-account.json` | GCP / Firebase admin | Never commit |
 
-- [ ] Firebase project has an **iOS** app whose bundle ID is exactly
-      `com.example.codSquadApp` (do not add a different bundle ID)
-- [ ] Download the real `GoogleService-Info.plist` and place it at
-      `ios/Runner/GoogleService-Info.plist` (gitignored)
-- [ ] Confirm `BUNDLE_ID` inside that plist is `com.example.codSquadApp`
-- [ ] Confirm `GOOGLE_APP_ID` / `GCM_SENDER_ID` match
-      `DefaultFirebaseOptions.ios` (or re-run FlutterFire and update
-      `firebase_options.dart` **without** changing the bundle ID)
-- [ ] Enable Google Analytics for the iOS app
-- [ ] DebugView (optional): Xcode scheme `-FIRDebugEnabled` and watch
-      `lobby_join`, `peacock_offer`, `peacock_lock`, `session_rate`,
-      `ready_check` — no uid / email / display name params
+`GoogleService-Info.plist.example` is **not** a substitute. A build-phase
+script copies the example only so Xcode has a file; device APNs/FCM will
+not register against `YOUR_` values.
 
----
+### Archive commands
 
-## 6. Google OAuth
+From the repo root, on a Mac with Xcode + signing team:
 
-Repo (native Google Sign-In → Supabase `signInWithIdToken`):
+```bash
+flutter pub get
 
-| Piece | Value |
-| --- | --- |
-| iOS client | `756172684661-99ecq9sd74qvt9ufs28os52j9g33h1v9.apps.googleusercontent.com` |
-| Web / server client | `756172684661-pv3rscsdd548cb5r6orrs6u2bvu1oi6e.apps.googleusercontent.com` |
-| Reversed URL scheme | `com.googleusercontent.apps.756172684661-99ecq9sd74qvt9ufs28os52j9g33h1v9` |
-| Info.plist | `GIDClientID` + `google.sign.in` URL type |
-| Config | `lib/core/google_auth_config.dart` (`.env` wins over bundled IDs) |
+# Preferred: IPA for App Store Connect / TestFlight
+flutter build ipa \
+  --release \
+  --dart-define-from-file=.env \
+  --export-options-plist=ios/export_options.plist
+```
 
-Console:
+`ios/export_options.plist` already sets `method` = `app-store` and lists
+Team ID `K4ZTXPQ8J9` — Spencer confirms that Team ID matches Membership
+(step 2). If it differs, edit the plist locally; do not invent a second
+bundle ID.
 
-- [ ] Google Cloud / Firebase OAuth client of type **iOS** uses bundle ID
-      `com.example.codSquadApp`
-- [ ] iOS URL scheme in the client matches `REVERSED_CLIENT_ID` from the
-      real plist
-- [ ] Web client (type 3) is the `serverClientId` / `GOOGLE_WEB_CLIENT_ID`
-- [ ] Supabase Authentication → Providers → Google: Client ID + secret
-      from that web client; skip nonce as required by `signInWithIdToken`
-- [ ] Device test: Google Sign-In returns an ID token and a Supabase
-      session. Simulator needs the reversed scheme in Info.plist (already
-      present)
+Xcode archive (same Release flavor):
 
-`.env` keys (do not commit): `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_WEB_CLIENT_ID`.
+```bash
+flutter build ios --release --dart-define-from-file=.env
+# then open ios/Runner.xcworkspace → Product → Archive → Distribute App
+# → App Store Connect
+```
+
+Always pass **`--dart-define-from-file=.env`**. Dart-defines are
+compile-time. Hot restart does not inject them. Do not use leftover
+`com.squadsync.app`.
+
+After upload: wait for processing in App Store Connect → TestFlight →
+add internal testers. First install: Accept “Open in Cod Squad?” if the
+custom-scheme prompt appears.
 
 ---
 
-## 7. Supabase redirect allow-list
+## 4. Auth URL scheme (verified in repo)
 
-Canonical redirect (must match Info.plist + `kSupabaseAuthRedirect`):
+Canonical Supabase / OAuth return (do not change):
 
 ```
 com.example.codSquadApp://auth-callback
 ```
 
-Authentication → URL Configuration:
+Verified on tip:
 
-- [ ] **Redirect URLs** include `com.example.codSquadApp://auth-callback`
-- [ ] Do **not** add leftover `com.squadsync.app://…`
-- [ ] Site URL can stay the Supabase project URL
-      (`https://sfckxrnoiwetmzdycqaa.supabase.co`)
-- [ ] Additional allow-list if you still use browser OAuth:
-      `https://sfckxrnoiwetmzdycqaa.supabase.co/auth/v1/callback`
-- [ ] Keep `codsquadapp://` for in-app lobby/chat deep links — that is
-      **not** the auth callback
-
-Deep-link scheme vs auth scheme:
-
-| Scheme | Use |
+| Location | What it has |
 | --- | --- |
-| `codsquadapp://lobby/<id>` | Product deep link → `/squad?lobby_id=` |
-| `com.example.codSquadApp://auth-callback` | Google / Apple / magic-link return |
+| `ios/Runner/Info.plist` | URL type `supabase.auth.callback` → scheme `com.example.codSquadApp` |
+| `ios/Runner/Info.simulator.plist` | Same scheme (sim must register it too) |
+| `lib/core/auth_redirect.dart` | `kIosBundleId` + `kSupabaseAuthRedirect` = that URL |
+| `.env.example` | Comment lists the same redirect |
+
+In-app lobby/chat deep links stay `codsquadapp://lobby/<id>` — that is
+**not** the auth callback.
 
 ---
 
-## 8. Privacy nutrition (App Store Connect)
+## 5. Android applicationId mismatch (footnote only — do not fix)
 
-App Privacy questionnaire. Answer from **what the app actually does**.
-Do not claim data you do not collect.
-
-Collects (typical for this binary — confirm in Connect):
-
-| Category | Examples in product | Linked to identity? | Used for tracking? |
-| --- | --- | --- | --- |
-| Contact info | Email (account) | Yes (account) | No |
-| Identifiers | Supabase user id, FCM token / device id | Yes | No |
-| User content | Chat, photos, clips, profile image | Yes | No |
-| Usage data | Firebase Analytics events below | No (events are not PII) | No |
-| Diagnostics | Crash / error events (`error_occurred`) | No | No |
-
-Does **not** collect (unless you add it later): Health, Precise Location,
-Financial Info, Purchases (no IAP on tip), Sensitive Info.
-
-Third-party partners to list if Connect asks: Firebase (Analytics + FCM),
-Supabase (auth + database), Google Sign-In, Apple (Sign in with Apple),
-Agora (voice/video), IGDB/Twitch (game metadata).
-
-Product Analytics events (no PII params):
-
-- `lobby_join`
-- `peacock_offer`
-- `peacock_lock`
-- `session_rate`
-- `ready_check`
-
-Do not send uid, email, display name, tokens, or raw lobby/squad ids on
-those events (`lib/services/squad_analytics.dart` strips them).
-
-Privacy Nutrition Labels in Connect are **not** the same as
-`PrivacyInfo.xcprivacy` (Apple Privacy Manifest). Add a manifest in a
-later slice if App Store starts rejecting the upload for missing
-`NSPrivacyAccessedAPITypes`. This checklist does not invent that file.
-
-Usage-string keys already in Info.plist: photo library, camera,
-microphone, speech recognition, notifications, Siri.
-
----
-
-## 9. Export compliance
-
-The app uses HTTPS / TLS only (Supabase, Firebase, Google, Agora, IGDB).
-No custom cryptography.
-
-Repo: `ITSAppUsesNonExemptEncryption` = `false` in
-`ios/Runner/Info.plist` and `ios/Runner/Info.simulator.plist` so App Store
-Connect does not prompt on every upload.
-
-Connect (if still asked on the first version):
-
-- [ ] Export Compliance: **No** (app uses only exemption-eligible HTTPS)
-- [ ] Do not answer Yes unless you add non-exempt crypto
-
----
-
-## 10. Archive / TestFlight (Spencer — not this slice)
-
-Do **not** do these in the analytics/docs slice. When you are ready:
-
-- [ ] `aps-environment` = `production` on the device entitlements
-- [ ] Real `GoogleService-Info.plist` in the Runner bundle
-- [ ] Signing team = the Apple team that owns App ID
-      `com.example.codSquadApp`
-- [ ] `ios/export_options.plist` method `app-store`, Team ID confirmed
-- [ ] Archive from `ios/Runner.xcworkspace` (not `.xcodeproj`)
-- [ ] Upload; wait for processing; add internal testers
-- [ ] First install: Accept “Open in Cod Squad?” if the custom scheme
-      prompt appears; Sign in with Apple or Google; grant notifications
-
-Out of scope for this file’s slice: TestFlight upload itself, SQL,
-`.env` commit, bundle ID rename, merging PR #1.
-
----
-
-## Analytics events (already in the binary)
-
-Logged through existing `FirebaseAnalytics.instance`. Helpers:
-`lib/services/squad_analytics.dart`.
-
-| Event | When | Params (no PII) |
+| Platform | Id | Status |
 | --- | --- | --- |
-| `lobby_join` | Lobby join / LFG enqueue (`startLooking`) / LFG `joinMatched` | `source`, `game_name` |
-| `peacock_offer` | Peacock queue assign / LFG match | `source`, `game_name`, `seat_index` |
-| `peacock_lock` | All seated Ready → lock | `seated_count`, `ready_count` |
-| `session_rate` | Win/Loss rating persist | `stars`, `result`, `skipped` |
-| `ready_check` | Seated Ready / timeout | `seated_count`, `ready_count`, `outcome` |
+| iOS bundle | `com.example.codSquadApp` | Parked. Do not change. |
+| Android `applicationId` / namespace | `com.example.cod_squad_app` | **Mismatch. Do not fix this week.** |
 
-Verify in Firebase DebugView on a device build. Units mock analytics
-(`SquadAnalytics.logHook`) and cover helper + happy-path + fire/persist
-fail call sites (lock-in, peacock join, rating submit, LFG enqueue):
-`test/services/squad_analytics_test.dart`,
-`test/presentation/notifiers/lobby_notifier_test.dart`,
-`test/services/matchmaking_queue_tracker_test.dart`.
-Empty event names map to empty; thrown fire/persist maps to error.
+Leave Android as-is. No `applicationId` “fix”, no Firebase Android
+rename, no store listing work in this slice.
+
+---
+
+## 6. Fifteen-step “Spencer in the portal” runbook
+
+Spencer only. Checkbox as you click. Do not create a second App ID.
+Do not rename `com.example.codSquadApp`.
+
+- [ ] **1.** Open [developer.apple.com/account](https://developer.apple.com/account) and sign in as Spencer
+- [ ] **2.** Open **Membership details** (Account → Membership). Copy the
+      **10-character Team ID**. Leave git at `TEAMID.com.example.codSquadApp`
+      until you paste this id into the three AASA files (step 15)
+- [ ] **3.** Click **Certificates, Identifiers & Profiles**
+- [ ] **4.** Click **Identifiers**. Open the existing App ID
+      **`com.example.codSquadApp`**. Do **not** click the **+** button.
+      Do **not** rename the bundle
+- [ ] **5.** Enable **Push Notifications** → **Save**
+- [ ] **6.** Enable **Sign In with Apple** → **Save**
+- [ ] **7.** Enable **Associated Domains** → **Save**
+- [ ] **8.** Enable **Keychain Sharing** if it is off → **Save**
+      (repo already uses `$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)`)
+- [ ] **9.** Click **Keys** → create or reuse one **APNs Auth Key**.
+      Download the `.p8` once. Note **Key ID**. Keep the file off git
+- [ ] **10.** Open [appstoreconnect.apple.com](https://appstoreconnect.apple.com)
+      → **My Apps** → create or open **Cod Squad** with bundle ID
+      **`com.example.codSquadApp`** (the existing App ID from step 4)
+- [ ] **11.** Open Firebase Console → project **`cod-squad-a4c62`** →
+      **Project settings** → confirm the **iOS** app bundle is
+      **`com.example.codSquadApp`**. Download the real
+      `GoogleService-Info.plist` to `ios/Runner/GoogleService-Info.plist`.
+      Confirm `BUNDLE_ID` inside is `com.example.codSquadApp`. Do not commit
+- [ ] **12.** Same Firebase page → **Cloud Messaging** → Apple app
+      configuration → upload the `.p8` from step 9 + **Key ID** + the
+      Team ID from step 2
+- [ ] **13.** Open Supabase → project **`sfckxrnoiwetmzdycqaa`** →
+      **Authentication** → **URL Configuration** → **Redirect URLs**
+      must include `com.example.codSquadApp://auth-callback`.
+      Do not add leftover `com.squadsync.app://…`
+- [ ] **14.** Supabase **Authentication** → **Providers**:
+      - **Apple:** Team ID (step 2), Key ID + `.p8` (step 9), Services ID
+        that does **not** change the app bundle ID
+      - **Google:** Web client ID + secret; iOS OAuth client stays bundle
+        `com.example.codSquadApp`
+- [ ] **15.** Replace the `TEAMID` placeholder in all three AASA files
+      from section 2. `TEAMID.com.example.codSquadApp` becomes
+      `<your 10-char Team ID>.com.example.codSquadApp`. Host the file at
+      `https://codsquad.app/.well-known/apple-app-site-association`
+      (and www if you use it). Then delete-and-reinstall a **device-signed
+      Release** build so iOS re-fetches AASA. Until DNS/AASA are live,
+      `codsquadapp://lobby/<id>` still works
+
+---
+
+## Connect extras (Spencer, first upload)
+
+- [ ] App Privacy: answer from what the binary actually collects
+      (account email, user content, identifiers, usage/diagnostics).
+      No health / precise location / IAP on tip
+- [ ] Export Compliance: **No** — HTTPS/TLS only.
+      `ITSAppUsesNonExemptEncryption` is already `false` in Info.plist
+- [ ] Signing team on the archive = the Membership team that owns
+      App ID `com.example.codSquadApp`
+- [ ] Release/Archive `aps-environment` = **production** via the flavor
+      in section 1 — **not** a committed flip of the simulator file
+
+Out of scope for this slice: TestFlight upload itself, SQL, `.env`
+commit, bundle ID rename, Android id “fix”, merging PR #1, opening a
+new PR.

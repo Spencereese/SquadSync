@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- aps-environment flavors (see docs/TESTFLIGHT_CHECKLIST.md).
+	     This file is the iphoneos* device entitlements.
+	     Debug / local device: development (this committed value — do not
+	     silent-flip it; that breaks the simulator if it leaks to
+	     iphonesimulator*).
+	     Release / Archive / TestFlight / App Store: production on a
+	     Release-only overlay — never edit Runner.simulator.entitlements
+	     to production. -->
 	<key>aps-environment</key>
 	<string>development</string>
 	<key>com.apple.developer.applesignin</key>

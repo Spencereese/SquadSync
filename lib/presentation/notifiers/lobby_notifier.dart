@@ -1084,12 +1084,42 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     var snapshot = resolveLobbyReadyLock(spots: spots, statuses: statuses);
 
     final uid = userId.trim();
-    if (uid.isEmpty) return null;
-    if (spotIndex != null) {
-      if (spotIndex < 0 || spotIndex >= spots.length) return null;
-      if (seatedUidFromOccupant(spots[spotIndex]) != uid) return null;
+    if (uid.isEmpty) {
+      return SeatedReadyResult(
+        snapshot: snapshot,
+        justLocked: false,
+        changed: false,
+        denied: LobbyReadyLockDeniedReason.blankUid,
+      );
     }
-    if (!snapshot.seatedUids.contains(uid)) return null;
+    if (spotIndex != null) {
+      if (spotIndex < 0 || spotIndex >= spots.length) {
+        return SeatedReadyResult(
+          snapshot: snapshot,
+          justLocked: false,
+          changed: false,
+          denied: LobbyReadyLockDeniedReason.notSeated,
+        );
+      }
+      if (seatedUidFromOccupant(spots[spotIndex]) != uid) {
+        return SeatedReadyResult(
+          snapshot: snapshot,
+          justLocked: false,
+          changed: false,
+          denied: LobbyReadyLockDeniedReason.notSeated,
+        );
+      }
+    }
+    if (!snapshot.seatedUids.contains(uid)) {
+      return SeatedReadyResult(
+        snapshot: snapshot,
+        justLocked: false,
+        changed: false,
+        denied: snapshot.seatedUids.isEmpty
+            ? LobbyReadyLockDeniedReason.emptyLobby
+            : LobbyReadyLockDeniedReason.notSeated,
+      );
+    }
 
     if (readyCheckTimedOut(
       snapshot: snapshot,
@@ -1132,46 +1162,70 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     final spots = spotsForReadyLock(squadState, gameName: game);
     final statuses = mergeLobbyMemberStatuses(squadState, gameName: game);
     final before = resolveLobbyReadyLock(spots: spots, statuses: statuses);
+    final denied = readyLockDenied(
+      snapshot: before,
+      userId: userId,
+      ready: ready,
+    );
+    if (denied != LobbyReadyLockDeniedReason.none) {
+      return SeatedReadyResult(
+        snapshot: before,
+        justLocked: false,
+        changed: false,
+        denied: denied,
+      );
+    }
+    final uid = userId.trim();
+    if (before.isReady(uid) == ready) {
+      return SeatedReadyResult(
+        snapshot: before,
+        justLocked: false,
+        changed: false,
+      );
+    }
     final status = ready ? kSeatedReadyStatus : kSeatedNotReadyStatus;
-    final patched = Map<String, String>.from(statuses)..[userId] = status;
+    final patched = Map<String, String>.from(statuses)..[uid] = status;
     final after = resolveLobbyReadyLock(spots: spots, statuses: patched);
     final lockedNow = justLockedLobby(before: before, after: after);
     final unlockedNow = justUnlockedLobby(before: before, after: after);
 
     try {
-      await _repository.updateMemberStatus(lobbyId, userId, status);
+      await _repository.updateMemberStatus(lobbyId, uid, status);
     } catch (e) {
       debugPrint('LobbyNotifier: failed to set seated Ready: $e');
       rethrow;
     }
 
     _applyMemberStatusLocally(
-      userId: userId,
+      userId: uid,
       status: status,
       gameName: game,
     );
 
     _lastReadyLockSnapshot = after;
-    _syncReadyCheckTimer(after, armedByReady: ready && after.isReady(userId));
+    _syncReadyCheckTimer(after, armedByReady: ready && after.isReady(uid));
 
+    Object? notifyError;
     if (lockedNow || unlockedNow) {
       try {
-        await LobbyLockNotify.send(
+        final notify = await LobbyLockNotify.send(
           lockedNow
               ? planLobbyLockNotify(
                   seatedUids: after.seatedUids,
-                  actorUid: userId,
+                  actorUid: uid,
                   lobbyId: lobbyId,
                   gameName: game.isEmpty ? null : game,
                 )
               : planLobbyUnlockNotify(
                   seatedUids: after.seatedUids,
-                  actorUid: userId,
+                  actorUid: uid,
                   lobbyId: lobbyId,
                   gameName: game.isEmpty ? null : game,
                 ),
         );
+        if (notify.isFailed) notifyError = notify.error;
       } catch (e) {
+        notifyError = e;
         debugPrint('LobbyNotifier: lobby lock notify failed: $e');
       }
     }
@@ -1204,6 +1258,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       snapshot: after,
       justLocked: lockedNow,
       justUnlocked: unlockedNow,
+      notifyError: notifyError,
     );
   }
 

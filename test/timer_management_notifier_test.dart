@@ -59,11 +59,32 @@ void main() {
     });
 
     test('should process expired timers', () async {
-      // TODO: Implement test for processing expired timers
-      // Test should verify:
-      // - Repository processExpiredTimers is called
-      // - isProcessing flag is set during processing
-      // - State is updated after processing completes
+      when(mockRepository.processExpiredTimers()).thenAnswer((_) async {});
+      final notifier = container.read(timerManagementNotifierProvider.notifier);
+      await container.read(timerManagementNotifierProvider.future);
+
+      await notifier.processExpiredTimers();
+
+      verify(mockRepository.processExpiredTimers()).called(1);
+      expect(
+        container.read(timerManagementNotifierProvider).value!.isProcessing,
+        isFalse,
+      );
+    });
+
+    test('processExpiredTimers error clears isProcessing', () async {
+      when(mockRepository.processExpiredTimers())
+          .thenThrow(Exception('offline'));
+      final notifier = container.read(timerManagementNotifierProvider.notifier);
+      await container.read(timerManagementNotifierProvider.future);
+
+      await notifier.processExpiredTimers();
+
+      expect(
+        container.read(timerManagementNotifierProvider).value!.isProcessing,
+        isFalse,
+      );
+      verify(mockRepository.processExpiredTimers()).called(1);
     });
 
     test('should reset timers for a game', () async {
@@ -175,6 +196,29 @@ void main() {
       );
       verify(mockRepository.processExpiredTimers()).called(1);
       verifyNever(mockRepository.processPeacockQueue());
+    });
+
+    test('cleanupExpiredPeacockTimers error is not a silent success', () async {
+      PeacockAssignmentTracker.resetInstance();
+      addTearDown(PeacockAssignmentTracker.resetInstance);
+      when(mockRepository.processExpiredTimers())
+          .thenThrow(Exception('offline'));
+      final tracker = PeacockAssignmentTracker.instance;
+      tracker.assignSpot('expired-user', lobbyId: 'lobby-9');
+
+      final notifier = container.read(timerManagementNotifierProvider.notifier);
+      await container.read(timerManagementNotifierProvider.future);
+      notifier.updateTimerStates(peacockTimers: {
+        'expired-user': Duration.zero,
+      });
+
+      await notifier.cleanupExpiredPeacockTimers();
+
+      expect(
+        tracker.stateFor('expired-user').phase,
+        PeacockAssignmentPhase.idle,
+      );
+      verify(mockRepository.processExpiredTimers()).called(1);
     });
 
     test('should sync timer data with local storage', () async {

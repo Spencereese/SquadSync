@@ -1,7 +1,7 @@
 name: squad_sync
 description: "SquadSync — lobby, chat, and squad coordination for gaming groups."
 publish_to: 'none'
-version: 3.4.124+126
+version: 3.4.125+127
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

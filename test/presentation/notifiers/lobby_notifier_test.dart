@@ -852,6 +852,155 @@ void main() {
       expect(sentUids, ['user-1', 'user-2']);
       expect(sentData!['type'], kLobbyUnlockedType);
     });
+
+    test('empty lobby lock is denied and does not write Ready', () async {
+      final lobby = _lobby(
+        id: 'lobby-9',
+        memberUids: const ['user-1'],
+        spots: [null, null, null],
+      );
+      when(mockRepository.getLobbyStream('lobby-9')).thenAnswer(
+        (_) => Stream<Lobby?>.value(lobby),
+      );
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.setSelectedLobbyId('lobby-9');
+      await Future<void>.delayed(Duration.zero);
+
+      final result = await notifier.applySeatedReady(
+        userId: 'user-1',
+        ready: true,
+        gameName: 'Warzone',
+      );
+
+      expect(result, isNotNull);
+      expect(result!.isDenied, isTrue);
+      expect(result.denied, LobbyReadyLockDeniedReason.emptyLobby);
+      expect(result.justLocked, isFalse);
+      expect(result.snapshot.isLocked, isFalse);
+      expect(result.snackbarMessage, kLobbyLockDeniedEmptyCopy);
+      verifyNever(mockRepository.updateMemberStatus(any, any, any));
+    });
+
+    test('not seated Ready is denied with clear copy', () async {
+      final notifier = await pumpSeatedLobby();
+
+      final result = await notifier.toggleSeatedReady(
+        userId: 'user-9',
+        gameName: 'Warzone',
+        spotIndex: 0,
+      );
+
+      expect(result!.denied, LobbyReadyLockDeniedReason.notSeated);
+      expect(result.snackbarMessage, kLobbyLockDeniedNotSeatedCopy);
+      expect(result.justLocked, isFalse);
+      verifyNever(mockRepository.updateMemberStatus(any, any, any));
+    });
+
+    test('Ready persist fail is error and does not lock', () async {
+      when(mockRepository.updateMemberStatus(any, any, any))
+          .thenThrow(Exception('denied'));
+      final notifier = await pumpSeatedLobby(
+        statuses: const {'user-1': 'Ready'},
+      );
+
+      await expectLater(
+        notifier.toggleSeatedReady(
+          userId: 'user-2',
+          gameName: 'Warzone',
+          spotIndex: 1,
+        ),
+        throwsA(isA<Exception>()),
+      );
+
+      final snap = resolveLobbyReadyLockFromState(
+        container.read(lobbyNotifierProvider).value!,
+        gameName: 'Warzone',
+      );
+      expect(snap.isLocked, isFalse);
+      expect(snap.isReady('user-2'), isFalse);
+    });
+
+    test('lock notify fire fail still locks and is error not success', () async {
+      LobbyLockNotify.sendToUsersHook = ({
+        required title,
+        required body,
+        required recipientUids,
+        data,
+      }) async {
+        throw Exception('offline');
+      };
+
+      final notifier = await pumpSeatedLobby(
+        statuses: const {'user-1': 'Ready'},
+      );
+
+      final result = await notifier.toggleSeatedReady(
+        userId: 'user-2',
+        gameName: 'Warzone',
+        spotIndex: 1,
+      );
+
+      expect(result!.justLocked, isTrue);
+      expect(result.snapshot.isLocked, isTrue);
+      expect(result.notifyFailed, isTrue);
+      expect(lobbyLockNotifyErrorDetail(result.notifyError), 'offline');
+      expect(LobbyLockNotify.lastResult?.isFailed, isTrue);
+      expect(LobbyLockNotify.lastResult?.sent, isFalse);
+      verify(mockRepository.updateMemberStatus('lobby-9', 'user-2', 'Ready'))
+          .called(1);
+    });
+
+    test('elapsed timeout then last Ready does not keep prior Ready', () async {
+      final notifier = await pumpSeatedLobby();
+      await notifier.toggleSeatedReady(
+        userId: 'user-1',
+        gameName: 'Warzone',
+        spotIndex: 0,
+      );
+      reset(mockRepository);
+      when(mockRepository.updateMemberStatus(any, any, any))
+          .thenAnswer((_) async {});
+
+      final timed = await notifier.timeoutReadyCheck(
+        now: DateTime.now().add(kReadyCheckTimeout),
+      );
+      expect(timed!.timedOut, isTrue);
+      expect(timed.snapshot.readyUids, isEmpty);
+
+      final last = await notifier.toggleSeatedReady(
+        userId: 'user-2',
+        gameName: 'Warzone',
+        spotIndex: 1,
+      );
+      expect(last!.justLocked, isFalse);
+      expect(last.snapshot.isLocked, isFalse);
+      expect(last.snapshot.isReady('user-2'), isTrue);
+      expect(last.snapshot.isReady('user-1'), isFalse);
+    });
+
+    test('timeout after lock is a no-op (lock wins the race)', () async {
+      final notifier = await pumpSeatedLobby(
+        statuses: const {'user-1': 'Ready'},
+      );
+      final locked = await notifier.toggleSeatedReady(
+        userId: 'user-2',
+        gameName: 'Warzone',
+        spotIndex: 1,
+      );
+      expect(locked!.justLocked, isTrue);
+      reset(mockRepository);
+      when(mockRepository.updateMemberStatus(any, any, any))
+          .thenAnswer((_) async {});
+
+      final timed = await notifier.timeoutReadyCheck(
+        now: DateTime.now().add(kReadyCheckTimeout),
+      );
+      expect(timed!.timedOut, isFalse);
+      expect(timed.changed, isFalse);
+      expect(timed.snapshot.isLocked, isTrue);
+      verifyNever(mockRepository.updateMemberStatus(any, any, any));
+    });
   });
 
   group('resolveNextFreeSpotIndex', () {

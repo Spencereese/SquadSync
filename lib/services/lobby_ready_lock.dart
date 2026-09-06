@@ -55,6 +55,38 @@ class LobbyReadyLockSnapshot {
   bool get canUnlock => isLocked;
 }
 
+/// Why a Ready / Lock write did not apply. [none] is not a deny.
+enum LobbyReadyLockDeniedReason {
+  none,
+  emptyLobby,
+  notSeated,
+  alreadyLocked,
+  blankUid,
+}
+
+const kLobbyLockDeniedEmptyCopy = 'No one seated — cannot lock';
+const kLobbyLockDeniedNotSeatedCopy = 'Sit down to Ready up';
+const kLobbyLockDeniedAlreadyLockedCopy = 'Squad already locked';
+const kLobbyLockDeniedBlankUidCopy = 'Sign in to Ready up';
+const kLobbyLockNotifyNoSeatedCopy = 'No seated members to notify';
+const kLobbyLockNotifyErrorCopy = "Couldn't notify the squad";
+const kLobbyLockNotifyErrorHint = 'Check your connection and try again.';
+
+String? lobbyReadyLockDeniedCopy(LobbyReadyLockDeniedReason reason) {
+  switch (reason) {
+    case LobbyReadyLockDeniedReason.none:
+      return null;
+    case LobbyReadyLockDeniedReason.emptyLobby:
+      return kLobbyLockDeniedEmptyCopy;
+    case LobbyReadyLockDeniedReason.notSeated:
+      return kLobbyLockDeniedNotSeatedCopy;
+    case LobbyReadyLockDeniedReason.alreadyLocked:
+      return kLobbyLockDeniedAlreadyLockedCopy;
+    case LobbyReadyLockDeniedReason.blankUid:
+      return kLobbyLockDeniedBlankUidCopy;
+  }
+}
+
 class SeatedReadyResult {
   const SeatedReadyResult({
     required this.snapshot,
@@ -62,6 +94,8 @@ class SeatedReadyResult {
     this.justUnlocked = false,
     this.timedOut = false,
     this.changed = true,
+    this.denied = LobbyReadyLockDeniedReason.none,
+    this.notifyError,
   });
 
   final LobbyReadyLockSnapshot snapshot;
@@ -69,12 +103,18 @@ class SeatedReadyResult {
   final bool justUnlocked;
   final bool timedOut;
   final bool changed;
+  final LobbyReadyLockDeniedReason denied;
+  final Object? notifyError;
+
+  bool get isDenied => denied != LobbyReadyLockDeniedReason.none;
+  bool get notifyFailed => notifyError != null;
 
   String? get snackbarMessage {
     if (justLocked) return 'Squad locked — go in the game';
     if (justUnlocked) return 'Squad unlocked';
     if (timedOut) return 'Ready check timed out';
-    return null;
+    if (notifyFailed) return kLobbyLockNotifyErrorCopy;
+    return lobbyReadyLockDeniedCopy(denied);
   }
 }
 
@@ -84,26 +124,55 @@ class LobbyLockNotifyPlan {
     required this.title,
     required this.body,
     required this.data,
+    this.seatedCount = 0,
   });
 
   final List<String> recipientUids;
   final String title;
   final String body;
   final Map<String, dynamic> data;
+  final int seatedCount;
 }
 
-enum LobbyLockNotifyStatus { sent, noSeated, selfOnly }
+enum LobbyLockNotifyStatus { sent, noSeated, selfOnly, failed }
 
 class LobbyLockNotifyResult {
   const LobbyLockNotifyResult({
     required this.status,
     this.recipientUids = const [],
+    this.error,
   });
 
   final LobbyLockNotifyStatus status;
   final List<String> recipientUids;
+  final Object? error;
 
   bool get sent => status == LobbyLockNotifyStatus.sent;
+  bool get isFailed => status == LobbyLockNotifyStatus.failed;
+  bool get isEmpty => status == LobbyLockNotifyStatus.noSeated;
+
+  String? get snackbarMessage {
+    switch (status) {
+      case LobbyLockNotifyStatus.sent:
+      case LobbyLockNotifyStatus.selfOnly:
+        return null;
+      case LobbyLockNotifyStatus.noSeated:
+        return kLobbyLockNotifyNoSeatedCopy;
+      case LobbyLockNotifyStatus.failed:
+        return kLobbyLockNotifyErrorCopy;
+    }
+  }
+}
+
+String lobbyLockNotifyErrorDetail(Object? error) {
+  if (error == null) return '';
+  final text = error.toString().trim();
+  if (text.isEmpty) return '';
+  const prefix = 'Exception: ';
+  if (text.startsWith(prefix) && text.length > prefix.length) {
+    return text.substring(prefix.length);
+  }
+  return text;
 }
 
 /// Strip `_calling` from a spot occupant. Null / blank → null.
@@ -228,6 +297,57 @@ LobbyReadyLockSnapshot resolveLobbyReadyLockFromState(
   );
 }
 
+/// Why a Ready / Lock write is refused. Empty lobby is [emptyLobby],
+/// not [notSeated]. Ready-true on a locked lobby is [alreadyLocked].
+LobbyReadyLockDeniedReason readyLockDenied({
+  required LobbyReadyLockSnapshot snapshot,
+  required String userId,
+  required bool ready,
+}) {
+  final uid = userId.trim();
+  if (uid.isEmpty) return LobbyReadyLockDeniedReason.blankUid;
+  if (snapshot.seatedUids.isEmpty) {
+    return LobbyReadyLockDeniedReason.emptyLobby;
+  }
+  if (!snapshot.seatedUids.contains(uid)) {
+    return LobbyReadyLockDeniedReason.notSeated;
+  }
+  if (snapshot.isLocked && ready) {
+    return LobbyReadyLockDeniedReason.alreadyLocked;
+  }
+  return LobbyReadyLockDeniedReason.none;
+}
+
+Map<String, String> _applyReadyStatus({
+  required Map<String, String> statuses,
+  required List<String?> spots,
+  required String userId,
+  required bool ready,
+}) {
+  final current = resolveLobbyReadyLock(spots: spots, statuses: statuses);
+  if (readyLockDenied(snapshot: current, userId: userId, ready: ready) !=
+      LobbyReadyLockDeniedReason.none) {
+    return statuses;
+  }
+  final uid = userId.trim();
+  if (current.isReady(uid) == ready) return statuses;
+  final next = Map<String, String>.from(statuses);
+  next[uid] = ready ? kSeatedReadyStatus : kSeatedNotReadyStatus;
+  return next;
+}
+
+Map<String, String> _statusesFromSnapshot({
+  required Map<String, String> statuses,
+  required LobbyReadyLockSnapshot snapshot,
+}) {
+  final next = Map<String, String>.from(statuses);
+  for (final uid in snapshot.seatedUids) {
+    next[uid] =
+        snapshot.isReady(uid) ? kSeatedReadyStatus : kSeatedNotReadyStatus;
+  }
+  return next;
+}
+
 /// Apply a Ready / Occupied toggle for one seated uid, then recompute Lock.
 ///
 /// Returns the current snapshot unchanged when [userId] is not seated,
@@ -240,16 +360,58 @@ LobbyReadyLockSnapshot reduceLobbyReadyLock({
   required String userId,
   required bool ready,
 }) {
-  final uid = userId.trim();
   final current = resolveLobbyReadyLock(spots: spots, statuses: statuses);
-  if (uid.isEmpty) return current;
-  if (!current.seatedUids.contains(uid)) return current;
-  if (current.isLocked && ready) return current;
-  if (current.isReady(uid) == ready) return current;
-
-  final nextStatuses = Map<String, String>.from(statuses);
-  nextStatuses[uid] = ready ? kSeatedReadyStatus : kSeatedNotReadyStatus;
+  final nextStatuses = _applyReadyStatus(
+    statuses: statuses,
+    spots: spots,
+    userId: userId,
+    ready: ready,
+  );
+  if (identical(nextStatuses, statuses) ||
+      mapEquals(nextStatuses, statuses)) {
+    return current;
+  }
   return resolveLobbyReadyLock(spots: spots, statuses: nextStatuses);
+}
+
+/// Ready flip racing a lock. [lockFirst] applies the last Ready, then the
+/// flip (un-ready unlocks; Ready-true on locked is denied). Flip-first
+/// applies on the open snapshot, then the last Ready may still lock.
+LobbyReadyLockSnapshot reduceReadyFlipWhileLocking({
+  required List<String?> spots,
+  Map<String, String> statuses = const {},
+  required String lockingUid,
+  required String flippingUid,
+  required bool flippingReady,
+  bool lockFirst = true,
+}) {
+  var next = Map<String, String>.from(statuses);
+  void lock() {
+    next = _applyReadyStatus(
+      statuses: next,
+      spots: spots,
+      userId: lockingUid,
+      ready: true,
+    );
+  }
+
+  void flip() {
+    next = _applyReadyStatus(
+      statuses: next,
+      spots: spots,
+      userId: flippingUid,
+      ready: flippingReady,
+    );
+  }
+
+  if (lockFirst) {
+    lock();
+    flip();
+  } else {
+    flip();
+    lock();
+  }
+  return resolveLobbyReadyLock(spots: spots, statuses: next);
 }
 
 bool justLockedLobby({
@@ -307,6 +469,69 @@ bool readyCheckTimedOut({
   if (snapshot.readyUids.isEmpty) return false;
   if (startedAt == null) return false;
   return !now.isBefore(startedAt.add(timeout));
+}
+
+/// Lock vs elapsed ready-check. A locked snapshot wins; timeout does not
+/// clear Ready after lock. Open + elapsed window is [timedOut].
+enum ReadyCheckTimerRaceOutcome { lockedWins, timedOut, unchanged }
+
+ReadyCheckTimerRaceOutcome resolveReadyCheckTimerRace({
+  required LobbyReadyLockSnapshot snapshot,
+  required DateTime now,
+  DateTime? startedAt,
+  Duration timeout = kReadyCheckTimeout,
+}) {
+  if (snapshot.isLocked) return ReadyCheckTimerRaceOutcome.lockedWins;
+  if (readyCheckTimedOut(
+    snapshot: snapshot,
+    now: now,
+    startedAt: startedAt,
+    timeout: timeout,
+  )) {
+    return ReadyCheckTimerRaceOutcome.timedOut;
+  }
+  return ReadyCheckTimerRaceOutcome.unchanged;
+}
+
+/// Last Ready racing an elapsed timeout. Lock-first keeps lock. Timeout-first
+/// clears Ready, so the last Ready cannot lock other seated Occupied members.
+LobbyReadyLockSnapshot reduceExpiredTimerRace({
+  required List<String?> spots,
+  Map<String, String> statuses = const {},
+  required String lockingUid,
+  required DateTime now,
+  required DateTime startedAt,
+  bool lockFirst = true,
+  Duration timeout = kReadyCheckTimeout,
+}) {
+  if (lockFirst) {
+    final locked = reduceLobbyReadyLock(
+      spots: spots,
+      statuses: statuses,
+      userId: lockingUid,
+      ready: true,
+    );
+    return reduceReadyCheckTimeout(
+      spots: spots,
+      statuses: _statusesFromSnapshot(statuses: statuses, snapshot: locked),
+      now: now,
+      startedAt: startedAt,
+      timeout: timeout,
+    );
+  }
+  final timed = reduceReadyCheckTimeout(
+    spots: spots,
+    statuses: statuses,
+    now: now,
+    startedAt: startedAt,
+    timeout: timeout,
+  );
+  return reduceLobbyReadyLock(
+    spots: spots,
+    statuses: _statusesFromSnapshot(statuses: statuses, snapshot: timed),
+    userId: lockingUid,
+    ready: true,
+  );
 }
 
 /// Clear Ready → Occupied when the ready-check window elapses without a
@@ -420,6 +645,7 @@ LobbyLockNotifyPlan planLobbyReadyLockNotify({
     title: title,
     body: body,
     data: data,
+    seatedCount: _seatedCountForLockNotify(seatedUids),
   );
 }
 
@@ -440,28 +666,46 @@ class LobbyLockNotify {
     Map<String, dynamic>? data,
   })? sendToUsersHook;
 
+  /// Last send outcome. Null before the first [send] in a harness.
+  @visibleForTesting
+  static LobbyLockNotifyResult? lastResult;
+
   @visibleForTesting
   static void resetTestHooks() {
     sendToUsersHook = null;
+    lastResult = null;
   }
 
   static Future<LobbyLockNotifyResult> send(LobbyLockNotifyPlan plan) async {
+    if (plan.seatedCount <= 0) {
+      return lastResult = const LobbyLockNotifyResult(
+        status: LobbyLockNotifyStatus.noSeated,
+      );
+    }
     if (plan.recipientUids.isEmpty) {
-      return const LobbyLockNotifyResult(
+      return lastResult = const LobbyLockNotifyResult(
         status: LobbyLockNotifyStatus.selfOnly,
       );
     }
     final send = sendToUsersHook ?? NotificationService.sendNotificationToUsers;
-    await send(
-      title: plan.title,
-      body: plan.body,
-      recipientUids: plan.recipientUids,
-      data: plan.data,
-    );
-    return LobbyLockNotifyResult(
-      status: LobbyLockNotifyStatus.sent,
-      recipientUids: plan.recipientUids,
-    );
+    try {
+      await send(
+        title: plan.title,
+        body: plan.body,
+        recipientUids: plan.recipientUids,
+        data: plan.data,
+      );
+      return lastResult = LobbyLockNotifyResult(
+        status: LobbyLockNotifyStatus.sent,
+        recipientUids: plan.recipientUids,
+      );
+    } catch (e) {
+      return lastResult = LobbyLockNotifyResult(
+        status: LobbyLockNotifyStatus.failed,
+        recipientUids: plan.recipientUids,
+        error: e,
+      );
+    }
   }
 }
 
@@ -469,4 +713,14 @@ String? _nonEmpty(String? value) {
   final text = value?.trim();
   if (text == null || text.isEmpty) return null;
   return text;
+}
+
+int _seatedCountForLockNotify(Iterable<String> seatedUids) {
+  final seen = <String>{};
+  for (final raw in seatedUids) {
+    final uid = raw.trim();
+    if (uid.isEmpty) continue;
+    seen.add(uid);
+  }
+  return seen.length;
 }

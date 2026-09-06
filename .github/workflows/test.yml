@@ -106,4 +106,5 @@ jobs:
             test/presentation/notifiers/lobby_peacock_alias_test.dart \
             test/presentation/notifiers/lobby_ready_lock_snapshot_test.dart \
             test/core/lobby_chat_bind_test.dart \
-            test/presentation/notifiers/chat_notifier_lobby_bind_test.dart
+            test/presentation/notifiers/chat_notifier_lobby_bind_test.dart \
+            test/lobbies_tab/widgets/lobby_seat_write_error_test.dart

@@ -196,11 +196,13 @@ void main() {
           (path) =>
               path.endsWith('lib/core/lobby_chat_bind.dart') ||
               path.endsWith('lib/presentation/notifiers/chat_notifier.dart') ||
-              path.endsWith('lib/chat/chat_screen.dart'),
+              path.endsWith('lib/chat/chat_screen.dart') ||
+              path.endsWith('lib/core/deep_link_routes.dart') ||
+              path.endsWith('lib/core/app_router.dart'),
         ),
         isTrue,
         reason: 'only helper + chat_notifier write the bind; '
-            'chat_screen may call them in ≤40 lines',
+            'chat_screen / applyLobbyDeepLink may call them',
       );
       expect(
         hits.any((path) => path.endsWith('lib/core/lobby_chat_bind.dart')),

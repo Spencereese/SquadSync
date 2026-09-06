@@ -6,7 +6,7 @@ Tip `9c95267` v3.4.138+140. P0–P2 green. P5 Flight done. Red A+B done. Loop id
 
 ## next
 
-`docs/MORNING_BRIEF.md`. Workers IDLE. Optional Harness widen CI to fire on revive branch (`on:` only) — park for Spencer.
+`docs/MORNING_BRIEF.md`. Workers IDLE. Optional Harness: widen CI `on:` to the revive branch, or grep leftover `dotenv.env[…]` throw sites outside the Burst B lease — park for Spencer.
 
 ## residuals
 
@@ -15,6 +15,11 @@ Tip `9c95267` v3.4.138+140. P0–P2 green. P5 Flight done. Red A+B done. Loop id
 - CI workflow only on `main`/`master`
 - Portal / TestFlight still Spencer
 - Live SQL blocked
+- Previously committed Cloud Run literals are compromised; rotate if they were ever live (git history retains them)
+- Remaining `dotenv.env[…]` throw sites outside the Burst B lease may still crash features — park as next optional Harness grep
+- Soft-fail = empty IGDB / Twitch / voice / Grok without loud UI
+- HARDCODED default `BACKEND_URL` in `voice_service` if unset (pre-existing)
+- Pubspec not bumped; version stays `3.4.138+140`
 
 ## blocked-on-Spencer
 

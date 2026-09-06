@@ -92,12 +92,18 @@ class TonightActionsBlock extends StatelessWidget {
     this.isLoading = false,
     this.isEmpty = false,
     this.error,
+    this.onRetry,
+    this.onEmptyAction,
+    this.emptyActionLabel,
   });
 
   final List<Widget> children;
   final bool isLoading;
   final bool isEmpty;
   final Object? error;
+  final VoidCallback? onRetry;
+  final VoidCallback? onEmptyAction;
+  final String? emptyActionLabel;
 
   LobbySurfacePhase get phase => resolveLobbySurfacePhase(
         isLoading: isLoading,
@@ -127,6 +133,13 @@ class TonightActionsBlock extends StatelessWidget {
             kind: LobbySurfaceKind.tonight,
             phase: surfacePhase,
             error: error,
+            onRetry: onRetry,
+            onAction: surfacePhase == LobbySurfacePhase.empty
+                ? onEmptyAction
+                : null,
+            actionLabel: surfacePhase == LobbySurfacePhase.empty
+                ? emptyActionLabel
+                : null,
           ),
         if (children.isNotEmpty) ...[
           for (var i = 0; i < children.length; i++) ...[

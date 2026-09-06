@@ -93,6 +93,23 @@ void main() {
     expect(find.byKey(const Key('last-five-rated-notes-0')), findsOneWidget);
   });
 
+  testWidgets('loading does not paint the empty list', (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        const LastFiveRatedSessionsList(
+          sessions: [],
+          isLoading: true,
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('last-five-rated-loading')), findsOneWidget);
+    expect(find.text(kLastFiveRatedLoadingCopy), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-empty')), findsNothing);
+    expect(find.byKey(const Key('last-five-rated-error')), findsNothing);
+  });
+
   testWidgets('error state offers retry instead of an empty list',
       (tester) async {
     var retried = false;

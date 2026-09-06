@@ -675,11 +675,13 @@ const kLastFiveRatedSessionsLimit = 5;
 const kLastFiveRatedEmptyCopy = 'No rated sessions yet';
 const kLastFiveRatedEmptyHint =
     'Rate Vibes, Comms, Gunny, and Wingman after a match to see them here';
+const kLastFiveRatedLoadingCopy = 'Loading session history...';
 const kStatsLoadErrorTitle = "Couldn't load stats";
 const kStatsLoadErrorBody = 'Session history is unavailable right now.';
 const kStatsLoadErrorRetryLabel = 'Retry';
 const kYouSessionHistoryErrorCopy = "Couldn't load session history";
 const kRatingsEmptyHint = 'No session ratings in match history yet';
+const kStreaksEmptyHint = 'Join a lobby to track who is on a streak';
 
 const _kLastFiveMonthLabels = [
   'Jan',

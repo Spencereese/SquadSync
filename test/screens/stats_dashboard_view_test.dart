@@ -204,6 +204,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('No squad members to chart yet'), findsOneWidget);
+    expect(find.text(kStreaksEmptyHint), findsOneWidget);
     expect(
       find.text('Join a lobby to track wins and losses'),
       findsOneWidget,

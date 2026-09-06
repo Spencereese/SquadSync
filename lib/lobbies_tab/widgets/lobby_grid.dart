@@ -9,6 +9,7 @@ import '../../services/peacock_assignment_machine.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../domain/entities/lobby_state.dart';
 import '../dialogs/spot_assignment_dialog.dart';
+import '../../widgets/lobby_surface_feedback.dart';
 import 'lobby_seat_affordance.dart';
 import 'lobby_spot_map_seat.dart';
 
@@ -41,10 +42,23 @@ class LobbyGrid extends ConsumerWidget {
         );
       },
       loading: () => const SliverToBoxAdapter(
-        child: Center(child: CircularProgressIndicator()),
+        child: LobbySurfaceFeedback(
+          kind: LobbySurfaceKind.lock,
+          phase: LobbySurfacePhase.loading,
+        ),
       ),
       error: (error, stack) => SliverToBoxAdapter(
-        child: Center(child: Text('Error: $error')),
+        child: Padding(
+          key: const Key('lobby-grid-error'),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: LobbySurfaceFeedback(
+            kind: LobbySurfaceKind.lock,
+            phase: LobbySurfacePhase.error,
+            error: error,
+            message: "Couldn't load seats",
+            onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
+          ),
+        ),
       ),
     );
   }
@@ -67,18 +81,22 @@ class SpotCard extends ConsumerWidget {
 
     return squadAsync.when(
       data: (squadState) => _buildSpotCard(context, ref, squadState),
-      loading: () => const Card(
-        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: ListTile(
-          leading: CircularProgressIndicator(),
-          title: Text('Loading spot...'),
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: LobbySurfaceFeedback(
+          kind: LobbySurfaceKind.lock,
+          phase: LobbySurfacePhase.loading,
         ),
       ),
-      error: (error, stack) => Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: ListTile(
-          leading: const Icon(Icons.error, color: Colors.red),
-          title: Text('Error: $error'),
+      error: (error, stack) => Padding(
+        key: const Key('spot-card-error'),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: LobbySurfaceFeedback(
+          kind: LobbySurfaceKind.lock,
+          phase: LobbySurfacePhase.error,
+          error: error,
+          message: "Couldn't load lock",
+          onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
         ),
       ),
     );
@@ -369,6 +387,7 @@ class SpotCard extends ConsumerWidget {
                       spotIndex: index,
                     )
                 : null,
+            onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
           )
         else if (hasOccupant && hasTimer && isReady && isOwnSeat)
           Container(

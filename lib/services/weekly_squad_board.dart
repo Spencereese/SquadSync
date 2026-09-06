@@ -9,6 +9,7 @@ const kWeeklySquadBoardEmptyCopy = 'No nights recorded this week';
 const kWeeklySquadBoardEmptyHint =
     'Rate a session this week to fill nights, lock-in, and category scores';
 const kWeeklySquadBoardErrorCopy = "Couldn't load this week's board";
+const kWeeklySquadBoardLoadingCopy = 'Loading this week...';
 
 /// One squad member's weekly line on the board.
 class WeeklySquadBoardRow {

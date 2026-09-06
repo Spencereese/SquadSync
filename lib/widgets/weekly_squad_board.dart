@@ -12,6 +12,7 @@ class WeeklySquadBoardView extends StatelessWidget {
     this.emptyHint = kWeeklySquadBoardEmptyHint,
     this.errorMessage,
     this.onRetry,
+    this.isLoading = false,
   });
 
   final WeeklySquadBoard board;
@@ -19,9 +20,18 @@ class WeeklySquadBoardView extends StatelessWidget {
   final String emptyHint;
   final String? errorMessage;
   final VoidCallback? onRetry;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const _WeeklyBoardStatus(
+        key: Key('weekly-squad-board-loading'),
+        icon: Icons.hourglass_empty,
+        message: kWeeklySquadBoardLoadingCopy,
+        showSpinner: true,
+      );
+    }
     if (errorMessage != null) {
       return _WeeklyBoardStatus(
         key: const Key('weekly-squad-board-error'),
@@ -175,11 +185,13 @@ class YouWeeklySquadBoard extends StatelessWidget {
     required this.board,
     this.errorMessage,
     this.onRetry,
+    this.isLoading = false,
   });
 
   final WeeklySquadBoard board;
   final String? errorMessage;
   final VoidCallback? onRetry;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +216,7 @@ class YouWeeklySquadBoard extends StatelessWidget {
             board: board,
             errorMessage: errorMessage,
             onRetry: onRetry,
+            isLoading: isLoading,
           ),
         ],
       ),
@@ -220,6 +233,7 @@ class _WeeklyBoardStatus extends StatelessWidget {
     this.actionLabel,
     this.actionKey,
     this.onAction,
+    this.showSpinner = false,
   });
 
   final IconData icon;
@@ -228,33 +242,62 @@ class _WeeklyBoardStatus extends StatelessWidget {
   final String? actionLabel;
   final Key? actionKey;
   final VoidCallback? onAction;
+  final bool showSpinner;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          Icon(icon, color: Colors.white24, size: 28),
-          const SizedBox(height: 8),
+          if (showSpinner)
+            const SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: Colors.cyanAccent,
+              ),
+            )
+          else
+            Icon(icon, color: Colors.white38, size: 36),
+          const SizedBox(height: 10),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white54, fontSize: 13),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+            ),
           ),
           if (hint != null && hint!.isNotEmpty) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               hint!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                height: 1.3,
+              ),
             ),
           ],
           if (actionLabel != null && onAction != null) ...[
-            const SizedBox(height: 8),
-            TextButton(
+            const SizedBox(height: 12),
+            OutlinedButton(
               key: actionKey,
               onPressed: onAction,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.cyanAccent,
+                side: const BorderSide(color: Colors.cyanAccent),
+                minimumSize: const Size(88, 44),
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               child: Text(actionLabel!),
             ),
           ],

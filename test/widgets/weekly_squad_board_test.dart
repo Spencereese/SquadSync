@@ -78,6 +78,23 @@ void main() {
     expect(find.byKey(const Key('weekly-squad-board')), findsNothing);
   });
 
+  testWidgets('loading does not paint the empty board', (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        const WeeklySquadBoardView(
+          board: WeeklySquadBoard.empty(),
+          isLoading: true,
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('weekly-squad-board-loading')), findsOneWidget);
+    expect(find.text(kWeeklySquadBoardLoadingCopy), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byKey(const Key('weekly-squad-board-empty')), findsNothing);
+    expect(find.byKey(const Key('weekly-squad-board-error')), findsNothing);
+  });
+
   testWidgets('error state offers retry instead of an empty board',
       (tester) async {
     var retried = false;

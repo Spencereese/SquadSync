@@ -53,6 +53,7 @@ class LobbyControls extends ConsumerWidget {
             isLoading: tonightPhase == LobbySurfacePhase.loading,
             isEmpty: tonightPhase == LobbySurfacePhase.empty,
             error: tonightError,
+            onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
             children: tonightChildren,
           ),
           const SizedBox(height: 16),

@@ -262,37 +262,47 @@ class StatsDashboardErrorView extends StatelessWidget {
           key: const Key('stats-error'),
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
-            const SizedBox(height: 12),
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+            const SizedBox(height: 16),
             const Text(
               kStatsLoadErrorTitle,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                height: 1.2,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             const Text(
               kStatsLoadErrorBody,
-              style: TextStyle(color: Colors.white54, fontSize: 13),
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 16,
+                height: 1.3,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               '$error',
               key: const Key('stats-error-detail'),
-              style: const TextStyle(color: Colors.white38, fontSize: 11),
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             OutlinedButton(
               key: const Key('stats-error-retry'),
               onPressed: onRetry,
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.cyanAccent,
-                side: const BorderSide(color: Colors.cyanAccent),
+                side: const BorderSide(color: Colors.cyanAccent, width: 1.5),
+                minimumSize: const Size(160, 48),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               child: const Text(kStatsLoadErrorRetryLabel),
             ),
@@ -315,6 +325,7 @@ class _StreaksBarChart extends StatelessWidget {
         key: Key('stats-streaks-empty'),
         icon: Icons.local_fire_department_outlined,
         message: 'No squad members to chart yet',
+        hint: kStreaksEmptyHint,
       );
     }
 
@@ -866,11 +877,13 @@ class _EmptyHint extends StatelessWidget {
     super.key,
     required this.icon,
     required this.message,
+    this.hint,
     this.actions = const <Widget>[],
   });
 
   final IconData icon;
   final String message;
+  final String? hint;
   final List<Widget> actions;
 
   @override
@@ -879,15 +892,32 @@ class _EmptyHint extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 20),
       child: Column(
         children: [
-          Icon(icon, color: Colors.white24, size: 32),
-          const SizedBox(height: 8),
+          Icon(icon, color: Colors.white38, size: 40),
+          const SizedBox(height: 10),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white54, fontSize: 13),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+            ),
           ),
+          if (hint != null && hint!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              hint!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                height: 1.3,
+              ),
+            ),
+          ],
           if (actions.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 8,
@@ -920,6 +950,11 @@ class _EmptyActionButton extends StatelessWidget {
       style: OutlinedButton.styleFrom(
         foregroundColor: Colors.cyanAccent,
         side: const BorderSide(color: Colors.cyanAccent),
+        minimumSize: const Size(88, 44),
+        textStyle: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+        ),
       ),
       child: Text(label),
     );

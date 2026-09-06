@@ -521,7 +521,10 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         data: (snapshot) => YouLastFiveRatedSessions(
           sessions: snapshot.lastFiveRatedSessions,
         ),
-        loading: () => const YouLastFiveRatedSessions(sessions: []),
+        loading: () => const YouLastFiveRatedSessions(
+          sessions: [],
+          isLoading: true,
+        ),
         error: (_, __) => YouLastFiveRatedSessions(
           sessions: const [],
           errorMessage: kYouSessionHistoryErrorCopy,
@@ -536,7 +539,10 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
     return SliverToBoxAdapter(
       child: statsAsync.when(
         data: (snapshot) => YouWeeklySquadBoard(board: snapshot.weeklyBoard),
-        loading: () => const YouWeeklySquadBoard(board: WeeklySquadBoard.empty()),
+        loading: () => const YouWeeklySquadBoard(
+          board: WeeklySquadBoard.empty(),
+          isLoading: true,
+        ),
         error: (_, __) => YouWeeklySquadBoard(
           board: const WeeklySquadBoard.empty(),
           errorMessage: kWeeklySquadBoardErrorCopy,

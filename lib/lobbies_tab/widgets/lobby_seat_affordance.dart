@@ -127,11 +127,13 @@ class LobbySeatStatusChipSurface extends StatelessWidget {
     this.status,
     this.isLoading = false,
     this.error,
+    this.onRetry,
   });
 
   final LobbySeatStatus? status;
   final bool isLoading;
   final Object? error;
+  final VoidCallback? onRetry;
 
   LobbySurfacePhase get phase => resolveLobbySurfacePhase(
         isLoading: isLoading,
@@ -150,6 +152,7 @@ class LobbySeatStatusChipSurface extends StatelessWidget {
             : surfacePhase,
         error: error,
         compact: true,
+        onRetry: onRetry,
       );
     }
     return LobbySeatStatusChip(status: status!);
@@ -170,7 +173,10 @@ class LobbySeatStatusChipHost extends ConsumerWidget {
           skipLoadingOnReload: true,
           skipLoadingOnRefresh: true,
           loading: () => const LobbySeatStatusChipSurface(isLoading: true),
-          error: (error, _) => LobbySeatStatusChipSurface(error: error),
+          error: (error, _) => LobbySeatStatusChipSurface(
+            error: error,
+            onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
+          ),
           data: (lobbyState) {
             final status = resolveLobbySeatStatusFromTrackers(
               userId: _currentUidOrNull(),
@@ -397,6 +403,7 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
     this.error,
     this.timeoutRemaining,
     this.timeoutExpired = false,
+    this.onRetry,
   });
 
   final bool isReady;
@@ -407,6 +414,7 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
   final Object? error;
   final Duration? timeoutRemaining;
   final bool timeoutExpired;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -423,6 +431,7 @@ class SeatedSpotReadyAffordance extends StatelessWidget {
         phase: LobbySurfacePhase.error,
         error: error,
         compact: true,
+        onRetry: onRetry,
       );
     }
     if (timeoutExpired && !isLocked) {

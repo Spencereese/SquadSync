@@ -36,9 +36,12 @@ void main() {
       expect(find.byKey(const Key('tonight-actions')), findsOneWidget);
       expect(find.byKey(const Key('tonight-empty')), findsOneWidget);
       expect(find.text('No lobby tonight'), findsOneWidget);
+      expect(find.text(kTonightEmptyHint), findsOneWidget);
+      expect(find.byKey(const Key('tonight-empty-hint')), findsOneWidget);
       expect(find.text("I'm on now"), findsNothing);
       expect(find.byKey(const Key('tonight-loading')), findsNothing);
       expect(find.byKey(const Key('tonight-error')), findsNothing);
+      expect(find.byKey(const Key('tonight-retry')), findsNothing);
     });
 
     testWidgets('loading state from existing lobby AsyncValue', (tester) async {
@@ -59,19 +62,67 @@ void main() {
     });
 
     testWidgets('error state surfaces lobby load failure', (tester) async {
+      var retried = false;
       await tester.pumpWidget(
         _wrap(
-          const TonightActionsBlock(
+          TonightActionsBlock(
             error: 'offline',
-            children: [],
+            onRetry: () => retried = true,
+            children: const [],
           ),
         ),
       );
 
       expect(find.byKey(const Key('tonight-error')), findsOneWidget);
-      expect(find.text("Couldn't load tonight: offline"), findsOneWidget);
+      expect(find.text("Couldn't load tonight"), findsOneWidget);
+      expect(find.text(kLobbySurfaceErrorHint), findsOneWidget);
+      expect(find.text('offline'), findsOneWidget);
+      expect(find.byKey(const Key('tonight-retry')), findsOneWidget);
+      expect(find.text(kLobbySurfaceRetryLabel), findsOneWidget);
       expect(find.byKey(const Key('tonight-empty')), findsNothing);
       expect(find.byKey(const Key('tonight-loading')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('tonight-retry')));
+      await tester.pump();
+      expect(retried, isTrue);
+    });
+
+    testWidgets('empty CTA is tappable at arm length', (tester) async {
+      var tapped = false;
+      await tester.pumpWidget(
+        _wrap(
+          TonightActionsBlock(
+            isEmpty: true,
+            onEmptyAction: () => tapped = true,
+            emptyActionLabel: "I'm on now",
+            children: const [],
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('tonight-empty-cta')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('tonight-empty-cta')));
+      await tester.pump();
+      expect(tapped, isTrue);
+    });
+
+    test('error copy stays clean without dumping the raw error', () {
+      expect(
+        lobbySurfaceMessage(
+          LobbySurfaceKind.tonight,
+          LobbySurfacePhase.error,
+        ),
+        "Couldn't load tonight",
+      );
+      expect(
+        lobbySurfaceHint(
+          LobbySurfaceKind.tonight,
+          LobbySurfacePhase.error,
+        ),
+        kLobbySurfaceErrorHint,
+      );
+      expect(lobbySurfaceErrorDetail('offline'), 'offline');
+      expect(lobbySurfaceErrorDetail(Exception('denied')), 'denied');
     });
 
     test('tonightLobbyMissing is true without a lobby id', () {
@@ -101,7 +152,7 @@ void main() {
       );
 
       expect(find.byKey(const Key('peacock-chip-empty')), findsOneWidget);
-      expect(find.text('idle'), findsOneWidget);
+      expect(find.text('Idle'), findsOneWidget);
       expect(find.byKey(const Key('lobby-seat-status-chip')), findsNothing);
     });
 
@@ -118,13 +169,25 @@ void main() {
     });
 
     testWidgets('error chip when lobby seat status fails', (tester) async {
+      var retried = false;
       await tester.pumpWidget(
-        _wrap(const LobbySeatStatusChipSurface(error: 'timeout')),
+        _wrap(
+          LobbySeatStatusChipSurface(
+            error: 'timeout',
+            onRetry: () => retried = true,
+          ),
+        ),
       );
 
       expect(find.byKey(const Key('peacock-chip-error')), findsOneWidget);
-      expect(find.text("Couldn't load seat: timeout"), findsOneWidget);
+      expect(find.text("Couldn't load seat"), findsOneWidget);
+      expect(find.text(kLobbySurfaceRetryLabel), findsOneWidget);
+      expect(find.byKey(const Key('peacock-chip-retry')), findsOneWidget);
       expect(find.byKey(const Key('lobby-seat-status-chip')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('peacock-chip-retry')));
+      await tester.pump();
+      expect(retried, isTrue);
     });
 
     testWidgets('data chip still shows peacock', (tester) async {
@@ -176,19 +239,27 @@ void main() {
     });
 
     testWidgets('error lock when ready/lock state fails', (tester) async {
+      var retried = false;
       await tester.pumpWidget(
         _wrap(
-          const SeatedSpotReadyAffordance(
+          SeatedSpotReadyAffordance(
             isReady: false,
             isLocked: false,
             error: 'denied',
+            onRetry: () => retried = true,
           ),
         ),
       );
 
       expect(find.byKey(const Key('lock-error')), findsOneWidget);
-      expect(find.text("Couldn't load lock: denied"), findsOneWidget);
+      expect(find.text("Couldn't load lock"), findsOneWidget);
+      expect(find.text(kLobbySurfaceRetryLabel), findsOneWidget);
+      expect(find.byKey(const Key('lock-retry')), findsOneWidget);
       expect(find.byKey(const Key('seated-spot-locked-badge')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('lock-retry')));
+      await tester.pump();
+      expect(retried, isTrue);
     });
   });
 }

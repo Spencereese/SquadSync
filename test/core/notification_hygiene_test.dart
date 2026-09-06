@@ -195,6 +195,51 @@ void main() {
         ['u2'],
       );
     });
+
+    test('self-uid filter on muted send drops duplicates of self', () {
+      const settings = NotificationHygieneSnapshot(
+        mutedSquadIds: {'lobby-9'},
+        quietHoursEnabled: false,
+        startMinutes: NotificationHygiene.defaultStartMinutes,
+        endMinutes: NotificationHygiene.defaultEndMinutes,
+      );
+      expect(
+        NotificationHygiene.recipientsAfterHygiene(
+          recipientUids: const ['me', 'u2', 'me', 'u3'],
+          payload: const {'type': 'peacock_assigned', 'lobby_id': 'lobby-9'},
+          settings: settings,
+          currentUid: 'me',
+        ),
+        ['u2', 'u3'],
+      );
+    });
+
+    test('muted send without currentUid does not invent a self drop', () {
+      const settings = NotificationHygieneSnapshot(
+        mutedSquadIds: {'lobby-9'},
+        quietHoursEnabled: false,
+        startMinutes: NotificationHygiene.defaultStartMinutes,
+        endMinutes: NotificationHygiene.defaultEndMinutes,
+      );
+      expect(
+        NotificationHygiene.recipientsAfterHygiene(
+          recipientUids: const ['me', 'u2'],
+          payload: const {'type': 'peacock_assigned', 'lobby_id': 'lobby-9'},
+          settings: settings,
+          currentUid: null,
+        ),
+        ['me', 'u2'],
+      );
+      expect(
+        NotificationHygiene.recipientsAfterHygiene(
+          recipientUids: const ['me', 'u2'],
+          payload: const {'type': 'peacock_assigned', 'lobby_id': 'lobby-9'},
+          settings: settings,
+          currentUid: '  ',
+        ),
+        ['me', 'u2'],
+      );
+    });
   });
 
   test('hygiene does not add a second peacock presenter (XOR still holds)', () {
@@ -216,6 +261,15 @@ void main() {
       ).wouldDoubleNotifySelf,
       isFalse,
     );
+    final alreadyLocal = planPeacockSelfNotify(
+      notificationId: 'evt-1',
+      currentUid: 'me',
+      isForeground: false,
+      locallyPresentedIds: {'evt-1'},
+    );
+    expect(alreadyLocal.showLocal, isFalse);
+    expect(alreadyLocal.sendFcmToSelf, isFalse);
+    expect(alreadyLocal.wouldDoubleNotifySelf, isFalse);
   });
 
   test('formatMinutes pads hours and minutes', () {

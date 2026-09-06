@@ -190,6 +190,31 @@ void main() {
       expect(again.wouldDoubleNotifySelf, isFalse);
     });
 
+    test('duplicate notify after FCM never shows local for the same event_id',
+        () {
+      const assigned = PeacockAssignmentState(
+        phase: PeacockAssignmentPhase.assigned,
+        notificationId: 'evt-1',
+      );
+      final fcm = reducePeacockAssignment(
+        current: assigned,
+        event: PeacockAssignmentEvent.notifySelf,
+        isForeground: false,
+        currentUid: 'uid-1',
+        notificationId: 'evt-1',
+      );
+      final again = reducePeacockAssignment(
+        current: fcm,
+        event: PeacockAssignmentEvent.notifySelf,
+        isForeground: true,
+        currentUid: 'uid-1',
+        notificationId: 'evt-1',
+      );
+      expect(again.showedLocal, isFalse);
+      expect(again.sentFcmToSelf, isTrue);
+      expect(again.wouldDoubleNotifySelf, isFalse);
+    });
+
     test('background with no uid does not FCM', () {
       const assigned = PeacockAssignmentState(
         phase: PeacockAssignmentPhase.assigned,

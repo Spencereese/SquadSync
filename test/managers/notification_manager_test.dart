@@ -187,6 +187,66 @@ void main() {
     );
   });
 
+  test('presenter passes event_id through — not a second peacock presenter',
+      () async {
+    Map<String, dynamic>? shownPayload;
+    NotificationManager.showLocal = (title, body, payload) async {
+      shownPayload = payload;
+    };
+
+    await NotificationManager().showNotification(
+      title: 'Spot ready',
+      body: 'Your peacock queue assigned a lobby',
+      type: 'peacock_assigned',
+      lobbyId: 'lobby-9',
+      gameName: 'Warzone',
+      payload: const {'event_id': 'evt-1', 'spot_index': '2'},
+    );
+
+    expect(shownPayload, {
+      'event_id': 'evt-1',
+      'spot_index': '2',
+      'type': 'peacock_assigned',
+      'lobby_id': 'lobby-9',
+      'game_name': 'Warzone',
+    });
+    expect(
+      planPeacockSelfNotify(
+        notificationId: 'evt-1',
+        currentUid: 'me',
+        isForeground: true,
+        locallyPresentedIds: {},
+      ).sendFcmToSelf,
+      isFalse,
+    );
+    expect(
+      planPeacockSelfNotify(
+        notificationId: 'evt-1',
+        currentUid: 'me',
+        isForeground: false,
+        locallyPresentedIds: {'evt-1'},
+      ).sendFcmToSelf,
+      isFalse,
+    );
+  });
+
+  test('self-uid hygiene drop does not FCM-to-self on a muted peacock event',
+      () {
+    NotificationHygieneStore.instance.mutedSquadIds.add('lobby-9');
+    NotificationService.currentUidForHygiene = () => 'me';
+    expect(
+      NotificationService.recipientsAfterHygiene(
+        recipientUids: const ['me'],
+        data: const {
+          'type': 'peacock_assigned',
+          'lobby_id': 'lobby-9',
+          'event_id': 'evt-1',
+        },
+      ),
+      isEmpty,
+    );
+  });
+
   test('foreground FCM local show is Android-only', () {
     const withNotification = RemoteMessage(
       notification: RemoteNotification(title: 'Hi', body: 'There'),

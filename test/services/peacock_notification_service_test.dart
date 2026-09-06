@@ -6,6 +6,11 @@ import 'package:squad_sync/services/peacock_notification_service.dart';
 import 'package:squad_sync/services/preferred_peacock_games.dart';
 
 void main() {
+  setUp(() {
+    NotificationManager.showLocal = null;
+    PeacockNotificationService.resetTestHooks();
+  });
+
   tearDown(() {
     NotificationManager.showLocal = null;
     PeacockNotificationService.resetTestHooks();
@@ -90,6 +95,111 @@ void main() {
       expect(cache.contains('a'), isFalse);
       expect(cache.length, 0);
     });
+
+    test('re-adding the same event_id is idempotent', () {
+      final cache = PeacockIdCache(maxSize: 8);
+      cache.add('evt-1');
+      cache.add('evt-1');
+      expect(cache.contains('evt-1'), isTrue);
+      expect(cache.length, 1);
+    });
+  });
+
+  group('peacockEventId', () {
+    test('prefers event_id over row id', () {
+      expect(
+        peacockEventId({
+          'id': 'row-1',
+          'event_id': 'evt-1',
+          'data': {'event_id': 'nested-ignored', 'id': 'data-id'},
+        }),
+        'evt-1',
+      );
+    });
+
+    test('falls back through notification_id then row id then data.id', () {
+      expect(peacockEventId({'notification_id': 'n-1', 'id': 'row-1'}), 'n-1');
+      expect(peacockEventId({'id': 'row-1'}), 'row-1');
+      expect(
+        peacockEventId({
+          'data': {'event_id': 'from-data'},
+        }),
+        'from-data',
+      );
+      expect(
+        peacockEventId({
+          'data': {'id': 'data-id'},
+        }),
+        'data-id',
+      );
+      expect(peacockEventId(<String, dynamic>{}), isNull);
+      expect(peacockEventId({'id': '  ', 'event_id': 'null'}), isNull);
+    });
+  });
+
+  group('self-uid filter', () {
+    test('peacockEventIsForCurrentUid skips another user', () {
+      expect(
+        peacockEventIsForCurrentUid(
+          record: {'user_uid': 'other'},
+          currentUid: 'me',
+        ),
+        isFalse,
+      );
+      expect(
+        peacockEventIsForCurrentUid(
+          record: {'user_uid': 'me'},
+          currentUid: 'me',
+        ),
+        isTrue,
+      );
+      expect(
+        peacockEventIsForCurrentUid(
+          record: <String, dynamic>{},
+          currentUid: 'me',
+        ),
+        isTrue,
+      );
+      expect(
+        peacockEventIsForCurrentUid(
+          record: {'user_uid': 'other'},
+          currentUid: null,
+        ),
+        isTrue,
+      );
+    });
+
+    test('peacockSelfUidRecipients never includes anyone but self', () {
+      expect(
+        peacockSelfUidRecipients(
+          candidateUids: const ['me', 'u2', ' me ', 'me', ''],
+          currentUid: 'me',
+        ),
+        ['me'],
+      );
+      expect(
+        peacockSelfUidRecipients(
+          candidateUids: const ['me', 'u2'],
+          currentUid: 'me',
+          showLocal: true,
+        ),
+        isEmpty,
+      );
+      expect(
+        peacockSelfUidRecipients(
+          candidateUids: const ['me'],
+          currentUid: null,
+        ),
+        isEmpty,
+      );
+      expect(
+        peacockSelfUidRecipients(
+          candidateUids: const ['u2'],
+          currentUid: 'me',
+        ),
+        isEmpty,
+      );
+    });
   });
 
   group('planPeacockSelfNotify', () {
@@ -149,11 +259,30 @@ void main() {
         }
       }
     });
+
+    test('background self-uid filter drops blanks and other uids', () {
+      final plan = planPeacockSelfNotify(
+        notificationId: 'n1',
+        currentUid: '  ',
+        isForeground: false,
+        locallyPresentedIds: {},
+      );
+      expect(plan.showLocal, isFalse);
+      expect(plan.sendFcmToSelf, isFalse);
+      expect(plan.recipientUids, isEmpty);
+    });
   });
 
   group('handleNotification', () {
-    Map<String, dynamic> record({String id = 'n1'}) => {
+    Map<String, dynamic> record({
+      String id = 'n1',
+      String? eventId,
+      String? userUid,
+    }) =>
+        {
           'id': id,
+          if (eventId != null) 'event_id': eventId,
+          if (userUid != null) 'user_uid': userUid,
           'title': 'Spot ready',
           'body': 'Your peacock queue assigned a lobby',
           'data': {
@@ -168,6 +297,7 @@ void main() {
         ({
           List<Map<String, dynamic>> local,
           List<List<String>> fcm,
+          List<Map<String, dynamic>> fcmData,
           List<String> sent,
         })> runHandle({
       required bool foreground,
@@ -176,6 +306,7 @@ void main() {
     }) async {
       final local = <Map<String, dynamic>>[];
       final fcm = <List<String>>[];
+      final fcmData = <Map<String, dynamic>>[];
       final sent = <String>[];
 
       NotificationManager.showLocal = (title, body, payload) async {
@@ -190,13 +321,25 @@ void main() {
         data,
       }) async {
         fcm.add(List<String>.from(recipientUids));
+        fcmData.add(Map<String, dynamic>.from(data ?? const {}));
       };
       PeacockNotificationService.markSentHook = (id) async {
         sent.add(id);
       };
 
-      await PeacockNotificationService.handleNotification(payload ?? record());
-      return (local: local, fcm: fcm, sent: sent);
+      await PeacockNotificationService.handleNotification(
+        payload ?? record(userUid: uid),
+      );
+      return (local: local, fcm: fcm, fcmData: fcmData, sent: sent);
+    }
+
+    bool xorHolds(
+      List<Map<String, dynamic>> local,
+      List<List<String>> fcm,
+      String uid,
+    ) {
+      final fcmUids = fcm.expand((uids) => uids);
+      return !(local.isNotEmpty && fcmUids.contains(uid));
     }
 
     test('skips notify when preferred games exclude the offer', () async {
@@ -288,6 +431,217 @@ void main() {
       expect(state.showedLocal, isFalse);
       expect(state.sentFcmToSelf, isTrue);
       expect(state.wouldDoubleNotifySelf, isFalse);
+    });
+
+    test('missing event_id and row id is a no-op', () async {
+      final result = await runHandle(
+        foreground: true,
+        payload: {
+          'title': 'Spot ready',
+          'body': 'Your peacock queue assigned a lobby',
+          'data': {'type': 'peacock_assigned'},
+        },
+      );
+      expect(result.local, isEmpty);
+      expect(result.fcm, isEmpty);
+      expect(result.sent, isEmpty);
+    });
+
+    test('same event_id is idempotent even when the row id differs', () async {
+      final first = await runHandle(
+        foreground: true,
+        payload: record(id: 'row-1', eventId: 'evt-1', userUid: 'uid-1'),
+      );
+      expect(first.local, isNotEmpty);
+      expect(first.local.first['event_id'], 'evt-1');
+      expect(first.fcm, isEmpty);
+      expect(first.sent, ['row-1']);
+
+      final second = await runHandle(
+        foreground: false,
+        payload: record(id: 'row-2', eventId: 'evt-1', userUid: 'uid-1'),
+      );
+      expect(second.local, isEmpty);
+      expect(second.fcm, isEmpty);
+      expect(second.sent, ['row-2']);
+    });
+
+    test('event_id in data matches row id for cache identity', () async {
+      final first = await runHandle(
+        foreground: true,
+        payload: {
+          'id': 'evt-1',
+          'user_uid': 'uid-1',
+          'title': 'Spot ready',
+          'body': 'Your peacock queue assigned a lobby',
+          'data': {
+            'type': 'peacock_assigned',
+            'lobby_id': 'lobby-9',
+            'game_name': 'Warzone',
+          },
+        },
+      );
+      expect(first.local, isNotEmpty);
+
+      final second = await runHandle(
+        foreground: false,
+        payload: {
+          'id': 'row-2',
+          'user_uid': 'uid-1',
+          'title': 'Spot ready',
+          'body': 'Your peacock queue assigned a lobby',
+          'data': {
+            'type': 'peacock_assigned',
+            'event_id': 'evt-1',
+            'lobby_id': 'lobby-9',
+          },
+        },
+      );
+      expect(second.local, isEmpty);
+      expect(second.fcm, isEmpty);
+    });
+
+    test('distinct event_ids notify independently without mixing XOR',
+        () async {
+      final first = await runHandle(
+        foreground: true,
+        payload: record(id: 'a', eventId: 'evt-a', userUid: 'uid-1'),
+      );
+      final second = await runHandle(
+        foreground: false,
+        payload: record(id: 'b', eventId: 'evt-b', userUid: 'uid-1'),
+      );
+      expect(first.local, isNotEmpty);
+      expect(first.fcm, isEmpty);
+      expect(second.local, isEmpty);
+      expect(second.fcm, [
+        ['uid-1']
+      ]);
+      expect(second.fcmData.first['event_id'], 'evt-b');
+      expect(xorHolds(first.local, first.fcm, 'uid-1'), isTrue);
+      expect(xorHolds(second.local, second.fcm, 'uid-1'), isTrue);
+    });
+
+    test('record for another uid is not presented locally or via FCM',
+        () async {
+      final result = await runHandle(
+        foreground: true,
+        uid: 'me',
+        payload: record(id: 'n1', userUid: 'other'),
+      );
+      expect(result.local, isEmpty);
+      expect(result.fcm, isEmpty);
+      expect(result.sent, ['n1']);
+    });
+
+    test('background FCM recipients are only the current uid', () async {
+      final result = await runHandle(foreground: false);
+      expect(result.local, isEmpty);
+      expect(result.fcm, [
+        ['uid-1']
+      ]);
+      expect(result.fcmData.first['event_id'], 'n1');
+      expect(result.fcmData.first['type'], 'peacock_assigned');
+    });
+
+    test('foreground Realtime vs background FCM follows lifecycle', () async {
+      const foregroundStates = [
+        null,
+        AppLifecycleState.resumed,
+        AppLifecycleState.inactive,
+      ];
+      const backgroundStates = [
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.detached,
+      ];
+
+      for (final state in foregroundStates) {
+        PeacockNotificationService.resetTestHooks();
+        NotificationManager.showLocal = null;
+        PeacockNotificationService.isForegroundHook = null;
+        final result = await runHandle(
+          foreground: peacockLifecycleIsForeground(state),
+        );
+        expect(result.local, isNotEmpty, reason: '$state');
+        expect(result.fcm, isEmpty, reason: '$state');
+        expect(xorHolds(result.local, result.fcm, 'uid-1'), isTrue);
+      }
+
+      for (final state in backgroundStates) {
+        PeacockNotificationService.resetTestHooks();
+        NotificationManager.showLocal = null;
+        final result = await runHandle(
+          foreground: peacockLifecycleIsForeground(state),
+        );
+        expect(result.local, isEmpty, reason: '$state');
+        expect(
+            result.fcm,
+            [
+              ['uid-1']
+            ],
+            reason: '$state');
+        expect(xorHolds(result.local, result.fcm, 'uid-1'), isTrue);
+      }
+    });
+
+    test('same event_id never both in-app and FCM across FG then BG', () async {
+      final local = await runHandle(foreground: true);
+      expect(local.local, isNotEmpty);
+      expect(local.fcm, isEmpty);
+
+      final fcm = await runHandle(foreground: false);
+      expect(fcm.local, isEmpty);
+      expect(fcm.fcm, isEmpty);
+
+      final combinedLocal = [...local.local, ...fcm.local];
+      final combinedFcm = [...local.fcm, ...fcm.fcm];
+      expect(xorHolds(combinedLocal, combinedFcm, 'uid-1'), isTrue);
+    });
+
+    test('same event_id never both in-app and FCM across BG then FG', () async {
+      final fcm = await runHandle(foreground: false);
+      expect(fcm.local, isEmpty);
+      expect(fcm.fcm, isNotEmpty);
+
+      final local = await runHandle(foreground: true);
+      expect(local.local, isEmpty);
+      expect(local.fcm, isEmpty);
+
+      final combinedLocal = [...fcm.local, ...local.local];
+      final combinedFcm = [...fcm.fcm, ...local.fcm];
+      expect(xorHolds(combinedLocal, combinedFcm, 'uid-1'), isTrue);
+    });
+
+    test('XOR pack: every lifecycle × already-local pair is one channel',
+        () async {
+      const uid = 'uid-1';
+      for (final state in AppLifecycleState.values) {
+        for (final already in [false, true]) {
+          PeacockNotificationService.resetTestHooks();
+          NotificationManager.showLocal = null;
+          if (already) {
+            final first = await runHandle(
+              foreground: true,
+              payload: record(id: 'n1', userUid: uid),
+            );
+            expect(first.local, isNotEmpty);
+          }
+          final result = await runHandle(
+            foreground: peacockLifecycleIsForeground(state),
+            payload: record(id: 'n1', userUid: uid),
+          );
+          expect(
+            xorHolds(result.local, result.fcm, uid),
+            isTrue,
+            reason: '$state already=$already',
+          );
+          if (already) {
+            expect(result.local, isEmpty, reason: '$state replay');
+            expect(result.fcm, isEmpty, reason: '$state replay');
+          }
+        }
+      }
     });
   });
 }

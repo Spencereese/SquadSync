@@ -86,6 +86,29 @@ void main() {
       expect(second.state.sentFcmToSelf, isFalse);
     });
 
+    test('second notifySelf after FCM never shows local for the same event_id',
+        () {
+      tracker.assignSpot('u1', notificationId: 'evt-1');
+      final first = tracker.notifySelf(
+        'u1',
+        isForeground: false,
+        currentUid: 'u1',
+        notificationId: 'evt-1',
+      );
+      expect(first.plan.sendFcmToSelf, isTrue);
+      final second = tracker.notifySelf(
+        'u1',
+        isForeground: true,
+        currentUid: 'u1',
+        notificationId: 'evt-1',
+      );
+      expect(second.plan.showLocal, isFalse);
+      expect(second.plan.sendFcmToSelf, isFalse);
+      expect(second.state.showedLocal, isFalse);
+      expect(second.state.sentFcmToSelf, isTrue);
+      expect(second.state.wouldDoubleNotifySelf, isFalse);
+    });
+
     test('background notifySelf with no uid does not FCM', () {
       tracker.assignSpot('u1', notificationId: 'n1');
       final dispatch = tracker.notifySelf(

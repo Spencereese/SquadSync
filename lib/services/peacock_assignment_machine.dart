@@ -137,15 +137,16 @@ PeacockAssignmentState reducePeacockAssignment({
         return current;
       }
       final id = notificationId ?? current.notificationId ?? '';
-      final alreadyLocal = <String>{
-        if (current.showedLocal && current.notificationId != null)
+      final alreadyHandled = <String>{
+        if (current.notificationId != null &&
+            (current.showedLocal || current.sentFcmToSelf))
           current.notificationId!,
       };
       final plan = planPeacockSelfNotify(
         notificationId: id,
         currentUid: currentUid,
         isForeground: isForeground,
-        locallyPresentedIds: alreadyLocal,
+        locallyPresentedIds: alreadyHandled,
       );
       return current.copyWith(
         phase: PeacockAssignmentPhase.notified,

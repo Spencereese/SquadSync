@@ -141,7 +141,7 @@ class PeacockNotificationService {
   /// Handle incoming notification.
   ///
   /// Local for in-app Realtime, FCM only when backgrounded — never both
-  /// to the current uid for the same [record] id. Always marks `sent: true`.
+  /// to the current uid for the same event_id. Always marks `sent: true`.
   @visibleForTesting
   static Future<void> handleNotification(Map<String, dynamic> record) async {
     try {
@@ -151,7 +151,9 @@ class PeacockNotificationService {
       final data = rawData is Map
           ? Map<String, dynamic>.from(rawData)
           : <String, dynamic>{};
-      final notificationId = record['id'] as String;
+      final eventId = peacockEventId(record);
+      if (eventId == null) return;
+      final rowId = _nonEmpty(record['id']) ?? eventId;
       final type = _nonEmpty(data['type']) ?? 'peacock_assigned';
       final lobbyId = _nonEmpty(data['lobby_id']) ?? _nonEmpty(data['lobbyId']);
       final gameName =
@@ -159,18 +161,24 @@ class PeacockNotificationService {
       final spotIndex = _nonEmpty(data['spot_index']);
       final parsedSpot = spotIndex == null ? null : int.tryParse(spotIndex);
 
-      final duplicate = _handledIds.contains(notificationId);
-      _handledIds.add(notificationId);
+      final duplicate = _handledIds.contains(eventId);
+      _handledIds.add(eventId);
       if (duplicate) {
-        await _markSent(notificationId);
+        await _markSent(rowId);
         return;
       }
 
       final currentUid =
           currentUidHook?.call() ?? AuthServiceSupabase().currentUser?.id;
+      if (!peacockEventIsForCurrentUid(
+        record: record,
+        currentUid: currentUid,
+      )) {
+        await _markSent(rowId);
+        return;
+      }
       final isForeground = _isForeground();
-      final trackerUserId =
-          currentUid ?? _nonEmpty(record['user_uid']) ?? notificationId;
+      final trackerUserId = currentUid ?? peacockRecordUid(record) ?? eventId;
 
       // Realtime insert is this client's assign event when the host
       // processed the queue elsewhere. Then notifySelf — XOR via the
@@ -180,23 +188,28 @@ class PeacockNotificationService {
         trackerUserId,
         lobbyId: lobbyId,
         gameName: gameName,
-        notificationId: notificationId,
+        notificationId: eventId,
         spotIndex: parsedSpot != null && parsedSpot >= 0 ? parsedSpot : null,
       );
       if (!peacockOfferAllowed(
         gameName: gameName,
         preferredPeacockGames: PreferredPeacockGamesStore.instance.snapshot,
       )) {
-        await _markSent(notificationId);
+        await _markSent(rowId);
         return;
       }
       final dispatch = tracker.notifySelf(
         trackerUserId,
         isForeground: isForeground,
         currentUid: currentUid,
-        notificationId: notificationId,
+        notificationId: eventId,
       );
       final plan = dispatch.plan;
+      final fcmUids = peacockSelfUidRecipients(
+        candidateUids: plan.recipientUids,
+        currentUid: currentUid,
+        showLocal: plan.showLocal,
+      );
 
       if (plan.showLocal) {
         developer.log('📣 Showing notification: $title - $body');
@@ -207,25 +220,27 @@ class PeacockNotificationService {
           lobbyId: lobbyId,
           gameName: gameName,
           payload: {
+            'event_id': eventId,
             if (spotIndex != null) 'spot_index': spotIndex,
           },
         );
-        _locallyPresentedIds.add(notificationId);
+        _locallyPresentedIds.add(eventId);
       }
 
       // Never FCM to self if this assignment was (or just was) shown locally.
       if (plan.sendFcmToSelf &&
           !plan.showLocal &&
-          !_locallyPresentedIds.contains(notificationId) &&
-          plan.recipientUids.isNotEmpty) {
+          !_locallyPresentedIds.contains(eventId) &&
+          fcmUids.isNotEmpty) {
         final send =
             sendToUsersHook ?? NotificationService.sendNotificationToUsers;
         await send(
           title: title,
           body: body,
-          recipientUids: plan.recipientUids,
+          recipientUids: fcmUids,
           data: {
             'type': type,
+            'event_id': eventId,
             if (lobbyId != null) 'lobby_id': lobbyId,
             if (gameName != null) 'game_name': gameName,
             if (spotIndex != null) 'spot_index': spotIndex,
@@ -233,7 +248,7 @@ class PeacockNotificationService {
         );
       }
 
-      await _markSent(notificationId);
+      await _markSent(rowId);
 
       developer.log('✅ Notification handled and marked as delivered');
     } catch (e) {

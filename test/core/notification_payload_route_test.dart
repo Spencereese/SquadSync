@@ -349,6 +349,15 @@ void main() {
         ).wouldDoubleNotifySelf,
         isFalse,
       );
+      expect(
+        planPeacockSelfNotify(
+          notificationId: 'evt-1',
+          currentUid: 'me',
+          isForeground: false,
+          locallyPresentedIds: {'evt-1'},
+        ).sendFcmToSelf,
+        isFalse,
+      );
     });
   });
 

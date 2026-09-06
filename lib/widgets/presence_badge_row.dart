@@ -25,6 +25,15 @@ Color presenceBadgeColor(PresenceBadgeKind kind) {
   }
 }
 
+SnackBar presenceReconnectSnackBar() {
+  return const SnackBar(
+    key: Key(kPresenceReconnectToastKey),
+    content: Text(kPresenceReconnectingCopy),
+    duration: Duration(seconds: 2),
+    behavior: SnackBarBehavior.floating,
+  );
+}
+
 /// Compact On / Looking / In lobby chips. Pass [badges] from the helper.
 class PresenceBadgeRow extends StatelessWidget {
   const PresenceBadgeRow({
@@ -38,7 +47,9 @@ class PresenceBadgeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (badges.isEmpty) return const SizedBox.shrink();
+    if (badges.isEmpty) {
+      return const SizedBox.shrink(key: Key(kPresenceEmptyStripKey));
+    }
     return Wrap(
       key: const Key('presence-badges'),
       spacing: compact ? 3 : 6,
@@ -85,6 +96,10 @@ class PresenceBadgesHost extends ConsumerStatefulWidget {
     this.compact = false,
   });
 
+  /// Widget tests leave a pending [Timer] if this is true. Production
+  /// keeps it on so last-known Stale chips drop when the timeout elapses.
+  static bool scheduleStaleCleanup = true;
+
   final String? userId;
   final bool compact;
 
@@ -94,6 +109,11 @@ class PresenceBadgesHost extends ConsumerStatefulWidget {
 
 class _PresenceBadgesHostState extends ConsumerState<PresenceBadgesHost>
     with WidgetsBindingObserver {
+  PresenceHealth? _lastHealth;
+  DateTime? _staleSince;
+  Timer? _staleTimer;
+  bool _staleTimedOut = false;
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +126,7 @@ class _PresenceBadgesHostState extends ConsumerState<PresenceBadgesHost>
 
   @override
   void dispose() {
+    _staleTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -122,6 +143,57 @@ class _PresenceBadgesHostState extends ConsumerState<PresenceBadgesHost>
     if (mounted) setState(() {});
   }
 
+  Future<void> _onStaleTimeout() async {
+    _staleTimedOut = true;
+    if (mounted) setState(() {});
+    await refreshPresenceSources(force: true);
+    if (mounted) setState(() {});
+  }
+
+  void _scheduleStaleCleanup(DateTime? staleSince) {
+    if (!PresenceBadgesHost.scheduleStaleCleanup) return;
+    if (_staleTimedOut) {
+      _staleTimer?.cancel();
+      _staleTimer = null;
+      return;
+    }
+    if (staleSince == null) {
+      _staleTimer?.cancel();
+      _staleTimer = null;
+      return;
+    }
+    if (_staleTimer != null) return;
+    _staleTimer = Timer(kPresenceStaleTimeout, () {
+      if (!mounted) return;
+      unawaited(_onStaleTimeout());
+    });
+  }
+
+  void _maybeReconnectToast({
+    required PresenceHealth? previous,
+    required PresenceHealth current,
+    required bool lobbyReconnect,
+    required bool stripEmpty,
+  }) {
+    if (stripEmpty) return;
+    if (!shouldShowPresenceReconnectToast(
+      previous: previous,
+      current: current,
+      lobbyReconnect: lobbyReconnect,
+    )) {
+      return;
+    }
+    if (!presenceReconnectToastGate.claim(now: DateTime.now().toUtc())) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.showSnackBar(presenceReconnectSnackBar());
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
@@ -134,13 +206,36 @@ class _PresenceBadgesHostState extends ConsumerState<PresenceBadgesHost>
         availabilityOnStore,
       ]),
       builder: (context, _) {
+        final now = DateTime.now().toUtc();
+        if (_staleTimedOut) {
+          _staleSince ??= now.subtract(kPresenceStaleTimeout);
+        }
         final badges = resolvePresenceBadgesFromTrackers(
           userId: widget.userId,
           lobbyState: lobbyState,
           isLoading: isLoading,
           error: error,
+          now: now,
+          staleSince: _staleTimedOut
+              ? now.subtract(kPresenceStaleTimeout)
+              : _staleSince,
         );
-        if (badges.isEmpty) return const SizedBox.shrink();
+        if (badges.health == PresenceHealth.stale) {
+          _staleSince ??= now;
+        } else if (badges.health == PresenceHealth.live ||
+            badges.health == PresenceHealth.reconnecting) {
+          _staleSince = null;
+          _staleTimedOut = false;
+        }
+        final previous = _lastHealth;
+        _lastHealth = badges.health;
+        _scheduleStaleCleanup(_staleSince);
+        _maybeReconnectToast(
+          previous: previous,
+          current: badges.health,
+          lobbyReconnect: isLoading,
+          stripEmpty: badges.isEmpty,
+        );
         return PresenceBadgeRow(badges: badges, compact: widget.compact);
       },
     );

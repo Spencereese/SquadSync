@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,6 +73,8 @@ Future<void> _pumpHosts(
 void main() {
   setUp(() {
     AvailabilityOnStore.scheduleExpirySweeps = false;
+    PresenceBadgesHost.scheduleStaleCleanup = false;
+    presenceReconnectToastGate.reset();
     MatchmakingQueueTracker.resetInstance();
     resetAvailabilityOnStore();
   });
@@ -78,6 +82,8 @@ void main() {
   tearDown(() {
     MatchmakingQueueTracker.resetInstance();
     resetAvailabilityOnStore();
+    presenceReconnectToastGate.reset();
+    PresenceBadgesHost.scheduleStaleCleanup = true;
     AvailabilityOnStore.scheduleExpirySweeps = true;
   });
 
@@ -114,7 +120,10 @@ void main() {
       ),
     );
     expect(find.byKey(const Key('presence-badges')), findsNothing);
+    expect(find.byKey(const Key(kPresenceEmptyStripKey)), findsOneWidget);
     expect(find.text('On'), findsNothing);
+    expect(find.text('Offline'), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
   testWidgets('row shows Offline / Stale / Reconnecting without a spinner',
@@ -261,11 +270,92 @@ void main() {
     expect(find.byKey(const Key('presence-badge-stale')), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
+
+  testWidgets('host shows reconnecting toast without a spinner',
+      (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          lobbyNotifierProvider.overrideWith(() => _LoadingLobbyNotifier()),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: PresenceBadgesHost(userId: 'u1'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Reconnecting'), findsOneWidget);
+    expect(
+      find.byKey(const Key('presence-badge-reconnecting')),
+      findsOneWidget,
+    );
+    expect(find.text(kPresenceReconnectingCopy), findsOneWidget);
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+  });
+
+  testWidgets('host clears stale On after timeout', (tester) async {
+    PresenceBadgesHost.scheduleStaleCleanup = true;
+    availabilityOnStore.markOn('u1');
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          lobbyNotifierProvider.overrideWith(() => _ErrorLobbyNotifier()),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: PresenceBadgesHost(userId: 'u1'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('On'), findsOneWidget);
+    expect(find.text('Stale'), findsOneWidget);
+
+    await tester.pump(kPresenceStaleTimeout);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('On'), findsNothing);
+    expect(find.text('Stale'), findsNothing);
+    expect(find.text('Offline'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('host with empty uid is an empty strip, not Offline',
+      (tester) async {
+    await _pumpHosts(tester, userIds: const ['', '  ']);
+
+    expect(find.byKey(const Key(kPresenceEmptyStripKey)), findsWidgets);
+    expect(find.byKey(const Key('presence-badges')), findsNothing);
+    expect(find.text('Offline'), findsNothing);
+    expect(find.text('On'), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
+  });
 }
 
 class _ErrorLobbyNotifier extends LobbyNotifier {
   @override
   Future<LobbyState> build() async {
     throw Exception('offline');
+  }
+}
+
+class _LoadingLobbyNotifier extends LobbyNotifier {
+  @override
+  Future<LobbyState> build() {
+    return Completer<LobbyState>().future;
   }
 }

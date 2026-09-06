@@ -511,6 +511,186 @@ void main() {
     });
   });
 
+  group('presence reconnect toast', () {
+    test('fires on cold lobby reconnect, not a live background hydrate', () {
+      expect(
+        shouldShowPresenceReconnectToast(
+          previous: null,
+          current: PresenceHealth.reconnecting,
+          lobbyReconnect: true,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldShowPresenceReconnectToast(
+          previous: PresenceHealth.reconnecting,
+          current: PresenceHealth.reconnecting,
+          lobbyReconnect: true,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldShowPresenceReconnectToast(
+          previous: PresenceHealth.live,
+          current: PresenceHealth.reconnecting,
+          lobbyReconnect: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldShowPresenceReconnectToast(
+          previous: PresenceHealth.offline,
+          current: PresenceHealth.reconnecting,
+          lobbyReconnect: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldShowPresenceReconnectToast(
+          previous: PresenceHealth.stale,
+          current: PresenceHealth.reconnecting,
+          lobbyReconnect: false,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldShowPresenceReconnectToast(
+          previous: PresenceHealth.offline,
+          current: PresenceHealth.offline,
+          lobbyReconnect: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('copy is arm length and gate claims once per cooldown', () {
+      expect(kPresenceReconnectingCopy, 'Reconnecting...');
+      expect(kPresenceReconnectToastKey, 'presence-reconnect-toast');
+      final gate = PresenceReconnectToastGate();
+      final t = DateTime.utc(2026, 9, 6, 12);
+      expect(gate.claim(now: t), isTrue);
+      expect(gate.claim(now: t.add(const Duration(seconds: 1))), isFalse);
+      expect(
+        gate.claim(now: t.add(kPresenceReconnectToastCooldown)),
+        isTrue,
+      );
+    });
+  });
+
+  group('stale presence cleanup', () {
+    test('keeps last-known On before the stale timeout', () {
+      final since = DateTime.utc(2026, 9, 6, 12);
+      final badges = clearStalePresenceAfterTimeout(
+        badges: const PresenceBadges(
+          isOn: true,
+          health: PresenceHealth.stale,
+        ),
+        staleSince: since,
+        now: since.add(kPresenceStaleTimeout - const Duration(seconds: 1)),
+      );
+      expect(badges.isOn, isTrue);
+      expect(badges.health, PresenceHealth.stale);
+      expect(badges.kinds, [
+        PresenceBadgeKind.on,
+        PresenceBadgeKind.stale,
+      ]);
+    });
+
+    test('clears last-known live signals after the stale timeout', () {
+      final since = DateTime.utc(2026, 9, 6, 12);
+      final badges = clearStalePresenceAfterTimeout(
+        badges: const PresenceBadges(
+          isOn: true,
+          isLooking: true,
+          health: PresenceHealth.stale,
+        ),
+        staleSince: since,
+        now: since.add(kPresenceStaleTimeout),
+      );
+      expect(badges.hasLiveSignals, isFalse);
+      expect(badges.health, PresenceHealth.offline);
+      expect(badges.kinds, [PresenceBadgeKind.offline]);
+      expect(badges.isEmpty, isFalse);
+    });
+
+    test('empty strip stays empty through stale cleanup', () {
+      expect(
+        clearStalePresenceAfterTimeout(
+          badges: PresenceBadges.empty,
+          staleSince: DateTime.utc(2026, 9, 6, 12),
+          now: DateTime.utc(2026, 9, 6, 13),
+        ),
+        PresenceBadges.empty,
+      );
+    });
+
+    test('resolve drops On after stale timeout and keeps it before', () {
+      onStore.markOn('u-on');
+      final since = DateTime.utc(2026, 9, 6, 12);
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'u-on',
+          lfg: lfg,
+          onStore: onStore,
+          isStale: true,
+          staleSince: since,
+          now: since.add(kPresenceStaleTimeout - const Duration(seconds: 1)),
+        ).kinds,
+        [
+          PresenceBadgeKind.on,
+          PresenceBadgeKind.stale,
+        ],
+      );
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: 'u-on',
+          lfg: lfg,
+          onStore: onStore,
+          isStale: true,
+          staleSince: since,
+          now: since.add(kPresenceStaleTimeout),
+        ).kinds,
+        [PresenceBadgeKind.offline],
+      );
+    });
+
+    test('stale-since is last live plus LFG live window', () {
+      final lastLive = DateTime.utc(2026, 9, 6, 12);
+      expect(
+        presenceStaleSince(
+          health: PresenceHealth.stale,
+          lastLiveAt: lastLive,
+        ),
+        lastLive.add(kLfgListStaleAfter),
+      );
+      expect(
+        presenceStaleSince(
+          health: PresenceHealth.live,
+          lastLiveAt: lastLive,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('empty presence strip', () {
+    test('blank uid is empty, not Offline or Reconnecting', () {
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: '  ',
+          lfg: lfg,
+          onStore: onStore,
+          isLoading: true,
+          isStale: true,
+          error: 'offline',
+        ),
+        PresenceBadges.empty,
+      );
+      expect(PresenceBadges.empty.isEmpty, isTrue);
+      expect(kPresenceEmptyStripKey, 'presence-empty');
+    });
+  });
+
   group('presenceUserIdFrom', () {
     test('prefers uid then id then friend_uid', () {
       expect(presenceUserIdFrom({'uid': 'a', 'id': 'b'}), 'a');

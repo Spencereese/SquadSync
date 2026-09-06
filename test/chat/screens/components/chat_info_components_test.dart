@@ -210,12 +210,16 @@ void main() {
   group('ChatInfoMembersSection', () {
     setUp(() {
       AvailabilityOnStore.scheduleExpirySweeps = false;
+      PresenceBadgesHost.scheduleStaleCleanup = false;
+      presenceReconnectToastGate.reset();
       MatchmakingQueueTracker.resetInstance();
       resetAvailabilityOnStore();
     });
     tearDown(() {
       MatchmakingQueueTracker.resetInstance();
       resetAvailabilityOnStore();
+      presenceReconnectToastGate.reset();
+      PresenceBadgesHost.scheduleStaleCleanup = true;
       AvailabilityOnStore.scheduleExpirySweeps = true;
     });
 

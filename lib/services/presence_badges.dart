@@ -10,6 +10,18 @@ enum PresenceBadgeKind { on, looking, inLobby, offline, stale, reconnecting }
 /// Connection health for the presence strip. Not a fourth live signal.
 enum PresenceHealth { live, stale, offline, reconnecting }
 
+/// How long a Stale strip may keep last-known On / Looking / In lobby.
+const kPresenceStaleTimeout = Duration(minutes: 2);
+
+/// SnackBar copy when the strip is reconnecting. Never a spinner.
+const kPresenceReconnectingCopy = 'Reconnecting...';
+
+const kPresenceEmptyStripKey = 'presence-empty';
+const kPresenceReconnectToastKey = 'presence-reconnect-toast';
+
+/// Rising-edge cooldown so a friends list does not spam toasts.
+const kPresenceReconnectToastCooldown = Duration(seconds: 4);
+
 /// Snapshot of glance badges for one user.
 class PresenceBadges {
   const PresenceBadges({
@@ -122,6 +134,80 @@ PresenceHealth resolvePresenceHealth({
   return PresenceHealth.live;
 }
 
+/// Toast on a real reconnect (cold lobby load or recovery from stale),
+/// not a background LFG hydrate of a live strip.
+bool shouldShowPresenceReconnectToast({
+  PresenceHealth? previous,
+  required PresenceHealth current,
+  bool lobbyReconnect = false,
+}) {
+  if (current != PresenceHealth.reconnecting) return false;
+  if (previous == PresenceHealth.reconnecting) return false;
+  if (previous == PresenceHealth.live) return false;
+  if (previous == PresenceHealth.stale) return true;
+  return lobbyReconnect;
+}
+
+/// When [lastLiveAt] aged into stale. Null if health is not stale or
+/// there was never a successful hydrate (host tracks that window).
+DateTime? presenceStaleSince({
+  required PresenceHealth health,
+  DateTime? lastLiveAt,
+  Duration liveFor = kLfgListStaleAfter,
+}) {
+  if (health != PresenceHealth.stale) return null;
+  if (lastLiveAt == null) return null;
+  return lastLiveAt.add(liveFor);
+}
+
+DateTime? resolvePresenceStaleSince({
+  DateTime? staleSince,
+  DateTime? lastLiveAt,
+  required PresenceHealth health,
+}) {
+  final derived = presenceStaleSince(
+    health: health,
+    lastLiveAt: lastLiveAt,
+  );
+  if (staleSince == null) return derived;
+  if (derived == null) return staleSince;
+  return staleSince.isBefore(derived) ? staleSince : derived;
+}
+
+/// After [timeout], drop last-known live signals so Stale does not lie.
+/// Empty uid stays empty. Settled idle after cleanup is Offline.
+PresenceBadges clearStalePresenceAfterTimeout({
+  required PresenceBadges badges,
+  DateTime? staleSince,
+  required DateTime now,
+  Duration timeout = kPresenceStaleTimeout,
+}) {
+  if (badges.isEmpty) return badges;
+  if (badges.health != PresenceHealth.stale) return badges;
+  if (staleSince == null) return badges;
+  if (now.difference(staleSince) < timeout) return badges;
+  return const PresenceBadges(health: PresenceHealth.offline);
+}
+
+/// One toast per reconnect cycle across every presence strip on screen.
+class PresenceReconnectToastGate {
+  DateTime? _lastShownAt;
+
+  bool claim({
+    required DateTime now,
+    Duration cooldown = kPresenceReconnectToastCooldown,
+  }) {
+    final last = _lastShownAt;
+    if (last != null && now.difference(last) < cooldown) return false;
+    _lastShownAt = now;
+    return true;
+  }
+
+  void reset() => _lastShownAt = null;
+}
+
+final presenceReconnectToastGate = PresenceReconnectToastGate();
+
 /// uid / id / friend_uid from a friends or squad member row.
 String? presenceUserIdFrom(Map<String, dynamic> row) {
   for (final key in ['uid', 'id', 'friend_uid', 'user_id']) {
@@ -207,6 +293,7 @@ PresenceBadges resolvePresenceBadges({
 ///
 /// [isLoading] / [error] / [isOffline] / [isStale] map reconnecting /
 /// stale / offline onto the strip. Empty uid stays empty (no fake Offline).
+/// After [kPresenceStaleTimeout] last-known live signals drop.
 PresenceBadges resolvePresenceBadgesFromTrackers({
   required String? userId,
   LobbyState? lobbyState,
@@ -216,6 +303,9 @@ PresenceBadges resolvePresenceBadgesFromTrackers({
   Object? error,
   bool isOffline = false,
   bool isStale = false,
+  DateTime? now,
+  DateTime? staleSince,
+  Duration staleTimeout = kPresenceStaleTimeout,
 }) {
   final uid = resolvePresenceUserId(
     userId: userId,
@@ -240,7 +330,17 @@ PresenceBadges resolvePresenceBadgesFromTrackers({
     hasLiveSignals: badges.hasLiveSignals,
     isStale: isStale || tracker.hasStaleQueue,
   );
-  return badges.copyWith(health: health);
+  final withHealth = badges.copyWith(health: health);
+  return clearStalePresenceAfterTimeout(
+    badges: withHealth,
+    staleSince: resolvePresenceStaleSince(
+      staleSince: staleSince,
+      lastLiveAt: tracker.lastHydratedAt,
+      health: health,
+    ),
+    now: now ?? DateTime.now().toUtc(),
+    timeout: staleTimeout,
+  );
 }
 
 /// Drop expired On windows and hydrate LFG looking. Reuses ticket 5 sources.

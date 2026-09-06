@@ -78,10 +78,15 @@ class SquadRouteArgs {
 
 /// Root tab for the friends / full shell. Router + nav share this list.
 class FriendsRootTab {
-  const FriendsRootTab({required this.label, required this.route});
+  const FriendsRootTab({
+    required this.label,
+    required this.route,
+    required this.icon,
+  });
 
   final String label;
   final String route;
+  final IconData icon;
 }
 
 /// Surfaces that stay on disk but are gated off the friends root.
@@ -94,17 +99,27 @@ enum FriendsGatedSurface {
 }
 
 const _friendsRootTabs = <FriendsRootTab>[
-  FriendsRootTab(label: 'Tonight/Squad', route: '/squad'),
-  FriendsRootTab(label: 'Chat', route: '/chat'),
-  FriendsRootTab(label: 'You', route: '/profile'),
+  FriendsRootTab(label: 'Tonight', route: '/squad', icon: Icons.people),
+  FriendsRootTab(label: 'Chat', route: '/chat', icon: Icons.chat_bubble),
+  FriendsRootTab(label: 'You', route: '/profile', icon: Icons.person),
 ];
 
+const kFriendsTabChatUnread = Key('friends-tab-chat-unread');
+
 const _fullRootTabs = <FriendsRootTab>[
-  FriendsRootTab(label: 'Home', route: '/'),
-  FriendsRootTab(label: 'Discover', route: '/discover-swipe'),
-  FriendsRootTab(label: 'Tonight/Squad', route: '/squad'),
-  FriendsRootTab(label: 'Chat', route: '/chat'),
-  FriendsRootTab(label: 'You', route: '/profile'),
+  FriendsRootTab(label: 'Home', route: '/', icon: Icons.home),
+  FriendsRootTab(
+    label: 'Discover',
+    route: '/discover-swipe',
+    icon: Icons.explore,
+  ),
+  FriendsRootTab(
+    label: 'Tonight/Squad',
+    route: '/squad',
+    icon: Icons.people,
+  ),
+  FriendsRootTab(label: 'Chat', route: '/chat', icon: Icons.chat_bubble),
+  FriendsRootTab(label: 'You', route: '/profile', icon: Icons.person),
 ];
 
 List<FriendsRootTab> friendsRootTabs({required bool friendsMode}) {
@@ -118,7 +133,7 @@ bool friendsGatesSurface(
   return friendsMode;
 }
 
-/// Friends root: Tonight/Squad, Chat (incl. thread), You, plus `/setup`.
+/// Friends root: Tonight, Chat (incl. thread), You, plus `/setup`.
 /// Full shell allows every prior location.
 bool friendsRootAllowsLocation(
   String location, {
@@ -154,6 +169,39 @@ String resolveFriendsPostLoginLocation({
     return '/chat/$last';
   }
   return '/squad';
+}
+
+/// Title shown on `/chat/:id` before (and if) the live group row returns.
+@visibleForTesting
+String lastKnownChatRouteTitle({
+  required String chatGroupId,
+  String? cachedName,
+  String? fetchedName,
+}) {
+  if (chatGroupId.trim().isEmpty) return 'Chat';
+  final fetched = fetchedName?.trim();
+  if (fetched != null && fetched.isNotEmpty) return fetched;
+  final cached = cachedName?.trim();
+  if (cached != null && cached.isNotEmpty) return cached;
+  return 'Chat';
+}
+
+String? _cachedChatGroupName(Ref ref, String chatGroupId) {
+  try {
+    return ref
+        .read(chatNotifierProvider)
+        .asData
+        ?.value
+        .chatGroups[chatGroupId]
+        ?.name;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Friends 404 Go Home lands Tonight (`/squad`); full shell keeps `/`.
+String friendsErrorHomeLocation({required bool friendsMode}) {
+  return friendsMode ? '/squad' : '/';
 }
 
 /// GoRouter configuration provider with A/B testing integration
@@ -309,8 +357,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         name: 'chatDetail',
         builder: (context, state) {
           final chatGroupId = state.pathParameters['id']!;
+          final lastKnownTitle = lastKnownChatRouteTitle(
+            chatGroupId: chatGroupId,
+            cachedName: _cachedChatGroupName(ref, chatGroupId),
+          );
 
-          // Use a FutureBuilder to handle async loading
+          // Fetch live name; first frame keeps last-known title + skeleton.
           return FutureBuilder<Map<String, dynamic>?>(
             future: SupabaseService.client
                 .from('chat_groups')
@@ -319,15 +371,31 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 .maybeSingle(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
+                return Scaffold(
+                  backgroundColor: Colors.black,
+                  appBar: AppBar(
+                    backgroundColor: Colors.black,
+                    title: Text(
+                      lastKnownTitle,
+                      key: const Key('chat-route-last-known-title'),
+                    ),
+                  ),
+                  body: const ColoredBox(
+                    key: Key('chat-route-skeleton'),
+                    color: Color(0x22FFFFFF),
+                    child: SizedBox(height: 120, width: double.infinity),
+                  ),
                 );
               }
 
               final response = snapshot.data;
               return ChatScreen(
                 chatGroupId: chatGroupId,
-                chatGroupName: response?['name'] as String? ?? 'Chat',
+                chatGroupName: lastKnownChatRouteTitle(
+                  chatGroupId: chatGroupId,
+                  cachedName: lastKnownTitle,
+                  fetchedName: response?['name'] as String?,
+                ),
                 chatType: ChatType.userGroup,
               );
             },
@@ -393,7 +461,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => context.go('/'),
+              key: const Key('friends-error-go-home'),
+              onPressed: () => context.go(
+                AppEnv.friendsMode ? '/squad' : '/',
+              ),
               child: const Text('Go Home'),
             ),
           ],

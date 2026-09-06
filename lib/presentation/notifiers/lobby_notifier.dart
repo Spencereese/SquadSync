@@ -323,6 +323,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   /// [gameName] - The game for this lobby
   /// [maxSpots] - Maximum number of spots (default: 8)
   /// [isPublic] - Whether this lobby is discoverable (default: false)
+  /// [chatGroupName] - Friend-visible group name for the lobby title
   ///
   /// Returns the created lobby ID
   Future<String> createLobby({
@@ -330,65 +331,46 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     required String gameName,
     required int maxSpots,
     bool isPublic = false,
+    String? chatGroupName,
   }) async {
     try {
       debugPrint(
           '🎮 Creating lobby: chatGroupId=$chatGroupId, game=$gameName, maxSpots=$maxSpots, isPublic=$isPublic');
 
-      // Note: chatGroupId linking needs to be handled separately
-      final lobby = await _repository.createLobby('Lobby', gameName, maxSpots);
+      final name = lobbyNameFromChat(
+        gameName: gameName,
+        chatGroupName: chatGroupName,
+        chatGroupId: chatGroupId,
+      );
+      final lobby = await _repository.createLobby(name, gameName, maxSpots);
       final lobbyId = lobby.id;
+      final boundGroupId = chatGroupId.trim();
+      final bound = boundGroupId.isEmpty
+          ? lobby
+          : lobby.copyWith(chatGroupId: boundGroupId);
 
-      debugPrint('✅ Lobby created: $lobbyId');
+      debugPrint('✅ Lobby created: $lobbyId chatGroupId=${bound.chatGroupId}');
 
-      // Send notifications to chat group members (or all if public)
+      await _persistChatGroupBind(
+        lobbyId: lobbyId,
+        chatGroupId: boundGroupId,
+      );
+      _landOnCreatedLobby(bound);
+
       try {
-        if (chatGroupId.isNotEmpty) {
-          // Get chat group member UIDs
-          final chatGroupResponse = await SupabaseService.client
-              .from('chat_groups')
-              .select('member_uids')
-              .eq('id', chatGroupId)
-              .maybeSingle();
-
-          if (chatGroupResponse != null) {
-            final memberUids =
-                (chatGroupResponse['member_uids'] as List<dynamic>?)
-                        ?.cast<String>() ??
-                    [];
-
-            final currentUserId = AuthServiceSupabase().currentUser?.id;
-            // Exclude current user from notifications
-            final recipientUids =
-                memberUids.where((uid) => uid != currentUserId).toList();
-
-            if (recipientUids.isNotEmpty) {
-              await NotificationService.sendNotificationToUsers(
-                title: 'New Lobby Created!',
-                body: 'A new $gameName lobby has been created',
-                recipientUids: recipientUids,
-                data: {
-                  'type': 'lobby_created',
-                  'lobby_id': lobbyId,
-                  'game_name': gameName,
-                  'chat_group_id': chatGroupId,
-                },
-              );
-              debugPrint(
-                  '📬 Sent lobby creation notifications to ${recipientUids.length} members');
-            }
-          }
+        if (boundGroupId.isNotEmpty) {
+          await _notifyLobbyCreatedFromChat(
+            lobby: bound,
+            chatGroupId: boundGroupId,
+            gameName: gameName,
+          );
         } else if (isPublic) {
           debugPrint(
               '📢 Public lobby created, notifications skipped (no specific recipients)');
         }
       } catch (e) {
         debugPrint('⚠️ Failed to send lobby creation notifications: $e');
-        // Don't fail the lobby creation if notifications fail
       }
-
-      // Reload state to include new lobby
-      state = await AsyncValue.guard(() => _loadPersistedLobbyState());
 
       return lobbyId;
     } catch (e, stackTrace) {
@@ -400,6 +382,100 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       );
       rethrow;
     }
+  }
+
+  /// Bind [chatGroupId] on the created row. Ignores Postgres 42703 when
+  /// the column is not applied yet (Lead/CoS). Does not fail create.
+  Future<void> _persistChatGroupBind({
+    required String lobbyId,
+    required String chatGroupId,
+  }) async {
+    if (chatGroupId.isEmpty || lobbyId.isEmpty) return;
+    try {
+      await SupabaseService.client.from('lobbies').update({
+        'chat_group_id': chatGroupId,
+      }).eq('id', lobbyId);
+    } catch (e) {
+      if (isUndefinedColumn42703(e)) {
+        debugPrint(
+            '⚠️ chat_group_id column missing (42703); lobby $lobbyId still created');
+        return;
+      }
+      debugPrint('⚠️ chat_group_id bind skipped: $e');
+    }
+  }
+
+  /// Select + subscribe so the creator (and later friends) land on THIS lobby.
+  void _landOnCreatedLobby(Lobby lobby) {
+    final current = state.valueOrNull ?? LobbyState.initial();
+    final lobbies = Map<String, Lobby>.from(current.userLobbies);
+    lobbies[lobby.id] = lobby;
+    final lobbyIds = List<String>.from(current.userLobbyIds);
+    if (!lobbyIds.contains(lobby.id)) lobbyIds.add(lobby.id);
+    final gameSpots = Map<String, List<String?>>.from(current.gameLobbySpots);
+    if (lobby.gameName.isNotEmpty) {
+      gameSpots[lobby.gameName] = lobby.spots;
+    }
+    state = AsyncData(current.copyWith(
+      currentLobby: lobby,
+      userLobbies: lobbies,
+      userLobbyIds: lobbyIds,
+      selectedLobbyId: lobby.id,
+      gameLobbySpots: gameSpots,
+    ));
+    setSelectedLobbyId(lobby.id);
+  }
+
+  /// Friends in the chat get lobby_created. Creator is never a recipient.
+  Future<void> _notifyLobbyCreatedFromChat({
+    required Lobby lobby,
+    required String chatGroupId,
+    required String gameName,
+  }) async {
+    var memberUids = List<String>.from(lobby.memberUids);
+    if (memberUids.length <= 1) {
+      try {
+        final chatGroupResponse = await SupabaseService.client
+            .from('chat_groups')
+            .select('member_uids, members')
+            .eq('id', chatGroupId)
+            .maybeSingle();
+        if (chatGroupResponse != null) {
+          final fromGroup = _stringListFrom(chatGroupResponse['member_uids']) ??
+              _stringListFrom(chatGroupResponse['members']);
+          if (fromGroup != null && fromGroup.isNotEmpty) {
+            memberUids = fromGroup;
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ chat group members lookup skipped: $e');
+      }
+    }
+
+    final currentUserId = AuthServiceSupabase().currentUser?.id?.trim() ?? '';
+    final creatorId = currentUserId.isNotEmpty
+        ? currentUserId
+        : lobby.createdBy.trim();
+    final recipientUids = lobbyCreatedNotifyRecipients(
+      memberUids: memberUids,
+      creatorUid: creatorId,
+    );
+    if (recipientUids.isEmpty) return;
+
+    await LobbyLockNotify.send(LobbyLockNotifyPlan(
+      recipientUids: recipientUids,
+      title: 'New Lobby Created!',
+      body: 'A new $gameName lobby has been created',
+      data: {
+        'type': 'lobby_created',
+        'lobby_id': lobby.id,
+        'game_name': gameName,
+        'chat_group_id': chatGroupId,
+      },
+      seatedCount: memberUids.length,
+    ));
+    debugPrint(
+        '📬 Sent lobby creation notifications to ${recipientUids.length} members');
   }
 
   /// Create a public lobby for Discovery
@@ -2337,4 +2413,56 @@ int? resolveNextFreeSpotFromLobbyState({
     }
   }
   return null;
+}
+
+/// Friend-visible name: game + group, truncated. Never the literal "Lobby".
+const kLobbyNameFromChatMaxChars = 48;
+
+String lobbyNameFromChat({
+  required String gameName,
+  String? chatGroupName,
+  String? chatGroupId,
+}) {
+  final game = gameName.trim();
+  final group = (chatGroupName ?? '').trim();
+  final id = (chatGroupId ?? '').trim();
+  final suffix = group.isNotEmpty ? group : id;
+  final raw = suffix.isEmpty
+      ? (game.isEmpty ? 'Squad' : game)
+      : (game.isEmpty ? suffix : '$game · $suffix');
+  if (raw.length <= kLobbyNameFromChatMaxChars) return raw;
+  return raw.substring(0, kLobbyNameFromChatMaxChars).trimRight();
+}
+
+/// Drop the creator so lobby_created is never FCM-to-self.
+List<String> lobbyCreatedNotifyRecipients({
+  required Iterable<String> memberUids,
+  required String creatorUid,
+}) {
+  final creator = creatorUid.trim();
+  final seen = <String>{};
+  final out = <String>[];
+  for (final raw in memberUids) {
+    final uid = raw.trim();
+    if (uid.isEmpty || uid == creator) continue;
+    if (seen.add(uid)) out.add(uid);
+  }
+  return out;
+}
+
+List<String>? _stringListFrom(dynamic raw) {
+  if (raw is! List) return null;
+  return [
+    for (final item in raw)
+      if (item != null && item.toString().trim().isNotEmpty)
+        item.toString().trim(),
+  ];
+}
+
+/// Postgres undefined_column. Safe to degrade when chat_group_id is unapplied.
+bool isUndefinedColumn42703(Object error) {
+  final code = error is PostgrestException ? error.code : null;
+  if (code == '42703') return true;
+  final text = error.toString();
+  return text.contains('42703') || text.contains('undefined_column');
 }

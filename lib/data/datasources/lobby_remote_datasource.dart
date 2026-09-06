@@ -117,7 +117,7 @@ class LobbyRemoteDataSourceImpl
     final json = lobby.toJson();
 
     // Convert to snake_case for Supabase
-    final data = {
+    final data = <String, dynamic>{
       'id': json['id'],
       'name': json['name'],
       'member_uids': json['memberUids'],
@@ -135,8 +135,36 @@ class LobbyRemoteDataSourceImpl
       'settings': json['settings'],
     };
 
-    await _supabase.from('lobbies').insert(data);
+    final chatGroupId = lobby.chatGroupId?.trim();
+    if (chatGroupId != null && chatGroupId.isNotEmpty) {
+      data['chat_group_id'] = chatGroupId;
+    }
+
+    await _insertLobbyRow(data);
     return lobby;
+  }
+
+  /// Write [chat_group_id] when the column exists. Retry without it on
+  /// Postgres 42703 (undefined_column) so create still succeeds.
+  Future<void> _insertLobbyRow(Map<String, dynamic> data) async {
+    try {
+      await _supabase.from('lobbies').insert(data);
+    } catch (e) {
+      if (data.containsKey('chat_group_id') && _isUndefinedColumn42703(e)) {
+        debugPrint(
+            '⚠️ lobbies.chat_group_id missing (42703); inserting without bind');
+        final retry = Map<String, dynamic>.from(data)..remove('chat_group_id');
+        await _supabase.from('lobbies').insert(retry);
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  bool _isUndefinedColumn42703(Object error) {
+    if (error is PostgrestException && error.code == '42703') return true;
+    final text = error.toString();
+    return text.contains('42703') || text.contains('undefined_column');
   }
 
   // Helper to convert spotTimers list to map for Supabase

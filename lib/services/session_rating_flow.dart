@@ -60,9 +60,30 @@ Future<void> recordEndedSquadSession({
   }
 }
 
+/// Map [recordEndedSquadSession] through the persist mapper (success / empty
+/// / fail). Retry is calling this again with the same rating.
+Future<SessionRatingPersistResult> persistEndedSquadSession({
+  required WidgetRef ref,
+  required String lobbyId,
+  required String result,
+  SessionRatingState sessionRating = SessionRatingState.unrated,
+}) {
+  return runSessionRatingPersist(
+    () => recordEndedSquadSession(
+      ref: ref,
+      lobbyId: lobbyId,
+      result: result,
+      sessionRating: sessionRating,
+    ),
+    rating: sessionRating,
+    lobbyId: lobbyId,
+  );
+}
+
 /// Prompt then record. Live path: lobby Win/Loss and stats Record win/loss.
 /// After a rating, the existing path offers attach-clip (no new page).
-Future<SessionRatingState> promptAndRecordEndedSession({
+/// Persist fail surfaces Retry — never a silent success toast.
+Future<SessionRatingPersistResult> promptAndRecordEndedSession({
   required BuildContext context,
   required WidgetRef ref,
   required String lobbyId,
@@ -83,12 +104,26 @@ Future<SessionRatingState> promptAndRecordEndedSession({
     );
     rating = attachClipToRatedSession(rating, clip);
   }
-  if (!context.mounted) return rating;
-  await recordEndedSquadSession(
+  var persist = await persistEndedSquadSession(
     ref: ref,
     lobbyId: lobbyId,
     result: result,
     sessionRating: rating,
   );
-  return rating;
+  while (persist.isFailed) {
+    if (!context.mounted) return persist;
+    final retry = await showSessionRatingPersistErrorDialog(context, persist);
+    if (!retry) break;
+    persist = await retrySessionRatingPersist(
+      () => recordEndedSquadSession(
+        ref: ref,
+        lobbyId: lobbyId,
+        result: result,
+        sessionRating: persist.rating ?? rating,
+      ),
+      rating: persist.rating ?? rating,
+      lobbyId: lobbyId,
+    );
+  }
+  return persist;
 }

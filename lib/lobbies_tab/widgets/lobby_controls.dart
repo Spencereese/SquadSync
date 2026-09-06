@@ -7,6 +7,7 @@ import '../../domain/entities/lobby.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../services/auth_service_supabase.dart';
 import '../../services/availability_ping.dart';
+import '../dialogs/session_rating_dialog.dart';
 import '../../services/session_rating_flow.dart';
 import '../../services/session_rating_machine.dart';
 import '../../screens/discovery_swipe_screen.dart';
@@ -309,25 +310,31 @@ class _WinButton extends ConsumerWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      try {
-        final rating = await promptAndRecordEndedSession(
-          context: context,
-          ref: ref,
-          lobbyId: lobbyId,
-          result: 'win',
-        );
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(sessionRecordedSnackbar('win', rating))),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to record win: $e')),
-          );
-        }
-      }
+      final persist = await promptAndRecordEndedSession(
+        context: context,
+        ref: ref,
+        lobbyId: lobbyId,
+        result: 'win',
+      );
+      if (!context.mounted) return;
+      presentSessionRatingPersist(
+        context,
+        'win',
+        persist,
+        onRetry: persist.isFailed
+            ? () {
+                persistEndedSquadSession(
+                  ref: ref,
+                  lobbyId: lobbyId,
+                  result: 'win',
+                  sessionRating: persist.rating ?? SessionRatingState.unrated,
+                ).then((again) {
+                  if (!context.mounted) return;
+                  presentSessionRatingPersist(context, 'win', again);
+                });
+              }
+            : null,
+      );
     }
   }
 
@@ -439,25 +446,31 @@ class _LossButton extends ConsumerWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      try {
-        final rating = await promptAndRecordEndedSession(
-          context: context,
-          ref: ref,
-          lobbyId: lobbyId,
-          result: 'loss',
-        );
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(sessionRecordedSnackbar('loss', rating))),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to record loss: $e')),
-          );
-        }
-      }
+      final persist = await promptAndRecordEndedSession(
+        context: context,
+        ref: ref,
+        lobbyId: lobbyId,
+        result: 'loss',
+      );
+      if (!context.mounted) return;
+      presentSessionRatingPersist(
+        context,
+        'loss',
+        persist,
+        onRetry: persist.isFailed
+            ? () {
+                persistEndedSquadSession(
+                  ref: ref,
+                  lobbyId: lobbyId,
+                  result: 'loss',
+                  sessionRating: persist.rating ?? SessionRatingState.unrated,
+                ).then((again) {
+                  if (!context.mounted) return;
+                  presentSessionRatingPersist(context, 'loss', again);
+                });
+              }
+            : null,
+      );
     }
   }
 

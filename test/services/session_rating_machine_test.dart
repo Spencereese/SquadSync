@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/services/session_rating_machine.dart';
 
@@ -877,6 +878,160 @@ void main() {
         decodeSessionRatingFromNotes(write.payload['notes'])?.vibes,
         5,
       );
+    });
+  });
+
+  group('session rating persist mapper', () {
+    SessionRatingState rated() => reduceSessionRating(
+          current: const SessionRatingState(lobbyId: 'lobby-1'),
+          event: SessionRatingEvent.rate,
+          vibes: 5,
+          comms: 4,
+          gunny: 3,
+          wingman: 2,
+          lobbyId: 'lobby-1',
+        );
+
+    test('persist success is rated write that completed', () async {
+      var calls = 0;
+      final rating = rated();
+      final result = await runSessionRatingPersist(
+        () async {
+          calls++;
+        },
+        rating: rating,
+        lobbyId: 'lobby-1',
+      );
+      expect(result.isSuccess, isTrue);
+      expect(result.isFailed, isFalse);
+      expect(result.isEmpty, isFalse);
+      expect(result.rating?.stars, 4);
+      expect(calls, 1);
+      expect(
+        sessionRatingPersistMessage(result, matchResult: 'win'),
+        'Win recorded · 4★',
+      );
+      expect(
+        sessionRatingPersistFeedbackKey(result.outcome),
+        const Key('session-rating-persist-success'),
+      );
+    });
+
+    test('thrown persist is error, not a silent success', () async {
+      final result = await runSessionRatingPersist(
+        () async => throw Exception('offline'),
+        rating: rated(),
+        lobbyId: 'lobby-1',
+      );
+      expect(result.isFailed, isTrue);
+      expect(result.isSuccess, isFalse);
+      expect(sessionRatingErrorDetail(result.error), 'offline');
+      expect(sessionRatingPersistMessage(result), kSessionRatingPersistErrorCopy);
+      expect(
+        sessionRatingPersistHint(result),
+        kSessionRatingPersistErrorHint,
+      );
+      expect(
+        sessionRatingPersistFeedbackKey(result.outcome),
+        const Key('session-rating-persist-error'),
+      );
+    });
+
+    test('missing lobby is empty and does not write', () async {
+      var calls = 0;
+      final rating = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        stars: 5,
+      );
+      final result = await runSessionRatingPersist(
+        () async {
+          calls++;
+        },
+        rating: rating,
+      );
+      expect(result.isEmpty, isTrue);
+      expect(result.isSuccess, isFalse);
+      expect(calls, 0);
+      expect(
+        sessionRatingPersistMessage(result),
+        kSessionRatingPersistMissingLobbyCopy,
+      );
+      expect(
+        sessionRatingPersistFeedbackKey(result.outcome),
+        const Key('session-rating-persist-empty'),
+      );
+    });
+
+    test('skip after persist is empty, not rated success', () async {
+      var calls = 0;
+      final skipped = reduceSessionRating(
+        current: const SessionRatingState(lobbyId: 'lobby-1'),
+        event: SessionRatingEvent.skip,
+        lobbyId: 'lobby-1',
+        result: 'win',
+      );
+      final result = await runSessionRatingPersist(
+        () async {
+          calls++;
+        },
+        rating: skipped,
+        lobbyId: 'lobby-1',
+      );
+      expect(result.isEmpty, isTrue);
+      expect(result.isSuccess, isFalse);
+      expect(calls, 1);
+      expect(
+        sessionRatingPersistMessage(result, matchResult: 'win'),
+        'Win recorded',
+      );
+      expect(
+        sessionRatingPersistMessage(result),
+        kSessionRatingPersistEmptyCopy,
+      );
+    });
+
+    test('retry re-runs persist and can succeed', () async {
+      var calls = 0;
+      Future<void> persist() async {
+        calls++;
+        if (calls == 1) throw Exception('offline');
+      }
+
+      final rating = rated();
+      final first = await runSessionRatingPersist(
+        persist,
+        rating: rating,
+        lobbyId: 'lobby-1',
+      );
+      expect(first.isFailed, isTrue);
+      expect(calls, 1);
+
+      final second = await retrySessionRatingPersist(
+        persist,
+        rating: rating,
+        lobbyId: 'lobby-1',
+      );
+      expect(second.isSuccess, isTrue);
+      expect(calls, 2);
+    });
+
+    test('retry after error can stay error', () async {
+      Future<void> persist() async => throw Exception('denied');
+      final rating = rated();
+      final first = await runSessionRatingPersist(
+        persist,
+        rating: rating,
+        lobbyId: 'lobby-1',
+      );
+      final second = await retrySessionRatingPersist(
+        persist,
+        rating: rating,
+        lobbyId: 'lobby-1',
+      );
+      expect(first.isFailed, isTrue);
+      expect(second.isFailed, isTrue);
+      expect(sessionRatingErrorDetail(second.error), 'denied');
     });
   });
 }

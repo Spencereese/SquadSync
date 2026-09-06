@@ -169,6 +169,7 @@ class YouLastFiveRatedSessions extends StatelessWidget {
     super.key,
     required this.sessions,
     this.errorMessage,
+    this.errorDetail,
     this.onRetry,
     this.onOpenClip,
     this.isLoading = false,
@@ -176,6 +177,7 @@ class YouLastFiveRatedSessions extends StatelessWidget {
 
   final List<SessionRatingState> sessions;
   final String? errorMessage;
+  final String? errorDetail;
   final VoidCallback? onRetry;
   final OpenSessionClip? onOpenClip;
   final bool isLoading;
@@ -202,6 +204,7 @@ class YouLastFiveRatedSessions extends StatelessWidget {
           LastFiveRatedSessionsList(
             sessions: sessions,
             errorMessage: errorMessage,
+            errorDetail: errorDetail,
             onRetry: onRetry,
             onOpenClip: onOpenClip,
             isLoading: isLoading,

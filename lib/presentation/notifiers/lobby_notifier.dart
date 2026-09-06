@@ -1483,7 +1483,9 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }) async {
     try {
       final currentState = state.value;
-      if (currentState == null) return;
+      if (currentState == null) {
+        throw StateError(kSessionRatingPersistMissingStateCopy);
+      }
 
       final lobby = currentState.userLobbies.values.firstWhere(
         (l) => l.id == lobbyId,
@@ -1537,7 +1539,9 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }) async {
     try {
       final currentState = state.value;
-      if (currentState == null) return;
+      if (currentState == null) {
+        throw StateError(kSessionRatingPersistMissingStateCopy);
+      }
 
       final lobby = currentState.userLobbies.values.firstWhere(
         (l) => l.id == lobbyId,

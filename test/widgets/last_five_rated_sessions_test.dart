@@ -127,10 +127,29 @@ void main() {
 
     expect(find.byKey(const Key('last-five-rated-error')), findsOneWidget);
     expect(find.text(kYouSessionHistoryErrorCopy), findsOneWidget);
+    expect(find.text(kStatsLoadErrorBody), findsOneWidget);
     expect(find.byKey(const Key('last-five-rated-empty')), findsNothing);
     await tester.tap(find.byKey(const Key('last-five-rated-retry')));
     await tester.pump();
     expect(retried, isTrue);
+  });
+
+  testWidgets('error detail is not painted as an empty list', (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        const LastFiveRatedSessionsList(
+          sessions: [],
+          errorMessage: kYouSessionHistoryErrorCopy,
+          errorDetail: 'offline',
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('last-five-rated-error')), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-error-detail')), findsOneWidget);
+    expect(find.text('offline'), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-empty')), findsNothing);
+    expect(find.byKey(const Key('last-five-rated-retry')), findsNothing);
   });
 
   testWidgets('You surface renders last-5 from match_history notes',
@@ -153,6 +172,31 @@ void main() {
     expect(find.byKey(const Key('you-last-five')), findsOneWidget);
     expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
     expect(find.text('4★ · Warzone · Win · Sep 3'), findsOneWidget);
+  });
+
+  testWidgets('You surface error offers retry instead of empty last-5',
+      (tester) async {
+    var retried = false;
+    await tester.pumpWidget(
+      wrap(
+        YouLastFiveRatedSessions(
+          sessions: const [],
+          errorMessage: kYouSessionHistoryErrorCopy,
+          errorDetail: 'offline',
+          onRetry: () {
+            retried = true;
+          },
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('you-last-five')), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-error')), findsOneWidget);
+    expect(find.text('offline'), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-empty')), findsNothing);
+    await tester.tap(find.byKey(const Key('last-five-rated-retry')));
+    await tester.pump();
+    expect(retried, isTrue);
   });
 
   testWidgets('You / last-5 row shows clip marker when notes have a clip',

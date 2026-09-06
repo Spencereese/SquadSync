@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 /// 1–5 star rating of a squad session after it ends.
 ///
 /// Persistence is the existing `match_history.notes` TEXT column (JSON),
@@ -902,3 +904,134 @@ String sessionRecordedSnackbar(String result, SessionRatingState rating) {
   }
   return '$outcome recorded';
 }
+
+/// Persist mapper for an ended-session write to existing `match_history`.
+///
+/// Success is a rated write that completed. Empty is skip / unrated / missing
+/// lobby — no silent "Win recorded". Thrown write is failed; retry is calling
+/// [runSessionRatingPersist] again.
+enum SessionRatingPersistOutcome { success, empty, failed }
+
+const kSessionRatingEmptyCopy = 'Pick a rating to submit';
+const kSessionRatingEmptyHint =
+    'Tap Vibes, Comms, Gunny, or Wingman. Skip still records the match.';
+const kSessionRatingPersistErrorCopy = "Couldn't save session rating";
+const kSessionRatingPersistErrorHint = 'Check your connection and try again.';
+const kSessionRatingPersistRetryLabel = 'Retry';
+const kSessionRatingPersistEmptyCopy = 'Match recorded without a rating';
+const kSessionRatingPersistMissingLobbyCopy = 'No lobby to save this rating';
+const kSessionRatingPersistMissingStateCopy = 'Lobby state is unavailable';
+
+class SessionRatingPersistResult {
+  const SessionRatingPersistResult.success(this.rating)
+      : outcome = SessionRatingPersistOutcome.success,
+        error = null;
+
+  const SessionRatingPersistResult.empty({this.rating})
+      : outcome = SessionRatingPersistOutcome.empty,
+        error = null;
+
+  const SessionRatingPersistResult.failed(this.error, {this.rating})
+      : outcome = SessionRatingPersistOutcome.failed;
+
+  final SessionRatingPersistOutcome outcome;
+  final SessionRatingState? rating;
+  final Object? error;
+
+  bool get isSuccess => outcome == SessionRatingPersistOutcome.success;
+  bool get isEmpty => outcome == SessionRatingPersistOutcome.empty;
+  bool get isFailed => outcome == SessionRatingPersistOutcome.failed;
+}
+
+typedef PersistSessionRating = Future<SessionRatingPersistResult> Function(
+  SessionRatingState rating,
+);
+
+Key sessionRatingPersistFeedbackKey(SessionRatingPersistOutcome outcome) {
+  switch (outcome) {
+    case SessionRatingPersistOutcome.success:
+      return const Key('session-rating-persist-success');
+    case SessionRatingPersistOutcome.empty:
+      return const Key('session-rating-persist-empty');
+    case SessionRatingPersistOutcome.failed:
+      return const Key('session-rating-persist-error');
+  }
+}
+
+String sessionRatingErrorDetail(Object? error) {
+  if (error == null) return '';
+  final text = error.toString().trim();
+  if (text.isEmpty) return '';
+  const prefix = 'Exception: ';
+  if (text.startsWith(prefix) && text.length > prefix.length) {
+    return text.substring(prefix.length);
+  }
+  return text;
+}
+
+String sessionRatingPersistMessage(
+  SessionRatingPersistResult result, {
+  String? matchResult,
+}) {
+  switch (result.outcome) {
+    case SessionRatingPersistOutcome.success:
+      return sessionRecordedSnackbar(
+        matchResult ?? result.rating?.result ?? 'win',
+        result.rating ?? SessionRatingState.unrated,
+      );
+    case SessionRatingPersistOutcome.empty:
+      if (_nonEmpty(result.rating?.lobbyId) == null &&
+          (result.rating?.isRated ?? false)) {
+        return kSessionRatingPersistMissingLobbyCopy;
+      }
+      if (matchResult != null) {
+        return sessionRecordedSnackbar(
+          matchResult,
+          result.rating ?? SessionRatingState.unrated,
+        );
+      }
+      return kSessionRatingPersistEmptyCopy;
+    case SessionRatingPersistOutcome.failed:
+      return kSessionRatingPersistErrorCopy;
+  }
+}
+
+String? sessionRatingPersistHint(SessionRatingPersistResult result) {
+  switch (result.outcome) {
+    case SessionRatingPersistOutcome.failed:
+      return kSessionRatingPersistErrorHint;
+    case SessionRatingPersistOutcome.empty:
+    case SessionRatingPersistOutcome.success:
+      return null;
+  }
+}
+
+/// Map a persist attempt. Missing lobby is empty (no write). Thrown write is
+/// error. Skip / unrated after a completed write is empty. Retry is calling
+/// this again.
+Future<SessionRatingPersistResult> runSessionRatingPersist(
+  Future<void> Function() persist, {
+  required SessionRatingState rating,
+  String? lobbyId,
+}) async {
+  final id = _nonEmpty(lobbyId) ?? _nonEmpty(rating.lobbyId);
+  if (id == null) {
+    return SessionRatingPersistResult.empty(rating: rating);
+  }
+  try {
+    await persist();
+    if (!rating.isRated) {
+      return SessionRatingPersistResult.empty(rating: rating);
+    }
+    return SessionRatingPersistResult.success(rating);
+  } catch (e) {
+    return SessionRatingPersistResult.failed(e, rating: rating);
+  }
+}
+
+Future<SessionRatingPersistResult> retrySessionRatingPersist(
+  Future<void> Function() persist, {
+  required SessionRatingState rating,
+  String? lobbyId,
+}) =>
+    runSessionRatingPersist(persist, rating: rating, lobbyId: lobbyId);

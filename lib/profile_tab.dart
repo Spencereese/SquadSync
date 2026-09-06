@@ -525,9 +525,10 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
           sessions: [],
           isLoading: true,
         ),
-        error: (_, __) => YouLastFiveRatedSessions(
+        error: (error, _) => YouLastFiveRatedSessions(
           sessions: const [],
           errorMessage: kYouSessionHistoryErrorCopy,
+          errorDetail: sessionRatingErrorDetail(error),
           onRetry: () => ref.invalidate(statsDashboardProvider),
         ),
       ),

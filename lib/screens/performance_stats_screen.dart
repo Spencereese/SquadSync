@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'package:squad_sync/lobbies_tab/dialogs/session_rating_dialog.dart';
 import 'package:squad_sync/services/session_rating_flow.dart';
 import 'package:squad_sync/services/session_rating_machine.dart';
 
@@ -82,23 +83,36 @@ class PerformanceStatsScreen extends ConsumerWidget {
     if (snapshot.statsLobbyIds.length != 1) return null;
     final lobbyId = snapshot.statsLobbyIds.first;
     return () async {
-      try {
-        final rating = await promptAndRecordEndedSession(
-          context: context,
-          ref: ref,
-          lobbyId: lobbyId,
-          result: result,
-        );
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(sessionRecordedSnackbar(result, rating))),
-        );
+      final persist = await promptAndRecordEndedSession(
+        context: context,
+        ref: ref,
+        lobbyId: lobbyId,
+        result: result,
+      );
+      if (!context.mounted) return;
+      presentSessionRatingPersist(
+        context,
+        result,
+        persist,
+        onRetry: persist.isFailed
+            ? () {
+                persistEndedSquadSession(
+                  ref: ref,
+                  lobbyId: lobbyId,
+                  result: result,
+                  sessionRating: persist.rating ?? SessionRatingState.unrated,
+                ).then((again) {
+                  if (!context.mounted) return;
+                  presentSessionRatingPersist(context, result, again);
+                  if (!again.isFailed) {
+                    ref.invalidate(statsDashboardProvider);
+                  }
+                });
+              }
+            : null,
+      );
+      if (!persist.isFailed) {
         ref.invalidate(statsDashboardProvider);
-      } catch (e) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to record $result: $e')),
-        );
       }
     };
   }

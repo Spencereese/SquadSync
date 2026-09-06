@@ -221,6 +221,14 @@ void main() {
       expect(decoded?.stars, 4);
     });
 
+    test('decodes preserved text notes as the comment', () {
+      const json =
+          '{"text":"clutch 1v3","session_rating":{"v":1,"stars":4,"rated_at":"2026-09-05T12:00:00.000Z"}}';
+      final rating = decodeSessionRatingFromNotes(json);
+      expect(rating?.comment, 'clutch 1v3');
+      expect(rating?.stars, 4);
+    });
+
     test('decodes category-only notes without overall stars', () {
       const json =
           '{"session_rating":{"v":1,"vibes":5,"comms":3,"rated_at":"2026-09-05T12:00:00.000Z"}}';
@@ -296,6 +304,33 @@ void main() {
       expect(avg.isEmpty, isTrue);
       expect(avg.dailySampleSize, 0);
       expect(avg.allTimeSampleSize, 0);
+      expect(avg.hasCategoryAverages, isFalse);
+    });
+
+    test('averages Vibes/Comms/Gunny/Wingman from notes JSON', () {
+      final notes = encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          vibes: 5,
+          comms: 3,
+          gunny: 4,
+          wingman: 2,
+          comment: 'clutch',
+          ratedAt: DateTime.utc(2026, 9, 3, 12),
+        ),
+      );
+      final avg = sessionRatingAveragesFromHistory(
+        [
+          {'notes': notes},
+        ],
+        now: now,
+      );
+      expect(avg.vibesAverage, 5);
+      expect(avg.commsAverage, 3);
+      expect(avg.gunnyAverage, 4);
+      expect(avg.wingmanAverage, 2);
+      expect(avg.hasCategoryAverages, isTrue);
     });
   });
 
@@ -432,6 +467,29 @@ void main() {
       expect(lastFiveRatedSessionLabel(rated), '2★ · Loss');
       expect(lastFiveRatedSessionResultLabel('l'), 'Loss');
       expect(lastFiveRatedSessionDateLabel(null), isEmpty);
+    });
+
+    test('joins filled Vibes/Comms/Gunny/Wingman scores', () {
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        vibes: 5,
+        comms: 4,
+        gunny: 3,
+        wingman: 2,
+        comment: 'clutch',
+      );
+      expect(lastFiveRatedSessionCategoriesLabel(rated), 'V5 · C4 · G3 · W2');
+      expect(lastFiveRatedSessionNotesLabel(rated), 'clutch');
+    });
+
+    test('omits empty categories and notes', () {
+      const rated = SessionRatingState(
+        phase: SessionRatingPhase.rated,
+        stars: 4,
+      );
+      expect(lastFiveRatedSessionCategoriesLabel(rated), isEmpty);
+      expect(lastFiveRatedSessionNotesLabel(rated), isNull);
     });
 
     test('appends Clip when session has attached clip metadata', () {

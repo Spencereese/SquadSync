@@ -17,6 +17,8 @@ import 'screens/performance_stats_screen.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/last_five_rated_sessions.dart';
 import 'widgets/weekly_squad_board.dart';
+import 'services/session_rating_machine.dart';
+import 'services/weekly_squad_board.dart';
 import 'domain/entities/lobby_state.dart';
 import 'domain/entities/app_user.dart';
 import 'core/app_theme.dart';
@@ -515,11 +517,16 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   Widget _buildLastFiveRatedSessions() {
     final statsAsync = ref.watch(statsDashboardProvider);
     return SliverToBoxAdapter(
-      child: statsAsync.maybeWhen(
+      child: statsAsync.when(
         data: (snapshot) => YouLastFiveRatedSessions(
           sessions: snapshot.lastFiveRatedSessions,
         ),
-        orElse: () => const SizedBox.shrink(),
+        loading: () => const YouLastFiveRatedSessions(sessions: []),
+        error: (_, __) => YouLastFiveRatedSessions(
+          sessions: const [],
+          errorMessage: kYouSessionHistoryErrorCopy,
+          onRetry: () => ref.invalidate(statsDashboardProvider),
+        ),
       ),
     );
   }
@@ -527,9 +534,14 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   Widget _buildWeeklySquadBoard() {
     final statsAsync = ref.watch(statsDashboardProvider);
     return SliverToBoxAdapter(
-      child: statsAsync.maybeWhen(
+      child: statsAsync.when(
         data: (snapshot) => YouWeeklySquadBoard(board: snapshot.weeklyBoard),
-        orElse: () => const SizedBox.shrink(),
+        loading: () => const YouWeeklySquadBoard(board: WeeklySquadBoard.empty()),
+        error: (_, __) => YouWeeklySquadBoard(
+          board: const WeeklySquadBoard.empty(),
+          errorMessage: kWeeklySquadBoardErrorCopy,
+          onRetry: () => ref.invalidate(statsDashboardProvider),
+        ),
       ),
     );
   }
@@ -1220,6 +1232,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   Future<void> _onRefresh() async {
+    ref.invalidate(statsDashboardProvider);
     // Simulate refreshing user data
     await Future.delayed(const Duration(milliseconds: 500));
 

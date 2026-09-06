@@ -6,6 +6,9 @@ import 'package:squad_sync/services/session_rating_machine.dart';
 const kWeeklySquadBoardWindow = Duration(days: 7);
 
 const kWeeklySquadBoardEmptyCopy = 'No nights recorded this week';
+const kWeeklySquadBoardEmptyHint =
+    'Rate a session this week to fill nights, lock-in, and category scores';
+const kWeeklySquadBoardErrorCopy = "Couldn't load this week's board";
 
 /// One squad member's weekly line on the board.
 class WeeklySquadBoardRow {
@@ -16,6 +19,8 @@ class WeeklySquadBoardRow {
     this.lockInRate,
     this.commsAverage,
     this.vibesAverage,
+    this.gunnyAverage,
+    this.wingmanAverage,
   });
 
   final String uid;
@@ -24,6 +29,8 @@ class WeeklySquadBoardRow {
   final double? lockInRate;
   final double? commsAverage;
   final double? vibesAverage;
+  final double? gunnyAverage;
+  final double? wingmanAverage;
 }
 
 /// Squad-scoped weekly aggregates from `match_history` + existing ratings.
@@ -38,8 +45,12 @@ class WeeklySquadBoard {
     this.lockInRate,
     this.commsAverage,
     this.vibesAverage,
+    this.gunnyAverage,
+    this.wingmanAverage,
     this.commsSampleSize = 0,
     this.vibesSampleSize = 0,
+    this.gunnySampleSize = 0,
+    this.wingmanSampleSize = 0,
     this.rows = const [],
   });
 
@@ -49,8 +60,12 @@ class WeeklySquadBoard {
   final double? lockInRate;
   final double? commsAverage;
   final double? vibesAverage;
+  final double? gunnyAverage;
+  final double? wingmanAverage;
   final int commsSampleSize;
   final int vibesSampleSize;
+  final int gunnySampleSize;
+  final int wingmanSampleSize;
   final List<WeeklySquadBoardRow> rows;
 
   bool get isEmpty => nightsPlayed == 0 && rows.isEmpty;
@@ -80,6 +95,12 @@ String weeklySquadBoardRowLabel(WeeklySquadBoardRow row) {
   }
   if (row.vibesAverage != null) {
     parts.add('V${weeklySquadBoardScoreLabel(row.vibesAverage)}');
+  }
+  if (row.gunnyAverage != null) {
+    parts.add('G${weeklySquadBoardScoreLabel(row.gunnyAverage)}');
+  }
+  if (row.wingmanAverage != null) {
+    parts.add('W${weeklySquadBoardScoreLabel(row.wingmanAverage)}');
   }
   return parts.join(' · ');
 }
@@ -112,6 +133,10 @@ WeeklySquadBoard weeklySquadBoardFromHistory(
   var commsCount = 0;
   var vibesTotal = 0;
   var vibesCount = 0;
+  var gunnyTotal = 0;
+  var gunnyCount = 0;
+  var wingmanTotal = 0;
+  var wingmanCount = 0;
 
   for (final session in weekly) {
     nights.add(session.nightKey);
@@ -123,6 +148,14 @@ WeeklySquadBoard weeklySquadBoardFromHistory(
     if (session.vibes != null) {
       vibesTotal += session.vibes!;
       vibesCount++;
+    }
+    if (session.gunny != null) {
+      gunnyTotal += session.gunny!;
+      gunnyCount++;
+    }
+    if (session.wingman != null) {
+      wingmanTotal += session.wingman!;
+      wingmanCount++;
     }
   }
 
@@ -138,6 +171,20 @@ WeeklySquadBoard weeklySquadBoardFromHistory(
     if (fromMaps != null) {
       vibesTotal = fromMaps.$1;
       vibesCount = fromMaps.$2;
+    }
+  }
+  if (gunnyCount == 0) {
+    final fromMaps = _categoryAverage(categoryRatings, _isGunnyKey);
+    if (fromMaps != null) {
+      gunnyTotal = fromMaps.$1;
+      gunnyCount = fromMaps.$2;
+    }
+  }
+  if (wingmanCount == 0) {
+    final fromMaps = _categoryAverage(categoryRatings, _isWingmanKey);
+    if (fromMaps != null) {
+      wingmanTotal = fromMaps.$1;
+      wingmanCount = fromMaps.$2;
     }
   }
   if (vibesCount == 0) {
@@ -167,6 +214,10 @@ WeeklySquadBoard weeklySquadBoardFromHistory(
     var memberCommsCount = 0;
     var memberVibesTotal = 0;
     var memberVibesCount = 0;
+    var memberGunnyTotal = 0;
+    var memberGunnyCount = 0;
+    var memberWingmanTotal = 0;
+    var memberWingmanCount = 0;
     var memberStarsTotal = 0;
     var memberStarsCount = 0;
 
@@ -184,6 +235,14 @@ WeeklySquadBoard weeklySquadBoardFromHistory(
         memberVibesTotal += session.vibes!;
         memberVibesCount++;
       }
+      if (session.gunny != null) {
+        memberGunnyTotal += session.gunny!;
+        memberGunnyCount++;
+      }
+      if (session.wingman != null) {
+        memberWingmanTotal += session.wingman!;
+        memberWingmanCount++;
+      }
       if (session.stars != null) {
         memberStarsTotal += session.stars!;
         memberStarsCount++;
@@ -191,15 +250,22 @@ WeeklySquadBoard weeklySquadBoardFromHistory(
     }
     if (memberNights.isEmpty) continue;
 
-    final fromComms = _playerCategory(categoryRatings, uid, _isCommsKey);
-    final fromVibes = _playerCategory(categoryRatings, uid, _isVibesKey);
-    final commsAvg = fromComms ??
-        (memberCommsCount == 0 ? null : memberCommsTotal / memberCommsCount);
-    var vibesAvg = fromVibes ??
-        (memberVibesCount == 0 ? null : memberVibesTotal / memberVibesCount);
+    // Persisted match_history notes win over lobby trivia maps.
+    final commsAvg = memberCommsCount > 0
+        ? memberCommsTotal / memberCommsCount
+        : _playerCategory(categoryRatings, uid, _isCommsKey);
+    var vibesAvg = memberVibesCount > 0
+        ? memberVibesTotal / memberVibesCount
+        : _playerCategory(categoryRatings, uid, _isVibesKey);
     if (vibesAvg == null && memberStarsCount > 0) {
       vibesAvg = memberStarsTotal / memberStarsCount;
     }
+    final gunnyAvg = memberGunnyCount > 0
+        ? memberGunnyTotal / memberGunnyCount
+        : _playerCategory(categoryRatings, uid, _isGunnyKey);
+    final wingmanAvg = memberWingmanCount > 0
+        ? memberWingmanTotal / memberWingmanCount
+        : _playerCategory(categoryRatings, uid, _isWingmanKey);
 
     final name = displayNames[uid];
     memberRows.add(
@@ -210,6 +276,8 @@ WeeklySquadBoard weeklySquadBoardFromHistory(
         lockInRate: memberLocked.length / memberNights.length,
         commsAverage: commsAvg,
         vibesAverage: vibesAvg,
+        gunnyAverage: gunnyAvg,
+        wingmanAverage: wingmanAvg,
       ),
     );
   }
@@ -221,8 +289,12 @@ WeeklySquadBoard weeklySquadBoardFromHistory(
     lockInRate: lockInRate,
     commsAverage: commsCount == 0 ? null : commsTotal / commsCount,
     vibesAverage: vibesCount == 0 ? null : vibesTotal / vibesCount,
+    gunnyAverage: gunnyCount == 0 ? null : gunnyTotal / gunnyCount,
+    wingmanAverage: wingmanCount == 0 ? null : wingmanTotal / wingmanCount,
     commsSampleSize: commsCount,
     vibesSampleSize: vibesCount,
+    gunnySampleSize: gunnyCount,
+    wingmanSampleSize: wingmanCount,
     rows: memberRows,
   );
 }
@@ -246,6 +318,8 @@ class _WeeklySession {
     this.stars,
     this.comms,
     this.vibes,
+    this.gunny,
+    this.wingman,
   });
 
   final DateTime when;
@@ -255,6 +329,8 @@ class _WeeklySession {
   final int? stars;
   final int? comms;
   final int? vibes;
+  final int? gunny;
+  final int? wingman;
 }
 
 _WeeklySession? _sessionFromRow(Map<String, dynamic> row) {
@@ -266,8 +342,6 @@ _WeeklySession? _sessionFromRow(Map<String, dynamic> row) {
           ?.toUtc();
   if (when == null) return null;
 
-  final comms = _asInt(nested['comms'] ?? nested['Comms']);
-  final vibes = _asInt(nested['vibes'] ?? nested['Vibes']);
   final lockedFlag = _asBool(
     nested['locked'] ??
         nested['lock_in'] ??
@@ -283,9 +357,27 @@ _WeeklySession? _sessionFromRow(Map<String, dynamic> row) {
     lockedIn: lockedIn,
     playerUids: _playersOf(row),
     stars: rating?.stars,
-    comms: isValidSessionStars(comms) ? comms : null,
-    vibes: isValidSessionStars(vibes) ? vibes : null,
+    comms: _starOrNested(rating?.comms, nested, kSessionRatingCommsKey, 'Comms'),
+    vibes: _starOrNested(rating?.vibes, nested, kSessionRatingVibesKey, 'Vibes'),
+    gunny: _starOrNested(rating?.gunny, nested, kSessionRatingGunnyKey, 'Gunny'),
+    wingman: _starOrNested(
+      rating?.wingman,
+      nested,
+      kSessionRatingWingmanKey,
+      'Wingman',
+    ),
   );
+}
+
+int? _starOrNested(
+  int? fromRating,
+  Map<String, dynamic> nested,
+  String snake,
+  String label,
+) {
+  if (isValidSessionStars(fromRating)) return fromRating;
+  final value = _asInt(nested[snake] ?? nested[label] ?? nested[label.toLowerCase()]);
+  return isValidSessionStars(value) ? value : null;
 }
 
 String _nightKey(DateTime when) {
@@ -355,6 +447,16 @@ bool _isCommsKey(String key) {
 bool _isVibesKey(String key) {
   final k = key.toLowerCase().trim();
   return k == 'vibes' || k == 'vibe';
+}
+
+bool _isGunnyKey(String key) {
+  final k = key.toLowerCase().trim();
+  return k == 'gunny' || k == 'guns' || k == 'aim';
+}
+
+bool _isWingmanKey(String key) {
+  final k = key.toLowerCase().trim();
+  return k == 'wingman' || k == 'wing' || k == 'teamwork';
 }
 
 Map<String, dynamic> _notesObject(dynamic existing) {

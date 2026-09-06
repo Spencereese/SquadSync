@@ -299,7 +299,10 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.textContaining('Could not load stats:'), findsOneWidget);
+      expect(find.byKey(const Key('stats-error')), findsOneWidget);
+      expect(find.text(kStatsLoadErrorTitle), findsOneWidget);
+      expect(find.text(kStatsLoadErrorBody), findsOneWidget);
+      expect(find.byKey(const Key('stats-error-retry')), findsOneWidget);
       expect(
         find.text('No win/loss results in game history yet'),
         findsNothing,
@@ -309,6 +312,104 @@ void main() {
         findsNothing,
       );
       expect(find.byType(StatsDashboardView), findsNothing);
+
+      await tester.tap(find.byKey(const Key('stats-error-retry')));
+      await tester.pump();
+      expect(find.byKey(const Key('stats-error-retry')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Stats screen reads Vibes/Comms/Gunny/Wingman + notes from mocked match_history',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final notes = encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          vibes: 5,
+          comms: 4,
+          gunny: 3,
+          wingman: 2,
+          comment: 'clutch',
+          gameName: 'Warzone',
+          result: 'win',
+          ratedAt: DateTime.utc(2026, 9, 5, 12),
+        ),
+      );
+      final repo = MockLobbyRepository();
+      when(repo.getLobbyStats('lobby-1')).thenAnswer(
+        (_) async => {
+          'total_matches': 1,
+          'wins': 1,
+          'losses': 0,
+          'draws': 0,
+          'win_rate': 100.0,
+        },
+      );
+      when(repo.getMatchHistory('lobby-1')).thenAnswer(
+        (_) async => [
+          {
+            'id': 'm1',
+            'lobby_id': 'lobby-1',
+            'game_name': 'Warzone',
+            'result': 'win',
+            'player_uids': ['u1'],
+            'created_at': '2026-09-05T12:00:00Z',
+            'created_by': 'u1',
+            'notes': notes,
+          },
+        ],
+      );
+
+      final user = _user();
+      final lobby = LobbyState.initial().copyWith(
+        selectedLobbyId: 'lobby-1',
+        lobbyMemberUids: ['u1'],
+        memberDisplayNames: const {'u1': 'Sam'},
+        dailyRatings: const {
+          'u1': {'Comms': 1, 'Vibes': 1, 'Gunny': 1, 'Wingman': 1},
+        },
+        allTimeRatings: const {
+          'Warzone': {'u1': 1},
+        },
+        gameHistory: const [],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            lobbyRepositoryProvider.overrideWithValue(repo),
+            userNotifierProvider.overrideWith(() => _SeededUserNotifier(user)),
+            lobbyNotifierProvider
+                .overrideWith(() => _SeededLobbyNotifier(lobby)),
+          ],
+          child: const MaterialApp(
+            home: PerformanceStatsScreen(),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byKey(const Key('stats-rating-vibes')), findsOneWidget);
+      expect(find.byKey(const Key('stats-rating-comms')), findsOneWidget);
+      expect(find.byKey(const Key('stats-rating-gunny')), findsOneWidget);
+      expect(find.byKey(const Key('stats-rating-wingman')), findsOneWidget);
+      expect(find.text('5.0★'), findsWidgets);
+      expect(find.text('4.0★'), findsWidgets);
+      expect(find.text('3.0★'), findsOneWidget);
+      expect(find.text('2.0★'), findsOneWidget);
+      expect(find.text('V5 · C4 · G3 · W2'), findsOneWidget);
+      expect(find.text('clutch'), findsOneWidget);
+      expect(find.text('1.0★'), findsNothing);
+
+      verify(repo.getMatchHistory('lobby-1')).called(1);
     },
   );
 }

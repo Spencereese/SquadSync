@@ -93,14 +93,36 @@ class RatingSummary {
     this.allTimeAverage,
     this.dailySampleSize = 0,
     this.allTimeSampleSize = 0,
+    this.vibesAverage,
+    this.commsAverage,
+    this.gunnyAverage,
+    this.wingmanAverage,
+    this.vibesSampleSize = 0,
+    this.commsSampleSize = 0,
+    this.gunnySampleSize = 0,
+    this.wingmanSampleSize = 0,
   });
 
   final double? dailyAverage;
   final double? allTimeAverage;
   final int dailySampleSize;
   final int allTimeSampleSize;
+  final double? vibesAverage;
+  final double? commsAverage;
+  final double? gunnyAverage;
+  final double? wingmanAverage;
+  final int vibesSampleSize;
+  final int commsSampleSize;
+  final int gunnySampleSize;
+  final int wingmanSampleSize;
 
   bool get isEmpty => dailyAverage == null && allTimeAverage == null;
+
+  bool get hasCategoryAverages =>
+      vibesAverage != null ||
+      commsAverage != null ||
+      gunnyAverage != null ||
+      wingmanAverage != null;
 
   static String format(double? value) {
     if (value == null) return '—';
@@ -645,6 +667,14 @@ RatingSummary ratingSummaryFromSessionHistory(
     allTimeAverage: avg.allTimeAverage,
     dailySampleSize: avg.dailySampleSize,
     allTimeSampleSize: avg.allTimeSampleSize,
+    vibesAverage: avg.vibesAverage,
+    commsAverage: avg.commsAverage,
+    gunnyAverage: avg.gunnyAverage,
+    wingmanAverage: avg.wingmanAverage,
+    vibesSampleSize: avg.vibesSampleSize,
+    commsSampleSize: avg.commsSampleSize,
+    gunnySampleSize: avg.gunnySampleSize,
+    wingmanSampleSize: avg.wingmanSampleSize,
   );
 }
 

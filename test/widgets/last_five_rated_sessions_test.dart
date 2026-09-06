@@ -63,8 +63,57 @@ void main() {
     );
 
     expect(find.byKey(const Key('last-five-rated-empty')), findsOneWidget);
-    expect(find.text('No rated sessions yet'), findsOneWidget);
+    expect(find.text(kLastFiveRatedEmptyCopy), findsOneWidget);
+    expect(find.text(kLastFiveRatedEmptyHint), findsOneWidget);
     expect(find.byKey(const Key('last-five-rated-sessions')), findsNothing);
+  });
+
+  testWidgets('row shows Vibes/Comms/Gunny/Wingman + notes from persisted JSON',
+      (tester) async {
+    final session = reduceSessionRating(
+      current: SessionRatingState.unrated,
+      event: SessionRatingEvent.rate,
+      vibes: 5,
+      comms: 4,
+      gunny: 3,
+      wingman: 2,
+      comment: 'clutch',
+      gameName: 'Warzone',
+      result: 'win',
+      ratedAt: DateTime.utc(2026, 9, 5),
+    );
+
+    await tester.pumpWidget(
+      wrap(LastFiveRatedSessionsList(sessions: [session])),
+    );
+
+    expect(find.text('V5 · C4 · G3 · W2'), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-cats-0')), findsOneWidget);
+    expect(find.text('clutch'), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-notes-0')), findsOneWidget);
+  });
+
+  testWidgets('error state offers retry instead of an empty list',
+      (tester) async {
+    var retried = false;
+    await tester.pumpWidget(
+      wrap(
+        LastFiveRatedSessionsList(
+          sessions: const [],
+          errorMessage: kYouSessionHistoryErrorCopy,
+          onRetry: () {
+            retried = true;
+          },
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('last-five-rated-error')), findsOneWidget);
+    expect(find.text(kYouSessionHistoryErrorCopy), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-empty')), findsNothing);
+    await tester.tap(find.byKey(const Key('last-five-rated-retry')));
+    await tester.pump();
+    expect(retried, isTrue);
   });
 
   testWidgets('You surface renders last-5 from match_history notes',

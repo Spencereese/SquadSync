@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:squad_sync/services/session_rating_machine.dart';
 import 'package:squad_sync/services/weekly_squad_board.dart';
 
 /// Weekly nights / lock-in / comms / vibes from `match_history`. Used on
@@ -8,21 +9,36 @@ class WeeklySquadBoardView extends StatelessWidget {
     super.key,
     required this.board,
     this.emptyMessage = kWeeklySquadBoardEmptyCopy,
+    this.emptyHint = kWeeklySquadBoardEmptyHint,
+    this.errorMessage,
+    this.onRetry,
   });
 
   final WeeklySquadBoard board;
   final String emptyMessage;
+  final String emptyHint;
+  final String? errorMessage;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
+    if (errorMessage != null) {
+      return _WeeklyBoardStatus(
+        key: const Key('weekly-squad-board-error'),
+        icon: Icons.error_outline,
+        message: errorMessage!,
+        hint: kStatsLoadErrorBody,
+        actionLabel: onRetry == null ? null : kStatsLoadErrorRetryLabel,
+        actionKey: const Key('weekly-squad-board-retry'),
+        onAction: onRetry,
+      );
+    }
     if (board.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(
-          emptyMessage,
-          key: const Key('weekly-squad-board-empty'),
-          style: const TextStyle(color: Colors.white54, fontSize: 13),
-        ),
+      return _WeeklyBoardStatus(
+        key: const Key('weekly-squad-board-empty'),
+        icon: Icons.calendar_today_outlined,
+        message: emptyMessage,
+        hint: emptyHint,
       );
     }
 
@@ -65,6 +81,26 @@ class WeeklySquadBoardView extends StatelessWidget {
                 key: const Key('weekly-squad-vibes'),
                 label: 'Vibes',
                 value: weeklySquadBoardScoreLabel(board.vibesAverage),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _WeeklyStatTile(
+                key: const Key('weekly-squad-gunny'),
+                label: 'Gunny',
+                value: weeklySquadBoardScoreLabel(board.gunnyAverage),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _WeeklyStatTile(
+                key: const Key('weekly-squad-wingman'),
+                label: 'Wingman',
+                value: weeklySquadBoardScoreLabel(board.wingmanAverage),
               ),
             ),
           ],
@@ -137,9 +173,13 @@ class YouWeeklySquadBoard extends StatelessWidget {
   const YouWeeklySquadBoard({
     super.key,
     required this.board,
+    this.errorMessage,
+    this.onRetry,
   });
 
   final WeeklySquadBoard board;
+  final String? errorMessage;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -160,7 +200,64 @@ class YouWeeklySquadBoard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          WeeklySquadBoardView(board: board),
+          WeeklySquadBoardView(
+            board: board,
+            errorMessage: errorMessage,
+            onRetry: onRetry,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyBoardStatus extends StatelessWidget {
+  const _WeeklyBoardStatus({
+    super.key,
+    required this.icon,
+    required this.message,
+    this.hint,
+    this.actionLabel,
+    this.actionKey,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String message;
+  final String? hint;
+  final String? actionLabel;
+  final Key? actionKey;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.white24, size: 28),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54, fontSize: 13),
+          ),
+          if (hint != null && hint!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              hint!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+          ],
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 8),
+            TextButton(
+              key: actionKey,
+              onPressed: onAction,
+              child: Text(actionLabel!),
+            ),
+          ],
         ],
       ),
     );

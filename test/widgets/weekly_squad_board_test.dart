@@ -52,6 +52,10 @@ void main() {
     expect(find.text('LOCK-IN'), findsOneWidget);
     expect(find.text('COMMS'), findsOneWidget);
     expect(find.text('VIBES'), findsOneWidget);
+    expect(find.text('GUNNY'), findsOneWidget);
+    expect(find.text('WINGMAN'), findsOneWidget);
+    expect(find.byKey(const Key('weekly-squad-gunny')), findsOneWidget);
+    expect(find.byKey(const Key('weekly-squad-wingman')), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
     expect(find.text('67%'), findsOneWidget);
     expect(find.text('4.5'), findsOneWidget);
@@ -70,7 +74,31 @@ void main() {
 
     expect(find.byKey(const Key('weekly-squad-board-empty')), findsOneWidget);
     expect(find.text(kWeeklySquadBoardEmptyCopy), findsOneWidget);
+    expect(find.text(kWeeklySquadBoardEmptyHint), findsOneWidget);
     expect(find.byKey(const Key('weekly-squad-board')), findsNothing);
+  });
+
+  testWidgets('error state offers retry instead of an empty board',
+      (tester) async {
+    var retried = false;
+    await tester.pumpWidget(
+      wrap(
+        WeeklySquadBoardView(
+          board: const WeeklySquadBoard.empty(),
+          errorMessage: kWeeklySquadBoardErrorCopy,
+          onRetry: () {
+            retried = true;
+          },
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('weekly-squad-board-error')), findsOneWidget);
+    expect(find.text(kWeeklySquadBoardErrorCopy), findsOneWidget);
+    expect(find.byKey(const Key('weekly-squad-board-empty')), findsNothing);
+    await tester.tap(find.byKey(const Key('weekly-squad-board-retry')));
+    await tester.pump();
+    expect(retried, isTrue);
   });
 
   testWidgets('You surface renders weekly board from snapshot', (tester) async {

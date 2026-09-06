@@ -33,11 +33,24 @@ void main() {
         allTimeAverage: 3.8,
         dailySampleSize: 2,
         allTimeSampleSize: 10,
+        vibesAverage: 5,
+        commsAverage: 4,
+        gunnyAverage: 3,
+        wingmanAverage: 2,
+        vibesSampleSize: 1,
+        commsSampleSize: 1,
+        gunnySampleSize: 1,
+        wingmanSampleSize: 1,
       ),
       lastFiveRatedSessions: [
         SessionRatingState(
           phase: SessionRatingPhase.rated,
           stars: 5,
+          vibes: 5,
+          comms: 4,
+          gunny: 3,
+          wingman: 2,
+          comment: 'clutch',
           gameName: 'Warzone',
           result: 'win',
         ),
@@ -53,6 +66,8 @@ void main() {
         lockInRate: 0.67,
         commsAverage: 4.5,
         vibesAverage: 3.8,
+        gunnyAverage: 3.0,
+        wingmanAverage: 2.0,
         rows: [
           WeeklySquadBoardRow(
             uid: 'u1',
@@ -84,21 +99,29 @@ void main() {
     expect(find.byKey(const Key('stats-weekly-board')), findsOneWidget);
     expect(find.text('NIGHTS'), findsOneWidget);
     expect(find.text('LOCK-IN'), findsOneWidget);
-    expect(find.text('COMMS'), findsOneWidget);
-    expect(find.text('VIBES'), findsOneWidget);
+    expect(find.text('COMMS'), findsWidgets);
+    expect(find.text('VIBES'), findsWidgets);
+    expect(find.text('GUNNY'), findsWidgets);
+    expect(find.text('WINGMAN'), findsWidgets);
     expect(find.text('67%'), findsOneWidget);
     expect(find.text('Sam · 3n · 100% · C4.5 · V4.0'), findsOneWidget);
     expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
     expect(find.byKey(const Key('stats-last-five')), findsOneWidget);
     expect(find.text('5★ · Warzone · Win'), findsOneWidget);
+    expect(find.text('V5 · C4 · G3 · W2'), findsOneWidget);
+    expect(find.text('clutch'), findsOneWidget);
     expect(find.text('2★ · BF6 · Loss'), findsOneWidget);
+    expect(find.byKey(const Key('stats-rating-vibes')), findsOneWidget);
+    expect(find.byKey(const Key('stats-rating-comms')), findsOneWidget);
+    expect(find.byKey(const Key('stats-rating-gunny')), findsOneWidget);
+    expect(find.byKey(const Key('stats-rating-wingman')), findsOneWidget);
     expect(find.text('COMMUNITY'), findsOneWidget);
     expect(find.byKey(const Key('stats-community')), findsOneWidget);
     expect(find.text('Complaints'), findsOneWidget);
     expect(find.text('Bans'), findsOneWidget);
     expect(find.text('Friends'), findsOneWidget);
     expect(find.text('Warzone'), findsWidgets);
-    expect(find.text('4.0★'), findsOneWidget);
+    expect(find.text('4.0★'), findsWidgets);
     expect(find.byKey(const Key('stats-streaks-chart')), findsOneWidget);
     expect(find.byKey(const Key('stats-win-loss-chart')), findsOneWidget);
     expect(find.byKey(const Key('stats-ratings')), findsOneWidget);
@@ -185,12 +208,45 @@ void main() {
       find.text('Join a lobby to track wins and losses'),
       findsOneWidget,
     );
-    expect(find.text('—'), findsNWidgets(2));
-    expect(find.text('No ratings yet'), findsNWidgets(2));
+    expect(find.byKey(const Key('stats-ratings-empty')), findsOneWidget);
+    expect(find.text(kRatingsEmptyHint), findsOneWidget);
     expect(find.text('LAST 5 SESSIONS'), findsOneWidget);
-    expect(find.text('No rated sessions yet'), findsOneWidget);
+    expect(find.text(kLastFiveRatedEmptyCopy), findsOneWidget);
+    expect(find.text(kLastFiveRatedEmptyHint), findsOneWidget);
     expect(find.text('THIS WEEK'), findsOneWidget);
     expect(find.text(kWeeklySquadBoardEmptyCopy), findsOneWidget);
+    expect(find.text(kWeeklySquadBoardEmptyHint), findsOneWidget);
+  });
+
+  testWidgets('error view shows retry without painting empty W/L',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var retried = false;
+    await tester.pumpWidget(
+      wrap(
+        StatsDashboardErrorView(
+          error: Exception('remote history down'),
+          onRetry: () {
+            retried = true;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('stats-error')), findsOneWidget);
+    expect(find.text(kStatsLoadErrorTitle), findsOneWidget);
+    expect(find.text(kStatsLoadErrorBody), findsOneWidget);
+    expect(find.byKey(const Key('stats-error-retry')), findsOneWidget);
+    expect(find.text('No matches recorded for this lobby yet'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('stats-error-retry')));
+    await tester.pump();
+    expect(retried, isTrue);
   });
 
   testWidgets('titles W/L as All lobbies when aggregating multiple lobbies',

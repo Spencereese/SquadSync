@@ -440,6 +440,64 @@ void main() {
       expect(snap.lastFiveRatedSessions.map((s) => s.stars).toList(), [5, 3]);
     });
 
+    test('reads Vibes/Comms/Gunny/Wingman + notes from match_history, not trivia',
+        () {
+      final notes = encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          vibes: 5,
+          comms: 4,
+          gunny: 3,
+          wingman: 2,
+          comment: 'clutch',
+          gameName: 'Warzone',
+          result: 'win',
+          ratedAt: DateTime.utc(2026, 9, 5, 12),
+        ),
+      );
+      final snap = StatsDashboardSnapshot.fromSources(
+        user: _user(
+          dailyRatings: const {
+            'Warzone': {'me': 1},
+          },
+          allTimeRatings: const {
+            'Warzone': {'me': 1},
+          },
+        ),
+        lobby: LobbyState.initial().copyWith(
+          dailyRatings: const {
+            'me': {'Comms': 1, 'Vibes': 1, 'Gunny': 1, 'Wingman': 1},
+          },
+        ),
+        extraHistory: [
+          {
+            'id': 'm1',
+            'game_name': 'Warzone',
+            'result': 'win',
+            'created_at': '2026-09-05T12:00:00.000Z',
+            'notes': notes,
+          },
+        ],
+        now: DateTime.utc(2026, 9, 5, 18),
+      );
+      expect(snap.ratings.vibesAverage, 5);
+      expect(snap.ratings.commsAverage, 4);
+      expect(snap.ratings.gunnyAverage, 3);
+      expect(snap.ratings.wingmanAverage, 2);
+      expect(snap.ratings.allTimeAverage, 4);
+      expect(snap.lastFiveRatedSessions, hasLength(1));
+      expect(snap.lastFiveRatedSessions.single.vibes, 5);
+      expect(snap.lastFiveRatedSessions.single.comms, 4);
+      expect(snap.lastFiveRatedSessions.single.gunny, 3);
+      expect(snap.lastFiveRatedSessions.single.wingman, 2);
+      expect(snap.lastFiveRatedSessions.single.comment, 'clutch');
+      expect(snap.weeklyBoard.vibesAverage, 5);
+      expect(snap.weeklyBoard.commsAverage, 4);
+      expect(snap.weeklyBoard.gunnyAverage, 3);
+      expect(snap.weeklyBoard.wingmanAverage, 2);
+    });
+
     test('caps last-five rated sessions at 5 newest notes', () {
       final extraHistory = [
         for (var i = 1; i <= 7; i++)
@@ -788,6 +846,70 @@ void main() {
       );
       expect(snap.winLoss.wins, 1);
       expect(snap.winLoss.losses, 1);
+    });
+
+    test('mocked match_history notes decode into stats snapshot categories',
+        () async {
+      final notes = encodeSessionRatingNotes(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          vibes: 5,
+          comms: 4,
+          gunny: 3,
+          wingman: 2,
+          comment: 'ace',
+          gameName: 'Warzone',
+          result: 'win',
+          ratedAt: DateTime.utc(2026, 9, 5, 12),
+        ),
+      );
+      final snap = await loadStatsDashboardSnapshot(
+        user: _user(
+          uid: 'u1',
+          dailyRatings: const {
+            'Warzone': {'u1': 1},
+          },
+          allTimeRatings: const {
+            'Warzone': {'u1': 1},
+          },
+        ),
+        lobby: LobbyState.initial().copyWith(
+          selectedLobbyId: 'lobby-1',
+          lobbyMemberUids: ['u1'],
+          memberDisplayNames: const {'u1': 'Sam'},
+          dailyRatings: const {
+            'u1': {'Comms': 1, 'Vibes': 1},
+          },
+          gameHistory: const [],
+        ),
+        fetchLobbyStats: (_) async => {
+          'wins': 0,
+          'losses': 0,
+          'draws': 0,
+          'total_matches': 0,
+        },
+        fetchMatchHistory: (_) async => [
+          {
+            'id': 'm1',
+            'lobby_id': 'lobby-1',
+            'game_name': 'Warzone',
+            'result': 'win',
+            'player_uids': ['u1'],
+            'created_at': '2026-09-05T12:00:00Z',
+            'created_by': 'u1',
+            'notes': notes,
+          },
+        ],
+      );
+      expect(snap.ratings.vibesAverage, 5);
+      expect(snap.ratings.commsAverage, 4);
+      expect(snap.ratings.gunnyAverage, 3);
+      expect(snap.ratings.wingmanAverage, 2);
+      expect(snap.lastFiveRatedSessions.single.comment, 'ace');
+      expect(snap.weeklyBoard.gunnyAverage, 3);
+      expect(snap.weeklyBoard.wingmanAverage, 2);
+      expect(snap.winLoss.wins, 1);
     });
 
     test('rethrows when every lobby fetch fails', () async {

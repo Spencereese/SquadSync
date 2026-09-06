@@ -15,13 +15,28 @@ void main() {
     int? stars,
     int? comms,
     int? vibes,
+    int? gunny,
+    int? wingman,
+    String? comment,
     bool locked = false,
     String? id,
   }) {
     String? notes;
-    if (stars == null && comms == null && vibes == null && locked) {
+    if (stars == null &&
+        comms == null &&
+        vibes == null &&
+        gunny == null &&
+        wingman == null &&
+        comment == null &&
+        locked) {
       notes = '{"locked":true}';
-    } else if (stars != null || comms != null || vibes != null || locked) {
+    } else if (stars != null ||
+        comms != null ||
+        vibes != null ||
+        gunny != null ||
+        wingman != null ||
+        comment != null ||
+        locked) {
       notes = jsonEncode({
         kSessionRatingNotesKey: {
           'v': 1,
@@ -29,6 +44,9 @@ void main() {
           'rated_at': at.toUtc().toIso8601String(),
           if (comms != null) 'comms': comms,
           if (vibes != null) 'vibes': vibes,
+          if (gunny != null) 'gunny': gunny,
+          if (wingman != null) 'wingman': wingman,
+          if (comment != null) 'comment': comment,
           if (locked) 'locked': true,
         },
       });
@@ -114,6 +132,38 @@ void main() {
       expect(board.vibesAverage, 4);
       expect(board.commsSampleSize, 2);
       expect(board.vibesSampleSize, 2);
+    });
+
+    test('gunny and wingman average from ticket-36 notes, not trivia maps', () {
+      final board = weeklySquadBoardFromHistory(
+        [
+          row(
+            at: DateTime.utc(2026, 9, 5),
+            stars: 4,
+            comms: 5,
+            vibes: 3,
+            gunny: 4,
+            wingman: 2,
+            players: ['u1'],
+          ),
+        ],
+        now: now,
+        memberUids: const ['u1'],
+        categoryRatings: const {
+          'u1': {'Comms': 1, 'Vibes': 1, 'Gunny': 1, 'Wingman': 1},
+        },
+      );
+      expect(board.gunnyAverage, 4);
+      expect(board.wingmanAverage, 2);
+      expect(board.commsAverage, 5);
+      expect(board.vibesAverage, 3);
+      expect(board.rows.single.gunnyAverage, 4);
+      expect(board.rows.single.wingmanAverage, 2);
+      expect(board.rows.single.commsAverage, 5);
+      expect(
+        weeklySquadBoardRowLabel(board.rows.single),
+        contains('G4.0'),
+      );
     });
 
     test('falls back to player Comms/Vibes maps then session stars', () {

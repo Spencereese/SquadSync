@@ -58,15 +58,9 @@ class PerformanceStatsScreen extends ConsumerWidget {
         loading: () => const Center(
           child: CircularProgressIndicator(color: Colors.cyanAccent),
         ),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              'Could not load stats: $error',
-              style: const TextStyle(color: Colors.redAccent),
-              textAlign: TextAlign.center,
-            ),
-          ),
+        error: (error, _) => StatsDashboardErrorView(
+          error: error,
+          onRetry: () => ref.invalidate(statsDashboardProvider),
         ),
         data: (snapshot) => StatsDashboardView(
           snapshot: snapshot,
@@ -248,6 +242,67 @@ class _DashboardCard extends StatelessWidget {
   }
 }
 
+/// Full-screen stats fetch failure. Retry invalidates [statsDashboardProvider].
+class StatsDashboardErrorView extends StatelessWidget {
+  const StatsDashboardErrorView({
+    super.key,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          key: const Key('stats-error'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+            const SizedBox(height: 12),
+            const Text(
+              kStatsLoadErrorTitle,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              kStatsLoadErrorBody,
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$error',
+              key: const Key('stats-error-detail'),
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton(
+              key: const Key('stats-error-retry'),
+              onPressed: onRetry,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.cyanAccent,
+                side: const BorderSide(color: Colors.cyanAccent),
+              ),
+              child: const Text(kStatsLoadErrorRetryLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _StreaksBarChart extends StatelessWidget {
   const _StreaksBarChart({required this.streaks});
 
@@ -257,6 +312,7 @@ class _StreaksBarChart extends StatelessWidget {
   Widget build(BuildContext context) {
     if (streaks.isEmpty) {
       return const _EmptyHint(
+        key: Key('stats-streaks-empty'),
         icon: Icons.local_fire_department_outlined,
         message: 'No squad members to chart yet',
       );
@@ -412,6 +468,7 @@ class _WinLossPie extends StatelessWidget {
   Widget build(BuildContext context) {
     if (summary.isEmpty) {
       return _EmptyHint(
+        key: const Key('stats-win-loss-empty'),
         icon: Icons.pie_chart_outline,
         message: emptyMessage,
         actions: [
@@ -550,24 +607,82 @@ class _RatingsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    if (ratings.isEmpty && !ratings.hasCategoryAverages) {
+      return const _EmptyHint(
+        key: Key('stats-ratings-empty'),
+        icon: Icons.star_border,
+        message: kRatingsEmptyHint,
+      );
+    }
+
+    return Column(
       key: const Key('stats-ratings'),
       children: [
-        Expanded(
-          child: _RatingTile(
-            label: 'Daily',
-            value: RatingSummary.format(ratings.dailyAverage),
-            sampleSize: ratings.dailySampleSize,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _RatingTile(
+                label: 'Daily',
+                value: RatingSummary.format(ratings.dailyAverage),
+                sampleSize: ratings.dailySampleSize,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _RatingTile(
+                label: 'All-time',
+                value: RatingSummary.format(ratings.allTimeAverage),
+                sampleSize: ratings.allTimeSampleSize,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _RatingTile(
-            label: 'All-time',
-            value: RatingSummary.format(ratings.allTimeAverage),
-            sampleSize: ratings.allTimeSampleSize,
+        if (ratings.hasCategoryAverages) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _RatingTile(
+                  key: const Key('stats-rating-vibes'),
+                  label: 'Vibes',
+                  value: RatingSummary.format(ratings.vibesAverage),
+                  sampleSize: ratings.vibesSampleSize,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _RatingTile(
+                  key: const Key('stats-rating-comms'),
+                  label: 'Comms',
+                  value: RatingSummary.format(ratings.commsAverage),
+                  sampleSize: ratings.commsSampleSize,
+                ),
+              ),
+            ],
           ),
-        ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _RatingTile(
+                  key: const Key('stats-rating-gunny'),
+                  label: 'Gunny',
+                  value: RatingSummary.format(ratings.gunnyAverage),
+                  sampleSize: ratings.gunnySampleSize,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _RatingTile(
+                  key: const Key('stats-rating-wingman'),
+                  label: 'Wingman',
+                  value: RatingSummary.format(ratings.wingmanAverage),
+                  sampleSize: ratings.wingmanSampleSize,
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -575,6 +690,7 @@ class _RatingsRow extends StatelessWidget {
 
 class _RatingTile extends StatelessWidget {
   const _RatingTile({
+    super.key,
     required this.label,
     required this.value,
     required this.sampleSize,
@@ -747,6 +863,7 @@ class _CommunityChip extends StatelessWidget {
 
 class _EmptyHint extends StatelessWidget {
   const _EmptyHint({
+    super.key,
     required this.icon,
     required this.message,
     this.actions = const <Widget>[],

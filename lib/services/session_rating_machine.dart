@@ -475,7 +475,8 @@ SessionRatingState? decodeSessionRatingFromNotes(
         gameName,
     result: _nonEmpty(nested['result']?.toString()) ?? result,
     comment: _nonEmpty(nested['comment']?.toString()) ??
-        _nonEmpty(nested['notes']?.toString()),
+        _nonEmpty(nested['notes']?.toString()) ??
+        _nonEmpty(payload['text']?.toString()),
     ratedAt: _asDateTime(nested['rated_at'] ?? nested['ratedAt']),
     clip: decodeSessionClipFromNotes(payload),
   );
@@ -638,17 +639,47 @@ class SessionRatingAverages {
     this.allTimeAverage,
     this.dailySampleSize = 0,
     this.allTimeSampleSize = 0,
+    this.vibesAverage,
+    this.commsAverage,
+    this.gunnyAverage,
+    this.wingmanAverage,
+    this.vibesSampleSize = 0,
+    this.commsSampleSize = 0,
+    this.gunnySampleSize = 0,
+    this.wingmanSampleSize = 0,
   });
 
   final double? dailyAverage;
   final double? allTimeAverage;
   final int dailySampleSize;
   final int allTimeSampleSize;
+  final double? vibesAverage;
+  final double? commsAverage;
+  final double? gunnyAverage;
+  final double? wingmanAverage;
+  final int vibesSampleSize;
+  final int commsSampleSize;
+  final int gunnySampleSize;
+  final int wingmanSampleSize;
 
   bool get isEmpty => dailyAverage == null && allTimeAverage == null;
+
+  bool get hasCategoryAverages =>
+      vibesAverage != null ||
+      commsAverage != null ||
+      gunnyAverage != null ||
+      wingmanAverage != null;
 }
 
 const kLastFiveRatedSessionsLimit = 5;
+const kLastFiveRatedEmptyCopy = 'No rated sessions yet';
+const kLastFiveRatedEmptyHint =
+    'Rate Vibes, Comms, Gunny, and Wingman after a match to see them here';
+const kStatsLoadErrorTitle = "Couldn't load stats";
+const kStatsLoadErrorBody = 'Session history is unavailable right now.';
+const kStatsLoadErrorRetryLabel = 'Retry';
+const kYouSessionHistoryErrorCopy = "Couldn't load session history";
+const kRatingsEmptyHint = 'No session ratings in match history yet';
 
 const _kLastFiveMonthLabels = [
   'Jan',
@@ -712,6 +743,21 @@ String lastFiveRatedSessionLabel(SessionRatingState rating) {
   return parts.join(' · ');
 }
 
+/// Compact category line: `V5 · C4 · G3 · W2`. Empty when none filled.
+String lastFiveRatedSessionCategoriesLabel(SessionRatingState rating) {
+  final parts = <String>[
+    if (isValidSessionStars(rating.vibes)) 'V${rating.vibes}',
+    if (isValidSessionStars(rating.comms)) 'C${rating.comms}',
+    if (isValidSessionStars(rating.gunny)) 'G${rating.gunny}',
+    if (isValidSessionStars(rating.wingman)) 'W${rating.wingman}',
+  ];
+  return parts.join(' · ');
+}
+
+/// Optional notes line from ticket-36 `session_rating.comment` / preserved text.
+String? lastFiveRatedSessionNotesLabel(SessionRatingState rating) =>
+    _nonEmpty(rating.comment);
+
 String? lastFiveRatedSessionResultLabel(String? result) {
   switch (result?.toLowerCase().trim()) {
     case 'win':
@@ -750,6 +796,14 @@ SessionRatingAverages sessionRatingAveragesFromHistory(
   var dailyCount = 0;
   var allTotal = 0;
   var allCount = 0;
+  var vibesTotal = 0;
+  var vibesCount = 0;
+  var commsTotal = 0;
+  var commsCount = 0;
+  var gunnyTotal = 0;
+  var gunnyCount = 0;
+  var wingmanTotal = 0;
+  var wingmanCount = 0;
   for (final row in rows) {
     final rating = sessionRatingFromMatchRow(row);
     if (rating == null || !rating.isRated) continue;
@@ -762,12 +816,36 @@ SessionRatingAverages sessionRatingAveragesFromHistory(
       dailyTotal += stars;
       dailyCount++;
     }
+    if (isValidSessionStars(rating.vibes)) {
+      vibesTotal += rating.vibes!;
+      vibesCount++;
+    }
+    if (isValidSessionStars(rating.comms)) {
+      commsTotal += rating.comms!;
+      commsCount++;
+    }
+    if (isValidSessionStars(rating.gunny)) {
+      gunnyTotal += rating.gunny!;
+      gunnyCount++;
+    }
+    if (isValidSessionStars(rating.wingman)) {
+      wingmanTotal += rating.wingman!;
+      wingmanCount++;
+    }
   }
   return SessionRatingAverages(
     dailyAverage: dailyCount == 0 ? null : dailyTotal / dailyCount,
     allTimeAverage: allCount == 0 ? null : allTotal / allCount,
     dailySampleSize: dailyCount,
     allTimeSampleSize: allCount,
+    vibesAverage: vibesCount == 0 ? null : vibesTotal / vibesCount,
+    commsAverage: commsCount == 0 ? null : commsTotal / commsCount,
+    gunnyAverage: gunnyCount == 0 ? null : gunnyTotal / gunnyCount,
+    wingmanAverage: wingmanCount == 0 ? null : wingmanTotal / wingmanCount,
+    vibesSampleSize: vibesCount,
+    commsSampleSize: commsCount,
+    gunnySampleSize: gunnyCount,
+    wingmanSampleSize: wingmanCount,
   );
 }
 

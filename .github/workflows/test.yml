@@ -78,6 +78,7 @@ jobs:
             test/core/notification_tap_router_test.dart \
             test/core/peacock_card_test.dart \
             test/chat/widgets/peacock_card_test.dart \
+            test/services/peacock_lock_live_activity_test.dart \
             test/services/peacock_lifecycle_machine_test.dart \
             test/core/pending_link_test.dart \
             test/core/layout_insets_test.dart \

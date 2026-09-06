@@ -5,6 +5,58 @@ import 'package:squad_sync/services/lobby_ready_lock.dart';
 import 'package:squad_sync/services/peacock_lock_live_activity.dart';
 import 'package:squad_sync/services/peacock_self_notify.dart';
 
+/// Records home-widget / Live Activity payload mocks. No native I/O.
+class FakePeacockLockWidgetUpdater {
+  PeacockLockLiveActivityPayload? lastPayload;
+  PeacockLockLiveActivityPhase? previousPhase;
+  final plans = <PeacockLockLiveActivityPlan>[];
+  String nextActivityId = 'act-1';
+
+  bool get isEmpty => lastPayload == null;
+
+  Map<String, dynamic>? get lastChannelArgs => lastPayload?.toChannelArgs();
+
+  PeacockLockWidgetView view({DateTime? now}) {
+    final payload = lastPayload;
+    if (payload == null) return PeacockLockWidgetView.empty;
+    return resolvePeacockLockWidgetView(
+      payload: payload,
+      previousPhase: previousPhase,
+      now: now,
+    );
+  }
+
+  Future<String?> apply(PeacockLockLiveActivityPlan plan) async {
+    plans.add(plan);
+    previousPhase = lastPayload?.phase;
+    switch (plan.op) {
+      case PeacockLockLiveActivityOp.none:
+        return lastPayload?.activityId;
+      case PeacockLockLiveActivityOp.start:
+        lastPayload = plan.payload.copyWith(activityId: nextActivityId);
+        return nextActivityId;
+      case PeacockLockLiveActivityOp.update:
+        lastPayload = plan.payload;
+        return plan.payload.activityId ?? lastPayload?.activityId;
+      case PeacockLockLiveActivityOp.end:
+        lastPayload = null;
+        return null;
+    }
+  }
+}
+
+const _open = LobbyReadyLockSnapshot(
+  phase: LobbyReadyLockPhase.open,
+  seatedUids: ['u1', 'u2'],
+  readyUids: ['u1'],
+);
+
+const _locked = LobbyReadyLockSnapshot(
+  phase: LobbyReadyLockPhase.locked,
+  seatedUids: ['u1', 'u2'],
+  readyUids: ['u1', 'u2'],
+);
+
 void main() {
   setUp(PeacockLockLiveActivity.resetTestHooks);
   tearDown(PeacockLockLiveActivity.resetTestHooks);
@@ -169,6 +221,296 @@ void main() {
         ).wouldDoubleNotifySelf,
         isFalse,
       );
+    });
+  });
+
+  group('home widget payload mock — lock / unlock', () {
+    test('lock peacock writes locked on the widget payload mock', () async {
+      final widget = FakePeacockLockWidgetUpdater();
+      final clock = DateTime.utc(2026, 9, 6, 12);
+      final plan = planPeacockLockLiveActivity(
+        snapshot: _locked,
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        now: clock,
+      );
+
+      expect(plan.op, PeacockLockLiveActivityOp.start);
+      expect(plan.payload.isLocked, isTrue);
+      expect(plan.payload.toChannelArgs()['locked'], isTrue);
+      expect(plan.payload.toChannelArgs()['phase'], 'locked');
+      expect(
+        resolvePeacockLockWidgetView(payload: plan.payload),
+        PeacockLockWidgetView.locked,
+      );
+
+      await widget.apply(plan);
+      expect(widget.view(), PeacockLockWidgetView.locked);
+      expect(widget.lastChannelArgs!['locked'], isTrue);
+      expect(widget.lastChannelArgs!['title'], 'Squad locked');
+      expect(widget.lastPayload!.updatedAt, clock);
+    });
+
+    test('unlock peacock clears locked on the widget payload mock', () async {
+      final widget = FakePeacockLockWidgetUpdater();
+      await widget.apply(
+        planPeacockLockLiveActivity(
+          snapshot: _locked,
+          lobbyId: 'lobby-9',
+          gameName: 'Warzone',
+        ),
+      );
+      expect(widget.lastChannelArgs!['locked'], isTrue);
+
+      final unlocked = planPeacockLockLiveActivity(
+        snapshot: _open,
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        currentActivityId: widget.lastPayload!.activityId,
+      );
+
+      expect(unlocked.op, PeacockLockLiveActivityOp.update);
+      expect(unlocked.payload.isLocked, isFalse);
+      expect(unlocked.payload.phase, PeacockLockLiveActivityPhase.ready);
+      expect(unlocked.payload.toChannelArgs()['locked'], isFalse);
+      expect(unlocked.payload.toChannelArgs()['phase'], 'ready');
+      expect(
+        resolvePeacockLockWidgetView(
+          payload: unlocked.payload,
+          previousPhase: PeacockLockLiveActivityPhase.locked,
+        ),
+        PeacockLockWidgetView.unlocked,
+      );
+
+      await widget.apply(unlocked);
+      expect(widget.view(), PeacockLockWidgetView.unlocked);
+      expect(widget.lastChannelArgs!['locked'], isFalse);
+      expect(widget.lastChannelArgs!['title'], isNot('Squad locked'));
+    });
+
+    test('unlock with no seated ends the widget as unlocked / cleared', () {
+      final plan = planPeacockLockLiveActivity(
+        snapshot: LobbyReadyLockSnapshot.empty,
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        currentActivityId: 'act-1',
+      );
+
+      expect(plan.op, PeacockLockLiveActivityOp.end);
+      expect(plan.payload.isLocked, isFalse);
+      expect(plan.payload.phase, PeacockLockLiveActivityPhase.ended);
+      expect(plan.payload.body, 'Warzone unlocked');
+      expect(plan.payload.toChannelArgs()['locked'], isFalse);
+      expect(
+        resolvePeacockLockWidgetView(
+          payload: plan.payload,
+          op: plan.op,
+          previousPhase: PeacockLockLiveActivityPhase.locked,
+        ),
+        PeacockLockWidgetView.unlocked,
+      );
+    });
+
+    test('syncFromReadyLock lock then unlock clears the live payload',
+        () async {
+      final widget = FakePeacockLockWidgetUpdater();
+      PeacockLockLiveActivity.invokeHook = widget.apply;
+
+      await PeacockLockLiveActivity.syncFromReadyLock(
+        snapshot: _locked,
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+      );
+      expect(widget.lastChannelArgs!['locked'], isTrue);
+      expect(PeacockLockLiveActivity.debugActivityId, 'act-1');
+
+      await PeacockLockLiveActivity.syncFromReadyLock(
+        snapshot: _open,
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+      );
+      expect(widget.view(), PeacockLockWidgetView.unlocked);
+      expect(widget.lastChannelArgs!['locked'], isFalse);
+      expect(PeacockLockLiveActivity.debugActivityId, 'act-1');
+    });
+  });
+
+  group('home widget payload mock — empty', () {
+    test('no lobby is empty, not a hung locked widget', () {
+      final plan = planPeacockLockLiveActivity(
+        snapshot: _locked,
+        lobbyId: '  ',
+      );
+
+      expect(plan.op, PeacockLockLiveActivityOp.none);
+      expect(plan.payload.isLocked, isFalse);
+      expect(
+        resolvePeacockLockWidgetView(payload: plan.payload, op: plan.op),
+        PeacockLockWidgetView.empty,
+      );
+      expect(
+        resolvePeacockLockWidgetView(
+          payload: PeacockLockLiveActivityPayload.empty,
+        ),
+        PeacockLockWidgetView.empty,
+      );
+    });
+
+    test('no active peacock / no seated is empty when nothing is live',
+        () async {
+      final widget = FakePeacockLockWidgetUpdater();
+      final plan = planPeacockLockLiveActivity(
+        snapshot: LobbyReadyLockSnapshot.empty,
+        lobbyId: 'lobby-9',
+      );
+
+      expect(plan.shouldInvoke, isFalse);
+      expect(
+        resolvePeacockLockWidgetView(payload: plan.payload, op: plan.op),
+        PeacockLockWidgetView.empty,
+      );
+
+      await widget.apply(plan);
+      expect(widget.isEmpty, isTrue);
+      expect(widget.view(), PeacockLockWidgetView.empty);
+      expect(widget.lastChannelArgs, isNull);
+    });
+
+    test('empty payload round-trips through the channel mock', () {
+      final args = PeacockLockLiveActivityPayload.empty.toChannelArgs();
+      final restored = PeacockLockLiveActivityPayload.fromChannelArgs(args);
+      expect(restored.lobbyId, isEmpty);
+      expect(restored.phase, PeacockLockLiveActivityPhase.ended);
+      expect(restored.isLocked, isFalse);
+      expect(restored.seatedCount, 0);
+      expect(args['locked'], isFalse);
+    });
+  });
+
+  group('home widget payload mock — stale', () {
+    final clock = DateTime.utc(2026, 9, 6, 12);
+
+    test('fresh payload is not stale', () {
+      final payload = PeacockLockLiveActivityPayload(
+        lobbyId: 'lobby-9',
+        phase: PeacockLockLiveActivityPhase.locked,
+        seatedCount: 2,
+        readyCount: 2,
+        activityId: 'act-1',
+        updatedAt: clock,
+      );
+      expect(payload.isStaleAt(clock), isFalse);
+      expect(
+        payload.isStaleAt(
+          clock.add(kPeacockLockWidgetStaleTimeout - const Duration(seconds: 1)),
+        ),
+        isFalse,
+      );
+      expect(
+        resolvePeacockLockWidgetView(payload: payload, now: clock),
+        PeacockLockWidgetView.locked,
+      );
+      expect(
+        planStalePeacockLockWidget(lastPayload: payload, now: clock).op,
+        PeacockLockLiveActivityOp.none,
+      );
+    });
+
+    test('outdated payload is marked stale then cleared when live', () async {
+      final widget = FakePeacockLockWidgetUpdater();
+      final payload = PeacockLockLiveActivityPayload(
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        phase: PeacockLockLiveActivityPhase.locked,
+        seatedCount: 2,
+        readyCount: 2,
+        activityId: 'act-1',
+        updatedAt: clock,
+      );
+      widget.lastPayload = payload;
+
+      final staleAt = clock.add(kPeacockLockWidgetStaleTimeout);
+      expect(payload.isStaleAt(staleAt), isTrue);
+      expect(
+        resolvePeacockLockWidgetView(payload: payload, now: staleAt),
+        PeacockLockWidgetView.stale,
+      );
+
+      final plan = planStalePeacockLockWidget(
+        lastPayload: payload,
+        now: staleAt,
+      );
+      expect(plan.op, PeacockLockLiveActivityOp.end);
+      expect(plan.payload.phase, PeacockLockLiveActivityPhase.ended);
+      expect(plan.payload.isLocked, isFalse);
+      expect(plan.payload.toChannelArgs()['locked'], isFalse);
+
+      await widget.apply(plan);
+      expect(widget.isEmpty, isTrue);
+      expect(widget.view(), PeacockLockWidgetView.empty);
+    });
+
+    test('stale payload with nothing live stays empty, not a hung widget', () {
+      final payload = PeacockLockLiveActivityPayload(
+        lobbyId: 'lobby-9',
+        phase: PeacockLockLiveActivityPhase.locked,
+        seatedCount: 2,
+        readyCount: 2,
+        updatedAt: clock,
+      );
+      final staleAt = clock.add(kPeacockLockWidgetStaleTimeout);
+      final plan = planStalePeacockLockWidget(
+        lastPayload: payload,
+        now: staleAt,
+      );
+      expect(plan.op, PeacockLockLiveActivityOp.none);
+      expect(plan.shouldInvoke, isFalse);
+      expect(
+        resolvePeacockLockWidgetView(payload: payload, now: staleAt),
+        PeacockLockWidgetView.stale,
+      );
+    });
+
+    test('syncStaleWidget ends the live helper when the payload expired',
+        () async {
+      final widget = FakePeacockLockWidgetUpdater();
+      PeacockLockLiveActivity.invokeHook = widget.apply;
+      await widget.apply(
+        planPeacockLockLiveActivity(
+          snapshot: _locked,
+          lobbyId: 'lobby-9',
+          now: clock,
+        ),
+      );
+      expect(widget.lastPayload, isNotNull);
+
+      await PeacockLockLiveActivity.syncStaleWidget(
+        lastPayload: widget.lastPayload!,
+        now: clock.add(kPeacockLockWidgetStaleTimeout),
+      );
+      expect(widget.isEmpty, isTrue);
+      expect(PeacockLockLiveActivity.debugActivityId, isNull);
+      expect(widget.plans.last.op, PeacockLockLiveActivityOp.end);
+    });
+
+    test('channel mock carries staleAt for the native payload', () {
+      final payload = PeacockLockLiveActivityPayload(
+        lobbyId: 'lobby-9',
+        phase: PeacockLockLiveActivityPhase.locked,
+        seatedCount: 1,
+        readyCount: 1,
+        updatedAt: clock,
+      );
+      final args = payload.toChannelArgs();
+      expect(args['updatedAt'], clock.toIso8601String());
+      expect(
+        args['staleAt'],
+        clock.add(kPeacockLockWidgetStaleTimeout).toIso8601String(),
+      );
+      final restored = PeacockLockLiveActivityPayload.fromChannelArgs(args);
+      expect(restored.updatedAt, clock);
+      expect(restored.isStaleAt(clock.add(kPeacockLockWidgetStaleTimeout)),
+          isTrue);
     });
   });
 }

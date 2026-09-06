@@ -9,9 +9,19 @@ import 'lobby_ready_lock.dart';
 /// Native start/update/end lives on the existing Runner target
 /// (`com.squadsync/live_activities`). Lock Screen UI still needs a Widget
 /// Extension (separate App ID) — not this target, not a bundle ID change.
+/// This file is the Dart payload mock only; it does not register an
+/// ActivityConfiguration or a Widget Extension App ID.
 enum PeacockLockLiveActivityPhase { ready, locked, ended }
 
 enum PeacockLockLiveActivityOp { none, start, update, end }
+
+/// Glance state for the home-widget / Live Activity payload mock.
+/// Native Lock Screen UI still needs a Widget Extension App ID.
+enum PeacockLockWidgetView { empty, ready, locked, unlocked, stale }
+
+/// How long an un-refreshed widget payload may sit before it is stale.
+/// Dart payload-mock TTL only — not an ActivityKit entitlement.
+const kPeacockLockWidgetStaleTimeout = Duration(minutes: 8);
 
 class PeacockLockLiveActivityPayload {
   const PeacockLockLiveActivityPayload({
@@ -21,7 +31,16 @@ class PeacockLockLiveActivityPayload {
     required this.readyCount,
     this.gameName,
     this.activityId,
+    this.updatedAt,
   });
+
+  /// Empty home-widget / Live Activity payload. No lobby, no peacock.
+  static const empty = PeacockLockLiveActivityPayload(
+    lobbyId: '',
+    phase: PeacockLockLiveActivityPhase.ended,
+    seatedCount: 0,
+    readyCount: 0,
+  );
 
   final String lobbyId;
   final String? gameName;
@@ -29,6 +48,22 @@ class PeacockLockLiveActivityPayload {
   final int seatedCount;
   final int readyCount;
   final String? activityId;
+  final DateTime? updatedAt;
+
+  bool get isLocked => phase == PeacockLockLiveActivityPhase.locked;
+
+  DateTime? get staleAt {
+    final stamp = updatedAt;
+    if (stamp == null) return null;
+    return stamp.add(kPeacockLockWidgetStaleTimeout);
+  }
+
+  /// Outdated / expired payload. [updatedAt] missing is not stale.
+  bool isStaleAt(DateTime now) {
+    final expires = staleAt;
+    if (expires == null) return false;
+    return !now.isBefore(expires);
+  }
 
   String get title {
     switch (phase) {
@@ -80,13 +115,57 @@ class PeacockLockLiveActivityPayload {
       'lobbyId': lobbyId,
       'gameName': gameName,
       'phase': phase.name,
+      'locked': isLocked,
       'seatedCount': seatedCount,
       'readyCount': readyCount,
       'title': title,
       'body': body,
       'deepLink': deepLink,
       if (activityId != null) 'activityId': activityId,
+      if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
+      if (staleAt != null) 'staleAt': staleAt!.toIso8601String(),
     };
+  }
+
+  factory PeacockLockLiveActivityPayload.fromChannelArgs(
+    Map<String, dynamic> args,
+  ) {
+    final phaseName = args['phase'] as String? ?? 'ended';
+    final phase = PeacockLockLiveActivityPhase.values.firstWhere(
+      (value) => value.name == phaseName,
+      orElse: () => PeacockLockLiveActivityPhase.ended,
+    );
+    return PeacockLockLiveActivityPayload(
+      lobbyId: (args['lobbyId'] as String? ?? '').trim(),
+      gameName: _nonEmpty(args['gameName'] as String?),
+      phase: phase,
+      seatedCount: (args['seatedCount'] as num?)?.toInt() ?? 0,
+      readyCount: (args['readyCount'] as num?)?.toInt() ?? 0,
+      activityId: _nonEmpty(args['activityId'] as String?),
+      updatedAt: DateTime.tryParse(args['updatedAt'] as String? ?? ''),
+    );
+  }
+
+  PeacockLockLiveActivityPayload copyWith({
+    String? lobbyId,
+    String? gameName,
+    PeacockLockLiveActivityPhase? phase,
+    int? seatedCount,
+    int? readyCount,
+    String? activityId,
+    DateTime? updatedAt,
+    bool clearActivityId = false,
+    bool clearUpdatedAt = false,
+  }) {
+    return PeacockLockLiveActivityPayload(
+      lobbyId: lobbyId ?? this.lobbyId,
+      gameName: gameName ?? this.gameName,
+      phase: phase ?? this.phase,
+      seatedCount: seatedCount ?? this.seatedCount,
+      readyCount: readyCount ?? this.readyCount,
+      activityId: clearActivityId ? null : (activityId ?? this.activityId),
+      updatedAt: clearUpdatedAt ? null : (updatedAt ?? this.updatedAt),
+    );
   }
 }
 
@@ -109,6 +188,7 @@ PeacockLockLiveActivityPlan planPeacockLockLiveActivity({
   required String lobbyId,
   String? gameName,
   String? currentActivityId,
+  DateTime? now,
 }) {
   final lobby = lobbyId.trim();
   final activityId = _nonEmpty(currentActivityId);
@@ -124,6 +204,7 @@ PeacockLockLiveActivityPlan planPeacockLockLiveActivity({
       seatedCount: 0,
       readyCount: 0,
       activityId: activityId,
+      updatedAt: now,
     );
     if (activityId == null) {
       return PeacockLockLiveActivityPlan(
@@ -147,6 +228,7 @@ PeacockLockLiveActivityPlan planPeacockLockLiveActivity({
     seatedCount: seatedCount,
     readyCount: readyCount,
     activityId: activityId,
+    updatedAt: now,
   );
   if (activityId == null) {
     return PeacockLockLiveActivityPlan(
@@ -156,6 +238,68 @@ PeacockLockLiveActivityPlan planPeacockLockLiveActivity({
   }
   return PeacockLockLiveActivityPlan(
     op: PeacockLockLiveActivityOp.update,
+    payload: payload,
+  );
+}
+
+/// Glance state for the home-widget payload mock. Pure. No native I/O.
+///
+/// Lock Screen UI still needs a Widget Extension App ID — this maps the
+/// existing start/update/end payload onto empty / locked / unlocked / stale.
+PeacockLockWidgetView resolvePeacockLockWidgetView({
+  required PeacockLockLiveActivityPayload payload,
+  PeacockLockLiveActivityOp op = PeacockLockLiveActivityOp.none,
+  PeacockLockLiveActivityPhase? previousPhase,
+  DateTime? now,
+}) {
+  if (now != null && payload.isStaleAt(now)) {
+    return PeacockLockWidgetView.stale;
+  }
+  if (payload.phase == PeacockLockLiveActivityPhase.locked) {
+    return PeacockLockWidgetView.locked;
+  }
+  if (payload.phase == PeacockLockLiveActivityPhase.ready) {
+    if (previousPhase == PeacockLockLiveActivityPhase.locked) {
+      return PeacockLockWidgetView.unlocked;
+    }
+    return PeacockLockWidgetView.ready;
+  }
+  if (op == PeacockLockLiveActivityOp.end) {
+    return PeacockLockWidgetView.unlocked;
+  }
+  return PeacockLockWidgetView.empty;
+}
+
+/// Outdated / expired stored payload → mark stale and clear when live.
+/// Fresh Ready-Lock snapshots still go through [planPeacockLockLiveActivity].
+PeacockLockLiveActivityPlan planStalePeacockLockWidget({
+  required PeacockLockLiveActivityPayload lastPayload,
+  required DateTime now,
+}) {
+  if (!lastPayload.isStaleAt(now)) {
+    return PeacockLockLiveActivityPlan(
+      op: PeacockLockLiveActivityOp.none,
+      payload: lastPayload,
+    );
+  }
+  final activityId = _nonEmpty(lastPayload.activityId);
+  final payload = PeacockLockLiveActivityPayload(
+    lobbyId: lastPayload.lobbyId,
+    gameName: lastPayload.gameName,
+    phase: PeacockLockLiveActivityPhase.ended,
+    seatedCount: 0,
+    readyCount: 0,
+    activityId: activityId,
+    updatedAt: now,
+  );
+  if (activityId == null) {
+    return PeacockLockLiveActivityPlan(
+      op: PeacockLockLiveActivityOp.none,
+      payload: payload,
+    );
+  }
+  return PeacockLockLiveActivityPlan(
+    op: PeacockLockLiveActivityOp.end,
     payload: payload,
   );
 }
@@ -184,13 +328,31 @@ class PeacockLockLiveActivity {
     required LobbyReadyLockSnapshot snapshot,
     required String lobbyId,
     String? gameName,
+    DateTime? now,
   }) async {
     final plan = planPeacockLockLiveActivity(
       snapshot: snapshot,
       lobbyId: lobbyId,
       gameName: gameName,
       currentActivityId: _activityId,
+      now: now,
     );
+    await _applyPlan(plan);
+  }
+
+  /// Clear an outdated / expired widget payload. Payload-mock only.
+  static Future<void> syncStaleWidget({
+    required PeacockLockLiveActivityPayload lastPayload,
+    DateTime? now,
+  }) async {
+    final plan = planStalePeacockLockWidget(
+      lastPayload: lastPayload,
+      now: now ?? DateTime.now(),
+    );
+    await _applyPlan(plan);
+  }
+
+  static Future<void> _applyPlan(PeacockLockLiveActivityPlan plan) async {
     if (!plan.shouldInvoke) return;
 
     final hook = invokeHook;

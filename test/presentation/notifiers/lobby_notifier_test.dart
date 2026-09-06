@@ -753,6 +753,40 @@ void main() {
       expect(sentData!['type'], kLobbyUnlockedType);
     });
 
+    test('unlock after lock clears locked on the widget payload mock',
+        () async {
+      PeacockLockLiveActivityPlan? livePlan;
+      PeacockLockLiveActivity.invokeHook = (plan) async {
+        livePlan = plan;
+        if (plan.op == PeacockLockLiveActivityOp.start) return 'act-lock';
+        return plan.payload.activityId;
+      };
+
+      final notifier = await pumpSeatedLobby(
+        statuses: const {'user-1': 'Ready'},
+      );
+      await notifier.toggleSeatedReady(
+        userId: 'user-2',
+        gameName: 'Warzone',
+        spotIndex: 1,
+      );
+      expect(livePlan, isNotNull);
+      expect(livePlan!.payload.isLocked, isTrue);
+      expect(livePlan!.payload.toChannelArgs()['locked'], isTrue);
+
+      final result = await notifier.toggleSeatedReady(
+        userId: 'user-1',
+        gameName: 'Warzone',
+        spotIndex: 0,
+      );
+
+      expect(result!.justUnlocked, isTrue);
+      expect(livePlan!.payload.isLocked, isFalse);
+      expect(livePlan!.payload.phase, PeacockLockLiveActivityPhase.ready);
+      expect(livePlan!.payload.toChannelArgs()['locked'], isFalse);
+      expect(livePlan!.payload.toChannelArgs()['phase'], 'ready');
+    });
+
     test('timeoutReadyCheck clears Ready and notifies seated', () async {
       List<String>? sentUids;
       Map<String, dynamic>? sentData;

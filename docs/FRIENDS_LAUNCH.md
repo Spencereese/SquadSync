@@ -2,11 +2,19 @@
 
 ## now
 
-P5 Flight done at `719cbe8`. Harness inventory + Red Burst A in flight. Loop idle.
+Tip ~`186215c` v3.4.138+140. P0–P2 CI green. P5 Flight done. Burst A CSPRNG landed. Burst B in flight.
 
 ## next
 
-First failing friend-visible Loop slice after inventory.
+Red Burst B secret quarantine + docs redact; Harness sqlite verify; then MORNING_BRIEF.
+
+## residuals
+
+- Client secrets still read via dotenv/fromEnvironment (IGDB/Twitch/Agora/XAI) — Burst B stubbing
+- `CLOUD_RUN_DEPLOYMENT.md` previously contained literal-looking secrets — redact in Burst B
+- Portal: TEAMID/AASA/APNs/.p8/GoogleService/TestFlight still Spencer
+- Live SQL blocked
+- CI workflow still only on main/master push (revive PR may not run GH Actions until configured)
 
 ## blocked-on-Spencer
 
@@ -22,8 +30,8 @@ Flight parked: TEAMID/AASA host, `.env`+GoogleService on build machine, producti
 
 ## SHA
 
-`719cbe8bc4070f49a2dfbd481c827d8dc1460c01`
+`186215c064b96cf746ea713f6b1c44e39425e9a5`
 
 ## version
 
-`3.4.136+138` until Loop/Red bumps pubspec
+`3.4.138+140`

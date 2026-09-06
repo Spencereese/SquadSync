@@ -15,3 +15,10 @@ Append-only. Newest last.
 - slice: P5 Cod Flight TestFlight checklist + aps flavor comments
 - result: pass
 - next: Harness P0–P2 inventory; Red Burst A; Loop waits for first red
+
+## 2026-09-06 04:40 America/Chicago
+
+- SHA: `186215c` / `f256dce`
+- slices: Harness LFG orphan promote PASS; Red Burst A CSPRNG sqlite key PASS
+- result: pass
+- next: Red Burst B secret quarantine + docs redact; Harness sqlite verify; then MORNING_BRIEF

@@ -44,15 +44,33 @@ String peacockCardDeepLink({
   ).toString();
 }
 
+/// Notification payload the chat peacock card tap shares with
+/// `peacock_assigned` taps (same [NotificationRoutes] table).
+Map<String, dynamic> peacockCardNotificationPayload({
+  String? lobbyId,
+  String? gameName,
+  int? spotIndex,
+}) {
+  return {
+    'type': 'peacock_assigned',
+    if (_nonEmpty(lobbyId) != null) 'lobby_id': lobbyId!.trim(),
+    if (_nonEmpty(gameName) != null) 'game_name': gameName!.trim(),
+    if (spotIndex != null && spotIndex >= 0) 'spot_index': spotIndex,
+  };
+}
+
 /// Chat peacock card tap. Same parse + [NotificationRoutes.go] as
 /// notification taps and App Links. [spotIndex] highlights the offered
-/// spot on `/squad`.
+/// spot on `/squad`. Offline does not navigate — Retry is the card
+/// action, not a second presenter.
 void openPeacockCard({
   String? lobbyId,
   String? gameName,
   int? spotIndex,
   void Function(String location)? go,
+  bool isOffline = false,
 }) {
+  if (isOffline) return;
   final location = locationForDeepLink(
     peacockCardDeepLink(
       lobbyId: lobbyId,

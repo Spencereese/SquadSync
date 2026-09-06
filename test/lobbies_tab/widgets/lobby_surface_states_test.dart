@@ -199,6 +199,78 @@ void main() {
         isFalse,
       );
     });
+
+    test('peacockCardMissing is true without a lobby or claimed seat', () {
+      expect(peacockCardMissing(LobbyState.initial()), isTrue);
+      final lobby = Lobby.create(
+        name: 'Squad',
+        gameName: 'Warzone',
+        maxSpots: 4,
+        createdBy: 'u1',
+      ).copyWith(id: 'lobby-1');
+      expect(
+        peacockCardMissing(
+          LobbyState.initial().copyWith(
+            selectedLobbyId: 'lobby-1',
+            currentLobby: lobby,
+            currentGame: const {'name': 'Warzone', 'maxSpots': 4},
+            gameLobbySpots: {
+              'Warzone': [null, null, null, null],
+            },
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        peacockCardMissing(
+          LobbyState.initial().copyWith(
+            selectedLobbyId: 'lobby-1',
+            currentLobby: lobby,
+            currentGame: const {'name': 'Warzone', 'maxSpots': 4},
+            gameLobbySpots: {
+              'Warzone': ['u1', null, null, null],
+            },
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('peacock card empty / offline copy is arm length', () {
+      expect(
+        lobbySurfaceMessage(
+          LobbySurfaceKind.peacockCard,
+          LobbySurfacePhase.empty,
+        ),
+        'No active lobby',
+      );
+      expect(
+        lobbySurfaceHint(
+          LobbySurfaceKind.peacockCard,
+          LobbySurfacePhase.empty,
+        ),
+        kPeacockCardEmptyHint,
+      );
+      expect(
+        lobbySurfaceMessage(
+          LobbySurfaceKind.peacockCard,
+          LobbySurfacePhase.error,
+          isOffline: true,
+        ),
+        kLobbySurfaceOfflineCopy,
+      );
+      expect(
+        lobbySurfaceKey(
+          LobbySurfaceKind.peacockCard,
+          LobbySurfacePhase.empty,
+        ),
+        const Key('peacock-card-empty'),
+      );
+      expect(
+        lobbySurfaceRetryKey(LobbySurfaceKind.peacockCard),
+        const Key('peacock-card-retry'),
+      );
+    });
   });
 
   group('resolveLobbySurfacePhase', () {

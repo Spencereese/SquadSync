@@ -288,6 +288,23 @@ void main() {
         go: (location) => opened = location,
       );
       expect(opened, expected);
+      expect(
+        NotificationRoutes.locationFor(
+          peacockCardNotificationPayload(lobbyId: lobbyId, gameName: game),
+        ),
+        expected,
+      );
+    });
+
+    test('offline peacock card tap does not call go', () {
+      String? opened;
+      openPeacockCard(
+        lobbyId: lobbyId,
+        gameName: game,
+        isOffline: true,
+        go: (location) => opened = location,
+      );
+      expect(opened, isNull);
     });
 
     test('peacock card missing / empty id is empty squad not an error route',

@@ -146,6 +146,56 @@ void main() {
       );
     });
 
+    testWidgets(
+        'peacock card tap and peacock_assigned notification open the same lobby',
+        (tester) async {
+      await pumpApp(tester);
+      const payload = {
+        'type': 'peacock_assigned',
+        'lobby_id': 'lobby-9',
+        'game_name': 'Warzone',
+        'spot_index': 2,
+      };
+      expect(
+        locationForDeepLink(
+          peacockCardDeepLink(
+            lobbyId: 'lobby-9',
+            gameName: 'Warzone',
+            spotIndex: 2,
+          ),
+        ),
+        NotificationRoutes.locationFor(payload),
+      );
+      await tap(
+        tester,
+        () => openPeacockCard(
+          lobbyId: 'lobby-9',
+          gameName: 'Warzone',
+          spotIndex: 2,
+        ),
+      );
+      expect(
+        find.text('screen:lobby lobby:lobby-9 game:Warzone spot:2'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('offline peacock card tap does not leave home', (tester) async {
+      await pumpApp(tester);
+      await tap(
+        tester,
+        () => openPeacockCard(
+          lobbyId: 'lobby-9',
+          gameName: 'Warzone',
+          spotIndex: 2,
+          isOffline: true,
+        ),
+      );
+      expect(find.text('screen:home'), findsOneWidget);
+      expect(find.textContaining('screen:lobby'), findsNothing);
+      expect(find.textContaining('screen:error'), findsNothing);
+    });
+
     testWidgets('stats payload tap opens stats', (tester) async {
       await pumpApp(tester);
       await tap(tester, () => NotificationRoutes.open({'type': 'stats'}));
@@ -268,11 +318,19 @@ void main() {
 
     testWidgets('empty and garbage openRaw stay on home', (tester) async {
       await pumpApp(tester);
-      for (final raw in [null, '', '   ', 'hello', '{not-json', 'not=a-route']) {
+      for (final raw in [
+        null,
+        '',
+        '   ',
+        'hello',
+        '{not-json',
+        'not=a-route'
+      ]) {
         NotificationRoutes.openRaw(raw);
         await tester.pumpAndSettle();
         expect(find.text('screen:home'), findsOneWidget, reason: '$raw');
-        expect(find.textContaining('screen:error'), findsNothing, reason: '$raw');
+        expect(find.textContaining('screen:error'), findsNothing,
+            reason: '$raw');
       }
     });
 

@@ -277,6 +277,22 @@ void main() {
       expect(pulseOfferedSpotAt(index: 2, highlightSpotIndex: 2), isTrue);
       expect(pulseOfferedSpotAt(index: 0, highlightSpotIndex: 2), isFalse);
     });
+
+    test('empty and offline card taps do not invent a lobby route', () {
+      expect(PeacockLifecycleState.idle.routeLocation, isNull);
+      String? opened;
+      openPeacockCard(go: (location) => opened = location);
+      expect(opened, '/squad');
+      opened = null;
+      openPeacockCard(
+        lobbyId: lobbyId,
+        gameName: game,
+        spotIndex: spotIndex,
+        isOffline: true,
+        go: (location) => opened = location,
+      );
+      expect(opened, isNull);
+    });
   });
 
   group('resolvePeacockLifecycle from assignment + seat (ticket 14)', () {

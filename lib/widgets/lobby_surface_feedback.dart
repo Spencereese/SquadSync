@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/entities/lobby_state.dart';
 
-/// Compact empty / loading / error for Tonight, peacock/LFG chips, lock UI.
-enum LobbySurfaceKind { tonight, peacock, lock }
+/// Compact empty / loading / error for Tonight, peacock/LFG chips, lock UI,
+/// and the chat peacock card.
+enum LobbySurfaceKind { tonight, peacock, lock, peacockCard }
 
 enum LobbySurfacePhase { data, empty, loading, error }
 
@@ -12,6 +13,8 @@ const kLobbySurfaceRetryLabel = 'Retry';
 
 const kTonightEmptyHint =
     "Pick a lobby to ping who's on, look for a squad, or invite.";
+
+const kPeacockCardEmptyHint = 'Join a lobby to open your peacock card.';
 
 const kLobbySurfaceErrorHint = 'Check your connection and try again.';
 const kLobbySurfaceOfflineCopy = "You're offline";
@@ -45,6 +48,57 @@ LobbySurfacePhase resolveLobbySurfacePhase({
 bool tonightLobbyMissing(LobbyState? state) {
   final id = state?.selectedLobbyId ?? state?.currentLobby?.id;
   return id == null || id.isEmpty;
+}
+
+/// Chat peacock card has nothing to show without a lobby, game, or claimed
+/// seat. Missing is empty, not an error route.
+bool peacockCardMissing(LobbyState? state) {
+  if (state == null || tonightLobbyMissing(state)) return true;
+  final snapshot = peacockCardSnapshot(state);
+  return snapshot.gameName == null || snapshot.claimed == 0;
+}
+
+/// Fields the chat peacock card reads from lobby state.
+class PeacockCardSnapshot {
+  const PeacockCardSnapshot({
+    this.lobbyId,
+    this.gameName,
+    this.claimed = 0,
+    this.maxSpots = 0,
+  });
+
+  final String? lobbyId;
+  final String? gameName;
+  final int claimed;
+  final int maxSpots;
+}
+
+PeacockCardSnapshot peacockCardSnapshot(LobbyState? state) {
+  if (state == null) return const PeacockCardSnapshot();
+  final lobbyId =
+      _nonEmpty(state.selectedLobbyId) ?? _nonEmpty(state.currentLobby?.id);
+  final currentGame = state.currentGame;
+  final rawName = currentGame?['name'];
+  final gameName = rawName == null ? null : _nonEmpty(rawName.toString());
+  final maxSpots = (currentGame?['maxSpots'] as num?)?.toInt() ??
+      state.currentLobby?.maxSpots ??
+      0;
+  final spots = gameName == null
+      ? const <String?>[]
+      : (state.gameLobbySpots[gameName] ?? const <String?>[]);
+  final claimed = spots.where((spot) => spot != null).length;
+  return PeacockCardSnapshot(
+    lobbyId: lobbyId,
+    gameName: gameName,
+    claimed: claimed,
+    maxSpots: maxSpots,
+  );
+}
+
+String? _nonEmpty(String? value) {
+  if (value == null) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 bool lobbySurfaceIsOfflineError(Object? error) {
@@ -118,6 +172,17 @@ Key lobbySurfaceKey(LobbySurfaceKind kind, LobbySurfacePhase phase) {
         case LobbySurfacePhase.data:
           return const Key('seated-spot-locked-badge');
       }
+    case LobbySurfaceKind.peacockCard:
+      switch (phase) {
+        case LobbySurfacePhase.empty:
+          return const Key('peacock-card-empty');
+        case LobbySurfacePhase.loading:
+          return const Key('peacock-card-loading');
+        case LobbySurfacePhase.error:
+          return const Key('peacock-card-error');
+        case LobbySurfacePhase.data:
+          return const Key('peacock-card');
+      }
   }
 }
 
@@ -129,6 +194,8 @@ Key lobbySurfaceRetryKey(LobbySurfaceKind kind) {
       return const Key('peacock-chip-retry');
     case LobbySurfaceKind.lock:
       return const Key('lock-retry');
+    case LobbySurfaceKind.peacockCard:
+      return const Key('peacock-card-retry');
   }
 }
 
@@ -140,6 +207,8 @@ Key lobbySurfaceEmptyActionKey(LobbySurfaceKind kind) {
       return const Key('peacock-chip-empty-cta');
     case LobbySurfaceKind.lock:
       return const Key('lock-empty-cta');
+    case LobbySurfaceKind.peacockCard:
+      return const Key('peacock-card-empty-cta');
   }
 }
 
@@ -157,6 +226,10 @@ Key lobbySurfaceHintKey(LobbySurfaceKind kind, LobbySurfacePhase phase) {
       return phase == LobbySurfacePhase.error
           ? const Key('lock-error-hint')
           : const Key('lock-empty-hint');
+    case LobbySurfaceKind.peacockCard:
+      return phase == LobbySurfacePhase.error
+          ? const Key('peacock-card-error-hint')
+          : const Key('peacock-card-empty-hint');
   }
 }
 
@@ -168,6 +241,8 @@ Key lobbySurfaceDetailKey(LobbySurfaceKind kind) {
       return const Key('peacock-chip-error-detail');
     case LobbySurfaceKind.lock:
       return const Key('lock-error-detail');
+    case LobbySurfaceKind.peacockCard:
+      return const Key('peacock-card-error-detail');
   }
 }
 
@@ -213,6 +288,17 @@ String lobbySurfaceMessage(
         case LobbySurfacePhase.data:
           return 'Locked';
       }
+    case LobbySurfaceKind.peacockCard:
+      switch (phase) {
+        case LobbySurfacePhase.empty:
+          return 'No active lobby';
+        case LobbySurfacePhase.loading:
+          return 'Loading peacock...';
+        case LobbySurfacePhase.error:
+          return "Couldn't load peacock";
+        case LobbySurfacePhase.data:
+          return 'Your Active Lobby';
+      }
   }
 }
 
@@ -223,7 +309,15 @@ String? lobbySurfaceHint(
 }) {
   switch (phase) {
     case LobbySurfacePhase.empty:
-      return kind == LobbySurfaceKind.tonight ? kTonightEmptyHint : null;
+      switch (kind) {
+        case LobbySurfaceKind.tonight:
+          return kTonightEmptyHint;
+        case LobbySurfaceKind.peacockCard:
+          return kPeacockCardEmptyHint;
+        case LobbySurfaceKind.peacock:
+        case LobbySurfaceKind.lock:
+          return null;
+      }
     case LobbySurfacePhase.error:
       return kLobbySurfaceErrorHint;
     case LobbySurfacePhase.loading:

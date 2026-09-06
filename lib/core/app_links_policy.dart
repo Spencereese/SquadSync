@@ -117,6 +117,172 @@ bool isProductCustomSchemeAppLink(Uri url) {
   return url.scheme.toLowerCase() == 'codsquadapp';
 }
 
+/// SpringBoard first-open copy. Units mock the tap; they do not talk to
+/// SpringBoard. Apple portal / AASA hosting stays a human gate.
+const kOpenInCodSquadPrompt = 'Open in Cod Squad?';
+
+final _appLinkControlChars = RegExp(r'[\u0000-\u001F\u007F]');
+final _appLinkWhitespace = RegExp(r'\s');
+
+/// Empty, whitespace, control chars, missing scheme, or [Uri.parse] throw.
+/// Unknown-but-well-formed URLs are not malformed — they just have no route.
+bool isMalformedAppLink(String? link) {
+  if (link == null) return true;
+  final trimmed = link.trim();
+  if (trimmed.isEmpty) return true;
+  if (_appLinkControlChars.hasMatch(trimmed)) return true;
+  if (_appLinkWhitespace.hasMatch(trimmed)) return true;
+  final Uri uri;
+  try {
+    uri = Uri.parse(trimmed);
+  } catch (_) {
+    return true;
+  }
+  if (!uri.hasScheme || uri.scheme.trim().isEmpty) return true;
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme.contains('googleusercontent')) return false;
+  const known = {
+    'codsquadapp',
+    'https',
+    'http',
+    'com.example.codsquadapp',
+  };
+  if (!known.contains(scheme)) return true;
+  if ((scheme == 'https' || scheme == 'http') && uri.host.trim().isEmpty) {
+    return true;
+  }
+  return false;
+}
+
+Uri? tryParseAppLinkUri(String? link) {
+  if (isMalformedAppLink(link)) return null;
+  try {
+    return Uri.parse(link!.trim());
+  } catch (_) {
+    return null;
+  }
+}
+
+bool isLobbyUniversalLinkHost(String? host) {
+  final name = host?.trim().toLowerCase() ?? '';
+  if (name.isEmpty) return false;
+  return name == 'codsquad.app' || name == 'www.codsquad.app';
+}
+
+/// AASA-claimed Universal Link: `https://codsquad.app/l/<id>` (and www / http).
+/// Other https paths may still parse in Dart; they are not associated-domains
+/// `/l/*` deliveries.
+bool isLobbyUniversalLinkUri(Uri uri) {
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'https' && scheme != 'http') return false;
+  if (!isLobbyUniversalLinkHost(uri.host)) return false;
+  final segments =
+      uri.pathSegments.where((segment) => segment.isNotEmpty).toList();
+  return segments.isNotEmpty && segments.first.toLowerCase() == 'l';
+}
+
+bool isLobbyUniversalLink(String? link) {
+  final uri = tryParseAppLinkUri(link);
+  if (uri == null) return false;
+  return isLobbyUniversalLinkUri(uri);
+}
+
+/// Mocked tap on the Open-in sheet or Associated Domains delivery gate.
+enum AppLinkAcceptDecision {
+  /// Sheet is showing; Dart has not received the URL yet.
+  pending,
+
+  /// Human / mock Accept. URL may proceed to the existing parser.
+  accept,
+
+  /// Human / mock Cancel. No pending location.
+  cancel,
+}
+
+enum AppLinkAcceptKind {
+  customScheme,
+  universalLink,
+  swallowed,
+  malformed,
+  unknown,
+}
+
+/// Mock of SpringBoard "Open in Cod Squad?" and Associated Domains delivery.
+///
+/// Units inject Accept / Cancel. Does not talk to SpringBoard, DNS, or the
+/// Apple portal. Default associated-domains decision is Cancel (AASA hosting
+/// stays a human gate).
+class AppLinkAcceptGate {
+  AppLinkAcceptGate({
+    AppLinkAcceptDecision customSchemeDecision = AppLinkAcceptDecision.pending,
+    AppLinkAcceptDecision associatedDomainsDecision =
+        AppLinkAcceptDecision.cancel,
+    bool customSchemeAcceptedThisInstall = false,
+  })  : _customSchemeDecision = customSchemeDecision,
+        _associatedDomainsDecision = associatedDomainsDecision,
+        _customSchemeAcceptedThisInstall = customSchemeAcceptedThisInstall ||
+            customSchemeDecision == AppLinkAcceptDecision.accept;
+
+  /// Current tree: custom-scheme works after the one-time Open-in tap;
+  /// Associated Domains / AASA is still blocked.
+  factory AppLinkAcceptGate.portalBlocked() => AppLinkAcceptGate(
+        customSchemeDecision: AppLinkAcceptDecision.accept,
+        associatedDomainsDecision: AppLinkAcceptDecision.cancel,
+      );
+
+  /// Device after Spencer portal + DNS and the Open-in Accept.
+  factory AppLinkAcceptGate.deviceReady() => AppLinkAcceptGate(
+        customSchemeDecision: AppLinkAcceptDecision.accept,
+        associatedDomainsDecision: AppLinkAcceptDecision.accept,
+      );
+
+  AppLinkAcceptDecision _customSchemeDecision;
+  AppLinkAcceptDecision _associatedDomainsDecision;
+  bool _customSchemeAcceptedThisInstall;
+
+  AppLinkAcceptDecision get customSchemeDecision => _customSchemeDecision;
+  AppLinkAcceptDecision get associatedDomainsDecision =>
+      _associatedDomainsDecision;
+  bool get customSchemeAcceptedThisInstall => _customSchemeAcceptedThisInstall;
+
+  /// Record the mocked SpringBoard tap. Accept sticks for this install.
+  void answerCustomSchemePrompt(AppLinkAcceptDecision decision) {
+    _customSchemeDecision = decision;
+    if (decision == AppLinkAcceptDecision.accept) {
+      _customSchemeAcceptedThisInstall = true;
+    }
+  }
+
+  /// Mock of Spencer's Associated Domains / AASA portal result.
+  void mockAssociatedDomainsPortal(AppLinkAcceptDecision decision) {
+    _associatedDomainsDecision = decision;
+  }
+
+  bool presentsCustomSchemePrompt(Uri url) {
+    if (!isProductCustomSchemeAppLink(url)) return false;
+    if (_customSchemeAcceptedThisInstall) return false;
+    return _customSchemeDecision == AppLinkAcceptDecision.pending;
+  }
+
+  /// Whether iOS would hand [link] to Dart. Parser is separate.
+  bool delivers(String? link, {bool? isIosSimulator}) {
+    if (isMalformedAppLink(link)) return false;
+    final uri = tryParseAppLinkUri(link);
+    if (uri == null) return false;
+    final sim = isIosSimulator ?? detectIosSimulator();
+    if (sim && shouldSwallowSimulatorAppLink(uri)) return false;
+    if (isProductCustomSchemeAppLink(uri)) {
+      if (_customSchemeAcceptedThisInstall) return true;
+      return _customSchemeDecision == AppLinkAcceptDecision.accept;
+    }
+    if (isLobbyUniversalLinkUri(uri)) {
+      if (sim) return false;
+      return _associatedDomainsDecision == AppLinkAcceptDecision.accept;
+    }
+    return false;
+  }
+}
+
 /// Simulator swallow rules. Google / Supabase auth schemes stay open.
 /// `codsquadapp://` product URLs (lobby / squad / peacock / chat / join)
 /// are not swallowed so `simctl openurl` can route. Leftover https

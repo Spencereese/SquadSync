@@ -81,6 +81,7 @@ jobs:
             test/services/peacock_lock_live_activity_test.dart \
             test/services/peacock_lifecycle_machine_test.dart \
             test/core/pending_link_test.dart \
+            test/core/universal_link_edge_test.dart \
             test/core/layout_insets_test.dart \
             test/managers/notification_manager_test.dart \
             test/widgets/email_auth_actions_test.dart \

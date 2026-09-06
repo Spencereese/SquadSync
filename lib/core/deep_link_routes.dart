@@ -246,11 +246,12 @@ String? locationForLiveAppLink(
 }) {
   final trimmed = link.trim();
   if (trimmed.isEmpty) return null;
+  if (isMalformedAppLink(trimmed)) return null;
   Uri? uri;
   try {
     uri = Uri.parse(trimmed);
   } catch (_) {
-    return locationForDeepLink(trimmed);
+    return null;
   }
   if ((isIosSimulator ?? detectIosSimulator()) &&
       shouldSwallowSimulatorAppLink(uri)) {
@@ -281,6 +282,119 @@ String? prepareLiveAppLink(
   return location;
 }
 
+/// AASA `/l/*` Universal Link after delivery. Malformed and non-`/l/`
+/// https URLs return null. [acceptGate] mocks Associated Domains Accept
+/// without portal / DNS work; omit it to parse as if already delivered.
+String? locationForUniversalLink(
+  String? link, {
+  bool? isIosSimulator,
+  AppLinkAcceptGate? acceptGate,
+}) {
+  if (link == null || isMalformedAppLink(link)) return null;
+  final uri = tryParseAppLinkUri(link);
+  if (uri == null || !isLobbyUniversalLinkUri(uri)) return null;
+  if (acceptGate != null &&
+      !acceptGate.delivers(link, isIosSimulator: isIosSimulator)) {
+    return null;
+  }
+  return locationForLiveAppLink(link, isIosSimulator: isIosSimulator);
+}
+
+/// SpringBoard / Associated Domains Accept-gate probe. Location is the
+/// existing [locationForDeepLink] table when the mock delivers.
+class AppLinkAcceptOutcome {
+  const AppLinkAcceptOutcome({
+    required this.kind,
+    required this.decision,
+    required this.presentedPrompt,
+    this.location,
+    this.prompt,
+  });
+
+  final AppLinkAcceptKind kind;
+  final AppLinkAcceptDecision decision;
+  final bool presentedPrompt;
+  final String? location;
+  final String? prompt;
+
+  bool get delivers => location != null;
+}
+
+AppLinkAcceptOutcome resolveAppLinkAccept({
+  required String? link,
+  required AppLinkAcceptGate gate,
+  bool? isIosSimulator,
+}) {
+  if (isMalformedAppLink(link)) {
+    return const AppLinkAcceptOutcome(
+      kind: AppLinkAcceptKind.malformed,
+      decision: AppLinkAcceptDecision.cancel,
+      presentedPrompt: false,
+    );
+  }
+  final trimmed = link!.trim();
+  final uri = tryParseAppLinkUri(trimmed);
+  if (uri == null) {
+    return const AppLinkAcceptOutcome(
+      kind: AppLinkAcceptKind.malformed,
+      decision: AppLinkAcceptDecision.cancel,
+      presentedPrompt: false,
+    );
+  }
+  final sim = isIosSimulator ?? detectIosSimulator();
+  if (sim && shouldSwallowSimulatorAppLink(uri)) {
+    return const AppLinkAcceptOutcome(
+      kind: AppLinkAcceptKind.swallowed,
+      decision: AppLinkAcceptDecision.cancel,
+      presentedPrompt: false,
+    );
+  }
+  if (isProductCustomSchemeAppLink(uri)) {
+    final presented = gate.presentsCustomSchemePrompt(uri);
+    if (presented) {
+      return const AppLinkAcceptOutcome(
+        kind: AppLinkAcceptKind.customScheme,
+        decision: AppLinkAcceptDecision.pending,
+        presentedPrompt: true,
+        prompt: kOpenInCodSquadPrompt,
+      );
+    }
+    if (!gate.delivers(trimmed, isIosSimulator: sim)) {
+      return const AppLinkAcceptOutcome(
+        kind: AppLinkAcceptKind.customScheme,
+        decision: AppLinkAcceptDecision.cancel,
+        presentedPrompt: false,
+      );
+    }
+    return AppLinkAcceptOutcome(
+      kind: AppLinkAcceptKind.customScheme,
+      decision: AppLinkAcceptDecision.accept,
+      presentedPrompt: false,
+      location: locationForLiveAppLink(trimmed, isIosSimulator: sim),
+    );
+  }
+  if (isLobbyUniversalLinkUri(uri)) {
+    if (!gate.delivers(trimmed, isIosSimulator: sim)) {
+      return AppLinkAcceptOutcome(
+        kind: AppLinkAcceptKind.universalLink,
+        decision: gate.associatedDomainsDecision,
+        presentedPrompt: false,
+      );
+    }
+    return AppLinkAcceptOutcome(
+      kind: AppLinkAcceptKind.universalLink,
+      decision: AppLinkAcceptDecision.accept,
+      presentedPrompt: false,
+      location: locationForLiveAppLink(trimmed, isIosSimulator: sim),
+    );
+  }
+  return const AppLinkAcceptOutcome(
+    kind: AppLinkAcceptKind.unknown,
+    decision: AppLinkAcceptDecision.cancel,
+    presentedPrompt: false,
+  );
+}
+
 /// Pure mapping from an App Link / custom-scheme URI to a go_router
 /// location. Returns null for auth callbacks and unknown URIs.
 ///
@@ -290,6 +404,7 @@ String? prepareLiveAppLink(
 String? locationForDeepLink(String link) {
   final trimmed = link.trim();
   if (trimmed.isEmpty) return null;
+  if (isMalformedAppLink(trimmed)) return null;
   try {
     return locationForDeepLinkUri(Uri.parse(trimmed));
   } catch (_) {
@@ -548,6 +663,7 @@ class PendingLinkQueue {
     bool? isIosSimulator,
     void Function()? dismissSplash,
     void Function(String message)? log,
+    AppLinkAcceptGate? acceptGate,
   }) {
     return _offerUrl(
       link,
@@ -555,6 +671,7 @@ class PendingLinkQueue {
       isIosSimulator: isIosSimulator,
       dismissSplash: dismissSplash,
       log: log,
+      acceptGate: acceptGate,
     );
   }
 
@@ -564,6 +681,7 @@ class PendingLinkQueue {
     bool? isIosSimulator,
     void Function()? dismissSplash,
     void Function(String message)? log,
+    AppLinkAcceptGate? acceptGate,
   }) {
     return _offerUrl(
       link,
@@ -571,6 +689,7 @@ class PendingLinkQueue {
       isIosSimulator: isIosSimulator,
       dismissSplash: dismissSplash,
       log: log,
+      acceptGate: acceptGate,
     );
   }
 
@@ -579,12 +698,14 @@ class PendingLinkQueue {
     bool? isIosSimulator,
     void Function()? dismissSplash,
     void Function(String message)? log,
+    AppLinkAcceptGate? acceptGate,
   }) {
     return offerColdStartUrl(
       uri?.toString(),
       isIosSimulator: isIosSimulator,
       dismissSplash: dismissSplash,
       log: log,
+      acceptGate: acceptGate,
     );
   }
 
@@ -593,12 +714,14 @@ class PendingLinkQueue {
     bool? isIosSimulator,
     void Function()? dismissSplash,
     void Function(String message)? log,
+    AppLinkAcceptGate? acceptGate,
   }) {
     return offerResumeUrl(
       uri?.toString(),
       isIosSimulator: isIosSimulator,
       dismissSplash: dismissSplash,
       log: log,
+      acceptGate: acceptGate,
     );
   }
 
@@ -629,6 +752,7 @@ class PendingLinkQueue {
     bool? isIosSimulator,
     void Function()? dismissSplash,
     void Function(String message)? log,
+    AppLinkAcceptGate? acceptGate,
   }) {
     final plan = planAppLinkListen(isIosSimulator: isIosSimulator);
     String? launch;
@@ -638,6 +762,7 @@ class PendingLinkQueue {
         isIosSimulator: isIosSimulator,
         dismissSplash: dismissSplash,
         log: log,
+        acceptGate: acceptGate,
       );
     }
     String? resume;
@@ -647,8 +772,44 @@ class PendingLinkQueue {
         isIosSimulator: isIosSimulator,
         dismissSplash: dismissSplash,
         log: log,
+        acceptGate: acceptGate,
       );
     }
+    return (launch: launch, resume: resume);
+  }
+
+  /// Stub of killed vs background-resume for AASA `/l/*` Universal Links.
+  /// Non-UL URLs are ignored so a later product resume can still deliver.
+  ({String? launch, String? resume}) consumeUniversalLinkStubs({
+    String? initialLink,
+    String? resumeLink,
+    bool? isIosSimulator,
+    void Function()? dismissSplash,
+    void Function(String message)? log,
+    AppLinkAcceptGate? acceptGate,
+  }) {
+    String? offer(String? link, PendingLinkSource source) {
+      if (link == null || isMalformedAppLink(link)) return null;
+      if (!isLobbyUniversalLink(link)) return null;
+      return source == PendingLinkSource.coldStart
+          ? offerColdStartUrl(
+              link,
+              isIosSimulator: isIosSimulator,
+              dismissSplash: dismissSplash,
+              log: log,
+              acceptGate: acceptGate,
+            )
+          : offerResumeUrl(
+              link,
+              isIosSimulator: isIosSimulator,
+              dismissSplash: dismissSplash,
+              log: log,
+              acceptGate: acceptGate,
+            );
+    }
+
+    final launch = offer(initialLink, PendingLinkSource.coldStart);
+    final resume = offer(resumeLink, PendingLinkSource.resume);
     return (launch: launch, resume: resume);
   }
 
@@ -674,8 +835,14 @@ class PendingLinkQueue {
     bool? isIosSimulator,
     void Function()? dismissSplash,
     void Function(String message)? log,
+    AppLinkAcceptGate? acceptGate,
   }) {
     if (link == null || link.trim().isEmpty) return null;
+    if (isMalformedAppLink(link)) return null;
+    if (acceptGate != null &&
+        !acceptGate.delivers(link, isIosSimulator: isIosSimulator)) {
+      return null;
+    }
     final location = prepareLiveAppLink(
       link,
       isIosSimulator: isIosSimulator,

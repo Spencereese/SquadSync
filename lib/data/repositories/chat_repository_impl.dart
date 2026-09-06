@@ -78,6 +78,7 @@ class ChatRepositoryImpl implements ChatRepository {
       return chosen;
     } catch (e) {
       debugPrint('Remote message page failed; using cache: $e');
+      if (cached.isEmpty) rethrow;
       return cached;
     }
   }

@@ -43,6 +43,7 @@ import '../presentation/notifiers/message_notifier.dart';
 import '../presentation/notifiers/notification_notifier.dart';
 import '../core/chat_messages.dart';
 import '../core/lobby_chat_bind.dart';
+import '../widgets/chat_surface_feedback.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
@@ -120,6 +121,12 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   LobbyState? _cachedSquadState;
   cs.ChatState? _cachedChatState;
   MessageState? _cachedMessageState;
+  Object? _squadAsyncError;
+  Object? _chatAsyncError;
+  Object? _messageAsyncError;
+  bool _squadLoading = true;
+  bool _chatLoading = true;
+  bool _messageLoading = false;
 
   bool get isUserGroup => widget.chatType == ChatType.userGroup;
   bool get isDM => widget.chatType == ChatType.dm;
@@ -206,8 +213,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       final resolved = resolveActiveChatGroupId(
         widgetChatGroupId: widget.chatGroupId,
         isSquad: widget.chatType == ChatType.squad,
-        selectedLobbyId:
-            widget.chatType == ChatType.squad ? lobbyId : null,
+        selectedLobbyId: widget.chatType == ChatType.squad ? lobbyId : null,
         lobbyChatGroupId: lobbyChatId,
         historyCounts: counts,
         extraChatIds: candidates,
@@ -219,8 +225,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
       lobbyNotifier.setSelectedLobbyId(lobbyId);
       _syncActiveChatThread(
-        selectedLobbyId:
-            widget.chatType == ChatType.squad ? lobbyId : null,
+        selectedLobbyId: widget.chatType == ChatType.squad ? lobbyId : null,
       );
       if (resolved != null) {
         await _saveLastChatGroup(resolved);
@@ -664,34 +669,44 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // CRITICAL FIX: Use ref.listen() instead of ref.watch() in build()
     // This prevents disposal cascades from keyboard/MediaQuery changes
     ref.listenManual(
-      ln.lobbyNotifierProvider.select((value) => value.valueOrNull),
+      ln.lobbyNotifierProvider,
       (previous, next) {
-        if (mounted && next != null) {
-          setState(() => _cachedSquadState = next);
-          if (!_needsLobbyBind || _lobbyBindComplete) {
-            _syncActiveChatThread(selectedLobbyId: next.selectedLobbyId);
-          }
+        if (!mounted) return;
+        setState(() {
+          _cachedSquadState = next.valueOrNull ?? _cachedSquadState;
+          _squadAsyncError = next.hasError ? next.error : null;
+          _squadLoading = next.isLoading && next.valueOrNull == null;
+        });
+        final squad = next.valueOrNull;
+        if (squad != null && (!_needsLobbyBind || _lobbyBindComplete)) {
+          _syncActiveChatThread(selectedLobbyId: squad.selectedLobbyId);
         }
       },
       fireImmediately: true,
     );
 
     ref.listenManual(
-      cn.chatNotifierProvider.select((value) => value.valueOrNull),
+      cn.chatNotifierProvider,
       (previous, next) {
-        if (mounted && next != null) {
-          setState(() => _cachedChatState = next);
-        }
+        if (!mounted) return;
+        setState(() {
+          _cachedChatState = next.valueOrNull ?? _cachedChatState;
+          _chatAsyncError = next.hasError ? next.error : null;
+          _chatLoading = next.isLoading && next.valueOrNull == null;
+        });
       },
       fireImmediately: true,
     );
 
     ref.listenManual(
-      messageNotifierProvider.select((value) => value.valueOrNull),
+      messageNotifierProvider,
       (previous, next) {
-        if (mounted && next != null) {
-          setState(() => _cachedMessageState = next);
-        }
+        if (!mounted) return;
+        setState(() {
+          _cachedMessageState = next.valueOrNull ?? _cachedMessageState;
+          _messageAsyncError = next.hasError ? next.error : null;
+          _messageLoading = next.isLoading && next.valueOrNull == null;
+        });
       },
       fireImmediately: true,
     );
@@ -773,8 +788,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         readableTopicCount: readable,
         unreadableTopicCount: unreadable,
       );
-      final toRemove =
-          mode == ChannelCleanupMode.nukeAll ? channels : scoped;
+      final toRemove = mode == ChannelCleanupMode.nukeAll ? channels : scoped;
       if (mode == ChannelCleanupMode.nukeAll) {
         debugPrint(
             '🧹 Channel topics unavailable; removing all ${channels.length} channels');
@@ -1087,8 +1101,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Count private lobbies in this chat group
     squadState.gameLobbies.forEach((gameName, lobbies) {
       for (final lobby in lobbies) {
-        if (lobby['chatGroupId'] == chatGroupId &&
-            lobby['isActive'] == true) {
+        if (lobby['chatGroupId'] == chatGroupId && lobby['isActive'] == true) {
           count++;
         }
       }
@@ -1097,8 +1110,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Count public lobbies with group members
     squadState.gameLobbies.forEach((gameName, lobbies) {
       for (final lobby in lobbies) {
-        if (lobby['isActive'] == true &&
-            lobby['chatGroupId'] != chatGroupId) {
+        if (lobby['isActive'] == true && lobby['chatGroupId'] != chatGroupId) {
           final spots = lobby['spots'] as List<String?>? ?? [];
           final hasGroupMember = spots.any(
               (uid) => uid != null && squadState.lobbyMemberUids.contains(uid));
@@ -1466,6 +1478,76 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
+  void _retryOpenChat() {
+    setState(() {
+      _squadAsyncError = null;
+      _chatAsyncError = null;
+      _messageAsyncError = null;
+      _squadLoading = _cachedSquadState == null;
+      _chatLoading = _cachedChatState == null;
+    });
+    ref.invalidate(ln.lobbyNotifierProvider);
+    if (_cachedChatState == null) {
+      ref.invalidate(cn.chatNotifierProvider);
+    } else {
+      ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+    }
+    final id = threadChatGroupId;
+    if (id != null) {
+      _resetInitializationServiceFlags();
+      _scheduleChatStart(id, _initializationServiceGeneration);
+    }
+  }
+
+  void _retryChatThread() {
+    final id = threadChatGroupId;
+    if (id == null) {
+      _retryOpenChat();
+      return;
+    }
+    setState(() {
+      _messageAsyncError = null;
+      _messageLoading = true;
+      _initializationServiceCompleted = false;
+      _initializationServiceBail = ChatInitBail.none;
+      _initializationHardFailureRetries = 0;
+    });
+    ref
+        .read(messageNotifierProvider.notifier)
+        .initializeMessagesStream(id, widget.chatType);
+    _scheduleChatStart(id, _initializationServiceGeneration);
+  }
+
+  Widget _buildOpenChatBody(BuildContext context) {
+    final hasContent = _cachedSquadState != null && _cachedChatState != null;
+    final isOffline = _cachedChatState?.isOnline == false;
+    final isLoading = _squadLoading || _chatLoading;
+    final error = _squadAsyncError ??
+        _chatAsyncError ??
+        (!hasContent && !isLoading ? kChatThreadErrorCopy : null);
+    final phase = resolveChatSurfacePhase(
+      isLoading: isLoading,
+      error: error,
+      isEmpty: !hasContent,
+      isOffline: isOffline,
+      itemCount: hasContent ? 1 : 0,
+    );
+    if (phase == ChatSurfacePhase.data && hasContent) {
+      return _buildChatContent(
+        context,
+        _cachedSquadState!,
+        _cachedChatState!,
+      );
+    }
+    return ChatSurfaceFeedback(
+      kind: ChatSurfaceKind.thread,
+      phase: phase == ChatSurfacePhase.data ? ChatSurfacePhase.loading : phase,
+      error: error,
+      isOffline: isOffline,
+      onRetry: _retryOpenChat,
+    );
+  }
+
   /// Fetch display names for message senders
   void _fetchDisplayNamesForMessages(List<msg.Message> messages) {
     if (messages.isEmpty) return;
@@ -1506,10 +1588,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             resizeToAvoidBottomInset: false,
             extendBodyBehindAppBar: true,
             backgroundColor: Colors.transparent,
-            body: (_cachedSquadState != null && _cachedChatState != null)
-                ? _buildChatContent(
-                    context, _cachedSquadState!, _cachedChatState!)
-                : const Center(child: CircularProgressIndicator()),
+            body: _buildOpenChatBody(context),
           ),
         ),
       ),
@@ -1799,6 +1878,31 @@ class ChatScreenState extends ConsumerState<ChatScreen>
 
                       final hasReply = chatState.replyToMessage != null;
                       final inputBarHeight = hasReply ? 140.0 : 80.0;
+                      final isOffline = chatState.isOnline == false;
+                      final initFailed = _initializationServiceBail ==
+                          ChatInitBail.hardFailure;
+                      final messageError = _messageAsyncError ??
+                          (initFailed ? 'Could not finish opening chat' : null);
+                      final threadPhase = resolveChatSurfacePhase(
+                        isLoading: messages.isEmpty &&
+                            messageError == null &&
+                            !isOffline &&
+                            (_messageLoading ||
+                                !_initializationServiceCompleted),
+                        error: messageError,
+                        isEmpty: messages.isEmpty,
+                        isOffline: isOffline,
+                        itemCount: messages.length,
+                      );
+                      if (threadPhase != ChatSurfacePhase.data) {
+                        return ChatSurfaceFeedback(
+                          kind: ChatSurfaceKind.thread,
+                          phase: threadPhase,
+                          error: messageError,
+                          isOffline: isOffline,
+                          onRetry: _retryChatThread,
+                        );
+                      }
 
                       return _uiManager.buildMessagesList(
                         ref: ref,
@@ -1953,8 +2057,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                         SizedBox(
                           height: isKeyboardVisible
                               ? 8.0
-                              : 8.0 +
-                                  MediaQuery.viewPaddingOf(context).bottom,
+                              : 8.0 + MediaQuery.viewPaddingOf(context).bottom,
                         ),
                       ],
                     ),

@@ -9,6 +9,7 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import '../../utils.dart';
 import '../../core/layout.dart';
+import '../../widgets/chat_surface_feedback.dart';
 import 'group_chat_context_menu.dart';
 
 class UserGroupsTab extends ConsumerStatefulWidget {
@@ -283,35 +284,49 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
   @override
   Widget build(BuildContext context) {
     final chatStateAsync = ref.watch(cn.chatNotifierProvider);
-
-    return chatStateAsync.when(
-      loading: () {
-        return const Center(
-          child: CircularProgressIndicator(color: Colors.cyanAccent),
-        );
-      },
-      error: (error, stack) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Error: $error',
-                style: const TextStyle(color: Colors.white),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
-                },
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        );
-      },
-      data: (chatState) => _buildContent(context, chatState),
+    final chatState = chatStateAsync.valueOrNull;
+    final groupsCount = chatState?.chatGroups.length ?? 0;
+    final isOffline = chatState?.isOnline == false;
+    final error = chatStateAsync.error ?? chatState?.syncError;
+    final phase = resolveChatSurfacePhase(
+      isLoading: chatStateAsync.isLoading && chatState == null,
+      error: error,
+      isEmpty: groupsCount == 0,
+      isOffline: isOffline,
+      itemCount: groupsCount,
     );
+
+    if (phase != ChatSurfacePhase.data) {
+      return Column(
+        children: [
+          if (phase == ChatSurfacePhase.empty) _buildDMStoryBar(context),
+          Expanded(
+            child: ChatSurfaceFeedback(
+              kind: ChatSurfaceKind.list,
+              phase: phase,
+              error: error,
+              isOffline: isOffline,
+              onRetry: () {
+                ref.read(cn.chatNotifierProvider.notifier).loadUserGroups();
+              },
+              onAction: phase == ChatSurfacePhase.empty
+                  ? () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const GroupActionsDialog(),
+                        ),
+                      );
+                    }
+                  : null,
+              actionLabel:
+                  phase == ChatSurfacePhase.empty ? 'Create Group' : null,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _buildContent(context, chatState!);
   }
 
   Widget _buildContent(BuildContext context, ChatState chatState) {

@@ -11,6 +11,8 @@ import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/core/realtime_subscribe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/chat_list_loader.dart';
+import '../../core/chat_surface.dart';
 import '../../core/notification_hygiene.dart';
 import '../../services/supabase_service.dart';
 import '../../services/auth_service_supabase.dart';
@@ -477,23 +479,40 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
 
       debugPrint('📚 Loading ALL groups for user: ${currentUser.id}');
 
-      // Query ALL groups where user is a member by checking member_uids array
-      // This includes squad chats, user groups, and DMs
-      debugPrint('🔍 Querying chat_groups where user is in member_uids...');
-      final groupsData = await SupabaseService.client
-          .from('chat_groups')
-          .select('*')
-          .contains('member_uids', [currentUser.id]);
+      final loaded = await loadChatList(
+        fetch: () async {
+          debugPrint('🔍 Querying chat_groups where user is in member_uids...');
+          final groupsData = await SupabaseService.client
+              .from('chat_groups')
+              .select('*')
+              .contains('member_uids', [currentUser.id]);
+          debugPrint('🔍 Received ${(groupsData as List).length} total groups');
+          return List<Map<String, dynamic>>.from(groupsData as List);
+        },
+      );
 
-      debugPrint('🔍 Received ${(groupsData as List).length} total groups');
+      if (loaded.phase == ChatSurfacePhase.error) {
+        debugPrint('❌ Error loading groups: ${loaded.error}');
+        final currentState = state.valueOrNull ?? await future;
+        state = AsyncData(currentState.copyWith(
+          syncError: loaded.error?.toString(),
+        ));
+        await _errorHandler.handleError(
+          error: loaded.error ?? 'loadUserGroups failed',
+          stackTrace: StackTrace.current,
+          operation: 'loadUserGroups',
+          showSnackBar: false,
+        );
+        return;
+      }
 
-      if ((groupsData as List).isEmpty) {
+      if (loaded.items.isEmpty) {
         debugPrint('📚 User is not a member of any groups');
-        // Set empty state
         final currentState = state.valueOrNull ?? await future;
         state = AsyncData(currentState.copyWith(
           chatGroups: {},
           userChatGroups: {},
+          syncError: null,
         ));
         return;
       }
@@ -501,8 +520,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       final allGroups = <String, ChatGroup>{};
       final userOnlyGroups = <String, ChatGroup>{};
 
-      for (var data in (groupsData as List<dynamic>)) {
-        final groupData = data as Map<String, dynamic>;
+      for (final groupData in loaded.items) {
         final groupId = groupData['id'] as String;
 
         // Query the most recent message for this group to get last activity and details
@@ -581,6 +599,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       final newState = currentState.copyWith(
         chatGroups: allGroups,
         userChatGroups: userOnlyGroups, // Now same as chatGroups
+        syncError: null,
       );
       state = AsyncData(newState);
       debugPrint(
@@ -588,6 +607,10 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
     } catch (e, stackTrace) {
       debugPrint('❌ Error loading groups: $e');
       debugPrint('Stack trace: $stackTrace');
+      final currentState = state.valueOrNull;
+      if (currentState != null) {
+        state = AsyncData(currentState.copyWith(syncError: e.toString()));
+      }
       await _errorHandler.handleError(
         error: e,
         stackTrace: stackTrace,

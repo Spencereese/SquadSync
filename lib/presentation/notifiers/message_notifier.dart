@@ -10,7 +10,9 @@ import '../../services/message_service.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import '../../core/realtime_subscribe.dart';
+import '../../core/chat_list_loader.dart';
 import '../../core/chat_messages.dart';
+import '../../core/chat_surface.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_notifier.dart' as cn;
 
@@ -151,25 +153,30 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   }
 
   Future<void> _loadInitialMessages(String chatGroupId) async {
-    try {
-      debugPrint('MessageNotifier: Loading initial messages for $chatGroupId');
-      final cachedMessages =
-          await _repository.loadMessages(chatGroupId, limit: 100);
-
-      state = await AsyncValue.guard(() async {
-        final currentState = await future;
-        final updatedMessages =
-            Map<String, List<Message>>.from(currentState.messages);
-        updatedMessages[chatGroupId] = cachedMessages;
-        return currentState.copyWith(messages: updatedMessages);
-      });
-
+    debugPrint('MessageNotifier: Loading initial messages for $chatGroupId');
+    final loaded = await loadChatList(
+      fetch: () => _repository.loadMessages(chatGroupId, limit: 100),
+    );
+    if (loaded.phase == ChatSurfacePhase.error) {
       debugPrint(
-          'MessageNotifier: Loaded ${cachedMessages.length} cached messages');
-    } catch (e) {
-      debugPrint('MessageNotifier: Error loading initial messages: $e');
-      state = AsyncValue.error(e, StackTrace.current);
+          'MessageNotifier: Error loading initial messages: ${loaded.error}');
+      state = AsyncValue.error(
+        loaded.error ?? Exception("Couldn't load chat"),
+        StackTrace.current,
+      );
+      return;
     }
+
+    state = await AsyncValue.guard(() async {
+      final currentState = await future;
+      final updatedMessages =
+          Map<String, List<Message>>.from(currentState.messages);
+      updatedMessages[chatGroupId] = loaded.items;
+      return currentState.copyWith(messages: updatedMessages);
+    });
+
+    debugPrint(
+        'MessageNotifier: Loaded ${loaded.items.length} cached messages');
   }
 
   Future<void> _startSupabaseMessagesStream(
@@ -248,8 +255,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       return;
     }
 
-    debugPrint(
-        'MessageNotifier: Starting degraded REST poll for $chatGroupId');
+    debugPrint('MessageNotifier: Starting degraded REST poll for $chatGroupId');
     _fallbackPollTimer?.cancel();
     Future<void> poll() async {
       try {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,10 +28,18 @@ import 'lobby_notifier_test.mocks.dart';
 /// / full `_loadPersistedLobbyState()`. Persist fail keeps the claimed seat
 /// and surfaces error + Retry.
 ///
+/// Slice H reds (same writer): removeSpot / clearAllSpots / claimSpotSimple /
+/// callSpotForGame / processExpiredTimers must patch currentLobby (and the
+/// Tonight map's gameLobbySpots) without loadLobbyState / full reload, then
+/// one-row persist via [LobbySeatWriter] / `_commitSeatWrite` — not
+/// `_patchSpotLocally` or a second writer. Persist fail keeps the optimistic
+/// seat and surfaces `lastSeatWriteError` + `retrySeatWrite`.
+///
 /// Loop may extract [LobbySeatWriter] from [LobbyNotifier]. Seams:
 /// `Object? lastSeatWriteError` and `Future<void> retrySeatWrite()` on the
 /// notifier (or the extracted writer). Never persist the literal wipe of a
-/// seat just claimed.
+/// seat just claimed. Use `debugCurrentUserId` / `_resolvedCurrentUserId`
+/// for friend-tap paths (do not require a live Auth session in this harness).
 Lobby _lobby({
   String id = 'lobby-9',
   String name = 'Tonight',
@@ -139,6 +148,94 @@ Future<void> _retrySeatWrite(LobbyNotifier notifier) async {
   }
 }
 
+LobbyState? _lobbyState(ProviderContainer container) =>
+    container.read(lobbyNotifierProvider).valueOrNull;
+
+List<String?>? _mapSpots(ProviderContainer container, [String game = 'Warzone']) =>
+    _lobbyState(container)?.gameLobbySpots[game];
+
+/// Friend-visible Tonight map + currentLobby must stay in lockstep.
+void _expectVisibleSpots(
+  ProviderContainer container,
+  List<String?> expected, {
+  required String reason,
+}) {
+  final lobby = _currentLobby(container);
+  expect(lobby, isNotNull, reason: reason);
+  expect(lobby!.id, 'lobby-9', reason: '$reason — no full-reload wipe');
+  expect(lobby.spots, expected, reason: reason);
+  expect(
+    _mapSpots(container, lobby.gameName),
+    expected,
+    reason: '$reason (Tonight map reads gameLobbySpots)',
+  );
+}
+
+String _methodBody(String src, String name) {
+  final match = RegExp('Future<void> $name\\(').firstMatch(src);
+  if (match == null) {
+    fail(
+      'Loop: $name must stay on LobbyNotifier and route through '
+      'LobbySeatWriter / _commitSeatWrite',
+    );
+  }
+  var i = src.indexOf('{', match.end);
+  if (i < 0) {
+    fail('$name has no body');
+  }
+  var depth = 0;
+  final start = i;
+  for (; i < src.length; i++) {
+    final ch = src[i];
+    if (ch == '{') depth++;
+    if (ch == '}') {
+      depth--;
+      if (depth == 0) return src.substring(start, i + 1);
+    }
+  }
+  fail('$name body unclosed');
+}
+
+void _expectRoutesThroughSeatWriter(String src, String name) {
+  final body = _methodBody(src, name);
+  expect(
+    body.contains('_commitSeatWrite'),
+    isTrue,
+    reason: '$name must route through LobbySeatWriter / _commitSeatWrite '
+        '— not a second writer',
+  );
+  expect(
+    body.contains('_loadPersistedLobbyState'),
+    isFalse,
+    reason: '$name must not full-reload (flash) after the seat patch',
+  );
+  expect(
+    body.contains('_patchSpotLocally'),
+    isFalse,
+    reason: '$name must not use _patchSpotLocally as a second writer',
+  );
+}
+
+List<Map<String, dynamic>?> _expiredAndLiveTimers() {
+  return [
+    <String, dynamic>{
+      'start_time': DateTime.now()
+          .subtract(const Duration(minutes: 10))
+          .toIso8601String(),
+      'duration': 30,
+      'remaining': 0,
+      'spot_index': 0,
+    },
+    <String, dynamic>{
+      'start_time': DateTime.now().toIso8601String(),
+      'duration': 120,
+      'remaining': 90,
+      'spot_index': 1,
+    },
+    null,
+  ];
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -173,6 +270,7 @@ void main() {
     when(mockRepository.updateMemberStatus(any, any, any))
         .thenAnswer((_) async {});
     when(mockRepository.processPeacockQueue()).thenAnswer((_) async {});
+    when(mockRepository.processExpiredTimers()).thenAnswer((_) async {});
     when(mockRepository.saveLobbyState(any)).thenAnswer((_) async {});
 
     SharedPreferences.setMockInitialValues({});
@@ -209,6 +307,7 @@ void main() {
 
   Future<LobbyNotifier> pumpOpenLobby({
     Lobby? lobby,
+    String? currentUserId,
   }) async {
     final seated = lobby ?? _lobby();
     when(mockRepository.getLobbyStream(seated.id)).thenAnswer(
@@ -216,6 +315,9 @@ void main() {
     );
     await container.read(lobbyNotifierProvider.future);
     final notifier = container.read(lobbyNotifierProvider.notifier);
+    if (currentUserId != null) {
+      notifier.debugCurrentUserId = currentUserId;
+    }
     notifier.setSelectedLobbyId(seated.id);
     await Future<void>.delayed(Duration.zero);
     expect(
@@ -370,6 +472,379 @@ void main() {
         verifyNever(mockRepository.saveLobbyState(any));
         verifyNever(mockRepository.joinLobby(any, any));
         expect(_currentLobby(container)?.spots[2], 'user-3');
+      },
+    );
+  });
+
+  group('LobbySeatWriter - friend-visible leave/clear/claim/call/expired (Slice H)',
+      () {
+    test(
+      'removeSpot / clearAllSpots / claimSpotSimple / callSpotForGame / '
+      'processExpiredTimers route through LobbySeatWriter',
+      () {
+        final src = File('lib/presentation/notifiers/lobby_notifier.dart')
+            .readAsStringSync();
+        _expectRoutesThroughSeatWriter(src, 'removeSpot');
+        _expectRoutesThroughSeatWriter(src, 'clearAllSpots');
+        _expectRoutesThroughSeatWriter(src, 'claimSpotSimple');
+        _expectRoutesThroughSeatWriter(src, 'callSpotForGame');
+        _expectRoutesThroughSeatWriter(src, 'processExpiredTimers');
+      },
+    );
+
+    test(
+      'removeSpot patches currentLobby without loadLobbyState',
+      () async {
+        final notifier = await pumpOpenLobby(currentUserId: 'user-1');
+
+        await notifier.removeSpot('Warzone', 0);
+
+        _expectVisibleSpots(
+          container,
+          [null, 'user-2', null],
+          reason: 'friends who leave a seat must vanish immediately — '
+              'no full-reload flash',
+        );
+        verify(mockRepository.assignSpot('lobby-9', 0, null)).called(1);
+        _expectNoFullReload(mockRepository);
+      },
+    );
+
+    test(
+      'removeSpot persist fail keeps optimistic empty seat and surfaces retry',
+      () async {
+        final notifier = await pumpOpenLobby(currentUserId: 'user-1');
+        when(mockRepository.assignSpot(any, any, any))
+            .thenThrow(Exception('offline'));
+
+        Object? thrown;
+        try {
+          await notifier.removeSpot('Warzone', 0);
+        } catch (e) {
+          thrown = e;
+        }
+
+        _expectVisibleSpots(
+          container,
+          [null, 'user-2', null],
+          reason: 'persist fail must keep the seat just left',
+        );
+        expect(
+          thrown,
+          isNull,
+          reason: 'persist fail marks error + Retry; do not rethrow a wipe',
+        );
+        expect(
+          _seatWriteError(notifier),
+          isNotNull,
+          reason: 'Loop seam lastSeatWriteError (LobbySeatWriter)',
+        );
+        expect(_seatWriteCanRetry(notifier), isTrue);
+
+        when(mockRepository.assignSpot(any, any, any)).thenAnswer((_) async {});
+        await _retrySeatWrite(notifier);
+
+        _expectVisibleSpots(
+          container,
+          [null, 'user-2', null],
+          reason: 'Retry must keep the left seat',
+        );
+        expect(_seatWriteError(notifier), isNull);
+        verify(mockRepository.assignSpot('lobby-9', 0, null))
+            .called(greaterThanOrEqualTo(2));
+        verifyNever(mockRepository.loadLobbyState());
+      },
+    );
+
+    test(
+      'clearAllSpots patches currentLobby without loadLobbyState',
+      () async {
+        final notifier = await pumpOpenLobby();
+
+        await notifier.clearAllSpots('Warzone');
+
+        _expectVisibleSpots(
+          container,
+          [null, null, null],
+          reason: 'Clear All Spots must empty the map immediately — '
+              'no full-reload flash',
+        );
+        verify(mockRepository.assignSpot(any, any, any))
+            .called(greaterThanOrEqualTo(1));
+        _expectNoFullReload(mockRepository);
+      },
+    );
+
+    test(
+      'clearAllSpots persist fail keeps optimistic empty seats and surfaces retry',
+      () async {
+        final notifier = await pumpOpenLobby();
+        when(mockRepository.assignSpot(any, any, any))
+            .thenThrow(Exception('offline'));
+
+        Object? thrown;
+        try {
+          await notifier.clearAllSpots('Warzone');
+        } catch (e) {
+          thrown = e;
+        }
+
+        _expectVisibleSpots(
+          container,
+          [null, null, null],
+          reason: 'persist fail must keep the cleared map',
+        );
+        expect(
+          thrown,
+          isNull,
+          reason: 'persist fail marks error + Retry; do not rethrow a wipe',
+        );
+        expect(
+          _seatWriteError(notifier),
+          isNotNull,
+          reason: 'Loop seam lastSeatWriteError (LobbySeatWriter)',
+        );
+        expect(_seatWriteCanRetry(notifier), isTrue);
+
+        when(mockRepository.assignSpot(any, any, any)).thenAnswer((_) async {});
+        await _retrySeatWrite(notifier);
+
+        _expectVisibleSpots(
+          container,
+          [null, null, null],
+          reason: 'Retry must keep the cleared seats',
+        );
+        expect(_seatWriteError(notifier), isNull);
+        verify(mockRepository.assignSpot(any, any, any))
+            .called(greaterThanOrEqualTo(2));
+        verifyNever(mockRepository.loadLobbyState());
+      },
+    );
+
+    test(
+      'claimSpotSimple patches currentLobby without loadLobbyState',
+      () async {
+        final notifier = await pumpOpenLobby(currentUserId: 'user-3');
+
+        await notifier.claimSpotSimple(2);
+
+        _expectVisibleSpots(
+          container,
+          ['user-1', 'user-2', 'user-3'],
+          reason: 'friends who tap Claim must sit immediately — '
+              'no full-reload flash',
+        );
+        verify(mockRepository.assignSpot('lobby-9', 2, 'user-3')).called(1);
+        _expectNoFullReload(mockRepository);
+      },
+    );
+
+    test(
+      'claimSpotSimple persist fail keeps optimistic seat and surfaces retry',
+      () async {
+        final notifier = await pumpOpenLobby(currentUserId: 'user-3');
+        when(mockRepository.assignSpot(any, any, any))
+            .thenThrow(Exception('offline'));
+
+        Object? thrown;
+        try {
+          await notifier.claimSpotSimple(2);
+        } catch (e) {
+          thrown = e;
+        }
+
+        _expectVisibleSpots(
+          container,
+          ['user-1', 'user-2', 'user-3'],
+          reason: 'persist fail must keep the seat just claimed',
+        );
+        expect(
+          thrown,
+          isNull,
+          reason: 'persist fail marks error + Retry; do not rethrow a wipe',
+        );
+        expect(
+          _seatWriteError(notifier),
+          isNotNull,
+          reason: 'Loop seam lastSeatWriteError (LobbySeatWriter)',
+        );
+        expect(_seatWriteCanRetry(notifier), isTrue);
+
+        when(mockRepository.assignSpot(any, any, any)).thenAnswer((_) async {});
+        await _retrySeatWrite(notifier);
+
+        _expectVisibleSpots(
+          container,
+          ['user-1', 'user-2', 'user-3'],
+          reason: 'Retry must keep the claimed seat',
+        );
+        expect(_seatWriteError(notifier), isNull);
+        verify(mockRepository.assignSpot('lobby-9', 2, 'user-3'))
+            .called(greaterThanOrEqualTo(2));
+        verifyNever(mockRepository.loadLobbyState());
+      },
+    );
+
+    test(
+      'callSpotForGame patches currentLobby without loadLobbyState',
+      () async {
+        final notifier = await pumpOpenLobby(currentUserId: 'user-3');
+
+        await notifier.callSpotForGame(2, 'Warzone');
+
+        _expectVisibleSpots(
+          container,
+          ['user-1', 'user-2', 'user-3'],
+          reason: 'friends who tap Call must sit immediately — '
+              'no full-reload flash',
+        );
+        final lobby = _currentLobby(container)!;
+        expect(
+          lobby.spotTimers[2],
+          isNotNull,
+          reason: 'Call must start the seat timer on currentLobby immediately',
+        );
+        final duration = lobby.spotTimers[2]!['duration'];
+        expect(
+          duration,
+          anyOf(300, const Duration(minutes: 5).inSeconds),
+        );
+        verify(mockRepository.assignSpot('lobby-9', 2, 'user-3')).called(1);
+        _expectNoFullReload(mockRepository);
+      },
+    );
+
+    test(
+      'callSpotForGame persist fail keeps optimistic call and surfaces retry',
+      () async {
+        final notifier = await pumpOpenLobby(currentUserId: 'user-3');
+        when(mockRepository.assignSpot(any, any, any))
+            .thenThrow(Exception('offline'));
+
+        Object? thrown;
+        try {
+          await notifier.callSpotForGame(2, 'Warzone');
+        } catch (e) {
+          thrown = e;
+        }
+
+        _expectVisibleSpots(
+          container,
+          ['user-1', 'user-2', 'user-3'],
+          reason: 'persist fail must keep the called seat',
+        );
+        expect(
+          _currentLobby(container)?.spotTimers[2],
+          isNotNull,
+          reason: 'persist fail must keep the call timer just started',
+        );
+        expect(
+          thrown,
+          isNull,
+          reason: 'persist fail marks error + Retry; do not rethrow a wipe',
+        );
+        expect(
+          _seatWriteError(notifier),
+          isNotNull,
+          reason: 'Loop seam lastSeatWriteError (LobbySeatWriter)',
+        );
+        expect(_seatWriteCanRetry(notifier), isTrue);
+
+        when(mockRepository.assignSpot(any, any, any)).thenAnswer((_) async {});
+        await _retrySeatWrite(notifier);
+
+        _expectVisibleSpots(
+          container,
+          ['user-1', 'user-2', 'user-3'],
+          reason: 'Retry must keep the called seat',
+        );
+        expect(_seatWriteError(notifier), isNull);
+        verify(mockRepository.assignSpot('lobby-9', 2, 'user-3'))
+            .called(greaterThanOrEqualTo(2));
+        verifyNever(mockRepository.loadLobbyState());
+      },
+    );
+
+    test(
+      'processExpiredTimers patches currentLobby without loadLobbyState',
+      () async {
+        final notifier = await pumpOpenLobby(
+          lobby: _lobby(spotTimers: _expiredAndLiveTimers()),
+        );
+
+        await notifier.processExpiredTimers();
+
+        _expectVisibleSpots(
+          container,
+          [null, 'user-2', null],
+          reason: 'expired seat must free immediately — no full-reload flash',
+        );
+        final lobby = _currentLobby(container)!;
+        expect(
+          lobby.spots[1],
+          'user-2',
+          reason: 'live timer seat must stay seated',
+        );
+        expect(
+          lobby.spotTimers[0],
+          isNull,
+          reason: 'expired timer row must clear on currentLobby',
+        );
+        verify(mockRepository.processExpiredTimers()).called(1);
+        _expectNoFullReload(mockRepository);
+      },
+    );
+
+    test(
+      'processExpiredTimers persist fail keeps optimistic expiry and surfaces retry',
+      () async {
+        final notifier = await pumpOpenLobby(
+          lobby: _lobby(spotTimers: _expiredAndLiveTimers()),
+        );
+        when(mockRepository.processExpiredTimers())
+            .thenThrow(Exception('offline'));
+
+        Object? thrown;
+        try {
+          await notifier.processExpiredTimers();
+        } catch (e) {
+          thrown = e;
+        }
+
+        _expectVisibleSpots(
+          container,
+          [null, 'user-2', null],
+          reason: 'persist fail must keep the expired seat freed',
+        );
+        expect(
+          _currentLobby(container)?.spots[1],
+          'user-2',
+          reason: 'persist fail must not wipe the live seat via reload',
+        );
+        expect(
+          thrown,
+          isNull,
+          reason: 'persist fail marks error + Retry; do not rethrow a wipe',
+        );
+        expect(
+          _seatWriteError(notifier),
+          isNotNull,
+          reason: 'Loop seam lastSeatWriteError (LobbySeatWriter)',
+        );
+        expect(_seatWriteCanRetry(notifier), isTrue);
+
+        when(mockRepository.processExpiredTimers()).thenAnswer((_) async {});
+        await _retrySeatWrite(notifier);
+
+        _expectVisibleSpots(
+          container,
+          [null, 'user-2', null],
+          reason: 'Retry must keep the expired seat freed',
+        );
+        expect(_seatWriteError(notifier), isNull);
+        verify(mockRepository.processExpiredTimers())
+            .called(greaterThanOrEqualTo(2));
+        verifyNever(mockRepository.loadLobbyState());
       },
     );
   });

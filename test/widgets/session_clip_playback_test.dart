@@ -31,10 +31,7 @@ void main() {
               shown = await openSessionClipMedia(
                 context,
                 attached(videoUrl: null),
-                playerBuilder: (_) {
-                  fail('player should not build');
-                  return const SizedBox.shrink();
-                },
+                playerBuilder: (_) => fail('player should not build'),
               );
             },
             child: const Text('open'),
@@ -125,5 +122,148 @@ void main() {
     await tester.tap(find.byKey(const Key('session-clip-playback-open')));
     await tester.pump();
     expect(launched, Uri.parse('https://cdn.example/ace.mp4'));
+  });
+
+  testWidgets('missing clip dialog is empty, not a crash', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SessionClipPlaybackDialog(
+          clip: attached(videoUrl: null),
+          playerBuilder: (_) => fail('player should not build'),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('session-clip-playback')), findsOneWidget);
+    expect(find.byKey(const Key('session-clip-missing')), findsOneWidget);
+    expect(find.text(kSessionClipMissingCopy), findsOneWidget);
+    expect(find.text(kSessionClipMissingHint), findsOneWidget);
+    expect(find.byKey(const Key('session-clip-player-retry')), findsNothing);
+    expect(find.byKey(const Key('session-clip-playback-open')), findsNothing);
+  });
+
+  testWidgets('offline network clip offers retry instead of a hang',
+      (tester) async {
+    var playerBuilds = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SessionClipPlaybackDialog(
+          clip: attached(
+            videoUrl: 'https://cdn.example/ace.mp4',
+            title: 'Ace',
+          ),
+          isOffline: true,
+          playerBuilder: (_) {
+            playerBuilds++;
+            return const SizedBox(
+              key: Key('session-clip-player-stub'),
+              height: 40,
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('session-clip-offline')), findsOneWidget);
+    expect(find.text(kSessionClipOfflineHint), findsOneWidget);
+    expect(find.byKey(const Key('session-clip-offline-retry')), findsOneWidget);
+    expect(playerBuilds, 0);
+
+    await tester.tap(find.byKey(const Key('session-clip-offline-retry')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('session-clip-player-stub')), findsOneWidget);
+    expect(playerBuilds, 1);
+    expect(find.byKey(const Key('session-clip-offline')), findsNothing);
+  });
+
+  testWidgets('player load failure offers retry', (tester) async {
+    var loads = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SessionClipPlayer(
+            url: 'https://cdn.example/ace.mp4',
+            initialize: () async {
+              loads++;
+              if (loads == 1) throw Exception('decode failed');
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const Key('session-clip-player-error')), findsOneWidget);
+    expect(find.text(kSessionClipLoadFailedCopy), findsOneWidget);
+    expect(find.byKey(const Key('session-clip-player-retry')), findsOneWidget);
+    expect(loads, 1);
+
+    await tester.tap(find.byKey(const Key('session-clip-player-retry')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(loads, 2);
+    expect(find.byKey(const Key('session-clip-player')), findsOneWidget);
+    expect(find.byKey(const Key('session-clip-player-error')), findsNothing);
+  });
+
+  testWidgets('player offline error retry re-attempts load', (tester) async {
+    var loads = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SessionClipPlayer(
+            url: 'https://cdn.example/ace.mp4',
+            isOffline: true,
+            initialize: () async {
+              loads++;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('session-clip-offline')), findsOneWidget);
+    expect(find.byKey(const Key('session-clip-offline-retry')), findsOneWidget);
+    expect(loads, 0);
+
+    await tester.tap(find.byKey(const Key('session-clip-offline-retry')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(loads, 1);
+    expect(find.byKey(const Key('session-clip-player')), findsOneWidget);
+  });
+
+  testWidgets('empty You/stats last-5 open is a no-op, not a crash',
+      (tester) async {
+    var shown = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              shown = await openSessionClipFromYouStats(
+                context,
+                sessions: const [],
+                playerBuilder: (_) => fail('player should not build'),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(shown, isFalse);
+    expect(find.byKey(const Key('session-clip-playback')), findsNothing);
   });
 }

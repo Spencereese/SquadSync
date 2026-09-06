@@ -358,4 +358,18 @@ void main() {
     expect(find.byKey(const Key('last-five-rated-open-0')), findsNothing);
     expect(find.byKey(const Key('last-five-rated-clip-0')), findsNothing);
   });
+
+  testWidgets('empty You last-5 does not crash looking up a clip',
+      (tester) async {
+    await tester.pumpWidget(
+      wrap(const YouLastFiveRatedSessions(sessions: [])),
+    );
+
+    expect(find.byKey(const Key('you-last-five')), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-empty')), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-open-0')), findsNothing);
+    expect(find.byKey(const Key('session-clip-playback')), findsNothing);
+    expect(sessionClipFromYouStats(sessions: const []), isNull);
+    expect(lastFiveRatedSessionLabel(SessionRatingState.unrated), isEmpty);
+  });
 }

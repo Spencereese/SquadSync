@@ -782,6 +782,267 @@ void main() {
     });
   });
 
+  group('session clip playback empty/error/retry', () {
+    SessionClip attached({
+      String clipId = 'clip-1',
+      String? videoUrl = '/tmp/clutch.mp4',
+    }) {
+      return reduceSessionClip(
+        current: SessionClip.empty,
+        event: SessionClipEvent.attach,
+        clipId: clipId,
+        videoUrl: videoUrl,
+      );
+    }
+
+    test('missing clip is empty, not a player', () {
+      expect(
+        resolveSessionClipPlaybackPhase(clip: null),
+        SessionClipPlaybackPhase.missing,
+      );
+      expect(
+        resolveSessionClipPlaybackPhase(clip: SessionClip.empty),
+        SessionClipPlaybackPhase.missing,
+      );
+      expect(
+        resolveSessionClipPlaybackPhase(clip: attached(videoUrl: null)),
+        SessionClipPlaybackPhase.missing,
+      );
+      expect(
+        sessionClipPlaybackMessage(SessionClipPlaybackPhase.missing),
+        kSessionClipMissingCopy,
+      );
+      expect(
+        sessionClipPlaybackFeedbackKey(SessionClipPlaybackPhase.missing),
+        const Key('session-clip-missing'),
+      );
+      expect(
+        sessionClipPlaybackCanRetry(SessionClipPlaybackPhase.missing),
+        isFalse,
+      );
+    });
+
+    test('missing wins over offline and load fail', () {
+      expect(
+        resolveSessionClipPlaybackPhase(
+          clip: attached(videoUrl: null),
+          isOffline: true,
+          loadError: 'broken',
+        ),
+        SessionClipPlaybackPhase.missing,
+      );
+    });
+
+    test('load failure is error with retry, not a hang', () {
+      expect(
+        resolveSessionClipPlaybackPhase(
+          clip: attached(),
+          loadError: 'decode failed',
+        ),
+        SessionClipPlaybackPhase.loadFailed,
+      );
+      expect(
+        sessionClipPlaybackMessage(SessionClipPlaybackPhase.loadFailed),
+        kSessionClipLoadFailedCopy,
+      );
+      expect(
+        sessionClipPlaybackCanRetry(SessionClipPlaybackPhase.loadFailed),
+        isTrue,
+      );
+      expect(
+        sessionClipPlaybackRetryKey(SessionClipPlaybackPhase.loadFailed),
+        const Key('session-clip-player-retry'),
+      );
+    });
+
+    test('network clip while offline is offline with retry', () {
+      final http = attached(videoUrl: 'https://cdn.example/ace.mp4');
+      expect(
+        resolveSessionClipPlaybackPhase(clip: http, isOffline: true),
+        SessionClipPlaybackPhase.offline,
+      );
+      expect(
+        resolveSessionClipPlaybackPhase(
+          clip: http,
+          loadError: Exception('SocketException: offline'),
+        ),
+        SessionClipPlaybackPhase.offline,
+      );
+      expect(
+        sessionClipPlaybackHint(SessionClipPlaybackPhase.offline),
+        kSessionClipOfflineHint,
+      );
+      expect(
+        sessionClipPlaybackCanRetry(SessionClipPlaybackPhase.offline),
+        isTrue,
+      );
+    });
+
+    test('gallery clip still loads when offline flag is set', () {
+      expect(
+        resolveSessionClipPlaybackPhase(
+          clip: attached(),
+          isOffline: true,
+        ),
+        SessionClipPlaybackPhase.ready,
+      );
+    });
+
+    test('reduce open/fail/retry for an openable clip', () {
+      final clip = attached();
+      final opened = reduceSessionClipPlayback(
+        current: SessionClipPlaybackState.missing,
+        event: SessionClipPlaybackEvent.open,
+        clip: clip,
+      );
+      expect(opened.isLoading, isTrue);
+
+      final failed = reduceSessionClipPlayback(
+        current: opened,
+        event: SessionClipPlaybackEvent.fail,
+        error: 'decode failed',
+      );
+      expect(failed.isLoadFailed, isTrue);
+      expect(failed.canRetry, isTrue);
+
+      final retried = reduceSessionClipPlayback(
+        current: failed,
+        event: SessionClipPlaybackEvent.retry,
+      );
+      expect(retried.isLoading, isTrue);
+      expect(retried.clip?.clipId, 'clip-1');
+
+      final ready = reduceSessionClipPlayback(
+        current: retried,
+        event: SessionClipPlaybackEvent.loaded,
+      );
+      expect(ready.isReady, isTrue);
+    });
+
+    test('retry on a missing clip stays missing', () {
+      final next = reduceSessionClipPlayback(
+        current: SessionClipPlaybackState.missing,
+        event: SessionClipPlaybackEvent.retry,
+        clip: attached(videoUrl: null),
+      );
+      expect(next.isMissing, isTrue);
+      expect(next.canRetry, isFalse);
+    });
+
+    test('offline retry goes back to loading', () {
+      final clip = attached(videoUrl: 'https://cdn.example/ace.mp4');
+      final offline = reduceSessionClipPlayback(
+        current: SessionClipPlaybackState.missing,
+        event: SessionClipPlaybackEvent.open,
+        clip: clip,
+        isOffline: true,
+      );
+      expect(offline.isOffline, isTrue);
+      final retried = reduceSessionClipPlayback(
+        current: offline,
+        event: SessionClipPlaybackEvent.retry,
+      );
+      expect(retried.isLoading, isTrue);
+    });
+
+    test('runSessionClipLoad maps missing, fail, offline, and retry', () async {
+      var calls = 0;
+      final missing = await runSessionClipLoad(
+        () async {
+          calls++;
+        },
+        clip: attached(videoUrl: null),
+      );
+      expect(missing.isMissing, isTrue);
+      expect(calls, 0);
+
+      final failed = await runSessionClipLoad(
+        () async {
+          calls++;
+          throw Exception('decode failed');
+        },
+        clip: attached(),
+      );
+      expect(failed.isFailed, isTrue);
+      expect(calls, 1);
+
+      final offline = await runSessionClipLoad(
+        () async {
+          calls++;
+        },
+        clip: attached(videoUrl: 'https://cdn.example/ace.mp4'),
+        isOffline: true,
+      );
+      expect(offline.isOffline, isTrue);
+      expect(calls, 1);
+
+      Future<void> load() async {
+        calls++;
+        if (calls == 2) throw Exception('offline');
+      }
+
+      final first = await runSessionClipLoad(load, clip: attached());
+      expect(first.isOffline, isTrue);
+      final second = await retrySessionClipLoad(load, clip: attached());
+      expect(second.isReady, isTrue);
+      expect(calls, 3);
+    });
+
+    test('empty You/stats last-5 is missing, not a crash', () {
+      expect(lastFiveRatedSessionsAreEmpty(null), isTrue);
+      expect(lastFiveRatedSessionsAreEmpty(const []), isTrue);
+      expect(sessionClipFromYouStats(sessions: null), isNull);
+      expect(sessionClipFromYouStats(sessions: const []), isNull);
+      expect(
+        sessionClipFromYouStats(
+          sessions: [
+            reduceSessionRating(
+              current: SessionRatingState.unrated,
+              event: SessionRatingEvent.rate,
+              stars: 5,
+            ),
+          ],
+        ),
+        isNull,
+      );
+      expect(sessionClipLoadFromYouStats().isMissing, isTrue);
+      expect(
+        sessionClipLoadFromYouStats(sessions: const []).isMissing,
+        isTrue,
+      );
+      expect(
+        sessionClipLoadFromYouStats(sessions: const [], index: 3).isMissing,
+        isTrue,
+      );
+      expect(lastFiveRatedSessionLabel(SessionRatingState.unrated), '');
+      expect(lastFiveRatedSessionsFromHistory(const []), isEmpty);
+      expect(
+        resolveSessionClipPlaybackPhase(
+          clip: sessionClipFromYouStats(sessions: const []),
+        ),
+        SessionClipPlaybackPhase.missing,
+      );
+    });
+
+    test('You/stats last-5 row with video_url is ready to open', () {
+      final rated = attachClipToRatedSession(
+        reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          stars: 5,
+        ),
+        attached(),
+      );
+      final result = sessionClipLoadFromYouStats(sessions: [rated]);
+      expect(result.isReady, isTrue);
+      expect(result.clip?.videoUrl, '/tmp/clutch.mp4');
+      expect(
+        sessionClipFromYouStats(sessions: [rated], index: 1),
+        isNull,
+      );
+    });
+  });
+
   group('planMatchHistoryWrite', () {
     final ratedNotes = notesForSessionRating(
       reduceSessionRating(

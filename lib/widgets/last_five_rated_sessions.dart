@@ -157,7 +157,7 @@ class _LastFiveRatedSessionRow extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         key: Key('session-clip-unavailable'),
-        content: Text('Clip media is unavailable'),
+        content: Text(kSessionClipUnavailableCopy),
       ),
     );
   }

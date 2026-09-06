@@ -412,11 +412,317 @@ bool sessionClipIsNetworkMedia(SessionClip? clip) {
   return uri.scheme == 'http' || uri.scheme == 'https';
 }
 
-/// Dialog / a11y title for an attached session clip.
-String sessionClipPlaybackTitle(SessionClip clip) {
+/// Dialog / a11y title for an attached session clip. Missing clip is still
+/// titled — the empty/error body lives in [resolveSessionClipPlaybackPhase].
+String sessionClipPlaybackTitle(SessionClip? clip) {
+  if (clip == null) return 'Session clip';
   return _nonEmpty(clip.title) ??
       _nonEmpty(clip.fileName) ??
       'Session clip';
+}
+
+/// Empty / load-fail / offline for You/stats clip playback (tickets 9/17).
+/// Missing clip wins. Retry is [SessionClipPlaybackEvent.retry] /
+/// [retrySessionClipLoad], not a second dialog.
+enum SessionClipPlaybackPhase {
+  missing,
+  loading,
+  ready,
+  loadFailed,
+  offline,
+}
+
+enum SessionClipPlaybackEvent {
+  open,
+  loaded,
+  fail,
+  goOffline,
+  retry,
+}
+
+enum SessionClipLoadOutcome { ready, missing, failed, offline }
+
+const kSessionClipMissingCopy = 'Clip is missing';
+const kSessionClipMissingHint = 'This session has no playable clip.';
+const kSessionClipLoadFailedCopy = "Can't play clip";
+const kSessionClipLoadFailedHint = 'The file could not be loaded.';
+const kSessionClipOfflineCopy = "Can't play clip";
+const kSessionClipOfflineHint = 'Check your connection and try again.';
+const kSessionClipRetryLabel = 'Retry';
+const kSessionClipUnavailableCopy = 'Clip media is unavailable';
+
+class SessionClipPlaybackState {
+  const SessionClipPlaybackState({
+    this.phase = SessionClipPlaybackPhase.missing,
+    this.clip,
+    this.error,
+  });
+
+  static const missing = SessionClipPlaybackState();
+
+  final SessionClipPlaybackPhase phase;
+  final SessionClip? clip;
+  final Object? error;
+
+  bool get isMissing => phase == SessionClipPlaybackPhase.missing;
+  bool get isLoading => phase == SessionClipPlaybackPhase.loading;
+  bool get isReady => phase == SessionClipPlaybackPhase.ready;
+  bool get isLoadFailed => phase == SessionClipPlaybackPhase.loadFailed;
+  bool get isOffline => phase == SessionClipPlaybackPhase.offline;
+  bool get canRetry => sessionClipPlaybackCanRetry(phase);
+}
+
+class SessionClipLoadResult {
+  const SessionClipLoadResult.ready(this.clip)
+      : outcome = SessionClipLoadOutcome.ready,
+        error = null;
+
+  const SessionClipLoadResult.missing({this.clip})
+      : outcome = SessionClipLoadOutcome.missing,
+        error = null;
+
+  const SessionClipLoadResult.failed(this.error, {this.clip})
+      : outcome = SessionClipLoadOutcome.failed;
+
+  const SessionClipLoadResult.offline({this.clip, this.error})
+      : outcome = SessionClipLoadOutcome.offline;
+
+  final SessionClipLoadOutcome outcome;
+  final SessionClip? clip;
+  final Object? error;
+
+  bool get isReady => outcome == SessionClipLoadOutcome.ready;
+  bool get isMissing => outcome == SessionClipLoadOutcome.missing;
+  bool get isFailed => outcome == SessionClipLoadOutcome.failed;
+  bool get isOffline => outcome == SessionClipLoadOutcome.offline;
+}
+
+/// Safe last-5 clip lookup for You / stats. Empty list, OOB index, or an
+/// unattached clip is null — never a range or null-check crash.
+SessionClip? sessionClipFromYouStats({
+  List<SessionRatingState>? sessions,
+  int index = 0,
+}) {
+  if (sessions == null || sessions.isEmpty) return null;
+  if (index < 0 || index >= sessions.length) return null;
+  final clip = sessions[index].clip;
+  if (clip == null || !clip.isAttached) return null;
+  return clip;
+}
+
+bool lastFiveRatedSessionsAreEmpty(List<SessionRatingState>? sessions) =>
+    sessions == null || sessions.isEmpty;
+
+/// Missing clip wins over offline / load fail. Empty You/stats last-5 is
+/// missing, not a hang.
+SessionClipPlaybackPhase resolveSessionClipPlaybackPhase({
+  SessionClip? clip,
+  String? mediaUrl,
+  bool isLoading = false,
+  bool isOffline = false,
+  Object? loadError,
+}) {
+  final openable =
+      canOpenSessionClip(clip) || _nonEmpty(mediaUrl) != null;
+  if (!openable) return SessionClipPlaybackPhase.missing;
+  if (isOffline &&
+      (sessionClipIsNetworkMedia(clip) ||
+          _sessionClipUrlIsNetwork(mediaUrl))) {
+    return SessionClipPlaybackPhase.offline;
+  }
+  if (loadError != null) {
+    if (sessionClipPlaybackIsOfflineError(loadError)) {
+      return SessionClipPlaybackPhase.offline;
+    }
+    return SessionClipPlaybackPhase.loadFailed;
+  }
+  if (isLoading) return SessionClipPlaybackPhase.loading;
+  return SessionClipPlaybackPhase.ready;
+}
+
+bool _sessionClipUrlIsNetwork(String? url) {
+  final uri = url == null ? null : uriForSessionClipMedia(url);
+  if (uri == null) return false;
+  return uri.scheme == 'http' || uri.scheme == 'https';
+}
+
+bool sessionClipPlaybackIsOfflineError(Object? error) {
+  if (error == null) return false;
+  final text = error.toString().toLowerCase();
+  return text.contains('socket') ||
+      text.contains('offline') ||
+      text.contains('network') ||
+      text.contains('failed host lookup') ||
+      text.contains('connection refused') ||
+      text.contains('clientexception');
+}
+
+bool sessionClipPlaybackCanRetry(SessionClipPlaybackPhase phase) =>
+    phase == SessionClipPlaybackPhase.loadFailed ||
+    phase == SessionClipPlaybackPhase.offline;
+
+Key sessionClipPlaybackFeedbackKey(SessionClipPlaybackPhase phase) {
+  switch (phase) {
+    case SessionClipPlaybackPhase.missing:
+      return const Key('session-clip-missing');
+    case SessionClipPlaybackPhase.loading:
+      return const Key('session-clip-player-loading');
+    case SessionClipPlaybackPhase.ready:
+      return const Key('session-clip-player');
+    case SessionClipPlaybackPhase.loadFailed:
+      return const Key('session-clip-player-error');
+    case SessionClipPlaybackPhase.offline:
+      return const Key('session-clip-offline');
+  }
+}
+
+Key sessionClipPlaybackRetryKey(SessionClipPlaybackPhase phase) {
+  if (phase == SessionClipPlaybackPhase.offline) {
+    return const Key('session-clip-offline-retry');
+  }
+  return const Key('session-clip-player-retry');
+}
+
+String sessionClipPlaybackMessage(SessionClipPlaybackPhase phase) {
+  switch (phase) {
+    case SessionClipPlaybackPhase.missing:
+      return kSessionClipMissingCopy;
+    case SessionClipPlaybackPhase.loading:
+      return '';
+    case SessionClipPlaybackPhase.ready:
+      return '';
+    case SessionClipPlaybackPhase.loadFailed:
+      return kSessionClipLoadFailedCopy;
+    case SessionClipPlaybackPhase.offline:
+      return kSessionClipOfflineCopy;
+  }
+}
+
+String? sessionClipPlaybackHint(SessionClipPlaybackPhase phase) {
+  switch (phase) {
+    case SessionClipPlaybackPhase.missing:
+      return kSessionClipMissingHint;
+    case SessionClipPlaybackPhase.loadFailed:
+      return kSessionClipLoadFailedHint;
+    case SessionClipPlaybackPhase.offline:
+      return kSessionClipOfflineHint;
+    case SessionClipPlaybackPhase.loading:
+    case SessionClipPlaybackPhase.ready:
+      return null;
+  }
+}
+
+/// Reduce clip playback empty/error/retry. Pure; no I/O. Missing clip cannot
+/// retry into a player. Offline + load-fail retry goes back to loading when
+/// the clip is still openable.
+SessionClipPlaybackState reduceSessionClipPlayback({
+  required SessionClipPlaybackState current,
+  required SessionClipPlaybackEvent event,
+  SessionClip? clip,
+  Object? error,
+  bool isOffline = false,
+}) {
+  final target = clip ?? current.clip;
+  SessionClipPlaybackState next(SessionClipPlaybackPhase phase) {
+    return SessionClipPlaybackState(
+      phase: phase,
+      clip: target,
+      error: phase == SessionClipPlaybackPhase.loadFailed ||
+              phase == SessionClipPlaybackPhase.offline
+          ? error ?? current.error
+          : null,
+    );
+  }
+
+  SessionClipPlaybackPhase opened() {
+    return resolveSessionClipPlaybackPhase(
+      clip: target,
+      isLoading: true,
+      isOffline: isOffline,
+      loadError: error,
+    );
+  }
+
+  switch (event) {
+    case SessionClipPlaybackEvent.open:
+      return next(opened());
+    case SessionClipPlaybackEvent.loaded:
+      if (!canOpenSessionClip(target)) {
+        return next(SessionClipPlaybackPhase.missing);
+      }
+      if (isOffline && sessionClipIsNetworkMedia(target)) {
+        return next(SessionClipPlaybackPhase.offline);
+      }
+      return next(SessionClipPlaybackPhase.ready);
+    case SessionClipPlaybackEvent.fail:
+      if (!canOpenSessionClip(target)) {
+        return next(SessionClipPlaybackPhase.missing);
+      }
+      if (isOffline || sessionClipPlaybackIsOfflineError(error)) {
+        return next(SessionClipPlaybackPhase.offline);
+      }
+      return next(SessionClipPlaybackPhase.loadFailed);
+    case SessionClipPlaybackEvent.goOffline:
+      if (!canOpenSessionClip(target)) {
+        return next(SessionClipPlaybackPhase.missing);
+      }
+      return next(SessionClipPlaybackPhase.offline);
+    case SessionClipPlaybackEvent.retry:
+      if (!canOpenSessionClip(target)) {
+        return next(SessionClipPlaybackPhase.missing);
+      }
+      return next(SessionClipPlaybackPhase.loading);
+  }
+}
+
+/// Map a clip load attempt. Missing media is empty. Thrown load is fail, or
+/// offline when [isOffline] / the error looks like a network drop. Retry is
+/// calling this again.
+Future<SessionClipLoadResult> runSessionClipLoad(
+  Future<void> Function() load, {
+  SessionClip? clip,
+  bool isOffline = false,
+}) async {
+  if (!canOpenSessionClip(clip)) {
+    return SessionClipLoadResult.missing(clip: clip);
+  }
+  if (isOffline && sessionClipIsNetworkMedia(clip)) {
+    return SessionClipLoadResult.offline(clip: clip);
+  }
+  try {
+    await load();
+    return SessionClipLoadResult.ready(clip!);
+  } catch (e) {
+    if (isOffline || sessionClipPlaybackIsOfflineError(e)) {
+      return SessionClipLoadResult.offline(clip: clip, error: e);
+    }
+    return SessionClipLoadResult.failed(e, clip: clip);
+  }
+}
+
+Future<SessionClipLoadResult> retrySessionClipLoad(
+  Future<void> Function() load, {
+  SessionClip? clip,
+  bool isOffline = false,
+}) =>
+    runSessionClipLoad(load, clip: clip, isOffline: isOffline);
+
+/// Empty You/stats last-5 (or OOB row) is missing, not a crash.
+SessionClipLoadResult sessionClipLoadFromYouStats({
+  List<SessionRatingState>? sessions,
+  int index = 0,
+}) {
+  if (lastFiveRatedSessionsAreEmpty(sessions)) {
+    return const SessionClipLoadResult.missing();
+  }
+  if (index < 0 || index >= sessions!.length) {
+    return const SessionClipLoadResult.missing();
+  }
+  final clip = sessionClipFromYouStats(sessions: sessions, index: index);
+  if (!canOpenSessionClip(clip)) {
+    return SessionClipLoadResult.missing(clip: clip ?? sessions[index].clip);
+  }
+  return SessionClipLoadResult.ready(clip!);
 }
 
 /// Null unless [rating] is a 1–5 star submit.

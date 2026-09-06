@@ -217,6 +217,15 @@ void main() {
     expect(find.text('THIS WEEK'), findsOneWidget);
     expect(find.text(kWeeklySquadBoardEmptyCopy), findsOneWidget);
     expect(find.text(kWeeklySquadBoardEmptyHint), findsOneWidget);
+    expect(find.byKey(const Key('stats-last-five')), findsOneWidget);
+    expect(find.byKey(const Key('last-five-rated-open-0')), findsNothing);
+    expect(find.byKey(const Key('session-clip-playback')), findsNothing);
+    expect(
+      sessionClipLoadFromYouStats(
+        sessions: snapshot.lastFiveRatedSessions,
+      ).isMissing,
+      isTrue,
+    );
   });
 
   testWidgets('error view shows retry without painting empty W/L',

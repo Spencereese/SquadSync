@@ -238,7 +238,10 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
     if (plan.consumeInitialLink) {
       final initialLink = await _appLinks.getInitialLink();
       if (initialLink != null && mounted) {
-        _handleDeepLink(initialLink.toString());
+        _handleDeepLink(
+          initialLink.toString(),
+          source: PendingLinkSource.coldStart,
+        );
       }
     } else {
       debugPrint(
@@ -249,23 +252,38 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
 
     _sub = _appLinks.uriLinkStream.listen((Uri? link) {
       if (link != null && mounted) {
-        _handleDeepLink(link.toString());
+        _handleDeepLink(
+          link.toString(),
+          source: PendingLinkSource.resume,
+        );
       }
     }, onError: (err) {
       // Error in link stream - silently handled
     });
   }
 
-  void _handleDeepLink(String link) {
+  void _handleDeepLink(
+    String link, {
+    required PendingLinkSource source,
+  }) {
     if (!mounted) return;
 
     // Live path: leftover sim UL dropped; product custom-scheme lobby
-    // URLs resolve to /squad?lobby_id= and take splash down.
-    final location = prepareLiveAppLink(
-      link,
-      dismissSplash: FlutterNativeSplash.remove,
-    );
+    // URLs resolve to /squad?lobby_id= and take splash down. Same parse
+    // as the pending-link stubs. Take so bindRouter does not double-go.
+    final location = source == PendingLinkSource.coldStart
+        ? pendingLinkQueue.offerColdStartUrl(
+            link,
+            dismissSplash: FlutterNativeSplash.remove,
+          )
+        : pendingLinkQueue.offerResumeUrl(
+            link,
+            dismissSplash: FlutterNativeSplash.remove,
+          );
     if (location == null) return;
+
+    // AppLinks delivers through [DeepLinkRouter]; do not also flush.
+    pendingLinkQueue.take();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {

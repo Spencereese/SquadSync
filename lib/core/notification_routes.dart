@@ -16,16 +16,19 @@ class NotificationRoutes {
   /// Wire taps after GoRouter is built. Prefers the live navigator; falls
   /// back to the stored [GoRouter] and one post-frame retry so
   /// [getInitialMessage] does not silently drop before the first frame.
+  /// Flushes [pendingLinkQueue] held from killed → open URL / FCM.
   static void bindRouter(GoRouter goRouter, GlobalKey<NavigatorState> key) {
     router = goRouter;
     navigatorKey = key;
     go = navigate;
+    pendingLinkQueue.flush();
   }
 
   /// Older name used by app_widgets / tests.
   static void bindNavigator(GlobalKey<NavigatorState> key) {
     navigatorKey = key;
     go = navigate;
+    pendingLinkQueue.flush();
   }
 
   static void navigate(String location) {
@@ -242,7 +245,7 @@ class NotificationRoutes {
   static void open(Map<String, dynamic> data) {
     final location = locationFor(data);
     if (location != null) {
-      go?.call(location);
+      _deliver(location);
     }
   }
 
@@ -257,8 +260,17 @@ class NotificationRoutes {
     }
     final location = locationForDeepLink(raw.trim());
     if (location != null) {
-      go?.call(location);
+      _deliver(location);
     }
+  }
+
+  /// Immediate go when bound; otherwise hold for [bindRouter] flush.
+  static void _deliver(String location) {
+    if (go != null) {
+      go!(location);
+      return;
+    }
+    pendingLinkQueue.hold(location, source: PendingLinkSource.coldStart);
   }
 
   /// JSON, URI-decoded JSON, or `type=&lobby_id=` query string.

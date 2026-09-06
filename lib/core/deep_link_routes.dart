@@ -374,3 +374,225 @@ String? _nonEmpty(String? value) {
   if (text == null || text.isEmpty) return null;
   return text;
 }
+
+/// How a product link arrived. Stubs AppLinks / FCM without a device.
+enum PendingLinkSource {
+  /// App was killed; user opened a URL or tapped a notification.
+  coldStart,
+
+  /// App was backgrounded; a pending URL or notification tap resumed it.
+  resume,
+}
+
+/// Holds one resolved go_router location until [NotificationRoutes] is bound.
+///
+/// Cold start (`getInitialLink` / `getInitialMessage`) and background-resume
+/// (`uriLinkStream` / `onMessageOpenedApp`) share this queue. Unknown URLs
+/// and empty payloads do not invent a route.
+class PendingLinkQueue {
+  String? _location;
+  PendingLinkSource? _source;
+
+  String? get location => _location;
+  PendingLinkSource? get source => _source;
+  bool get isPending => _location != null;
+
+  void clear() {
+    _location = null;
+    _source = null;
+  }
+
+  /// Keep [location] until [flush]. Null / unknown is ignored so a later
+  /// resume can still deliver. The same location is stored once.
+  void hold(String? location, {required PendingLinkSource source}) {
+    if (location == null || location.isEmpty) return;
+    if (_location == location) {
+      _source ??= source;
+      return;
+    }
+    _location = location;
+    _source = source;
+  }
+
+  String? take() {
+    final location = _location;
+    clear();
+    return location;
+  }
+
+  /// Open the pending location through [go] or [NotificationRoutes.go].
+  /// Leaves it pending when no opener is bound yet.
+  String? flush({void Function(String location)? go}) {
+    final location = _location;
+    if (location == null) return null;
+    final opener = go ?? NotificationRoutes.go;
+    if (opener == null) return location;
+    clear();
+    opener(location);
+    return location;
+  }
+
+  /// Killed → open URL (`AppLinks.getInitialLink`).
+  String? offerColdStartUrl(
+    String? link, {
+    bool? isIosSimulator,
+    void Function()? dismissSplash,
+    void Function(String message)? log,
+  }) {
+    return _offerUrl(
+      link,
+      PendingLinkSource.coldStart,
+      isIosSimulator: isIosSimulator,
+      dismissSplash: dismissSplash,
+      log: log,
+    );
+  }
+
+  /// Background-resume URL (`AppLinks.uriLinkStream`).
+  String? offerResumeUrl(
+    String? link, {
+    bool? isIosSimulator,
+    void Function()? dismissSplash,
+    void Function(String message)? log,
+  }) {
+    return _offerUrl(
+      link,
+      PendingLinkSource.resume,
+      isIosSimulator: isIosSimulator,
+      dismissSplash: dismissSplash,
+      log: log,
+    );
+  }
+
+  String? offerColdStartUri(
+    Uri? uri, {
+    bool? isIosSimulator,
+    void Function()? dismissSplash,
+    void Function(String message)? log,
+  }) {
+    return offerColdStartUrl(
+      uri?.toString(),
+      isIosSimulator: isIosSimulator,
+      dismissSplash: dismissSplash,
+      log: log,
+    );
+  }
+
+  String? offerResumeUri(
+    Uri? uri, {
+    bool? isIosSimulator,
+    void Function()? dismissSplash,
+    void Function(String message)? log,
+  }) {
+    return offerResumeUrl(
+      uri?.toString(),
+      isIosSimulator: isIosSimulator,
+      dismissSplash: dismissSplash,
+      log: log,
+    );
+  }
+
+  /// Killed → notification tap (`FirebaseMessaging.getInitialMessage`).
+  String? offerColdStartPayload(Map<String, dynamic>? data) {
+    return _offerPayload(data, PendingLinkSource.coldStart);
+  }
+
+  /// Background-resume notification (`onMessageOpenedApp`).
+  String? offerResumePayload(Map<String, dynamic>? data) {
+    return _offerPayload(data, PendingLinkSource.resume);
+  }
+
+  String? offerColdStartRaw(String? raw) {
+    return _offerRaw(raw, PendingLinkSource.coldStart);
+  }
+
+  String? offerResumeRaw(String? raw) {
+    return _offerRaw(raw, PendingLinkSource.resume);
+  }
+
+  /// Stub of [main] AppLinks: killed → `getInitialLink`, then `uriLinkStream`.
+  ({String? launch, String? resume}) consumeAppLinkStubs({
+    String? initialLink,
+    Uri? initialUri,
+    String? resumeLink,
+    Uri? resumeUri,
+    bool? isIosSimulator,
+    void Function()? dismissSplash,
+    void Function(String message)? log,
+  }) {
+    final plan = planAppLinkListen(isIosSimulator: isIosSimulator);
+    String? launch;
+    if (plan.consumeInitialLink) {
+      launch = offerColdStartUrl(
+        initialLink ?? initialUri?.toString(),
+        isIosSimulator: isIosSimulator,
+        dismissSplash: dismissSplash,
+        log: log,
+      );
+    }
+    String? resume;
+    if (plan.subscribeUriLinkStream) {
+      resume = offerResumeUrl(
+        resumeLink ?? resumeUri?.toString(),
+        isIosSimulator: isIosSimulator,
+        dismissSplash: dismissSplash,
+        log: log,
+      );
+    }
+    return (launch: launch, resume: resume);
+  }
+
+  /// Stub of FCM: killed → `getInitialMessage`, then `onMessageOpenedApp`.
+  ({String? launch, String? resume}) consumeNotificationStubs({
+    Map<String, dynamic>? initialMessage,
+    String? initialRaw,
+    Map<String, dynamic>? openedAppMessage,
+    String? openedAppRaw,
+  }) {
+    final launch = initialMessage != null
+        ? offerColdStartPayload(initialMessage)
+        : offerColdStartRaw(initialRaw);
+    final resume = openedAppMessage != null
+        ? offerResumePayload(openedAppMessage)
+        : offerResumeRaw(openedAppRaw);
+    return (launch: launch, resume: resume);
+  }
+
+  String? _offerUrl(
+    String? link,
+    PendingLinkSource source, {
+    bool? isIosSimulator,
+    void Function()? dismissSplash,
+    void Function(String message)? log,
+  }) {
+    if (link == null || link.trim().isEmpty) return null;
+    final location = prepareLiveAppLink(
+      link,
+      isIosSimulator: isIosSimulator,
+      dismissSplash: dismissSplash,
+      log: log,
+    );
+    hold(location, source: source);
+    return location;
+  }
+
+  String? _offerPayload(Map<String, dynamic>? data, PendingLinkSource source) {
+    if (data == null || data.isEmpty) return null;
+    final location = NotificationRoutes.locationFor(data);
+    hold(location, source: source);
+    return location;
+  }
+
+  String? _offerRaw(String? raw, PendingLinkSource source) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final mapped = NotificationRoutes.mapFromRaw(raw);
+    final location = mapped != null
+        ? NotificationRoutes.locationFor(mapped)
+        : locationForDeepLink(raw.trim());
+    hold(location, source: source);
+    return location;
+  }
+}
+
+/// Live queue used by AppLinks, FCM taps, and [NotificationRoutes.bindRouter].
+final pendingLinkQueue = PendingLinkQueue();

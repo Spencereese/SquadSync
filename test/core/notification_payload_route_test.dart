@@ -9,6 +9,7 @@ import 'package:squad_sync/services/peacock_self_notify.dart';
 /// existing [NotificationRoutes] pipeline (no second presenter).
 void main() {
   tearDown(() {
+    pendingLinkQueue.clear();
     NotificationRoutes.go = null;
     NotificationRoutes.router = null;
     NotificationRoutes.navigatorKey = null;

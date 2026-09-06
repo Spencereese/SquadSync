@@ -14,12 +14,14 @@ void main() {
   late GlobalKey<NavigatorState> navigatorKey;
 
   setUp(() {
+    pendingLinkQueue.clear();
     navigatorKey = GlobalKey<NavigatorState>();
     router = _productRouter(navigatorKey);
     NotificationRoutes.bindRouter(router, navigatorKey);
   });
 
   tearDown(() {
+    pendingLinkQueue.clear();
     NotificationRoutes.go = null;
     NotificationRoutes.router = null;
     NotificationRoutes.navigatorKey = null;
@@ -380,6 +382,239 @@ void main() {
         find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('cold start: killed → open URL', () {
+    setUp(() {
+      NotificationRoutes.go = null;
+      NotificationRoutes.router = null;
+      NotificationRoutes.navigatorKey = null;
+      pendingLinkQueue.clear();
+    });
+
+    Future<void> pumpUnbound(WidgetTester tester) async {
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+      expect(find.text('screen:home'), findsOneWidget);
+    }
+
+    testWidgets('getInitialLink lobby URL opens after bindRouter flush',
+        (tester) async {
+      await pumpUnbound(tester);
+      pendingLinkQueue.offerColdStartUri(
+        Uri.parse('codsquadapp://lobby/lobby-9'),
+        isIosSimulator: true,
+      );
+      expect(find.text('screen:home'), findsOneWidget);
+      expect(pendingLinkQueue.source, PendingLinkSource.coldStart);
+
+      NotificationRoutes.bindRouter(router, navigatorKey);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('screen:error'), findsNothing);
+      expect(pendingLinkQueue.isPending, isFalse);
+    });
+
+    testWidgets('getInitialMessage peacock payload opens after bind',
+        (tester) async {
+      await pumpUnbound(tester);
+      NotificationService.handleOpenedData({
+        'type': 'peacock_assigned',
+        'lobby_id': 'lobby-9',
+        'game_name': 'Warzone',
+        'spot_index': 2,
+      });
+      expect(find.text('screen:home'), findsOneWidget);
+      expect(
+        pendingLinkQueue.location,
+        '/squad/Warzone?lobby_id=lobby-9&spot_index=2',
+      );
+
+      NotificationRoutes.bindRouter(router, navigatorKey);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('screen:lobby lobby:lobby-9 game:Warzone spot:2'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('device https /l/:id cold start opens lobby', (tester) async {
+      await pumpUnbound(tester);
+      pendingLinkQueue.offerColdStartUrl(
+        'https://codsquad.app/l/lobby-9',
+        isIosSimulator: false,
+      );
+      NotificationRoutes.bindRouter(router, navigatorKey);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unknown killed URL stays home, no error screen',
+        (tester) async {
+      await pumpUnbound(tester);
+      pendingLinkQueue.offerColdStartUrl(
+        'codsquadapp://unknown/path',
+        isIosSimulator: true,
+      );
+      NotificationRoutes.bindRouter(router, navigatorKey);
+      await tester.pumpAndSettle();
+      expect(find.text('screen:home'), findsOneWidget);
+      expect(find.textContaining('screen:error'), findsNothing);
+    });
+
+    testWidgets('missing lobby_id peacock cold start is empty squad',
+        (tester) async {
+      await pumpUnbound(tester);
+      pendingLinkQueue.offerColdStartPayload({'type': 'peacock_assigned'});
+      NotificationRoutes.bindRouter(router, navigatorKey);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('screen:lobby lobby:none game:none spot:none'),
+        findsOneWidget,
+      );
+      expect(find.text('screen:lobby-empty'), findsOneWidget);
+      expect(find.textContaining('screen:error'), findsNothing);
+    });
+
+    testWidgets('missing chat id cold start is empty chat list',
+        (tester) async {
+      await pumpUnbound(tester);
+      pendingLinkQueue.offerColdStartPayload({'type': 'chat'});
+      NotificationRoutes.bindRouter(router, navigatorKey);
+      await tester.pumpAndSettle();
+      expect(find.text('screen:chat-list'), findsOneWidget);
+      expect(find.textContaining('screen:chat id:'), findsNothing);
+      expect(find.textContaining('screen:error'), findsNothing);
+    });
+
+    testWidgets('unknown lobby id cold start still lands on that lobby',
+        (tester) async {
+      await pumpUnbound(tester);
+      pendingLinkQueue.offerColdStartUrl(
+        'codsquadapp://lobby/smoke-no-such-lobby-20260903',
+        isIosSimulator: true,
+      );
+      NotificationRoutes.bindRouter(router, navigatorKey);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'screen:lobby lobby:smoke-no-such-lobby-20260903 game:none spot:none',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('screen:error'), findsNothing);
+    });
+  });
+
+  group('background-resume with pending link', () {
+    testWidgets('uriLinkStream lobby URL opens the lobby screen',
+        (tester) async {
+      await pumpApp(tester);
+      final location = pendingLinkQueue.offerResumeUri(
+        Uri.parse('codsquadapp://lobby/lobby-9'),
+        isIosSimulator: true,
+      );
+      expect(location, '/squad?lobby_id=lobby-9');
+      pendingLinkQueue.flush();
+      await tester.pumpAndSettle();
+      expect(
+        find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('onMessageOpenedApp payload opens lobby', (tester) async {
+      await pumpApp(tester);
+      await tap(
+        tester,
+        () => NotificationService.handleOpenedData({
+          'type': 'lobby_locked',
+          'lobby_id': 'lobby-9',
+        }),
+      );
+      expect(
+        find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('resume pending chat / stats / join stay on product routes',
+        (tester) async {
+      await pumpApp(tester);
+      pendingLinkQueue.offerResumeUrl(
+        'codsquadapp://chat/1766270568521',
+        isIosSimulator: true,
+      );
+      pendingLinkQueue.flush();
+      await tester.pumpAndSettle();
+      expect(find.text('screen:chat id:1766270568521'), findsOneWidget);
+
+      pendingLinkQueue.offerResumeUrl(
+        'codsquadapp://stats',
+        isIosSimulator: true,
+      );
+      pendingLinkQueue.flush();
+      await tester.pumpAndSettle();
+      expect(find.text('screen:stats'), findsOneWidget);
+
+      pendingLinkQueue.offerResumeUrl(
+        'codsquadapp://join/ABC123',
+        isIosSimulator: true,
+      );
+      pendingLinkQueue.flush();
+      await tester.pumpAndSettle();
+      expect(find.text('screen:join code:ABC123'), findsOneWidget);
+      expect(find.textContaining('screen:error'), findsNothing);
+    });
+
+    testWidgets('launch + matching resume flushes once to lobby',
+        (tester) async {
+      await pumpApp(tester);
+      const url = 'codsquadapp://lobby/lobby-9';
+      pendingLinkQueue.consumeAppLinkStubs(
+        initialLink: url,
+        resumeLink: url,
+        isIosSimulator: true,
+      );
+      pendingLinkQueue.flush();
+      await tester.pumpAndSettle();
+      expect(
+        find.text('screen:lobby lobby:lobby-9 game:none spot:none'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('screen:error'), findsNothing);
+    });
+
+    testWidgets('unknown resume URL stays home, no error', (tester) async {
+      await pumpApp(tester);
+      pendingLinkQueue.offerResumeUrl(
+        'codsquadapp://unknown/path',
+        isIosSimulator: true,
+      );
+      pendingLinkQueue.flush();
+      await tester.pumpAndSettle();
+      expect(find.text('screen:home'), findsOneWidget);
+      expect(find.textContaining('screen:error'), findsNothing);
+    });
+
+    testWidgets('missing id resume peacock is empty squad', (tester) async {
+      await pumpApp(tester);
+      pendingLinkQueue.offerResumePayload({'type': 'peacock_assigned'});
+      pendingLinkQueue.flush();
+      await tester.pumpAndSettle();
+      expect(
+        find.text('screen:lobby lobby:none game:none spot:none'),
+        findsOneWidget,
+      );
+      expect(find.text('screen:lobby-empty'), findsOneWidget);
+      expect(find.textContaining('screen:error'), findsNothing);
     });
   });
 }

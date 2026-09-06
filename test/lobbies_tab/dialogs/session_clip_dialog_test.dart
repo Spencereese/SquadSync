@@ -128,7 +128,7 @@ void main() {
 
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('session-rating-star-4')));
+    await tester.tap(find.byKey(const Key('session-rating-vibes-4')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('session-rating-submit')));
     await tester.pumpAndSettle();

@@ -27,6 +27,24 @@ void main() {
       expect(next.isRated, isTrue);
     });
 
+    test('category sheet derives overall stars', () {
+      final next = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        vibes: 5,
+        comms: 3,
+        gunny: 4,
+        wingman: 4,
+      );
+      expect(next.phase, SessionRatingPhase.rated);
+      expect(next.vibes, 5);
+      expect(next.comms, 3);
+      expect(next.gunny, 4);
+      expect(next.wingman, 4);
+      expect(next.stars, 4);
+      expect(next.isRated, isTrue);
+    });
+
     test('invalid stars are a no-op', () {
       const looking = SessionRatingState(
         phase: SessionRatingPhase.unrated,
@@ -174,6 +192,43 @@ void main() {
       expect(decodeSessionRatingFromNotes('great game'), isNull);
       expect(decodeSessionRatingFromNotes(''), isNull);
       expect(decodeSessionRatingFromNotes(null), isNull);
+    });
+
+    test('encodes Vibes/Comms/Gunny/Wingman and optional notes', () {
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        vibes: 5,
+        comms: 4,
+        gunny: 3,
+        wingman: 2,
+        comment: 'clutch',
+        result: 'win',
+        raterUid: 'u1',
+        ratedAt: DateTime.utc(2026, 9, 5, 18),
+      );
+      expect(rated.stars, 4);
+      expect(rated.hasCategoryScores, isTrue);
+      final notes = notesForSessionRating(rated);
+      expect(notes, isNotNull);
+      final decoded = decodeSessionRatingFromNotes(notes);
+      expect(decoded?.vibes, 5);
+      expect(decoded?.comms, 4);
+      expect(decoded?.gunny, 3);
+      expect(decoded?.wingman, 2);
+      expect(decoded?.comment, 'clutch');
+      expect(decoded?.result, 'win');
+      expect(decoded?.stars, 4);
+    });
+
+    test('decodes category-only notes without overall stars', () {
+      const json =
+          '{"session_rating":{"v":1,"vibes":5,"comms":3,"rated_at":"2026-09-05T12:00:00.000Z"}}';
+      final rating = decodeSessionRatingFromNotes(json);
+      expect(rating?.isRated, isTrue);
+      expect(rating?.vibes, 5);
+      expect(rating?.comms, 3);
+      expect(rating?.stars, 4);
     });
 
     test('applySessionRatingToMatchRow stamps notes on a history row', () {
@@ -664,6 +719,105 @@ void main() {
       expect(
         sessionClipMediaUri(lastFive.single.clip),
         Uri(scheme: 'file', path: '/tmp/ace.mp4'),
+      );
+    });
+  });
+
+  group('planMatchHistoryWrite', () {
+    final ratedNotes = notesForSessionRating(
+      reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        vibes: 5,
+        comms: 4,
+        gunny: 3,
+        wingman: 5,
+        comment: 'good night',
+        result: 'win',
+        ratedAt: DateTime.utc(2026, 9, 5, 18),
+      ),
+    );
+
+    test('create when no recent row', () {
+      final write = planMatchHistoryWrite(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'win',
+        playerUids: const ['u1', 'u2'],
+        createdBy: 'u1',
+        notes: ratedNotes,
+      );
+      expect(write.isCreate, isTrue);
+      expect(write.payload['lobby_id'], 'lobby-1');
+      expect(write.payload['created_by'], 'u1');
+      expect(write.payload['notes'], ratedNotes);
+      expect(write.matchId, isNull);
+    });
+
+    test('update when a recent row exists', () {
+      final now = DateTime.utc(2026, 9, 5, 18, 5);
+      final write = planMatchHistoryWrite(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'loss',
+        playerUids: const ['u1'],
+        createdBy: 'u1',
+        notes: ratedNotes,
+        existingRow: {
+          'id': 'm-existing',
+          'lobby_id': 'lobby-1',
+          'created_at': DateTime.utc(2026, 9, 5, 18).toIso8601String(),
+          'notes': 'plain',
+        },
+        now: now,
+      );
+      expect(write.isUpdate, isTrue);
+      expect(write.matchId, 'm-existing');
+      expect(write.payload.containsKey('lobby_id'), isFalse);
+      expect(write.payload['result'], 'loss');
+      expect(write.payload['notes'], isNotNull);
+      final merged = decodeSessionRatingFromNotes(write.payload['notes']);
+      expect(merged?.vibes, 5);
+      expect(merged?.comment, 'good night');
+    });
+
+    test('create when existing row is older than the update window', () {
+      final write = planMatchHistoryWrite(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'win',
+        playerUids: const ['u1'],
+        createdBy: 'u1',
+        notes: ratedNotes,
+        existingRow: {
+          'id': 'm-old',
+          'created_at': DateTime.utc(2026, 9, 5, 17).toIso8601String(),
+        },
+        now: DateTime.utc(2026, 9, 5, 18),
+      );
+      expect(write.isCreate, isTrue);
+    });
+
+    test('update skip does not smash existing notes', () {
+      final write = planMatchHistoryWrite(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'win',
+        playerUids: const ['u1'],
+        createdBy: 'u1',
+        notes: null,
+        existingRow: {
+          'id': 'm1',
+          'created_at': DateTime.utc(2026, 9, 5, 18).toIso8601String(),
+          'notes': ratedNotes,
+        },
+        now: DateTime.utc(2026, 9, 5, 18, 2),
+      );
+      expect(write.isUpdate, isTrue);
+      expect(write.payload.containsKey('notes'), isTrue);
+      expect(
+        decodeSessionRatingFromNotes(write.payload['notes'])?.vibes,
+        5,
       );
     });
   });

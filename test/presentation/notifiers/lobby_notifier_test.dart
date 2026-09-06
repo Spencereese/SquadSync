@@ -937,6 +937,120 @@ void main() {
       );
     });
 
+    test('recordWin encodes Vibes/Comms/Gunny/Wingman + notes', () async {
+      final lobby = _lobby(id: 'lobby-1', memberUids: const ['user-1', 'u2']);
+      when(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).thenAnswer((_) async {});
+
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.state = AsyncData(
+        (notifier.state.value ?? LobbyState.initial()).copyWith(
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        vibes: 5,
+        comms: 4,
+        gunny: 3,
+        wingman: 5,
+        comment: 'locked in',
+        raterUid: 'user-1',
+        ratedAt: DateTime.utc(2026, 9, 5, 18),
+      );
+
+      await notifier.recordWin('lobby-1', sessionRating: rated);
+
+      final captured = verify(mockRepository.recordMatchResult(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'win',
+        playerUids: ['user-1', 'u2'],
+        notes: captureAnyNamed('notes'),
+      )).captured;
+      final decoded = decodeSessionRatingFromNotes(captured.single as String?);
+      expect(decoded?.vibes, 5);
+      expect(decoded?.comms, 4);
+      expect(decoded?.gunny, 3);
+      expect(decoded?.wingman, 5);
+      expect(decoded?.comment, 'locked in');
+      expect(decoded?.stars, 4);
+
+      final history = container.read(lobbyNotifierProvider).valueOrNull;
+      expect(history?.gameHistory, hasLength(1));
+      expect(
+        sessionRatingFromMatchRow(history!.gameHistory.first)?.vibes,
+        5,
+      );
+    });
+
+    test('second recordWin updates in-memory history instead of duplicating',
+        () async {
+      final lobby = _lobby(id: 'lobby-1', memberUids: const ['user-1']);
+      when(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).thenAnswer((_) async {});
+
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.state = AsyncData(
+        (notifier.state.value ?? LobbyState.initial()).copyWith(
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+
+      await notifier.recordWin(
+        'lobby-1',
+        sessionRating: reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          vibes: 2,
+          raterUid: 'user-1',
+          ratedAt: DateTime.utc(2026, 9, 5, 18),
+        ),
+      );
+      await notifier.recordLoss(
+        'lobby-1',
+        sessionRating: reduceSessionRating(
+          current: SessionRatingState.unrated,
+          event: SessionRatingEvent.rate,
+          vibes: 5,
+          comms: 5,
+          comment: 'comeback',
+          raterUid: 'user-1',
+          ratedAt: DateTime.utc(2026, 9, 5, 18, 1),
+        ),
+      );
+
+      verify(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).called(2);
+
+      final history = container.read(lobbyNotifierProvider).valueOrNull;
+      expect(history?.gameHistory, hasLength(1));
+      expect(history?.gameHistory.first['result'], 'loss');
+      final decoded =
+          sessionRatingFromMatchRow(history!.gameHistory.first);
+      expect(decoded?.vibes, 5);
+      expect(decoded?.comms, 5);
+      expect(decoded?.comment, 'comeback');
+    });
+
     test('recordLoss skip leaves notes null', () async {
       final lobby = _lobby(id: 'lobby-1');
       when(mockRepository.recordMatchResult(

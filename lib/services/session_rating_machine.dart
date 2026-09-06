@@ -3,7 +3,8 @@ import 'dart:convert';
 /// 1–5 star rating of a squad session after it ends.
 ///
 /// Persistence is the existing `match_history.notes` TEXT column (JSON),
-/// not a new table. The reducer is pure; I/O lives in [LobbyNotifier].
+/// not a new table. The reducer and write-plan are pure; I/O lives in
+/// [LobbyNotifier] / `LobbyRemoteDataSourceImpl` (injected SupabaseClient).
 enum SessionRatingPhase {
   unrated,
   rated,
@@ -75,11 +76,22 @@ enum SessionClipEvent {
   clear,
 }
 
+/// End-session sheet categories (1–5 each). Encoded into `match_history.notes`.
+const kSessionRatingCategoryLabels = ['Vibes', 'Comms', 'Gunny', 'Wingman'];
+const kSessionRatingVibesKey = 'vibes';
+const kSessionRatingCommsKey = 'comms';
+const kSessionRatingGunnyKey = 'gunny';
+const kSessionRatingWingmanKey = 'wingman';
+
 /// Snapshot of one user's rating of one ended squad session.
 class SessionRatingState {
   const SessionRatingState({
     this.phase = SessionRatingPhase.unrated,
     this.stars,
+    this.vibes,
+    this.comms,
+    this.gunny,
+    this.wingman,
     this.lobbyId,
     this.raterUid,
     this.matchId,
@@ -94,6 +106,10 @@ class SessionRatingState {
 
   final SessionRatingPhase phase;
   final int? stars;
+  final int? vibes;
+  final int? comms;
+  final int? gunny;
+  final int? wingman;
   final String? lobbyId;
   final String? raterUid;
   final String? matchId;
@@ -106,11 +122,29 @@ class SessionRatingState {
   bool get isRated =>
       phase == SessionRatingPhase.rated && isValidSessionStars(stars);
 
+  bool get hasCategoryScores =>
+      isValidSessionStars(vibes) ||
+      isValidSessionStars(comms) ||
+      isValidSessionStars(gunny) ||
+      isValidSessionStars(wingman);
+
   bool get hasClip => clip != null && clip!.isAttached;
+
+  /// Label → 1–5 for filled sheet categories.
+  Map<String, int> get categoryScores => {
+        if (isValidSessionStars(vibes)) 'Vibes': vibes!,
+        if (isValidSessionStars(comms)) 'Comms': comms!,
+        if (isValidSessionStars(gunny)) 'Gunny': gunny!,
+        if (isValidSessionStars(wingman)) 'Wingman': wingman!,
+      };
 
   SessionRatingState copyWith({
     SessionRatingPhase? phase,
     int? stars,
+    int? vibes,
+    int? comms,
+    int? gunny,
+    int? wingman,
     String? lobbyId,
     String? raterUid,
     String? matchId,
@@ -125,6 +159,10 @@ class SessionRatingState {
     return SessionRatingState(
       phase: phase ?? this.phase,
       stars: clearRating ? null : (stars ?? this.stars),
+      vibes: clearRating ? null : (vibes ?? this.vibes),
+      comms: clearRating ? null : (comms ?? this.comms),
+      gunny: clearRating ? null : (gunny ?? this.gunny),
+      wingman: clearRating ? null : (wingman ?? this.wingman),
       lobbyId: clearRating ? null : (lobbyId ?? this.lobbyId),
       raterUid: clearRating ? null : (raterUid ?? this.raterUid),
       matchId: clearRating ? null : (matchId ?? this.matchId),
@@ -140,11 +178,40 @@ class SessionRatingState {
 bool isValidSessionStars(int? stars) =>
     stars != null && stars >= 1 && stars <= 5;
 
+/// Overall stars, or the rounded average of filled Vibes/Comms/Gunny/Wingman.
+int? sessionStarsFromSheet({
+  int? stars,
+  int? vibes,
+  int? comms,
+  int? gunny,
+  int? wingman,
+}) {
+  if (isValidSessionStars(stars)) return stars;
+  final values = <int>[
+    if (isValidSessionStars(vibes)) vibes!,
+    if (isValidSessionStars(comms)) comms!,
+    if (isValidSessionStars(gunny)) gunny!,
+    if (isValidSessionStars(wingman)) wingman!,
+  ];
+  if (values.isEmpty) return null;
+  return (values.reduce((a, b) => a + b) / values.length).round().clamp(1, 5);
+}
+
+int? _keepCategory(int? incoming, int? current) {
+  if (isValidSessionStars(incoming)) return incoming;
+  if (isValidSessionStars(current)) return current;
+  return null;
+}
+
 /// Reduce a session-rating snapshot. Pure; no I/O.
 SessionRatingState reduceSessionRating({
   required SessionRatingState current,
   required SessionRatingEvent event,
   int? stars,
+  int? vibes,
+  int? comms,
+  int? gunny,
+  int? wingman,
   String? lobbyId,
   String? raterUid,
   String? matchId,
@@ -156,10 +223,25 @@ SessionRatingState reduceSessionRating({
 }) {
   switch (event) {
     case SessionRatingEvent.rate:
-      if (!isValidSessionStars(stars)) return current;
+      final nextVibes = _keepCategory(vibes, current.vibes);
+      final nextComms = _keepCategory(comms, current.comms);
+      final nextGunny = _keepCategory(gunny, current.gunny);
+      final nextWingman = _keepCategory(wingman, current.wingman);
+      final nextStars = sessionStarsFromSheet(
+        stars: stars,
+        vibes: nextVibes,
+        comms: nextComms,
+        gunny: nextGunny,
+        wingman: nextWingman,
+      );
+      if (nextStars == null) return current;
       return SessionRatingState(
         phase: SessionRatingPhase.rated,
-        stars: stars,
+        stars: nextStars,
+        vibes: nextVibes,
+        comms: nextComms,
+        gunny: nextGunny,
+        wingman: nextWingman,
         lobbyId: lobbyId ?? current.lobbyId,
         raterUid: raterUid ?? current.raterUid,
         matchId: matchId ?? current.matchId,
@@ -179,6 +261,7 @@ SessionRatingState reduceSessionRating({
         matchId: matchId ?? current.matchId,
         gameName: gameName ?? current.gameName,
         result: result ?? current.result,
+        comment: comment ?? current.comment,
       );
 
     case SessionRatingEvent.clear:
@@ -248,6 +331,11 @@ String encodeSessionRatingNotes(
   payload[kSessionRatingNotesKey] = <String, dynamic>{
     'v': 1,
     'stars': rating.stars,
+    if (isValidSessionStars(rating.vibes)) kSessionRatingVibesKey: rating.vibes,
+    if (isValidSessionStars(rating.comms)) kSessionRatingCommsKey: rating.comms,
+    if (isValidSessionStars(rating.gunny)) kSessionRatingGunnyKey: rating.gunny,
+    if (isValidSessionStars(rating.wingman))
+      kSessionRatingWingmanKey: rating.wingman,
     if (_nonEmpty(rating.raterUid) != null) 'rater_uid': rating.raterUid,
     if (_nonEmpty(rating.lobbyId) != null) 'lobby_id': rating.lobbyId,
     if (_nonEmpty(rating.matchId) != null) 'match_id': rating.matchId,
@@ -357,10 +445,25 @@ SessionRatingState? decodeSessionRatingFromNotes(
   }
   if (nested == null) return null;
   final stars = _asInt(nested['stars']);
-  if (!isValidSessionStars(stars)) return null;
+  final vibes = _categoryOf(nested, kSessionRatingVibesKey, 'Vibes');
+  final comms = _categoryOf(nested, kSessionRatingCommsKey, 'Comms');
+  final gunny = _categoryOf(nested, kSessionRatingGunnyKey, 'Gunny');
+  final wingman = _categoryOf(nested, kSessionRatingWingmanKey, 'Wingman');
+  final resolvedStars = sessionStarsFromSheet(
+    stars: stars,
+    vibes: vibes,
+    comms: comms,
+    gunny: gunny,
+    wingman: wingman,
+  );
+  if (!isValidSessionStars(resolvedStars)) return null;
   return SessionRatingState(
     phase: SessionRatingPhase.rated,
-    stars: stars,
+    stars: resolvedStars,
+    vibes: vibes,
+    comms: comms,
+    gunny: gunny,
+    wingman: wingman,
     lobbyId: _nonEmpty(nested['lobby_id']?.toString()) ?? lobbyId,
     raterUid: _nonEmpty(nested['rater_uid']?.toString()) ??
         _nonEmpty(nested['raterUid']?.toString()),
@@ -371,7 +474,8 @@ SessionRatingState? decodeSessionRatingFromNotes(
         _nonEmpty(nested['gameName']?.toString()) ??
         gameName,
     result: _nonEmpty(nested['result']?.toString()) ?? result,
-    comment: _nonEmpty(nested['comment']?.toString()),
+    comment: _nonEmpty(nested['comment']?.toString()) ??
+        _nonEmpty(nested['notes']?.toString()),
     ratedAt: _asDateTime(nested['rated_at'] ?? nested['ratedAt']),
     clip: decodeSessionClipFromNotes(payload),
   );
@@ -427,6 +531,105 @@ SessionRatingState? sessionRatingFromMatchRow(Map<String, dynamic> row) {
     gameName: row['game_name']?.toString() ?? row['gameName']?.toString(),
     result: row['result']?.toString(),
   );
+}
+
+const kMatchHistoryTable = 'match_history';
+const kMatchHistoryUpdateWindow = Duration(minutes: 10);
+
+enum SessionRatingWriteKind { create, update }
+
+/// Insert or update payload for existing `match_history` (no new table).
+class SessionRatingWrite {
+  const SessionRatingWrite.create(this.payload)
+      : kind = SessionRatingWriteKind.create,
+        matchId = null;
+
+  const SessionRatingWrite.update({
+    required this.matchId,
+    required this.payload,
+  }) : kind = SessionRatingWriteKind.update;
+
+  final SessionRatingWriteKind kind;
+  final String? matchId;
+  final Map<String, dynamic> payload;
+
+  bool get isUpdate => kind == SessionRatingWriteKind.update;
+  bool get isCreate => kind == SessionRatingWriteKind.create;
+}
+
+/// True when [row] is still inside the match_history UPDATE RLS window.
+bool isRecentMatchHistoryRow(
+  Map<String, dynamic> row, {
+  DateTime? now,
+  Duration window = kMatchHistoryUpdateWindow,
+}) {
+  final created = _asDateTime(row['created_at'] ?? row['createdAt'])?.toUtc();
+  if (created == null) return false;
+  final clock = (now ?? DateTime.now()).toUtc();
+  final age = clock.difference(created);
+  return !age.isNegative && age <= window;
+}
+
+String? matchHistoryRowId(Map<String, dynamic>? row) {
+  final id = row?['id']?.toString().trim();
+  if (id == null || id.isEmpty) return null;
+  return id;
+}
+
+/// Create vs update for an ended-session write. Pure; no I/O.
+///
+/// Update when a recent `match_history` row exists for this lobby (10-minute
+/// creator window). Skip/unrated updates do not smash existing notes.
+SessionRatingWrite planMatchHistoryWrite({
+  required String lobbyId,
+  required String gameName,
+  required String result,
+  required List<String> playerUids,
+  required String createdBy,
+  String? notes,
+  Map<String, dynamic>? existingRow,
+  DateTime? now,
+}) {
+  final existingId = matchHistoryRowId(existingRow);
+  final canUpdate = existingRow != null &&
+      existingId != null &&
+      isRecentMatchHistoryRow(existingRow, now: now);
+  if (canUpdate) {
+    final payload = <String, dynamic>{
+      'game_name': gameName,
+      'result': result,
+      'player_uids': List<String>.from(playerUids),
+    };
+    final merged = mergeMatchHistoryNotes(
+      incomingNotes: notes,
+      existingNotes: existingRow['notes'],
+    );
+    if (merged != null) payload['notes'] = merged;
+    return SessionRatingWrite.update(matchId: existingId, payload: payload);
+  }
+  return SessionRatingWrite.create(<String, dynamic>{
+    'lobby_id': lobbyId,
+    'game_name': gameName,
+    'result': result,
+    'player_uids': List<String>.from(playerUids),
+    'created_by': createdBy,
+    'notes': notes,
+  });
+}
+
+/// Stamp a new rating onto existing notes. Null incoming leaves existing as-is.
+String? mergeMatchHistoryNotes({
+  String? incomingNotes,
+  dynamic existingNotes,
+}) {
+  if (incomingNotes == null || incomingNotes.trim().isEmpty) {
+    if (existingNotes == null) return null;
+    if (existingNotes is String) return existingNotes;
+    return jsonEncode(_notesObject(existingNotes));
+  }
+  final incoming = decodeSessionRatingFromNotes(incomingNotes);
+  if (incoming == null || !incoming.isRated) return incomingNotes;
+  return encodeSessionRatingNotes(incoming, existingNotes: existingNotes);
 }
 
 class SessionRatingAverages {
@@ -598,6 +801,11 @@ int? _asInt(Object? value) {
   if (value is num) return value.toInt();
   if (value is String) return num.tryParse(value.trim())?.toInt();
   return null;
+}
+
+int? _categoryOf(Map<String, dynamic> nested, String snake, String label) {
+  final value = _asInt(nested[snake] ?? nested[label] ?? nested[label.toLowerCase()]);
+  return isValidSessionStars(value) ? value : null;
 }
 
 DateTime? _asDateTime(Object? value) {

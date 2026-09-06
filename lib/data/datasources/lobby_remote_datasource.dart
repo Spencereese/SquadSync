@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:squad_sync/data/lobby_stats_codec.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
+import 'package:squad_sync/services/session_rating_machine.dart';
 import 'package:squad_sync/services/supabase_service.dart';
 import 'package:squad_sync/services/jwt_validator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -69,8 +70,38 @@ abstract class LobbyRemoteDataSource {
 class LobbyRemoteDataSourceImpl
     with JwtValidationMixin
     implements LobbyRemoteDataSource {
-  final AuthServiceSupabase _authService = AuthServiceSupabase();
-  final SupabaseClient _supabase = SupabaseService.client;
+  /// Prefer an injected [supabase] (Riverpod / tests). The no-arg path uses
+  /// [SupabaseService.maybeClient] and throws a clear [StateError] when
+  /// uninitialized — never [Supabase.instance] assert in a harness.
+  ///
+  /// [matchHistoryClient] is the table I/O target (defaults to [supabase]).
+  /// Tests inject a recording fake here so create/update never need the
+  /// Postgrest fluent types.
+  LobbyRemoteDataSourceImpl({
+    SupabaseClient? supabase,
+    AuthServiceSupabase? authService,
+    dynamic matchHistoryClient,
+  })  : _supabase = supabase ?? _clientOrThrow(),
+        _authService = authService ?? AuthServiceSupabase(),
+        _matchHistoryClient = matchHistoryClient;
+
+  final AuthServiceSupabase _authService;
+  final SupabaseClient _supabase;
+  final dynamic _matchHistoryClient;
+
+  dynamic get _historyClient => _matchHistoryClient ?? _supabase;
+
+  static SupabaseClient _clientOrThrow() {
+    final client = SupabaseService.maybeClient;
+    if (client == null) {
+      throw StateError(
+        'LobbyRemoteDataSourceImpl requires an injected SupabaseClient '
+        '(or initialized SupabaseService). Override in unit tests — '
+        'do not construct against Supabase.instance.',
+      );
+    }
+    return client;
+  }
 
   @override
   Future<Lobby> createLobby(Lobby lobby) async {
@@ -570,26 +601,48 @@ class LobbyRemoteDataSourceImpl
     required String createdBy,
     String? notes,
   }) async {
-    validateJwt();
-    final authenticatedUserId = getAuthenticatedUserId();
-
-    // Ensure createdBy matches authenticated user
+    final authenticatedUserId = _supabase.auth.currentUser?.id;
+    if (authenticatedUserId == null) {
+      throw UnauthorizedException('Authentication required');
+    }
     if (createdBy != authenticatedUserId) {
       throw UnauthorizedException('Cannot record match for another user');
     }
 
     try {
-      await _supabase.from('match_history').insert({
-        'lobby_id': lobbyId,
-        'game_name': gameName,
-        'result': result,
-        'player_uids': playerUids,
-        'created_by': createdBy,
-        'notes': notes,
-      });
+      final existing = await findRecentMatchHistory(
+        lobbyId: lobbyId,
+        createdBy: createdBy,
+      );
+      final write = planMatchHistoryWrite(
+        lobbyId: lobbyId,
+        gameName: gameName,
+        result: result,
+        playerUids: playerUids,
+        createdBy: createdBy,
+        notes: notes,
+        existingRow: existing,
+      );
+      await applyMatchHistoryWrite(_historyClient, write);
     } catch (e) {
+      if (e is UnauthorizedException) rethrow;
       throw Exception('Failed to record match result: $e');
     }
+  }
+
+  /// Latest `match_history` row for this lobby + creator inside the
+  /// 10-minute UPDATE window. Null when none — caller inserts.
+  Future<Map<String, dynamic>?> findRecentMatchHistory({
+    required String lobbyId,
+    required String createdBy,
+    DateTime? now,
+  }) {
+    return findRecentMatchHistoryOn(
+      _historyClient,
+      lobbyId: lobbyId,
+      createdBy: createdBy,
+      now: now,
+    );
   }
 
   @override
@@ -648,4 +701,57 @@ class LobbyRemoteDataSourceImpl
       throw Exception('Failed to fetch match history: $e');
     }
   }
+}
+
+/// First row from a Postgrest select (list or single map). Null if empty.
+Map<String, dynamic>? firstMatchHistoryRow(dynamic response) {
+  if (response is List) {
+    if (response.isEmpty) return null;
+    final first = response.first;
+    if (first is Map) return Map<String, dynamic>.from(first);
+    return null;
+  }
+  if (response is Map) return Map<String, dynamic>.from(response);
+  return null;
+}
+
+/// Insert or update `match_history` from a planned write.
+///
+/// [client] is [SupabaseClient] in production. Tests pass a recording fake;
+/// the chain is invoked dynamically so unit harnesses do not need the
+/// Postgrest fluent types.
+Future<void> applyMatchHistoryWrite(
+  dynamic client,
+  SessionRatingWrite write,
+) async {
+  if (write.isUpdate) {
+    await client
+        .from(kMatchHistoryTable)
+        .update(write.payload)
+        .eq('id', write.matchId);
+    return;
+  }
+  await client.from(kMatchHistoryTable).insert(write.payload);
+}
+
+/// Latest in-window `match_history` row for [lobbyId] + [createdBy].
+Future<Map<String, dynamic>?> findRecentMatchHistoryOn(
+  dynamic client, {
+  required String lobbyId,
+  required String createdBy,
+  DateTime? now,
+}) async {
+  final cutoff = (now ?? DateTime.now())
+      .toUtc()
+      .subtract(kMatchHistoryUpdateWindow)
+      .toIso8601String();
+  final response = await client
+      .from(kMatchHistoryTable)
+      .select()
+      .eq('lobby_id', lobbyId)
+      .eq('created_by', createdBy)
+      .gte('created_at', cutoff)
+      .order('created_at', ascending: false)
+      .limit(1);
+  return firstMatchHistoryRow(response);
 }

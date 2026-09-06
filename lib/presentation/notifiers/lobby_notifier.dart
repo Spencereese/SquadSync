@@ -1532,13 +1532,24 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     required String result,
   }) {
     final current = sessionRating ?? SessionRatingState.unrated;
-    final event = isValidSessionStars(current.stars)
+    final resolvedStars = sessionStarsFromSheet(
+      stars: current.stars,
+      vibes: current.vibes,
+      comms: current.comms,
+      gunny: current.gunny,
+      wingman: current.wingman,
+    );
+    final event = isValidSessionStars(resolvedStars)
         ? SessionRatingEvent.rate
         : SessionRatingEvent.skip;
     return reduceSessionRating(
       current: current,
       event: event,
       stars: current.stars,
+      vibes: current.vibes,
+      comms: current.comms,
+      gunny: current.gunny,
+      wingman: current.wingman,
       lobbyId: lobbyId,
       raterUid: current.raterUid,
       matchId: current.matchId,
@@ -1585,21 +1596,37 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }) {
     final current = state.value;
     if (current == null) return;
+    final now = DateTime.now().toUtc();
+    final rows = [
+      for (final row in current.gameHistory) Map<String, dynamic>.from(row),
+    ];
+    final existingIndex = rows.indexWhere(
+      (row) =>
+          row['lobby_id']?.toString() == lobbyId &&
+          isRecentMatchHistoryRow(row, now: now),
+    );
+    final base = existingIndex >= 0
+        ? rows[existingIndex]
+        : <String, dynamic>{
+            'lobby_id': lobbyId,
+            'created_at': now.toIso8601String(),
+          };
     final row = applySessionRatingToMatchRow(
       row: {
+        ...base,
         'lobby_id': lobbyId,
         'game_name': gameName,
         'result': result,
         'player_uids': List<String>.from(playerUids),
-        'created_at': DateTime.now().toUtc().toIso8601String(),
       },
       rating: rating,
     );
-    state = AsyncData(
-      current.copyWith(
-        gameHistory: [row, ...current.gameHistory],
-      ),
-    );
+    if (existingIndex >= 0) {
+      rows[existingIndex] = row;
+    } else {
+      rows.insert(0, row);
+    }
+    state = AsyncData(current.copyWith(gameHistory: rows));
   }
 
   // TODO: Implement addBan method

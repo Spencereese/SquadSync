@@ -605,11 +605,14 @@ void main() {
         () async {
       final copied = <String>[];
       final shared = <String>[];
-      final payload = await shareLobbyLink(
+      final result = await shareLobbyLink(
         lobbyId: 'lobby-9',
         copy: (text) async => copied.add(text),
         share: (text) async => shared.add(text),
       );
+      expect(result.outcome, LobbyShareOutcome.success);
+      expect(result.isSuccess, isTrue);
+      final payload = result.payload!;
       expect(
         payload.split('\n'),
         [
@@ -620,10 +623,65 @@ void main() {
       expect(copied, [payload]);
       expect(shared, [payload]);
       expect(payload, contains('codsquadapp://lobby/lobby-9'));
-      expect(payload, contains('https://codsquad.app/l/lobby-9'));
+      expect(payload, contains(lobbyShareHttpsLink(lobbyId: 'lobby-9')));
+      expect(lobbyShareMessage(result), kLobbyShareCopiedCopy);
       for (final line in payload.split('\n')) {
         expect(locationForDeepLink(line), '/squad?lobby_id=lobby-9');
       }
+    });
+
+    test('shareLobbyLink empty lobby id is empty, not a link', () async {
+      var copied = false;
+      var shared = false;
+      for (final id in [null, '', '   ']) {
+        copied = false;
+        shared = false;
+        final result = await shareLobbyLink(
+          lobbyId: id,
+          copy: (_) async => copied = true,
+          share: (_) async => shared = true,
+        );
+        expect(result.outcome, LobbyShareOutcome.empty, reason: '$id');
+        expect(result.isSuccess, isFalse);
+        expect(result.payload, isNull);
+        expect(copied, isFalse);
+        expect(shared, isFalse);
+        expect(lobbyShareMessage(result), kLobbyShareEmptyCopy);
+      }
+    });
+
+    test('shareLobbyLink clipboard failure does not claim copied', () async {
+      final shared = <String>[];
+      final result = await shareLobbyLink(
+        lobbyId: 'lobby-9',
+        copy: (_) async => throw Exception('denied'),
+        share: (text) async => shared.add(text),
+      );
+      expect(result.outcome, LobbyShareOutcome.clipboardFailed);
+      expect(result.isSuccess, isFalse);
+      expect(shared, isEmpty);
+      expect(
+        result.payload,
+        'codsquadapp://lobby/lobby-9\nhttps://codsquad.app/l/lobby-9',
+      );
+      expect(
+        lobbyShareMessage(result),
+        '$kLobbyShareClipboardFailedCopy: denied',
+      );
+      expect(lobbyShareErrorDetail(result.error), 'denied');
+    });
+
+    test('shareLobbyLink share-sheet failure still succeeds after copy',
+        () async {
+      final copied = <String>[];
+      final result = await shareLobbyLink(
+        lobbyId: '  lobby-9  ',
+        copy: (text) async => copied.add(text),
+        share: (_) async => throw Exception('sheet dismissed'),
+      );
+      expect(result.outcome, LobbyShareOutcome.success);
+      expect(copied, [result.payload]);
+      expect(lobbyShareMessage(result), kLobbyShareCopiedCopy);
     });
   });
 

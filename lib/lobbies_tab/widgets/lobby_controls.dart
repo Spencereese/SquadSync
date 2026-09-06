@@ -134,33 +134,9 @@ class _LobbyInviteButton extends ConsumerWidget {
       currentLobby: currentLobby,
       userLobbies: userLobbies,
     );
-    if (lobbyId.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No lobby selected')),
-        );
-      }
-      return;
-    }
-
-    try {
-      await shareLobbyLink(lobbyId: lobbyId);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lobby link copied'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not share lobby link: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+    final result = await shareLobbyLink(lobbyId: lobbyId);
+    if (!context.mounted) return;
+    presentLobbyShare(context, result);
   }
 
   @override

@@ -451,11 +451,13 @@ void main() {
   test('empty-spot Invite reuses shareLobbyLink payload', () async {
     String? copied;
     String? shared;
-    final payload = await shareEmptySpotInvite(
+    final result = await shareEmptySpotInvite(
       lobbyId: 'lobby-9',
       copy: (text) async => copied = text,
       share: (text) async => shared = text,
     );
+    expect(result.outcome, LobbyShareOutcome.success);
+    final payload = result.payload;
     expect(
       payload,
       'codsquadapp://lobby/lobby-9\nhttps://codsquad.app/l/lobby-9',

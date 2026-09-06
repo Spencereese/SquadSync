@@ -103,10 +103,9 @@ class LobbyHeader extends ConsumerWidget {
                   onPressed: () => _joinVoiceRoom(context, ref, lobbyId!),
                 ),
 
-              if (_nonEmptyLobbyId(lobbyId) != null)
-                LobbyShareButton(
-                  onPressed: () => _shareLobbyLink(context, lobbyId!),
-                ),
+              LobbyShareButton(
+                onPressed: () => _shareLobbyLink(context, lobbyId),
+              ),
 
               // Settings button
               Semantics(
@@ -149,26 +148,11 @@ class LobbyHeader extends ConsumerWidget {
     );
   }
 
-  Future<void> _shareLobbyLink(BuildContext context, String lobbyId) async {
+  Future<void> _shareLobbyLink(BuildContext context, String? lobbyId) async {
     HapticFeedback.lightImpact();
-    try {
-      await shareLobbyLink(lobbyId: lobbyId);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lobby link copied'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not share lobby link: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+    final result = await shareLobbyLink(lobbyId: lobbyId);
+    if (!context.mounted) return;
+    presentLobbyShare(context, result);
   }
 
   void _showGameSelectionDialog(BuildContext context, WidgetRef ref) async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../chat/screens/components/chat_info_actions.dart';
+import '../../core/deep_link_routes.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/lobby_ready_lock.dart';
 import '../../services/lobby_seat_status.dart';
@@ -437,32 +438,9 @@ class SpotCard extends ConsumerWidget {
       currentLobby: squadState.currentLobby,
       userLobbies: squadState.userLobbies,
     );
-    if (lobbyId.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No lobby selected')),
-        );
-      }
-      return;
-    }
-    try {
-      await shareEmptySpotInvite(lobbyId: lobbyId);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lobby link copied'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not share lobby link: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+    final result = await shareEmptySpotInvite(lobbyId: lobbyId);
+    if (!context.mounted) return;
+    presentLobbyShare(context, result);
   }
 
   Future<void> _peacockEmptySpot(

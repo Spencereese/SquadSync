@@ -72,8 +72,8 @@ Key emptySpotCtaKey(EmptySpotCtaKind kind) {
 
 /// Empty-spot Invite uses the same [shareLobbyLink] path as the lobby
 /// header and Tonight Invite. Tests inject [copy] / [share].
-Future<String> shareEmptySpotInvite({
-  required String lobbyId,
+Future<LobbyShareResult> shareEmptySpotInvite({
+  String? lobbyId,
   Future<void> Function(String link)? copy,
   Future<void> Function(String link)? share,
 }) {

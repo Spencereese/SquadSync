@@ -135,9 +135,8 @@ class TonightActionsBlock extends StatelessWidget {
             phase: surfacePhase,
             error: error,
             onRetry: onRetry,
-            onAction: surfacePhase == LobbySurfacePhase.empty
-                ? onEmptyAction
-                : null,
+            onAction:
+                surfacePhase == LobbySurfacePhase.empty ? onEmptyAction : null,
             actionLabel: surfacePhase == LobbySurfacePhase.empty
                 ? emptyActionLabel
                 : null,
@@ -660,8 +659,7 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color:
-                          theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                 ),
@@ -707,33 +705,9 @@ class _InviteButton extends ConsumerWidget {
       currentLobby: currentLobby,
       userLobbies: userLobbies,
     );
-    if (lobbyId.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No lobby selected')),
-        );
-      }
-      return;
-    }
-
-    try {
-      await shareLobbyLink(lobbyId: lobbyId);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lobby link copied'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not share lobby link: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+    final result = await shareLobbyLink(lobbyId: lobbyId);
+    if (!context.mounted) return;
+    presentLobbyShare(context, result);
   }
 
   @override

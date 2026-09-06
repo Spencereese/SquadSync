@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -101,21 +101,113 @@ String lobbySharePayload({required String lobbyId}) {
       '${lobbyShareHttpsLink(lobbyId: lobbyId)}';
 }
 
+/// Outcome of [shareLobbyLink]. Success copies the payload; empty lobby
+/// id does not invent a link; clipboard failure does not claim copied.
+enum LobbyShareOutcome {
+  success,
+  empty,
+  clipboardFailed,
+}
+
+const kLobbyShareCopiedCopy = 'Lobby link copied';
+const kLobbyShareEmptyCopy = 'No lobby selected';
+const kLobbyShareClipboardFailedCopy = 'Could not copy lobby link';
+
+class LobbyShareResult {
+  const LobbyShareResult.success(this.payload)
+      : outcome = LobbyShareOutcome.success,
+        error = null;
+
+  const LobbyShareResult.empty()
+      : outcome = LobbyShareOutcome.empty,
+        payload = null,
+        error = null;
+
+  const LobbyShareResult.clipboardFailed({this.error, this.payload})
+      : outcome = LobbyShareOutcome.clipboardFailed;
+
+  final LobbyShareOutcome outcome;
+  final String? payload;
+  final Object? error;
+
+  bool get isSuccess => outcome == LobbyShareOutcome.success;
+}
+
+Key lobbyShareFeedbackKey(LobbyShareOutcome outcome) {
+  switch (outcome) {
+    case LobbyShareOutcome.success:
+      return const Key('lobby-share-copied');
+    case LobbyShareOutcome.empty:
+      return const Key('lobby-share-empty');
+    case LobbyShareOutcome.clipboardFailed:
+      return const Key('lobby-share-clipboard-failed');
+  }
+}
+
+String lobbyShareErrorDetail(Object? error) {
+  if (error == null) return '';
+  final text = error.toString().trim();
+  if (text.isEmpty) return '';
+  const prefix = 'Exception: ';
+  if (text.startsWith(prefix) && text.length > prefix.length) {
+    return text.substring(prefix.length);
+  }
+  return text;
+}
+
+String lobbyShareMessage(LobbyShareResult result) {
+  switch (result.outcome) {
+    case LobbyShareOutcome.success:
+      return kLobbyShareCopiedCopy;
+    case LobbyShareOutcome.empty:
+      return kLobbyShareEmptyCopy;
+    case LobbyShareOutcome.clipboardFailed:
+      final detail = lobbyShareErrorDetail(result.error);
+      if (detail.isEmpty) return kLobbyShareClipboardFailedCopy;
+      return '$kLobbyShareClipboardFailedCopy: $detail';
+  }
+}
+
+/// SnackBar for [shareLobbyLink] — success toast, empty, clipboard fail.
+SnackBar lobbyShareSnackBar(LobbyShareResult result) {
+  return SnackBar(
+    content: Text(
+      lobbyShareMessage(result),
+      key: lobbyShareFeedbackKey(result.outcome),
+    ),
+    behavior: SnackBarBehavior.floating,
+  );
+}
+
+void presentLobbyShare(BuildContext context, LobbyShareResult result) {
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(lobbyShareSnackBar(result));
+}
+
 /// Copy [lobbySharePayload] then open the system share sheet.
 /// Live path: lobby header / Tonight Invite. Tests inject [copy] / [share].
-Future<String> shareLobbyLink({
-  required String lobbyId,
+/// Empty / whitespace lobby id is [LobbyShareOutcome.empty] — no copy, no sheet.
+Future<LobbyShareResult> shareLobbyLink({
+  String? lobbyId,
   Future<void> Function(String link)? copy,
   Future<void> Function(String link)? share,
 }) async {
-  final payload = lobbySharePayload(lobbyId: lobbyId);
-  await (copy ?? _copyLobbyLinkToClipboard)(payload);
+  final id = lobbyId?.trim() ?? '';
+  if (id.isEmpty) {
+    return const LobbyShareResult.empty();
+  }
+  final payload = lobbySharePayload(lobbyId: id);
+  try {
+    await (copy ?? _copyLobbyLinkToClipboard)(payload);
+  } catch (e) {
+    return LobbyShareResult.clipboardFailed(error: e, payload: payload);
+  }
   try {
     await (share ?? _shareLobbyLinkSheet)(payload);
   } catch (_) {
     // Clipboard already holds [payload].
   }
-  return payload;
+  return LobbyShareResult.success(payload);
 }
 
 Future<void> _copyLobbyLinkToClipboard(String payload) {

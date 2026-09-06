@@ -127,6 +127,42 @@ void main() {
       );
     });
 
+    test('Realtime disconnect of empty queue stays empty, not error', () {
+      expect(
+        resolveLfgListPhase(
+          isHydrating: false,
+          isHydrated: true,
+          isRealtimeDisconnected: true,
+          lookingCount: 0,
+        ),
+        LfgListPhase.empty,
+      );
+    });
+
+    test('Realtime disconnect with looking rows is stale, not empty', () {
+      expect(
+        resolveLfgListPhase(
+          isHydrating: false,
+          isHydrated: true,
+          isRealtimeDisconnected: true,
+          lookingCount: 1,
+        ),
+        LfgListPhase.stale,
+      );
+    });
+
+    test('hydrating after disconnect of empty queue is reconnecting', () {
+      expect(
+        resolveLfgListPhase(
+          isHydrating: true,
+          isHydrated: true,
+          isRealtimeDisconnected: true,
+          lookingCount: 0,
+        ),
+        LfgListPhase.loading,
+      );
+    });
+
     test('looking rows are data', () {
       expect(
         resolveLfgListPhase(

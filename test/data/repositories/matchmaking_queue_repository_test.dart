@@ -76,6 +76,7 @@ void main() {
       expect(await repo.fetchActive(), isEmpty);
       await repo.remove('u1');
       expect(repo.watch(), isA<Stream<MatchmakingQueueChange>>());
+      repo.resubscribeWatch();
       await repo.dispose();
     });
   });

@@ -198,6 +198,7 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   bool _applyingRemote = false;
   Object? _hydrateError;
   DateTime? _lastHydratedAt;
+  DateTime? _realtimeDisconnectedAt;
   final Map<String, int> _persistGen = <String, int>{};
   final Map<String, Future<void>> _persistTail = <String, Future<void>>{};
 
@@ -221,11 +222,23 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   bool get isHydrating => _hydrating;
   Object? get hydrateError => _hydrateError;
   DateTime? get lastHydratedAt => _lastHydratedAt;
+  DateTime? get realtimeDisconnectedAt => _realtimeDisconnectedAt;
+  bool get isRealtimeBound => _watchSub != null;
+  bool get isRealtimeDisconnected => _realtimeDisconnectedAt != null;
 
-  /// True when hydrate failed or the last successful fetch is older than
-  /// [kLfgListStaleAfter]. Idle never-hydrated is not stale.
+  /// Recovery hydrate after a live session or Realtime drop. First cold
+  /// hydrate is not reconnecting.
+  bool get isReconnecting =>
+      _hydrating && (_hydrated || _realtimeDisconnectedAt != null);
+
+  /// True when hydrate failed, Realtime dropped with last-known looking,
+  /// or the last successful fetch is older than [kLfgListStaleAfter].
+  /// Idle never-hydrated is not stale.
   bool get hasStaleQueue {
     if (_hydrateError != null) return _hydrated || lookingUserIds.isNotEmpty;
+    if (_realtimeDisconnectedAt != null && lookingUserIds.isNotEmpty) {
+      return true;
+    }
     final at = _lastHydratedAt;
     if (at == null) return false;
     return DateTime.now().toUtc().difference(at) >= kLfgListStaleAfter;
@@ -307,7 +320,9 @@ class MatchmakingQueueTracker extends ChangeNotifier {
       notificationId: notificationId,
     );
     final installed = _install(userId, next);
-    if (!_applyingRemote) {
+    // No-op reduces (startLooking while looking) must not persist again —
+    // resume / double-tap would otherwise double-enqueue the same row.
+    if (!_applyingRemote && !identical(next, before)) {
       unawaited(_persistQuietly(userId));
       if (event == MatchmakingQueueEvent.startLooking &&
           installed.phase == MatchmakingQueuePhase.looking &&
@@ -412,13 +427,25 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   }
 
   /// Fetch persisted rows then subscribe. Idempotent. No peacock assign.
-  /// [force] re-fetches so a stale / failed queue can recover.
+  /// [force] re-fetches and rebinds so a stale / dropped queue can recover.
   Future<void> ensureHydratedAndSubscribed({bool force = false}) async {
     _repository ??=
         MatchmakingQueueRepositoryImpl(client: SupabaseService.maybeClient);
     await hydrateFromRepository(force: force);
     cleanupStaleEntries();
-    _bindRealtime();
+    _bindRealtime(force: force);
+    if (force && _hydrateError == null) {
+      _realtimeDisconnectedAt = null;
+    }
+  }
+
+  /// App resume / Realtime recovery. Hydrates and resubscribes. Never
+  /// [startLooking] — already-looking stays looking (no double-enqueue).
+  Future<void> resumeQueue({bool force = true}) async {
+    await ensureHydratedAndSubscribed(force: force);
+    if (_hydrateError != null) {
+      cleanupAfterDisconnect();
+    }
   }
 
   Future<void> hydrateFromRepository({bool force = false}) async {
@@ -430,6 +457,15 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     notifyListeners();
     try {
       final rows = await repo.fetchActive();
+      // After a Realtime drop, drop last-known looking the server no
+      // longer has. Matched / joined stay (ticket 53 dequeue race).
+      if (force && _realtimeDisconnectedAt != null) {
+        for (final id in _byUser.keys.toList(growable: false)) {
+          if (!rows.containsKey(id)) {
+            applyRemote(id, null);
+          }
+        }
+      }
       for (final entry in rows.entries) {
         applyRemote(entry.key, entry.value);
       }
@@ -444,12 +480,44 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     }
   }
 
-  void _bindRealtime() {
+  void _bindRealtime({bool force = false}) {
     final repo = _repository;
-    if (repo == null || _watchSub != null) return;
-    _watchSub = repo.watch().listen((change) {
-      applyRemote(change.userId, change.entry);
-    });
+    if (repo == null) return;
+    if (_watchSub != null) {
+      if (!force) return;
+      final previous = _watchSub;
+      _watchSub = null;
+      unawaited(previous?.cancel());
+    }
+    if (force && repo is MatchmakingQueueRepositoryImpl) {
+      repo.resubscribeWatch();
+    }
+    _watchSub = repo.watch().listen(
+      (change) {
+        if (_realtimeDisconnectedAt != null) {
+          _realtimeDisconnectedAt = null;
+        }
+        applyRemote(change.userId, change.entry);
+      },
+      onError: (_) => markRealtimeDisconnected(),
+      onDone: () {
+        _watchSub = null;
+        markRealtimeDisconnected();
+      },
+      cancelOnError: false,
+    );
+  }
+
+  /// Realtime watch dropped. Last-known looking becomes stale, not error.
+  void markRealtimeDisconnected({DateTime? now}) {
+    _realtimeDisconnectedAt ??= now ?? DateTime.now().toUtc();
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void unbindRealtime() {
+    _watchSub?.cancel();
+    _watchSub = null;
   }
 
   /// Reduce [startLooking] after [remoteWrite] succeeds (notify friends,
@@ -630,10 +698,45 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     return ids;
   }
 
+  /// Drop last-known looking after a Realtime disconnect timeout.
+  /// Local only — does not persist-delete other users' rows. Empty is a no-op.
+  List<String> cleanupAfterDisconnect({
+    DateTime? now,
+    Duration? after,
+  }) {
+    final since = _realtimeDisconnectedAt;
+    if (since == null) return const <String>[];
+    final at = now ?? DateTime.now().toUtc();
+    final ttl = after ?? kLfgDisconnectStaleAfter;
+    if (at.difference(since) < ttl) return const <String>[];
+    final kept = clearStaleQueueAfterDisconnect(
+      snapshot: snapshot,
+      disconnectedAt: since,
+      now: at,
+      timeout: ttl,
+    );
+    final dropped = <String>[];
+    final already = _applyingRemote;
+    _applyingRemote = true;
+    try {
+      for (final id in _byUser.keys.toList(growable: false)) {
+        if (kept.containsKey(id)) continue;
+        dropped.add(id);
+        _install(id, MatchmakingQueueEntry.idle);
+      }
+    } finally {
+      if (!already) _applyingRemote = false;
+    }
+    return dropped;
+  }
+
   void clear() {
     _byUser.clear();
     _persistGen.clear();
     _persistTail.clear();
+    _hydrateError = null;
+    _lastHydratedAt = null;
+    _realtimeDisconnectedAt = null;
     notifyListeners();
   }
 
@@ -647,6 +750,9 @@ class MatchmakingQueueTracker extends ChangeNotifier {
 /// How long a successful LFG hydrate stays "live" before the row is stale.
 const kLfgListStaleAfter = Duration(minutes: 2);
 
+/// How long last-known looking rows survive after a Realtime disconnect.
+const kLfgDisconnectStaleAfter = kLfgListStaleAfter;
+
 /// How long a looking row may sit before [cleanupStaleEntries] expires it.
 /// Stub: in-memory expire + existing persist remove. No sweeper table.
 const kLfgStaleEntryAfter = Duration(minutes: 15);
@@ -658,6 +764,8 @@ const kLfgListErrorHint = 'Check your connection and try again.';
 const kLfgListStaleCopy = 'Queue may be out of date';
 const kLfgListStaleHint = 'Showing the last known queue.';
 const kLfgListReconnectingCopy = 'Reconnecting to queue...';
+const kLfgReconnectToastKey = 'lfg-queue-reconnect-toast';
+const kLfgReconnectToastCooldown = Duration(seconds: 4);
 
 enum LfgListPhase { data, empty, loading, error, stale }
 
@@ -680,6 +788,7 @@ class LfgListView {
 
 /// Empty / error / stale / reconnecting for the LFG list. Loading only
 /// while a hydrate is in flight with no rows yet — never a settled spinner.
+/// Realtime disconnect of an empty queue stays empty, not error.
 LfgListPhase resolveLfgListPhase({
   required bool isHydrating,
   required bool isHydrated,
@@ -687,11 +796,21 @@ LfgListPhase resolveLfgListPhase({
   required int lookingCount,
   bool isOffline = false,
   bool isStale = false,
+  bool isRealtimeDisconnected = false,
 }) {
   final hasRows = lookingCount > 0;
-  if (isHydrating && !hasRows && !isHydrated) return LfgListPhase.loading;
-  if ((error != null || isOffline) && !hasRows) return LfgListPhase.error;
-  if (error != null || isOffline || (isStale && hasRows)) {
+  if (isHydrating &&
+      !hasRows &&
+      (!isHydrated || isRealtimeDisconnected)) {
+    return LfgListPhase.loading;
+  }
+  if ((error != null || isOffline) && !hasRows && !isRealtimeDisconnected) {
+    return LfgListPhase.error;
+  }
+  if (error != null ||
+      isOffline ||
+      (isStale && hasRows) ||
+      (isRealtimeDisconnected && hasRows)) {
     return LfgListPhase.stale;
   }
   if (!hasRows) return LfgListPhase.empty;
@@ -705,6 +824,7 @@ LfgListView resolveLfgList({
   Object? error,
   bool isOffline = false,
   bool isStale = false,
+  bool isRealtimeDisconnected = false,
 }) {
   final looking = <String>[];
   for (final entry in snapshot.entries) {
@@ -720,6 +840,7 @@ LfgListView resolveLfgList({
       lookingCount: looking.length,
       isOffline: isOffline,
       isStale: isStale,
+      isRealtimeDisconnected: isRealtimeDisconnected,
     ),
     lookingUserIds: looking,
     error: error,
@@ -737,7 +858,74 @@ LfgListView resolveLfgListFromTracker(
     error: tracker.hydrateError,
     isOffline: isOffline,
     isStale: tracker.hasStaleQueue,
+    isRealtimeDisconnected: tracker.isRealtimeDisconnected,
   );
+}
+
+/// Toast on a real queue reconnect (Realtime drop or recovery from stale),
+/// not a background hydrate of a live queue.
+bool shouldShowLfgReconnectToast({
+  LfgListPhase? previous,
+  required LfgListPhase current,
+  bool realtimeReconnect = false,
+}) {
+  final reconnecting =
+      current == LfgListPhase.loading || realtimeReconnect;
+  if (!reconnecting) return false;
+  if (previous == LfgListPhase.loading) return false;
+  if (previous == LfgListPhase.data) return false;
+  if (previous == LfgListPhase.stale) return true;
+  return realtimeReconnect;
+}
+
+/// One toast per reconnect cycle across LFG rows on screen.
+class LfgReconnectToastGate {
+  DateTime? _lastShownAt;
+
+  bool claim({
+    required DateTime now,
+    Duration cooldown = kLfgReconnectToastCooldown,
+  }) {
+    final last = _lastShownAt;
+    if (last != null && now.difference(last) < cooldown) return false;
+    _lastShownAt = now;
+    return true;
+  }
+
+  void reset() => _lastShownAt = null;
+}
+
+final lfgReconnectToastGate = LfgReconnectToastGate();
+
+/// Resume hydrates an existing looking row. It never starts looking.
+bool shouldStartLookingOnResume(MatchmakingQueueEntry current) {
+  return false;
+}
+
+/// True when a resume [startLooking] would double-enqueue.
+bool wouldDoubleEnqueueOnResume(MatchmakingQueueEntry current) {
+  return current.phase == MatchmakingQueuePhase.looking ||
+      current.phase == MatchmakingQueuePhase.matched ||
+      current.phase == MatchmakingQueuePhase.joined;
+}
+
+/// After Realtime disconnect, drop last-known looking once [timeout] elapses.
+/// Empty snapshot stays empty. Matched/joined are kept.
+Map<String, MatchmakingQueueEntry> clearStaleQueueAfterDisconnect({
+  required Map<String, MatchmakingQueueEntry> snapshot,
+  DateTime? disconnectedAt,
+  required DateTime now,
+  Duration timeout = kLfgDisconnectStaleAfter,
+}) {
+  if (snapshot.isEmpty) return snapshot;
+  if (disconnectedAt == null) return snapshot;
+  if (now.difference(disconnectedAt) < timeout) return snapshot;
+  final kept = <String, MatchmakingQueueEntry>{};
+  for (final entry in snapshot.entries) {
+    if (entry.value.phase == MatchmakingQueuePhase.looking) continue;
+    kept[entry.key] = entry.value;
+  }
+  return kept;
 }
 
 Key lfgListKey(LfgListPhase phase) {

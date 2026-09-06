@@ -1,8 +1,45 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/data/repositories/matchmaking_queue_repository.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/squad_analytics.dart';
 import 'package:squad_sync/widgets/lfg_queue_status_row.dart';
+
+class _MemoryQueueRepo implements MatchmakingQueueRepository {
+  _MemoryQueueRepo({this.onFetch});
+
+  final Map<String, MatchmakingQueueEntry> rows =
+      <String, MatchmakingQueueEntry>{};
+  final StreamController<MatchmakingQueueChange> controller =
+      StreamController<MatchmakingQueueChange>.broadcast();
+  Future<Map<String, MatchmakingQueueEntry>> Function()? onFetch;
+
+  @override
+  Future<void> upsert(String userId, MatchmakingQueueEntry entry) async {
+    rows[userId] = entry;
+  }
+
+  @override
+  Future<void> remove(String userId) async {
+    rows.remove(userId);
+  }
+
+  @override
+  Future<Map<String, MatchmakingQueueEntry>> fetchActive() {
+    if (onFetch != null) return onFetch!();
+    return Future.value(Map<String, MatchmakingQueueEntry>.from(rows));
+  }
+
+  @override
+  Stream<MatchmakingQueueChange> watch() => controller.stream;
+
+  @override
+  Future<void> dispose() async {
+    await controller.close();
+  }
+}
 
 Widget _wrap(Widget child) {
   return MaterialApp(home: Scaffold(body: child));
@@ -120,5 +157,74 @@ void main() {
     expect(find.text(kLfgListReconnectingCopy), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byKey(const Key('lfg-queue-retry')), findsNothing);
+  });
+
+  group('LfgQueueStatusHost', () {
+    setUp(() {
+      LfgQueueStatusHost.scheduleDisconnectCleanup = false;
+      lfgReconnectToastGate.reset();
+    });
+    tearDown(() {
+      lfgReconnectToastGate.reset();
+      LfgQueueStatusHost.scheduleDisconnectCleanup = true;
+    });
+
+    testWidgets('host shows reconnecting toast without a spinner',
+        (tester) async {
+      final gate = Completer<Map<String, MatchmakingQueueEntry>>();
+      final repo = _MemoryQueueRepo(onFetch: () => gate.future);
+      addTearDown(repo.dispose);
+      final tracker = MatchmakingQueueTracker(repository: repo);
+      addTearDown(tracker.unbindRealtime);
+      tracker.markRealtimeDisconnected();
+      unawaited(tracker.hydrateFromRepository(force: true));
+
+      await tester.pumpWidget(
+        _wrap(LfgQueueStatusHost(tracker: tracker)),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('lfg-queue-reconnecting')),
+        findsOneWidget,
+      );
+      expect(find.text(kLfgListReconnectingCopy), findsWidgets);
+      expect(find.byKey(const Key(kLfgReconnectToastKey)), findsOneWidget);
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      gate.complete(const {});
+      await tracker.waitForPendingPersists();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+    });
+
+    testWidgets('host empty after disconnect cleanup is empty copy',
+        (tester) async {
+      LfgQueueStatusHost.scheduleDisconnectCleanup = true;
+      final tracker = MatchmakingQueueTracker();
+      tracker.applyRemote(
+        'u1',
+        const MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+      );
+      tracker.markRealtimeDisconnected();
+
+      await tester.pumpWidget(
+        _wrap(LfgQueueStatusHost(tracker: tracker)),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('lfg-queue-stale')), findsOneWidget);
+      expect(find.text(kLfgListStaleCopy), findsOneWidget);
+
+      await tester.pump(kLfgDisconnectStaleAfter);
+      await tester.pump();
+
+      expect(find.byKey(const Key('lfg-queue-empty')), findsOneWidget);
+      expect(find.text(kLfgListEmptyCopy), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
   });
 }

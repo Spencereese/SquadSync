@@ -317,4 +317,160 @@ void main() {
       );
     });
   });
+
+  group('lfg reconnect toast', () {
+    test('fires on Realtime recovery from stale, not a live hydrate', () {
+      expect(
+        shouldShowLfgReconnectToast(
+          previous: null,
+          current: LfgListPhase.loading,
+          realtimeReconnect: true,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldShowLfgReconnectToast(
+          previous: LfgListPhase.loading,
+          current: LfgListPhase.loading,
+          realtimeReconnect: true,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldShowLfgReconnectToast(
+          previous: LfgListPhase.data,
+          current: LfgListPhase.loading,
+          realtimeReconnect: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldShowLfgReconnectToast(
+          previous: LfgListPhase.empty,
+          current: LfgListPhase.loading,
+          realtimeReconnect: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldShowLfgReconnectToast(
+          previous: LfgListPhase.stale,
+          current: LfgListPhase.loading,
+          realtimeReconnect: false,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldShowLfgReconnectToast(
+          previous: LfgListPhase.stale,
+          current: LfgListPhase.stale,
+          realtimeReconnect: true,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldShowLfgReconnectToast(
+          previous: LfgListPhase.empty,
+          current: LfgListPhase.empty,
+          realtimeReconnect: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('copy is arm length and gate claims once per cooldown', () {
+      expect(kLfgListReconnectingCopy, 'Reconnecting to queue...');
+      expect(kLfgReconnectToastKey, 'lfg-queue-reconnect-toast');
+      final gate = LfgReconnectToastGate();
+      final t = DateTime.utc(2026, 9, 6, 12);
+      expect(gate.claim(now: t), isTrue);
+      expect(gate.claim(now: t.add(const Duration(seconds: 1))), isFalse);
+      expect(
+        gate.claim(now: t.add(kLfgReconnectToastCooldown)),
+        isTrue,
+      );
+    });
+  });
+
+  group('resume does not double-enqueue', () {
+    test('already looking / matched / joined would double-enqueue', () {
+      expect(
+        wouldDoubleEnqueueOnResume(MatchmakingQueueEntry.idle),
+        isFalse,
+      );
+      expect(
+        wouldDoubleEnqueueOnResume(
+          const MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+        ),
+        isTrue,
+      );
+      expect(
+        wouldDoubleEnqueueOnResume(
+          const MatchmakingQueueEntry(
+            phase: MatchmakingQueuePhase.matched,
+            lobbyId: 'lobby-9',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        shouldStartLookingOnResume(
+          const MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+        ),
+        isFalse,
+      );
+      expect(
+        shouldStartLookingOnResume(MatchmakingQueueEntry.idle),
+        isFalse,
+      );
+    });
+  });
+
+  group('clearStaleQueueAfterDisconnect', () {
+    test('keeps last-known looking before the disconnect timeout', () {
+      final since = DateTime.utc(2026, 9, 6, 12);
+      const looking = MatchmakingQueueEntry(
+        phase: MatchmakingQueuePhase.looking,
+      );
+      final kept = clearStaleQueueAfterDisconnect(
+        snapshot: const {'u1': looking},
+        disconnectedAt: since,
+        now: since.add(kLfgDisconnectStaleAfter - const Duration(seconds: 1)),
+      );
+      expect(kept['u1']?.phase, MatchmakingQueuePhase.looking);
+    });
+
+    test('drops last-known looking after the disconnect timeout', () {
+      final since = DateTime.utc(2026, 9, 6, 12);
+      final cleared = clearStaleQueueAfterDisconnect(
+        snapshot: const {
+          'u-look': MatchmakingQueueEntry(
+            phase: MatchmakingQueuePhase.looking,
+          ),
+          'u-match': MatchmakingQueueEntry(
+            phase: MatchmakingQueuePhase.matched,
+            lobbyId: 'lobby-9',
+          ),
+        },
+        disconnectedAt: since,
+        now: since.add(kLfgDisconnectStaleAfter),
+      );
+      expect(cleared.containsKey('u-look'), isFalse);
+      expect(
+        cleared['u-match']?.phase,
+        MatchmakingQueuePhase.matched,
+      );
+    });
+
+    test('empty snapshot stays empty', () {
+      expect(
+        clearStaleQueueAfterDisconnect(
+          snapshot: const {},
+          disconnectedAt: DateTime.utc(2026, 9, 6, 12),
+          now: DateTime.utc(2026, 9, 6, 13),
+        ),
+        isEmpty,
+      );
+    });
+  });
 }

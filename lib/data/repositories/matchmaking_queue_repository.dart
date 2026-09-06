@@ -199,6 +199,12 @@ class MatchmakingQueueRepositoryImpl implements MatchmakingQueueRepository {
     });
   }
 
+  /// Reset the recovery cap and subscribe again (app resume / tracker force).
+  void resubscribeWatch() {
+    _watchRetries = 0;
+    _subscribeWatch();
+  }
+
   @override
   Future<void> dispose() async {
     await _channel?.unsubscribe();

@@ -307,7 +307,8 @@ class LookingForSquadButton extends ConsumerStatefulWidget {
       _LookingForSquadButtonState();
 }
 
-class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
+class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton>
+    with WidgetsBindingObserver {
   bool _isLoading = false;
 
   MatchmakingQueueTracker get _tracker => MatchmakingQueueTracker.instance;
@@ -318,13 +319,35 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_hydrateLiveQueue());
     });
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_resumeLiveQueue());
+    }
+  }
+
   Future<void> _hydrateLiveQueue() async {
     await _tracker.ensureHydratedAndSubscribed();
+    if (!mounted) return;
+    await _processLobbyAwareQueue();
+    if (mounted) setState(() {});
+  }
+
+  /// Resume hydrates + resubscribes. Never startLooking (no double-enqueue).
+  Future<void> _resumeLiveQueue() async {
+    await _tracker.resumeQueue();
     if (!mounted) return;
     await _processLobbyAwareQueue();
     if (mounted) setState(() {});
@@ -613,7 +636,6 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
           status = claimSeatCopy(seat?.seatIndex);
         }
 
-        final list = resolveLfgListFromTracker(_tracker);
         final showQueueStatus = status == null;
 
         return Padding(
@@ -664,11 +686,9 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
                   ),
                 ),
               if (showQueueStatus)
-                LfgQueueStatusRow(
-                  view: list,
-                  onRetry: () => unawaited(
-                    _tracker.ensureHydratedAndSubscribed(force: true),
-                  ),
+                LfgQueueStatusHost(
+                  tracker: _tracker,
+                  onRetry: () => unawaited(_tracker.resumeQueue()),
                 ),
             ],
           ),

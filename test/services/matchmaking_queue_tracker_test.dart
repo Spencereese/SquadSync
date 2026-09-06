@@ -50,8 +50,13 @@ class _MemoryQueueRepo implements MatchmakingQueueRepository {
     return Map<String, MatchmakingQueueEntry>.fromEntries(ordered);
   }
 
+  int watchStarts = 0;
+
   @override
-  Stream<MatchmakingQueueChange> watch() => controller.stream;
+  Stream<MatchmakingQueueChange> watch() {
+    watchStarts++;
+    return controller.stream;
+  }
 
   @override
   Future<void> dispose() async {
@@ -746,6 +751,150 @@ void main() {
       final view = resolveLfgListFromTracker(tracker);
       expect(view.phase, LfgListPhase.empty);
       expect(view.lookingCount, 0);
+    });
+  });
+
+  group('Realtime reconnect + resume', () {
+    late _MemoryQueueRepo repo;
+
+    setUp(() {
+      repo = _MemoryQueueRepo();
+      tracker = MatchmakingQueueTracker(peacock: peacock, repository: repo);
+    });
+
+    tearDown(() async {
+      tracker.unbindRealtime();
+      await repo.dispose();
+    });
+
+    test('ensureHydratedAndSubscribed force rebinds watch', () async {
+      await tracker.ensureHydratedAndSubscribed();
+      expect(tracker.isRealtimeBound, isTrue);
+      expect(repo.watchStarts, 1);
+
+      await tracker.ensureHydratedAndSubscribed(force: true);
+      expect(tracker.isRealtimeBound, isTrue);
+      expect(repo.watchStarts, 2);
+    });
+
+    test('watch error marks disconnected; looking rows go stale not error',
+        () async {
+      await tracker.ensureHydratedAndSubscribed();
+      tracker.startLooking('u1');
+      await tracker.waitForPendingPersists();
+
+      repo.controller.addError(Exception('socket'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(tracker.isRealtimeDisconnected, isTrue);
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.looking);
+      expect(
+        resolveLfgListFromTracker(tracker).phase,
+        LfgListPhase.stale,
+      );
+    });
+
+    test('empty queue after disconnect stays empty copy', () async {
+      await tracker.ensureHydratedAndSubscribed();
+      tracker.markRealtimeDisconnected(now: DateTime.utc(2026, 9, 6, 12));
+
+      expect(tracker.lookingUserIds, isEmpty);
+      expect(
+        resolveLfgListFromTracker(tracker).phase,
+        LfgListPhase.empty,
+      );
+      expect(lfgListMessage(LfgListPhase.empty), kLfgListEmptyCopy);
+    });
+
+    test('disconnect timeout drops last-known looking to empty copy', () {
+      final now = DateTime.utc(2026, 9, 6, 12);
+      tracker.applyRemote(
+        'u1',
+        const MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+      );
+      tracker.markRealtimeDisconnected(now: now);
+      expect(
+        resolveLfgListFromTracker(tracker).phase,
+        LfgListPhase.stale,
+      );
+
+      expect(
+        tracker.cleanupAfterDisconnect(
+          now: now.add(kLfgDisconnectStaleAfter),
+        ),
+        ['u1'],
+      );
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.idle);
+      expect(repo.rows.containsKey('u1'), isFalse);
+      expect(
+        resolveLfgListFromTracker(tracker).phase,
+        LfgListPhase.empty,
+      );
+    });
+
+    test('resumeQueue hydrates empty server queue after disconnect', () async {
+      tracker.startLooking('u1');
+      await tracker.waitForPendingPersists();
+      expect(repo.rows.containsKey('u1'), isTrue);
+      await repo.remove('u1');
+      tracker.markRealtimeDisconnected();
+
+      await tracker.resumeQueue();
+
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.idle);
+      expect(tracker.isRealtimeDisconnected, isFalse);
+      expect(
+        resolveLfgListFromTracker(tracker).phase,
+        LfgListPhase.empty,
+      );
+    });
+
+    test('resumeQueue does not persist looking again', () async {
+      await tracker.startLookingAfter(() async {}, userId: 'u1');
+      expect(repo.upsertPhases, ['looking']);
+      repo.upsertPhases.clear();
+
+      await tracker.resumeQueue();
+
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.looking);
+      expect(repo.upsertPhases, isEmpty);
+      expect(
+        wouldDoubleEnqueueOnResume(tracker.stateFor('u1')),
+        isTrue,
+      );
+      expect(
+        shouldStartLookingOnResume(tracker.stateFor('u1')),
+        isFalse,
+      );
+    });
+
+    test('startLooking while looking does not persist a second enqueue',
+        () async {
+      tracker.startLooking('u1', gameName: 'Warzone');
+      await tracker.waitForPendingPersists();
+      expect(repo.upsertPhases, ['looking']);
+
+      tracker.startLooking('u1', gameName: 'Warzone');
+      await tracker.waitForPendingPersists();
+
+      expect(repo.upsertPhases, ['looking']);
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.looking);
+    });
+
+    test('Realtime looking still applies after resubscribe', () async {
+      await tracker.ensureHydratedAndSubscribed();
+      await tracker.ensureHydratedAndSubscribed(force: true);
+
+      repo.controller.add(
+        const MatchmakingQueueChange(
+          userId: 'u2',
+          entry: MatchmakingQueueEntry(phase: MatchmakingQueuePhase.looking),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(tracker.stateFor('u2').phase, MatchmakingQueuePhase.looking);
+      expect(peacock.stateFor('u2').phase, PeacockAssignmentPhase.idle);
     });
   });
 }

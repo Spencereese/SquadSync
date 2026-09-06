@@ -15,6 +15,7 @@ import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
 import 'package:squad_sync/services/availability_on.dart';
 import 'package:squad_sync/services/matchmaking_queue_machine.dart';
 import 'package:squad_sync/services/presence_badges.dart';
+import 'package:squad_sync/widgets/lfg_queue_status_row.dart';
 import 'package:squad_sync/widgets/presence_badge_row.dart';
 
 void main() {
@@ -119,8 +120,16 @@ void main() {
   });
 
   group('ChatInfoActionsSection', () {
-    setUp(MatchmakingQueueTracker.resetInstance);
-    tearDown(MatchmakingQueueTracker.resetInstance);
+    setUp(() {
+      MatchmakingQueueTracker.resetInstance();
+      LfgQueueStatusHost.scheduleDisconnectCleanup = false;
+      lfgReconnectToastGate.reset();
+    });
+    tearDown(() {
+      MatchmakingQueueTracker.resetInstance();
+      lfgReconnectToastGate.reset();
+      LfgQueueStatusHost.scheduleDisconnectCleanup = true;
+    });
 
     Future<void> pumpActions(WidgetTester tester) {
       return tester.pumpWidget(

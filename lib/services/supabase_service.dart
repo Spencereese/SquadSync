@@ -93,77 +93,132 @@ class SupabaseService {
       debug: kDebugMode,
     );
 
-    // Wait for session to restore from storage (iOS Keychain/Android SharedPreferences)
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    final session = Supabase.instance.client.auth.currentSession;
-    if (kDebugMode) {
-      debugPrint('✅ Supabase initialized with authentication');
-      debugPrint('   Current session: ${session?.user.id ?? "none"}');
-
-      // NEW in 2.12.0: Get JWT claims for custom claim verification
-      if (session != null) {
-        try {
-          final claimsResponse =
-              await Supabase.instance.client.auth.getClaims();
-          final claims =
-              claimsResponse.claims.claims; // Access claims map via JwtPayload
-          debugPrint('   JWT claim keys: ${claims.keys.toList()}');
-        } catch (e) {
-          debugPrint('   ⚠️ Failed to get JWT claims: $e');
-        }
-      }
-
-      if (!kIsWeb) {
-        debugPrint('   Platform: ${Platform.operatingSystem}');
-        if (Platform.isIOS) {
-          debugPrint('   iOS: Session persistence via Keychain enabled');
-        }
-      }
-    }
-
+    // Mark ready before Keychain restore so a missing/failed session still
+    // leaves sign-in available. Restore errors must not crash cold open.
     _isInitialized = true;
-    await ensureFreshSession();
+
+    try {
+      // Wait for session to restore from storage (iOS Keychain/Android SharedPreferences)
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      final session = _readStoredSession();
+      if (kDebugMode) {
+        debugPrint('✅ Supabase initialized with authentication');
+        debugPrint('   Current session: ${session?.user.id ?? "none"}');
+
+        // NEW in 2.12.0: Get JWT claims for custom claim verification
+        if (session != null) {
+          try {
+            final claimsResponse =
+                await Supabase.instance.client.auth.getClaims();
+            final claims =
+                claimsResponse.claims.claims; // Access claims map via JwtPayload
+            debugPrint('   JWT claim keys: ${claims.keys.toList()}');
+          } catch (e) {
+            debugPrint('   ⚠️ Failed to get JWT claims: $e');
+          }
+        }
+
+        if (!kIsWeb) {
+          debugPrint('   Platform: ${Platform.operatingSystem}');
+          if (Platform.isIOS) {
+            debugPrint('   iOS: Session persistence via Keychain enabled');
+          }
+        }
+      }
+
+      await ensureFreshSession();
+    } catch (e) {
+      debugPrint('Keychain session restore failed: $e');
+    }
+  }
+
+  static Session? _readStoredSession() {
+    return readStoredSessionSafely(
+      () => maybeClient?.auth.currentSession,
+      onError: (e) => debugPrint('Keychain session restore failed: $e'),
+    );
   }
 
   /// Refresh an expired/near-expiry Keychain JWT, or [signOut] so a
-  /// dead session cannot keep opening realtime.
+  /// dead session cannot keep opening realtime. Missing session, Keychain
+  /// restore failure, and expired refresh all return null — never throw.
   static Future<Session?> ensureFreshSession() async {
-    if (!isReady) return null;
-    final existing = maybeClient;
-    if (existing == null) return null;
-
-    final session = existing.auth.currentSession;
-    if (session == null) return null;
-
-    if (!shouldAttemptSessionRefresh(expiresAtSeconds: session.expiresAt)) {
-      return session;
-    }
-
     try {
-      final response = await existing.auth.refreshSession();
-      return response.session;
-    } catch (e) {
-      debugPrint(
-        'Session refresh failed; signing out dead Keychain session: $e',
+      if (!isReady) return null;
+      final existing = maybeClient;
+      if (existing == null) return null;
+
+      final session = readStoredSessionSafely(
+        () => existing.auth.currentSession,
+        onError: (e) => debugPrint('Keychain session restore failed: $e'),
       );
-      try {
-        await existing.auth.signOut();
-      } catch (signOutError) {
-        debugPrint('Sign-out after dead session failed: $signOutError');
+      if (session == null) return null;
+
+      final phase = resolveSessionRestorePhase(
+        isConfigured: true,
+        isInitialized: true,
+        hasUser: true,
+        expiresAtSeconds: session.expiresAt,
+      );
+      if (!sessionRestoreShouldAttemptRefresh(phase)) {
+        return phase == SessionRestorePhase.usable ? session : null;
       }
+
+      try {
+        final response = await existing.auth.refreshSession();
+        final next = response.session;
+        if (next == null ||
+            isSessionExpired(expiresAtSeconds: next.expiresAt)) {
+          await _signOutDeadSession(existing, 'refresh returned dead session');
+          return null;
+        }
+        return next;
+      } catch (e) {
+        await _signOutDeadSession(existing, e);
+        return null;
+      }
+    } catch (e) {
+      debugPrint('ensureFreshSession failed: $e');
       return null;
     }
   }
 
+  static Future<void> _signOutDeadSession(
+    SupabaseClient existing,
+    Object reason,
+  ) async {
+    debugPrint(
+      'Session refresh failed; signing out dead Keychain session: $reason',
+    );
+    try {
+      await existing.auth.signOut();
+    } catch (signOutError) {
+      debugPrint('Sign-out after dead session failed: $signOutError');
+    }
+  }
+
   /// Check if user is authenticated in Supabase
-  static bool get isAuthenticated => isUsableAuthSession(
+  static bool get isAuthenticated {
+    try {
+      return isUsableAuthSession(
         hasUser: currentUser != null,
         expiresAtSeconds: currentSession?.expiresAt,
       );
+    } catch (_) {
+      return false;
+    }
+  }
 
-  /// Get current Supabase user
-  static User? get currentUser => maybeClient?.auth.currentUser;
+  /// Get current Supabase user. Keychain restore failure is null, not a throw.
+  static User? get currentUser {
+    try {
+      return maybeClient?.auth.currentUser;
+    } catch (e) {
+      debugPrint('Keychain currentUser restore failed: $e');
+      return null;
+    }
+  }
 
   /// Get current user ID
   static String? get currentUserId => currentUser?.id;
@@ -204,8 +259,8 @@ class SupabaseService {
     );
   }
 
-  /// Get current session
-  static Session? get currentSession => maybeClient?.auth.currentSession;
+  /// Get current session. Keychain restore failure is null, not a throw.
+  static Session? get currentSession => _readStoredSession();
 
   /// Sign out from Supabase
   static Future<void> signOut() async {

@@ -16,7 +16,9 @@ import '../chat/dialogs/group_actions_dialog.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/ab_testing_service.dart';
 import '../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app_env.dart';
+import 'session_guard.dart';
 import '../domain/entities/message.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -83,14 +85,26 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     debugLogDiagnostics: kDebugMode,
     initialLocation: '/',
     redirect: (context, state) async {
-      final isLoginRoute = state.matchedLocation == '/setup';
-
-      if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
-        return isLoginRoute ? null : '/setup';
+      Session? session;
+      Object? restoreError;
+      try {
+        if (AppEnv.isSupabaseConfigured && SupabaseService.isInitialized) {
+          session = await SupabaseService.ensureFreshSession();
+        }
+      } catch (e) {
+        debugPrint('GoRouter: session restore failed: $e');
+        restoreError = e;
       }
 
-      final session = await SupabaseService.ensureFreshSession();
-      final user = session?.user;
+      final restore = reduceSessionRestore(
+        isConfigured: AppEnv.isSupabaseConfigured,
+        isInitialized: SupabaseService.isInitialized,
+        hasUser: session?.user != null,
+        expiresAtSeconds: session?.expiresAt,
+        restoreError: restoreError,
+        currentLocation: state.matchedLocation,
+      );
+      final user = restore.isUsable ? session?.user : null;
 
       // Track navigation for A/B testing
       if (abTestService != null) {
@@ -104,15 +118,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         );
       }
 
-      // Redirect to setup if not authenticated
-      if (user == null && !isLoginRoute) {
-        return '/setup';
-      }
-
-      // If authenticated and on setup, redirect to main
-      if (user != null && isLoginRoute) {
-        return '/';
-      }
+      if (restore.redirectTo != null) return restore.redirectTo;
 
       // OPTIMIZATION: Redirect to last chat on app startup to avoid flash of groups screen
       // Only do this on the initial '/' route to avoid interfering with manual navigation

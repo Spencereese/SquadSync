@@ -731,7 +731,12 @@ class _InviteButton extends ConsumerWidget {
       currentLobby: currentLobby,
       userLobbies: userLobbies,
     );
-    final result = await shareLobbyLink(lobbyId: lobbyId);
+    final result = await shareLobbyLink(
+      lobbyId: lobbyId,
+      isOffline: lobbySurfaceIsOfflineError(
+        ref.read(lobbyNotifierProvider).error,
+      ),
+    );
     if (!context.mounted) return;
     presentLobbyShare(context, result);
   }

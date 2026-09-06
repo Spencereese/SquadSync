@@ -22,6 +22,7 @@ class LobbyHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isOffline = ref.watch(ln.lobbyNotifierProvider).hasError;
     return Padding(
       padding: EdgeInsets.only(
         top: MediaQuery.paddingOf(context).top,
@@ -105,7 +106,11 @@ class LobbyHeader extends ConsumerWidget {
               ),
 
               LobbyShareButton(
-                onPressed: () => _shareLobbyLink(context, lobbyId),
+                onPressed: () => _shareLobbyLink(
+                  context,
+                  lobbyId,
+                  isOffline: isOffline,
+                ),
               ),
 
               // Settings button
@@ -143,9 +148,16 @@ class LobbyHeader extends ConsumerWidget {
     return kDefaultVoiceSquadName;
   }
 
-  Future<void> _shareLobbyLink(BuildContext context, String? lobbyId) async {
+  Future<void> _shareLobbyLink(
+    BuildContext context,
+    String? lobbyId, {
+    bool isOffline = false,
+  }) async {
     HapticFeedback.lightImpact();
-    final result = await shareLobbyLink(lobbyId: lobbyId);
+    final result = await shareLobbyLink(
+      lobbyId: lobbyId,
+      isOffline: isOffline,
+    );
     if (!context.mounted) return;
     presentLobbyShare(context, result);
   }

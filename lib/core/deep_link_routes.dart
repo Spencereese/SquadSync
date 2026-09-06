@@ -114,22 +114,41 @@ String lobbyShareHttpsLink({required String lobbyId}) {
 }
 
 /// Share-sheet text: app scheme plus https Universal Link fallback.
+/// Empty / whitespace lobby id does not invent a link.
 String lobbySharePayload({required String lobbyId}) {
-  return '${lobbyShareDeepLink(lobbyId: lobbyId)}\n'
-      '${lobbyShareHttpsLink(lobbyId: lobbyId)}';
+  final id = lobbyId.trim();
+  if (id.isEmpty) return '';
+  return '${lobbyShareDeepLink(lobbyId: id)}\n'
+      '${lobbyShareHttpsLink(lobbyId: id)}';
+}
+
+bool lobbySharePayloadIsEmpty(String? payload) {
+  return payload == null || payload.trim().isEmpty;
 }
 
 /// Outcome of [shareLobbyLink]. Success copies the payload; empty lobby
-/// id does not invent a link; clipboard failure does not claim copied.
+/// id / empty payload does not invent a link; clipboard failure does not
+/// claim copied; share-sheet cancel is silent; offline does not copy.
 enum LobbyShareOutcome {
   success,
   empty,
   clipboardFailed,
+  cancelled,
+  offline,
 }
 
 const kLobbyShareCopiedCopy = 'Lobby link copied';
 const kLobbyShareEmptyCopy = 'No lobby selected';
 const kLobbyShareClipboardFailedCopy = 'Could not copy lobby link';
+const kLobbyShareOfflineCopy = "You're offline";
+
+/// Share sheet dismissed. Clipboard already holds the payload.
+class LobbyShareSheetCancelled implements Exception {
+  const LobbyShareSheetCancelled();
+
+  @override
+  String toString() => 'sheet dismissed';
+}
 
 class LobbyShareResult {
   const LobbyShareResult.success(this.payload)
@@ -144,11 +163,22 @@ class LobbyShareResult {
   const LobbyShareResult.clipboardFailed({this.error, this.payload})
       : outcome = LobbyShareOutcome.clipboardFailed;
 
+  const LobbyShareResult.cancelled({this.payload})
+      : outcome = LobbyShareOutcome.cancelled,
+        error = null;
+
+  const LobbyShareResult.offline({this.error, this.payload})
+      : outcome = LobbyShareOutcome.offline;
+
   final LobbyShareOutcome outcome;
   final String? payload;
   final Object? error;
 
   bool get isSuccess => outcome == LobbyShareOutcome.success;
+  bool get isEmpty => outcome == LobbyShareOutcome.empty;
+  bool get isClipboardFailed => outcome == LobbyShareOutcome.clipboardFailed;
+  bool get isCancelled => outcome == LobbyShareOutcome.cancelled;
+  bool get isOffline => outcome == LobbyShareOutcome.offline;
 }
 
 Key lobbyShareFeedbackKey(LobbyShareOutcome outcome) {
@@ -159,18 +189,53 @@ Key lobbyShareFeedbackKey(LobbyShareOutcome outcome) {
       return const Key('lobby-share-empty');
     case LobbyShareOutcome.clipboardFailed:
       return const Key('lobby-share-clipboard-failed');
+    case LobbyShareOutcome.cancelled:
+      return const Key('lobby-share-cancelled');
+    case LobbyShareOutcome.offline:
+      return const Key('lobby-share-offline');
   }
 }
 
 String lobbyShareErrorDetail(Object? error) {
   if (error == null) return '';
-  final text = error.toString().trim();
+  var text = error.toString().trim();
   if (text.isEmpty) return '';
-  const prefix = 'Exception: ';
-  if (text.startsWith(prefix) && text.length > prefix.length) {
-    return text.substring(prefix.length);
+  const prefix = 'Exception:';
+  if (text.startsWith(prefix)) {
+    text = text.substring(prefix.length).trim();
   }
   return text;
+}
+
+/// Share-sheet dismiss / cancel. [ShareResultStatus.dismissed] or a
+/// cancel/dismissed error — not a copy failure.
+bool lobbyShareIsCancelled(Object? value) {
+  if (value is LobbyShareSheetCancelled) return true;
+  if (value is ShareResult) {
+    return value.status == ShareResultStatus.dismissed;
+  }
+  if (value == null) return false;
+  final text = value.toString().toLowerCase();
+  return text.contains('cancel') || text.contains('dismiss');
+}
+
+/// Socket / network / offline errors on copy or share.
+bool lobbyShareIsOfflineError(Object? error) {
+  if (error == null) return false;
+  final text = error.toString().toLowerCase();
+  return text.contains('socket') ||
+      text.contains('offline') ||
+      text.contains('network') ||
+      text.contains('failed host lookup') ||
+      text.contains('connection refused') ||
+      text.contains('clientexception');
+}
+
+/// Map a share-sheet [ShareResult] (or thrown cancel) to an outcome.
+/// Dismissed is cancel; success / unavailable stay success (copy holds).
+LobbyShareOutcome lobbyShareSheetOutcome(Object? result) {
+  if (lobbyShareIsCancelled(result)) return LobbyShareOutcome.cancelled;
+  return LobbyShareOutcome.success;
 }
 
 String lobbyShareMessage(LobbyShareResult result) {
@@ -183,10 +248,17 @@ String lobbyShareMessage(LobbyShareResult result) {
       final detail = lobbyShareErrorDetail(result.error);
       if (detail.isEmpty) return kLobbyShareClipboardFailedCopy;
       return '$kLobbyShareClipboardFailedCopy: $detail';
+    case LobbyShareOutcome.cancelled:
+      return '';
+    case LobbyShareOutcome.offline:
+      final detail = lobbyShareErrorDetail(result.error);
+      if (detail.isEmpty) return kLobbyShareOfflineCopy;
+      return '$kLobbyShareOfflineCopy: $detail';
   }
 }
 
-/// SnackBar for [shareLobbyLink] — success toast, empty, clipboard fail.
+/// SnackBar for [shareLobbyLink] — success toast, empty, clipboard fail,
+/// offline. Cancel is silent ([presentLobbyShare] skips it).
 SnackBar lobbyShareSnackBar(LobbyShareResult result) {
   return SnackBar(
     content: Text(
@@ -199,41 +271,61 @@ SnackBar lobbyShareSnackBar(LobbyShareResult result) {
 
 void presentLobbyShare(BuildContext context, LobbyShareResult result) {
   if (!context.mounted) return;
+  if (result.outcome == LobbyShareOutcome.cancelled) return;
   ScaffoldMessenger.of(context).showSnackBar(lobbyShareSnackBar(result));
 }
 
 /// Copy [lobbySharePayload] then open the system share sheet.
 /// Live path: lobby header / Tonight Invite. Tests inject [copy] / [share].
-/// Empty / whitespace lobby id is [LobbyShareOutcome.empty] — no copy, no sheet.
+/// Empty / whitespace lobby id or empty payload is
+/// [LobbyShareOutcome.empty] — no copy, no sheet. Offline does not copy.
+/// Share-sheet cancel is [LobbyShareOutcome.cancelled] after copy.
 Future<LobbyShareResult> shareLobbyLink({
   String? lobbyId,
+  String? payload,
   Future<void> Function(String link)? copy,
   Future<void> Function(String link)? share,
+  bool isOffline = false,
 }) async {
   final id = lobbyId?.trim() ?? '';
-  if (id.isEmpty) {
+  final text = payload ?? (id.isEmpty ? '' : lobbySharePayload(lobbyId: id));
+  if (lobbySharePayloadIsEmpty(text)) {
     return const LobbyShareResult.empty();
   }
-  final payload = lobbySharePayload(lobbyId: id);
+  if (isOffline) {
+    return LobbyShareResult.offline(payload: text);
+  }
   try {
-    await (copy ?? _copyLobbyLinkToClipboard)(payload);
+    await (copy ?? _copyLobbyLinkToClipboard)(text);
   } catch (e) {
-    return LobbyShareResult.clipboardFailed(error: e, payload: payload);
+    if (lobbyShareIsOfflineError(e)) {
+      return LobbyShareResult.offline(error: e, payload: text);
+    }
+    return LobbyShareResult.clipboardFailed(error: e, payload: text);
   }
   try {
-    await (share ?? _shareLobbyLinkSheet)(payload);
-  } catch (_) {
-    // Clipboard already holds [payload].
+    await (share ?? _shareLobbyLinkSheet)(text);
+  } catch (e) {
+    if (lobbyShareIsOfflineError(e)) {
+      return LobbyShareResult.offline(error: e, payload: text);
+    }
+    if (lobbyShareIsCancelled(e)) {
+      return LobbyShareResult.cancelled(payload: text);
+    }
+    // Clipboard already holds [text].
   }
-  return LobbyShareResult.success(payload);
+  return LobbyShareResult.success(text);
 }
 
 Future<void> _copyLobbyLinkToClipboard(String payload) {
   return Clipboard.setData(ClipboardData(text: payload));
 }
 
-Future<void> _shareLobbyLinkSheet(String payload) {
-  return SharePlus.instance.share(ShareParams(text: payload));
+Future<void> _shareLobbyLinkSheet(String payload) async {
+  final result = await SharePlus.instance.share(ShareParams(text: payload));
+  if (result.status == ShareResultStatus.dismissed) {
+    throw const LobbyShareSheetCancelled();
+  }
 }
 
 /// Live AppLinks gate used by [main] / [DeepLinkRouter.handleDeepLink].

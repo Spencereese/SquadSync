@@ -74,10 +74,18 @@ Key emptySpotCtaKey(EmptySpotCtaKind kind) {
 /// header and Tonight Invite. Tests inject [copy] / [share].
 Future<LobbyShareResult> shareEmptySpotInvite({
   String? lobbyId,
+  String? payload,
   Future<void> Function(String link)? copy,
   Future<void> Function(String link)? share,
+  bool isOffline = false,
 }) {
-  return shareLobbyLink(lobbyId: lobbyId, copy: copy, share: share);
+  return shareLobbyLink(
+    lobbyId: lobbyId,
+    payload: payload,
+    copy: copy,
+    share: share,
+    isOffline: isOffline,
+  );
 }
 
 /// Compact seated / peacock / lock mm:ss chip.

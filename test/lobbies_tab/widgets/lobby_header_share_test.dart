@@ -115,4 +115,80 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('share sheet cancel is silent, not copied toast', (tester) async {
+    var copied = false;
+    await _pumpShareButton(
+      tester,
+      onPressed: (context) async {
+        final result = await shareLobbyLink(
+          lobbyId: 'lobby-9',
+          copy: (_) async => copied = true,
+          share: (_) async => throw const LobbyShareSheetCancelled(),
+        );
+        presentLobbyShare(context, result);
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('lobby-share-link')));
+    await tester.pump();
+
+    expect(copied, isTrue);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(find.text(kLobbyShareCopiedCopy), findsNothing);
+    expect(find.text(kLobbyShareClipboardFailedCopy), findsNothing);
+  });
+
+  testWidgets('empty payload shows empty error, not copied', (tester) async {
+    var copied = false;
+    var shared = false;
+    await _pumpShareButton(
+      tester,
+      onPressed: (context) async {
+        final result = await shareLobbyLink(
+          lobbyId: 'lobby-9',
+          payload: '  ',
+          copy: (_) async => copied = true,
+          share: (_) async => shared = true,
+        );
+        presentLobbyShare(context, result);
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('lobby-share-link')));
+    await tester.pump();
+
+    expect(copied, isFalse);
+    expect(shared, isFalse);
+    expect(find.text(kLobbyShareEmptyCopy), findsOneWidget);
+    expect(find.byKey(const Key('lobby-share-empty')), findsOneWidget);
+    expect(find.text(kLobbyShareCopiedCopy), findsNothing);
+  });
+
+  testWidgets('offline share shows offline copy, not copied toast',
+      (tester) async {
+    var copied = false;
+    var shared = false;
+    await _pumpShareButton(
+      tester,
+      onPressed: (context) async {
+        final result = await shareLobbyLink(
+          lobbyId: 'lobby-9',
+          isOffline: true,
+          copy: (_) async => copied = true,
+          share: (_) async => shared = true,
+        );
+        presentLobbyShare(context, result);
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('lobby-share-link')));
+    await tester.pump();
+
+    expect(copied, isFalse);
+    expect(shared, isFalse);
+    expect(find.text(kLobbyShareOfflineCopy), findsOneWidget);
+    expect(find.byKey(const Key('lobby-share-offline')), findsOneWidget);
+    expect(find.text(kLobbyShareCopiedCopy), findsNothing);
+  });
 }

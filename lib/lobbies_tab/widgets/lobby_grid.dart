@@ -230,7 +230,7 @@ class SpotCard extends ConsumerWidget {
         actions: showEmptyCtas
             ? EmptySpotCtaBar(
                 primary: emptyCtaKind,
-                onInvite: () => _inviteEmptySpot(context, squadState),
+                onInvite: () => _inviteEmptySpot(context, ref, squadState),
                 onPeacock: () => _peacockEmptySpot(
                   context,
                   ref,
@@ -430,6 +430,7 @@ class SpotCard extends ConsumerWidget {
 
   Future<void> _inviteEmptySpot(
     BuildContext context,
+    WidgetRef ref,
     LobbyState squadState,
   ) async {
     final lobbyId = resolveInviteLobbyId(
@@ -438,7 +439,12 @@ class SpotCard extends ConsumerWidget {
       currentLobby: squadState.currentLobby,
       userLobbies: squadState.userLobbies,
     );
-    final result = await shareEmptySpotInvite(lobbyId: lobbyId);
+    final result = await shareEmptySpotInvite(
+      lobbyId: lobbyId,
+      isOffline: lobbySurfaceIsOfflineError(
+        ref.read(ln.lobbyNotifierProvider).error,
+      ),
+    );
     if (!context.mounted) return;
     presentLobbyShare(context, result);
   }

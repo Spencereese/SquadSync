@@ -600,6 +600,13 @@ void main() {
       );
     });
 
+    test('lobbySharePayload empty lobby id is empty, not a host-only URI', () {
+      expect(lobbySharePayload(lobbyId: ''), isEmpty);
+      expect(lobbySharePayload(lobbyId: '   '), isEmpty);
+      expect(lobbySharePayloadIsEmpty(lobbySharePayload(lobbyId: '')), isTrue);
+      expect(lobbySharePayloadIsEmpty('codsquadapp://lobby/lobby-9'), isFalse);
+    });
+
     test('lobbySharePayload is app scheme plus https fallback', () {
       const lobbyId = 'lobby-9';
       final payload = lobbySharePayload(lobbyId: lobbyId);
@@ -694,11 +701,60 @@ void main() {
       final result = await shareLobbyLink(
         lobbyId: '  lobby-9  ',
         copy: (text) async => copied.add(text),
-        share: (_) async => throw Exception('sheet dismissed'),
+        share: (_) async => throw Exception('share unavailable'),
       );
       expect(result.outcome, LobbyShareOutcome.success);
       expect(copied, [result.payload]);
       expect(lobbyShareMessage(result), kLobbyShareCopiedCopy);
+    });
+
+    test('shareLobbyLink share-sheet cancel is cancelled after copy', () async {
+      final copied = <String>[];
+      final result = await shareLobbyLink(
+        lobbyId: 'lobby-9',
+        copy: (text) async => copied.add(text),
+        share: (_) async => throw const LobbyShareSheetCancelled(),
+      );
+      expect(result.outcome, LobbyShareOutcome.cancelled);
+      expect(result.isCancelled, isTrue);
+      expect(copied, [result.payload]);
+      expect(lobbyShareMessage(result), isEmpty);
+    });
+
+    test('shareLobbyLink empty payload is empty, not a copied link', () async {
+      var copied = false;
+      var shared = false;
+      for (final payload in ['', '   ']) {
+        copied = false;
+        shared = false;
+        final result = await shareLobbyLink(
+          lobbyId: 'lobby-9',
+          payload: payload,
+          copy: (_) async => copied = true,
+          share: (_) async => shared = true,
+        );
+        expect(result.outcome, LobbyShareOutcome.empty, reason: '$payload');
+        expect(result.isEmpty, isTrue);
+        expect(copied, isFalse);
+        expect(shared, isFalse);
+        expect(lobbyShareMessage(result), kLobbyShareEmptyCopy);
+      }
+    });
+
+    test('shareLobbyLink offline does not copy or open the sheet', () async {
+      var copied = false;
+      var shared = false;
+      final result = await shareLobbyLink(
+        lobbyId: 'lobby-9',
+        isOffline: true,
+        copy: (_) async => copied = true,
+        share: (_) async => shared = true,
+      );
+      expect(result.outcome, LobbyShareOutcome.offline);
+      expect(result.isOffline, isTrue);
+      expect(copied, isFalse);
+      expect(shared, isFalse);
+      expect(lobbyShareMessage(result), kLobbyShareOfflineCopy);
     });
   });
 

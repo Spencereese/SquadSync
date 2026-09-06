@@ -290,6 +290,22 @@ void main() {
       expect(opened, expected);
     });
 
+    test('peacock card missing / empty id is empty squad not an error route',
+        () {
+      String? opened;
+      openPeacockCard(go: (location) => opened = location);
+      expect(opened, '/squad');
+      opened = null;
+      openPeacockCard(
+        lobbyId: '  ',
+        gameName: '',
+        go: (location) => opened = location,
+      );
+      expect(opened, '/squad');
+      expect(locationForDeepLink('codsquadapp://peacock'), '/squad');
+      expect(locationForDeepLink('codsquadapp://peacock/'), '/squad');
+    });
+
     test('peacock card tap with offered spot matches notification highlight',
         () {
       const highlighted = '/squad/Warzone?lobby_id=lobby-9&spot_index=2';

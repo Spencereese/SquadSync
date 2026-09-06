@@ -140,6 +140,30 @@ void main() {
       expect(NotificationRoutes.locationFor({'type': 'local'}), isNull);
     });
 
+    test('handleOpenedData unknown / empty payload does not navigate', () {
+      String? opened;
+      NotificationRoutes.go = (location) => opened = location;
+      NotificationService.handleOpenedData({'type': 'unknown'});
+      expect(opened, isNull);
+      NotificationService.handleOpenedData({});
+      expect(opened, isNull);
+      NotificationService.handleOpenedData({'type': 'local'});
+      expect(opened, isNull);
+    });
+
+    test('handleOpenedData missing lobby_id peacock is empty squad', () {
+      String? opened;
+      NotificationRoutes.go = (location) => opened = location;
+      NotificationService.handleOpenedData({'type': 'peacock_assigned'});
+      expect(opened, '/squad');
+      opened = null;
+      NotificationService.handleOpenedData({
+        'type': 'unknown_event',
+        'lobby_id': '',
+      });
+      expect(opened, isNull);
+    });
+
     test('chat and lfg_alert keep chat routes even when lobby_id is present',
         () {
       expect(

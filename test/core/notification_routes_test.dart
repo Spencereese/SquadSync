@@ -208,6 +208,35 @@ void main() {
 
   test('unknown type does not invent a route', () {
     expect(NotificationRoutes.locationFor({'type': 'unknown'}), isNull);
+    expect(NotificationRoutes.locationFor({}), isNull);
+    expect(NotificationRoutes.locationFor({'type': ''}), isNull);
+  });
+
+  test('unknown payload and empty raw do not call go', () {
+    var called = false;
+    NotificationRoutes.go = (_) => called = true;
+    NotificationRoutes.open({'type': 'unknown'});
+    NotificationRoutes.open({});
+    NotificationRoutes.openRaw(null);
+    NotificationRoutes.openRaw('');
+    NotificationRoutes.openRaw('hello');
+    NotificationRoutes.openRaw('{not-json');
+    expect(called, isFalse);
+    NotificationRoutes.go = null;
+  });
+
+  test('missing ids land on empty chat list or empty squad', () {
+    expect(NotificationRoutes.locationFor({'type': 'chat'}), '/chat');
+    expect(
+      NotificationRoutes.locationFor({'type': 'chat', 'chatGroupId': ''}),
+      '/chat',
+    );
+    expect(NotificationRoutes.locationFor({'type': 'lfg_alert'}), '/chat');
+    expect(NotificationRoutes.locationFor({'type': 'peacock_assigned'}), '/squad');
+    expect(
+      NotificationRoutes.locationFor({'type': 'lobby', 'lobby_id': '  '}),
+      '/squad',
+    );
   });
 
   test('open calls go when a handler is bound', () {

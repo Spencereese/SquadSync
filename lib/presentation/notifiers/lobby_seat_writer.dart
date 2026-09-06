@@ -7,6 +7,9 @@ enum LobbySeatWriteKind {
   joinLobby,
   leaveSquad,
   startSpotTimer,
+  clearAllSpots,
+  callSpotForGame,
+  processExpiredTimers,
 }
 
 class LobbySeatWrite {
@@ -23,6 +26,11 @@ class LobbySeatWrite {
   final int? spotIndex;
   final String? userId;
   final Duration? duration;
+}
+
+bool _isExpiredRemaining(Map<String, dynamic> timer) {
+  final remaining = timer['remaining'];
+  return remaining is num && remaining <= 0;
 }
 
 /// Patch [lobby] for a seat write. Never wipes a seat just claimed.
@@ -65,6 +73,49 @@ Lobby applySeatWriteToLobby(Lobby lobby, LobbySeatWrite write) {
         'spot_index': index,
       };
       return lobby.copyWith(spotTimers: timers);
+    case LobbySeatWriteKind.clearAllSpots:
+      return lobby.copyWith(
+        spots: List<String?>.filled(lobby.spots.length, null),
+      );
+    case LobbySeatWriteKind.callSpotForGame:
+      final assigned = applySeatWriteToLobby(
+        lobby,
+        LobbySeatWrite(
+          kind: LobbySeatWriteKind.assignSpot,
+          lobbyId: write.lobbyId,
+          spotIndex: write.spotIndex,
+          userId: write.userId,
+        ),
+      );
+      return applySeatWriteToLobby(
+        assigned,
+        LobbySeatWrite(
+          kind: LobbySeatWriteKind.startSpotTimer,
+          lobbyId: write.lobbyId,
+          spotIndex: write.spotIndex,
+          duration: write.duration,
+        ),
+      );
+    case LobbySeatWriteKind.processExpiredTimers:
+      final spots = List<String?>.from(lobby.spots);
+      final timers = List<Map<String, dynamic>?>.from(lobby.spotTimers);
+      final count = spots.length > timers.length ? spots.length : timers.length;
+      while (spots.length < count) {
+        spots.add(null);
+      }
+      while (timers.length < count) {
+        timers.add(null);
+      }
+      for (var i = 0; i < timers.length; i++) {
+        final timer = timers[i];
+        if (timer == null) continue;
+        // Free only remaining:0 seats — do not infer expiry from start_time.
+        if (_isExpiredRemaining(timer)) {
+          spots[i] = null;
+          timers[i] = null;
+        }
+      }
+      return lobby.copyWith(spots: spots, spotTimers: timers);
   }
 }
 
@@ -78,6 +129,7 @@ LobbyState applySeatWriteToState(LobbyState state, LobbySeatWrite write) {
   final game = nextLobby.gameName;
   switch (write.kind) {
     case LobbySeatWriteKind.assignSpot:
+    case LobbySeatWriteKind.clearAllSpots:
       if (game.isNotEmpty) {
         final spots = Map<String, List<String?>>.from(state.gameLobbySpots);
         spots[game] = nextLobby.spots;
@@ -91,6 +143,18 @@ LobbyState applySeatWriteToState(LobbyState state, LobbySeatWrite write) {
         );
         timers[game] = nextLobby.spotTimers;
         next = next.copyWith(gameSpotTimers: timers);
+      }
+      break;
+    case LobbySeatWriteKind.callSpotForGame:
+    case LobbySeatWriteKind.processExpiredTimers:
+      if (game.isNotEmpty) {
+        final spots = Map<String, List<String?>>.from(state.gameLobbySpots);
+        spots[game] = nextLobby.spots;
+        final timers = Map<String, List<Map<String, dynamic>?>>.from(
+          state.gameSpotTimers,
+        );
+        timers[game] = nextLobby.spotTimers;
+        next = next.copyWith(gameLobbySpots: spots, gameSpotTimers: timers);
       }
       break;
     case LobbySeatWriteKind.joinLobby:

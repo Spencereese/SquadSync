@@ -658,6 +658,28 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
           write.duration ?? Duration.zero,
         );
         break;
+      case LobbySeatWriteKind.clearAllSpots:
+        final spots =
+            state.valueOrNull?.currentLobby?.spots ?? const <String?>[];
+        for (var i = 0; i < spots.length; i++) {
+          await _repository.assignSpot(write.lobbyId, i, null);
+        }
+        break;
+      case LobbySeatWriteKind.callSpotForGame:
+        await _repository.assignSpot(
+          write.lobbyId,
+          write.spotIndex ?? 0,
+          write.userId,
+        );
+        await _repository.startSpotTimer(
+          write.lobbyId,
+          write.spotIndex ?? 0,
+          write.duration ?? const Duration(minutes: 5),
+        );
+        break;
+      case LobbySeatWriteKind.processExpiredTimers:
+        await _repository.processExpiredTimers();
+        break;
     }
   }
 
@@ -676,10 +698,12 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }
 
   Future<void> processExpiredTimers() async {
-    // Delegate to TimerManagementNotifier
-    final timerNotifier = ref.read(timerManagementNotifierProvider.notifier);
-    await timerNotifier.processExpiredTimers();
-    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+    final lobby = state.valueOrNull?.currentLobby;
+    if (lobby == null) return;
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.processExpiredTimers,
+      lobbyId: lobby.id,
+    ));
   }
 
   PeacockAssignmentTracker get _peacock => PeacockAssignmentTracker.instance;
@@ -1763,26 +1787,18 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }
 
   Future<void> removeSpot(String gameName, int spotIndex) async {
-    final currentState = state;
-    if (currentState is AsyncData) {
-      final squadState = currentState.value!;
-      final squadId = squadState.selectedLobbyId;
-      if (squadId != null) {
-        final authService = AuthServiceSupabase();
-        final userId = authService.currentUser?.id;
-        if (userId == null) return;
-        await _repository.assignSpot(squadId, spotIndex, null);
-        // Cancel timer if user is removing their own spot
-        final spots = squadState.gameLobbySpots[gameName] ?? [];
-        if (spotIndex < spots.length && spots[spotIndex] == userId) {
-          final timerNotifier =
-              ref.read(timerManagementNotifierProvider.notifier);
-          await timerNotifier.stopSpotTimer(gameName, userId);
-        }
-        // Reload state
-        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
-      }
-    }
+    final squadState = state.valueOrNull;
+    final lobbyId =
+        squadState?.currentLobby?.id ?? squadState?.selectedLobbyId;
+    if (lobbyId == null) return;
+    final userId = _resolvedCurrentUserId;
+    if (userId == null) return;
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.assignSpot,
+      lobbyId: lobbyId,
+      spotIndex: spotIndex,
+      userId: null,
+    ));
   }
 
   /// Records a win for the current lobby.
@@ -2017,25 +2033,14 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   // Clear all spots for a specific game
   Future<void> clearAllSpots(String gameName) async {
-    final currentState = state;
-    if (currentState is AsyncData && currentState.value != null) {
-      final squadState = currentState.value!;
-      final lobbyId = squadState.selectedLobbyId;
-      if (lobbyId == null) return;
-
-      try {
-        // Clear all spots in the database
-        final spots = squadState.gameLobbySpots[gameName] ?? [];
-        for (int i = 0; i < spots.length; i++) {
-          await _repository.assignSpot(lobbyId, i, null);
-        }
-
-        // Reload state
-        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
-      } catch (e) {
-        debugPrint('Error clearing all spots: $e');
-      }
-    }
+    final squadState = state.valueOrNull;
+    final lobbyId =
+        squadState?.currentLobby?.id ?? squadState?.selectedLobbyId;
+    if (lobbyId == null) return;
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.clearAllSpots,
+      lobbyId: lobbyId,
+    ));
   }
 
   // Reset all timers for a specific game
@@ -2143,26 +2148,19 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }
 
   Future<void> callSpotForGame(int spotIndex, String gameName) async {
-    final currentState = state;
-    if (currentState is AsyncData) {
-      final squadState = currentState.value!;
-      final squadId = squadState.selectedLobbyId;
-      if (squadId != null) {
-        final authService = AuthServiceSupabase();
-        final userId = authService.currentUser?.id;
-        if (userId == null) return;
-        await _repository.assignSpot(squadId, spotIndex, userId);
-
-        // Delegate timer management to TimerManagementNotifier
-        final timerNotifier =
-            ref.read(timerManagementNotifierProvider.notifier);
-        await timerNotifier.startSpotTimer(
-            squadId, gameName, spotIndex, userId, const Duration(minutes: 5));
-
-        // Reload state
-        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
-      }
-    }
+    final squadState = state.valueOrNull;
+    final lobbyId =
+        squadState?.currentLobby?.id ?? squadState?.selectedLobbyId;
+    if (lobbyId == null) return;
+    final userId = _resolvedCurrentUserId;
+    if (userId == null) return;
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.callSpotForGame,
+      lobbyId: lobbyId,
+      spotIndex: spotIndex,
+      userId: userId,
+      duration: const Duration(minutes: 5),
+    ));
   }
 
   /// Friend-visible Claim seat. Assigns via the peacock machine, not joinQueue.
@@ -2219,7 +2217,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     final lobby = currentState?.currentLobby;
     if (lobby == null) return;
 
-    final uid = AuthServiceSupabase().currentUser?.id;
+    final uid = _resolvedCurrentUserId;
     if (uid == null) return;
 
     final currentClaim =
@@ -2231,9 +2229,13 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     // Check if within maxSpots
     if (spotIndex >= lobby.maxSpots) return;
 
-    // Use repository to assign spot
-    await _repository.assignSpot(lobby.id, spotIndex, uid);
-    await _patchSpotLocally(spotIndex: spotIndex, occupant: uid);
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.assignSpot,
+      lobbyId: lobby.id,
+      spotIndex: spotIndex,
+      userId: uid,
+    ));
+    if (lastSeatWriteError != null) return;
     await reconcileReadyLock(actorUid: uid, notify: true);
   }
 

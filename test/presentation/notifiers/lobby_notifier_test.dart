@@ -1493,5 +1493,96 @@ void main() {
       });
       expectNoPii();
     });
+
+    test('lock-in fire fail still locks and is error not success', () async {
+      SquadAnalytics.logHook = (_, __) async => throw Exception('offline');
+      final notifier = await pumpSeatedLobby(
+        statuses: const {'user-1': 'Ready'},
+      );
+
+      final result = await notifier.toggleSeatedReady(
+        userId: 'user-2',
+        gameName: 'Warzone',
+        spotIndex: 1,
+      );
+      await flushAnalytics();
+
+      expect(result?.justLocked, isTrue);
+      expect(result?.snapshot.isLocked, isTrue);
+      expect(SquadAnalytics.lastResult?.isFailed, isTrue);
+      expect(SquadAnalytics.lastResult?.isSuccess, isFalse);
+      expect(
+        analyticsFireErrorDetail(SquadAnalytics.lastResult?.error),
+        'offline',
+      );
+    });
+
+    test('peacock join fire fail still assigns and is error not success',
+        () async {
+      SquadAnalytics.logHook = (_, __) async => throw Exception('denied');
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.addToPeacockQueue('user-1', 'Warzone');
+      final assigned = await notifier.processPeacockQueue(
+        assignedUserId: 'user-1',
+        lobbyId: 'lobby-9',
+        gameName: 'Warzone',
+        notificationId: 'n1',
+      );
+      await flushAnalytics();
+
+      expect(assigned, isNotNull);
+      expect(SquadAnalytics.lastResult?.isFailed, isTrue);
+      expect(SquadAnalytics.lastResult?.name, kAnalyticsPeacockOffer);
+      expect(
+        analyticsFireErrorDetail(SquadAnalytics.lastResult?.error),
+        'denied',
+      );
+    });
+
+    test('rating submit fire fail still persists and is error not success',
+        () async {
+      SquadAnalytics.logHook = (_, __) async => throw Exception('offline');
+      final lobby = _lobby(id: 'lobby-1', memberUids: const ['user-1', 'u2']);
+      when(mockRepository.recordMatchResult(
+        lobbyId: anyNamed('lobbyId'),
+        gameName: anyNamed('gameName'),
+        result: anyNamed('result'),
+        playerUids: anyNamed('playerUids'),
+        notes: anyNamed('notes'),
+      )).thenAnswer((_) async {});
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+      notifier.state = AsyncData(
+        (notifier.state.value ?? LobbyState.initial()).copyWith(
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+      final rated = reduceSessionRating(
+        current: SessionRatingState.unrated,
+        event: SessionRatingEvent.rate,
+        stars: 4,
+        raterUid: 'user-1',
+        ratedAt: DateTime.utc(2026, 9, 3, 18),
+      );
+
+      await notifier.recordWin('lobby-1', sessionRating: rated);
+      await flushAnalytics();
+
+      verify(mockRepository.recordMatchResult(
+        lobbyId: 'lobby-1',
+        gameName: 'Warzone',
+        result: 'win',
+        playerUids: ['user-1', 'u2'],
+        notes: anyNamed('notes'),
+      )).called(1);
+      expect(SquadAnalytics.lastResult?.isFailed, isTrue);
+      expect(SquadAnalytics.lastResult?.name, kAnalyticsSessionRate);
+      expect(
+        analyticsFireErrorDetail(SquadAnalytics.lastResult?.error),
+        'offline',
+      );
+    });
   });
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/services/squad_analytics.dart';
 
@@ -134,6 +135,13 @@ void main() {
         {'seated_count': 3, 'ready_count': 1, 'outcome': 'ready'},
       );
     });
+
+    test('lfg enqueue reuses lobby_join source and game only', () {
+      expect(
+        lfgEnqueueParams(gameName: 'Warzone'),
+        {'source': 'lfg', 'game_name': 'Warzone'},
+      );
+    });
   });
 
   group('SquadAnalytics.log', () {
@@ -148,6 +156,7 @@ void main() {
       await SquadAnalytics.logPeacockLock(seatedCount: 2, readyCount: 2);
       await SquadAnalytics.logSessionRate(stars: 3, result: 'loss');
       await SquadAnalytics.logReadyCheck(outcome: 'timeout');
+      await SquadAnalytics.logLfgEnqueue(gameName: 'MW3');
       await SquadAnalytics.log(kAnalyticsLobbyJoin, {
         'source': 'lfg',
         'user_id': 'should-drop',
@@ -161,6 +170,7 @@ void main() {
         kAnalyticsSessionRate,
         kAnalyticsReadyCheck,
         kAnalyticsLobbyJoin,
+        kAnalyticsLobbyJoin,
       ]);
       expect(recorded[0]['source'], 'code');
       expect(recorded[0]['game_name'], 'Warzone');
@@ -169,14 +179,19 @@ void main() {
       expect(recorded[3]['stars'], 3);
       expect(recorded[3]['result'], 'loss');
       expect(recorded[4]['outcome'], 'timeout');
+      expect(recorded[5]['source'], 'lfg');
+      expect(recorded[5]['game_name'], 'MW3');
       expect(recorded.last.containsKey('user_id'), isFalse);
       expect(recorded.last.containsKey('email'), isFalse);
       expect(recorded.last['source'], 'lfg');
+      expect(SquadAnalytics.lastResult?.isSuccess, isTrue);
     });
 
     test('missing Firebase does not throw', () async {
       SquadAnalytics.resetTestHooks();
-      await SquadAnalytics.logLobbyJoin(source: 'code');
+      final result = await SquadAnalytics.logLobbyJoin(source: 'code');
+      expect(result.isSuccess, isFalse);
+      expect(result.isFailed || result.isEmpty, isTrue);
     });
 
     test('captureLogs mocks Firebase and records sanitized events', () async {
@@ -201,6 +216,218 @@ void main() {
       expect(logged.last.params, {'source': 'lfg'});
       expect(logged.last.params.containsKey('user_id'), isFalse);
       expect(logged.last.params.containsKey('lobby_id'), isFalse);
+      expect(SquadAnalytics.lastResult?.isSuccess, isTrue);
+    });
+  });
+
+  group('analytics fire/persist mapper', () {
+    test('blank name is empty, not a silent success', () async {
+      var calls = 0;
+      final result = await runAnalyticsFire(
+        (name, params) async {
+          calls++;
+        },
+        name: '   ',
+      );
+      expect(result.isEmpty, isTrue);
+      expect(result.isSuccess, isFalse);
+      expect(calls, 0);
+      expect(analyticsFireMessage(result), kAnalyticsFireEmptyCopy);
+      expect(analyticsFireHint(result), kAnalyticsFireEmptyHint);
+      expect(
+        analyticsFireFeedbackKey(result.outcome),
+        const Key('analytics-fire-empty'),
+      );
+      expect(
+        analyticsFireHintKey(result.outcome),
+        const Key('analytics-fire-empty-hint'),
+      );
+    });
+
+    test('SquadAnalytics.log empty name is empty', () async {
+      final result = await SquadAnalytics.log('  ');
+      expect(result.isEmpty, isTrue);
+      expect(SquadAnalytics.lastResult?.isEmpty, isTrue);
+    });
+
+    test('thrown fire is error, not a silent success', () async {
+      final result = await runAnalyticsFire(
+        (name, params) async => throw Exception('offline'),
+        name: kAnalyticsPeacockLock,
+        parameters: peacockLockParams(seatedCount: 2, readyCount: 2),
+      );
+      expect(result.isFailed, isTrue);
+      expect(result.isSuccess, isFalse);
+      expect(result.name, kAnalyticsPeacockLock);
+      expect(analyticsFireErrorDetail(result.error), 'offline');
+      expect(analyticsFireMessage(result), kAnalyticsFireErrorCopy);
+      expect(analyticsFireHint(result), kAnalyticsFireErrorHint);
+      expect(
+        analyticsFireFeedbackKey(result.outcome),
+        const Key('analytics-fire-error'),
+      );
+      expect(analyticsFireRetryKey(), const Key('analytics-fire-retry'));
+      expect(
+        analyticsFireDetailKey(),
+        const Key('analytics-fire-error-detail'),
+      );
+    });
+
+    test('retry re-runs fire and can succeed', () async {
+      var calls = 0;
+      Future<void> fire(String name, Map<String, Object> params) async {
+        calls++;
+        if (calls == 1) throw Exception('offline');
+      }
+
+      final first = await runAnalyticsFire(
+        fire,
+        name: kAnalyticsSessionRate,
+        parameters: sessionRateParams(stars: 4, result: 'win'),
+      );
+      expect(first.isFailed, isTrue);
+      expect(calls, 1);
+
+      final second = await retryAnalyticsFire(
+        fire,
+        name: kAnalyticsSessionRate,
+        parameters: sessionRateParams(stars: 4, result: 'win'),
+      );
+      expect(second.isSuccess, isTrue);
+      expect(calls, 2);
+      expect(second.params['stars'], 4);
+    });
+
+    test('retry after error can stay error', () async {
+      Future<void> fire(String name, Map<String, Object> params) async {
+        throw Exception('denied');
+      }
+
+      final first = await runAnalyticsFire(
+        fire,
+        name: kAnalyticsLobbyJoin,
+      );
+      final second = await retryAnalyticsFire(
+        fire,
+        name: kAnalyticsLobbyJoin,
+      );
+      expect(first.isFailed, isTrue);
+      expect(second.isFailed, isTrue);
+      expect(analyticsFireErrorDetail(second.error), 'denied');
+    });
+  });
+
+  group('key events success + fail', () {
+    test('lock-in success fires peacock_lock without PII', () async {
+      final logged = SquadAnalytics.captureLogs();
+      final result = await SquadAnalytics.logPeacockLock(
+        seatedCount: 4,
+        readyCount: 4,
+      );
+      expect(result.isSuccess, isTrue);
+      expect(logged.single.name, kAnalyticsPeacockLock);
+      expect(logged.single.params, {
+        'seated_count': 4,
+        'ready_count': 4,
+      });
+      expect(logged.single.params.containsKey('lobby_id'), isFalse);
+      expect(logged.single.params.containsKey('user_id'), isFalse);
+      expect(
+        analyticsFireFeedbackKey(result.outcome),
+        const Key('analytics-fire-success'),
+      );
+    });
+
+    test('lock-in fire fail is error, not success', () async {
+      SquadAnalytics.logHook = (_, __) async => throw Exception('offline');
+      final result = await SquadAnalytics.logPeacockLock(
+        seatedCount: 2,
+        readyCount: 2,
+      );
+      expect(result.isFailed, isTrue);
+      expect(result.isSuccess, isFalse);
+      expect(result.name, kAnalyticsPeacockLock);
+      expect(analyticsFireErrorDetail(result.error), 'offline');
+      expect(SquadAnalytics.lastResult?.isFailed, isTrue);
+    });
+
+    test('peacock join success fires peacock_offer without PII', () async {
+      final logged = SquadAnalytics.captureLogs();
+      final result = await SquadAnalytics.logPeacockOffer(
+        source: 'peacock_queue',
+        gameName: 'Warzone',
+        seatIndex: 1,
+      );
+      expect(result.isSuccess, isTrue);
+      expect(logged.single.name, kAnalyticsPeacockOffer);
+      expect(logged.single.params, {
+        'source': 'peacock_queue',
+        'game_name': 'Warzone',
+        'seat_index': 1,
+      });
+      expect(logged.single.params.containsKey('user_id'), isFalse);
+      expect(logged.single.params.containsKey('lobby_id'), isFalse);
+    });
+
+    test('peacock join fire fail is error, not success', () async {
+      SquadAnalytics.logHook = (_, __) async => throw Exception('denied');
+      final result = await SquadAnalytics.logPeacockOffer(
+        source: 'peacock_queue',
+        gameName: 'Warzone',
+      );
+      expect(result.isFailed, isTrue);
+      expect(result.name, kAnalyticsPeacockOffer);
+      expect(analyticsFireErrorDetail(result.error), 'denied');
+    });
+
+    test('rating submit success fires session_rate without rater', () async {
+      final logged = SquadAnalytics.captureLogs();
+      final result = await SquadAnalytics.logSessionRate(
+        stars: 5,
+        result: 'win',
+      );
+      expect(result.isSuccess, isTrue);
+      expect(logged.single.name, kAnalyticsSessionRate);
+      expect(logged.single.params, {
+        'stars': 5,
+        'result': 'win',
+        'skipped': 0,
+      });
+      expect(logged.single.params.containsKey('rater_uid'), isFalse);
+      expect(logged.single.params.containsKey('comment'), isFalse);
+    });
+
+    test('rating submit fire fail is error, not success', () async {
+      SquadAnalytics.logHook = (_, __) async => throw Exception('offline');
+      final result = await SquadAnalytics.logSessionRate(
+        stars: 3,
+        result: 'loss',
+      );
+      expect(result.isFailed, isTrue);
+      expect(result.name, kAnalyticsSessionRate);
+      expect(analyticsFireErrorDetail(result.error), 'offline');
+    });
+
+    test('LFG enqueue success fires lobby_join source lfg', () async {
+      final logged = SquadAnalytics.captureLogs();
+      final result = await SquadAnalytics.logLfgEnqueue(gameName: 'Warzone');
+      expect(result.isSuccess, isTrue);
+      expect(logged.single.name, kAnalyticsLobbyJoin);
+      expect(logged.single.params, {
+        'source': 'lfg',
+        'game_name': 'Warzone',
+      });
+      expect(logged.single.params.containsKey('user_id'), isFalse);
+      expect(logged.single.params.containsKey('squad_id'), isFalse);
+    });
+
+    test('LFG enqueue fire fail is error, not success', () async {
+      SquadAnalytics.logHook = (_, __) async => throw Exception('offline');
+      final result = await SquadAnalytics.logLfgEnqueue(gameName: 'Warzone');
+      expect(result.isFailed, isTrue);
+      expect(result.name, kAnalyticsLobbyJoin);
+      expect(analyticsFireErrorDetail(result.error), 'offline');
+      expect(analyticsFireMessage(result), kAnalyticsFireErrorCopy);
     });
   });
 }

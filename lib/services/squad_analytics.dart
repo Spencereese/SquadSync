@@ -160,8 +160,145 @@ Map<String, Object> readyCheckParams({
   });
 }
 
+Map<String, Object> lfgEnqueueParams({
+  String? gameName,
+}) {
+  return lobbyJoinParams(source: 'lfg', gameName: gameName);
+}
+
+/// Fire/persist mapper for named core-loop events.
+///
+/// Success is a named event that reached [FirebaseAnalytics] (or [logHook]).
+/// Empty is a blank event name — nothing to fire, not a silent success.
+/// Thrown fire/persist is failed. Retry is calling [runAnalyticsFire] again.
+enum AnalyticsFireOutcome { success, empty, failed }
+
+const kAnalyticsFireErrorCopy = "Couldn't log analytics event";
+const kAnalyticsFireErrorHint = 'Check your connection and try again.';
+const kAnalyticsFireEmptyCopy = 'Nothing to log';
+const kAnalyticsFireEmptyHint = 'Event name is empty.';
+const kAnalyticsFireRetryLabel = 'Retry';
+
+class AnalyticsFireResult {
+  const AnalyticsFireResult.success({
+    required this.name,
+    this.params = const {},
+  })  : outcome = AnalyticsFireOutcome.success,
+        error = null;
+
+  const AnalyticsFireResult.empty({
+    this.name = '',
+    this.params = const {},
+  })  : outcome = AnalyticsFireOutcome.empty,
+        error = null;
+
+  const AnalyticsFireResult.failed(
+    this.error, {
+    this.name = '',
+    this.params = const {},
+  }) : outcome = AnalyticsFireOutcome.failed;
+
+  final AnalyticsFireOutcome outcome;
+  final String name;
+  final Map<String, Object> params;
+  final Object? error;
+
+  bool get isSuccess => outcome == AnalyticsFireOutcome.success;
+  bool get isEmpty => outcome == AnalyticsFireOutcome.empty;
+  bool get isFailed => outcome == AnalyticsFireOutcome.failed;
+}
+
+Key analyticsFireFeedbackKey(AnalyticsFireOutcome outcome) {
+  switch (outcome) {
+    case AnalyticsFireOutcome.success:
+      return const Key('analytics-fire-success');
+    case AnalyticsFireOutcome.empty:
+      return const Key('analytics-fire-empty');
+    case AnalyticsFireOutcome.failed:
+      return const Key('analytics-fire-error');
+  }
+}
+
+Key analyticsFireHintKey(AnalyticsFireOutcome outcome) {
+  switch (outcome) {
+    case AnalyticsFireOutcome.failed:
+      return const Key('analytics-fire-error-hint');
+    case AnalyticsFireOutcome.empty:
+      return const Key('analytics-fire-empty-hint');
+    case AnalyticsFireOutcome.success:
+      return const Key('analytics-fire-success');
+  }
+}
+
+Key analyticsFireRetryKey() => const Key('analytics-fire-retry');
+
+Key analyticsFireDetailKey() => const Key('analytics-fire-error-detail');
+
+String analyticsFireMessage(AnalyticsFireResult result) {
+  switch (result.outcome) {
+    case AnalyticsFireOutcome.success:
+      return result.name;
+    case AnalyticsFireOutcome.empty:
+      return kAnalyticsFireEmptyCopy;
+    case AnalyticsFireOutcome.failed:
+      return kAnalyticsFireErrorCopy;
+  }
+}
+
+String? analyticsFireHint(AnalyticsFireResult result) {
+  switch (result.outcome) {
+    case AnalyticsFireOutcome.failed:
+      return kAnalyticsFireErrorHint;
+    case AnalyticsFireOutcome.empty:
+      return kAnalyticsFireEmptyHint;
+    case AnalyticsFireOutcome.success:
+      return null;
+  }
+}
+
+String analyticsFireErrorDetail(Object? error) {
+  if (error == null) return '';
+  final text = error.toString().trim();
+  if (text.isEmpty) return '';
+  const prefix = 'Exception: ';
+  if (text.startsWith(prefix) && text.length > prefix.length) {
+    return text.substring(prefix.length);
+  }
+  return text;
+}
+
+/// Map a fire/persist attempt. Blank name is empty (no write). Thrown
+/// [fire] is error. Retry is calling this again with the same [fire].
+Future<AnalyticsFireResult> runAnalyticsFire(
+  Future<void> Function(String name, Map<String, Object> params) fire, {
+  required String name,
+  Map<String, Object?>? parameters,
+}) async {
+  final event = name.trim();
+  if (event.isEmpty) {
+    return const AnalyticsFireResult.empty();
+  }
+  final params = sanitizeAnalyticsParams(parameters);
+  try {
+    await fire(event, params);
+    return AnalyticsFireResult.success(name: event, params: params);
+  } catch (e) {
+    return AnalyticsFireResult.failed(e, name: event, params: params);
+  }
+}
+
+Future<AnalyticsFireResult> retryAnalyticsFire(
+  Future<void> Function(String name, Map<String, Object> params) fire, {
+  required String name,
+  Map<String, Object?>? parameters,
+}) =>
+    runAnalyticsFire(fire, name: name, parameters: parameters);
+
 /// Fire-and-forget logger. [logHook] intercepts in unit tests so
 /// [FirebaseAnalytics.instance] is never required in the harness.
+///
+/// Returns [AnalyticsFireResult] so empty/error is inspectable. Thrown
+/// Firebase / hook never bubbles into product call sites.
 class SquadAnalytics {
   SquadAnalytics._();
 
@@ -170,9 +307,14 @@ class SquadAnalytics {
   static Future<void> Function(String name, Map<String, Object> params)?
       logHook;
 
+  /// Last fire/persist result. Null before the first [log] in a harness.
+  @visibleForTesting
+  static AnalyticsFireResult? lastResult;
+
   @visibleForTesting
   static void resetTestHooks() {
     logHook = null;
+    lastResult = null;
   }
 
   /// Intercepts [log] into a list so unit tests mock Firebase.
@@ -185,29 +327,36 @@ class SquadAnalytics {
     return logs;
   }
 
-  static Future<void> log(
+  static Future<AnalyticsFireResult> log(
     String name, [
     Map<String, Object?>? parameters,
   ]) async {
-    final event = name.trim();
-    if (event.isEmpty) return;
-    final params = sanitizeAnalyticsParams(parameters);
-    final hook = logHook;
-    if (hook != null) {
-      await hook(event, params);
-      return;
-    }
-    try {
-      await FirebaseAnalytics.instance.logEvent(
-        name: event,
-        parameters: params.isEmpty ? null : params,
+    final result = await runAnalyticsFire(
+      (event, params) async {
+        final hook = logHook;
+        if (hook != null) {
+          await hook(event, params);
+          return;
+        }
+        await FirebaseAnalytics.instance.logEvent(
+          name: event,
+          parameters: params.isEmpty ? null : params,
+        );
+      },
+      name: name,
+      parameters: parameters,
+    );
+    lastResult = result;
+    if (result.isFailed && kDebugMode) {
+      debugPrint(
+        'SquadAnalytics: ${analyticsFireMessage(result)}'
+        '${result.name.isEmpty ? '' : ' (${result.name})'}',
       );
-    } catch (_) {
-      // Never break product or unit harnesses on analytics.
     }
+    return result;
   }
 
-  static Future<void> logLobbyJoin({
+  static Future<AnalyticsFireResult> logLobbyJoin({
     String? source,
     String? gameName,
   }) {
@@ -217,7 +366,15 @@ class SquadAnalytics {
     ));
   }
 
-  static Future<void> logPeacockOffer({
+  /// LFG enqueue (`startLooking`). Reuses [kAnalyticsLobbyJoin] with
+  /// `source: lfg` — no new vendor, no PII.
+  static Future<AnalyticsFireResult> logLfgEnqueue({
+    String? gameName,
+  }) {
+    return log(kAnalyticsLobbyJoin, lfgEnqueueParams(gameName: gameName));
+  }
+
+  static Future<AnalyticsFireResult> logPeacockOffer({
     String? source,
     String? gameName,
     int? seatIndex,
@@ -232,7 +389,7 @@ class SquadAnalytics {
     );
   }
 
-  static Future<void> logPeacockLock({
+  static Future<AnalyticsFireResult> logPeacockLock({
     int? seatedCount,
     int? readyCount,
   }) {
@@ -245,7 +402,7 @@ class SquadAnalytics {
     );
   }
 
-  static Future<void> logSessionRate({
+  static Future<AnalyticsFireResult> logSessionRate({
     int? stars,
     String? result,
     bool skipped = false,
@@ -260,7 +417,7 @@ class SquadAnalytics {
     );
   }
 
-  static Future<void> logReadyCheck({
+  static Future<AnalyticsFireResult> logReadyCheck({
     int? seatedCount,
     int? readyCount,
     String? outcome,

@@ -306,6 +306,13 @@ class MatchmakingQueueTracker extends ChangeNotifier {
     final installed = _install(userId, next);
     if (!_applyingRemote) {
       unawaited(persistCurrent(userId));
+      if (event == MatchmakingQueueEvent.startLooking &&
+          installed.phase == MatchmakingQueuePhase.looking &&
+          before.phase != MatchmakingQueuePhase.looking) {
+        unawaited(SquadAnalytics.logLfgEnqueue(
+          gameName: installed.gameName,
+        ));
+      }
       if (event == MatchmakingQueueEvent.matchFound &&
           installed.phase == MatchmakingQueuePhase.matched &&
           before.phase != MatchmakingQueuePhase.matched) {

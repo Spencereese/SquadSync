@@ -269,9 +269,48 @@ void main() {
       expect(tracker.snapshot.containsKey('u1'), isFalse);
     });
 
+    test('startLooking fires LFG enqueue without PII', () async {
+      final logged = SquadAnalytics.captureLogs();
+      tracker.startLooking('u1', squadId: 'squad-1', gameName: 'Warzone');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(logged.map((e) => e.name), [kAnalyticsLobbyJoin]);
+      expect(logged.single.params, {
+        'source': 'lfg',
+        'game_name': 'Warzone',
+      });
+      expect(logged.single.params.containsKey('user_id'), isFalse);
+      expect(logged.single.params.containsKey('squad_id'), isFalse);
+      expect(SquadAnalytics.lastResult?.isSuccess, isTrue);
+    });
+
+    test('startLooking enqueue fire fail still queues the user', () async {
+      SquadAnalytics.logHook = (_, __) async => throw Exception('offline');
+      tracker.startLooking('u1', gameName: 'Warzone');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(tracker.stateFor('u1').phase, MatchmakingQueuePhase.looking);
+      expect(SquadAnalytics.lastResult?.isFailed, isTrue);
+      expect(
+        analyticsFireErrorDetail(SquadAnalytics.lastResult?.error),
+        'offline',
+      );
+    });
+
+    test('startLooking no-op does not fire a second enqueue', () async {
+      final logged = SquadAnalytics.captureLogs();
+      tracker.startLooking('u1', gameName: 'Warzone');
+      await Future<void>.delayed(Duration.zero);
+      tracker.startLooking('u1', gameName: 'Warzone');
+      await Future<void>.delayed(Duration.zero);
+      expect(logged, hasLength(1));
+    });
+
     test('matchFound fires peacock_offer without PII', () async {
       final logged = SquadAnalytics.captureLogs();
       tracker.startLooking('u1');
+      await Future<void>.delayed(Duration.zero);
+      logged.clear();
       tracker.matchFound(
         'u1',
         lobbyId: 'lobby-9',
@@ -314,9 +353,13 @@ void main() {
       expect(logged.single.params.containsKey('lobby_id'), isFalse);
     });
 
-    test('joinMatched from looking does not fire lobby_join', () async {
+    test('joinMatched from looking does not fire a second lobby_join',
+        () async {
       final logged = SquadAnalytics.captureLogs();
       tracker.startLooking('u1');
+      await Future<void>.delayed(Duration.zero);
+      expect(logged.map((e) => e.name), [kAnalyticsLobbyJoin]);
+      logged.clear();
       tracker.joinMatched('u1');
       await Future<void>.delayed(Duration.zero);
       expect(logged, isEmpty);

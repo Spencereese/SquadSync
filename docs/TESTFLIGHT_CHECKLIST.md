@@ -326,14 +326,16 @@ Logged through existing `FirebaseAnalytics.instance`. Helpers:
 
 | Event | When | Params (no PII) |
 | --- | --- | --- |
-| `lobby_join` | Lobby join / LFG `joinMatched` | `source`, `game_name` |
+| `lobby_join` | Lobby join / LFG enqueue (`startLooking`) / LFG `joinMatched` | `source`, `game_name` |
 | `peacock_offer` | Peacock queue assign / LFG match | `source`, `game_name`, `seat_index` |
 | `peacock_lock` | All seated Ready → lock | `seated_count`, `ready_count` |
 | `session_rate` | Win/Loss rating persist | `stars`, `result`, `skipped` |
 | `ready_check` | Seated Ready / timeout | `seated_count`, `ready_count`, `outcome` |
 
 Verify in Firebase DebugView on a device build. Units mock analytics
-(`SquadAnalytics.logHook`) and cover helper + happy-path call sites:
+(`SquadAnalytics.logHook`) and cover helper + happy-path + fire/persist
+fail call sites (lock-in, peacock join, rating submit, LFG enqueue):
 `test/services/squad_analytics_test.dart`,
 `test/presentation/notifiers/lobby_notifier_test.dart`,
 `test/services/matchmaking_queue_tracker_test.dart`.
+Empty event names map to empty; thrown fire/persist maps to error.

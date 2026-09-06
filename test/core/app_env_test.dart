@@ -133,6 +133,32 @@ void main() {
     expect(AppEnv.isXaiConfigured, isFalse);
   });
 
+  test('AppEnv.friendsMode reads FRIENDS_MODE dart-define and defaults true',
+      () {
+    AppEnv.debugReplaceForTest({});
+    addTearDown(() => AppEnv.debugReplaceForTest({}));
+
+    // Unset / empty → Friends IPA on. Loop adds AppEnv.friendsMode and
+    // FRIENDS_MODE to dartDefineOverlay (String.fromEnvironment).
+    expect(AppEnv.friendsMode, isTrue);
+
+    AppEnv.debugReplaceForTest(mergeEnvLayers(
+      dartDefines: const {'FRIENDS_MODE': 'true'},
+    ));
+    expect(AppEnv.friendsMode, isTrue);
+
+    AppEnv.debugReplaceForTest(mergeEnvLayers(
+      dartDefines: const {'FRIENDS_MODE': 'false'},
+    ));
+    expect(AppEnv.friendsMode, isFalse);
+
+    AppEnv.debugReplaceForTest({'FRIENDS_MODE': ''});
+    expect(AppEnv.friendsMode, isTrue);
+
+    AppEnv.debugReplaceForTest({'FRIENDS_MODE': 'FALSE'});
+    expect(AppEnv.friendsMode, isFalse);
+  });
+
   test('AgoraConfig unset secrets fail soft (no throw)', () {
     AppEnv.debugReplaceForTest({});
     addTearDown(() => AppEnv.debugReplaceForTest({}));

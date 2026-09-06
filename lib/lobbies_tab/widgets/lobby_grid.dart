@@ -14,6 +14,82 @@ import '../../widgets/lobby_surface_feedback.dart';
 import 'lobby_seat_affordance.dart';
 import 'lobby_spot_map_seat.dart';
 
+const kSeatWriteErrorCopy = "Seat didn't save";
+const kSeatWriteErrorBannerKey = Key('seat-write-error-banner');
+const kSeatWriteRetryKey = Key('seat-write-retry');
+const kSeatMapSeatWriteErrorKey = Key('seat-map-seat-write-error');
+const kTonightSeatWriteErrorKey = Key('tonight-seat-write-error');
+
+Object? lobbySeatWriteErrorOf(WidgetRef ref) {
+  try {
+    return ref.read(ln.lobbyNotifierProvider.notifier).lastSeatWriteError;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Persistent seat-persist fail chip. Not a SnackBar and not Tonight load chrome.
+class SeatWriteErrorBanner extends ConsumerWidget {
+  const SeatWriteErrorBanner({super.key, this.surfaceKey});
+
+  final Key? surfaceKey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(ln.lobbyNotifierProvider);
+    final error = lobbySeatWriteErrorOf(ref);
+    if (error == null) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.error;
+    return KeyedSubtree(
+      key: surfaceKey,
+      child: Padding(
+        key: kSeatWriteErrorBannerKey,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Material(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline, size: 18, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    kSeatWriteErrorCopy,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: color,
+                      fontSize: kLobbySurfaceCompactSize,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  key: kSeatWriteRetryKey,
+                  onPressed: () {
+                    ref.read(ln.lobbyNotifierProvider.notifier).retrySeatWrite();
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: color,
+                    minimumSize: const Size(64, kLobbySurfaceActionMinHeight),
+                    textStyle: const TextStyle(
+                      fontSize: kLobbySurfaceCompactSize,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  child: const Text(kLobbySurfaceRetryLabel),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// LobbyGrid component - handles the display of spot cards and assignment logic
 /// Extracted from the monolithic LobbyTab to improve maintainability
 class LobbyGrid extends ConsumerWidget {
@@ -25,20 +101,30 @@ class LobbyGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final squadAsync = ref.watch(ln.lobbyNotifierProvider);
+    final writeError = lobbySeatWriteErrorOf(ref);
 
     return squadAsync.when(
       data: (squadState) {
         final currentGame = squadState.currentGame;
         final maxSpots = currentGame?['maxSpots'] ?? 4;
+        final bannerCount = writeError == null ? 0 : 1;
 
         return SliverList(
           delegate: SliverChildBuilderDelegate(
-            (context, index) => SpotCard(
-              key: ValueKey('spot_$index'),
-              index: index,
-              highlightSpotIndex: highlightSpotIndex,
-            ),
-            childCount: maxSpots,
+            (context, index) {
+              if (writeError != null && index == 0) {
+                return const SeatWriteErrorBanner(
+                  surfaceKey: kSeatMapSeatWriteErrorKey,
+                );
+              }
+              final spotIndex = index - bannerCount;
+              return SpotCard(
+                key: ValueKey('spot_$spotIndex'),
+                index: spotIndex,
+                highlightSpotIndex: highlightSpotIndex,
+              );
+            },
+            childCount: maxSpots + bannerCount,
           ),
         );
       },

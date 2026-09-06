@@ -14,6 +14,7 @@ import '../../screens/discovery_swipe_screen.dart';
 import '../../widgets/discovery_swipe_gate.dart';
 import '../../widgets/grok_concierge.dart';
 import '../../widgets/lobby_surface_feedback.dart';
+import 'lobby_grid.dart';
 
 /// LobbyControls — Tonight strip (I am on / Looking for Squad / Invite),
 /// Grok concierge (three commands), gated fill swipe, Win/Loss, Voice under More.
@@ -60,7 +61,13 @@ class LobbyControls extends ConsumerWidget {
             error:
                 tonightPhase == LobbySurfacePhase.error ? tonightError : null,
             onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
-            children: tonightChildren,
+            children: [
+              if (lobbySeatWriteErrorOf(ref) != null)
+                const SeatWriteErrorBanner(
+                  surfaceKey: kTonightSeatWriteErrorKey,
+                ),
+              ...tonightChildren,
+            ],
           ),
           const SizedBox(height: 16),
           GrokConciergeSection(

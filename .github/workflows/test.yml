@@ -3,9 +3,9 @@ name: PR
 # Linux-only PR checks. No macOS runner, no iOS simulator, no TestFlight.
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, cursor/revive-squadsync-be5c]
   push:
-    branches: [main, master]
+    branches: [main, master, cursor/revive-squadsync-be5c]
 
 concurrency:
   group: pr-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

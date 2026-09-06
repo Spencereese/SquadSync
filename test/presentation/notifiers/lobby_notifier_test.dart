@@ -1768,4 +1768,145 @@ void main() {
       );
     });
   });
+
+  group('LobbyNotifier - createLobby from chat', () {
+    const creatorUid = 'creator-1';
+    const friendUid = 'friend-2';
+    const otherFriendUid = 'friend-3';
+    const chatGroupId = 'chat-friday';
+    const createdLobbyId = 'lobby-from-chat';
+
+    Lobby repoLobby({required String name, String boundChatGroupId = ''}) {
+      return _lobby(
+        id: createdLobbyId,
+        name: name,
+        gameName: 'Warzone',
+        memberUids: const [creatorUid, friendUid, otherFriendUid],
+        chatGroupId: boundChatGroupId,
+      );
+    }
+
+    void stubCreateLobby() {
+      when(mockRepository.createLobby(any, any, any)).thenAnswer((inv) async {
+        return repoLobby(name: inv.positionalArguments[0] as String);
+      });
+    }
+
+    test('createLobby with chatGroupId persists / binds and selects+subscribes',
+        () async {
+      stubCreateLobby();
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      final lobbyId = await notifier.createLobby(
+        chatGroupId: chatGroupId,
+        gameName: 'Warzone',
+        maxSpots: 8,
+      );
+
+      expect(lobbyId, createdLobbyId);
+      final state = container.read(lobbyNotifierProvider).valueOrNull;
+      final bound = state?.currentLobby ?? state?.userLobbies[createdLobbyId];
+      expect(
+        bound?.chatGroupId,
+        chatGroupId,
+        reason: 'createLobby must persist/bind chat_group_id on the lobby',
+      );
+      expect(
+        state?.selectedLobbyId,
+        createdLobbyId,
+        reason: 'creator must land on the new lobby (selects)',
+      );
+      verify(mockRepository.getLobbyStream(createdLobbyId))
+          .called(greaterThanOrEqualTo(1));
+    });
+
+    test('createLobby with empty chatGroupId still creates', () async {
+      stubCreateLobby();
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      final lobbyId = await notifier.createLobby(
+        chatGroupId: '',
+        gameName: 'Warzone',
+        maxSpots: 8,
+      );
+
+      expect(lobbyId, isNotEmpty);
+      expect(lobbyId, createdLobbyId);
+      verify(mockRepository.createLobby(any, 'Warzone', 8)).called(1);
+    });
+
+    test('createLobby notify excludes the creator', () async {
+      List<String>? sentUids;
+      Map<String, dynamic>? sentData;
+      LobbyLockNotify.sendToUsersHook = ({
+        required title,
+        required body,
+        required recipientUids,
+        data,
+      }) async {
+        sentUids = List<String>.from(recipientUids);
+        sentData = data == null ? null : Map<String, dynamic>.from(data);
+      };
+      stubCreateLobby();
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.createLobby(
+        chatGroupId: chatGroupId,
+        gameName: 'Warzone',
+        maxSpots: 8,
+      );
+
+      expect(
+        sentUids,
+        isNotNull,
+        reason: 'lobby-created notify must fire for chat members',
+      );
+      expect(
+        sentUids,
+        contains(friendUid),
+        reason: 'friends in the chat group must be notified',
+      );
+      expect(
+        sentUids,
+        isNot(contains(creatorUid)),
+        reason: 'creator must not receive lobby_created (no FCM-to-self)',
+      );
+      expect(sentData?['type'], 'lobby_created');
+      expect(sentData?['chat_group_id'], chatGroupId);
+      expect(sentData?['lobby_id'], createdLobbyId);
+    });
+
+    test('createLobby name is not literal Lobby when game+group provided',
+        () async {
+      stubCreateLobby();
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      await notifier.createLobby(
+        chatGroupId: chatGroupId,
+        gameName: 'Warzone',
+        maxSpots: 8,
+      );
+
+      final captured = verify(
+        mockRepository.createLobby(captureAny, 'Warzone', 8),
+      ).captured;
+      expect(captured, isNotEmpty);
+      final name = captured.single as String;
+      expect(
+        name,
+        isNot(equals('Lobby')),
+        reason: 'hardcoded Lobby is not a friend-visible name',
+      );
+      expect(name.toLowerCase(), isNot(equals('lobby')));
+      expect(
+        name,
+        contains('Warzone'),
+        reason: 'name must include the game (game+group, truncated)',
+      );
+    });
+  });
 }

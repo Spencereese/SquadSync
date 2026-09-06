@@ -94,4 +94,6 @@ jobs:
             test/services/presence_badges_test.dart \
             test/widgets/presence_badge_row_test.dart \
             test/services/preferred_peacock_games_test.dart \
-            test/lobbies_tab/peacock_widgets_test.dart
+            test/lobbies_tab/peacock_widgets_test.dart \
+            test/widgets/lfg_queue_status_row_test.dart \
+            test/services/lfg_list_test.dart

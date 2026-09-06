@@ -50,6 +50,7 @@ jobs:
         run: |
           flutter test \
             test/presentation/notifiers/lobby_notifier_test.dart \
+            test/presentation/notifiers/lobby_seat_writer_test.dart \
             test/services/constitution_manager_test.dart \
             test/core/deep_link_routes_test.dart \
             test/core/universal_link_lobby_parse_test.dart \

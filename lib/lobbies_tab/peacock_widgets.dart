@@ -230,9 +230,24 @@ class PreferredPeacockGamesSection extends ConsumerWidget {
     final squadState = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
     final games = preferredPeacockGameChoices(squadState);
     final preferred = resolvedPreferredPeacockGames(squadState);
+    final store = PreferredPeacockGamesStore.instance;
+    final offers = PeacockAssignmentTracker.instance.snapshot.values
+        .where((state) => state.phase != PeacockAssignmentPhase.idle)
+        .map((state) => state.gameName);
+    final filter = mapPreferredPeacockFilter(
+      preferredPeacockGames: preferred,
+      offerGameNames: offers,
+      error: store.lastError,
+    );
     return PreferredPeacockGamesChips(
       games: games,
       preferred: preferred,
+      filter: filter,
+      onRetry: () {
+        ref
+            .read(ln.lobbyNotifierProvider.notifier)
+            .retryPreferredPeacockGames();
+      },
       onToggle: (gameName) {
         ref
             .read(ln.lobbyNotifierProvider.notifier)
@@ -248,17 +263,37 @@ class PreferredPeacockGamesChips extends StatelessWidget {
     required this.games,
     required this.preferred,
     required this.onToggle,
+    this.filter,
+    this.error,
+    this.offerGameNames = const [],
+    this.onRetry,
   });
 
-  static const titleLabel = 'Preferred Peacock Games';
-  static const emptyLabel = 'No games yet — add one to filter peacock offers';
+  static const titleLabel = kPreferredPeacockGamesTitle;
+  static const emptyLabel = kPreferredPeacockFilterNoCatalogCopy;
 
   final List<String> games;
   final Set<String> preferred;
   final ValueChanged<String> onToggle;
+  final PreferredPeacockFilterResult? filter;
+  final Object? error;
+  final Iterable<String?> offerGameNames;
+  final VoidCallback? onRetry;
+
+  PreferredPeacockFilterResult get _filter =>
+      filter ??
+      mapPreferredPeacockFilter(
+        preferredPeacockGames: preferred,
+        offerGameNames: offerGameNames,
+        error: error,
+      );
 
   @override
   Widget build(BuildContext context) {
+    final mapped = _filter;
+    final theme = Theme.of(context);
+    final failed = mapped.isFailed;
+    final statusColor = failed ? theme.colorScheme.error : Colors.white70;
     return Container(
       key: const Key('preferred-peacock-games'),
       padding: const EdgeInsets.all(16),
@@ -276,13 +311,20 @@ class PreferredPeacockGamesChips extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          if (games.isEmpty)
+          if (failed) ...[
+            _PreferredPeacockFilterStatus(
+              result: mapped,
+              color: statusColor,
+              onRetry: onRetry,
+            ),
+            if (games.isNotEmpty) const SizedBox(height: 8),
+          ] else if (games.isEmpty)
             const Text(
               emptyLabel,
               key: Key('preferred-peacock-games-empty'),
               style: TextStyle(color: Colors.white70, fontSize: 12),
-            )
-          else
+            ),
+          if (games.isNotEmpty) ...[
             Wrap(
               spacing: 8,
               children: [
@@ -298,8 +340,90 @@ class PreferredPeacockGamesChips extends StatelessWidget {
                   ),
               ],
             ),
+            if (!failed && mapped.isEmpty) ...[
+              const SizedBox(height: 8),
+              _PreferredPeacockFilterStatus(
+                result: mapped,
+                color: statusColor,
+                onRetry: onRetry,
+              ),
+            ],
+          ],
         ],
       ),
+    );
+  }
+}
+
+class _PreferredPeacockFilterStatus extends StatelessWidget {
+  const _PreferredPeacockFilterStatus({
+    required this.result,
+    required this.color,
+    this.onRetry,
+  });
+
+  final PreferredPeacockFilterResult result;
+  final Color color;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final hint = preferredPeacockFilterHint(result);
+    final detail =
+        result.isFailed ? preferredPeacockFilterErrorDetail(result.error) : '';
+    final showRetry = result.isFailed && onRetry != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          preferredPeacockFilterMessage(result),
+          key: preferredPeacockFilterKey(result),
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (hint != null && hint.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            hint,
+            key: preferredPeacockFilterHintKey(result),
+            style: TextStyle(
+              color: color.withValues(alpha: 0.85),
+              fontSize: 12,
+            ),
+          ),
+        ],
+        if (detail.isNotEmpty &&
+            detail != preferredPeacockFilterMessage(result)) ...[
+          const SizedBox(height: 2),
+          Text(
+            detail,
+            key: preferredPeacockFilterDetailKey(),
+            style: TextStyle(
+              color: color.withValues(alpha: 0.7),
+              fontSize: 12,
+            ),
+          ),
+        ],
+        if (showRetry)
+          TextButton(
+            key: preferredPeacockFilterRetryKey(),
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: color,
+              minimumSize: const Size(88, 44),
+              padding: EdgeInsets.zero,
+              alignment: Alignment.centerLeft,
+              textStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: const Text(kPreferredPeacockFilterRetryLabel),
+          ),
+      ],
     );
   }
 }

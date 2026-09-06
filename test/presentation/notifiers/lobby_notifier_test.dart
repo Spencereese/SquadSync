@@ -498,7 +498,10 @@ void main() {
 
       await notifier.togglePreferredPeacockGame('Warzone');
       expect(
-        container.read(lobbyNotifierProvider).valueOrNull?.preferredPeacockGames,
+        container
+            .read(lobbyNotifierProvider)
+            .valueOrNull
+            ?.preferredPeacockGames,
         {'Warzone'},
       );
       expect(PreferredPeacockGamesStore.instance.snapshot, {'Warzone'});
@@ -522,6 +525,34 @@ void main() {
       final reloaded = await container.read(lobbyNotifierProvider.future);
       expect(reloaded.preferredPeacockGames, {'Warzone'});
       expect(PreferredPeacockGamesStore.instance.snapshot, {'Warzone'});
+    });
+
+    test('togglePreferredPeacockGame persist fail surfaces error and retry',
+        () async {
+      await container.read(lobbyNotifierProvider.future);
+      final notifier = container.read(lobbyNotifierProvider.notifier);
+
+      when(mockRepository.saveLobbyState(any)).thenThrow(Exception('offline'));
+      await notifier.togglePreferredPeacockGame('Warzone');
+      expect(PreferredPeacockGamesStore.instance.snapshot, {'Warzone'});
+      expect(
+        PreferredPeacockGamesStore.instance.lastError.toString(),
+        contains('offline'),
+      );
+      expect(
+        mapPreferredPeacockFilter(
+          preferredPeacockGames: PreferredPeacockGamesStore.instance.snapshot,
+          error: PreferredPeacockGamesStore.instance.lastError,
+        ).isFailed,
+        isTrue,
+      );
+
+      when(mockRepository.saveLobbyState(any)).thenAnswer((_) async {});
+      await notifier.retryPreferredPeacockGames();
+      expect(PreferredPeacockGamesStore.instance.lastError, isNull);
+      expect(PreferredPeacockGamesStore.instance.snapshot, {'Warzone'});
+      verify(mockRepository.saveLobbyState(any))
+          .called(greaterThanOrEqualTo(1));
     });
 
     test('processPeacockQueue skips assign when preferred games exclude title',
@@ -1146,8 +1177,7 @@ void main() {
       final history = container.read(lobbyNotifierProvider).valueOrNull;
       expect(history?.gameHistory, hasLength(1));
       expect(history?.gameHistory.first['result'], 'loss');
-      final decoded =
-          sessionRatingFromMatchRow(history!.gameHistory.first);
+      final decoded = sessionRatingFromMatchRow(history!.gameHistory.first);
       expect(decoded?.vibes, 5);
       expect(decoded?.comms, 5);
       expect(decoded?.comment, 'comeback');

@@ -124,18 +124,46 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   /// Toggle a Preferred Peacock Game chip. Persists across sessions.
   Future<void> togglePreferredPeacockGame(String gameName) async {
-    await PreferredPeacockGamesStore.instance.toggle(gameName);
+    final persist = await PreferredPeacockGamesStore.instance.toggle(gameName);
     final current = state.valueOrNull;
     if (current == null) return;
     final next = current.copyWith(
       preferredPeacockGames: PreferredPeacockGamesStore.instance.snapshot,
     );
     state = AsyncData(next);
+    if (persist.isFailed) return;
     try {
       await _repository.saveLobbyState(next);
     } catch (e) {
+      PreferredPeacockGamesStore.instance.markError(e, wasSave: true);
+      debugPrint('preferred peacock games save skipped: $e');
+      state = AsyncData(next);
+    }
+  }
+
+  /// Re-run the last preferred-games prefs persist/load, then lobby-state
+  /// save. Surfaces persist/load fail as filter error + Retry.
+  Future<void> retryPreferredPeacockGames() async {
+    final store = PreferredPeacockGamesStore.instance;
+    final persist = await store.retry();
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final next = overlayPreferredPeacockGames(
+      current,
+      preferred: store.snapshot,
+    );
+    if (persist.isFailed) {
+      state = AsyncData(next);
+      return;
+    }
+    try {
+      await _repository.saveLobbyState(next);
+      store.lastError = null;
+    } catch (e) {
+      store.markError(e, wasSave: true);
       debugPrint('preferred peacock games save skipped: $e');
     }
+    state = AsyncData(next);
   }
 
   /// Set up Supabase real-time subscriptions for current lobby and user lobbies

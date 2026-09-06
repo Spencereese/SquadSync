@@ -73,6 +73,217 @@ LobbyState overlayPreferredPeacockGames(
   return loaded.copyWith(preferredPeacockGames: games);
 }
 
+/// Filter mapper for preferred peacock games.
+///
+/// Persist/load throw is [PreferredPeacockFilterOutcome.failed]. Empty
+/// preferred is no-games-selected (offers stay unfiltered). Non-empty
+/// preferred with no matching offers is no-matches. Retry is calling
+/// [runPreferredPeacockFilter] again.
+enum PreferredPeacockFilterOutcome { data, empty, failed }
+
+enum PreferredPeacockFilterEmptyKind { none, noGamesSelected, noMatches }
+
+const kPreferredPeacockGamesTitle = 'Preferred Peacock Games';
+const kPreferredPeacockFilterRetryLabel = 'Retry';
+const kPreferredPeacockFilterErrorCopy = "Couldn't update preferred games";
+const kPreferredPeacockFilterErrorHint = 'Check your connection and try again.';
+const kPreferredPeacockFilterNoCatalogCopy =
+    'No games yet — add one to filter peacock offers';
+const kPreferredPeacockFilterNoGamesSelectedCopy = 'No games selected';
+const kPreferredPeacockFilterNoGamesSelectedHint =
+    'Tap a game to filter peacock offers. None selected stays unfiltered.';
+const kPreferredPeacockFilterNoMatchesCopy = 'No matching peacock offers';
+const kPreferredPeacockFilterNoMatchesHint =
+    'Queued offers do not match your preferred games.';
+
+class PreferredPeacockFilterResult {
+  const PreferredPeacockFilterResult.data(this.matches)
+      : outcome = PreferredPeacockFilterOutcome.data,
+        emptyKind = PreferredPeacockFilterEmptyKind.none,
+        error = null;
+
+  const PreferredPeacockFilterResult.empty({
+    this.emptyKind = PreferredPeacockFilterEmptyKind.noGamesSelected,
+    this.matches = const [],
+  })  : outcome = PreferredPeacockFilterOutcome.empty,
+        error = null;
+
+  const PreferredPeacockFilterResult.failed(this.error,
+      {this.matches = const []})
+      : outcome = PreferredPeacockFilterOutcome.failed,
+        emptyKind = PreferredPeacockFilterEmptyKind.none;
+
+  final PreferredPeacockFilterOutcome outcome;
+  final PreferredPeacockFilterEmptyKind emptyKind;
+  final List<String> matches;
+  final Object? error;
+
+  bool get isData => outcome == PreferredPeacockFilterOutcome.data;
+  bool get isEmpty => outcome == PreferredPeacockFilterOutcome.empty;
+  bool get isFailed => outcome == PreferredPeacockFilterOutcome.failed;
+}
+
+class PreferredPeacockPersistResult {
+  const PreferredPeacockPersistResult.ok() : error = null;
+  const PreferredPeacockPersistResult.failed(this.error);
+
+  final Object? error;
+
+  bool get isOk => error == null;
+  bool get isFailed => error != null;
+}
+
+Key preferredPeacockFilterKey(PreferredPeacockFilterResult result) {
+  switch (result.outcome) {
+    case PreferredPeacockFilterOutcome.data:
+      return const Key('preferred-peacock-games');
+    case PreferredPeacockFilterOutcome.empty:
+      return result.emptyKind == PreferredPeacockFilterEmptyKind.noMatches
+          ? const Key('preferred-peacock-games-empty-matches')
+          : const Key('preferred-peacock-games-empty-selected');
+    case PreferredPeacockFilterOutcome.failed:
+      return const Key('preferred-peacock-games-error');
+  }
+}
+
+Key preferredPeacockFilterHintKey(PreferredPeacockFilterResult result) {
+  switch (result.outcome) {
+    case PreferredPeacockFilterOutcome.failed:
+      return const Key('preferred-peacock-games-error-hint');
+    case PreferredPeacockFilterOutcome.empty:
+      return result.emptyKind == PreferredPeacockFilterEmptyKind.noMatches
+          ? const Key('preferred-peacock-games-empty-matches-hint')
+          : const Key('preferred-peacock-games-empty-selected-hint');
+    case PreferredPeacockFilterOutcome.data:
+      return const Key('preferred-peacock-games');
+  }
+}
+
+Key preferredPeacockFilterRetryKey() =>
+    const Key('preferred-peacock-games-retry');
+
+Key preferredPeacockFilterDetailKey() =>
+    const Key('preferred-peacock-games-error-detail');
+
+String preferredPeacockFilterMessage(PreferredPeacockFilterResult result) {
+  switch (result.outcome) {
+    case PreferredPeacockFilterOutcome.failed:
+      return kPreferredPeacockFilterErrorCopy;
+    case PreferredPeacockFilterOutcome.empty:
+      return result.emptyKind == PreferredPeacockFilterEmptyKind.noMatches
+          ? kPreferredPeacockFilterNoMatchesCopy
+          : kPreferredPeacockFilterNoGamesSelectedCopy;
+    case PreferredPeacockFilterOutcome.data:
+      return kPreferredPeacockGamesTitle;
+  }
+}
+
+String? preferredPeacockFilterHint(PreferredPeacockFilterResult result) {
+  switch (result.outcome) {
+    case PreferredPeacockFilterOutcome.failed:
+      return kPreferredPeacockFilterErrorHint;
+    case PreferredPeacockFilterOutcome.empty:
+      return result.emptyKind == PreferredPeacockFilterEmptyKind.noMatches
+          ? kPreferredPeacockFilterNoMatchesHint
+          : kPreferredPeacockFilterNoGamesSelectedHint;
+    case PreferredPeacockFilterOutcome.data:
+      return null;
+  }
+}
+
+String preferredPeacockFilterErrorDetail(Object? error) {
+  if (error == null) return '';
+  final text = error.toString().trim();
+  if (text.isEmpty) return '';
+  const prefix = 'Exception: ';
+  if (text.startsWith(prefix) && text.length > prefix.length) {
+    return text.substring(prefix.length);
+  }
+  return text;
+}
+
+/// Map preferred-games filter. Persist/load [error] wins. Empty preferred
+/// is no-games-selected. Non-empty preferred with no matching offers is
+/// no-matches. Offer gating still uses [peacockOfferAllowed].
+PreferredPeacockFilterResult mapPreferredPeacockFilter({
+  required Set<String> preferredPeacockGames,
+  Iterable<String?> offerGameNames = const [],
+  Object? error,
+}) {
+  if (error != null) {
+    return PreferredPeacockFilterResult.failed(error);
+  }
+  if (preferredPeacockGames.isEmpty) {
+    return const PreferredPeacockFilterResult.empty(
+      emptyKind: PreferredPeacockFilterEmptyKind.noGamesSelected,
+    );
+  }
+  final matches = <String>[];
+  for (final raw in offerGameNames) {
+    if (!peacockOfferAllowed(
+      gameName: raw,
+      preferredPeacockGames: preferredPeacockGames,
+    )) {
+      continue;
+    }
+    final name = _trimmedGameName(raw);
+    if (name != null) matches.add(name);
+  }
+  if (matches.isEmpty) {
+    return const PreferredPeacockFilterResult.empty(
+      emptyKind: PreferredPeacockFilterEmptyKind.noMatches,
+    );
+  }
+  return PreferredPeacockFilterResult.data(matches);
+}
+
+/// Map a persist/load attempt then the filter. Thrown write is error.
+/// Retry is calling this again with the same persist.
+Future<PreferredPeacockFilterResult> runPreferredPeacockFilter(
+  Future<void> Function() persist, {
+  required Set<String> preferredPeacockGames,
+  Iterable<String?> offerGameNames = const [],
+}) async {
+  try {
+    await persist();
+  } catch (e) {
+    return PreferredPeacockFilterResult.failed(e);
+  }
+  return mapPreferredPeacockFilter(
+    preferredPeacockGames: preferredPeacockGames,
+    offerGameNames: offerGameNames,
+  );
+}
+
+Future<PreferredPeacockFilterResult> retryPreferredPeacockFilter(
+  Future<void> Function() persist, {
+  required Set<String> preferredPeacockGames,
+  Iterable<String?> offerGameNames = const [],
+}) =>
+    runPreferredPeacockFilter(
+      persist,
+      preferredPeacockGames: preferredPeacockGames,
+      offerGameNames: offerGameNames,
+    );
+
+/// Map a prefs persist/load. Thrown write is error. Retry is calling this
+/// again.
+Future<PreferredPeacockPersistResult> runPreferredPeacockPersist(
+  Future<void> Function() persist,
+) async {
+  try {
+    await persist();
+    return const PreferredPeacockPersistResult.ok();
+  } catch (e) {
+    return PreferredPeacockPersistResult.failed(e);
+  }
+}
+
+Future<PreferredPeacockPersistResult> retryPreferredPeacockPersist(
+  Future<void> Function() persist,
+) =>
+    runPreferredPeacockPersist(persist);
+
 /// In-memory + SharedPreferences. [LobbyNotifier] hydrates LobbyState.
 class PreferredPeacockGamesStore {
   PreferredPeacockGamesStore();
@@ -87,6 +298,10 @@ class PreferredPeacockGamesStore {
   /// True once SharedPreferences has a value for [prefsKey], including [].
   /// Distinguishes "never written" (seed from LobbyState) from "user cleared".
   bool _hydratedFromPrefs = false;
+  bool _lastPersistWasSave = false;
+
+  /// Last prefs persist/load error. Null after a successful write or load.
+  Object? lastError;
 
   Set<String> get snapshot => Set<String>.from(games);
 
@@ -103,35 +318,53 @@ class PreferredPeacockGamesStore {
     return false;
   }
 
-  Future<void> toggle(String gameName) async {
+  /// Record a persist/load failure from prefs or lobby-state save.
+  void markError(Object error, {required bool wasSave}) {
+    lastError = error;
+    _lastPersistWasSave = wasSave;
+  }
+
+  Future<PreferredPeacockPersistResult> toggle(String gameName) async {
     final name = gameName.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty) {
+      return lastError != null
+          ? PreferredPeacockPersistResult.failed(lastError!)
+          : const PreferredPeacockPersistResult.ok();
+    }
     if (!games.add(name)) {
       games.remove(name);
     }
-    await save();
+    return save();
   }
 
-  Future<void> replaceAll(Iterable<String> names) async {
+  Future<PreferredPeacockPersistResult> replaceAll(
+      Iterable<String> names) async {
     games
       ..clear()
       ..addAll(names.map((n) => n.trim()).where((n) => n.isNotEmpty));
-    await save();
+    return save();
   }
 
   /// First run: copy the existing LobbyState field into prefs.
   /// No-ops when the prefs key already exists — even as an empty list —
   /// so clearing chips stays unfiltered across launches.
-  Future<void> seedIfEmpty(Iterable<String> fromState) async {
-    if (_hydratedFromPrefs || games.isNotEmpty) return;
+  Future<PreferredPeacockPersistResult> seedIfEmpty(
+    Iterable<String> fromState,
+  ) async {
+    if (lastError != null || _hydratedFromPrefs || games.isNotEmpty) {
+      return lastError != null
+          ? PreferredPeacockPersistResult.failed(lastError!)
+          : const PreferredPeacockPersistResult.ok();
+    }
     final seeded = fromState.map((n) => n.trim()).where((n) => n.isNotEmpty);
-    if (seeded.isEmpty) return;
+    if (seeded.isEmpty) return const PreferredPeacockPersistResult.ok();
     games.addAll(seeded);
-    await save();
+    return save();
   }
 
-  Future<void> load() async {
-    try {
+  Future<PreferredPeacockPersistResult> load() async {
+    _lastPersistWasSave = false;
+    final result = await runPreferredPeacockPersist(() async {
       final prefs = await SharedPreferences.getInstance();
       final stored = prefs.getStringList(prefsKey);
       if (stored == null) {
@@ -142,31 +375,47 @@ class PreferredPeacockGamesStore {
       games
         ..clear()
         ..addAll(stored.map((n) => n.trim()).where((n) => n.isNotEmpty));
-    } catch (e) {
-      debugPrint('PreferredPeacockGamesStore.load failed: $e');
+    });
+    lastError = result.error;
+    if (result.isFailed) {
+      debugPrint('PreferredPeacockGamesStore.load failed: ${result.error}');
     }
+    return result;
   }
 
-  Future<void> save() async {
-    try {
+  Future<PreferredPeacockPersistResult> save() async {
+    _lastPersistWasSave = true;
+    final result = await runPreferredPeacockPersist(() async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(prefsKey, games.toList());
       _hydratedFromPrefs = true;
-    } catch (e) {
-      debugPrint('PreferredPeacockGamesStore.save failed: $e');
+    });
+    lastError = result.error;
+    if (result.isFailed) {
+      debugPrint('PreferredPeacockGamesStore.save failed: ${result.error}');
     }
+    return result;
   }
+
+  /// Re-run the last persist. Failed writes save current memory; otherwise
+  /// reload from disk.
+  Future<PreferredPeacockPersistResult> retry() =>
+      _lastPersistWasSave ? save() : load();
 
   /// Drop in-memory games. Does not write SharedPreferences.
   void reset() {
     games.clear();
     _hydratedFromPrefs = false;
+    _lastPersistWasSave = false;
+    lastError = null;
   }
 }
 
 Future<LobbyState> syncPreferredPeacockGames(LobbyState loaded) async {
   final store = PreferredPeacockGamesStore.instance;
-  await store.load();
-  await store.seedIfEmpty(loaded.preferredPeacockGames);
+  final loadedPrefs = await store.load();
+  if (loadedPrefs.isOk) {
+    await store.seedIfEmpty(loaded.preferredPeacockGames);
+  }
   return overlayPreferredPeacockGames(loaded, preferred: store.snapshot);
 }

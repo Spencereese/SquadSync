@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
@@ -158,7 +159,8 @@ void main() {
       expect(next.preferredPeacockGames, {'MW2'});
     });
 
-    test('resolvedPreferredPeacockGames uses empty stored prefs over stale state',
+    test(
+        'resolvedPreferredPeacockGames uses empty stored prefs over stale state',
         () async {
       final store = PreferredPeacockGamesStore.instance;
       await store.replaceAll(const []);
@@ -201,6 +203,184 @@ void main() {
         preferredPeacockGameChoices(state),
         ['Battlefield', 'Fortnite', 'Halo', 'MW2', 'Warzone'],
       );
+    });
+  });
+
+  group('preferred peacock filter mapper', () {
+    test('empty preferred is no-games-selected, not matches', () {
+      final result = mapPreferredPeacockFilter(
+        preferredPeacockGames: const {},
+        offerGameNames: const ['Warzone', 'Fortnite'],
+      );
+      expect(result.isEmpty, isTrue);
+      expect(result.isFailed, isFalse);
+      expect(result.isData, isFalse);
+      expect(
+        result.emptyKind,
+        PreferredPeacockFilterEmptyKind.noGamesSelected,
+      );
+      expect(result.matches, isEmpty);
+      expect(
+        preferredPeacockFilterMessage(result),
+        kPreferredPeacockFilterNoGamesSelectedCopy,
+      );
+      expect(
+        preferredPeacockFilterHint(result),
+        kPreferredPeacockFilterNoGamesSelectedHint,
+      );
+      expect(
+        preferredPeacockFilterKey(result),
+        const Key('preferred-peacock-games-empty-selected'),
+      );
+    });
+
+    test('non-empty preferred with no matching offers is no-matches', () {
+      final result = mapPreferredPeacockFilter(
+        preferredPeacockGames: const {'Warzone'},
+        offerGameNames: const ['Fortnite', 'Halo', null, '  '],
+      );
+      expect(result.isEmpty, isTrue);
+      expect(
+        result.emptyKind,
+        PreferredPeacockFilterEmptyKind.noMatches,
+      );
+      expect(result.matches, isEmpty);
+      expect(
+        preferredPeacockFilterMessage(result),
+        kPreferredPeacockFilterNoMatchesCopy,
+      );
+      expect(
+        preferredPeacockFilterHint(result),
+        kPreferredPeacockFilterNoMatchesHint,
+      );
+      expect(
+        preferredPeacockFilterKey(result),
+        const Key('preferred-peacock-games-empty-matches'),
+      );
+    });
+
+    test('non-empty preferred with no offers is no-matches', () {
+      final result = mapPreferredPeacockFilter(
+        preferredPeacockGames: const {'Warzone'},
+        offerGameNames: const [],
+      );
+      expect(result.isEmpty, isTrue);
+      expect(
+        result.emptyKind,
+        PreferredPeacockFilterEmptyKind.noMatches,
+      );
+    });
+
+    test('matching offers are data', () {
+      final result = mapPreferredPeacockFilter(
+        preferredPeacockGames: const {'Warzone', 'MW2'},
+        offerGameNames: const ['fortnite', 'warzone', 'MW2'],
+      );
+      expect(result.isData, isTrue);
+      expect(result.isEmpty, isFalse);
+      expect(result.matches, ['warzone', 'MW2']);
+      expect(
+        preferredPeacockFilterKey(result),
+        const Key('preferred-peacock-games'),
+      );
+    });
+
+    test('persist/load error wins over empty', () {
+      final result = mapPreferredPeacockFilter(
+        preferredPeacockGames: const {},
+        offerGameNames: const [],
+        error: Exception('offline'),
+      );
+      expect(result.isFailed, isTrue);
+      expect(result.isEmpty, isFalse);
+      expect(preferredPeacockFilterErrorDetail(result.error), 'offline');
+      expect(
+        preferredPeacockFilterMessage(result),
+        kPreferredPeacockFilterErrorCopy,
+      );
+      expect(
+        preferredPeacockFilterHint(result),
+        kPreferredPeacockFilterErrorHint,
+      );
+      expect(
+        preferredPeacockFilterKey(result),
+        const Key('preferred-peacock-games-error'),
+      );
+    });
+
+    test('thrown persist is error, not a silent empty', () async {
+      final result = await runPreferredPeacockFilter(
+        () async => throw Exception('offline'),
+        preferredPeacockGames: const {'Warzone'},
+        offerGameNames: const ['Warzone'],
+      );
+      expect(result.isFailed, isTrue);
+      expect(result.isData, isFalse);
+      expect(preferredPeacockFilterErrorDetail(result.error), 'offline');
+      expect(
+        preferredPeacockFilterMessage(result),
+        kPreferredPeacockFilterErrorCopy,
+      );
+    });
+
+    test('successful persist with empty preferred is empty', () async {
+      var calls = 0;
+      final result = await runPreferredPeacockFilter(
+        () async {
+          calls++;
+        },
+        preferredPeacockGames: const {},
+        offerGameNames: const ['Warzone'],
+      );
+      expect(result.isEmpty, isTrue);
+      expect(
+        result.emptyKind,
+        PreferredPeacockFilterEmptyKind.noGamesSelected,
+      );
+      expect(calls, 1);
+    });
+
+    test('retry re-runs persist and can succeed', () async {
+      var calls = 0;
+      Future<void> persist() async {
+        calls++;
+        if (calls == 1) throw Exception('offline');
+      }
+
+      const preferred = {'Warzone'};
+      const offers = ['Warzone'];
+      final first = await runPreferredPeacockFilter(
+        persist,
+        preferredPeacockGames: preferred,
+        offerGameNames: offers,
+      );
+      expect(first.isFailed, isTrue);
+      expect(calls, 1);
+
+      final second = await retryPreferredPeacockFilter(
+        persist,
+        preferredPeacockGames: preferred,
+        offerGameNames: offers,
+      );
+      expect(second.isData, isTrue);
+      expect(second.matches, ['Warzone']);
+      expect(calls, 2);
+    });
+
+    test('retry after error can stay error', () async {
+      Future<void> persist() async => throw Exception('denied');
+      const preferred = {'Warzone'};
+      final first = await runPreferredPeacockFilter(
+        persist,
+        preferredPeacockGames: preferred,
+      );
+      final second = await retryPreferredPeacockFilter(
+        persist,
+        preferredPeacockGames: preferred,
+      );
+      expect(first.isFailed, isTrue);
+      expect(second.isFailed, isTrue);
+      expect(preferredPeacockFilterErrorDetail(second.error), 'denied');
     });
   });
 }

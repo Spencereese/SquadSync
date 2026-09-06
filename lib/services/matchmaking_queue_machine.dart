@@ -195,6 +195,8 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   bool _hydrated = false;
   bool _hydrating = false;
   bool _applyingRemote = false;
+  Object? _hydrateError;
+  DateTime? _lastHydratedAt;
 
   PeacockAssignmentTracker get _peacock =>
       _peacockOverride ?? PeacockAssignmentTracker.instance;
@@ -211,6 +213,31 @@ class MatchmakingQueueTracker extends ChangeNotifier {
 
   MatchmakingQueueEntry stateFor(String userId) =>
       _byUser[userId] ?? MatchmakingQueueEntry.idle;
+
+  bool get isHydrated => _hydrated;
+  bool get isHydrating => _hydrating;
+  Object? get hydrateError => _hydrateError;
+  DateTime? get lastHydratedAt => _lastHydratedAt;
+
+  /// True when hydrate failed or the last successful fetch is older than
+  /// [kLfgListStaleAfter]. Idle never-hydrated is not stale.
+  bool get hasStaleQueue {
+    if (_hydrateError != null) return _hydrated || lookingUserIds.isNotEmpty;
+    final at = _lastHydratedAt;
+    if (at == null) return false;
+    return DateTime.now().toUtc().difference(at) >= kLfgListStaleAfter;
+  }
+
+  /// Users currently in [MatchmakingQueuePhase.looking], FIFO.
+  List<String> get lookingUserIds {
+    final ids = <String>[];
+    for (final entry in _byUser.entries) {
+      if (entry.value.phase == MatchmakingQueuePhase.looking) {
+        ids.add(entry.key);
+      }
+    }
+    return ids;
+  }
 
   /// First looking user in FIFO ([queuedAt], then insertion).
   String? nextLookingUserId({String? except}) {
@@ -337,17 +364,21 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   }
 
   /// Fetch persisted rows then subscribe. Idempotent. No peacock assign.
-  Future<void> ensureHydratedAndSubscribed() async {
+  /// [force] re-fetches so a stale / failed queue can recover.
+  Future<void> ensureHydratedAndSubscribed({bool force = false}) async {
     _repository ??=
         MatchmakingQueueRepositoryImpl(client: SupabaseService.maybeClient);
-    await hydrateFromRepository();
+    await hydrateFromRepository(force: force);
     _bindRealtime();
   }
 
-  Future<void> hydrateFromRepository() async {
+  Future<void> hydrateFromRepository({bool force = false}) async {
     final repo = _repository;
-    if (repo == null || _hydrated || _hydrating) return;
+    if (repo == null || _hydrating) return;
+    if (_hydrated && !force && _hydrateError == null) return;
     _hydrating = true;
+    _hydrateError = null;
+    notifyListeners();
     try {
       final rows = await repo.fetchActive();
       _applyingRemote = true;
@@ -355,9 +386,14 @@ class MatchmakingQueueTracker extends ChangeNotifier {
         _install(entry.key, entry.value);
       }
       _hydrated = true;
+      _lastHydratedAt = DateTime.now().toUtc();
+      _hydrateError = null;
+    } catch (e) {
+      _hydrateError = e;
     } finally {
       _applyingRemote = false;
       _hydrating = false;
+      notifyListeners();
     }
   }
 
@@ -536,6 +572,146 @@ class MatchmakingQueueTracker extends ChangeNotifier {
   static void resetInstance() {
     instance._watchSub?.cancel();
     instance = MatchmakingQueueTracker();
+  }
+}
+
+/// How long a successful LFG hydrate stays "live" before the row is stale.
+const kLfgListStaleAfter = Duration(minutes: 2);
+
+const kLfgListEmptyCopy = 'No one looking right now';
+const kLfgListEmptyHint = 'Tap Looking for Squad to join the queue.';
+const kLfgListErrorCopy = "Couldn't load looking";
+const kLfgListErrorHint = 'Check your connection and try again.';
+const kLfgListStaleCopy = 'Queue may be out of date';
+const kLfgListStaleHint = 'Showing the last known queue.';
+const kLfgListReconnectingCopy = 'Reconnecting to queue...';
+
+enum LfgListPhase { data, empty, loading, error, stale }
+
+/// Snapshot of the LFG / matchmaking_queue list for empty / error / stale UI.
+class LfgListView {
+  const LfgListView({
+    required this.phase,
+    this.lookingUserIds = const <String>[],
+    this.error,
+  });
+
+  static const empty = LfgListView(phase: LfgListPhase.empty);
+
+  final LfgListPhase phase;
+  final List<String> lookingUserIds;
+  final Object? error;
+
+  int get lookingCount => lookingUserIds.length;
+}
+
+/// Empty / error / stale / reconnecting for the LFG list. Loading only
+/// while a hydrate is in flight with no rows yet — never a settled spinner.
+LfgListPhase resolveLfgListPhase({
+  required bool isHydrating,
+  required bool isHydrated,
+  Object? error,
+  required int lookingCount,
+  bool isOffline = false,
+  bool isStale = false,
+}) {
+  final hasRows = lookingCount > 0;
+  if (isHydrating && !hasRows && !isHydrated) return LfgListPhase.loading;
+  if ((error != null || isOffline) && !hasRows) return LfgListPhase.error;
+  if (error != null || isOffline || (isStale && hasRows)) {
+    return LfgListPhase.stale;
+  }
+  if (!hasRows) return LfgListPhase.empty;
+  return LfgListPhase.data;
+}
+
+LfgListView resolveLfgList({
+  required Map<String, MatchmakingQueueEntry> snapshot,
+  required bool isHydrating,
+  required bool isHydrated,
+  Object? error,
+  bool isOffline = false,
+  bool isStale = false,
+}) {
+  final looking = <String>[];
+  for (final entry in snapshot.entries) {
+    if (entry.value.phase == MatchmakingQueuePhase.looking) {
+      looking.add(entry.key);
+    }
+  }
+  return LfgListView(
+    phase: resolveLfgListPhase(
+      isHydrating: isHydrating,
+      isHydrated: isHydrated,
+      error: error,
+      lookingCount: looking.length,
+      isOffline: isOffline,
+      isStale: isStale,
+    ),
+    lookingUserIds: looking,
+    error: error,
+  );
+}
+
+LfgListView resolveLfgListFromTracker(
+  MatchmakingQueueTracker tracker, {
+  bool isOffline = false,
+}) {
+  return resolveLfgList(
+    snapshot: tracker.snapshot,
+    isHydrating: tracker.isHydrating,
+    isHydrated: tracker.isHydrated,
+    error: tracker.hydrateError,
+    isOffline: isOffline,
+    isStale: tracker.hasStaleQueue,
+  );
+}
+
+Key lfgListKey(LfgListPhase phase) {
+  switch (phase) {
+    case LfgListPhase.empty:
+      return const Key('lfg-queue-empty');
+    case LfgListPhase.loading:
+      return const Key('lfg-queue-reconnecting');
+    case LfgListPhase.error:
+      return const Key('lfg-queue-error');
+    case LfgListPhase.stale:
+      return const Key('lfg-queue-stale');
+    case LfgListPhase.data:
+      return const Key('lfg-queue-status');
+  }
+}
+
+String lfgListMessage(
+  LfgListPhase phase, {
+  int lookingCount = 0,
+}) {
+  switch (phase) {
+    case LfgListPhase.empty:
+      return kLfgListEmptyCopy;
+    case LfgListPhase.loading:
+      return kLfgListReconnectingCopy;
+    case LfgListPhase.error:
+      return kLfgListErrorCopy;
+    case LfgListPhase.stale:
+      return kLfgListStaleCopy;
+    case LfgListPhase.data:
+      if (lookingCount == 1) return '1 looking';
+      return '$lookingCount looking';
+  }
+}
+
+String? lfgListHint(LfgListPhase phase) {
+  switch (phase) {
+    case LfgListPhase.empty:
+      return kLfgListEmptyHint;
+    case LfgListPhase.error:
+      return kLfgListErrorHint;
+    case LfgListPhase.stale:
+      return kLfgListStaleHint;
+    case LfgListPhase.loading:
+    case LfgListPhase.data:
+      return null;
   }
 }
 

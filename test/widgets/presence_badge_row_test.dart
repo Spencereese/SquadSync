@@ -117,6 +117,44 @@ void main() {
     expect(find.text('On'), findsNothing);
   });
 
+  testWidgets('row shows Offline / Stale / Reconnecting without a spinner',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              PresenceBadgeRow(
+                badges: PresenceBadges(health: PresenceHealth.offline),
+              ),
+              PresenceBadgeRow(
+                badges: PresenceBadges(
+                  isOn: true,
+                  health: PresenceHealth.stale,
+                ),
+              ),
+              PresenceBadgeRow(
+                badges: PresenceBadges(health: PresenceHealth.reconnecting),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Offline'), findsOneWidget);
+    expect(find.text('Stale'), findsOneWidget);
+    expect(find.text('On'), findsOneWidget);
+    expect(find.text('Reconnecting'), findsOneWidget);
+    expect(find.byKey(const Key('presence-badge-offline')), findsOneWidget);
+    expect(find.byKey(const Key('presence-badge-stale')), findsOneWidget);
+    expect(
+      find.byKey(const Key('presence-badge-reconnecting')),
+      findsOneWidget,
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
   testWidgets('host reads live on / looking / lobby membership',
       (tester) async {
     availabilityOnStore.markOn('u-on');
@@ -149,11 +187,14 @@ void main() {
     availabilityOnStore = AvailabilityOnStore(clock: () => now);
 
     await _pumpHosts(tester, userIds: const ['u1']);
-    expect(find.byKey(const Key('presence-badges')), findsNothing);
+    expect(find.text('Offline'), findsOneWidget);
+    expect(find.byKey(const Key('presence-badge-offline')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
 
     availabilityOnStore.markOn('u1');
     await tester.pump();
     expect(find.text('On'), findsOneWidget);
+    expect(find.text('Offline'), findsNothing);
 
     MatchmakingQueueTracker.instance.startLooking('u1');
     await tester.pump();
@@ -168,7 +209,8 @@ void main() {
     MatchmakingQueueTracker.instance.cancelLooking('u1');
     await tester.pump();
     expect(find.text('Looking'), findsNothing);
-    expect(find.byKey(const Key('presence-badges')), findsNothing);
+    expect(find.text('Offline'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
   testWidgets('host drops In lobby when live membership refreshes',
@@ -195,5 +237,35 @@ void main() {
     );
     await tester.pump();
     expect(find.text('In lobby'), findsNothing);
+    expect(find.text('Offline'), findsOneWidget);
   });
+
+  testWidgets('host shows Stale copy when lobby load fails, not a spinner',
+      (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          lobbyNotifierProvider.overrideWith(() => _ErrorLobbyNotifier()),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: PresenceBadgesHost(userId: 'u1'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Stale'), findsOneWidget);
+    expect(find.byKey(const Key('presence-badge-stale')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+}
+
+class _ErrorLobbyNotifier extends LobbyNotifier {
+  @override
+  Future<LobbyState> build() async {
+    throw Exception('offline');
+  }
 }

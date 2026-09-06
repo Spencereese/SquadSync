@@ -149,6 +149,9 @@ void main() {
       expect(find.text("I'm on now"), findsOneWidget);
       expect(find.text('Looking for Squad'), findsOneWidget);
       expect(find.text('Invite'), findsOneWidget);
+      expect(find.text(kLfgListEmptyCopy), findsOneWidget);
+      expect(find.text(kLfgListEmptyHint), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
     testWidgets('Grok concierge is three commands with no free-chat field',

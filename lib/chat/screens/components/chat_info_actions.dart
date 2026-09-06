@@ -17,6 +17,7 @@ import '../../../domain/entities/lobby_state.dart';
 import '../../../presentation/notifiers/lobby_notifier.dart';
 import '../../../notification_service.dart';
 import '../../../widgets/grok_concierge.dart';
+import '../../../widgets/lfg_queue_status_row.dart';
 import '../../../widgets/lobby_surface_feedback.dart';
 
 /// Product order for the Tonight strip. Search is omitted until it searches.
@@ -613,6 +614,9 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
           status = claimSeatCopy(seat?.seatIndex);
         }
 
+        final list = resolveLfgListFromTracker(_tracker);
+        final showQueueStatus = status == null;
+
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
@@ -622,22 +626,13 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: _isLoading || joined ? null : _onPressed,
-                  icon: _isLoading
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: theme.colorScheme.onPrimary,
-                          ),
-                        )
-                      : Icon(
-                          icon,
-                          size: 20,
-                          color: Colors.black,
-                        ),
+                  icon: Icon(
+                    icon,
+                    size: 20,
+                    color: Colors.black,
+                  ),
                   label: Text(
-                    label,
+                    _isLoading ? 'Working...' : label,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -656,18 +651,27 @@ class _LookingForSquadButtonState extends ConsumerState<LookingForSquadButton> {
                   ),
                 ),
               ),
-              if (status != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  status,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              if (status != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    status,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
                   ),
                 ),
-              ],
+              if (showQueueStatus)
+                LfgQueueStatusRow(
+                  view: list,
+                  onRetry: () => unawaited(
+                    _tracker.ensureHydratedAndSubscribed(force: true),
+                  ),
+                ),
             ],
           ),
         );

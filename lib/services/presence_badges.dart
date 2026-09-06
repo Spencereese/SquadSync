@@ -4,7 +4,11 @@ import 'availability_on.dart';
 import 'matchmaking_queue_machine.dart';
 
 /// Who is On / Looking / In lobby — glance badges on friends / squad lists.
-enum PresenceBadgeKind { on, looking, inLobby }
+/// Health chips (offline / stale / reconnecting) sit after live signals.
+enum PresenceBadgeKind { on, looking, inLobby, offline, stale, reconnecting }
+
+/// Connection health for the presence strip. Not a fourth live signal.
+enum PresenceHealth { live, stale, offline, reconnecting }
 
 /// Snapshot of glance badges for one user.
 class PresenceBadges {
@@ -12,6 +16,7 @@ class PresenceBadges {
     this.isOn = false,
     this.isLooking = false,
     this.isInLobby = false,
+    this.health = PresenceHealth.live,
   });
 
   static const empty = PresenceBadges();
@@ -19,16 +24,38 @@ class PresenceBadges {
   final bool isOn;
   final bool isLooking;
   final bool isInLobby;
+  final PresenceHealth health;
 
-  bool get isEmpty => !isOn && !isLooking && !isInLobby;
+  bool get hasLiveSignals => isOn || isLooking || isInLobby;
+
+  bool get isEmpty => kinds.isEmpty;
 
   bool get isNotEmpty => !isEmpty;
 
-  /// Product order: On, Looking, In lobby.
+  PresenceBadges copyWith({
+    bool? isOn,
+    bool? isLooking,
+    bool? isInLobby,
+    PresenceHealth? health,
+  }) {
+    return PresenceBadges(
+      isOn: isOn ?? this.isOn,
+      isLooking: isLooking ?? this.isLooking,
+      isInLobby: isInLobby ?? this.isInLobby,
+      health: health ?? this.health,
+    );
+  }
+
+  /// Product order: On, Looking, In lobby, then health.
   List<PresenceBadgeKind> get kinds => [
         if (isOn) PresenceBadgeKind.on,
         if (isLooking) PresenceBadgeKind.looking,
         if (isInLobby) PresenceBadgeKind.inLobby,
+        if (health == PresenceHealth.offline && !hasLiveSignals)
+          PresenceBadgeKind.offline,
+        if (health == PresenceHealth.stale) PresenceBadgeKind.stale,
+        if (health == PresenceHealth.reconnecting)
+          PresenceBadgeKind.reconnecting,
       ];
 
   @override
@@ -36,10 +63,11 @@ class PresenceBadges {
       other is PresenceBadges &&
       other.isOn == isOn &&
       other.isLooking == isLooking &&
-      other.isInLobby == isInLobby;
+      other.isInLobby == isInLobby &&
+      other.health == health;
 
   @override
-  int get hashCode => Object.hash(isOn, isLooking, isInLobby);
+  int get hashCode => Object.hash(isOn, isLooking, isInLobby, health);
 }
 
 String presenceBadgeLabel(PresenceBadgeKind kind) {
@@ -50,6 +78,12 @@ String presenceBadgeLabel(PresenceBadgeKind kind) {
       return 'Looking';
     case PresenceBadgeKind.inLobby:
       return 'In lobby';
+    case PresenceBadgeKind.offline:
+      return 'Offline';
+    case PresenceBadgeKind.stale:
+      return 'Stale';
+    case PresenceBadgeKind.reconnecting:
+      return 'Reconnecting';
   }
 }
 
@@ -61,7 +95,31 @@ String presenceBadgeKey(PresenceBadgeKind kind) {
       return 'presence-badge-looking';
     case PresenceBadgeKind.inLobby:
       return 'presence-badge-in-lobby';
+    case PresenceBadgeKind.offline:
+      return 'presence-badge-offline';
+    case PresenceBadgeKind.stale:
+      return 'presence-badge-stale';
+    case PresenceBadgeKind.reconnecting:
+      return 'presence-badge-reconnecting';
   }
+}
+
+/// Pure health mapper. Loading beats stale/offline so the strip never
+/// pretends a hung fetch is a live empty.
+PresenceHealth resolvePresenceHealth({
+  required bool isLoading,
+  Object? error,
+  bool isOffline = false,
+  bool hasLiveSignals = false,
+  bool isStale = false,
+}) {
+  if (isLoading) return PresenceHealth.reconnecting;
+  if (error != null || isStale) return PresenceHealth.stale;
+  if (isOffline) {
+    return hasLiveSignals ? PresenceHealth.stale : PresenceHealth.offline;
+  }
+  if (!hasLiveSignals) return PresenceHealth.offline;
+  return PresenceHealth.live;
 }
 
 /// uid / id / friend_uid from a friends or squad member row.
@@ -146,20 +204,28 @@ PresenceBadges resolvePresenceBadges({
 }
 
 /// Live sources already shipped: on-store, matchmaking_queue, lobby state.
+///
+/// [isLoading] / [error] / [isOffline] / [isStale] map reconnecting /
+/// stale / offline onto the strip. Empty uid stays empty (no fake Offline).
 PresenceBadges resolvePresenceBadgesFromTrackers({
   required String? userId,
   LobbyState? lobbyState,
   MatchmakingQueueTracker? lfg,
   AvailabilityOnStore? onStore,
+  bool isLoading = false,
+  Object? error,
+  bool isOffline = false,
+  bool isStale = false,
 }) {
   final uid = resolvePresenceUserId(
     userId: userId,
     memberDisplayNames: lobbyState?.memberDisplayNames ?? const {},
   );
   if (uid == null || uid.isEmpty) return PresenceBadges.empty;
-  final looking = (lfg ?? MatchmakingQueueTracker.instance).stateFor(uid);
+  final tracker = lfg ?? MatchmakingQueueTracker.instance;
+  final looking = tracker.stateFor(uid);
   final on = (onStore ?? availabilityOnStore).isOn(uid);
-  return resolvePresenceBadges(
+  final badges = resolvePresenceBadges(
     userId: uid,
     isOn: on,
     lfg: looking,
@@ -167,13 +233,25 @@ PresenceBadges resolvePresenceBadgesFromTrackers({
     currentLobby: lobbyState?.currentLobby,
     userLobbies: lobbyState?.userLobbies ?? const {},
   );
+  final health = resolvePresenceHealth(
+    isLoading: isLoading || tracker.isHydrating,
+    error: error ?? tracker.hydrateError,
+    isOffline: isOffline,
+    hasLiveSignals: badges.hasLiveSignals,
+    isStale: isStale || tracker.hasStaleQueue,
+  );
+  return badges.copyWith(health: health);
 }
 
 /// Drop expired On windows and hydrate LFG looking. Reuses ticket 5 sources.
+/// Resume / pull-to-refresh passes [force] so a stale queue can recover.
 Future<void> refreshPresenceSources({
   MatchmakingQueueTracker? lfg,
   AvailabilityOnStore? onStore,
+  bool force = false,
 }) async {
   (onStore ?? availabilityOnStore).sweepExpired();
-  await (lfg ?? MatchmakingQueueTracker.instance).ensureHydratedAndSubscribed();
+  await (lfg ?? MatchmakingQueueTracker.instance).ensureHydratedAndSubscribed(
+    force: force,
+  );
 }

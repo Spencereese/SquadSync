@@ -1,0 +1,87 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/services/matchmaking_queue_machine.dart';
+import 'package:squad_sync/widgets/lfg_queue_status_row.dart';
+
+Widget _wrap(Widget child) {
+  return MaterialApp(home: Scaffold(body: child));
+}
+
+void main() {
+  testWidgets('empty copy is arm length with no spinner', (tester) async {
+    await tester.pumpWidget(
+      _wrap(const LfgQueueStatusRow(view: LfgListView.empty)),
+    );
+
+    expect(find.byKey(const Key('lfg-queue-empty')), findsOneWidget);
+    expect(find.text(kLfgListEmptyCopy), findsOneWidget);
+    expect(find.text(kLfgListEmptyHint), findsOneWidget);
+    expect(find.byKey(const Key('lfg-queue-empty-hint')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byKey(const Key('lfg-queue-retry')), findsNothing);
+  });
+
+  testWidgets('error copy offers Retry and never a spinner', (tester) async {
+    var retried = false;
+    await tester.pumpWidget(
+      _wrap(
+        LfgQueueStatusRow(
+          view: const LfgListView(
+            phase: LfgListPhase.error,
+            error: 'offline',
+          ),
+          onRetry: () => retried = true,
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('lfg-queue-error')), findsOneWidget);
+    expect(find.text(kLfgListErrorCopy), findsOneWidget);
+    expect(find.text(kLfgListErrorHint), findsOneWidget);
+    expect(find.byKey(const Key('lfg-queue-retry')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.tap(find.byKey(const Key('lfg-queue-retry')));
+    await tester.pump();
+    expect(retried, isTrue);
+  });
+
+  testWidgets('stale copy keeps last known queue and Retry', (tester) async {
+    var retried = false;
+    await tester.pumpWidget(
+      _wrap(
+        LfgQueueStatusRow(
+          view: const LfgListView(
+            phase: LfgListPhase.stale,
+            lookingUserIds: ['u-look'],
+          ),
+          onRetry: () => retried = true,
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('lfg-queue-stale')), findsOneWidget);
+    expect(find.text(kLfgListStaleCopy), findsOneWidget);
+    expect(find.text(kLfgListStaleHint), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    expect(retried, isTrue);
+  });
+
+  testWidgets('reconnecting is copy, not a dead spinner', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        const LfgQueueStatusRow(
+          view: LfgListView(phase: LfgListPhase.loading),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('lfg-queue-reconnecting')), findsOneWidget);
+    expect(find.text(kLfgListReconnectingCopy), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byKey(const Key('lfg-queue-retry')), findsNothing);
+  });
+}

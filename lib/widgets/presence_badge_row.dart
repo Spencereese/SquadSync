@@ -16,6 +16,12 @@ Color presenceBadgeColor(PresenceBadgeKind kind) {
       return Colors.cyanAccent;
     case PresenceBadgeKind.inLobby:
       return Colors.orangeAccent;
+    case PresenceBadgeKind.offline:
+      return Colors.blueGrey;
+    case PresenceBadgeKind.stale:
+      return Colors.amberAccent;
+    case PresenceBadgeKind.reconnecting:
+      return Colors.lightBlueAccent;
   }
 }
 
@@ -112,13 +118,16 @@ class _PresenceBadgesHostState extends ConsumerState<PresenceBadgesHost>
   }
 
   Future<void> _refresh() async {
-    await refreshPresenceSources();
+    await refreshPresenceSources(force: true);
     if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final lobbyState = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
+    final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
+    final lobbyState = lobbyAsync.valueOrNull;
+    final isLoading = lobbyAsync.isLoading && lobbyState == null;
+    final error = lobbyAsync.hasError ? lobbyAsync.error : null;
     return ListenableBuilder(
       listenable: Listenable.merge([
         MatchmakingQueueTracker.instance,
@@ -128,6 +137,8 @@ class _PresenceBadgesHostState extends ConsumerState<PresenceBadgesHost>
         final badges = resolvePresenceBadgesFromTrackers(
           userId: widget.userId,
           lobbyState: lobbyState,
+          isLoading: isLoading,
+          error: error,
         );
         if (badges.isEmpty) return const SizedBox.shrink();
         return PresenceBadgeRow(badges: badges, compact: widget.compact);

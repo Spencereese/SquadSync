@@ -66,7 +66,10 @@ class MemberWidgets {
               ),
             );
           },
-          loading: () => const CircularProgressIndicator(),
+          loading: () => const Text(
+            'Reconnecting',
+            key: Key('member-status-reconnecting'),
+          ),
           error: (e, s) => Text('Error loading squad: $e'),
         );
   }
@@ -115,7 +118,10 @@ class MemberWidgets {
               ],
             );
           },
-          loading: () => const CircularProgressIndicator(),
+          loading: () => const Text(
+            'Reconnecting',
+            key: Key('member-status-reconnecting'),
+          ),
           error: (e, s) => Text('Error loading squad: $e'),
         );
   }

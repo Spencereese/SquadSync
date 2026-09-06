@@ -358,6 +358,159 @@ void main() {
     });
   });
 
+  group('resolvePresenceHealth', () {
+    test('loading is reconnecting even with live signals', () {
+      expect(
+        resolvePresenceHealth(isLoading: true, hasLiveSignals: true),
+        PresenceHealth.reconnecting,
+      );
+      expect(
+        resolvePresenceHealth(isLoading: true, hasLiveSignals: false),
+        PresenceHealth.reconnecting,
+      );
+    });
+
+    test('settled empty is offline', () {
+      expect(
+        resolvePresenceHealth(isLoading: false, hasLiveSignals: false),
+        PresenceHealth.offline,
+      );
+    });
+
+    test('device offline with no signals is offline', () {
+      expect(
+        resolvePresenceHealth(
+          isLoading: false,
+          isOffline: true,
+          hasLiveSignals: false,
+        ),
+        PresenceHealth.offline,
+      );
+    });
+
+    test('error or stale keeps last signals as stale, not a spinner', () {
+      expect(
+        resolvePresenceHealth(
+          isLoading: false,
+          error: 'timeout',
+          hasLiveSignals: true,
+        ),
+        PresenceHealth.stale,
+      );
+      expect(
+        resolvePresenceHealth(
+          isLoading: false,
+          error: 'timeout',
+          hasLiveSignals: false,
+        ),
+        PresenceHealth.stale,
+      );
+      expect(
+        resolvePresenceHealth(
+          isLoading: false,
+          isStale: true,
+          hasLiveSignals: true,
+        ),
+        PresenceHealth.stale,
+      );
+      expect(
+        resolvePresenceHealth(
+          isLoading: false,
+          isOffline: true,
+          hasLiveSignals: true,
+        ),
+        PresenceHealth.stale,
+      );
+    });
+
+    test('live signals with no error stay live', () {
+      expect(
+        resolvePresenceHealth(isLoading: false, hasLiveSignals: true),
+        PresenceHealth.live,
+      );
+    });
+  });
+
+  group('presence health chips', () {
+    test('offline / stale / reconnecting labels and keys', () {
+      expect(presenceBadgeLabel(PresenceBadgeKind.offline), 'Offline');
+      expect(presenceBadgeLabel(PresenceBadgeKind.stale), 'Stale');
+      expect(
+        presenceBadgeLabel(PresenceBadgeKind.reconnecting),
+        'Reconnecting',
+      );
+      expect(presenceBadgeKey(PresenceBadgeKind.offline), 'presence-badge-offline');
+      expect(presenceBadgeKey(PresenceBadgeKind.stale), 'presence-badge-stale');
+      expect(
+        presenceBadgeKey(PresenceBadgeKind.reconnecting),
+        'presence-badge-reconnecting',
+      );
+    });
+
+    test('idle uid maps to Offline, not an empty strip', () {
+      final badges = resolvePresenceBadgesFromTrackers(
+        userId: 'u-idle',
+        lfg: lfg,
+        onStore: onStore,
+      );
+      expect(badges.hasLiveSignals, isFalse);
+      expect(badges.health, PresenceHealth.offline);
+      expect(badges.kinds, [PresenceBadgeKind.offline]);
+      expect(badges.isEmpty, isFalse);
+    });
+
+    test('hydrate error maps idle presence to Stale', () {
+      final badges = resolvePresenceBadgesFromTrackers(
+        userId: 'u-idle',
+        lfg: lfg,
+        onStore: onStore,
+        error: 'offline',
+      );
+      expect(badges.health, PresenceHealth.stale);
+      expect(badges.kinds, [PresenceBadgeKind.stale]);
+    });
+
+    test('On survives stale overlay in product order', () {
+      onStore.markOn('u-on');
+      final badges = resolvePresenceBadgesFromTrackers(
+        userId: 'u-on',
+        lfg: lfg,
+        onStore: onStore,
+        isStale: true,
+      );
+      expect(badges.kinds, [
+        PresenceBadgeKind.on,
+        PresenceBadgeKind.stale,
+      ]);
+    });
+
+    test('loading maps to Reconnecting without dropping On', () {
+      onStore.markOn('u-on');
+      final badges = resolvePresenceBadgesFromTrackers(
+        userId: 'u-on',
+        lfg: lfg,
+        onStore: onStore,
+        isLoading: true,
+      );
+      expect(badges.kinds, [
+        PresenceBadgeKind.on,
+        PresenceBadgeKind.reconnecting,
+      ]);
+    });
+
+    test('empty uid stays empty so the strip does not fake Offline', () {
+      expect(
+        resolvePresenceBadgesFromTrackers(
+          userId: null,
+          lfg: lfg,
+          onStore: onStore,
+          isLoading: true,
+        ),
+        PresenceBadges.empty,
+      );
+    });
+  });
+
   group('presenceUserIdFrom', () {
     test('prefers uid then id then friend_uid', () {
       expect(presenceUserIdFrom({'uid': 'a', 'id': 'b'}), 'a');

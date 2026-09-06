@@ -994,17 +994,62 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
-  // TODO: Implement addToPeacock method (alias for addToPeacockQueue)
+  /// Friend-visible add: [addToPeacockQueue] with the open lobby's gameName.
   Future<void> addToPeacock(String userId) async {
-    await addToPeacockQueue(userId, ''); // TODO: Pass proper game name
+    await addToPeacockQueue(userId, _currentPeacockGameName() ?? '');
   }
 
-  // TODO: Implement removeFromPeacock method (alias for removeFromPeacockQueue)
-  Future<void> removeFromPeacock(String gameName, [String? userId]) async {
-    // TODO: Implement with game context
-    if (userId != null) {
-      await removeFromPeacockQueue(userId);
-    }
+  /// Friend-visible remove. First arg is the member uid, not a game name.
+  Future<void> removeFromPeacock(String userId) async {
+    await removeFromPeacockQueue(userId);
+  }
+
+  /// Friend-visible Accept. Single [reducePeacockAssignment] via assignSpot.
+  Future<void> acceptPeacock({
+    required String userId,
+    required String lobbyId,
+    required String gameName,
+    String? notificationId,
+  }) {
+    return assignPeacockSpot(
+      userId: userId,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      notificationId: notificationId,
+    );
+  }
+
+  Future<void> acceptPeacockSpot({
+    required String userId,
+    required String lobbyId,
+    required String gameName,
+    String? notificationId,
+  }) {
+    return acceptPeacock(
+      userId: userId,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      notificationId: notificationId,
+    );
+  }
+
+  /// Friend-visible Decline. Single expire reduce.
+  void declinePeacock(String userId) {
+    expirePeacockAssignment(userId);
+  }
+
+  void declinePeacockSpot(String userId) {
+    declinePeacock(userId);
+  }
+
+  String? _currentPeacockGameName() {
+    final current = state.valueOrNull;
+    if (current == null) return null;
+    final fromLobby = current.currentLobby?.gameName.trim();
+    if (fromLobby != null && fromLobby.isNotEmpty) return fromLobby;
+    final fromGame = (current.currentGame?['name'] as String?)?.trim();
+    if (fromGame != null && fromGame.isNotEmpty) return fromGame;
+    return null;
   }
 
   // Computed properties for game-scoped data
@@ -2129,9 +2174,14 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
+  /// Friend-visible Claim seat. Assigns via the peacock machine, not joinQueue.
   Future<void> claimPeacockSpot(
       String lobbyId, String userId, String gameName) async {
-    await addToPeacockQueue(userId, gameName);
+    await assignPeacockSpot(
+      userId: userId,
+      lobbyId: lobbyId,
+      gameName: gameName,
+    );
   }
 
   Future<void> lockPeacockSpot(

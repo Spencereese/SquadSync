@@ -25,6 +25,99 @@ String? chatIdOrNull(Object? value) {
   return id.isEmpty ? null : id;
 }
 
+/// Sole lib writers of the active lobby↔thread bind. ChatScreen may call
+/// them; lobby_notifier / chat_info / message_bubble must not.
+const kActiveLobbyChatBindWriterPaths = {
+  'lib/core/lobby_chat_bind.dart',
+  'lib/presentation/notifiers/chat_notifier.dart',
+};
+
+enum LobbyChatBindAction { teardown, attach }
+
+class LobbyChatBindStep {
+  const LobbyChatBindStep({
+    required this.action,
+    required this.lobbyId,
+    required this.chatGroupId,
+  });
+
+  final LobbyChatBindAction action;
+  final String lobbyId;
+  final String chatGroupId;
+}
+
+/// Active Tonight lobby ↔ Squad Chat thread. Slice A `chat_group_id` wins
+/// over leftover history from the previous lobby.
+class ActiveLobbyChatBind {
+  const ActiveLobbyChatBind({
+    this.lobbyId,
+    this.chatGroupId,
+    this.tornDownChatGroupId,
+    this.steps = const [],
+  });
+
+  static const empty = ActiveLobbyChatBind();
+
+  final String? lobbyId;
+  final String? chatGroupId;
+  final String? tornDownChatGroupId;
+  final List<LobbyChatBindStep> steps;
+
+  bool get isBound => chatIdOrNull(chatGroupId) != null;
+}
+
+/// Tear down the previous Squad Chat thread, then attach the next lobby's
+/// Slice A `chat_group_id`. Same lobby + same thread is a no-op.
+ActiveLobbyChatBind switchActiveLobbyChatBind({
+  required ActiveLobbyChatBind current,
+  required String nextLobbyId,
+  required String nextLobbyChatGroupId,
+  Map<String, int> previousHistoryCounts = const {},
+}) {
+  // Leftover history never keeps the prior thread; Slice A id wins.
+  if (previousHistoryCounts.isNotEmpty) {
+    debugPrint(
+      'Lobby chat bind ignores leftover history for $nextLobbyId',
+    );
+  }
+
+  final currentLobbyId = chatIdOrNull(current.lobbyId);
+  final currentThread = chatIdOrNull(current.chatGroupId);
+  final nextThread = chatIdOrNull(nextLobbyChatGroupId);
+
+  if (currentLobbyId == nextLobbyId && currentThread == nextThread) {
+    return ActiveLobbyChatBind(
+      lobbyId: current.lobbyId,
+      chatGroupId: current.chatGroupId,
+    );
+  }
+
+  final steps = <LobbyChatBindStep>[];
+  String? tornDown;
+  if (currentThread != null) {
+    tornDown = currentThread;
+    steps.add(LobbyChatBindStep(
+      action: LobbyChatBindAction.teardown,
+      lobbyId: currentLobbyId ?? current.lobbyId ?? '',
+      chatGroupId: currentThread,
+    ));
+  }
+  if (nextThread != null) {
+    steps.add(LobbyChatBindStep(
+      action: LobbyChatBindAction.attach,
+      lobbyId: nextLobbyId,
+      chatGroupId: nextThread,
+    ));
+  }
+
+  return ActiveLobbyChatBind(
+    lobbyId: nextLobbyId,
+    chatGroupId: nextLobbyChatGroupId,
+    tornDownChatGroupId: tornDown,
+    steps: steps,
+  );
+}
+
 /// Collect probe / lobby / sibling ids. Does not invent ids.
 Set<String> collectOpenChatCandidates({
   String? probeId,

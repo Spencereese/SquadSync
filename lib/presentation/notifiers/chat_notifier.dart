@@ -13,6 +13,7 @@ import 'package:squad_sync/core/realtime_subscribe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/chat_list_loader.dart';
 import '../../core/chat_surface.dart';
+import '../../core/lobby_chat_bind.dart';
 import '../../core/notification_hygiene.dart';
 import '../../services/supabase_service.dart';
 import '../../services/auth_service_supabase.dart';
@@ -74,12 +75,66 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   String? _currentChatGroupId;
   int _initializeChatEpoch = 0;
   ChatType? _currentChatType;
+  ActiveLobbyChatBind _activeLobbyChatBind = ActiveLobbyChatBind.empty;
+
+  /// Sole notifier writer of the Tonight lobby ↔ Squad Chat bind.
+  ActiveLobbyChatBind get activeLobbyChatBind => _activeLobbyChatBind;
+
+  static bool get _isFlutterBindingReady {
+    try {
+      WidgetsBinding.instance;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Unbind the previous thread, bind [lobbyChatGroupId], then initialize
+  /// that lobby's chat. Same lobby + same thread is a no-op.
+  void bindActiveLobbyChat({
+    required String lobbyId,
+    required String lobbyChatGroupId,
+    Map<String, int> previousHistoryCounts = const {},
+  }) {
+    _activeLobbyChatBind = switchActiveLobbyChatBind(
+      current: _activeLobbyChatBind,
+      nextLobbyId: lobbyId,
+      nextLobbyChatGroupId: lobbyChatGroupId,
+      previousHistoryCounts: previousHistoryCounts,
+    );
+
+    final attachId = chatIdOrNull(_activeLobbyChatBind.chatGroupId);
+    final attached = _activeLobbyChatBind.steps
+        .any((step) => step.action == LobbyChatBindAction.attach);
+    if (attachId != null && attached) {
+      unawaited(_initializeBoundLobbyChat(attachId));
+      return;
+    }
+    if (_activeLobbyChatBind.tornDownChatGroupId != null && attachId == null) {
+      unawaited(_disposePresenceChannel());
+    }
+  }
+
+  Future<void> _initializeBoundLobbyChat(String chatGroupId) async {
+    try {
+      await initializeChat(chatGroupId, _currentChatType ?? ChatType.squad);
+    } catch (e) {
+      debugPrint('ChatNotifier: lobby chat bind init skipped: $e');
+    }
+  }
 
   @override
   Future<ChatState> build() async {
     try {
-      // Initialize offline-first capabilities
-      await initializeOfflineFirst();
+      // Initialize offline-first capabilities. Missing Flutter binding
+      // (notifier unit tests) must not start connectivity listen.
+      if (_isFlutterBindingReady) {
+        try {
+          await initializeOfflineFirst();
+        } catch (e) {
+          debugPrint('ChatNotifier: offline-first skipped: $e');
+        }
+      }
 
       // Listen to MessageNotifier updates and sync to ChatState
       ref.listen<AsyncValue<MessageState>>(messageNotifierProvider,

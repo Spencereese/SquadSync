@@ -132,6 +132,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   bool get isDM => widget.chatType == ChatType.dm;
 
   String? get effectiveChatGroupId {
+    final boundId = chatIdOrNull(
+      ref.read(cn.chatNotifierProvider.notifier).activeLobbyChatBind.chatGroupId,
+    );
+    if (boundId != null) return boundId;
     return resolveActiveChatGroupId(
       widgetChatGroupId: widget.chatGroupId,
       isSquad: widget.chatType == ChatType.squad,
@@ -210,6 +214,10 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       });
 
       final lobbyId = snapshot.lobbyId ?? currentLobby?.id ?? probeId;
+      ref.read(cn.chatNotifierProvider.notifier).bindActiveLobbyChat(
+            lobbyId: lobbyId,
+            lobbyChatGroupId: lobbyChatId ?? '',
+          );
       final resolved = resolveActiveChatGroupId(
         widgetChatGroupId: widget.chatGroupId,
         isSquad: widget.chatType == ChatType.squad,
@@ -245,17 +253,21 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   void _syncActiveChatThread({String? selectedLobbyId}) {
     final notifier = _notificationNotifier;
     if (notifier == null) return;
-    final id = resolveActiveChatGroupId(
-      widgetChatGroupId: widget.chatGroupId,
-      isSquad: widget.chatType == ChatType.squad,
-      selectedLobbyId: selectedLobbyId ??
-          (widget.chatType == ChatType.squad
-              ? _cachedSquadState?.selectedLobbyId
-              : null),
-      lobbyChatGroupId: _boundLobbyChatGroupId,
-      historyCounts: _threadHistoryCounts,
-      extraChatIds: _threadBindCandidates,
+    final boundId = chatIdOrNull(
+      ref.read(cn.chatNotifierProvider.notifier).activeLobbyChatBind.chatGroupId,
     );
+    final id = boundId ??
+        resolveActiveChatGroupId(
+          widgetChatGroupId: widget.chatGroupId,
+          isSquad: widget.chatType == ChatType.squad,
+          selectedLobbyId: selectedLobbyId ??
+              (widget.chatType == ChatType.squad
+                  ? _cachedSquadState?.selectedLobbyId
+                  : null),
+          lobbyChatGroupId: _boundLobbyChatGroupId,
+          historyCounts: _threadHistoryCounts,
+          extraChatIds: _threadBindCandidates,
+        );
     final isNewId = id != null && id != _registeredActiveChatGroupId;
     if (isNewId) {
       final previousId = _registeredActiveChatGroupId;
@@ -678,6 +690,13 @@ class ChatScreenState extends ConsumerState<ChatScreen>
           _squadLoading = next.isLoading && next.valueOrNull == null;
         });
         final squad = next.valueOrNull;
+        final lobby = squad?.currentLobby;
+        if (lobby != null && squad!.selectedLobbyId == lobby.id) {
+          ref.read(cn.chatNotifierProvider.notifier).bindActiveLobbyChat(
+                lobbyId: lobby.id,
+                lobbyChatGroupId: lobby.chatGroupId ?? '',
+              );
+        }
         if (squad != null && (!_needsLobbyBind || _lobbyBindComplete)) {
           _syncActiveChatThread(selectedLobbyId: squad.selectedLobbyId);
         }

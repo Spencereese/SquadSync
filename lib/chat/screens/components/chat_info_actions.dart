@@ -84,14 +84,15 @@ String resolveInviteLobbyId({
 
 /// Primary Tonight block: I am on / Looking for Squad / Invite.
 ///
-/// [isLoading] / [error] / [isEmpty] come from existing lobby [AsyncValue]
-/// (and whether a lobby id is present). No new fetch.
+/// [isLoading] / [error] / [isEmpty] / [isOffline] come from existing lobby
+/// [AsyncValue] (and whether a lobby id is present). No new fetch.
 class TonightActionsBlock extends StatelessWidget {
   const TonightActionsBlock({
     super.key,
     required this.children,
     this.isLoading = false,
     this.isEmpty = false,
+    this.isOffline = false,
     this.error,
     this.onRetry,
     this.onEmptyAction,
@@ -101,6 +102,7 @@ class TonightActionsBlock extends StatelessWidget {
   final List<Widget> children;
   final bool isLoading;
   final bool isEmpty;
+  final bool isOffline;
   final Object? error;
   final VoidCallback? onRetry;
   final VoidCallback? onEmptyAction;
@@ -110,6 +112,7 @@ class TonightActionsBlock extends StatelessWidget {
         isLoading: isLoading,
         error: error,
         isEmpty: isEmpty,
+        isOffline: isOffline,
       );
 
   @override
@@ -134,6 +137,7 @@ class TonightActionsBlock extends StatelessWidget {
             kind: LobbySurfaceKind.tonight,
             phase: surfacePhase,
             error: error,
+            isOffline: isOffline,
             onRetry: onRetry,
             onAction:
                 surfacePhase == LobbySurfacePhase.empty ? onEmptyAction : null,

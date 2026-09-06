@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_actions.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
@@ -66,7 +67,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           TonightActionsBlock(
-            error: 'offline',
+            error: 'denied',
             onRetry: () => retried = true,
             children: const [],
           ),
@@ -76,15 +77,62 @@ void main() {
       expect(find.byKey(const Key('tonight-error')), findsOneWidget);
       expect(find.text("Couldn't load tonight"), findsOneWidget);
       expect(find.text(kLobbySurfaceErrorHint), findsOneWidget);
-      expect(find.text('offline'), findsOneWidget);
+      expect(find.text('denied'), findsOneWidget);
       expect(find.byKey(const Key('tonight-retry')), findsOneWidget);
       expect(find.text(kLobbySurfaceRetryLabel), findsOneWidget);
       expect(find.byKey(const Key('tonight-empty')), findsNothing);
       expect(find.byKey(const Key('tonight-loading')), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
 
       await tester.tap(find.byKey(const Key('tonight-retry')));
       await tester.pump();
       expect(retried, isTrue);
+    });
+
+    testWidgets('offline is error + Retry, not empty or a hung spinner',
+        (tester) async {
+      var retried = false;
+      await tester.pumpWidget(
+        _wrap(
+          TonightActionsBlock(
+            isOffline: true,
+            onRetry: () => retried = true,
+            children: const [],
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('tonight-error')), findsOneWidget);
+      expect(find.text(kLobbySurfaceOfflineCopy), findsOneWidget);
+      expect(find.text(kLobbySurfaceErrorHint), findsOneWidget);
+      expect(find.byKey(const Key('tonight-retry')), findsOneWidget);
+      expect(find.text(kLobbySurfaceRetryLabel), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byKey(const Key('tonight-empty')), findsNothing);
+      expect(find.byKey(const Key('tonight-loading')), findsNothing);
+      expect(find.text("I'm on now"), findsNothing);
+
+      await tester.tap(find.byKey(const Key('tonight-retry')));
+      await tester.pump();
+      expect(retried, isTrue);
+    });
+
+    testWidgets('offline load error copy stays arm length without dumping',
+        (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          TonightActionsBlock(
+            error: Exception('SocketException: Failed host lookup'),
+            onRetry: () {},
+            children: const [],
+          ),
+        ),
+      );
+
+      expect(find.text(kLobbySurfaceOfflineCopy), findsOneWidget);
+      expect(find.text(kLobbySurfaceRetryLabel), findsOneWidget);
+      expect(find.textContaining('SocketException'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
     testWidgets('empty CTA is tappable at arm length', (tester) async {
@@ -121,7 +169,15 @@ void main() {
         ),
         kLobbySurfaceErrorHint,
       );
-      expect(lobbySurfaceErrorDetail('offline'), 'offline');
+      expect(
+        lobbySurfaceMessage(
+          LobbySurfaceKind.tonight,
+          LobbySurfacePhase.error,
+          isOffline: true,
+        ),
+        kLobbySurfaceOfflineCopy,
+      );
+      expect(lobbySurfaceErrorDetail('timeout'), 'timeout');
       expect(lobbySurfaceErrorDetail(Exception('denied')), 'denied');
     });
 
@@ -142,6 +198,136 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('resolveLobbySurfacePhase', () {
+    test('in-flight with no error is loading, not a settled empty', () {
+      expect(
+        resolveLobbySurfacePhase(isLoading: true, isEmpty: true),
+        LobbySurfacePhase.loading,
+      );
+    });
+
+    test('never-settled idle is empty, not a dead spinner', () {
+      expect(
+        resolveLobbySurfacePhase(isLoading: false, isEmpty: true),
+        LobbySurfacePhase.empty,
+      );
+    });
+
+    test('error with no lobby is error', () {
+      expect(
+        resolveLobbySurfacePhase(
+          isLoading: false,
+          error: 'denied',
+          isEmpty: true,
+        ),
+        LobbySurfacePhase.error,
+      );
+    });
+
+    test('offline with no lobby is error, not empty', () {
+      expect(
+        resolveLobbySurfacePhase(
+          isLoading: false,
+          isEmpty: true,
+          isOffline: true,
+        ),
+        LobbySurfacePhase.error,
+      );
+      expect(
+        resolveLobbySurfacePhase(
+          isLoading: true,
+          isEmpty: true,
+          isOffline: true,
+        ),
+        LobbySurfacePhase.error,
+      );
+    });
+
+    test('load failure wins over a hung spinner', () {
+      expect(
+        resolveLobbySurfacePhase(
+          isLoading: true,
+          error: 'timeout',
+        ),
+        LobbySurfacePhase.error,
+      );
+    });
+  });
+
+  group('lobbySurfacePhaseFromAsync', () {
+    Lobby _lobby() => Lobby.create(
+          name: 'Squad',
+          gameName: 'Warzone',
+          maxSpots: 4,
+          createdBy: 'u1',
+        ).copyWith(id: 'lobby-1');
+
+    test('loading with no value is loading, not empty', () {
+      expect(
+        lobbySurfacePhaseFromAsync(
+          const AsyncLoading<LobbyState>(),
+          isEmpty: tonightLobbyMissing,
+        ),
+        LobbySurfacePhase.loading,
+      );
+    });
+
+    test('settled lobby without an id is empty', () {
+      expect(
+        lobbySurfacePhaseFromAsync(
+          AsyncData(LobbyState.initial()),
+          isEmpty: tonightLobbyMissing,
+        ),
+        LobbySurfacePhase.empty,
+      );
+    });
+
+    test('offline with no lobby is error, not empty', () {
+      expect(
+        lobbySurfacePhaseFromAsync(
+          AsyncError<LobbyState>('offline', StackTrace.empty),
+          isEmpty: tonightLobbyMissing,
+        ),
+        LobbySurfacePhase.error,
+      );
+      expect(
+        lobbySurfacePhaseFromAsync(
+          AsyncData(LobbyState.initial()),
+          isEmpty: tonightLobbyMissing,
+          isOffline: true,
+        ),
+        LobbySurfacePhase.error,
+      );
+    });
+
+    test('cached lobby stays data when offline, not empty', () {
+      expect(
+        lobbySurfacePhaseFromAsync(
+          AsyncData(
+            LobbyState.initial().copyWith(
+              selectedLobbyId: 'lobby-1',
+              currentLobby: _lobby(),
+            ),
+          ),
+          isEmpty: tonightLobbyMissing,
+          isOffline: true,
+        ),
+        LobbySurfacePhase.data,
+      );
+    });
+
+    test('lobbySurfaceIsOfflineError matches network drops', () {
+      expect(lobbySurfaceIsOfflineError('offline'), isTrue);
+      expect(
+        lobbySurfaceIsOfflineError(
+            Exception('SocketException: Failed host lookup')),
+        isTrue,
+      );
+      expect(lobbySurfaceIsOfflineError('denied'), isFalse);
+      expect(lobbySurfaceIsOfflineError(null), isFalse);
     });
   });
 

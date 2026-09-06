@@ -14,6 +14,7 @@ const kTonightEmptyHint =
     "Pick a lobby to ping who's on, look for a squad, or invite.";
 
 const kLobbySurfaceErrorHint = 'Check your connection and try again.';
+const kLobbySurfaceOfflineCopy = "You're offline";
 
 /// Arm's-length type on empty / error so copy reads from the couch.
 const kLobbySurfaceTitleSize = 18.0;
@@ -22,14 +23,20 @@ const kLobbySurfaceHintSize = 14.0;
 const kLobbySurfaceCompactSize = 15.0;
 const kLobbySurfaceActionMinHeight = 44.0;
 
-/// Map existing [AsyncValue] + empty predicate. No new fetch.
+/// Empty / error / offline for Tonight (and compact peacock/lock chips).
+///
+/// Loading only while a fetch is in flight with no error — never a hung
+/// spinner. Offline or load failure is error + Retry, not empty.
 LobbySurfacePhase resolveLobbySurfacePhase({
   required bool isLoading,
   Object? error,
   bool isEmpty = false,
+  bool isOffline = false,
 }) {
-  if (isLoading) return LobbySurfacePhase.loading;
-  if (error != null) return LobbySurfacePhase.error;
+  if (isLoading && error == null && !isOffline) {
+    return LobbySurfacePhase.loading;
+  }
+  if (error != null || isOffline) return LobbySurfacePhase.error;
   if (isEmpty) return LobbySurfacePhase.empty;
   return LobbySurfacePhase.data;
 }
@@ -40,17 +47,34 @@ bool tonightLobbyMissing(LobbyState? state) {
   return id == null || id.isEmpty;
 }
 
+bool lobbySurfaceIsOfflineError(Object? error) {
+  if (error == null) return false;
+  final text = error.toString().toLowerCase();
+  return text.contains('socket') ||
+      text.contains('offline') ||
+      text.contains('network') ||
+      text.contains('failed host lookup') ||
+      text.contains('connection refused') ||
+      text.contains('clientexception');
+}
+
+/// Cached lobby stays data (Tonight buttons still work). Missing lobby +
+/// offline / load fail is error, not empty.
 LobbySurfacePhase lobbySurfacePhaseFromAsync(
   AsyncValue<LobbyState> value, {
   bool Function(LobbyState state)? isEmpty,
+  bool isOffline = false,
 }) {
-  if (lobbyAsyncIsLoading(value)) return LobbySurfacePhase.loading;
-  if (value.hasError) return LobbySurfacePhase.error;
+  final error = lobbyAsyncError(value);
+  final offline = isOffline || lobbySurfaceIsOfflineError(error);
   final state = value.valueOrNull;
-  if (state == null) return LobbySurfacePhase.empty;
-  return (isEmpty?.call(state) ?? false)
-      ? LobbySurfacePhase.empty
-      : LobbySurfacePhase.data;
+  final missing = state == null || (isEmpty?.call(state) ?? false);
+  if (!missing) return LobbySurfacePhase.data;
+  if (lobbyAsyncIsLoading(value) && error == null && !offline) {
+    return LobbySurfacePhase.loading;
+  }
+  if (error != null || offline) return LobbySurfacePhase.error;
+  return LobbySurfacePhase.empty;
 }
 
 Object? lobbyAsyncError(AsyncValue<dynamic> value) =>
@@ -149,8 +173,12 @@ Key lobbySurfaceDetailKey(LobbySurfaceKind kind) {
 
 String lobbySurfaceMessage(
   LobbySurfaceKind kind,
-  LobbySurfacePhase phase,
-) {
+  LobbySurfacePhase phase, {
+  bool isOffline = false,
+}) {
+  if (phase == LobbySurfacePhase.error && isOffline) {
+    return kLobbySurfaceOfflineCopy;
+  }
   switch (kind) {
     case LobbySurfaceKind.tonight:
       switch (phase) {
@@ -190,8 +218,9 @@ String lobbySurfaceMessage(
 
 String? lobbySurfaceHint(
   LobbySurfaceKind kind,
-  LobbySurfacePhase phase,
-) {
+  LobbySurfacePhase phase, {
+  bool isOffline = false,
+}) {
   switch (phase) {
     case LobbySurfacePhase.empty:
       return kind == LobbySurfaceKind.tonight ? kTonightEmptyHint : null;
@@ -221,6 +250,7 @@ class LobbySurfaceFeedback extends StatelessWidget {
     required this.kind,
     required this.phase,
     this.error,
+    this.isOffline = false,
     this.compact = false,
     this.message,
     this.hint,
@@ -232,6 +262,7 @@ class LobbySurfaceFeedback extends StatelessWidget {
   final LobbySurfaceKind kind;
   final LobbySurfacePhase phase;
   final Object? error;
+  final bool isOffline;
   final bool compact;
   final String? message;
   final String? hint;
@@ -264,9 +295,12 @@ class LobbySurfaceFeedback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final text = message ?? lobbySurfaceMessage(kind, phase);
-    final resolvedHint = hint ?? lobbySurfaceHint(kind, phase);
-    final detail = phase == LobbySurfacePhase.error
+    final offline = isOffline || lobbySurfaceIsOfflineError(error);
+    final text =
+        message ?? lobbySurfaceMessage(kind, phase, isOffline: offline);
+    final resolvedHint =
+        hint ?? lobbySurfaceHint(kind, phase, isOffline: offline);
+    final detail = phase == LobbySurfacePhase.error && !offline
         ? lobbySurfaceErrorDetail(error)
         : null;
     final key = lobbySurfaceKey(kind, phase);
@@ -437,7 +471,8 @@ class _CompactFeedback extends StatelessWidget {
       ),
     );
     final body = ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: kLobbySurfaceActionMinHeight),
+      constraints:
+          const BoxConstraints(minHeight: kLobbySurfaceActionMinHeight),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Row(

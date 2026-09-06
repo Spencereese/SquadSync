@@ -24,11 +24,13 @@ class LobbyControls extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
+    final tonightError = lobbyAsyncError(lobbyAsync);
+    final tonightOffline = lobbySurfaceIsOfflineError(tonightError);
     final tonightPhase = lobbySurfacePhaseFromAsync(
       lobbyAsync,
       isEmpty: tonightLobbyMissing,
+      isOffline: tonightOffline,
     );
-    final tonightError = lobbyAsyncError(lobbyAsync);
     final tonightChildren = tonightPhase == LobbySurfacePhase.data
         ? tonightStripChildren(
             onNow: const _OnNowButton(),
@@ -53,7 +55,10 @@ class LobbyControls extends ConsumerWidget {
           TonightActionsBlock(
             isLoading: tonightPhase == LobbySurfacePhase.loading,
             isEmpty: tonightPhase == LobbySurfacePhase.empty,
-            error: tonightError,
+            isOffline:
+                tonightPhase == LobbySurfacePhase.error && tonightOffline,
+            error:
+                tonightPhase == LobbySurfacePhase.error ? tonightError : null,
             onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
             children: tonightChildren,
           ),

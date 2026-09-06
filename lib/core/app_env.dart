@@ -62,6 +62,15 @@ class AppEnv {
   static bool get isAgoraCertificateConfigured => agoraAppCertificate != null;
   static bool get isXaiConfigured => xaiApiKey != null;
 
+  /// Friends IPA shell. Unset / empty defaults on. `false` / `0` keeps
+  /// the prior full root (Discovery, join, stats, clips).
+  static bool get friendsMode {
+    final raw = get('FRIENDS_MODE')?.trim();
+    if (raw == null || raw.isEmpty) return true;
+    final normalized = raw.toLowerCase();
+    return normalized != 'false' && normalized != '0';
+  }
+
   /// Secrets the Friends IPA must tolerate unset at cold start.
   static const clientSecretKeys = <String>[
     'TWITCH_CLIENT_SECRET',
@@ -126,6 +135,7 @@ class AppEnv {
       'AGORA_APP_ID': String.fromEnvironment('AGORA_APP_ID'),
       'AGORA_APP_CERTIFICATE': String.fromEnvironment('AGORA_APP_CERTIFICATE'),
       'XAI_API_KEY': String.fromEnvironment('XAI_API_KEY'),
+      'FRIENDS_MODE': String.fromEnvironment('FRIENDS_MODE'),
     };
     return {
       for (final entry in raw.entries)

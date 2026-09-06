@@ -75,6 +75,86 @@ class SquadRouteArgs {
   }
 }
 
+/// Root tab for the friends / full shell. Router + nav share this list.
+class FriendsRootTab {
+  const FriendsRootTab({required this.label, required this.route});
+
+  final String label;
+  final String route;
+}
+
+/// Surfaces that stay on disk but are gated off the friends root.
+enum FriendsGatedSurface {
+  discovery,
+  constitution,
+  grok,
+  pollCreation,
+  publicLobbyBrowser,
+}
+
+const _friendsRootTabs = <FriendsRootTab>[
+  FriendsRootTab(label: 'Tonight/Squad', route: '/squad'),
+  FriendsRootTab(label: 'Chat', route: '/chat'),
+  FriendsRootTab(label: 'You', route: '/profile'),
+];
+
+const _fullRootTabs = <FriendsRootTab>[
+  FriendsRootTab(label: 'Home', route: '/'),
+  FriendsRootTab(label: 'Discover', route: '/discover-swipe'),
+  FriendsRootTab(label: 'Tonight/Squad', route: '/squad'),
+  FriendsRootTab(label: 'Chat', route: '/chat'),
+  FriendsRootTab(label: 'You', route: '/profile'),
+];
+
+List<FriendsRootTab> friendsRootTabs({required bool friendsMode}) {
+  return friendsMode ? _friendsRootTabs : _fullRootTabs;
+}
+
+bool friendsGatesSurface(
+  FriendsGatedSurface surface, {
+  required bool friendsMode,
+}) {
+  return friendsMode;
+}
+
+/// Friends root: Tonight/Squad, Chat (incl. thread), You, plus `/setup`.
+/// Full shell allows every prior location.
+bool friendsRootAllowsLocation(
+  String location, {
+  required bool friendsMode,
+}) {
+  if (!friendsMode) return true;
+  final path = Uri.tryParse(location)?.path ?? location;
+  if (path == '/squad' || path.startsWith('/squad/')) return true;
+  if (path == '/chat' || path.startsWith('/chat/')) return true;
+  if (path == '/profile') return true;
+  if (path == '/setup') return true;
+  return false;
+}
+
+/// Post-login landing. Friends IPA opens `/squad` unless last chat is
+/// the bound lobby thread. Full shell keeps last-chat → `/` fallback.
+String resolveFriendsPostLoginLocation({
+  required bool friendsMode,
+  String? lastChatGroupId,
+  String? boundLobbyThreadId,
+}) {
+  final last = lastChatGroupId?.trim();
+  final bound = boundLobbyThreadId?.trim();
+  if (!friendsMode) {
+    if (last != null && last.isNotEmpty) return '/chat/$last';
+    return '/';
+  }
+  if (last != null &&
+      last.isNotEmpty &&
+      bound != null &&
+      bound.isNotEmpty &&
+      last == bound) {
+    return '/chat/$last';
+  }
+  return '/squad';
+}
+
 /// GoRouter configuration provider with A/B testing integration
 final goRouterProvider = Provider<GoRouter>((ref) {
   final analytics = FirebaseAnalytics.instance;
@@ -83,7 +163,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     debugLogDiagnostics: kDebugMode,
-    initialLocation: '/',
+    initialLocation: AppEnv.friendsMode ? '/squad' : '/',
     redirect: (context, state) async {
       Session? session;
       Object? restoreError;
@@ -120,17 +200,18 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 
       if (restore.redirectTo != null) return restore.redirectTo;
 
-      // OPTIMIZATION: Redirect to last chat on app startup to avoid flash of groups screen
-      // Only do this on the initial '/' route to avoid interfering with manual navigation
+      // Post-login / cold `/`: friendsMode lands /squad unless last chat
+      // is the bound lobby thread. Full shell keeps last-chat → `/`.
       if (state.matchedLocation == '/' && user != null) {
         try {
           final prefs = await SharedPreferences.getInstance();
           final lastGroupId = prefs.getString('last_chat_group');
-
+          var openId = lastGroupId;
+          String? boundThreadId;
           if (lastGroupId != null && lastGroupId.isNotEmpty) {
-            var openId = lastGroupId;
             try {
               final snapshot = await loadLobbyChatBindSnapshot(lastGroupId);
+              boundThreadId = snapshot.lobbyChatGroupId;
               final resolved = resolveActiveChatGroupId(
                 widgetChatGroupId: lastGroupId,
                 isSquad: false,
@@ -147,16 +228,33 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             } catch (e) {
               debugPrint('GoRouter: last-chat bind skipped: $e');
             }
-            debugPrint(
-              'GoRouter: groups-list path before last-chat redirect '
-              'last=$lastGroupId open=$openId',
-            );
-            debugPrint('GoRouter: Redirecting to last chat: $openId');
-            return '/chat/$openId';
+          }
+          final landing = resolveFriendsPostLoginLocation(
+            friendsMode: AppEnv.friendsMode,
+            lastChatGroupId: openId,
+            boundLobbyThreadId: boundThreadId,
+          );
+          debugPrint(
+            'GoRouter: groups-list path before last-chat redirect '
+            'last=$lastGroupId open=$openId landing=$landing',
+          );
+          if (landing != state.uri.toString() && landing != '/') {
+            return landing;
+          }
+          if (AppEnv.friendsMode && landing == '/squad') {
+            return landing;
           }
         } catch (e) {
           debugPrint('GoRouter: Error checking last chat: $e');
         }
+      }
+
+      if (AppEnv.friendsMode &&
+          !friendsRootAllowsLocation(
+            state.uri.toString(),
+            friendsMode: true,
+          )) {
+        return '/squad';
       }
 
       return null;

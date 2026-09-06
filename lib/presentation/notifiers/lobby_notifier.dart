@@ -26,6 +26,7 @@ import '../../services/squad_analytics.dart';
 import 'offline_first_mixin.dart';
 import 'timer_management_notifier.dart';
 import 'game_state_notifier.dart';
+import 'lobby_seat_writer.dart';
 
 /// Refactored LobbyNotifier - Core lobby coordination
 /// Handles:
@@ -56,6 +57,10 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   /// Test seam: current-user key for the self "Unknown User" guard.
   String? debugCurrentUserId;
 
+  /// Last one-row seat persist error. Null after success or Retry.
+  Object? lastSeatWriteError;
+  LobbySeatWrite? _pendingSeatWrite;
+
   @override
   Future<LobbyState> build() async {
     // Bind required deps BEFORE offline init / load so a swallowed failure
@@ -81,9 +86,13 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
     try {
       await initializeOfflineFirst();
-      return await _loadState();
     } catch (e) {
       debugPrint('Error initializing lobby notifier: $e');
+    }
+    try {
+      return await _loadState();
+    } catch (e) {
+      debugPrint('Error loading lobby notifier: $e');
       // Deps are already bound; return a safe default state.
       return overlayPreferredPeacockGames(LobbyState.initial());
     }
@@ -566,22 +575,35 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }
 
   Future<void> joinLobby(String squadId, String userId) async {
-    await _repository.joinLobby(squadId, userId);
-    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.joinLobby,
+      lobbyId: squadId,
+      userId: userId,
+    ));
+    if (lastSeatWriteError != null) return;
     unawaited(SquadAnalytics.logLobbyJoin(
       source: 'code',
-      gameName: state.valueOrNull?.currentGame?['name'] as String?,
+      gameName: state.valueOrNull?.currentGame?['name'] as String? ??
+          state.valueOrNull?.currentLobby?.gameName,
     ));
   }
 
   Future<void> leaveSquad(String squadId, String userId) async {
-    await _repository.leaveLobby(squadId, userId);
-    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.leaveSquad,
+      lobbyId: squadId,
+      userId: userId,
+    ));
   }
 
   Future<void> assignSpot(String squadId, int spotIndex, String? userId) async {
-    await _repository.assignSpot(squadId, spotIndex, userId);
-    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.assignSpot,
+      lobbyId: squadId,
+      spotIndex: spotIndex,
+      userId: userId,
+    ));
+    if (lastSeatWriteError != null) return;
     await reconcileReadyLock(
       actorUid: userId ?? '',
       notify: true,
@@ -590,8 +612,64 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   Future<void> startSpotTimer(
       String squadId, int spotIndex, Duration duration) async {
-    await _repository.startSpotTimer(squadId, spotIndex, duration);
-    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.startSpotTimer,
+      lobbyId: squadId,
+      spotIndex: spotIndex,
+      duration: duration,
+    ));
+  }
+
+  /// Retry the last failed one-row seat persist. Keeps the optimistic seat.
+  Future<void> retrySeatWrite() async {
+    final pending = _pendingSeatWrite;
+    if (pending == null) return;
+    await _commitSeatWrite(pending);
+  }
+
+  void _applySeatWriteLocally(LobbySeatWrite write) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(applySeatWriteToState(current, write));
+  }
+
+  Future<void> _persistSeatWrite(LobbySeatWrite write) async {
+    switch (write.kind) {
+      case LobbySeatWriteKind.assignSpot:
+        await _repository.assignSpot(
+          write.lobbyId,
+          write.spotIndex ?? 0,
+          write.userId,
+        );
+        break;
+      case LobbySeatWriteKind.joinLobby:
+        await _repository.joinLobby(write.lobbyId, write.userId ?? '');
+        break;
+      case LobbySeatWriteKind.leaveSquad:
+        await _repository.leaveLobby(write.lobbyId, write.userId ?? '');
+        break;
+      case LobbySeatWriteKind.startSpotTimer:
+        await _repository.startSpotTimer(
+          write.lobbyId,
+          write.spotIndex ?? 0,
+          write.duration ?? Duration.zero,
+        );
+        break;
+    }
+  }
+
+  /// Patch currentLobby, persist the one row, keep the seat on persist fail.
+  Future<void> _commitSeatWrite(LobbySeatWrite write) async {
+    _pendingSeatWrite = write;
+    _applySeatWriteLocally(write);
+    try {
+      await _persistSeatWrite(write);
+      lastSeatWriteError = null;
+      _pendingSeatWrite = null;
+    } catch (e) {
+      lastSeatWriteError = e;
+      debugPrint('LobbyNotifier: seat persist failed: $e');
+    }
   }
 
   Future<void> processExpiredTimers() async {
@@ -785,6 +863,12 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         );
     if (claimed != null) {
       await assignSpot(lobbyId, claimed, userId);
+      final persistError = lastSeatWriteError;
+      if (persistError != null) {
+        // Friends keep the optimistic seat + Retry. Peacock must not
+        // reduce to assigned when the one-row persist failed.
+        throw persistError;
+      }
     }
     _reducePeacock(
       userId: userId,

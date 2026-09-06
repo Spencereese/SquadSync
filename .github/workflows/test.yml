@@ -100,4 +100,6 @@ jobs:
             test/widgets/lfg_queue_status_row_test.dart \
             test/services/lfg_list_test.dart \
             test/presentation/notifiers/lobby_peacock_alias_test.dart \
-            test/presentation/notifiers/lobby_ready_lock_snapshot_test.dart
+            test/presentation/notifiers/lobby_ready_lock_snapshot_test.dart \
+            test/core/lobby_chat_bind_test.dart \
+            test/presentation/notifiers/chat_notifier_lobby_bind_test.dart

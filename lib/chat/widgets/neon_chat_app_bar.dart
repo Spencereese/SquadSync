@@ -150,12 +150,14 @@ class NeonChatAppBar extends StatelessWidget {
                         if (!hideVoiceButton)
                           _GlassCircleButton(
                             icon: Icons.headset,
-                            onPressed: () {
-                              openVoiceRoom(
+                            onPressed: () async {
+                              final result = await joinVoiceRoom(
                                 context: context,
                                 roomId: squadId,
                                 squadName: squadName,
                               );
+                              if (!context.mounted) return;
+                              presentVoiceLobbyJoin(context, result);
                             },
                             neonColor: neonColor,
                             backgroundColor: backgroundColor,
@@ -581,12 +583,14 @@ class NeonChatAppBarPreferred extends StatelessWidget
               // Right: Voice chat button in glass bubble
               _GlassCircleButton(
                 icon: Icons.headset,
-                onPressed: () {
-                  openVoiceRoom(
+                onPressed: () async {
+                  final result = await joinVoiceRoom(
                     context: context,
                     roomId: squadId,
                     squadName: squadName,
                   );
+                  if (!context.mounted) return;
+                  presentVoiceLobbyJoin(context, result);
                 },
                 neonColor: neonColor,
               ),

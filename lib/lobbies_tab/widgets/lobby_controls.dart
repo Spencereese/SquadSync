@@ -385,20 +385,15 @@ class _VoiceRoomButton extends ConsumerWidget {
 
     return squadStateAsync.maybeWhen(
       data: (squadState) => ElevatedButton.icon(
-        onPressed: () {
-          if (squadState.selectedLobbyId == null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No lobby selected')),
-            );
-            return;
-          }
-
-          openVoiceRoom(
+        onPressed: () async {
+          final result = await joinVoiceRoom(
             context: context,
-            roomId: squadState.selectedLobbyId!,
+            roomId: squadState.selectedLobbyId,
             squadName: kDefaultVoiceSquadName,
             isHost: false,
           );
+          if (!context.mounted) return;
+          presentVoiceLobbyJoin(context, result);
         },
         icon: const Icon(Icons.mic),
         label: const Text('Voice'),

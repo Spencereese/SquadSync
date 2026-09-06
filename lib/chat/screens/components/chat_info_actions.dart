@@ -187,7 +187,7 @@ class _MoreActionsBlockState extends State<MoreActionsBlock> {
 }
 
 /// Chat-info actions: Tonight strip first, Voice + Video under More.
-/// Voice join uses [openVoiceRoom] (same path as lobby header).
+/// Voice join uses [joinVoiceRoom] (same path as lobby header).
 /// Search is gone until it searches (coming-soon snackbar is not a feature).
 class ChatInfoActionsSection extends StatelessWidget {
   final String squadId;
@@ -242,12 +242,14 @@ class ChatInfoActionsSection extends StatelessWidget {
                         icon: Icons.headset,
                         label: 'Voice Chat',
                         neonColor: neonColor,
-                        onPressed: () {
-                          openVoiceRoom(
+                        onPressed: () async {
+                          final result = await joinVoiceRoom(
                             context: context,
                             roomId: squadId,
                             squadName: squadName,
                           );
+                          if (!context.mounted) return;
+                          presentVoiceLobbyJoin(context, result);
                         },
                       ),
                     if (slotForTonightAction(kMoreVideoAction) ==

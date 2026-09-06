@@ -45,12 +45,12 @@ void main() {
   });
 
   group('friendsMode true — root tabs', () {
-    test('only Tonight/Squad + Chat + You are root tabs', () {
+    test('only Tonight + Chat + You are root tabs', () {
       final tabs = friendsRootTabs(friendsMode: true);
       expect(tabs, hasLength(3));
       expect(
         tabs.map((tab) => tab.label).toList(),
-        ['Tonight/Squad', 'Chat', 'You'],
+        ['Tonight', 'Chat', 'You'],
       );
       expect(
         tabs.map((tab) => tab.route).toList(),

@@ -87,4 +87,11 @@ jobs:
             test/managers/notification_manager_test.dart \
             test/widgets/email_auth_actions_test.dart \
             test/services/audio_service_test.dart \
-            test/chat/widgets/audio_message_test.dart
+            test/chat/widgets/audio_message_test.dart \
+            test/widgets/notification_hygiene_tiles_test.dart \
+            test/data/repositories/matchmaking_queue_repository_test.dart \
+            test/services/matchmaking_queue_tracker_test.dart \
+            test/services/presence_badges_test.dart \
+            test/widgets/presence_badge_row_test.dart \
+            test/services/preferred_peacock_games_test.dart \
+            test/lobbies_tab/peacock_widgets_test.dart

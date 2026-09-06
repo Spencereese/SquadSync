@@ -1909,4 +1909,191 @@ void main() {
       );
     });
   });
+
+  group('LobbyNotifier - display names id/uid', () {
+    const selfKey = 'self-auth-uuid';
+    const memberKey = 'member-auth-uuid';
+
+    Future<LobbyNotifier> readyNotifier() async {
+      await container.read(lobbyNotifierProvider.future);
+      return container.read(lobbyNotifierProvider.notifier);
+    }
+
+    void clearDisplayNameCache(LobbyNotifier notifier) {
+      final current = notifier.state.valueOrNull ?? LobbyState.initial();
+      notifier.state = AsyncData(
+        current.copyWith(memberDisplayNames: <String, String>{}),
+      );
+    }
+
+    /// Loop seam on [LobbyNotifier] (instance):
+    /// `Future<Map<String, dynamic>?> Function(String column, String value)?
+    ///     debugUsersLookup`
+    /// `String? debugCurrentUserId`
+    ///
+    /// `_fetchDisplayNamesForMembers` / `updateLobbyMembers` must try
+    /// `users.id` first, then `users.uid`. Never persist the literal
+    /// `Unknown User` for the current user when either column returns a row.
+    bool bindUsersLookup(
+      LobbyNotifier notifier,
+      _UsersTable table, {
+      String? currentUserId,
+    }) {
+      var bound = false;
+      try {
+        (notifier as dynamic).debugUsersLookup = table.lookup;
+        bound = true;
+      } catch (_) {}
+      if (currentUserId != null) {
+        try {
+          (notifier as dynamic).debugCurrentUserId = currentUserId;
+        } catch (_) {}
+      }
+      return bound;
+    }
+
+    Future<String> nameAfterLookup(
+      LobbyNotifier notifier,
+      String key, {
+      required Future<void> Function(List<String> keys) run,
+    }) async {
+      clearDisplayNameCache(notifier);
+      await run([key]);
+      return notifier.getDisplayNameForUid(key);
+    }
+
+    test('lookup prefers users.id when that column path works', () async {
+      final notifier = await readyNotifier();
+      final table = _UsersTable([
+        {
+          'id': memberKey,
+          'uid': 'legacy-other',
+          'display_name': 'FromId',
+        },
+        {
+          'id': 'legacy-other-id',
+          'uid': memberKey,
+          'display_name': 'FromUid',
+        },
+      ]);
+      bindUsersLookup(notifier, table);
+
+      Future<void> expectIdWins(
+        Future<void> Function(List<String> keys) run,
+      ) async {
+        table.columnsTried.clear();
+        final name = await nameAfterLookup(notifier, memberKey, run: run);
+        expect(
+          name,
+          'FromId',
+          reason: 'users.id must win when that column path returns a row',
+        );
+        expect(
+          name,
+          isNot(equals('FromUid')),
+          reason: 'uid leftover must not win over a working id row',
+        );
+        expect(
+          table.columnsTried.isEmpty ? null : table.columnsTried.first,
+          'id',
+          reason: 'first users eq column must be id',
+        );
+      }
+
+      await expectIdWins(notifier.fetchDisplayNamesForUids);
+      await expectIdWins(notifier.updateLobbyMembers);
+    });
+
+    test('falls back to uid if id miss', () async {
+      final notifier = await readyNotifier();
+      final table = _UsersTable([
+        {
+          'id': 'not-the-member',
+          'uid': memberKey,
+          'display_name': 'FromUid',
+        },
+      ]);
+      bindUsersLookup(notifier, table);
+
+      Future<void> expectUidFallback(
+        Future<void> Function(List<String> keys) run,
+      ) async {
+        table.columnsTried.clear();
+        final name = await nameAfterLookup(notifier, memberKey, run: run);
+        expect(
+          name,
+          'FromUid',
+          reason: 'id miss must fall back to users.uid',
+        );
+        expect(
+          table.columnsTried,
+          containsAllInOrder(['id', 'uid']),
+          reason: 'lookup must try id first, then uid',
+        );
+      }
+
+      await expectUidFallback(notifier.fetchDisplayNamesForUids);
+      await expectUidFallback(notifier.updateLobbyMembers);
+    });
+
+    test(
+      'current user never resolves to literal Unknown User when a row exists under id or uid',
+      () async {
+        final notifier = await readyNotifier();
+
+        Future<void> expectSelfNamed({
+          required List<Map<String, dynamic>> rows,
+          required String expected,
+        }) async {
+          final table = _UsersTable(rows);
+          bindUsersLookup(notifier, table, currentUserId: selfKey);
+          for (final run in [
+            notifier.fetchDisplayNamesForUids,
+            notifier.updateLobbyMembers,
+          ]) {
+            table.columnsTried.clear();
+            final name = await nameAfterLookup(notifier, selfKey, run: run);
+            expect(
+              name,
+              isNot(equals('Unknown User')),
+              reason:
+                  'self must not stay Unknown User when users.id or users.uid has a row',
+            );
+            expect(name, expected);
+          }
+        }
+
+        await expectSelfNamed(
+          rows: [
+            {'id': selfKey, 'display_name': 'Alex'},
+          ],
+          expected: 'Alex',
+        );
+        await expectSelfNamed(
+          rows: [
+            {'uid': selfKey, 'display_name': 'AlexUid'},
+          ],
+          expected: 'AlexUid',
+        );
+      },
+    );
+  });
+}
+
+/// In-memory users rows for Slice B id-then-uid lookup. No live SQL.
+class _UsersTable {
+  _UsersTable(this.rows);
+
+  final List<Map<String, dynamic>> rows;
+  final List<String> columnsTried = [];
+
+  Future<Map<String, dynamic>?> lookup(String column, String value) async {
+    columnsTried.add(column);
+    for (final row in rows) {
+      if (row[column]?.toString() == value) {
+        return Map<String, dynamic>.from(row);
+      }
+    }
+    return null;
+  }
 }

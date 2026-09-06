@@ -9,12 +9,16 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/app_theme.dart';
+import '../../core/notification_hygiene.dart';
 import '../models/message_data.dart';
 import '../widgets/clip_message_bubble.dart';
 import '../link_preview.dart';
+import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/message.dart' hide MessageType;
 import '../models/message_data.dart' show MessageType;
 import '../../services/background_service.dart';
+import '../../services/presence_badges.dart';
+import '../../widgets/presence_badge_row.dart';
 import '../../core/utils/image_crop_helper.dart';
 import 'components/chat_info_widgets.dart';
 import 'components/chat_info_app_bar.dart';
@@ -27,7 +31,10 @@ import 'components/chat_info_links_files.dart';
 import '../../domain/entities/message.dart' show ChatType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/notifiers/chat_notifier.dart' as cn;
+import '../../presentation/notifiers/lobby_notifier.dart';
 import '../../presentation/notifiers/user_notifier.dart';
+import '../../widgets/notification_hygiene_tiles.dart';
+import '../../screens/settings_screen.dart';
 import '../services/chat_message_search_delegate.dart';
 import '../widgets/background_preview_screen.dart';
 
@@ -63,7 +70,9 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _selectedSegment = 0;
-  bool _notificationsEnabled = true;
+  bool _squadMuted = false;
+  Object? _muteError;
+  bool? _pendingMute;
   bool _hideAlerts = false;
   late final BackgroundService _backgroundService;
 
@@ -79,6 +88,56 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
         });
       }
     });
+    _loadSquadMute();
+  }
+
+  Future<void> _loadSquadMute() async {
+    final result = await NotificationHygieneStore.instance.load();
+    if (!mounted) return;
+    setState(() {
+      _squadMuted =
+          NotificationHygieneStore.instance.isSquadIdMuted(widget.squadId);
+      _muteError = result.error;
+      if (result.isOk) _pendingMute = null;
+    });
+  }
+
+  Future<void> _retrySquadMute() async {
+    final pending = _pendingMute;
+    if (pending != null) {
+      await _setSquadMuted(pending);
+      return;
+    }
+    await _loadSquadMute();
+  }
+
+  Future<void> _setSquadMuted(bool muted) async {
+    setState(() {
+      _squadMuted = muted;
+      _pendingMute = muted;
+      _muteError = null;
+    });
+    LobbyState? state;
+    try {
+      state = ref.read(lobbyNotifierProvider).valueOrNull;
+    } catch (_) {
+      state = null;
+    }
+    final lobbyId = resolveInviteLobbyId(
+      squadId: widget.squadId,
+      selectedLobbyId: state?.selectedLobbyId,
+      currentLobby: state?.currentLobby,
+      userLobbies: state?.userLobbies ?? const {},
+    );
+    final result = await NotificationHygieneStore.instance.setSquadMuted(
+      widget.squadId,
+      muted,
+      aliases: [
+        if (lobbyId.isNotEmpty && lobbyId != widget.squadId) lobbyId,
+      ],
+    );
+    if (!mounted) return;
+    setState(() => _muteError = result.error);
   }
 
   @override
@@ -272,49 +331,26 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
-        // Notifications toggle
-        _buildToggleCard(
-          context,
-          neonColor,
-          'Notifications',
-          Icons.notifications,
-          _notificationsEnabled,
-          (value) async {
-            setState(() {
-              _notificationsEnabled = value;
-            });
-
-            // Save to Supabase user_groups
-            try {
-              final currentUser = AuthServiceSupabase().currentUser;
-              if (currentUser != null) {
-                // Fetch current user_groups
-                final response = await SupabaseService.client
-                    .from('users')
-                    .select('user_groups')
-                    .eq('uid', currentUser.id)
-                    .maybeSingle();
-
-                if (response != null) {
-                  final userGroups = List<Map<String, dynamic>>.from(
-                      response['user_groups'] ?? []);
-
-                  // Find and update the specific group
-                  final groupIndex = userGroups
-                      .indexWhere((g) => g['chat_group_id'] == widget.squadId);
-
-                  if (groupIndex != -1) {
-                    userGroups[groupIndex]['notifications_enabled'] = value;
-
-                    await SupabaseService.client.from('users').update({
-                      'user_groups': userGroups,
-                    }).eq('uid', currentUser.id);
-                  }
-                }
-              }
-            } catch (e) {
-              debugPrint('Error saving notification setting: $e');
-            }
+        _buildSectionHeader(context, neonColor, 'Notifications'),
+        const SizedBox(height: 12),
+        MuteThisSquadTile(
+          muted: _squadMuted,
+          neonColor: neonColor,
+          error: _muteError,
+          onRetry: _retrySquadMute,
+          onChanged: _setSquadMuted,
+        ),
+        const SizedBox(height: 8),
+        QuietHoursSettingsEntry(
+          neonColor: neonColor,
+          onOpen: () {
+            Navigator.of(context)
+                .push(
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                )
+                .then((_) => _loadSquadMute());
           },
         ),
         const SizedBox(height: 8),
@@ -1344,6 +1380,7 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
               final isOnline = member['isOnline'] as bool? ?? false;
               final role = member['role'] as String?;
               final spot = member['spot'] as String?;
+              final uid = presenceUserIdFrom(member);
 
               return Material(
                 color: Colors.transparent,
@@ -1445,6 +1482,10 @@ class _ChatInfoScreenState extends ConsumerState<ChatInfoScreen>
                                     color: neonColor.withOpacity(0.7),
                                   ),
                                 ),
+                              if (uid != null) ...[
+                                const SizedBox(height: 4),
+                                PresenceBadgesHost(userId: uid),
+                              ],
                             ],
                           ),
                         ),

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>CFBundleDevelopmentRegion</key>
+		<string>$(DEVELOPMENT_LANGUAGE)</string>
+		<key>CFBundleDisplayName</key>
+		<string>Cod Squad</string>
+		<key>CFBundleExecutable</key>
+		<string>$(EXECUTABLE_NAME)</string>
+		<key>CFBundleIdentifier</key>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+		<key>CFBundleInfoDictionaryVersion</key>
+		<string>6.0</string>
+		<key>CFBundleName</key>
+		<string>Cod Squad</string>
+		<key>CFBundlePackageType</key>
+		<string>APPL</string>
+		<key>CFBundleShortVersionString</key>
+		<string>$(FLUTTER_BUILD_NAME)</string>
+		<key>CFBundleSignature</key>
+		<string>????</string>
+		<key>CFBundleVersion</key>
+		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>LSRequiresIPhoneOS</key>
+		<true/>
+		<!-- HTTPS/TLS only. Lets App Store Connect skip the export-compliance prompt. -->
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
+		<key>UILaunchStoryboardName</key>
+		<string>LaunchScreen</string>
+		<!-- No UIMainStoryboardFile: iOS 26 still connects a UIWindowScene.
+		     AppDelegate must not also instantiate Main's FlutterViewController
+		     (second FlutterEngine / already-invoked abort). Scene retargets
+		     the one launch-engine FVC. -->
+		<key>UISupportedInterfaceOrientations</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<key>UISupportedInterfaceOrientations~ipad</key>
+		<array>
+			<string>UIInterfaceOrientationPortrait</string>
+			<string>UIInterfaceOrientationPortraitUpsideDown</string>
+			<string>UIInterfaceOrientationLandscapeLeft</string>
+			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+		<key>CADisableMinimumFrameDurationOnPhone</key>
+		<true/>
+		<key>UIApplicationSupportsIndirectInputEvents</key>
+		<true/>
+		<key>GIDClientID</key>
+		<string>756172684661-99ecq9sd74qvt9ufs28os52j9g33h1v9.apps.googleusercontent.com</string>
+		<!-- Simulator must register codsquadapp so Debug-iphonesimulator
+		     Runner.app can openurl peacock / squad deep links (matches device
+		     Info.plist). SpringBoard may still show "Open in Cod Squad?" on
+		     first custom-scheme open; Accept is a one-time UI tap. Keep Google
+		     + com.example.codSquadApp for auth. Entitlements stay
+		     Runner.simulator.entitlements (no applinks). -->
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>codsquadapp</string>
+				</array>
+				<key>CFBundleURLName</key>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			</dict>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.example.codSquadApp</string>
+				</array>
+				<key>CFBundleURLName</key>
+				<string>supabase.auth.callback</string>
+			</dict>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>google.sign.in</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.756172684661-99ecq9sd74qvt9ufs28os52j9g33h1v9</string>
+				</array>
+			</dict>
+		</array>
+		<key>NSUserActivityTypes</key>
+		<array>
+			<string>SendMessageIntent</string>
+		</array>
+		<key>NSSiriUsageDescription</key>
+		<string>Send messages to your squad chat using Siri.</string>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>fetch</string>
+			<string>remote-notification</string>
+			<string>audio</string>
+		</array>
+		<key>FirebaseAppDelegateAutoRegister</key>
+		<false/>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Cod Squad needs photo library access so you can set a profile or group image and attach photos in chat.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Cod Squad needs permission to save images you share or download from chat.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Cod Squad needs camera access to take photos and clips for chat, scan QR invite codes, and use video chat.</string>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Cod Squad needs microphone access for voice chat, video chat, and voice notes.</string>
+		<key>NSSpeechRecognitionUsageDescription</key>
+		<string>Cod Squad uses speech recognition to transcribe voice notes for easier reading.</string>
+		<key>NSUserNotificationsUsageDescription</key>
+		<string>Cod Squad sends notifications for squad chat, lobby invites, and game session updates.</string>
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSAllowsArbitraryLoads</key>
+			<false/>
+			<key>NSExceptionDomains</key>
+			<dict>
+				<key>supabase.co</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>igdb.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>twitch.tv</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>googleapis.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>gstatic.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>firebaseio.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>firebasestorage.app</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>agora.io</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>sd-rtn.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>run.app</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>lobbiesync.app</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>codsquad.app</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>youtube.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+				<key>googleusercontent.com</key>
+				<dict>
+					<key>NSIncludesSubdomains</key>
+					<true/>
+				</dict>
+			</dict>
+		</dict>
+		<key>NSSupportsLiveActivities</key>
+		<true/>
+		<key>UIStatusBarHidden</key>
+		<false/>
+		<key>UIViewControllerBasedStatusBarAppearance</key>
+		<true/>
+	</dict>
+</plist>

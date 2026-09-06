@@ -1,5 +1,34 @@
 # Universal Links Setup Guide
 
+## Production lobby link (codesquad.app) — ticket 12 router
+
+Do not add a second parser. `https://codsquad.app/l/<id>` is already mapped
+by ticket 12:
+
+- `lib/core/deep_link_routes.dart` → `locationForDeepLink`
+- `lib/core/app_router.dart` → `DeepLinkRouter.locationFor` (alias)
+- Same destination as `codsquadapp://lobby/<id>`: `/squad?lobby_id=<id>`
+
+AASA + Associated Domains **repo prep** (this slice):
+
+- Canonical AASA: `ios/associated-domains/apple-app-site-association`
+- Host copies: `web/.well-known/apple-app-site-association` and
+  `web/apple-app-site-association` (root fallback)
+- Entitlements template: `ios/associated-domains/associated-domains.entitlements`
+  (`applinks:codsquad.app`, `applinks:www.codsquad.app`)
+- Live device entitlements already include those applinks:
+  `ios/Runner/Runner.entitlements`
+- Simulator entitlements must **not** claim associated-domains
+- Wiring notes: `ios/associated-domains/README.md`
+- Portal/DNS is **BLOCKED** on Spencer: `ios/associated-domains/SPENCER.txt`
+
+Bundle ID stays `com.example.codSquadApp`. Replace `TEAMID` in the AASA
+files when the Team ID is pasted. Until AASA is served at
+`https://codsquad.app/.well-known/apple-app-site-association`, Safari
+opens the https URL in the browser; the custom scheme still works.
+
+Historical `lobbiesync.app` paths below are not the production lobby UL.
+
 ## Overview
 Universal links enable deep linking across iOS, Android, and Web platforms, allowing users to open SquadSync content directly from web links.
 

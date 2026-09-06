@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
+import 'supabase_service.dart';
+
 /// JWT Validation Helper for Supabase Authentication
 ///
 /// Provides utilities to validate JWT tokens and extract claims
@@ -24,7 +26,7 @@ import 'package:flutter/foundation.dart';
 class JwtValidator {
   /// Get current session from Supabase
   static Session? get _currentSession =>
-      Supabase.instance.client.auth.currentSession;
+      SupabaseService.maybeClient?.auth.currentSession;
 
   /// Check if user is authenticated (has valid JWT)
   static bool isAuthenticated() {
@@ -128,7 +130,13 @@ class JwtValidator {
     requireAuthentication();
 
     final userId = getCurrentUserId();
-    final supabase = Supabase.instance.client;
+    final supabase = SupabaseService.maybeClient;
+    if (supabase == null) {
+      throw UnauthorizedException(
+        'Supabase client is not initialized. '
+        'Override supabaseClientProvider or inject a client in tests.',
+      );
+    }
 
     try {
       final response = await supabase
@@ -161,7 +169,6 @@ class JwtValidator {
 
     debugPrint('🔐 JWT Token Info:');
     debugPrint('   User ID: ${claims['sub']}');
-    debugPrint('   Email: ${claims['email']}');
     debugPrint('   Role: ${claims['role']}');
     debugPrint('   Expires in: ${getTimeUntilExpiry()} seconds');
     debugPrint('   Should refresh: ${shouldRefreshToken()}');

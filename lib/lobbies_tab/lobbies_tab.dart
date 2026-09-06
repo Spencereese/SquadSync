@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/layout.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
 import '../presentation/notifiers/user_notifier.dart';
@@ -14,6 +15,7 @@ import 'lobby_dialogs.dart';
 import 'widgets/lobby_grid.dart';
 import 'widgets/lobby_controls.dart';
 import 'widgets/lobby_header.dart';
+import 'widgets/lobby_seat_affordance.dart';
 import 'widgets/game_alerts_display.dart';
 import 'widgets/peacock_queue_section.dart';
 
@@ -152,9 +154,16 @@ class LobbyTab extends ConsumerStatefulWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? highlightSpotIndex;
 
-  const LobbyTab(
-      {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
+  const LobbyTab({
+    super.key,
+    this.lobbyId,
+    this.gameName,
+    this.game,
+    this.chatGroupId,
+    this.highlightSpotIndex,
+  });
 
   @override
   ConsumerState<LobbyTab> createState() => _LobbyTabState();
@@ -176,10 +185,12 @@ class _LobbyTabState extends ConsumerState<LobbyTab> {
   @override
   Widget build(BuildContext context) {
     return _LobbyTabContent(
-        lobbyId: widget.lobbyId,
-        gameName: widget.gameName,
-        game: widget.game,
-        chatGroupId: widget.chatGroupId);
+      lobbyId: widget.lobbyId,
+      gameName: widget.gameName,
+      game: widget.game,
+      chatGroupId: widget.chatGroupId,
+      highlightSpotIndex: widget.highlightSpotIndex,
+    );
   }
 }
 
@@ -188,9 +199,15 @@ class _LobbyTabContent extends ConsumerStatefulWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? highlightSpotIndex;
 
-  const _LobbyTabContent(
-      {this.lobbyId, this.gameName, this.game, this.chatGroupId});
+  const _LobbyTabContent({
+    this.lobbyId,
+    this.gameName,
+    this.game,
+    this.chatGroupId,
+    this.highlightSpotIndex,
+  });
 
   @override
   _LobbyTabContentState createState() => _LobbyTabContentState();
@@ -647,8 +664,8 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.5),
+                          Colors.black.withValues(alpha: 0.3),
+                          Colors.black.withValues(alpha: 0.5),
                         ],
                       ),
                     ),
@@ -731,8 +748,10 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
           ),
         ),
 
+        const SliverToBoxAdapter(child: LobbySeatOfferBannerHost()),
+
         // Lobby spots grid
-        LobbyGrid(),
+        LobbyGrid(highlightSpotIndex: widget.highlightSpotIndex),
 
         // Peacock members section (conditionally shown)
         SliverToBoxAdapter(
@@ -746,7 +765,7 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
         ),
 
         // Action buttons (Win/Loss)
-        LobbyControls(),
+        const LobbyControls(),
 
         // Game alerts display
         const GameAlertsDisplay(),
@@ -805,7 +824,9 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
 
         // Bottom spacing
         SliverToBoxAdapter(
-          child: const SizedBox(height: 80.0),
+          child: SizedBox(
+            height: mainTabClearanceOf(context),
+          ),
         ),
       ],
     );

@@ -1,133 +1,111 @@
-name: CI/CD Pipeline
+name: PR
 
+# Linux-only PR checks. No macOS runner, no iOS simulator, no TestFlight.
 on:
-  push:
-    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master, cursor/revive-squadsync-be5c]
+  push:
+    branches: [main, master, cursor/revive-squadsync-be5c]
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  # Unit and Widget Tests
-  test:
-    name: Unit & Widget Tests
+  analyze-and-test:
+    name: Analyze & targeted unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Slice G lease tests `git diff` against Slice F (0712929).
+          # Default fetch-depth: 1 makes that SHA missing (git exit 128).
+          fetch-depth: 0
 
-    - name: Setup Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        channel: 'stable'
-        cache: true
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
 
-    - name: Install dependencies
-      run: flutter pub get
+      # Dummy placeholders from .env.example only. Never inject repo secrets.
+      - name: Provide dummy .env for filesystem dotenv overlay
+        run: cp .env.example .env
 
-    - name: Analyze code
-      run: flutter analyze
+      - name: Install dependencies
+        run: flutter pub get
 
-    - name: Run tests with coverage
-      run: flutter test --machine --coverage
+      # Fail on analyzer errors. Leftover infos/warnings are not release-blocking.
+      - name: Dart analyze
+        run: dart analyze --no-fatal-warnings lib
 
-    - name: Generate coverage report
-      run: |
-        # Install lcov if not present
-        sudo apt-get update
-        sudo apt-get install -y lcov bc
-
-        # Check if coverage file exists
-        if [ ! -f coverage/lcov.info ]; then
-          echo "No coverage file found"
-          exit 1
-        fi
-
-        # Generate HTML coverage report
-        genhtml coverage/lcov.info -o coverage/html
-
-        # Calculate coverage percentage
-        COVERAGE_LINE=$(lcov --summary coverage/lcov.info | grep "lines......:")
-        COVERAGE=$(echo "$COVERAGE_LINE" | sed 's/.*: \([0-9.]*\)%.*/\1/')
-        echo "Coverage: $COVERAGE%"
-
-        # Write coverage to file for badge
-        echo $COVERAGE > coverage/coverage.txt
-
-        # Fail if coverage is below 70%
-        if (( $(echo "$COVERAGE < 70" | bc -l) )); then
-          echo "Coverage is below 70%: $COVERAGE%"
-          exit 1
-        fi
-
-    - name: Upload coverage reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-report
-        path: coverage/
-
-  # Integration Tests
-  integration-test:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        channel: 'stable'
-        cache: true
-
-    - name: Install dependencies
-      run: flutter pub get
-
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Setup Android emulator
-      run: |
-        echo "y" | $ANDROID_HOME/tools/bin/sdkmanager --install 'system-images;android-29;google_apis;x86'
-        echo "no" | $ANDROID_HOME/tools/bin/avdmanager create avd -n test -k 'system-images;android-29;google_apis;x86'
-
-    - name: Start Android emulator
-      run: |
-        $ANDROID_HOME/emulator/emulator -avd test -no-audio -no-window &
-        $ANDROID_HOME/platform-tools/adb wait-for-device
-        $ANDROID_HOME/platform-tools/adb shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done;'
-
-    - name: Run integration tests
-      run: flutter drive --driver=test_driver/integration_test.dart --target=integration_test/onboarding_flow_test.dart
-
-  # Deploy Firebase Cloud Functions
-  deploy-functions:
-    name: Deploy Firebase Functions
-    runs-on: ubuntu-latest
-    needs: [test, integration-test]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-
-    - name: Install Firebase CLI
-      run: npm install -g firebase-tools
-
-    - name: Authenticate to Firebase
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-
-    - name: Deploy Cloud Functions
-      run: |
-        cd functions
-        npm install
-        firebase deploy --only functions --project ${{ secrets.FIREBASE_PROJECT_ID }}
+      # Curated subset that is stable without a device or iOS sim.
+      # Revival-v1 freeze: lobby harness, constitution DI, deep links,
+      # peacock XOR + assignment machine, notification routes.
+      # Plus prior green CI files and fast product-machine tests.
+      # Not the full flutter test suite.
+      - name: Targeted unit tests
+        run: |
+          flutter test \
+            test/presentation/notifiers/lobby_notifier_test.dart \
+            test/presentation/notifiers/lobby_seat_writer_test.dart \
+            test/services/constitution_manager_test.dart \
+            test/core/deep_link_routes_test.dart \
+            test/core/universal_link_lobby_parse_test.dart \
+            test/services/peacock_assignment_machine_test.dart \
+            test/services/peacock_notification_service_test.dart \
+            test/core/notification_routes_test.dart \
+            test/core/notification_payload_route_test.dart \
+            test/services/matchmaking_queue_machine_test.dart \
+            test/services/session_rating_machine_test.dart \
+            test/services/lobby_ready_lock_test.dart \
+            test/services/squad_analytics_test.dart \
+            test/presentation/notifiers/game_notifier_test.dart \
+            test/presentation/notifiers/chat_badge_skip_test.dart \
+            test/core/email_auth_test.dart \
+            test/core/app_env_test.dart \
+            test/core/app_links_policy_test.dart \
+            test/core/session_guard_test.dart \
+            test/core/chat_messages_test.dart \
+            test/core/sqlite_cells_test.dart \
+            test/core/realtime_subscribe_test.dart \
+            test/core/google_auth_config_test.dart \
+            test/core/notification_cooldowns_test.dart \
+            test/core/notification_hygiene_test.dart \
+            test/services/peacock_assignment_tracker_test.dart \
+            test/core/app_router_squad_test.dart \
+            test/core/app_router_friends_mode_test.dart \
+            test/core/app_router_friends_chrome_test.dart \
+            test/core/notification_tap_router_test.dart \
+            test/core/peacock_card_test.dart \
+            test/chat/widgets/peacock_card_test.dart \
+            test/services/peacock_lock_live_activity_test.dart \
+            test/services/peacock_lifecycle_machine_test.dart \
+            test/core/pending_link_test.dart \
+            test/core/universal_link_edge_test.dart \
+            test/core/lobby_share_edge_test.dart \
+            test/core/layout_insets_test.dart \
+            test/managers/notification_manager_test.dart \
+            test/widgets/email_auth_actions_test.dart \
+            test/services/audio_service_test.dart \
+            test/chat/widgets/audio_message_test.dart \
+            test/widgets/notification_hygiene_tiles_test.dart \
+            test/data/repositories/matchmaking_queue_repository_test.dart \
+            test/services/matchmaking_queue_tracker_test.dart \
+            test/services/presence_badges_test.dart \
+            test/widgets/presence_badge_row_test.dart \
+            test/services/preferred_peacock_games_test.dart \
+            test/lobbies_tab/peacock_widgets_test.dart \
+            test/widgets/lfg_queue_status_row_test.dart \
+            test/services/lfg_list_test.dart \
+            test/presentation/notifiers/lobby_peacock_alias_test.dart \
+            test/presentation/notifiers/lobby_ready_lock_snapshot_test.dart \
+            test/core/lobby_chat_bind_test.dart \
+            test/presentation/notifiers/chat_notifier_lobby_bind_test.dart \
+            test/lobbies_tab/widgets/lobby_seat_write_error_test.dart

@@ -215,7 +215,7 @@ class _ReviewSubmitDialogState extends ConsumerState<ReviewSubmitDialog> {
 
       if (user == null) return;
 
-      // Submit review to Firestore
+      // Submit review via ReviewManager / Supabase
       await reviewManager.submitReview(
         gameName: widget.gameName,
         rating: _rating,

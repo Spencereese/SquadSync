@@ -18,17 +18,35 @@ class LobbyTabScreen extends StatelessWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? highlightSpotIndex;
 
-  const LobbyTabScreen(
-      {super.key, this.lobbyId, this.gameName, this.game, this.chatGroupId});
+  const LobbyTabScreen({
+    super.key,
+    this.lobbyId,
+    this.gameName,
+    this.game,
+    this.chatGroupId,
+    this.highlightSpotIndex,
+  });
+
+  /// Deep links may send `lobby_id` without `gameName`. Honor the lobby id
+  /// instead of falling through to Discovery.
+  static bool shouldShowFullSquad({String? gameName, String? lobbyId}) {
+    return _hasText(gameName) || _hasText(lobbyId);
+  }
+
+  static bool _hasText(String? value) =>
+      value != null && value.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
     return _LobbyTabScreenContent(
-        lobbyId: lobbyId,
-        gameName: gameName,
-        game: game,
-        chatGroupId: chatGroupId);
+      lobbyId: lobbyId,
+      gameName: gameName,
+      game: game,
+      chatGroupId: chatGroupId,
+      highlightSpotIndex: highlightSpotIndex,
+    );
   }
 }
 
@@ -37,9 +55,15 @@ class _LobbyTabScreenContent extends ConsumerStatefulWidget {
   final String? gameName;
   final Map<String, dynamic>? game;
   final String? chatGroupId;
+  final int? highlightSpotIndex;
 
-  const _LobbyTabScreenContent(
-      {this.lobbyId, this.gameName, this.game, this.chatGroupId});
+  const _LobbyTabScreenContent({
+    this.lobbyId,
+    this.gameName,
+    this.game,
+    this.chatGroupId,
+    this.highlightSpotIndex,
+  });
 
   @override
   ConsumerState<_LobbyTabScreenContent> createState() =>
@@ -83,10 +107,13 @@ class _LobbyTabScreenContentState
     final squadAsync = ref.watch(ln.lobbyNotifierProvider);
     return squadAsync.when(
       data: (squadState) {
-        // If gameName is provided, show full squad management interface
-        // (lobbyId is optional - LobbyTab can handle showing spots for a game)
-        if (widget.gameName != null) {
-          return _buildFullSquadInterface(context, squadState);
+        // gameName or lobbyId alone — do not drop lobby_id on Discovery.
+        if (LobbyTabScreen.shouldShowFullSquad(
+            gameName: widget.gameName, lobbyId: widget.lobbyId)) {
+          return KeyedSubtree(
+            key: const Key('lobby-full-squad'),
+            child: _buildFullSquadInterface(context, squadState),
+          );
         }
 
         // If no squad selected, show squad selection/dashboard instead of welcome screen
@@ -125,16 +152,21 @@ class _LobbyTabScreenContentState
   Widget _buildDashboardInterface(
       BuildContext context, LobbyState squadState, WidgetRef ref) {
     // Use the revamped Discovery screen as the Lobby tab content
-    return const DiscoveryScreen();
+    return const KeyedSubtree(
+      key: Key('lobby-discovery'),
+      child: DiscoveryScreen(),
+    );
   }
 
   Widget _buildFullSquadInterface(BuildContext context, LobbyState squadState) {
     // Import and use the original LobbyTab widget for full squad management
     return LobbyTab(
-        lobbyId: widget.lobbyId,
-        gameName: widget.gameName,
-        game: widget.game,
-        chatGroupId: widget.chatGroupId);
+      lobbyId: widget.lobbyId,
+      gameName: widget.gameName,
+      game: widget.game,
+      chatGroupId: widget.chatGroupId,
+      highlightSpotIndex: widget.highlightSpotIndex,
+    );
   }
 
   Widget _buildPinnedGamesCarousel(BuildContext context, WidgetRef ref) {
@@ -349,6 +381,8 @@ class _LobbyTabScreenContentState
   }
 
   void _addGame(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
     // Use unified game selection sheet for consistency
     await UnifiedGameSelectionSheet.show(
       context,
@@ -361,33 +395,30 @@ class _LobbyTabScreenContentState
         try {
           final userNotifier = ref.read(userNotifierProvider.notifier);
           await userNotifier.addPinnedGame(game.toJson());
-
-          if (mounted) {
-            HapticFeedback.mediumImpact();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${game.name} added to pinned games!'),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+          if (!mounted) return;
+          HapticFeedback.mediumImpact();
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('${game.name} added to pinned games!'),
+              backgroundColor: colorScheme.primary,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-            );
-          }
+            ),
+          );
         } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Failed to add game: $e'),
-                backgroundColor: Theme.of(context).colorScheme.error,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+          if (!mounted) return;
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Failed to add game: $e'),
+              backgroundColor: colorScheme.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-            );
-          }
+            ),
+          );
         }
       },
     );

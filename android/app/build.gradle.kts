@@ -23,9 +23,9 @@ android {
     defaultConfig {
         applicationId = "com.example.cod_squad_app"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 13
-        versionName = "1.2.0"
+        targetSdk = 35
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
 
     buildTypes {
@@ -40,7 +40,7 @@ flutter {
 }
 
 dependencies {
-    implementation(platform("com.google.firebase:firebase-bom:33.2.0"))
+    implementation(platform("com.google.firebase:firebase-bom:33.16.0"))
     implementation("com.google.firebase:firebase-analytics")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

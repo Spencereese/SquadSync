@@ -9,7 +9,12 @@ import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/repositories/chat_repository.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/core/injection.dart';
+import 'package:squad_sync/core/realtime_subscribe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/chat_list_loader.dart';
+import '../../core/chat_surface.dart';
+import '../../core/lobby_chat_bind.dart';
+import '../../core/notification_hygiene.dart';
 import '../../services/supabase_service.dart';
 import '../../services/auth_service_supabase.dart';
 import 'message_notifier.dart';
@@ -17,6 +22,41 @@ import 'media_notifier.dart';
 import 'offline_first_mixin.dart';
 import 'game_notifier.dart';
 import 'lobby_notifier.dart';
+
+/// Copy MessageNotifier maps onto ChatState. Same instance if nothing changed.
+ChatState applyMessageStateToChatState(
+  ChatState chatState,
+  MessageState messageState,
+) {
+  final messagesChanged = chatState.chatMessages != messageState.messages;
+  final replyChanged = chatState.replyToMessage != messageState.replyToMessage;
+  final typingChanged = chatState.typingIndicators != messageState.typingUsers;
+  if (!messagesChanged && !replyChanged && !typingChanged) {
+    return chatState;
+  }
+
+  debugPrint(
+      'ChatNotifier: Syncing from MessageNotifier (messages: $messagesChanged, reply: $replyChanged, typing: $typingChanged)');
+
+  final newChatMessages = <String, List<Message>>{};
+  for (final entry in messageState.messages.entries) {
+    newChatMessages[entry.key] = List<Message>.from(entry.value);
+    debugPrint(
+        'ChatNotifier STATE AFTER UPDATE: ${entry.value.length} messages for ${entry.key}');
+  }
+
+  final newTypingIndicators = <String, Set<String>>{};
+  for (final entry in messageState.typingUsers.entries) {
+    newTypingIndicators[entry.key] = Set<String>.from(entry.value);
+  }
+
+  return chatState.copyWith(
+    chatMessages: newChatMessages,
+    typingIndicators: newTypingIndicators,
+    replyToMessage: messageState.replyToMessage,
+    replyingToMessageId: messageState.replyingToMessageId,
+  );
+}
 
 /// ChatNotifier - Coordinator for chat functionality
 /// Delegates to MessageNotifier and MediaNotifier for specific operations
@@ -33,13 +73,68 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   // Presence tracking
   RealtimeChannel? _presenceChannel;
   String? _currentChatGroupId;
+  int _initializeChatEpoch = 0;
   ChatType? _currentChatType;
+  ActiveLobbyChatBind _activeLobbyChatBind = ActiveLobbyChatBind.empty;
+
+  /// Sole notifier writer of the Tonight lobby ↔ Squad Chat bind.
+  ActiveLobbyChatBind get activeLobbyChatBind => _activeLobbyChatBind;
+
+  static bool get _isFlutterBindingReady {
+    try {
+      WidgetsBinding.instance;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Unbind the previous thread, bind [lobbyChatGroupId], then initialize
+  /// that lobby's chat. Same lobby + same thread is a no-op.
+  void bindActiveLobbyChat({
+    required String lobbyId,
+    required String lobbyChatGroupId,
+    Map<String, int> previousHistoryCounts = const {},
+  }) {
+    _activeLobbyChatBind = switchActiveLobbyChatBind(
+      current: _activeLobbyChatBind,
+      nextLobbyId: lobbyId,
+      nextLobbyChatGroupId: lobbyChatGroupId,
+      previousHistoryCounts: previousHistoryCounts,
+    );
+
+    final attachId = chatIdOrNull(_activeLobbyChatBind.chatGroupId);
+    final attached = _activeLobbyChatBind.steps
+        .any((step) => step.action == LobbyChatBindAction.attach);
+    if (attachId != null && attached) {
+      unawaited(_initializeBoundLobbyChat(attachId));
+      return;
+    }
+    if (_activeLobbyChatBind.tornDownChatGroupId != null && attachId == null) {
+      unawaited(_disposePresenceChannel());
+    }
+  }
+
+  Future<void> _initializeBoundLobbyChat(String chatGroupId) async {
+    try {
+      await initializeChat(chatGroupId, _currentChatType ?? ChatType.squad);
+    } catch (e) {
+      debugPrint('ChatNotifier: lobby chat bind init skipped: $e');
+    }
+  }
 
   @override
   Future<ChatState> build() async {
     try {
-      // Initialize offline-first capabilities
-      await initializeOfflineFirst();
+      // Initialize offline-first capabilities. Missing Flutter binding
+      // (notifier unit tests) must not start connectivity listen.
+      if (_isFlutterBindingReady) {
+        try {
+          await initializeOfflineFirst();
+        } catch (e) {
+          debugPrint('ChatNotifier: offline-first skipped: $e');
+        }
+      }
 
       // Listen to MessageNotifier updates and sync to ChatState
       ref.listen<AsyncValue<MessageState>>(messageNotifierProvider,
@@ -55,7 +150,12 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
         _disposePresenceChannel();
       });
 
-      return ChatState.initial();
+      final initial = ChatState.initial();
+      final seeded = ref.read(messageNotifierProvider).valueOrNull;
+      if (seeded != null && seeded.messages.isNotEmpty) {
+        return applyMessageStateToChatState(initial, seeded);
+      }
+      return initial;
     } catch (e) {
       // Note: _errorHandler not yet initialized, use basic logging
       debugPrint('ChatNotifier build error: $e');
@@ -65,103 +165,12 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
 
   /// Sync messages from MessageNotifier to ChatNotifier state
   void _syncMessagesFromMessageNotifier(MessageState messageState) {
-    state.whenData((chatState) {
-      // Check if any relevant state has changed
-      final messagesChanged = chatState.chatMessages != messageState.messages;
-      final replyChanged =
-          chatState.replyToMessage != messageState.replyToMessage;
-      final typingChanged =
-          chatState.typingIndicators != messageState.typingUsers;
-
-      if (messagesChanged || replyChanged || typingChanged) {
-        debugPrint(
-            'ChatNotifier: Syncing from MessageNotifier (messages: $messagesChanged, reply: $replyChanged, typing: $typingChanged)');
-
-        // Debug: Log message counts per chat group
-        for (final entry in messageState.messages.entries) {
-          debugPrint(
-              'ChatNotifier: Syncing ${entry.value.length} messages for group ${entry.key}');
-        }
-
-        // CRITICAL: Create completely new Map and List instances
-        final newChatMessages = <String, List<Message>>{};
-        for (final entry in messageState.messages.entries) {
-          newChatMessages[entry.key] = List<Message>.from(entry.value);
-        }
-
-        final newTypingIndicators = <String, Set<String>>{};
-        for (final entry in messageState.typingUsers.entries) {
-          newTypingIndicators[entry.key] = Set<String>.from(entry.value);
-        }
-
-        // NUCLEAR OPTION: Create entirely new ChatState instead of copyWith
-        // This forces Freezed to create a new object with different identity
-        final newState = ChatState(
-          isInitialized: chatState.isInitialized,
-          isInitialDataLoaded: chatState.isInitialDataLoaded,
-          displayName: chatState.displayName,
-          profileImage: chatState.profileImage,
-          chatMessages: newChatMessages, // NEW MAP INSTANCE
-          chatGroups: chatState.chatGroups,
-          userChatGroups: chatState.userChatGroups,
-          selectedChatGroupId: chatState.selectedChatGroupId,
-          lastReadTimestamps: chatState.lastReadTimestamps,
-          typingIndicators: newTypingIndicators, // NEW MAP INSTANCE
-          unreadCounts: chatState.unreadCounts,
-          hasNewMessages: chatState.hasNewMessages,
-          mediaHistory: chatState.mediaHistory,
-          pinnedMessages: chatState.pinnedMessages,
-          activePolls: chatState.activePolls,
-          isRecording: chatState.isRecording,
-          isPlayingVoiceNote: chatState.isPlayingVoiceNote,
-          currentVoiceNoteId: chatState.currentVoiceNoteId,
-          voiceNoteProgress: chatState.voiceNoteProgress,
-          isAiResponding: chatState.isAiResponding,
-          aiResponses: chatState.aiResponses,
-          showEmojiPicker: chatState.showEmojiPicker,
-          showAttachmentOptions: chatState.showAttachmentOptions,
-          replyingToMessageId:
-              messageState.replyingToMessageId, // FROM MESSAGE STATE
-          editingMessageId: chatState.editingMessageId,
-          expandedMessages: chatState.expandedMessages,
-          isUploading: chatState.isUploading,
-          quickReactionEmoji: chatState.quickReactionEmoji,
-          quickReactionEmojis: chatState.quickReactionEmojis,
-          typingUser: chatState.typingUser,
-          replyToMessage: messageState.replyToMessage, // FROM MESSAGE STATE
-          isOnline: chatState.isOnline,
-          isSyncing: chatState.isSyncing,
-          lastSyncTimestamps: chatState.lastSyncTimestamps,
-          pendingMessages: chatState.pendingMessages,
-          syncError: chatState.syncError,
-          syncConflicts: chatState.syncConflicts,
-          messageAnalytics: chatState.messageAnalytics,
-          messageReactions: chatState.messageReactions,
-          searchResults: chatState.searchResults,
-          isSearching: chatState.isSearching,
-          searchQuery: chatState.searchQuery,
-          voiceChatActive: chatState.voiceChatActive,
-          voiceChatParticipants: chatState.voiceChatParticipants,
-          mutedChats: chatState.mutedChats,
-          pinnedChats: chatState.pinnedChats,
-          chatThemes: chatState.chatThemes,
-          notificationsEnabled: chatState.notificationsEnabled,
-        );
-
-        // Update state
-        state = AsyncValue.data(newState);
-        debugPrint(
-            '🔥 ChatNotifier: Set state with Map hashCode: ${newChatMessages.hashCode}, timestamp: ${DateTime.now().millisecondsSinceEpoch}');
-
-        // Debug: Verify state was updated correctly
-        state.whenData((updatedState) {
-          for (final entry in updatedState.chatMessages.entries) {
-            debugPrint(
-                '✅ ChatNotifier STATE AFTER UPDATE: ${entry.value.length} messages in state for group ${entry.key}');
-          }
-        });
-      }
-    });
+    final chatState = state.valueOrNull;
+    if (chatState == null) return;
+    final next = applyMessageStateToChatState(chatState, messageState);
+    if (!identical(next, chatState)) {
+      state = AsyncValue.data(next);
+    }
   }
 
   // ============================================================================
@@ -171,8 +180,17 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
   /// Initialize chat for a specific group
   /// Delegates message streaming to MessageNotifier
   Future<void> initializeChat(String chatGroupId, ChatType chatType) async {
+    final epoch = ++_initializeChatEpoch;
     try {
       await future;
+      if (epoch != _initializeChatEpoch) return;
+
+      final session = await SupabaseService.ensureFreshSession();
+      if (session == null) {
+        debugPrint('ChatNotifier: no valid session; skip realtime');
+        return;
+      }
+      if (epoch != _initializeChatEpoch) return;
 
       // AGGRESSIVE cleanup if approaching limit
       if (SupabaseService.activeChannelCount > 80) {
@@ -185,25 +203,30 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
 
         // Give Supabase time to process removals
         await Future.delayed(const Duration(milliseconds: 500));
+        if (epoch != _initializeChatEpoch) return;
       }
 
       if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
         await _disposePresenceChannel();
+        if (epoch != _initializeChatEpoch) return;
         _currentChatGroupId = chatGroupId;
         _currentChatType = chatType;
       }
 
       // Initialize presence tracking (await to ensure channel cleanup)
       await _initializePresenceChannel(chatGroupId);
+      if (epoch != _initializeChatEpoch) return;
 
       // Initialize message streaming via MessageNotifier
       final messageNotifier = ref.read(messageNotifierProvider.notifier);
       await messageNotifier.initializeMessagesStream(chatGroupId, chatType);
+      if (epoch != _initializeChatEpoch) return;
     } on RealtimeSubscribeException catch (e, stackTrace) {
       debugPrint(
           '❌ ChatNotifier: RealtimeSubscribeException during init: ${e.status}');
       debugPrint('❌ Details: ${e.details}');
-      if (e.status == RealtimeSubscribeStatus.channelError) {
+      if (e.status == RealtimeSubscribeStatus.channelError &&
+          shouldNukeAllRealtimeChannels(SupabaseService.activeChannelCount)) {
         await SupabaseService.cleanupOldChannels();
       }
       // Don't throw - allow chat to continue without real-time features
@@ -215,6 +238,8 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       // User will see cached messages but real-time updates may be degraded
     }
 
+    if (epoch != _initializeChatEpoch) return;
+
     // Load active polls via MediaNotifier (polls are stored in chat_messages.poll JSONB, not separate table)
     // Skip for now as polls table doesn't exist
     try {
@@ -225,6 +250,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
           '⚠️ Skipping polls loading (polls stored in chat_messages): $e');
     }
 
+    if (epoch != _initializeChatEpoch) return;
     // Update selected chat group in state
     await selectChatGroup(chatGroupId);
   }
@@ -292,7 +318,9 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
               _presenceChannel = null;
             }
             // Trigger cleanup if error present
-            if (error != null) {
+            if (error != null &&
+                shouldNukeAllRealtimeChannels(
+                    SupabaseService.activeChannelCount)) {
               await SupabaseService.cleanupOldChannels();
             }
           }
@@ -506,23 +534,40 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
 
       debugPrint('📚 Loading ALL groups for user: ${currentUser.id}');
 
-      // Query ALL groups where user is a member by checking member_uids array
-      // This includes squad chats, user groups, and DMs
-      debugPrint('🔍 Querying chat_groups where user is in member_uids...');
-      final groupsData = await SupabaseService.client
-          .from('chat_groups')
-          .select('*')
-          .contains('member_uids', [currentUser.id]);
+      final loaded = await loadChatList(
+        fetch: () async {
+          debugPrint('🔍 Querying chat_groups where user is in member_uids...');
+          final groupsData = await SupabaseService.client
+              .from('chat_groups')
+              .select('*')
+              .contains('member_uids', [currentUser.id]);
+          debugPrint('🔍 Received ${(groupsData as List).length} total groups');
+          return List<Map<String, dynamic>>.from(groupsData as List);
+        },
+      );
 
-      debugPrint('🔍 Received ${(groupsData as List).length} total groups');
+      if (loaded.phase == ChatSurfacePhase.error) {
+        debugPrint('❌ Error loading groups: ${loaded.error}');
+        final currentState = state.valueOrNull ?? await future;
+        state = AsyncData(currentState.copyWith(
+          syncError: loaded.error?.toString(),
+        ));
+        await _errorHandler.handleError(
+          error: loaded.error ?? 'loadUserGroups failed',
+          stackTrace: StackTrace.current,
+          operation: 'loadUserGroups',
+          showSnackBar: false,
+        );
+        return;
+      }
 
-      if ((groupsData as List).isEmpty) {
+      if (loaded.items.isEmpty) {
         debugPrint('📚 User is not a member of any groups');
-        // Set empty state
         final currentState = state.valueOrNull ?? await future;
         state = AsyncData(currentState.copyWith(
           chatGroups: {},
           userChatGroups: {},
+          syncError: null,
         ));
         return;
       }
@@ -530,8 +575,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       final allGroups = <String, ChatGroup>{};
       final userOnlyGroups = <String, ChatGroup>{};
 
-      for (var data in (groupsData as List<dynamic>)) {
-        final groupData = data as Map<String, dynamic>;
+      for (final groupData in loaded.items) {
         final groupId = groupData['id'] as String;
 
         // Query the most recent message for this group to get last activity and details
@@ -610,6 +654,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       final newState = currentState.copyWith(
         chatGroups: allGroups,
         userChatGroups: userOnlyGroups, // Now same as chatGroups
+        syncError: null,
       );
       state = AsyncData(newState);
       debugPrint(
@@ -617,6 +662,10 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
     } catch (e, stackTrace) {
       debugPrint('❌ Error loading groups: $e');
       debugPrint('Stack trace: $stackTrace');
+      final currentState = state.valueOrNull;
+      if (currentState != null) {
+        state = AsyncData(currentState.copyWith(syncError: e.toString()));
+      }
       await _errorHandler.handleError(
         error: e,
         stackTrace: stackTrace,
@@ -713,6 +762,8 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       'is_muted': !currentlyMuted,
       'muted_at': !currentlyMuted ? DateTime.now().toIso8601String() : null,
     });
+    await NotificationHygieneStore.instance
+        .setSquadMuted(groupId, !currentlyMuted);
   }
 
   /// Toggle pin status for a group chat
@@ -748,6 +799,7 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       'is_muted': true,
       'ignored_at': DateTime.now().toIso8601String(),
     });
+    await NotificationHygieneStore.instance.setSquadMuted(groupId, true);
   }
 
   /// Delete a group chat (creator only)

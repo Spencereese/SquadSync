@@ -2,17 +2,38 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- aps-environment flavors (see docs/TESTFLIGHT_CHECKLIST.md).
+	     This file is the iphoneos* device entitlements.
+	     Debug / local device: development (this committed value — do not
+	     silent-flip it; that breaks the simulator if it leaks to
+	     iphonesimulator*).
+	     Release / Archive / TestFlight / App Store: production on a
+	     Release-only overlay — never edit Runner.simulator.entitlements
+	     to production. -->
 	<key>aps-environment</key>
 	<string>development</string>
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.squadsync.app</string>
+		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	</array>
+	<!-- AASA appID must be TEAMID.com.example.codSquadApp (parked bundle ID).
+	     Supabase Auth redirect: com.example.codSquadApp://auth-callback
+	     Universal Links: https://codsquad.app/l/<id> → /squad?lobby_id=
+	     Prep: ios/associated-domains/apple-app-site-association
+	     Template: ios/associated-domains/associated-domains.entitlements
+	     Spencer: enable Associated Domains on App ID com.example.codSquadApp
+	     if not already; host AASA; replace TEAMID. Do not change bundle ID. -->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:sfckxrnoiwetmzdycqaa.supabase.co</string>
 		<string>applinks:lobbiesync.app</string>
 		<string>applinks:www.lobbiesync.app</string>
+		<string>applinks:codsquad.app</string>
+		<string>applinks:www.codsquad.app</string>
 	</array>
 </dict>
 </plist>

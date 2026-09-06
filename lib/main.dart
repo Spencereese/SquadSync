@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'core/app_env.dart';
 import 'firebase_options.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +14,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'core/injection.dart' as di;
 import 'core/app_router.dart';
+import 'core/app_links_policy.dart';
+import 'core/deep_link_routes.dart';
 import 'notification_service.dart';
 import 'widgets/app_widgets.dart';
 import 'services/supabase_service.dart';
@@ -27,8 +29,9 @@ void main() async {
   // Preserve native splash screen until we're ready
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  bindRuntimeHostedLogHandler();
   try {
-    await dotenv.load();
+    await AppEnv.load();
   } catch (e) {
     debugPrint('dotenv load failed: $e');
   }
@@ -79,11 +82,42 @@ void main() async {
     rethrow;
   }
 
+  try {
+    if (!di.getIt.isRegistered<AutoMergeService>()) {
+      di.getIt.registerSingleton<AutoMergeService>(AutoMergeService());
+    }
+    if (AppEnv.isSupabaseConfigured && SupabaseService.isInitialized) {
+      di.getIt<AutoMergeService>().startMergeDetection();
+      debugPrint('Auto-merge service initialized');
+    } else {
+      debugPrint('AutoMerge skipped: Supabase not configured');
+    }
+  } catch (e) {
+    debugPrint('Auto-merge service initialization failed: $e');
+  }
+
   // Note: Native splash will be removed by app_widgets.dart after Flutter content is ready
   // DO NOT call FlutterNativeSplash.remove() here - it removes splash too early
 
-  // Run the app
-  runApp(SquadSyncApp(prefs: prefs));
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarDividerColor: Colors.transparent,
+  ));
+
+  // ProviderScope must wrap the app — SquadSyncApp is a ConsumerStatefulWidget.
+  runApp(
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
+      child: SquadSyncApp(prefs: prefs),
+    ),
+  );
 }
 
 /// Initialize Firebase for Analytics & Messaging ONLY
@@ -127,17 +161,7 @@ Future<void> _initializeFirebase() async {
     // This is called after login in AuthServiceSupabase
     // PeacockNotificationService.initialize() is called when user signs in
 
-    // Initialize auto-merge service for lobby merge suggestions
-    try {
-      final autoMergeService = di.getIt<AutoMergeService>();
-      autoMergeService.startMergeDetection();
-      debugPrint('Auto-merge service initialized');
-    } catch (e) {
-      debugPrint('Auto-merge service initialization failed: $e');
-      // Continue without auto-merge - not critical
-    }
-
-    // Dependency injection is already done before this function is called
+    // Auto-merge starts after GetIt setup in main() — not here.
     // Remove duplicate call to avoid issues
     // await di.setupInjection();
     // debugPrint('Dependency injection initialized');
@@ -203,26 +227,64 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
   }
 
   Future<void> _initDeepLinks() async {
-    // Handle initial link
-    final initialLink = await _appLinks.getInitialLink();
-    if (initialLink != null && mounted) {
-      _handleDeepLink(initialLink.toString());
+    final fromChannel = await loadIosSimulatorFromChannel();
+    final envHasKeys = simulatorEnvKeysPresent();
+    final detected = detectIosSimulator(channelSaysSimulator: fromChannel);
+    final plan = planAppLinkListen(isIosSimulator: detected);
+    debugPrint(
+      'detectIosSimulator=$detected consumeInitialLink=${plan.consumeInitialLink} '
+      'envHasSimulatorKeys=$envHasKeys',
+    );
+    if (plan.consumeInitialLink) {
+      final initialLink = await _appLinks.getInitialLink();
+      if (initialLink != null && mounted) {
+        _handleDeepLink(
+          initialLink.toString(),
+          source: PendingLinkSource.coldStart,
+        );
+      }
+    } else {
+      debugPrint(
+          'AppLinks: skip getInitialLink; uriLinkStream stays on');
     }
 
-    // Listen for incoming links - initial link handling may be different in v6
+    if (!plan.subscribeUriLinkStream) return;
+
     _sub = _appLinks.uriLinkStream.listen((Uri? link) {
       if (link != null && mounted) {
-        _handleDeepLink(link.toString());
+        _handleDeepLink(
+          link.toString(),
+          source: PendingLinkSource.resume,
+        );
       }
     }, onError: (err) {
       // Error in link stream - silently handled
     });
   }
 
-  void _handleDeepLink(String link) {
+  void _handleDeepLink(
+    String link, {
+    required PendingLinkSource source,
+  }) {
     if (!mounted) return;
 
-    // Use DeepLinkRouter for go_router integration
+    // Live path: leftover sim UL dropped; product custom-scheme lobby
+    // URLs resolve to /squad?lobby_id= and take splash down. Same parse
+    // as the pending-link stubs. Take so bindRouter does not double-go.
+    final location = source == PendingLinkSource.coldStart
+        ? pendingLinkQueue.offerColdStartUrl(
+            link,
+            dismissSplash: FlutterNativeSplash.remove,
+          )
+        : pendingLinkQueue.offerResumeUrl(
+            link,
+            dismissSplash: FlutterNativeSplash.remove,
+          );
+    if (location == null) return;
+
+    // AppLinks delivers through [DeepLinkRouter]; do not also flush.
+    pendingLinkQueue.take();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         DeepLinkRouter.handleDeepLink(context, ref, link);
@@ -271,24 +333,36 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
       final user = authService.currentUser;
 
       if (user != null) {
-        // User already authenticated - initialize peacock notifications
-        await PeacockNotificationService.initialize();
-        await PeacockNotificationService.checkPendingNotifications();
-        debugPrint('✅ Peacock notification service initialized');
+        final session = await SupabaseService.ensureFreshSession();
+        if (session == null) {
+          debugPrint('Peacock skipped: session expired');
+        } else {
+          await PeacockNotificationService.initialize();
+          await PeacockNotificationService.checkPendingNotifications();
+          debugPrint('✅ Peacock notification service initialized');
+        }
       }
 
       // Listen for auth state changes to handle login/logout
-      SupabaseService.client.auth.onAuthStateChange.listen((data) {
+      final authClient = SupabaseService.maybeClient;
+      if (authClient == null) return;
+      authClient.auth.onAuthStateChange.listen((data) {
         final session = data.session;
         if (session != null) {
           // User logged in - initialize peacock notifications
           PeacockNotificationService.initialize();
           PeacockNotificationService.checkPendingNotifications();
+          try {
+            di.getIt<AutoMergeService>().startMergeDetection();
+          } catch (_) {}
           debugPrint(
               '✅ Peacock notifications active for user: ${session.user.id}');
         } else {
           // User logged out - dispose listener
           PeacockNotificationService.dispose();
+          try {
+            di.getIt<AutoMergeService>().stopMergeDetection();
+          } catch (_) {}
           debugPrint('🦚 Peacock notifications disposed');
         }
       });
@@ -299,11 +373,6 @@ class _SquadSyncAppState extends ConsumerState<SquadSyncApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ProviderScope(
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(widget.prefs),
-      ],
-      child: const SquadSyncMaterialApp(),
-    );
+    return const SquadSyncMaterialApp();
   }
 }

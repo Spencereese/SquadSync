@@ -1,32 +1,40 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart' as sqlcipher;
-import 'package:path/path.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:async';
+import 'package:squad_sync/core/sqlite_cells.dart';
 
 class SQLiteHelper {
   static Database? _database;
+  static Future<Database>? _opening;
   static const String _encryptionKeyName = 'sqlite_encryption_key';
   static const _secureStorage = FlutterSecureStorage();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+    if (_opening != null) return _opening!;
+    _opening = _initDatabase();
+    try {
+      _database = await _opening!;
+      return _database!;
+    } finally {
+      _opening = null;
+    }
   }
 
   /// Get or generate encryption key for SQLite database
   Future<String> _getEncryptionKey() async {
     try {
-      // Try to read existing key
       String? key = await _secureStorage.read(key: _encryptionKeyName);
 
       if (key == null) {
-        // Generate new 256-bit key (64 hex characters)
-        key = _generateSecureKey();
+        key = generateSecureKey();
         await _secureStorage.write(key: _encryptionKeyName, value: key);
         debugPrint('🔐 Generated new SQLite encryption key');
       }
@@ -34,48 +42,37 @@ class SQLiteHelper {
       return key;
     } catch (e) {
       debugPrint('⚠️  Failed to get encryption key: $e');
-      // Fallback to a deterministic key (less secure but ensures app works)
-      return 'fallback_key_${Platform.operatingSystem}_${Platform.localeName}';
+      // Deterministic OS/locale fallback removed. Friends/release never use it.
+      if (kDebugMode) {
+        debugPrint(
+          'SECURITY: sqlite key storage failed; minting ephemeral CSPRNG key. '
+          'NOT a deterministic OS/locale fallback. Debug only — release rethrows.',
+        );
+        return generateSecureKey();
+      }
+      rethrow;
     }
   }
 
-  /// Generate cryptographically secure random key
-  String _generateSecureKey() {
-    final random = DateTime.now().millisecondsSinceEpoch;
-    final chars = 'abcdef0123456789';
-    final key = List.generate(64, (index) {
-      final charIndex = (random + index) % chars.length;
-      return chars[charIndex];
-    }).join();
-    return key;
+  /// 256-bit hex key from CSPRNG. Not derived from clock, OS, or locale.
+  @visibleForTesting
+  static String generateSecureKey() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+    final buffer = StringBuffer();
+    for (final b in bytes) {
+      buffer.write(b.toRadixString(16).padLeft(2, '0'));
+    }
+    return buffer.toString();
   }
 
-  Future<Database> _initDatabase() async {
-    try {
-      // Get database path with proper error handling
-      final databasesPath = await getDatabasesPath();
-      debugPrint('📂 Database path: $databasesPath');
+  /// Old deterministic OS/locale fallback path is gone.
+  @visibleForTesting
+  static bool get usesDeterministicFallback => false;
 
-      // Ensure directory exists
-      final directory = Directory(databasesPath);
-      if (!await directory.exists()) {
-        debugPrint('📁 Creating database directory...');
-        await directory.create(recursive: true);
-      }
-
-      final path = join(databasesPath, 'lobbiesync.db');
-      debugPrint('💾 Opening database at: $path');
-
-      // Get encryption key
-      final encryptionKey = await _getEncryptionKey();
-
-      // Use sqlcipher for encrypted database
-      return await sqlcipher.openDatabase(
-        path,
-        version: 16, // Clear cache again due to metadata corruption
-        password: encryptionKey,
-        onCreate: (db, version) async {
-          await db.execute('''
+  /// Full v16 schema. Used by first open and cipher-recovery recreate.
+  static Future<void> createFullSchema(Database db) async {
+    await db.execute('''
           CREATE TABLE messages (
             id TEXT PRIMARY KEY,
             sender_id TEXT,
@@ -104,7 +101,7 @@ class SQLiteHelper {
             synced INTEGER DEFAULT 1
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE groups_cache (
             id TEXT PRIMARY KEY,
             game_name TEXT,
@@ -113,14 +110,14 @@ class SQLiteHelper {
             cached_at INTEGER
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE timers (
             key TEXT PRIMARY KEY,
             data TEXT,
             created_at TEXT
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE games_cache (
             id TEXT PRIMARY KEY,
             query TEXT,
@@ -128,13 +125,13 @@ class SQLiteHelper {
             cached_at INTEGER
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE cache_metadata (
             cache_key TEXT PRIMARY KEY,
             cached_at INTEGER
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE voice_rooms_cache (
             room_id TEXT PRIMARY KEY,
             room_name TEXT,
@@ -142,7 +139,7 @@ class SQLiteHelper {
             cached_at TEXT
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE lobbies (
             id TEXT PRIMARY KEY,
             name TEXT,
@@ -161,7 +158,7 @@ class SQLiteHelper {
             updatedAt TEXT
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE chat_groups (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -180,7 +177,7 @@ class SQLiteHelper {
             settings TEXT
           )
         ''');
-          await db.execute('''
+    await db.execute('''
           CREATE TABLE polls (
             id TEXT PRIMARY KEY,
             question TEXT NOT NULL,
@@ -193,17 +190,81 @@ class SQLiteHelper {
             is_active INTEGER DEFAULT 1
           )
         ''');
-          // Create indexes for better query performance
-          await db.execute(
-              'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
-          await db.execute(
-              'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
-          await db.execute(
-              'CREATE INDEX idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
-          await db.execute(
-              'CREATE INDEX idx_groups_cache ON groups_cache(game_name, search_term)');
-          await db.execute(
-              'CREATE INDEX idx_polls_chat_group ON polls(chat_group_id)');
+    await db.execute(
+        'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
+    await db.execute(
+        'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
+    await db.execute(
+        'CREATE INDEX idx_timestamp_group ON messages(timestamp_ms DESC, chat_group_id)');
+    await db.execute(
+        'CREATE INDEX idx_groups_cache ON groups_cache(game_name, search_term)');
+    await db.execute(
+        'CREATE INDEX idx_polls_chat_group ON polls(chat_group_id)');
+    await db.execute('''
+          CREATE TABLE offline_queue (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            data TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            retry_count INTEGER DEFAULT 0,
+            last_retry_at INTEGER,
+            error TEXT
+          )
+        ''');
+    await db.execute('''
+          CREATE TABLE clips (
+            id TEXT PRIMARY KEY,
+            squad_id TEXT,
+            sender_id TEXT,
+            sender_name TEXT,
+            video_url TEXT NOT NULL,
+            thumbnail_url TEXT,
+            duration_sec INTEGER,
+            width INTEGER,
+            height INTEGER,
+            views INTEGER DEFAULT 0,
+            hype_reactions TEXT,
+            created_at INTEGER NOT NULL,
+            synced INTEGER DEFAULT 1,
+            updated_at INTEGER
+          )
+        ''');
+    await db.execute(
+        'CREATE INDEX idx_offline_queue_type ON offline_queue(type)');
+    await db.execute(
+        'CREATE INDEX idx_offline_queue_created ON offline_queue(created_at)');
+    await db.execute('CREATE INDEX idx_clips_squad ON clips(squad_id)');
+    await db.execute(
+        'CREATE INDEX idx_clips_created ON clips(created_at DESC)');
+    await db.execute('CREATE INDEX idx_clips_synced ON clips(synced)');
+  }
+
+  Future<Database> _initDatabase() async {
+    try {
+      // Get database path with proper error handling
+      final databasesPath = await getDatabasesPath();
+      debugPrint('📂 Database path: $databasesPath');
+
+      // Ensure directory exists
+      final directory = Directory(databasesPath);
+      if (!await directory.exists()) {
+        debugPrint('📁 Creating database directory...');
+        await directory.create(recursive: true);
+      }
+
+      final path = join(databasesPath, 'lobbiesync.db');
+      debugPrint('💾 Opening database at: $path');
+
+      // Get encryption key
+      final encryptionKey = await _getEncryptionKey();
+
+      // Use sqlcipher for encrypted database
+      return await sqlcipher.openDatabase(
+        path,
+        version: 16, // Clear cache again due to metadata corruption
+        password: encryptionKey,
+        onCreate: (db, version) async {
+          await createFullSchema(db);
         },
         onUpgrade: (db, oldVersion, newVersion) async {
           if (oldVersion < 2) {
@@ -617,61 +678,36 @@ class SQLiteHelper {
       debugPrint('❌ Failed to initialize database: $e');
       debugPrint('Stack trace: $stackTrace');
 
-      // Try to delete corrupted database and retry
+      if (!isSqliteCipherOpenFailure(e)) {
+        rethrow;
+      }
+
+      // Key-mismatch / exclusive lock: delete and recreate once.
       try {
+        try {
+          await _database?.close();
+        } catch (_) {}
+        _database = null;
         final databasesPath = await getDatabasesPath();
         final path = join(databasesPath, 'lobbiesync.db');
+        try {
+          await sqlcipher.deleteDatabase(path);
+        } catch (_) {}
         final file = File(path);
-
         if (await file.exists()) {
           debugPrint('🗑️  Deleting corrupted database...');
           await file.delete();
-          debugPrint('♻️  Retrying database initialization...');
-
-          // Retry initialization
-          final encryptionKey = await _getEncryptionKey();
-          return await sqlcipher.openDatabase(
-            path,
-            version: 16,
-            password: encryptionKey,
-            onCreate: (db, version) async {
-              // Simplified onCreate for recovery
-              await db.execute('''
-                CREATE TABLE messages (
-                  id TEXT PRIMARY KEY,
-                  sender_id TEXT,
-                  sender_name TEXT,
-                  timestamp_ms INTEGER,
-                  content TEXT,
-                  text TEXT,
-                  reactions TEXT,
-                  delivered INTEGER,
-                  read INTEGER,
-                  reply_to TEXT,
-                  created_at TEXT,
-                  chat_group_id TEXT,
-                  message_type TEXT,
-                  media_url TEXT,
-                  media_type TEXT,
-                  poll TEXT,
-                  voice_note_url TEXT,
-                  voice_note_duration INTEGER,
-                  ai_response TEXT,
-                  metadata TEXT,
-                  is_edited INTEGER DEFAULT 0,
-                  edited_at TEXT,
-                  is_deleted INTEGER DEFAULT 0,
-                  deleted_at TEXT,
-                  synced INTEGER DEFAULT 1
-                )
-              ''');
-              await db.execute(
-                  'CREATE INDEX idx_timestamp_ms ON messages(timestamp_ms DESC)');
-              await db.execute(
-                  'CREATE INDEX idx_chat_group_id ON messages(chat_group_id)');
-            },
-          );
         }
+        debugPrint('♻️  Recreating database after cipher open_failed...');
+        final encryptionKey = await _getEncryptionKey();
+        return await sqlcipher.openDatabase(
+          path,
+          version: 16,
+          password: encryptionKey,
+          onCreate: (db, version) async {
+            await createFullSchema(db);
+          },
+        );
       } catch (retryError) {
         debugPrint('❌ Retry failed: $retryError');
       }

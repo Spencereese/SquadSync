@@ -6,6 +6,7 @@ import 'package:logger/logger.dart';
 import 'package:workmanager/workmanager.dart';
 import '../chat/sqlite_helper.dart';
 import 'supabase_service.dart';
+import '../core/workmanager_skip.dart';
 
 /// Background sync service for offline-first operations
 /// Syncs pending messages, uploads, and data changes when online
@@ -30,26 +31,45 @@ class BackgroundSyncService {
     try {
       _sqliteHelper = SQLiteHelper();
 
-      // Initialize Workmanager (only supported on Android/iOS)
+      // Workmanager is Android/iOS only; sim/desktop often throw here.
       try {
-        await Workmanager().initialize(
-          callbackDispatcher,
-          isInDebugMode: kDebugMode,
-        );
-
-        // Register periodic sync task (runs every 15 minutes)
-        await Workmanager().registerPeriodicTask(
-          periodicSyncTask,
-          periodicSyncTask,
-          frequency: const Duration(minutes: 15),
-          constraints: Constraints(
-            networkType: NetworkType.connected,
-          ),
-        );
-        _logger.i('Workmanager background tasks registered');
+        if (kIsWeb ||
+            defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            (kDebugMode && defaultTargetPlatform == TargetPlatform.iOS)) {
+          _logger.i('Workmanager skipped on this platform');
+        } else {
+          await Workmanager().initialize(
+            callbackDispatcher,
+            isInDebugMode: kDebugMode,
+          );
+          try {
+            await Workmanager().registerPeriodicTask(
+              periodicSyncTask,
+              periodicSyncTask,
+              frequency: const Duration(minutes: 15),
+              constraints: Constraints(
+                networkType: NetworkType.connected,
+              ),
+            );
+            _logger.i('Workmanager background tasks registered');
+          } catch (e) {
+            if (isExpectedWorkmanagerSkip(e)) {
+              debugPrint(
+                  'Workmanager periodic task skipped (simulator/unsupported)');
+            } else {
+              _logger.w('Workmanager registerPeriodicTask skipped: $e');
+            }
+          }
+        }
       } catch (e) {
-        _logger.w('Workmanager not available on this platform: $e');
-        // Continue without background tasks - app will sync when in foreground
+        if (isExpectedWorkmanagerSkip(e)) {
+          debugPrint(
+              'Workmanager initialize skipped (simulator/unsupported)');
+        } else {
+          _logger.w('Workmanager not available on this platform: $e');
+        }
       }
 
       // Listen to connectivity changes
@@ -319,7 +339,11 @@ class BackgroundSyncService {
   /// Dispose resources
   Future<void> dispose() async {
     await _connectivitySubscription?.cancel();
-    await Workmanager().cancelAll();
+    try {
+      await Workmanager().cancelAll();
+    } catch (e) {
+      _logger.w('Workmanager cancelAll skipped: $e');
+    }
   }
 }
 

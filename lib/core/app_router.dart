@@ -1,39 +1,239 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../screens/discovery_swipe_screen.dart';
 import '../screens/lobby_tab_screen.dart';
 import '../chat/chat_groups_screen.dart';
 import '../chat/chat_screen.dart';
 import '../profile_tab.dart';
 import '../screens/clips_screen.dart';
+import '../screens/performance_stats_screen.dart';
 import '../join_lobby_screen.dart';
 import '../setup_screen.dart';
 import '../chat/dialogs/group_actions_dialog.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/ab_testing_service.dart';
 import '../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'app_env.dart';
+import 'session_guard.dart';
 import '../domain/entities/message.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import 'package:squad_sync/presentation/notifiers/chat_notifier.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'notification_routes.dart';
+import 'deep_link_routes.dart';
+import 'lobby_chat_bind.dart';
+import 'package:squad_sync/presentation/notifiers/notification_notifier.dart';
 
 /// A/B Testing Service Provider
 final abTestingServiceProvider = FutureProvider<ABTestingService>((ref) async {
   return await ABTestingService.initialize();
 });
 
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// `/squad` and `/squad/:gameName` extras plus `lobby_id` query.
+/// `spot_index` highlights the offered peacock seat (ticket 35).
+@visibleForTesting
+class SquadRouteArgs {
+  const SquadRouteArgs({
+    this.gameName,
+    this.lobbyId,
+    this.game,
+    this.chatGroupId,
+    this.spotIndex,
+  });
+
+  final String? gameName;
+  final String? lobbyId;
+  final Map<String, dynamic>? game;
+  final String? chatGroupId;
+  final int? spotIndex;
+
+  factory SquadRouteArgs.fromState(GoRouterState state) {
+    final extra = state.extra as Map<String, dynamic>?;
+    final pathGame = state.pathParameters['gameName'];
+    final query = state.uri.queryParameters;
+    return SquadRouteArgs(
+      gameName: _nonEmpty(pathGame) ?? extra?['gameName'] as String?,
+      lobbyId: _nonEmpty(extra?['lobbyId']) ?? _nonEmpty(query['lobby_id']),
+      game: extra?['game'] as Map<String, dynamic>?,
+      chatGroupId: extra?['chatGroupId'] as String?,
+      spotIndex: NotificationRoutes.spotIndexFrom({
+        ...query,
+        if (extra != null) ...extra,
+      }),
+    );
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty) return null;
+    return text;
+  }
+}
+
+/// Root tab for the friends / full shell. Router + nav share this list.
+class FriendsRootTab {
+  const FriendsRootTab({
+    required this.label,
+    required this.route,
+    required this.icon,
+  });
+
+  final String label;
+  final String route;
+  final IconData icon;
+}
+
+/// Surfaces that stay on disk but are gated off the friends root.
+enum FriendsGatedSurface {
+  discovery,
+  constitution,
+  grok,
+  pollCreation,
+  publicLobbyBrowser,
+}
+
+const _friendsRootTabs = <FriendsRootTab>[
+  FriendsRootTab(label: 'Tonight', route: '/squad', icon: Icons.people),
+  FriendsRootTab(label: 'Chat', route: '/chat', icon: Icons.chat_bubble),
+  FriendsRootTab(label: 'You', route: '/profile', icon: Icons.person),
+];
+
+const kFriendsTabChatUnread = Key('friends-tab-chat-unread');
+
+const _fullRootTabs = <FriendsRootTab>[
+  FriendsRootTab(label: 'Home', route: '/', icon: Icons.home),
+  FriendsRootTab(
+    label: 'Discover',
+    route: '/discover-swipe',
+    icon: Icons.explore,
+  ),
+  FriendsRootTab(
+    label: 'Tonight/Squad',
+    route: '/squad',
+    icon: Icons.people,
+  ),
+  FriendsRootTab(label: 'Chat', route: '/chat', icon: Icons.chat_bubble),
+  FriendsRootTab(label: 'You', route: '/profile', icon: Icons.person),
+];
+
+List<FriendsRootTab> friendsRootTabs({required bool friendsMode}) {
+  return friendsMode ? _friendsRootTabs : _fullRootTabs;
+}
+
+bool friendsGatesSurface(
+  FriendsGatedSurface surface, {
+  required bool friendsMode,
+}) {
+  return friendsMode;
+}
+
+/// Friends root: Tonight, Chat (incl. thread), You, plus `/setup`.
+/// Full shell allows every prior location.
+bool friendsRootAllowsLocation(
+  String location, {
+  required bool friendsMode,
+}) {
+  if (!friendsMode) return true;
+  final path = Uri.tryParse(location)?.path ?? location;
+  if (path == '/squad' || path.startsWith('/squad/')) return true;
+  if (path == '/chat' || path.startsWith('/chat/')) return true;
+  if (path == '/profile') return true;
+  if (path == '/setup') return true;
+  return false;
+}
+
+/// Post-login landing. Friends IPA opens `/squad` unless last chat is
+/// the bound lobby thread. Full shell keeps last-chat → `/` fallback.
+String resolveFriendsPostLoginLocation({
+  required bool friendsMode,
+  String? lastChatGroupId,
+  String? boundLobbyThreadId,
+}) {
+  final last = lastChatGroupId?.trim();
+  final bound = boundLobbyThreadId?.trim();
+  if (!friendsMode) {
+    if (last != null && last.isNotEmpty) return '/chat/$last';
+    return '/';
+  }
+  if (last != null &&
+      last.isNotEmpty &&
+      bound != null &&
+      bound.isNotEmpty &&
+      last == bound) {
+    return '/chat/$last';
+  }
+  return '/squad';
+}
+
+/// Title shown on `/chat/:id` before (and if) the live group row returns.
+@visibleForTesting
+String lastKnownChatRouteTitle({
+  required String chatGroupId,
+  String? cachedName,
+  String? fetchedName,
+}) {
+  if (chatGroupId.trim().isEmpty) return 'Chat';
+  final fetched = fetchedName?.trim();
+  if (fetched != null && fetched.isNotEmpty) return fetched;
+  final cached = cachedName?.trim();
+  if (cached != null && cached.isNotEmpty) return cached;
+  return 'Chat';
+}
+
+String? _cachedChatGroupName(Ref ref, String chatGroupId) {
+  try {
+    return ref
+        .read(chatNotifierProvider)
+        .asData
+        ?.value
+        .chatGroups[chatGroupId]
+        ?.name;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Friends 404 Go Home lands Tonight (`/squad`); full shell keeps `/`.
+String friendsErrorHomeLocation({required bool friendsMode}) {
+  return friendsMode ? '/squad' : '/';
+}
+
 /// GoRouter configuration provider with A/B testing integration
 final goRouterProvider = Provider<GoRouter>((ref) {
-  final authService = AuthServiceSupabase();
   final analytics = FirebaseAnalytics.instance;
   final abTestService = ref.watch(abTestingServiceProvider).asData?.value;
 
-  return GoRouter(
-    debugLogDiagnostics: true,
-    initialLocation: '/',
+  final router = GoRouter(
+    navigatorKey: rootNavigatorKey,
+    debugLogDiagnostics: kDebugMode,
+    initialLocation: AppEnv.friendsMode ? '/squad' : '/',
     redirect: (context, state) async {
-      final user = authService.currentUser;
-      final isLoginRoute = state.matchedLocation == '/setup';
+      Session? session;
+      Object? restoreError;
+      try {
+        if (AppEnv.isSupabaseConfigured && SupabaseService.isInitialized) {
+          session = await SupabaseService.ensureFreshSession();
+        }
+      } catch (e) {
+        debugPrint('GoRouter: session restore failed: $e');
+        restoreError = e;
+      }
+
+      final restore = reduceSessionRestore(
+        isConfigured: AppEnv.isSupabaseConfigured,
+        isInitialized: SupabaseService.isInitialized,
+        hasUser: session?.user != null,
+        expiresAtSeconds: session?.expiresAt,
+        restoreError: restoreError,
+        currentLocation: state.matchedLocation,
+      );
+      final user = restore.isUsable ? session?.user : null;
 
       // Track navigation for A/B testing
       if (abTestService != null) {
@@ -47,30 +247,63 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         );
       }
 
-      // Redirect to setup if not authenticated
-      if (user == null && !isLoginRoute) {
-        return '/setup';
-      }
+      if (restore.redirectTo != null) return restore.redirectTo;
 
-      // If authenticated and on setup, redirect to main
-      if (user != null && isLoginRoute) {
-        return '/';
-      }
-
-      // OPTIMIZATION: Redirect to last chat on app startup to avoid flash of groups screen
-      // Only do this on the initial '/' route to avoid interfering with manual navigation
+      // Post-login / cold `/`: friendsMode lands /squad unless last chat
+      // is the bound lobby thread. Full shell keeps last-chat → `/`.
       if (state.matchedLocation == '/' && user != null) {
         try {
           final prefs = await SharedPreferences.getInstance();
           final lastGroupId = prefs.getString('last_chat_group');
-
+          var openId = lastGroupId;
+          String? boundThreadId;
           if (lastGroupId != null && lastGroupId.isNotEmpty) {
-            debugPrint('GoRouter: Redirecting to last chat: $lastGroupId');
-            return '/chat/$lastGroupId';
+            try {
+              final snapshot = await loadLobbyChatBindSnapshot(lastGroupId);
+              boundThreadId = snapshot.lobbyChatGroupId;
+              final resolved = resolveActiveChatGroupId(
+                widgetChatGroupId: lastGroupId,
+                isSquad: false,
+                lobbyChatGroupId: snapshot.lobbyChatGroupId,
+                historyCounts: snapshot.historyCounts,
+                extraChatIds: snapshot.candidates,
+              );
+              if (resolved != null && resolved.isNotEmpty) {
+                openId = resolved;
+                if (openId != lastGroupId) {
+                  await prefs.setString('last_chat_group', openId);
+                }
+              }
+            } catch (e) {
+              debugPrint('GoRouter: last-chat bind skipped: $e');
+            }
+          }
+          final landing = resolveFriendsPostLoginLocation(
+            friendsMode: AppEnv.friendsMode,
+            lastChatGroupId: openId,
+            boundLobbyThreadId: boundThreadId,
+          );
+          debugPrint(
+            'GoRouter: groups-list path before last-chat redirect '
+            'last=$lastGroupId open=$openId landing=$landing',
+          );
+          if (landing != state.uri.toString() && landing != '/') {
+            return landing;
+          }
+          if (AppEnv.friendsMode && landing == '/squad') {
+            return landing;
           }
         } catch (e) {
           debugPrint('GoRouter: Error checking last chat: $e');
         }
+      }
+
+      if (AppEnv.friendsMode &&
+          !friendsRootAllowsLocation(
+            state.uri.toString(),
+            friendsMode: true,
+          )) {
+        return '/squad';
       }
 
       return null;
@@ -90,12 +323,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/squad',
         name: 'squad',
         builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
+          final args = SquadRouteArgs.fromState(state);
           return LobbyTabScreen(
-            gameName: extra?['gameName'] as String?,
-            lobbyId: extra?['lobbyId'] as String?,
-            game: extra?['game'] as Map<String, dynamic>?,
-            chatGroupId: extra?['chatGroupId'] as String?,
+            gameName: args.gameName,
+            lobbyId: args.lobbyId,
+            game: args.game,
+            chatGroupId: args.chatGroupId,
+            highlightSpotIndex: args.spotIndex,
           );
         },
       ),
@@ -103,13 +337,13 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/squad/:gameName',
         name: 'squadWithGame',
         builder: (context, state) {
-          final gameName = state.pathParameters['gameName']!;
-          final extra = state.extra as Map<String, dynamic>?;
+          final args = SquadRouteArgs.fromState(state);
           return LobbyTabScreen(
-            gameName: gameName,
-            lobbyId: extra?['lobbyId'] as String?,
-            game: extra?['game'] as Map<String, dynamic>?,
-            chatGroupId: extra?['chatGroupId'] as String?,
+            gameName: args.gameName,
+            lobbyId: args.lobbyId,
+            game: args.game,
+            chatGroupId: args.chatGroupId,
+            highlightSpotIndex: args.spotIndex,
           );
         },
       ),
@@ -123,8 +357,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         name: 'chatDetail',
         builder: (context, state) {
           final chatGroupId = state.pathParameters['id']!;
+          final lastKnownTitle = lastKnownChatRouteTitle(
+            chatGroupId: chatGroupId,
+            cachedName: _cachedChatGroupName(ref, chatGroupId),
+          );
 
-          // Use a FutureBuilder to handle async loading
+          // Fetch live name; first frame keeps last-known title + skeleton.
           return FutureBuilder<Map<String, dynamic>?>(
             future: SupabaseService.client
                 .from('chat_groups')
@@ -133,19 +371,31 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 .maybeSingle(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
+                return Scaffold(
+                  backgroundColor: Colors.black,
+                  appBar: AppBar(
+                    backgroundColor: Colors.black,
+                    title: Text(
+                      lastKnownTitle,
+                      key: const Key('chat-route-last-known-title'),
+                    ),
+                  ),
+                  body: const ColoredBox(
+                    key: Key('chat-route-skeleton'),
+                    color: Color(0x22FFFFFF),
+                    child: SizedBox(height: 120, width: double.infinity),
+                  ),
                 );
               }
 
-              if (snapshot.hasError || snapshot.data == null) {
-                return const ChatGroupsScreen();
-              }
-
-              final response = snapshot.data!;
+              final response = snapshot.data;
               return ChatScreen(
                 chatGroupId: chatGroupId,
-                chatGroupName: response['name'] ?? 'Unknown Group',
+                chatGroupName: lastKnownChatRouteTitle(
+                  chatGroupId: chatGroupId,
+                  cachedName: lastKnownTitle,
+                  fetchedName: response?['name'] as String?,
+                ),
                 chatType: ChatType.userGroup,
               );
             },
@@ -158,9 +408,19 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProfileTab(),
       ),
       GoRoute(
+        path: '/stats',
+        name: 'stats',
+        builder: (context, state) => const PerformanceStatsScreen(),
+      ),
+      GoRoute(
         path: '/clips',
         name: 'clips',
         builder: (context, state) => const ClipsScreen(),
+      ),
+      GoRoute(
+        path: '/discover-swipe',
+        name: 'discoverSwipe',
+        builder: (context, state) => const DiscoverySwipeScreen(),
       ),
       GoRoute(
         path: '/join',
@@ -201,7 +461,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => context.go('/'),
+              key: const Key('friends-error-go-home'),
+              onPressed: () => context.go(
+                AppEnv.friendsMode ? '/squad' : '/',
+              ),
               child: const Text('Go Home'),
             ),
           ],
@@ -212,7 +475,49 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       FirebaseAnalyticsObserver(analytics: analytics),
     ],
   );
+  NotificationRoutes.bindRouter(router, rootNavigatorKey);
+  bindLobbyDeepLinkHooks(
+    selectLobby: (id) {
+      ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(id);
+    },
+    subscribe: (id) {
+      // setSelectedLobbyId already _subscribeToCurrentLobby
+      ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(id);
+    },
+    bindChat: (id, {lobbyChatGroupId}) {
+      _bindLobbyChatFromDeepLink(ref, id, lobbyChatGroupId);
+    },
+  );
+  return router;
 });
+
+void _bindLobbyChatFromDeepLink(
+  Ref ref,
+  String lobbyId,
+  String? lobbyChatGroupId,
+) {
+  final known = lobbyChatGroupId?.trim();
+  if (known != null && known.isNotEmpty) {
+    ref.read(chatNotifierProvider.notifier).bindActiveLobbyChat(
+          lobbyId: lobbyId,
+          lobbyChatGroupId: known,
+        );
+    return;
+  }
+  Future<void>(() async {
+    try {
+      final snapshot = await loadLobbyChatBindSnapshot(lobbyId);
+      final thread = snapshot.lobbyChatGroupId;
+      if (thread == null || thread.isEmpty) return;
+      ref.read(chatNotifierProvider.notifier).bindActiveLobbyChat(
+            lobbyId: lobbyId,
+            lobbyChatGroupId: thread,
+          );
+    } catch (e) {
+      debugPrint('DeepLinkRouter: lobby chat bind skipped: $e');
+    }
+  });
+}
 
 /// Deep link router - handles universal links and app links
 class DeepLinkRouter {
@@ -221,7 +526,6 @@ class DeepLinkRouter {
     WidgetRef ref,
     String link,
   ) async {
-    final router = GoRouter.of(context);
     final authService = AuthServiceSupabase();
     final user = authService.currentUser;
 
@@ -233,41 +537,123 @@ class DeepLinkRouter {
       orElse: () => null,
     );
 
-    // Handle different deep link patterns
-    if (link == 'codsquadapp://chat' || link.contains('/chat')) {
-      if (user != null && squadId != null) {
-        // Deferred navigation with addPostFrameCallback
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          router.go('/chat');
-        });
-      } else if (user == null) {
-        _showSnackBar(context, 'Please sign in first');
-      } else {
-        _showSnackBar(context, 'Please join a squad first');
-      }
-    } else if (link.startsWith('codsquadapp://join/') ||
-        link.contains('/join/')) {
-      // Extract code from URL
-      final uri = Uri.parse(link);
-      final code = link.startsWith('codsquadapp://')
-          ? link.split('/').last
-          : uri.queryParameters['code'] ?? uri.pathSegments.last;
-
-      // Deferred navigation with addPostFrameCallback
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        router.go('/join/$code');
-      });
-    } else if (link.startsWith('https://lobbiesync.app/join/')) {
-      // Handle web deep links for group invites
-      // Deferred navigation with addPostFrameCallback
+    // Web invite dialog stays on the HTTPS join URL. Lobby / peacock /
+    // LFG / notification taps share [locationForDeepLink] below.
+    if (link.startsWith('https://lobbiesync.app/join/')) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         showDialog(
           context: context,
           builder: (context) => const GroupActionsDialog(),
         );
       });
+      return;
     }
+
+    // Live AppLinks path: leftover sim UL dropped; unknown lobby ids
+    // still map to /squad?lobby_id= (existence is not required).
+    final location = locationForLiveAppLink(link);
+    if (location == null) return;
+    debugPrint('DeepLinkRouter: $link -> $location');
+    applyLobbyDeepLink(
+      location,
+      selectLobby: (id) {
+        ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(id);
+      },
+      subscribe: (id) {
+        ref.read(ln.lobbyNotifierProvider.notifier).setSelectedLobbyId(id);
+      },
+    );
+
+    // /squad?lobby_id= must still land even when the lobby does not exist
+    // and even if SquadSyncApp's context is above MaterialApp.router.
+    if (location.startsWith('/squad')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _go(location);
+      });
+      return;
+    }
+
+    if (location.startsWith('/chat') && user == null) {
+      _showSnackBar(context, 'Please sign in first');
+      return;
+    }
+
+    if (location == '/chat') {
+      if (user != null && squadId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _go('/chat');
+        });
+      } else if (user == null) {
+        _showSnackBar(context, 'Please sign in first');
+      } else {
+        _showSnackBar(context, 'Please join a squad first');
+      }
+      return;
+    }
+
+    final parsedChatId = _chatIdFromLocation(location);
+    if (parsedChatId != null) {
+      // Do not drop /chat/:id (1f580ae AppLinks overlay mentioned the
+      // 46-row thread once and never opened it).
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        var openId = parsedChatId;
+        try {
+          final snapshot = await loadLobbyChatBindSnapshot(parsedChatId);
+          final resolved = resolveActiveChatGroupId(
+            widgetChatGroupId: parsedChatId,
+            isSquad: false,
+            lobbyChatGroupId: snapshot.lobbyChatGroupId,
+            historyCounts: snapshot.historyCounts,
+            extraChatIds: snapshot.candidates,
+          );
+          if (resolved != null && resolved.isNotEmpty) openId = resolved;
+        } catch (e) {
+          debugPrint('DeepLinkRouter: chat bind skipped: $e');
+        }
+        debugPrint('DeepLinkRouter: Opening chat $openId');
+        _go('/chat/$openId');
+      });
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _go(location);
+    });
   }
+
+  /// Prefer the bound GoRouter. [GoRouter.of] on SquadSyncApp's context
+  /// is above MaterialApp.router and would throw, leaving splash/black.
+  static void _go(String location) {
+    debugPrint('DeepLinkRouter: go $location');
+    final go = NotificationRoutes.go;
+    if (go != null) {
+      go(location);
+      return;
+    }
+    final stored = NotificationRoutes.router;
+    if (stored != null) {
+      stored.go(location);
+      return;
+    }
+    final navContext = NotificationRoutes.navigatorKey?.currentContext;
+    if (navContext != null && navContext.mounted) {
+      GoRouter.of(navContext).go(location);
+      return;
+    }
+    NotificationRoutes.navigate(location);
+  }
+
+  static String? _chatIdFromLocation(String location) {
+    final uri = Uri.parse(location);
+    if (uri.pathSegments.length < 2 || uri.pathSegments.first != 'chat') {
+      return null;
+    }
+    final id = uri.pathSegments[1].trim();
+    return id.isEmpty ? null : id;
+  }
+
+  /// Pure URI → go_router location. See [locationForDeepLink].
+  static String? locationFor(String link) => locationForDeepLink(link);
 
   static void _showSnackBar(BuildContext context, String message) {
     if (context.mounted) {

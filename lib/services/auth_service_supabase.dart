@@ -1,7 +1,14 @@
-import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:logger/logger.dart';
+import 'dart:async';
 import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+import 'package:logger/logger.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/app_env.dart';
+import '../core/auth_redirect.dart';
+import '../core/session_guard.dart';
+import 'supabase_service.dart';
 
 /// Supabase Auth Service for SquadSync
 ///
@@ -23,14 +30,33 @@ import 'dart:math';
 /// final firebaseUid = authService.currentFirebaseUid;
 /// ```
 class AuthServiceSupabase {
-  static final SupabaseClient _supabase = Supabase.instance.client;
   static final Logger _logger = Logger();
 
-  /// Get current authenticated user
-  User? get currentUser => _supabase.auth.currentUser;
+  SupabaseClient? get _maybeClient => SupabaseService.maybeClient;
+
+  SupabaseClient get _supabase {
+    final client = _maybeClient;
+    if (client == null) {
+      throw StateError('Supabase is not configured.');
+    }
+    return client;
+  }
+
+  /// Get current authenticated user. Null when parked / init skipped.
+  /// Never throws.
+  User? get currentUser {
+    if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
+      return null;
+    }
+    try {
+      return _maybeClient?.auth.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Get current user ID (Supabase UID)
-  String? get currentUserId => _supabase.auth.currentUser?.id;
+  String? get currentUserId => currentUser?.id;
 
   /// Get current user's UID (Supabase UUID)
   String? get currentFirebaseUid {
@@ -39,10 +65,22 @@ class AuthServiceSupabase {
   }
 
   /// Get current session
-  Session? get currentSession => _supabase.auth.currentSession;
+  Session? get currentSession {
+    if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
+      return null;
+    }
+    try {
+      return _maybeClient?.auth.currentSession;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Check if user is authenticated
-  bool get isAuthenticated => currentUser != null;
+  bool get isAuthenticated => isUsableAuthSession(
+        hasUser: currentUser != null,
+        expiresAtSeconds: currentSession?.expiresAt,
+      );
 
   /// Sign in with email and password
   Future<AuthResponse> signInWithEmailPassword({
@@ -100,7 +138,7 @@ class AuthServiceSupabase {
     try {
       final result = await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: 'codsquadapp://auth-callback',
+        redirectTo: kSupabaseAuthRedirect,
         authScreenLaunchMode: LaunchMode.externalApplication,
       );
 
@@ -121,7 +159,7 @@ class AuthServiceSupabase {
     try {
       final result = await _supabase.auth.signInWithOAuth(
         OAuthProvider.apple,
-        redirectTo: 'codsquadapp://auth-callback',
+        redirectTo: kSupabaseAuthRedirect,
         authScreenLaunchMode: LaunchMode.externalApplication,
       );
 
@@ -203,7 +241,11 @@ class AuthServiceSupabase {
   }
 
   /// Auth state changes stream
-  Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
+  Stream<AuthState> get authStateChanges {
+    final client = _maybeClient;
+    if (client == null) return const Stream.empty();
+    return client.auth.onAuthStateChange;
+  }
 
   /// Reset password
   Future<void> resetPassword(String email) async {
@@ -254,16 +296,8 @@ class AuthServiceSupabase {
           claimsResponse.claims.claims; // Access claims map via JwtPayload
 
       if (kDebugMode) {
-        _logger.d('🔐 JWT Claims retrieved:');
-        _logger.d('   Role: ${claims['role']}');
-        _logger
-            .d('   User ID: ${claimsResponse.claims.sub}'); // Direct property
-        _logger.d('   Email: ${claims['email']}');
-        _logger.d('   App Metadata: ${claims['app_metadata']}');
-        _logger.d('   User Metadata: ${claims['user_metadata']}');
-
-        // Check expiration
-        final exp = claimsResponse.claims.exp; // Direct property
+        _logger.d('🔐 JWT claims retrieved: ${claims.keys.toList()}');
+        final exp = claimsResponse.claims.exp;
         if (exp != null) {
           final expiryDate = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
           final timeRemaining = expiryDate.difference(DateTime.now());

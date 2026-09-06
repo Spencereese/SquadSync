@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// SquadSync 2026 Material 3 Theme System
@@ -9,6 +10,8 @@ class AppTheme {
   // Base colors
   static const Color _darkBackground = Color(0xFF0B0E14);
   static const Color _darkSurface = Color(0xFF14181F);
+  static const Color _lightBackground = Color(0xFFF4F6FA);
+  static const Color _lightSurface = Color(0xFFFFFFFF);
   static const Color _defaultNeon = Color(0xFF00F5FF); // Cyan neon default
 
   /// Creates a dark theme with dynamic color seed from game cover art
@@ -24,50 +27,17 @@ class AppTheme {
     bool neonGlowEnabled = true,
     bool highContrastMode = false,
   }) {
-    final seedColor = dynamicSeedColor ?? _defaultNeon;
-
-    // Use pre-generated ColorScheme if available, otherwise create from seed
-    final colorScheme = dynamicColorScheme ??
-        ColorScheme.fromSeed(
-          seedColor: seedColor,
-          brightness: Brightness.dark,
-          background: _darkBackground,
-          surface: _darkSurface,
-        );
-
-    return ThemeData(
-      useMaterial3: true,
+    return _buildTheme(
       brightness: Brightness.dark,
-      colorScheme: colorScheme,
-      scaffoldBackgroundColor: _darkBackground,
-
-      // Custom text theme with Orbitron for headings, Inter for body
-      textTheme: _buildTextTheme(colorScheme),
-
-      // Custom input decoration with glass style
-      inputDecorationTheme: _buildInputDecorationTheme(colorScheme),
-
-      // Elevated button with glass fill and neon border
-      elevatedButtonTheme: _buildElevatedButtonTheme(colorScheme),
-
-      // Card theme with glass effect
-      cardTheme: _buildCardTheme(colorScheme),
-
-      // App bar with glass background
-      appBarTheme: _buildAppBarTheme(colorScheme),
-
-      // Bottom navigation with glass effect
-      bottomNavigationBarTheme: _buildBottomNavTheme(colorScheme),
-
-      // Dialog theme with glassmorphic style
-      dialogTheme: _buildDialogTheme(colorScheme),
-
-      // Floating action button with neon glow
-      floatingActionButtonTheme: _buildFABTheme(colorScheme),
+      dynamicSeedColor: dynamicSeedColor,
+      dynamicColorScheme: dynamicColorScheme,
+      neonGlowEnabled: neonGlowEnabled,
+      highContrastMode: highContrastMode,
     );
   }
 
-  /// Light theme variant (for future use)
+  /// Light Material 3 variant — same tokens, typography, and component themes
+  /// as [dark], resolved against light surfaces.
   ///
   /// [dynamicSeedColor] - Color extracted from IGDB cover art
   /// [dynamicColorScheme] - Pre-generated ColorScheme from ColorScheme.fromImageProvider
@@ -79,19 +49,51 @@ class AppTheme {
     bool neonGlowEnabled = true,
     bool highContrastMode = false,
   }) {
-    final seedColor = dynamicSeedColor ?? _defaultNeon;
+    return _buildTheme(
+      brightness: Brightness.light,
+      dynamicSeedColor: dynamicSeedColor,
+      dynamicColorScheme: dynamicColorScheme,
+      neonGlowEnabled: neonGlowEnabled,
+      highContrastMode: highContrastMode,
+    );
+  }
 
-    // Use pre-generated ColorScheme if available, otherwise create from seed
-    final colorScheme = dynamicColorScheme ??
+  static ThemeData _buildTheme({
+    required Brightness brightness,
+    Color? dynamicSeedColor,
+    ColorScheme? dynamicColorScheme,
+    bool neonGlowEnabled = true,
+    bool highContrastMode = false,
+  }) {
+    final seedColor = dynamicSeedColor ?? _defaultNeon;
+    final fallbackSurface =
+        brightness == Brightness.dark ? _darkSurface : _lightSurface;
+
+    var colorScheme = dynamicColorScheme ??
         ColorScheme.fromSeed(
           seedColor: seedColor,
-          brightness: Brightness.light,
+          brightness: brightness,
+          surface: fallbackSurface,
         );
+
+    if (highContrastMode) {
+      final scaffold = brightness == Brightness.dark
+          ? _darkBackground
+          : _lightBackground;
+      colorScheme = colorScheme.copyWith(
+        primary: highContrast(colorScheme.primary, brightness),
+        onSurface: accessibleTextColor(scaffold),
+        onPrimary: accessibleTextColor(colorScheme.primary),
+      );
+    }
 
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
+      brightness: brightness,
       colorScheme: colorScheme,
+      scaffoldBackgroundColor: brightness == Brightness.dark
+          ? _darkBackground
+          : _lightBackground,
       textTheme: _buildTextTheme(colorScheme),
       inputDecorationTheme: _buildInputDecorationTheme(colorScheme),
       elevatedButtonTheme: _buildElevatedButtonTheme(colorScheme),
@@ -99,8 +101,25 @@ class AppTheme {
       appBarTheme: _buildAppBarTheme(colorScheme),
       bottomNavigationBarTheme: _buildBottomNavTheme(colorScheme),
       dialogTheme: _buildDialogTheme(colorScheme),
-      floatingActionButtonTheme: _buildFABTheme(colorScheme),
+      floatingActionButtonTheme: _buildFABTheme(
+        colorScheme,
+        neonGlowEnabled: neonGlowEnabled,
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: seedColor,
+        selectionColor: seedColor.withValues(alpha: 0.35),
+        selectionHandleColor: seedColor,
+      ),
     );
+  }
+
+  static bool _isLight(ColorScheme scheme) =>
+      scheme.brightness == Brightness.light;
+
+  static Color _glassFill(ColorScheme scheme, {required double darkAlpha}) {
+    return _isLight(scheme)
+        ? Colors.black.withValues(alpha: 0.04)
+        : Colors.white.withValues(alpha: darkAlpha);
   }
 
   // Text theme with Google Fonts
@@ -111,37 +130,37 @@ class AppTheme {
         fontSize: 57,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.25,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       displayMedium: GoogleFonts.orbitron(
         fontSize: 45,
         fontWeight: FontWeight.w700,
         letterSpacing: 0,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       displaySmall: GoogleFonts.orbitron(
         fontSize: 36,
         fontWeight: FontWeight.w600,
         letterSpacing: 0,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       headlineLarge: GoogleFonts.orbitron(
         fontSize: 32,
         fontWeight: FontWeight.w600,
         letterSpacing: 0,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       headlineMedium: GoogleFonts.orbitron(
         fontSize: 28,
         fontWeight: FontWeight.w600,
         letterSpacing: 0,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       headlineSmall: GoogleFonts.orbitron(
         fontSize: 24,
         fontWeight: FontWeight.w600,
         letterSpacing: 0,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
 
       // Body text with Inter (clean, readable)
@@ -149,19 +168,19 @@ class AppTheme {
         fontSize: 16,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.5,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       bodyMedium: GoogleFonts.inter(
         fontSize: 14,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.25,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       bodySmall: GoogleFonts.inter(
         fontSize: 12,
         fontWeight: FontWeight.w400,
         letterSpacing: 0.4,
-        color: colorScheme.onBackground.withOpacity(0.8),
+        color: colorScheme.onSurface.withValues(alpha: 0.8),
       ),
 
       // Labels with Inter
@@ -169,19 +188,19 @@ class AppTheme {
         fontSize: 14,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.1,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       labelMedium: GoogleFonts.inter(
         fontSize: 12,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.5,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       labelSmall: GoogleFonts.inter(
         fontSize: 11,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.5,
-        color: colorScheme.onBackground.withOpacity(0.8),
+        color: colorScheme.onSurface.withValues(alpha: 0.8),
       ),
 
       // Titles with Orbitron
@@ -189,19 +208,19 @@ class AppTheme {
         fontSize: 22,
         fontWeight: FontWeight.w600,
         letterSpacing: 0,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       titleMedium: GoogleFonts.orbitron(
         fontSize: 16,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.15,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       titleSmall: GoogleFonts.orbitron(
         fontSize: 14,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.1,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
     );
   }
@@ -213,18 +232,18 @@ class AppTheme {
 
     return InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white.withOpacity(0.05),
+      fillColor: _glassFill(colorScheme, darkAlpha: 0.05),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(
-          color: neonColor.withOpacity(0.3),
+          color: neonColor.withValues(alpha: 0.3),
           width: 1.5,
         ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(
-          color: neonColor.withOpacity(0.3),
+          color: neonColor.withValues(alpha: 0.3),
           width: 1.5,
         ),
       ),
@@ -238,7 +257,7 @@ class AppTheme {
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(
-          color: colorScheme.error.withOpacity(0.5),
+          color: colorScheme.error.withValues(alpha: 0.5),
           width: 1.5,
         ),
       ),
@@ -252,7 +271,7 @@ class AppTheme {
       labelStyle: GoogleFonts.inter(
         fontSize: 14,
         fontWeight: FontWeight.w500,
-        color: neonColor.withOpacity(0.8),
+        color: neonColor.withValues(alpha: 0.8),
       ),
       floatingLabelStyle: GoogleFonts.inter(
         fontSize: 16,
@@ -261,7 +280,7 @@ class AppTheme {
       ),
       hintStyle: GoogleFonts.inter(
         fontSize: 14,
-        color: colorScheme.onBackground.withOpacity(0.5),
+        color: colorScheme.onSurface.withValues(alpha: 0.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
     );
@@ -274,15 +293,16 @@ class AppTheme {
 
     return ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        foregroundColor: Colors.white,
-        backgroundColor: Colors.white.withOpacity(0.08),
+        foregroundColor:
+            _isLight(colorScheme) ? colorScheme.onSurface : Colors.white,
+        backgroundColor: _glassFill(colorScheme, darkAlpha: 0.08),
         elevation: 0,
         shadowColor: Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: neonColor.withOpacity(0.4),
+            color: neonColor.withValues(alpha: 0.4),
             width: 1.5,
           ),
         ),
@@ -294,22 +314,22 @@ class AppTheme {
       ).copyWith(
         overlayColor: WidgetStateProperty.resolveWith<Color?>((states) {
           if (states.contains(WidgetState.hovered)) {
-            return neonColor.withOpacity(0.15);
+            return neonColor.withValues(alpha: 0.15);
           }
           if (states.contains(WidgetState.pressed)) {
-            return neonColor.withOpacity(0.25);
+            return neonColor.withValues(alpha: 0.25);
           }
           return null;
         }),
         side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
           if (states.contains(WidgetState.hovered)) {
             return BorderSide(
-              color: neonColor.withOpacity(0.8),
+              color: neonColor.withValues(alpha: 0.8),
               width: 2,
             );
           }
           return BorderSide(
-            color: neonColor.withOpacity(0.4),
+            color: neonColor.withValues(alpha: 0.4),
             width: 1.5,
           );
         }),
@@ -321,12 +341,12 @@ class AppTheme {
   static CardThemeData _buildCardTheme(ColorScheme colorScheme) {
     return CardThemeData(
       elevation: 0,
-      color: Colors.white.withOpacity(0.08),
+      color: _glassFill(colorScheme, darkAlpha: 0.08),
       shadowColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(
-          color: colorScheme.primary.withOpacity(0.4),
+          color: colorScheme.primary.withValues(alpha: 0.4),
           width: 1.5,
         ),
       ),
@@ -335,16 +355,23 @@ class AppTheme {
 
   // App bar with glass background
   static AppBarTheme _buildAppBarTheme(ColorScheme colorScheme) {
+    final light = _isLight(colorScheme);
     return AppBarTheme(
       elevation: 0,
       backgroundColor: Colors.transparent,
-      foregroundColor: colorScheme.onBackground,
+      foregroundColor: colorScheme.onSurface,
       centerTitle: true,
+      systemOverlayStyle: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness:
+            light ? Brightness.dark : Brightness.light,
+        statusBarBrightness: light ? Brightness.light : Brightness.dark,
+      ),
       titleTextStyle: GoogleFonts.orbitron(
         fontSize: 20,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.15,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
     );
   }
@@ -353,9 +380,9 @@ class AppTheme {
   static BottomNavigationBarThemeData _buildBottomNavTheme(
       ColorScheme colorScheme) {
     return BottomNavigationBarThemeData(
-      backgroundColor: Colors.white.withOpacity(0.05),
+      backgroundColor: _glassFill(colorScheme, darkAlpha: 0.05),
       selectedItemColor: colorScheme.primary,
-      unselectedItemColor: colorScheme.onBackground.withOpacity(0.6),
+      unselectedItemColor: colorScheme.onSurface.withValues(alpha: 0.6),
       selectedLabelStyle: GoogleFonts.inter(
         fontSize: 12,
         fontWeight: FontWeight.w600,
@@ -373,33 +400,37 @@ class AppTheme {
   static DialogThemeData _buildDialogTheme(ColorScheme colorScheme) {
     return DialogThemeData(
       elevation: 0,
-      backgroundColor: _darkSurface,
+      backgroundColor:
+          _isLight(colorScheme) ? _lightSurface : _darkSurface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
         side: BorderSide(
-          color: colorScheme.primary.withOpacity(0.4),
+          color: colorScheme.primary.withValues(alpha: 0.4),
           width: 1.5,
         ),
       ),
       titleTextStyle: GoogleFonts.orbitron(
         fontSize: 20,
         fontWeight: FontWeight.w700,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
       contentTextStyle: GoogleFonts.inter(
         fontSize: 14,
         fontWeight: FontWeight.w400,
-        color: colorScheme.onBackground,
+        color: colorScheme.onSurface,
       ),
     );
   }
 
   // Floating action button with neon glow
-  static FloatingActionButtonThemeData _buildFABTheme(ColorScheme colorScheme) {
+  static FloatingActionButtonThemeData _buildFABTheme(
+    ColorScheme colorScheme, {
+    bool neonGlowEnabled = true,
+  }) {
     return FloatingActionButtonThemeData(
       backgroundColor: colorScheme.primary,
       foregroundColor: Colors.black,
-      elevation: 8,
+      elevation: neonGlowEnabled ? 8 : 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
@@ -472,13 +503,13 @@ extension NeonGlow on Color {
   }) {
     return [
       BoxShadow(
-        color: withOpacity(opacity),
+        color: withValues(alpha: opacity),
         blurRadius: blur,
         spreadRadius: spread,
         offset: Offset.zero,
       ),
       BoxShadow(
-        color: withOpacity(opacity * 0.5),
+        color: withValues(alpha: opacity * 0.5),
         blurRadius: blur * 1.5,
         spreadRadius: spread * 1.5,
         offset: Offset.zero,
@@ -503,30 +534,24 @@ extension GlassyWidgets on ThemeData {
     // For light backgrounds: use dark semi-transparent overlay
     // For dark backgrounds: use light semi-transparent overlay
     final glassColor = isLightBackground
-        ? Colors.black.withOpacity(0.35)
-        : Colors.white.withOpacity(0.08);
+        ? Colors.black.withValues(alpha: 0.35)
+        : Colors.white.withValues(alpha: 0.08);
 
-    // Adjust border opacity for better visibility
     final borderOpacity = isLightBackground ? 0.7 : 0.4;
-
-    // Shadow adjustments
-    final shadowColor = isLightBackground
-        ? Colors.black.withOpacity(0.25)
-        : Colors.black.withOpacity(0.2);
 
     return BoxDecoration(
       color: glassColor,
       borderRadius: BorderRadius.circular(20),
       border: Border.all(
-        color: borderColor.withOpacity(borderOpacity),
+        color: borderColor.withValues(alpha: borderOpacity),
         width: 1.5,
       ),
       boxShadow: [
         // Strong drop shadow for visibility on all backgrounds
         BoxShadow(
           color: isLightBackground
-              ? Colors.black.withOpacity(0.3)
-              : Colors.black.withOpacity(0.2),
+              ? Colors.black.withValues(alpha: 0.3)
+              : Colors.black.withValues(alpha: 0.2),
           blurRadius: isLightBackground ? 20 : 10,
           offset: Offset(0, isLightBackground ? 8 : 4),
           spreadRadius: isLightBackground ? 2 : 0,
@@ -534,14 +559,14 @@ extension GlassyWidgets on ThemeData {
         // Secondary softer shadow for depth
         if (isLightBackground)
           BoxShadow(
-            color: Colors.black.withOpacity(0.15),
+            color: Colors.black.withValues(alpha: 0.15),
             blurRadius: 40,
             offset: const Offset(0, 12),
             spreadRadius: 0,
           ),
         // Subtle outer glow
         BoxShadow(
-          color: borderColor.withOpacity(isLightBackground ? 0.2 : 0.1),
+          color: borderColor.withValues(alpha: isLightBackground ? 0.2 : 0.1),
           blurRadius: 15,
           spreadRadius: 0,
         ),
@@ -563,25 +588,25 @@ extension GlassyWidgets on ThemeData {
     // For light backgrounds: use darker overlay
     // For dark backgrounds: use lighter overlay
     final glassColor = isLightBackground
-        ? Colors.black.withOpacity(0.25)
-        : Colors.white.withOpacity(0.05);
+        ? Colors.black.withValues(alpha: 0.25)
+        : Colors.white.withValues(alpha: 0.05);
 
     final borderOpacity = isLightBackground ? 0.6 : 0.3;
     final shadowColor = isLightBackground
-        ? Colors.black.withOpacity(0.2)
-        : Colors.black.withOpacity(0.15);
+        ? Colors.black.withValues(alpha: 0.2)
+        : Colors.black.withValues(alpha: 0.15);
 
     return BoxDecoration(
       color: glassColor,
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
-        color: borderColor.withOpacity(borderOpacity),
+        color: borderColor.withValues(alpha: borderOpacity),
         width: 1,
       ),
       boxShadow: [
         BoxShadow(
           color:
-              isLightBackground ? Colors.black.withOpacity(0.25) : shadowColor,
+              isLightBackground ? Colors.black.withValues(alpha: 0.25) : shadowColor,
           blurRadius: isLightBackground ? 16 : 8,
           offset: Offset(0, isLightBackground ? 6 : 2),
           spreadRadius: isLightBackground ? 1 : 0,
@@ -589,7 +614,7 @@ extension GlassyWidgets on ThemeData {
         // Additional shadow for light backgrounds
         if (isLightBackground)
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 30,
             offset: const Offset(0, 10),
           ),
@@ -656,13 +681,13 @@ class GlassmorphicContainer extends StatelessWidget {
     // For light backgrounds: use dark semi-transparent overlay
     // For dark backgrounds: use light semi-transparent overlay
     final glassColor = isLightBackground
-        ? Colors.black.withOpacity(0.35)
-        : Colors.white.withOpacity(0.08);
+        ? Colors.black.withValues(alpha: 0.35)
+        : Colors.white.withValues(alpha: 0.08);
 
     final borderOpacity = isLightBackground ? 0.7 : 0.4;
     final shadowColor = isLightBackground
-        ? Colors.black.withOpacity(0.25)
-        : Colors.black.withOpacity(0.2);
+        ? Colors.black.withValues(alpha: 0.25)
+        : Colors.black.withValues(alpha: 0.2);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -676,14 +701,14 @@ class GlassmorphicContainer extends StatelessWidget {
             color: glassColor,
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: borderColor.withOpacity(borderOpacity),
+              color: borderColor.withValues(alpha: borderOpacity),
               width: 1.5,
             ),
             boxShadow: [
               // Strong drop shadow for visibility
               BoxShadow(
                 color: isLightBackground
-                    ? Colors.black.withOpacity(0.3)
+                    ? Colors.black.withValues(alpha: 0.3)
                     : shadowColor,
                 blurRadius: isLightBackground ? 20 : 10,
                 offset: Offset(0, isLightBackground ? 8 : 4),
@@ -692,13 +717,13 @@ class GlassmorphicContainer extends StatelessWidget {
               // Secondary softer shadow for depth on light backgrounds
               if (isLightBackground)
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
+                  color: Colors.black.withValues(alpha: 0.15),
                   blurRadius: 40,
                   offset: const Offset(0, 12),
                 ),
               // Subtle neon glow
               BoxShadow(
-                color: borderColor.withOpacity(isLightBackground ? 0.2 : 0.15),
+                color: borderColor.withValues(alpha: isLightBackground ? 0.2 : 0.15),
                 blurRadius: 20,
                 spreadRadius: 0,
               ),
@@ -793,8 +818,8 @@ class _NeonPulseButtonState extends State<NeonPulseButton>
               style: ElevatedButton.styleFrom(
                 side: BorderSide(
                   color: _isHovered
-                      ? neonColor.withOpacity(_pulseAnimation.value)
-                      : neonColor.withOpacity(0.4),
+                      ? neonColor.withValues(alpha: _pulseAnimation.value)
+                      : neonColor.withValues(alpha: 0.4),
                   width: _isHovered ? 2 : 1.5,
                 ),
               ),

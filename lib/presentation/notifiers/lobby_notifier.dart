@@ -7,16 +7,26 @@ import 'package:squad_sync/domain/entities/lobby_state.dart';
 import 'package:squad_sync/domain/entities/lobby.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 import 'package:squad_sync/core/injection.dart';
+import 'package:squad_sync/core/user_display_names.dart';
 import 'package:squad_sync/services/auth_service_supabase.dart';
 import 'package:squad_sync/services/supabase_service.dart';
+import 'package:squad_sync/core/realtime_subscribe.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
 import 'package:squad_sync/services/constitution_manager.dart';
 import 'package:squad_sync/domain/entities/constitution.dart';
 
 import '../../notification_service.dart';
+import '../../services/lobby_ready_lock.dart';
+import '../../services/matchmaking_queue_machine.dart';
+import '../../services/peacock_assignment_machine.dart';
+import '../../services/peacock_lock_live_activity.dart';
+import '../../services/preferred_peacock_games.dart';
+import '../../services/session_rating_machine.dart';
+import '../../services/squad_analytics.dart';
 import 'offline_first_mixin.dart';
 import 'timer_management_notifier.dart';
 import 'game_state_notifier.dart';
+import 'lobby_seat_writer.dart';
 
 /// Refactored LobbyNotifier - Core lobby coordination
 /// Handles:
@@ -34,30 +44,60 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   StreamSubscription? _currentLobbySubscription;
   StreamSubscription? _userLobbiesSubscription;
+  int _lobbyChannelErrorRetries = 0;
+  String? _currentSubscribedLobbyId;
+  Timer? _readyCheckTimer;
+  DateTime? _readyCheckStartedAt;
+  LobbyReadyLockSnapshot? _lastReadyLockSnapshot;
+
+  /// Loop seam: Lock chip, [LobbyLockNotify], and live-activity share this.
+  LobbyReadyLockSnapshot? get lastReadyLockSnapshot => _lastReadyLockSnapshot;
+
+  /// Test seam: `(column, value) → users row`. When set, skips live SQL.
+  Future<Map<String, dynamic>?> Function(String column, String value)?
+      debugUsersLookup;
+
+  /// Test seam: current-user key for the self "Unknown User" guard.
+  String? debugCurrentUserId;
+
+  /// Last one-row seat persist error. Null after success or Retry.
+  Object? lastSeatWriteError;
+  LobbySeatWrite? _pendingSeatWrite;
 
   @override
   Future<LobbyState> build() async {
+    // Bind required deps BEFORE offline init / load so a swallowed failure
+    // never leaves late fields unset (LateInitializationError on later calls).
+    _repository = ref.read(lobbyRepositoryProvider);
+    _constitutionManager = ref.read(constitutionManagerProvider);
+    _errorHandler = ref.read(errorHandlingServiceProvider);
+
+    _bindPeacockQueueProcessor();
+    await PreferredPeacockGamesStore.instance.load();
+    final matchmakingRepo = ref.read(matchmakingQueueRepositoryProvider);
+    MatchmakingQueueTracker.instance.bindRepository(matchmakingRepo);
+    unawaited(_bindMatchmakingQueue());
+    ref.onDispose(() {
+      _currentLobbySubscription?.cancel();
+      _userLobbiesSubscription?.cancel();
+      _disarmReadyCheckTimer();
+      disposeOfflineFirst();
+      if (identical(_peacock.queueProcessor, processPeacockQueue)) {
+        _peacock.queueProcessor = null;
+      }
+    });
+
     try {
-      // Initialize offline-first capabilities
       await initializeOfflineFirst();
-
-      // Get dependencies
-      _repository = ref.read(lobbyRepositoryProvider);
-      _constitutionManager = ConstitutionManager();
-      _errorHandler = ref.read(errorHandlingServiceProvider);
-
-      // Clean up subscriptions on dispose
-      ref.onDispose(() {
-        _currentLobbySubscription?.cancel();
-        _userLobbiesSubscription?.cancel();
-        disposeOfflineFirst();
-      });
-
-      // Load initial state
-      return await _loadState();
     } catch (e) {
       debugPrint('Error initializing lobby notifier: $e');
-      return LobbyState.initial();
+    }
+    try {
+      return await _loadState();
+    } catch (e) {
+      debugPrint('Error loading lobby notifier: $e');
+      // Deps are already bound; return a safe default state.
+      return overlayPreferredPeacockGames(LobbyState.initial());
     }
   }
 
@@ -67,7 +107,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
       // Load state with performance monitoring and retry logic
       final initialState = await _errorHandler.withRetryAndMonitoring(
-        operation: () => _repository.loadLobbyState().timeout(
+        operation: () => _loadPersistedLobbyState().timeout(
           const Duration(seconds: 10),
           onTimeout: () {
             debugPrint(
@@ -85,7 +125,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       // Set up real-time subscriptions
       _setupSubscriptions(initialState);
 
-      return initialState;
+      return await syncPreferredPeacockGames(initialState);
     } catch (e, stackTrace) {
       await _errorHandler.handleError(
         error: e,
@@ -93,8 +133,57 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         stackTrace: stackTrace,
         showSnackBar: false, // Don't show error on initial load
       );
-      return LobbyState.initial();
+      return overlayPreferredPeacockGames(LobbyState.initial());
     }
+  }
+
+  Future<LobbyState> _loadPersistedLobbyState() async {
+    final loaded = await _repository.loadLobbyState();
+    return syncPreferredPeacockGames(loaded);
+  }
+
+  /// Toggle a Preferred Peacock Game chip. Persists across sessions.
+  Future<void> togglePreferredPeacockGame(String gameName) async {
+    final persist = await PreferredPeacockGamesStore.instance.toggle(gameName);
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final next = current.copyWith(
+      preferredPeacockGames: PreferredPeacockGamesStore.instance.snapshot,
+    );
+    state = AsyncData(next);
+    if (persist.isFailed) return;
+    try {
+      await _repository.saveLobbyState(next);
+    } catch (e) {
+      PreferredPeacockGamesStore.instance.markError(e, wasSave: true);
+      debugPrint('preferred peacock games save skipped: $e');
+      state = AsyncData(next);
+    }
+  }
+
+  /// Re-run the last preferred-games prefs persist/load, then lobby-state
+  /// save. Surfaces persist/load fail as filter error + Retry.
+  Future<void> retryPreferredPeacockGames() async {
+    final store = PreferredPeacockGamesStore.instance;
+    final persist = await store.retry();
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final next = overlayPreferredPeacockGames(
+      current,
+      preferred: store.snapshot,
+    );
+    if (persist.isFailed) {
+      state = AsyncData(next);
+      return;
+    }
+    try {
+      await _repository.saveLobbyState(next);
+      store.lastError = null;
+    } catch (e) {
+      store.markError(e, wasSave: true);
+      debugPrint('preferred peacock games save skipped: $e');
+    }
+    state = AsyncData(next);
   }
 
   /// Set up Supabase real-time subscriptions for current lobby and user lobbies
@@ -147,8 +236,21 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
+  void _resubscribeCurrentLobbyOnce(String lobbyId) {
+    if (!shouldResubscribeAfterChannelError(_lobbyChannelErrorRetries)) {
+      debugPrint('Lobby channel dead after resubscribe');
+      return;
+    }
+    _lobbyChannelErrorRetries++;
+    _subscribeToCurrentLobby(lobbyId);
+  }
+
   /// Subscribe to real-time updates for a specific lobby
   void _subscribeToCurrentLobby(String lobbyId) {
+    if (_currentSubscribedLobbyId != lobbyId) {
+      _lobbyChannelErrorRetries = 0;
+      _currentSubscribedLobbyId = lobbyId;
+    }
     _currentLobbySubscription?.cancel();
     _currentLobbySubscription = _repository.getLobbyStream(lobbyId).listen(
       (lobby) {
@@ -168,19 +270,60 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
         debugPrint(
             '📡 Current lobby updated: ${lobby.name} (${lobby.memberUids.length} members)');
+        unawaited(_processLobbyAwareMatchmaking(lobby));
+        // Stream is not the notify actor (the Ready/unlock/late-join
+        // writer already sent). Reconcile timer + live activity only.
+        unawaited(reconcileReadyLock(notify: false, gameName: lobby.gameName));
       },
       onError: (error) {
         debugPrint('❌ Error in current lobby stream: $error');
         // Handle RealtimeSubscribeException gracefully
         if (error is RealtimeSubscribeException) {
           debugPrint('❌ RealtimeSubscribeException: ${error.status}');
-          if (error.status == RealtimeSubscribeStatus.channelError ||
-              error.status == RealtimeSubscribeStatus.timedOut) {
-            debugPrint('❌ Channel error/timeout - cleaning up channels');
-            SupabaseService.cleanupOldChannels();
+          if (isDeadRealtimeStatus(error.status)) {
+            debugPrint('❌ Lobby channel dead; resubscribing once');
+            _resubscribeCurrentLobbyOnce(lobbyId);
           }
         }
       },
+    );
+  }
+
+  String? get _resolvedCurrentUserId {
+    final debugId = debugCurrentUserId;
+    if (debugId != null && debugId.isNotEmpty) return debugId;
+    return AuthServiceSupabase().currentUser?.id;
+  }
+
+  bool _isCurrentUserKey(String key) =>
+      isCurrentUserKey(key, currentUserId: _resolvedCurrentUserId);
+
+  /// Prefer `users.id`, then `users.uid`. Uses [debugUsersLookup] when bound.
+  Future<Map<String, dynamic>?> _lookupUserByIdThenUid(String key) {
+    final debugLookup = debugUsersLookup;
+    final lookup = debugLookup ??
+        supabaseUsersLookup((column, value) {
+          return SupabaseService.client
+              .from('users')
+              .select('display_name, photo_url')
+              .eq(column, value)
+              .maybeSingle();
+        });
+    return lookupUserByIdThenUid(key: key, lookup: lookup);
+  }
+
+  void _persistLookedUpName({
+    required Map<String, String> displayNames,
+    required String key,
+    required Map<String, dynamic>? row,
+    required void Function(String fallback) onMiss,
+  }) {
+    persistLookedUpDisplayName(
+      displayNames: displayNames,
+      key: key,
+      row: row,
+      currentUserId: _resolvedCurrentUserId,
+      onMiss: onMiss,
     );
   }
 
@@ -198,23 +341,25 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     for (final uid in memberUids) {
       if (!displayNames.containsKey(uid)) {
         try {
-          final userResponse = await SupabaseService.client
-              .from('users')
-              .select('display_name, photo_url')
-              .eq('uid', uid)
-              .maybeSingle();
+          final userResponse = await _lookupUserByIdThenUid(uid);
 
           if (userResponse != null) {
-            displayNames[uid] =
-                userResponse['display_name'] as String? ?? 'Unknown User';
+            _persistLookedUpName(
+              displayNames: displayNames,
+              key: uid,
+              row: userResponse,
+              onMiss: (fallback) => displayNames[uid] = fallback,
+            );
             profileImages[uid] = userResponse['photo_url'] as String?;
             hasUpdates = true;
           }
         } catch (e) {
           debugPrint('Error fetching display name for $uid: $e');
-          displayNames[uid] = 'Unknown User';
-          profileImages[uid] = null;
-          hasUpdates = true;
+          if (!_isCurrentUserKey(uid)) {
+            displayNames[uid] = unknownUserLabel;
+            profileImages[uid] = null;
+            hasUpdates = true;
+          }
         }
       }
     }
@@ -238,6 +383,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   /// [gameName] - The game for this lobby
   /// [maxSpots] - Maximum number of spots (default: 8)
   /// [isPublic] - Whether this lobby is discoverable (default: false)
+  /// [chatGroupName] - Friend-visible group name for the lobby title
   ///
   /// Returns the created lobby ID
   Future<String> createLobby({
@@ -245,65 +391,46 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     required String gameName,
     required int maxSpots,
     bool isPublic = false,
+    String? chatGroupName,
   }) async {
     try {
       debugPrint(
           '🎮 Creating lobby: chatGroupId=$chatGroupId, game=$gameName, maxSpots=$maxSpots, isPublic=$isPublic');
 
-      // Note: chatGroupId linking needs to be handled separately
-      final lobby = await _repository.createLobby('Lobby', gameName, maxSpots);
+      final name = lobbyNameFromChat(
+        gameName: gameName,
+        chatGroupName: chatGroupName,
+        chatGroupId: chatGroupId,
+      );
+      final lobby = await _repository.createLobby(name, gameName, maxSpots);
       final lobbyId = lobby.id;
+      final boundGroupId = chatGroupId.trim();
+      final bound = boundGroupId.isEmpty
+          ? lobby
+          : lobby.copyWith(chatGroupId: boundGroupId);
 
-      debugPrint('✅ Lobby created: $lobbyId');
+      debugPrint('✅ Lobby created: $lobbyId chatGroupId=${bound.chatGroupId}');
 
-      // Send notifications to chat group members (or all if public)
+      await _persistChatGroupBind(
+        lobbyId: lobbyId,
+        chatGroupId: boundGroupId,
+      );
+      _landOnCreatedLobby(bound);
+
       try {
-        if (chatGroupId.isNotEmpty) {
-          // Get chat group member UIDs
-          final chatGroupResponse = await SupabaseService.client
-              .from('chat_groups')
-              .select('member_uids')
-              .eq('id', chatGroupId)
-              .maybeSingle();
-
-          if (chatGroupResponse != null) {
-            final memberUids =
-                (chatGroupResponse['member_uids'] as List<dynamic>?)
-                        ?.cast<String>() ??
-                    [];
-
-            final currentUserId = AuthServiceSupabase().currentUser?.id;
-            // Exclude current user from notifications
-            final recipientUids =
-                memberUids.where((uid) => uid != currentUserId).toList();
-
-            if (recipientUids.isNotEmpty) {
-              await NotificationService.sendNotificationToUsers(
-                title: 'New Lobby Created!',
-                body: 'A new $gameName lobby has been created',
-                recipientUids: recipientUids,
-                data: {
-                  'type': 'lobby_created',
-                  'lobby_id': lobbyId,
-                  'game_name': gameName,
-                  'chat_group_id': chatGroupId,
-                },
-              );
-              debugPrint(
-                  '📬 Sent lobby creation notifications to ${recipientUids.length} members');
-            }
-          }
+        if (boundGroupId.isNotEmpty) {
+          await _notifyLobbyCreatedFromChat(
+            lobby: bound,
+            chatGroupId: boundGroupId,
+            gameName: gameName,
+          );
         } else if (isPublic) {
           debugPrint(
               '📢 Public lobby created, notifications skipped (no specific recipients)');
         }
       } catch (e) {
         debugPrint('⚠️ Failed to send lobby creation notifications: $e');
-        // Don't fail the lobby creation if notifications fail
       }
-
-      // Reload state to include new lobby
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
 
       return lobbyId;
     } catch (e, stackTrace) {
@@ -315,6 +442,100 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       );
       rethrow;
     }
+  }
+
+  /// Bind [chatGroupId] on the created row. Ignores Postgres 42703 when
+  /// the column is not applied yet (Lead/CoS). Does not fail create.
+  Future<void> _persistChatGroupBind({
+    required String lobbyId,
+    required String chatGroupId,
+  }) async {
+    if (chatGroupId.isEmpty || lobbyId.isEmpty) return;
+    try {
+      await SupabaseService.client.from('lobbies').update({
+        'chat_group_id': chatGroupId,
+      }).eq('id', lobbyId);
+    } catch (e) {
+      if (isUndefinedColumn42703(e)) {
+        debugPrint(
+            '⚠️ chat_group_id column missing (42703); lobby $lobbyId still created');
+        return;
+      }
+      debugPrint('⚠️ chat_group_id bind skipped: $e');
+    }
+  }
+
+  /// Select + subscribe so the creator (and later friends) land on THIS lobby.
+  void _landOnCreatedLobby(Lobby lobby) {
+    final current = state.valueOrNull ?? LobbyState.initial();
+    final lobbies = Map<String, Lobby>.from(current.userLobbies);
+    lobbies[lobby.id] = lobby;
+    final lobbyIds = List<String>.from(current.userLobbyIds);
+    if (!lobbyIds.contains(lobby.id)) lobbyIds.add(lobby.id);
+    final gameSpots = Map<String, List<String?>>.from(current.gameLobbySpots);
+    if (lobby.gameName.isNotEmpty) {
+      gameSpots[lobby.gameName] = lobby.spots;
+    }
+    state = AsyncData(current.copyWith(
+      currentLobby: lobby,
+      userLobbies: lobbies,
+      userLobbyIds: lobbyIds,
+      selectedLobbyId: lobby.id,
+      gameLobbySpots: gameSpots,
+    ));
+    setSelectedLobbyId(lobby.id);
+  }
+
+  /// Friends in the chat get lobby_created. Creator is never a recipient.
+  Future<void> _notifyLobbyCreatedFromChat({
+    required Lobby lobby,
+    required String chatGroupId,
+    required String gameName,
+  }) async {
+    var memberUids = List<String>.from(lobby.memberUids);
+    if (memberUids.length <= 1) {
+      try {
+        final chatGroupResponse = await SupabaseService.client
+            .from('chat_groups')
+            .select('member_uids, members')
+            .eq('id', chatGroupId)
+            .maybeSingle();
+        if (chatGroupResponse != null) {
+          final fromGroup = _stringListFrom(chatGroupResponse['member_uids']) ??
+              _stringListFrom(chatGroupResponse['members']);
+          if (fromGroup != null && fromGroup.isNotEmpty) {
+            memberUids = fromGroup;
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ chat group members lookup skipped: $e');
+      }
+    }
+
+    final currentUserId = AuthServiceSupabase().currentUser?.id?.trim() ?? '';
+    final creatorId = currentUserId.isNotEmpty
+        ? currentUserId
+        : lobby.createdBy.trim();
+    final recipientUids = lobbyCreatedNotifyRecipients(
+      memberUids: memberUids,
+      creatorUid: creatorId,
+    );
+    if (recipientUids.isEmpty) return;
+
+    await LobbyLockNotify.send(LobbyLockNotifyPlan(
+      recipientUids: recipientUids,
+      title: 'New Lobby Created!',
+      body: 'A new $gameName lobby has been created',
+      data: {
+        'type': 'lobby_created',
+        'lobby_id': lobby.id,
+        'game_name': gameName,
+        'chat_group_id': chatGroupId,
+      },
+      seatedCount: memberUids.length,
+    ));
+    debugPrint(
+        '📬 Sent lobby creation notifications to ${recipientUids.length} members');
   }
 
   /// Create a public lobby for Discovery
@@ -342,7 +563,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       debugPrint('✅ Public lobby created: $lobbyId');
 
       // Reload state to include new lobby
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      state = await AsyncValue.guard(() => _loadPersistedLobbyState());
 
       return lobbyId;
     } catch (e, stackTrace) {
@@ -357,57 +578,378 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }
 
   Future<void> joinLobby(String squadId, String userId) async {
-    await _repository.joinLobby(squadId, userId);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.joinLobby,
+      lobbyId: squadId,
+      userId: userId,
+    ));
+    if (lastSeatWriteError != null) return;
+    unawaited(SquadAnalytics.logLobbyJoin(
+      source: 'code',
+      gameName: state.valueOrNull?.currentGame?['name'] as String? ??
+          state.valueOrNull?.currentLobby?.gameName,
+    ));
   }
 
   Future<void> leaveSquad(String squadId, String userId) async {
-    await _repository.leaveLobby(squadId, userId);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.leaveSquad,
+      lobbyId: squadId,
+      userId: userId,
+    ));
   }
 
   Future<void> assignSpot(String squadId, int spotIndex, String? userId) async {
-    await _repository.assignSpot(squadId, spotIndex, userId);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.assignSpot,
+      lobbyId: squadId,
+      spotIndex: spotIndex,
+      userId: userId,
+    ));
+    if (lastSeatWriteError != null) return;
+    await reconcileReadyLock(
+      actorUid: userId ?? '',
+      notify: true,
+    );
   }
 
   Future<void> startSpotTimer(
       String squadId, int spotIndex, Duration duration) async {
-    await _repository.startSpotTimer(squadId, spotIndex, duration);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.startSpotTimer,
+      lobbyId: squadId,
+      spotIndex: spotIndex,
+      duration: duration,
+    ));
+  }
+
+  /// Retry the last failed one-row seat persist. Keeps the optimistic seat.
+  Future<void> retrySeatWrite() async {
+    final pending = _pendingSeatWrite;
+    if (pending == null) return;
+    await _commitSeatWrite(pending);
+  }
+
+  void _applySeatWriteLocally(LobbySeatWrite write) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(applySeatWriteToState(current, write));
+  }
+
+  Future<void> _persistSeatWrite(LobbySeatWrite write) async {
+    switch (write.kind) {
+      case LobbySeatWriteKind.assignSpot:
+        await _repository.assignSpot(
+          write.lobbyId,
+          write.spotIndex ?? 0,
+          write.userId,
+        );
+        break;
+      case LobbySeatWriteKind.joinLobby:
+        await _repository.joinLobby(write.lobbyId, write.userId ?? '');
+        break;
+      case LobbySeatWriteKind.leaveSquad:
+        await _repository.leaveLobby(write.lobbyId, write.userId ?? '');
+        break;
+      case LobbySeatWriteKind.startSpotTimer:
+        await _repository.startSpotTimer(
+          write.lobbyId,
+          write.spotIndex ?? 0,
+          write.duration ?? Duration.zero,
+        );
+        break;
+      case LobbySeatWriteKind.clearAllSpots:
+        final spots =
+            state.valueOrNull?.currentLobby?.spots ?? const <String?>[];
+        for (var i = 0; i < spots.length; i++) {
+          await _repository.assignSpot(write.lobbyId, i, null);
+        }
+        break;
+      case LobbySeatWriteKind.callSpotForGame:
+        await _repository.assignSpot(
+          write.lobbyId,
+          write.spotIndex ?? 0,
+          write.userId,
+        );
+        await _repository.startSpotTimer(
+          write.lobbyId,
+          write.spotIndex ?? 0,
+          write.duration ?? const Duration(minutes: 5),
+        );
+        break;
+      case LobbySeatWriteKind.processExpiredTimers:
+        await _repository.processExpiredTimers();
+        break;
+    }
+  }
+
+  /// Patch currentLobby, persist the one row, keep the seat on persist fail.
+  Future<void> _commitSeatWrite(LobbySeatWrite write) async {
+    _pendingSeatWrite = write;
+    _applySeatWriteLocally(write);
+    try {
+      await _persistSeatWrite(write);
+      lastSeatWriteError = null;
+      _pendingSeatWrite = null;
+    } catch (e) {
+      lastSeatWriteError = e;
+      debugPrint('LobbyNotifier: seat persist failed: $e');
+    }
   }
 
   Future<void> processExpiredTimers() async {
-    // Delegate to TimerManagementNotifier
-    final timerNotifier = ref.read(timerManagementNotifierProvider.notifier);
-    await timerNotifier.processExpiredTimers();
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    final lobby = state.valueOrNull?.currentLobby;
+    if (lobby == null) return;
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.processExpiredTimers,
+      lobbyId: lobby.id,
+    ));
+  }
+
+  PeacockAssignmentTracker get _peacock => PeacockAssignmentTracker.instance;
+
+  void _bindPeacockQueueProcessor() {
+    _peacock.queueProcessor = processPeacockQueue;
+  }
+
+  /// Persist LFG looking + lobby-aware [processQueue]. Does not peacock-assign.
+  Future<void> _bindMatchmakingQueue() async {
+    final tracker = MatchmakingQueueTracker.instance;
+    await tracker.ensureHydratedAndSubscribed();
+    final lobby = state.valueOrNull?.currentLobby;
+    if (lobby != null) {
+      await _processLobbyAwareMatchmaking(lobby);
+    }
+  }
+
+  Future<void> _processLobbyAwareMatchmaking(Lobby lobby) async {
+    final tracker = MatchmakingQueueTracker.instance;
+    final hasFree = lobbyHasFreeSeatForMatchmaking(
+      spots: lobby.spots,
+      maxSpots: lobby.maxSpots,
+      alreadyMatchedToLobby: tracker.matchedCountForLobby(lobby.id),
+    );
+    await tracker.processQueueAndPersist(
+      lobbyId: lobby.id,
+      gameName: lobby.gameName,
+      lobbyHasFreeSeat: hasFree,
+    );
+  }
+
+  /// Reduce [event] for [userId] after the matching repository call succeeds.
+  PeacockAssignmentState _reducePeacock({
+    required String userId,
+    required PeacockAssignmentEvent event,
+    String? lobbyId,
+    String? gameName,
+    String? notificationId,
+    int? spotIndex,
+  }) {
+    return _peacock.apply(
+      userId: userId,
+      event: event,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      notificationId: notificationId,
+      spotIndex: spotIndex,
+    );
   }
 
   Future<void> addToPeacockQueue(String userId, String gameName) async {
+    _bindPeacockQueueProcessor();
     await _repository.addToPeacockQueue(userId, gameName);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    _reducePeacock(
+      userId: userId,
+      event: PeacockAssignmentEvent.joinQueue,
+      gameName: gameName,
+    );
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> removeFromPeacockQueue(String userId) async {
+    _bindPeacockQueueProcessor();
+    final phase = _peacock.stateFor(userId).phase;
     await _repository.removeFromPeacockQueue(userId);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    if (phase == PeacockAssignmentPhase.queued) {
+      _reducePeacock(
+        userId: userId,
+        event: PeacockAssignmentEvent.leaveQueue,
+      );
+    } else if (phase == PeacockAssignmentPhase.assigned ||
+        phase == PeacockAssignmentPhase.notified) {
+      _reducePeacock(
+        userId: userId,
+        event: PeacockAssignmentEvent.expire,
+      );
+    }
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
-  Future<void> processPeacockQueue() async {
+  /// Process the peacock queue. Selects the next queued uid when one is not
+  /// passed, persists via the repository, then [assignSpot] on the tracker
+  /// so product phase never lags on a bare stub call.
+  ///
+  /// Preferred peacock games filter the offer: a non-empty preference set
+  /// skips assign + peacock_offer for other titles. Empty set is unfiltered.
+  Future<String?> processPeacockQueue({
+    String? assignedUserId,
+    String? lobbyId,
+    String? gameName,
+    String? notificationId,
+  }) async {
+    _bindPeacockQueueProcessor();
+    final preferred = PreferredPeacockGamesStore.instance.snapshot;
+    final uid = assignedUserId ??
+        _nextPreferredQueuedUser(
+          gameName: gameName,
+          preferred: preferred,
+        );
     await _repository.processPeacockQueue();
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    if (uid != null) {
+      final before = _peacock.stateFor(uid);
+      final resolvedGame = gameName ??
+          before.gameName ??
+          state.valueOrNull?.currentGame?['name'] as String?;
+      if (!peacockOfferAllowed(
+        gameName: resolvedGame,
+        preferredPeacockGames: preferred,
+      )) {
+        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+        return null;
+      }
+      _reducePeacock(
+        userId: uid,
+        event: PeacockAssignmentEvent.assignSpot,
+        lobbyId: lobbyId ?? state.valueOrNull?.selectedLobbyId,
+        gameName: resolvedGame,
+        notificationId: notificationId,
+      );
+      final after = _peacock.stateFor(uid);
+      _logPeacockOfferIfNew(
+        before: before,
+        after: after,
+        source: 'peacock_queue',
+      );
+    }
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
+    return uid;
+  }
+
+  String? _nextPreferredQueuedUser({
+    String? gameName,
+    required Set<String> preferred,
+  }) {
+    for (final entry in _peacock.snapshot.entries) {
+      if (entry.value.phase != PeacockAssignmentPhase.queued) continue;
+      final game = gameName ?? entry.value.gameName;
+      if (peacockOfferAllowed(
+        gameName: game,
+        preferredPeacockGames: preferred,
+      )) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  /// First empty seat for [lobbyId] / [gameName], or null when lobby
+  /// spots are unknown or full. Reuses [userId]'s existing seat.
+  int? nextFreeSpotIndex({
+    String? lobbyId,
+    String? gameName,
+    String? userId,
+  }) {
+    final lobbyState = state.valueOrNull;
+    if (lobbyState == null) return null;
+    return resolveNextFreeSpotFromLobbyState(
+      state: lobbyState,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      userId: userId,
+    );
+  }
+
+  /// Assign a peacock spot: repository [assignSpot] first when a seat
+  /// is known (explicit [spotIndex] or the next free seat from lobby
+  /// state), then reduce so a repo failure does not leave a phantom
+  /// phase. Returns the claimed index, or null for phase-only handoff.
+  Future<int?> assignPeacockSpot({
+    required String userId,
+    required String lobbyId,
+    String? gameName,
+    String? notificationId,
+    int? spotIndex,
+  }) async {
+    _bindPeacockQueueProcessor();
+    final before = _peacock.stateFor(userId);
+    final claimed = spotIndex ??
+        nextFreeSpotIndex(
+          lobbyId: lobbyId,
+          gameName: gameName,
+          userId: userId,
+        );
+    if (claimed != null) {
+      await assignSpot(lobbyId, claimed, userId);
+      final persistError = lastSeatWriteError;
+      if (persistError != null) {
+        // Friends keep the optimistic seat + Retry. Peacock must not
+        // reduce to assigned when the one-row persist failed.
+        throw persistError;
+      }
+    }
+    _reducePeacock(
+      userId: userId,
+      event: PeacockAssignmentEvent.assignSpot,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      notificationId: notificationId,
+      spotIndex: claimed,
+    );
+    final after = _peacock.stateFor(userId);
+    _logPeacockOfferIfNew(
+      before: before,
+      after: after,
+      source: 'peacock_queue',
+      seatIndex: claimed,
+    );
+    return claimed;
+  }
+
+  void _logPeacockOfferIfNew({
+    required PeacockAssignmentState before,
+    required PeacockAssignmentState after,
+    required String source,
+    int? seatIndex,
+  }) {
+    if (after.phase != PeacockAssignmentPhase.assigned) return;
+    if (before.phase == PeacockAssignmentPhase.assigned ||
+        before.phase == PeacockAssignmentPhase.notified) {
+      return;
+    }
+    unawaited(SquadAnalytics.logPeacockOffer(
+      source: source,
+      gameName: after.gameName,
+      seatIndex: seatIndex ?? after.spotIndex,
+    ));
+  }
+
+  /// Expire/cancel/timeout a peacock assignment.
+  void expirePeacockAssignment(String userId) {
+    _reducePeacock(
+      userId: userId,
+      event: PeacockAssignmentEvent.expire,
+    );
   }
 
   Future<void> updateMemberStatus(
       String squadId, String userId, String status) async {
     await _repository.updateMemberStatus(squadId, userId, status);
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> syncSquadData() async {
     await _repository.syncLobbyData();
-    state = await AsyncValue.guard(() => _repository.loadLobbyState());
+    state = await AsyncValue.guard(() => _loadPersistedLobbyState());
   }
 
   Future<void> setCurrentGame(Map<String, dynamic>? game) async {
@@ -429,27 +971,28 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     final currentState = state;
     if (currentState is AsyncData && currentState.value != null) {
       try {
-        // Fetch display names from Supabase users table
+        // Fetch display names: users.id first, then users.uid
         final Map<String, String> displayNames = {};
 
-        for (final uid in memberUids) {
+        Future<void> resolveMemberName(String uid) async {
           try {
-            final userResponse = await SupabaseService.client
-                .from('users')
-                .select('display_name')
-                .eq('uid', uid)
-                .maybeSingle();
-
-            if (userResponse != null) {
-              displayNames[uid] =
-                  userResponse['display_name'] as String? ?? 'Unknown User';
-            } else {
-              displayNames[uid] = 'Unknown User';
-            }
+            final userResponse = await _lookupUserByIdThenUid(uid);
+            _persistLookedUpName(
+              displayNames: displayNames,
+              key: uid,
+              row: userResponse,
+              onMiss: (fallback) => displayNames[uid] = fallback,
+            );
           } catch (e) {
             debugPrint('Error fetching display name for $uid: $e');
-            displayNames[uid] = 'Unknown User';
+            if (!_isCurrentUserKey(uid)) {
+              displayNames[uid] = unknownUserLabel;
+            }
           }
+        }
+
+        for (final uid in memberUids) {
+          await resolveMemberName(uid);
         }
 
         // Also fetch display names for any spot claimants
@@ -458,23 +1001,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
           for (final spotUid in gameSpots) {
             if (spotUid != null && !displayNames.containsKey(spotUid)) {
               final cleanUid = spotUid.replaceAll('_calling', '');
-              try {
-                final userResponse = await SupabaseService.client
-                    .from('users')
-                    .select('display_name')
-                    .eq('uid', cleanUid)
-                    .maybeSingle();
-
-                if (userResponse != null) {
-                  displayNames[cleanUid] =
-                      userResponse['display_name'] as String? ?? 'Unknown User';
-                } else {
-                  displayNames[cleanUid] = 'Unknown User';
-                }
-              } catch (e) {
-                debugPrint('Error fetching display name for $cleanUid: $e');
-                displayNames[cleanUid] = 'Unknown User';
-              }
+              await resolveMemberName(cleanUid);
             }
           }
         }
@@ -494,17 +1021,62 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
-  // TODO: Implement addToPeacock method (alias for addToPeacockQueue)
+  /// Friend-visible add: [addToPeacockQueue] with the open lobby's gameName.
   Future<void> addToPeacock(String userId) async {
-    await addToPeacockQueue(userId, ''); // TODO: Pass proper game name
+    await addToPeacockQueue(userId, _currentPeacockGameName() ?? '');
   }
 
-  // TODO: Implement removeFromPeacock method (alias for removeFromPeacockQueue)
-  Future<void> removeFromPeacock(String gameName, [String? userId]) async {
-    // TODO: Implement with game context
-    if (userId != null) {
-      await removeFromPeacockQueue(userId);
-    }
+  /// Friend-visible remove. First arg is the member uid, not a game name.
+  Future<void> removeFromPeacock(String userId) async {
+    await removeFromPeacockQueue(userId);
+  }
+
+  /// Friend-visible Accept. Single [reducePeacockAssignment] via assignSpot.
+  Future<void> acceptPeacock({
+    required String userId,
+    required String lobbyId,
+    required String gameName,
+    String? notificationId,
+  }) {
+    return assignPeacockSpot(
+      userId: userId,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      notificationId: notificationId,
+    );
+  }
+
+  Future<void> acceptPeacockSpot({
+    required String userId,
+    required String lobbyId,
+    required String gameName,
+    String? notificationId,
+  }) {
+    return acceptPeacock(
+      userId: userId,
+      lobbyId: lobbyId,
+      gameName: gameName,
+      notificationId: notificationId,
+    );
+  }
+
+  /// Friend-visible Decline. Single expire reduce.
+  void declinePeacock(String userId) {
+    expirePeacockAssignment(userId);
+  }
+
+  void declinePeacockSpot(String userId) {
+    declinePeacock(userId);
+  }
+
+  String? _currentPeacockGameName() {
+    final current = state.valueOrNull;
+    if (current == null) return null;
+    final fromLobby = current.currentLobby?.gameName.trim();
+    if (fromLobby != null && fromLobby.isNotEmpty) return fromLobby;
+    final fromGame = (current.currentGame?['name'] as String?)?.trim();
+    if (fromGame != null && fromGame.isNotEmpty) return fromGame;
+    return null;
   }
 
   // Computed properties for game-scoped data
@@ -618,7 +1190,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
           debugPrint('✅ Created and selected new lobby: $squadId');
 
           // Reload the lobby data to reflect the new lobby
-          state = await AsyncValue.guard(() => _repository.loadLobbyState());
+          state = await AsyncValue.guard(() => _loadPersistedLobbyState());
         } catch (e) {
           debugPrint('❌ Error creating lobby: $e');
           return;
@@ -730,7 +1302,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         } catch (e) {
           debugPrint('Error claiming spot: $e');
           // Reload state to reflect actual state if error occurred
-          state = await AsyncValue.guard(() => _repository.loadLobbyState());
+          state = await AsyncValue.guard(() => _loadPersistedLobbyState());
         }
       } else {
         debugPrint('Cannot claim spot: squadId or userId is null');
@@ -752,55 +1324,529 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       final timerNotifier = ref.read(timerManagementNotifierProvider.notifier);
       await timerNotifier.stopSpotTimer(gameName, userId);
 
-      // Update status to Ready
-      await _repository.updateMemberStatus(
-          squadState.selectedLobbyId!, userId, 'Ready');
-      // Reload state
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      // Calling → Ready on this seated spot, then Lock if everyone is Ready.
+      await applySeatedReady(
+        userId: userId,
+        ready: true,
+        gameName: gameName,
+      );
     }
+  }
+
+  /// Toggle Ready on the caller's seated spot. When every seated member
+  /// is Ready, the lobby Locks and seated members are notified.
+  /// While locked, the same tap unlocks (Ready → Occupied).
+  Future<SeatedReadyResult?> toggleSeatedReady({
+    required String userId,
+    String? gameName,
+    int? spotIndex,
+  }) async {
+    final squadState = state.valueOrNull;
+    if (squadState == null) return null;
+    final game = gameName ?? squadState.currentGame?['name'] as String? ?? '';
+    final spots = spotsForReadyLock(squadState, gameName: game);
+    final statuses = mergeLobbyMemberStatuses(squadState, gameName: game);
+    var snapshot = resolveLobbyReadyLock(spots: spots, statuses: statuses);
+
+    final uid = userId.trim();
+    if (uid.isEmpty) {
+      return SeatedReadyResult(
+        snapshot: snapshot,
+        justLocked: false,
+        changed: false,
+        denied: LobbyReadyLockDeniedReason.blankUid,
+      );
+    }
+    if (spotIndex != null) {
+      if (spotIndex < 0 || spotIndex >= spots.length) {
+        return SeatedReadyResult(
+          snapshot: snapshot,
+          justLocked: false,
+          changed: false,
+          denied: LobbyReadyLockDeniedReason.notSeated,
+        );
+      }
+      if (seatedUidFromOccupant(spots[spotIndex]) != uid) {
+        return SeatedReadyResult(
+          snapshot: snapshot,
+          justLocked: false,
+          changed: false,
+          denied: LobbyReadyLockDeniedReason.notSeated,
+        );
+      }
+    }
+    if (!snapshot.seatedUids.contains(uid)) {
+      return SeatedReadyResult(
+        snapshot: snapshot,
+        justLocked: false,
+        changed: false,
+        denied: snapshot.seatedUids.isEmpty
+            ? LobbyReadyLockDeniedReason.emptyLobby
+            : LobbyReadyLockDeniedReason.notSeated,
+      );
+    }
+
+    if (readyCheckTimedOut(
+      snapshot: snapshot,
+      now: DateTime.now(),
+      startedAt: _readyCheckStartedAt,
+    )) {
+      final timedOut = await timeoutReadyCheck();
+      if (timedOut != null) snapshot = timedOut.snapshot;
+    }
+
+    if (snapshot.isLocked) {
+      return applySeatedReady(
+        userId: uid,
+        ready: false,
+        gameName: game,
+      );
+    }
+
+    return applySeatedReady(
+      userId: uid,
+      ready: !snapshot.isReady(uid),
+      gameName: game,
+    );
+  }
+
+  /// Persist Ready / Occupied on a seated member, then Lock + notify
+  /// when all seated are Ready. Live path for [toggleSeatedReady] and
+  /// [lockSpot] (no scaffold).
+  Future<SeatedReadyResult?> applySeatedReady({
+    required String userId,
+    required bool ready,
+    String? gameName,
+  }) async {
+    final squadState = state.valueOrNull;
+    if (squadState == null) return null;
+    final lobbyId = squadState.selectedLobbyId ?? squadState.currentLobby?.id;
+    if (lobbyId == null || lobbyId.isEmpty) return null;
+
+    final game = gameName ?? squadState.currentGame?['name'] as String? ?? '';
+    final spots = spotsForReadyLock(squadState, gameName: game);
+    final statuses = mergeLobbyMemberStatuses(squadState, gameName: game);
+    final before = resolveLobbyReadyLock(spots: spots, statuses: statuses);
+    final denied = readyLockDenied(
+      snapshot: before,
+      userId: userId,
+      ready: ready,
+    );
+    if (denied != LobbyReadyLockDeniedReason.none) {
+      return SeatedReadyResult(
+        snapshot: before,
+        justLocked: false,
+        changed: false,
+        denied: denied,
+      );
+    }
+    final uid = userId.trim();
+    if (before.isReady(uid) == ready) {
+      return SeatedReadyResult(
+        snapshot: before,
+        justLocked: false,
+        changed: false,
+      );
+    }
+    final after = reduceLobbyReadyLock(
+      spots: spots,
+      statuses: statuses,
+      userId: uid,
+      ready: ready,
+    );
+    final status =
+        after.isReady(uid) ? kSeatedReadyStatus : kSeatedNotReadyStatus;
+    final lockedNow = justLockedLobby(before: before, after: after);
+    final unlockedNow = justUnlockedLobby(before: before, after: after);
+
+    try {
+      await _repository.updateMemberStatus(lobbyId, uid, status);
+    } catch (e) {
+      debugPrint('LobbyNotifier: failed to set seated Ready: $e');
+      rethrow;
+    }
+
+    _applyMemberStatusLocally(
+      userId: uid,
+      status: status,
+      gameName: game,
+    );
+
+    _lastReadyLockSnapshot = after;
+    _syncReadyCheckTimer(after, armedByReady: ready && after.isReady(uid));
+
+    final notifyError = await _notifyFromLastReadyLockSnapshot(
+      actorUid: uid,
+      lobbyId: lobbyId,
+      gameName: game,
+      notify: true,
+      lockedNow: lockedNow,
+      unlockedNow: unlockedNow,
+    );
+
+    if (ready) {
+      unawaited(SquadAnalytics.logReadyCheck(
+        seatedCount: after.seatedUids.length,
+        readyCount: after.readyUids.length,
+        outcome: lockedNow ? 'locked' : 'ready',
+      ));
+    }
+    if (lockedNow) {
+      unawaited(SquadAnalytics.logPeacockLock(
+        seatedCount: after.seatedUids.length,
+        readyCount: after.readyUids.length,
+      ));
+    }
+
+    return SeatedReadyResult(
+      snapshot: after,
+      justLocked: lockedNow,
+      justUnlocked: unlockedNow,
+      notifyError: notifyError,
+    );
+  }
+
+  /// Clear Ready flags when the ready-check window elapses without a lock.
+  Future<SeatedReadyResult?> timeoutReadyCheck({
+    DateTime? now,
+    DateTime? startedAt,
+  }) async {
+    final squadState = state.valueOrNull;
+    if (squadState == null) return null;
+    final lobbyId = squadState.selectedLobbyId ?? squadState.currentLobby?.id;
+    if (lobbyId == null || lobbyId.isEmpty) return null;
+
+    final game = squadState.currentGame?['name'] as String? ?? '';
+    final spots = spotsForReadyLock(squadState, gameName: game);
+    final statuses = mergeLobbyMemberStatuses(squadState, gameName: game);
+    final before = resolveLobbyReadyLock(spots: spots, statuses: statuses);
+    final clock = now ?? DateTime.now();
+    final started = startedAt ?? _readyCheckStartedAt;
+    final after = reduceReadyCheckTimeout(
+      spots: spots,
+      statuses: statuses,
+      now: clock,
+      startedAt: started,
+    );
+    if (!readyCheckTimedOut(
+      snapshot: before,
+      now: clock,
+      startedAt: started,
+    )) {
+      return SeatedReadyResult(
+        snapshot: before,
+        justLocked: false,
+        changed: false,
+      );
+    }
+
+    for (final uid in before.readyUids) {
+      try {
+        await _repository.updateMemberStatus(
+          lobbyId,
+          uid,
+          kSeatedNotReadyStatus,
+        );
+      } catch (e) {
+        debugPrint('LobbyNotifier: failed to timeout Ready for $uid: $e');
+      }
+      _applyMemberStatusLocally(
+        userId: uid,
+        status: kSeatedNotReadyStatus,
+        gameName: game,
+      );
+    }
+
+    _lastReadyLockSnapshot = after;
+    _disarmReadyCheckTimer();
+
+    final actor = AuthServiceSupabase().currentUser?.id ?? '';
+    await _notifyFromLastReadyLockSnapshot(
+      actorUid: actor,
+      lobbyId: lobbyId,
+      gameName: game,
+      notify: true,
+      lockedNow: false,
+      unlockedNow: false,
+      timedOut: true,
+    );
+
+    unawaited(SquadAnalytics.logReadyCheck(
+      seatedCount: after.seatedUids.length,
+      readyCount: after.readyUids.length,
+      outcome: 'timeout',
+    ));
+
+    return SeatedReadyResult(
+      snapshot: after,
+      justLocked: false,
+      timedOut: true,
+    );
+  }
+
+  /// Recompute Ready/Lock after seats change (late join / leave).
+  ///
+  /// [notify] is true on the acting client (assign / claim). Stream
+  /// updates pass false so seated FCM is not sent twice.
+  Future<SeatedReadyResult?> reconcileReadyLock({
+    String actorUid = '',
+    String? gameName,
+    bool notify = false,
+  }) async {
+    final squadState = state.valueOrNull;
+    if (squadState == null) return null;
+    final lobbyId = squadState.selectedLobbyId ?? squadState.currentLobby?.id;
+    final game = gameName ?? squadState.currentGame?['name'] as String? ?? '';
+    final after = resolveLobbyReadyLockFromState(squadState, gameName: game);
+    final before = _lastReadyLockSnapshot ?? after;
+    _lastReadyLockSnapshot = after;
+
+    if (readyCheckTimedOut(
+      snapshot: after,
+      now: DateTime.now(),
+      startedAt: _readyCheckStartedAt,
+    )) {
+      return timeoutReadyCheck();
+    }
+
+    _syncReadyCheckTimer(after);
+
+    final unlockedNow = justUnlockedLobby(before: before, after: after);
+    final lockedNow = justLockedLobby(before: before, after: after);
+    final lateJoin = lateJoinUnlocks(before: before, after: after);
+
+    await _notifyFromLastReadyLockSnapshot(
+      actorUid: actorUid,
+      lobbyId: lobbyId ?? '',
+      gameName: game,
+      notify: notify,
+      lockedNow: lockedNow,
+      unlockedNow: unlockedNow,
+    );
+
+    if (lockedNow) {
+      unawaited(SquadAnalytics.logPeacockLock(
+        seatedCount: after.seatedUids.length,
+        readyCount: after.readyUids.length,
+      ));
+    }
+
+    return SeatedReadyResult(
+      snapshot: after,
+      justLocked: lockedNow,
+      justUnlocked: unlockedNow,
+      changed: unlockedNow || lockedNow || lateJoin,
+    );
+  }
+
+  /// One Ready/Lock notify pipeline. Plans from [lastReadyLockSnapshot].
+  Future<Object?> _notifyFromLastReadyLockSnapshot({
+    required String actorUid,
+    required String lobbyId,
+    required String gameName,
+    required bool notify,
+    required bool lockedNow,
+    required bool unlockedNow,
+    bool timedOut = false,
+  }) async {
+    final snap = lastReadyLockSnapshot;
+    if (snap == null) return null;
+    final game = gameName.isEmpty ? null : gameName;
+
+    Object? notifyError;
+    final plan = notify && lobbyId.isNotEmpty
+        ? planNotifyFromReadyLockSnapshot(
+            snapshot: snap,
+            actorUid: actorUid,
+            lobbyId: lobbyId,
+            gameName: game,
+            lockedNow: lockedNow,
+            unlockedNow: unlockedNow,
+            timedOut: timedOut,
+          )
+        : null;
+    if (plan != null) {
+      try {
+        final sent = await LobbyLockNotify.send(plan);
+        if (sent.isFailed) notifyError = sent.error;
+      } catch (e) {
+        notifyError = e;
+        debugPrint('LobbyNotifier: lobby lock notify failed: $e');
+      }
+    }
+
+    if (lobbyId.isNotEmpty) {
+      try {
+        await PeacockLockLiveActivity.syncFromReadyLock(
+          snapshot: snap,
+          lobbyId: lobbyId,
+          gameName: game,
+        );
+      } catch (e) {
+        debugPrint('LobbyNotifier: peacock lock live activity failed: $e');
+      }
+    }
+    return notifyError;
+  }
+
+  Duration? readyCheckRemaining({DateTime? now}) {
+    final started = _readyCheckStartedAt;
+    if (started == null) return null;
+    final left =
+        started.add(kReadyCheckTimeout).difference(now ?? DateTime.now());
+    if (left.isNegative) return Duration.zero;
+    return left;
+  }
+
+  void _syncReadyCheckTimer(
+    LobbyReadyLockSnapshot snapshot, {
+    bool armedByReady = false,
+  }) {
+    if (snapshot.isLocked || snapshot.readyUids.isEmpty) {
+      _disarmReadyCheckTimer();
+      return;
+    }
+    if (armedByReady) {
+      _armReadyCheckTimer();
+    }
+  }
+
+  void _armReadyCheckTimer() {
+    if (_readyCheckTimer != null && _readyCheckTimer!.isActive) return;
+    _readyCheckStartedAt ??= DateTime.now();
+    final remaining = readyCheckRemaining() ?? kReadyCheckTimeout;
+    if (remaining <= Duration.zero) {
+      unawaited(timeoutReadyCheck());
+      return;
+    }
+    _readyCheckTimer = Timer(remaining, () {
+      unawaited(timeoutReadyCheck());
+    });
+  }
+
+  void _disarmReadyCheckTimer() {
+    _readyCheckTimer?.cancel();
+    _readyCheckTimer = null;
+    _readyCheckStartedAt = null;
+  }
+
+  Future<void> _patchSpotLocally({
+    required int spotIndex,
+    required String? occupant,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final lobby = current.currentLobby;
+    if (lobby == null) return;
+    final spots = List<String?>.from(lobby.spots);
+    while (spots.length <= spotIndex) {
+      spots.add(null);
+    }
+    spots[spotIndex] = occupant;
+    final game = lobby.gameName;
+    final gameSpots = Map<String, List<String?>>.from(current.gameLobbySpots);
+    if (game.isNotEmpty) {
+      gameSpots[game] = spots;
+    }
+    state = AsyncData(
+      current.copyWith(
+        currentLobby: lobby.copyWith(spots: spots),
+        gameLobbySpots: gameSpots,
+      ),
+    );
+  }
+
+  void _applyMemberStatusLocally({
+    required String userId,
+    required String status,
+    required String gameName,
+  }) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final global = Map<String, String>.from(current.globalStatuses);
+    global[userId] = status;
+    final gameStatuses =
+        Map<String, Map<String, String>>.from(current.gameStatuses);
+    if (gameName.isNotEmpty) {
+      final perGame = Map<String, String>.from(gameStatuses[gameName] ?? {});
+      perGame[userId] = status;
+      gameStatuses[gameName] = perGame;
+    }
+    final lobby = current.currentLobby;
+    state = AsyncData(
+      current.copyWith(
+        globalStatuses: global,
+        gameStatuses: gameStatuses,
+        currentLobby: lobby == null
+            ? lobby
+            : lobby.copyWith(
+                statuses: {...lobby.statuses, userId: status},
+              ),
+      ),
+    );
   }
 
   Future<void> removeSpot(String gameName, int spotIndex) async {
-    final currentState = state;
-    if (currentState is AsyncData) {
-      final squadState = currentState.value!;
-      final squadId = squadState.selectedLobbyId;
-      if (squadId != null) {
-        final authService = AuthServiceSupabase();
-        final userId = authService.currentUser?.id;
-        if (userId == null) return;
-        await _repository.assignSpot(squadId, spotIndex, null);
-        // Cancel timer if user is removing their own spot
-        final spots = squadState.gameLobbySpots[gameName] ?? [];
-        if (spotIndex < spots.length && spots[spotIndex] == userId) {
-          final timerNotifier =
-              ref.read(timerManagementNotifierProvider.notifier);
-          await timerNotifier.stopSpotTimer(gameName, userId);
-        }
-        // Reload state
-        state = await AsyncValue.guard(() => _repository.loadLobbyState());
-      }
-    }
+    final squadState = state.valueOrNull;
+    final lobbyId =
+        squadState?.currentLobby?.id ?? squadState?.selectedLobbyId;
+    if (lobbyId == null) return;
+    final userId = _resolvedCurrentUserId;
+    if (userId == null) return;
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.assignSpot,
+      lobbyId: lobbyId,
+      spotIndex: spotIndex,
+      userId: null,
+    ));
   }
 
-  /// Records a win for the current lobby
-  Future<void> recordWin(String lobbyId) async {
+  /// Records a win for the current lobby.
+  ///
+  /// [sessionRating] is reduced then encoded into existing
+  /// `match_history.notes` (no new table). Skip / unrated leaves notes null.
+  Future<void> recordWin(
+    String lobbyId, {
+    SessionRatingState? sessionRating,
+  }) async {
     try {
       final currentState = state.value;
-      if (currentState == null) return;
+      if (currentState == null) {
+        throw StateError(kSessionRatingPersistMissingStateCopy);
+      }
 
       final lobby = currentState.userLobbies.values.firstWhere(
         (l) => l.id == lobbyId,
         orElse: () => throw Exception('Lobby not found'),
       );
 
+      final rating = _reduceEndedSessionRating(
+        sessionRating,
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'win',
+      );
+      final notes = notesForSessionRating(rating);
+
       await _repository.recordMatchResult(
         lobbyId: lobbyId,
         gameName: lobby.gameName,
         result: 'win',
         playerUids: lobby.memberUids,
-        notes: null,
+        notes: notes,
       );
+      _appendMatchToHistory(
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'win',
+        playerUids: lobby.memberUids,
+        rating: rating,
+      );
+      unawaited(SquadAnalytics.logSessionRate(
+        stars: rating.stars,
+        result: 'win',
+        skipped: !rating.isRated,
+      ));
 
       debugPrint('LobbyNotifier: ✅ Win recorded for lobby $lobbyId');
     } catch (e, stackTrace) {
@@ -814,24 +1860,49 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
-  /// Records a loss for the current lobby
-  Future<void> recordLoss(String lobbyId) async {
+  /// Records a loss for the current lobby. Same notes path as [recordWin].
+  Future<void> recordLoss(
+    String lobbyId, {
+    SessionRatingState? sessionRating,
+  }) async {
     try {
       final currentState = state.value;
-      if (currentState == null) return;
+      if (currentState == null) {
+        throw StateError(kSessionRatingPersistMissingStateCopy);
+      }
 
       final lobby = currentState.userLobbies.values.firstWhere(
         (l) => l.id == lobbyId,
         orElse: () => throw Exception('Lobby not found'),
       );
 
+      final rating = _reduceEndedSessionRating(
+        sessionRating,
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'loss',
+      );
+      final notes = notesForSessionRating(rating);
+
       await _repository.recordMatchResult(
         lobbyId: lobbyId,
         gameName: lobby.gameName,
         result: 'loss',
         playerUids: lobby.memberUids,
-        notes: null,
+        notes: notes,
       );
+      _appendMatchToHistory(
+        lobbyId: lobbyId,
+        gameName: lobby.gameName,
+        result: 'loss',
+        playerUids: lobby.memberUids,
+        rating: rating,
+      );
+      unawaited(SquadAnalytics.logSessionRate(
+        stars: rating.stars,
+        result: 'loss',
+        skipped: !rating.isRated,
+      ));
 
       debugPrint('LobbyNotifier: ✅ Loss recorded for lobby $lobbyId');
     } catch (e, stackTrace) {
@@ -843,6 +1914,42 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       );
       rethrow;
     }
+  }
+
+  SessionRatingState _reduceEndedSessionRating(
+    SessionRatingState? sessionRating, {
+    required String lobbyId,
+    required String gameName,
+    required String result,
+  }) {
+    final current = sessionRating ?? SessionRatingState.unrated;
+    final resolvedStars = sessionStarsFromSheet(
+      stars: current.stars,
+      vibes: current.vibes,
+      comms: current.comms,
+      gunny: current.gunny,
+      wingman: current.wingman,
+    );
+    final event = isValidSessionStars(resolvedStars)
+        ? SessionRatingEvent.rate
+        : SessionRatingEvent.skip;
+    return reduceSessionRating(
+      current: current,
+      event: event,
+      stars: current.stars,
+      vibes: current.vibes,
+      comms: current.comms,
+      gunny: current.gunny,
+      wingman: current.wingman,
+      lobbyId: lobbyId,
+      raterUid: current.raterUid,
+      matchId: current.matchId,
+      gameName: gameName,
+      result: result,
+      comment: current.comment,
+      ratedAt: current.ratedAt,
+      clip: current.clip,
+    );
   }
 
   /// Get lobby statistics (W/L record)
@@ -861,6 +1968,58 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     }
   }
 
+  /// Match rows from `match_history` for [lobbyId] (newest first).
+  Future<List<Map<String, dynamic>>> getMatchHistory(String lobbyId) async {
+    try {
+      return await _repository.getMatchHistory(lobbyId);
+    } catch (e) {
+      debugPrint('LobbyNotifier: ❌ ERROR fetching match history: $e');
+      return const [];
+    }
+  }
+
+  void _appendMatchToHistory({
+    required String lobbyId,
+    required String gameName,
+    required String result,
+    required List<String> playerUids,
+    required SessionRatingState rating,
+  }) {
+    final current = state.value;
+    if (current == null) return;
+    final now = DateTime.now().toUtc();
+    final rows = [
+      for (final row in current.gameHistory) Map<String, dynamic>.from(row),
+    ];
+    final existingIndex = rows.indexWhere(
+      (row) =>
+          row['lobby_id']?.toString() == lobbyId &&
+          isRecentMatchHistoryRow(row, now: now),
+    );
+    final base = existingIndex >= 0
+        ? rows[existingIndex]
+        : <String, dynamic>{
+            'lobby_id': lobbyId,
+            'created_at': now.toIso8601String(),
+          };
+    final row = applySessionRatingToMatchRow(
+      row: {
+        ...base,
+        'lobby_id': lobbyId,
+        'game_name': gameName,
+        'result': result,
+        'player_uids': List<String>.from(playerUids),
+      },
+      rating: rating,
+    );
+    if (existingIndex >= 0) {
+      rows[existingIndex] = row;
+    } else {
+      rows.insert(0, row);
+    }
+    state = AsyncData(current.copyWith(gameHistory: rows));
+  }
+
   // TODO: Implement addBan method
   Future<void> addBan(String userId, String reason) async {
     // TODO: Implement ban adding
@@ -874,25 +2033,14 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
 
   // Clear all spots for a specific game
   Future<void> clearAllSpots(String gameName) async {
-    final currentState = state;
-    if (currentState is AsyncData && currentState.value != null) {
-      final squadState = currentState.value!;
-      final lobbyId = squadState.selectedLobbyId;
-      if (lobbyId == null) return;
-
-      try {
-        // Clear all spots in the database
-        final spots = squadState.gameLobbySpots[gameName] ?? [];
-        for (int i = 0; i < spots.length; i++) {
-          await _repository.assignSpot(lobbyId, i, null);
-        }
-
-        // Reload state
-        state = await AsyncValue.guard(() => _repository.loadLobbyState());
-      } catch (e) {
-        debugPrint('Error clearing all spots: $e');
-      }
-    }
+    final squadState = state.valueOrNull;
+    final lobbyId =
+        squadState?.currentLobby?.id ?? squadState?.selectedLobbyId;
+    if (lobbyId == null) return;
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.clearAllSpots,
+      lobbyId: lobbyId,
+    ));
   }
 
   // Reset all timers for a specific game
@@ -909,7 +2057,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
             gameName, squadState.gameLobbySpots);
 
         // Reload state
-        state = await AsyncValue.guard(() => _repository.loadLobbyState());
+        state = await AsyncValue.guard(() => _loadPersistedLobbyState());
       } catch (e) {
         debugPrint('Error resetting timers: $e');
       }
@@ -995,42 +2143,39 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
         allTimeRatings: updatedAllTimeRatings,
       ));
 
-      // TODO: Persist to Firestore
-      // await _firestoreManager.updateFirestore({'dailyRatings': updatedDailyRatings, 'allTimeRatings': updatedAllTimeRatings});
+      // Ratings persist via UserNotifier / Supabase users table.
     }
   }
 
   Future<void> callSpotForGame(int spotIndex, String gameName) async {
-    final currentState = state;
-    if (currentState is AsyncData) {
-      final squadState = currentState.value!;
-      final squadId = squadState.selectedLobbyId;
-      if (squadId != null) {
-        final authService = AuthServiceSupabase();
-        final userId = authService.currentUser?.id;
-        if (userId == null) return;
-        await _repository.assignSpot(squadId, spotIndex, userId);
-
-        // Delegate timer management to TimerManagementNotifier
-        final timerNotifier =
-            ref.read(timerManagementNotifierProvider.notifier);
-        await timerNotifier.startSpotTimer(
-            squadId, gameName, spotIndex, userId, const Duration(minutes: 5));
-
-        // Reload state
-        state = await AsyncValue.guard(() => _repository.loadLobbyState());
-      }
-    }
+    final squadState = state.valueOrNull;
+    final lobbyId =
+        squadState?.currentLobby?.id ?? squadState?.selectedLobbyId;
+    if (lobbyId == null) return;
+    final userId = _resolvedCurrentUserId;
+    if (userId == null) return;
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.callSpotForGame,
+      lobbyId: lobbyId,
+      spotIndex: spotIndex,
+      userId: userId,
+      duration: const Duration(minutes: 5),
+    ));
   }
 
+  /// Friend-visible Claim seat. Assigns via the peacock machine, not joinQueue.
   Future<void> claimPeacockSpot(
       String lobbyId, String userId, String gameName) async {
-    await _repository.addToPeacockQueue(userId, gameName);
+    await assignPeacockSpot(
+      userId: userId,
+      lobbyId: lobbyId,
+      gameName: gameName,
+    );
   }
 
   Future<void> lockPeacockSpot(
       String lobbyId, String userId, String gameName) async {
-    await _repository.removeFromPeacockQueue(userId);
+    await removeFromPeacockQueue(userId);
   }
 
   Future<List<Map<String, dynamic>>> getSquadAlerts(String squadId) async {
@@ -1059,6 +2204,8 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       _subscribeToCurrentLobby(lobbyId);
     } else {
       _currentLobbySubscription?.cancel();
+      _currentSubscribedLobbyId = null;
+      _lobbyChannelErrorRetries = 0;
     }
   }
 
@@ -1070,7 +2217,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     final lobby = currentState?.currentLobby;
     if (lobby == null) return;
 
-    final uid = AuthServiceSupabase().currentUser?.id;
+    final uid = _resolvedCurrentUserId;
     if (uid == null) return;
 
     final currentClaim =
@@ -1082,8 +2229,14 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
     // Check if within maxSpots
     if (spotIndex >= lobby.maxSpots) return;
 
-    // Use repository to assign spot
-    await _repository.assignSpot(lobby.id, spotIndex, uid);
+    await _commitSeatWrite(LobbySeatWrite(
+      kind: LobbySeatWriteKind.assignSpot,
+      lobbyId: lobby.id,
+      spotIndex: spotIndex,
+      userId: uid,
+    ));
+    if (lastSeatWriteError != null) return;
+    await reconcileReadyLock(actorUid: uid, notify: true);
   }
 
   /// Unclaim a spot in the current lobby (simplified version for CurrentLobbyNotifier compatibility)
@@ -1153,7 +2306,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       await _repository.deleteLobby(lobbyId);
 
       // Reload state to remove deleted lobby
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      state = await AsyncValue.guard(() => _loadPersistedLobbyState());
 
       debugPrint('✅ Lobby $lobbyId deleted successfully');
     } catch (e, stackTrace) {
@@ -1192,7 +2345,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       );
 
       // Update lobby with tags, visibility, and constitution rules
-      await SupabaseService.client.from('lobbies').update({
+      await ref.read(supabaseClientProvider).from('lobbies').update({
         'tags': tags,
         'visibility': visibility,
         'constitution_rules': constitution?.rules ?? {},
@@ -1203,7 +2356,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
       debugPrint('✅ Lobby created with constitution: $lobbyId');
 
       // Reload state
-      state = await AsyncValue.guard(() => _repository.loadLobbyState());
+      state = await AsyncValue.guard(() => _loadPersistedLobbyState());
 
       return lobbyId;
     } catch (e, stackTrace) {
@@ -1332,8 +2485,7 @@ class LobbyNotifier extends AsyncNotifier<LobbyState> with OfflineFirstMixin {
   }
 }
 
-final lobbyNotifierProvider =
-    AsyncNotifierProvider<LobbyNotifier, LobbyState>.new(
+final lobbyNotifierProvider = AsyncNotifierProvider<LobbyNotifier, LobbyState>(
   LobbyNotifier.new,
 );
 
@@ -1356,3 +2508,121 @@ final currentLobbyProvider = Provider<AsyncValue<Lobby?>>((ref) {
     error: (error, stack) => AsyncError(error, stack),
   );
 });
+
+bool _isSpotOccupied(String? uid) => uid != null && uid.isNotEmpty;
+
+bool _spotHeldBy(String? occupant, String userId) {
+  if (occupant == null || occupant.isEmpty) return false;
+  return occupant == userId || occupant == '${userId}_calling';
+}
+
+/// First empty seat, or the next index when [spots] is shorter than
+/// [maxSpots]. Reuses [userId]'s existing seat. Null when unknown/full.
+int? resolveNextFreeSpotIndex({
+  List<String?>? spots,
+  int? maxSpots,
+  String? userId,
+}) {
+  if (spots == null && maxSpots == null) return null;
+  final list = spots ?? const <String?>[];
+  if (userId != null && userId.isNotEmpty) {
+    final existing = list.indexWhere((uid) => _spotHeldBy(uid, userId));
+    if (existing >= 0) return existing;
+  }
+  final free = list.indexWhere((uid) => !_isSpotOccupied(uid));
+  if (free >= 0) return free;
+  final cap = maxSpots ?? list.length;
+  if (list.length < cap) return list.length;
+  return null;
+}
+
+Lobby? lobbyForSeatResolve(LobbyState state, String? lobbyId) {
+  if (lobbyId == null || lobbyId.isEmpty) return null;
+  final current = state.currentLobby;
+  if (current != null &&
+      (current.id == lobbyId || current.chatGroupId == lobbyId)) {
+    return current;
+  }
+  final byId = state.userLobbies[lobbyId];
+  if (byId != null) return byId;
+  for (final lobby in state.userLobbies.values) {
+    if (lobby.chatGroupId == lobbyId) return lobby;
+  }
+  return null;
+}
+
+/// Prefer [currentLobby] / [LobbyState.userLobbies], then game-scoped spots.
+int? resolveNextFreeSpotFromLobbyState({
+  required LobbyState state,
+  String? lobbyId,
+  String? gameName,
+  String? userId,
+}) {
+  final lobby = lobbyForSeatResolve(state, lobbyId);
+  if (lobby != null) {
+    return resolveNextFreeSpotIndex(
+      spots: lobby.spots,
+      maxSpots: lobby.maxSpots,
+      userId: userId,
+    );
+  }
+  if (gameName != null && gameName.isNotEmpty) {
+    final spots = state.gameLobbySpots[gameName];
+    if (spots != null) {
+      return resolveNextFreeSpotIndex(spots: spots, userId: userId);
+    }
+  }
+  return null;
+}
+
+/// Friend-visible name: game + group, truncated. Never the literal "Lobby".
+const kLobbyNameFromChatMaxChars = 48;
+
+String lobbyNameFromChat({
+  required String gameName,
+  String? chatGroupName,
+  String? chatGroupId,
+}) {
+  final game = gameName.trim();
+  final group = (chatGroupName ?? '').trim();
+  final id = (chatGroupId ?? '').trim();
+  final suffix = group.isNotEmpty ? group : id;
+  final raw = suffix.isEmpty
+      ? (game.isEmpty ? 'Squad' : game)
+      : (game.isEmpty ? suffix : '$game · $suffix');
+  if (raw.length <= kLobbyNameFromChatMaxChars) return raw;
+  return raw.substring(0, kLobbyNameFromChatMaxChars).trimRight();
+}
+
+/// Drop the creator so lobby_created is never FCM-to-self.
+List<String> lobbyCreatedNotifyRecipients({
+  required Iterable<String> memberUids,
+  required String creatorUid,
+}) {
+  final creator = creatorUid.trim();
+  final seen = <String>{};
+  final out = <String>[];
+  for (final raw in memberUids) {
+    final uid = raw.trim();
+    if (uid.isEmpty || uid == creator) continue;
+    if (seen.add(uid)) out.add(uid);
+  }
+  return out;
+}
+
+List<String>? _stringListFrom(dynamic raw) {
+  if (raw is! List) return null;
+  return [
+    for (final item in raw)
+      if (item != null && item.toString().trim().isNotEmpty)
+        item.toString().trim(),
+  ];
+}
+
+/// Postgres undefined_column. Safe to degrade when chat_group_id is unapplied.
+bool isUndefinedColumn42703(Object error) {
+  final code = error is PostgrestException ? error.code : null;
+  if (code == '42703') return true;
+  final text = error.toString();
+  return text.contains('42703') || text.contains('undefined_column');
+}

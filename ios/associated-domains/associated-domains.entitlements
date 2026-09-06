@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Associated Domains template for com.example.codSquadApp.
+	     AASA appID stays TEAMID.com.example.codSquadApp until Spencer
+	     pastes the real 10-char Team ID (portal Membership). Do not
+	     invent a Team ID in this repo.
+	     Live device file: ios/Runner/Runner.entitlements (already includes
+	     these applinks plus existing supabase / lobbiesync.app entries).
+	     Simulator: ios/Runner/Runner.simulator.entitlements must NOT claim
+	     applinks. Do not change the bundle ID. Spencer still must enable
+	     Associated Domains on the App ID and host AASA (see SPENCER.txt). -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:codsquad.app</string>
+		<string>applinks:www.codsquad.app</string>
+	</array>
+</dict>
+</plist>

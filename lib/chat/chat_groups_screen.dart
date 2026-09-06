@@ -8,6 +8,8 @@ import '../domain/entities/lobby_state.dart';
 import '../domain/entities/chat_group.dart';
 import 'chat_screen.dart';
 import '../core/app_theme.dart';
+import '../core/layout.dart';
+import '../widgets/chat_surface_feedback.dart';
 import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
 import 'widgets/group_chat_context_menu.dart';
@@ -95,11 +97,12 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
     super.didChangeDependencies();
     // Monitor keyboard height changes
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+      if (!mounted) return;
+      final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
       if (keyboardHeight != _lastKeyboardHeight) {
         setState(() {
           if (keyboardHeight > 0) {
-            _navBottomOffset = -75.0;
+            _navBottomOffset = -mainTabClearanceOf(context);
             _navOpacity = 0.0;
           } else {
             _navBottomOffset = 0.0;
@@ -257,8 +260,10 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           title: const Text('Chats'),
-          backgroundColor: Colors.black,
+          backgroundColor: const Color(0xFF0B0E14),
+          foregroundColor: Colors.white,
           elevation: 0,
+          systemOverlayStyle: SystemUiOverlayStyle.light,
           leading: _isDMView
               ? IconButton(
                   icon: const Icon(Icons.arrow_back, color: Colors.cyanAccent),
@@ -365,222 +370,192 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
       builder: (context, ref, child) {
         final chatState = ref.watch(chatNotifierProvider);
 
-        return chatState.when(
-          data: (state) {
-            final groups = state.chatGroups.values.toList();
+        final state = chatState.valueOrNull;
+        final groups = state?.chatGroups.values.toList() ?? [];
+        final error = chatState.error ?? state?.syncError;
+        final isOffline = state?.isOnline == false;
+        final phase = resolveChatSurfacePhase(
+          isLoading: chatState.isLoading && state == null,
+          error: error,
+          isEmpty: groups.isEmpty,
+          isOffline: isOffline,
+          itemCount: groups.length,
+        );
+        if (phase != ChatSurfacePhase.data) {
+          return ChatSurfaceFeedback(
+            kind: ChatSurfaceKind.list,
+            phase: phase,
+            error: error,
+            isOffline: isOffline,
+            onRetry: () {
+              ref.read(chatNotifierProvider.notifier).loadUserGroups();
+            },
+          );
+        }
 
-            if (groups.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.group_outlined,
-                      size: 64,
-                      color: Colors.white.withOpacity(0.3),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No groups yet',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
-                        fontSize: 18,
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: groups.length,
+          itemBuilder: (context, index) {
+            final group = groups[index];
+
+            return InkWell(
+              onTap: () async {
+                HapticFeedback.lightImpact();
+                await ref
+                    .read(chatNotifierProvider.notifier)
+                    .loadMessages(group.id);
+                if (context.mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChatScreen(
+                        chatGroupId: group.id,
+                        chatGroupName: group.name,
+                        chatType: ChatType.userGroup,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Create or join a group to get started',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.4),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            return ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: groups.length,
-              itemBuilder: (context, index) {
-                final group = groups[index];
-
-                return InkWell(
-                  onTap: () async {
-                    HapticFeedback.lightImpact();
-                    await ref
-                        .read(chatNotifierProvider.notifier)
-                        .loadMessages(group.id);
-                    if (context.mounted) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ChatScreen(
-                            chatGroupId: group.id,
-                            chatGroupName: group.name,
-                            chatType: ChatType.userGroup,
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  onLongPress: () async {
-                    HapticFeedback.mediumImpact();
-                    final currentUser = AuthServiceSupabase().currentUser;
-                    if (currentUser == null) return;
-
-                    try {
-                      // Fetch group metadata from users.user_groups
-                      final userData = await SupabaseService.client
-                          .from('users')
-                          .select('user_groups')
-                          .eq('uid', currentUser.id)
-                          .maybeSingle();
-
-                      final userGroups = List<Map<String, dynamic>>.from(
-                          userData?['user_groups'] ?? []);
-                      final groupMeta = userGroups.firstWhere(
-                        (g) => g['id'] == group.id,
-                        orElse: () => <String, dynamic>{},
-                      );
-
-                      final isMuted = groupMeta['is_muted'] as bool? ?? false;
-                      final isPinned = groupMeta['is_pinned'] as bool? ?? false;
-
-                      // Check if user is creator
-                      final groupData = await SupabaseService.client
-                          .from('chat_groups')
-                          .select('created_by')
-                          .eq('id', group.id)
-                          .maybeSingle();
-                      final createdBy =
-                          groupData?['created_by'] as String? ?? '';
-                      final isCreator = createdBy == currentUser.id;
-
-                      if (!context.mounted) return;
-
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: Colors.transparent,
-                        builder: (context) => GroupChatContextMenu(
-                          groupId: group.id,
-                          groupName: group.name,
-                          createdBy: createdBy,
-                          isMuted: isMuted,
-                          isPinned: isPinned,
-                          onMarkUnread: () async {
-                            await ref
-                                .read(chatNotifierProvider.notifier)
-                                .markGroupAsUnread(group.id);
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          onTogglePinned: () async {
-                            await ref
-                                .read(chatNotifierProvider.notifier)
-                                .togglePinGroup(group.id, isPinned);
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          onToggleMute: () async {
-                            await ref
-                                .read(chatNotifierProvider.notifier)
-                                .toggleMuteGroup(group.id, isMuted);
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          onIgnore: () async {
-                            await ref
-                                .read(chatNotifierProvider.notifier)
-                                .ignoreGroup(group.id);
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          onLeave: () async {
-                            Navigator.pop(context);
-                            _showLeaveGroupDialog(
-                                context, group.id, group.name);
-                          },
-                          onDelete: isCreator
-                              ? () async {
-                                  try {
-                                    await ref
-                                        .read(chatNotifierProvider.notifier)
-                                        .deleteGroup(group.id);
-                                    if (context.mounted) {
-                                      Navigator.pop(context);
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content:
-                                              Text('Deleted "${group.name}"'),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      Navigator.pop(context);
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text('Failed to delete: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                    }
-                                  }
-                                }
-                              : null,
-                        ),
-                      );
-                    } catch (e) {
-                      debugPrint('Error showing context menu: $e');
-                    }
-                  },
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withOpacity(0.2),
-                      backgroundImage: group.avatarUrl != null
-                          ? NetworkImage(group.avatarUrl!)
-                          : null,
-                      child: group.avatarUrl == null
-                          ? Icon(
-                              Icons.group,
-                              color: Theme.of(context).colorScheme.primary,
-                            )
-                          : null,
-                    ),
-                    title: Text(
-                      group.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    subtitle: Text(
-                      _formatLastMessage(group),
-                      maxLines: 1,
-                      overflow: TextOverflow.clip,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                );
+                  );
+                }
               },
+              onLongPress: () async {
+                HapticFeedback.mediumImpact();
+                final currentUser = AuthServiceSupabase().currentUser;
+                if (currentUser == null) return;
+
+                try {
+                  // Fetch group metadata from users.user_groups
+                  final userData = await SupabaseService.client
+                      .from('users')
+                      .select('user_groups')
+                      .eq('uid', currentUser.id)
+                      .maybeSingle();
+
+                  final userGroups = List<Map<String, dynamic>>.from(
+                      userData?['user_groups'] ?? []);
+                  final groupMeta = userGroups.firstWhere(
+                    (g) => g['id'] == group.id,
+                    orElse: () => <String, dynamic>{},
+                  );
+
+                  final isMuted = groupMeta['is_muted'] as bool? ?? false;
+                  final isPinned = groupMeta['is_pinned'] as bool? ?? false;
+
+                  // Check if user is creator
+                  final groupData = await SupabaseService.client
+                      .from('chat_groups')
+                      .select('created_by')
+                      .eq('id', group.id)
+                      .maybeSingle();
+                  final createdBy = groupData?['created_by'] as String? ?? '';
+                  final isCreator = createdBy == currentUser.id;
+
+                  if (!context.mounted) return;
+
+                  showModalBottomSheet(
+                    context: context,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => GroupChatContextMenu(
+                      groupId: group.id,
+                      groupName: group.name,
+                      createdBy: createdBy,
+                      isMuted: isMuted,
+                      isPinned: isPinned,
+                      onMarkUnread: () async {
+                        await ref
+                            .read(chatNotifierProvider.notifier)
+                            .markGroupAsUnread(group.id);
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      onTogglePinned: () async {
+                        await ref
+                            .read(chatNotifierProvider.notifier)
+                            .togglePinGroup(group.id, isPinned);
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      onToggleMute: () async {
+                        await ref
+                            .read(chatNotifierProvider.notifier)
+                            .toggleMuteGroup(group.id, isMuted);
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      onIgnore: () async {
+                        await ref
+                            .read(chatNotifierProvider.notifier)
+                            .ignoreGroup(group.id);
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      onLeave: () async {
+                        Navigator.pop(context);
+                        _showLeaveGroupDialog(context, group.id, group.name);
+                      },
+                      onDelete: isCreator
+                          ? () async {
+                              try {
+                                await ref
+                                    .read(chatNotifierProvider.notifier)
+                                    .deleteGroup(group.id);
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Deleted "${group.name}"'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to delete: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            }
+                          : null,
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error showing context menu: $e');
+                }
+              },
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor:
+                      Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                  backgroundImage: group.avatarUrl != null
+                      ? NetworkImage(group.avatarUrl!)
+                      : null,
+                  child: group.avatarUrl == null
+                      ? Icon(
+                          Icons.group,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
+                ),
+                title: Text(
+                  group.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  _formatLastMessage(group),
+                  maxLines: 1,
+                  overflow: TextOverflow.clip,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
             );
           },
-          loading: () => const Center(
-            child: CircularProgressIndicator(color: Colors.cyanAccent),
-          ),
-          error: (error, stack) => Center(
-            child: Text(
-              'Error loading groups: $error',
-              style: const TextStyle(color: Colors.red),
-            ),
-          ),
         );
       },
     );
@@ -682,50 +657,29 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
               future: _discoverGroupsFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: Colors.cyanAccent),
+                  return const ChatSurfaceFeedback(
+                    kind: ChatSurfaceKind.list,
+                    phase: ChatSurfacePhase.loading,
                   );
                 }
 
                 if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      'Error loading groups: ${snapshot.error}',
-                      style: const TextStyle(color: Colors.red),
-                    ),
+                  return ChatSurfaceFeedback(
+                    kind: ChatSurfaceKind.list,
+                    phase: ChatSurfacePhase.error,
+                    error: snapshot.error,
+                    onRetry: _refreshDiscoverGroups,
                   );
                 }
 
                 final groups = snapshot.data ?? [];
 
                 if (groups.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.explore_outlined,
-                          size: 64,
-                          color: Colors.white.withOpacity(0.3),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No public groups available',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
-                            fontSize: 18,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Check back later for groups to discover',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.4),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
+                  return const ChatSurfaceFeedback(
+                    kind: ChatSurfaceKind.list,
+                    phase: ChatSurfacePhase.empty,
+                    message: 'No public groups available',
+                    hint: 'Check back later for groups to discover',
                   );
                 }
 
@@ -1005,33 +959,50 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeInOut,
                         opacity: _navOpacity,
-                        child: Container(
-                          height: 75,
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 8,
-                                offset: const Offset(0, -2),
-                              ),
-                            ],
-                          ),
-                          child: ValueListenableBuilder<int>(
-                            valueListenable: _selectedIndexNotifier,
-                            builder: (context, selectedIndex, child) {
-                              return Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  _buildTabItem(0, selectedIndex, squadState),
-                                  _buildTabItem(1, selectedIndex, squadState),
-                                  _buildTabItem(2, selectedIndex, squadState),
-                                  _buildTabItem(3, selectedIndex, squadState),
+                        child: Builder(
+                          builder: (context) {
+                            final bottomSafe =
+                                MediaQuery.viewPaddingOf(context).bottom;
+                            final neon = Theme.of(context).colorScheme.primary;
+                            return Container(
+                              height: mainTabClearance(bottomSafe),
+                              padding: EdgeInsets.only(bottom: bottomSafe),
+                              decoration: BoxDecoration(
+                                color: const Color(0xE60B0E14),
+                                border: Border(
+                                  top: BorderSide(
+                                    color: neon.withValues(alpha: 0.28),
+                                  ),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: neon.withValues(alpha: 0.12),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, -2),
+                                  ),
                                 ],
-                              );
-                            },
-                          ),
+                              ),
+                              child: ValueListenableBuilder<int>(
+                                valueListenable: _selectedIndexNotifier,
+                                builder: (context, selectedIndex, child) {
+                                  return Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceEvenly,
+                                    children: [
+                                      _buildTabItem(
+                                          0, selectedIndex, squadState),
+                                      _buildTabItem(
+                                          1, selectedIndex, squadState),
+                                      _buildTabItem(
+                                          2, selectedIndex, squadState),
+                                      _buildTabItem(
+                                          3, selectedIndex, squadState),
+                                    ],
+                                  );
+                                },
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),

@@ -8,3 +8,10 @@ Append-only. Newest last.
 - slice: bootstrap living docs
 - result: pass
 - next: P0 Harness verify auth cold start
+
+## 2026-09-06 04:34 America/Chicago
+
+- SHA: `719cbe8`
+- slice: P5 Cod Flight TestFlight checklist + aps flavor comments
+- result: pass
+- next: Harness P0–P2 inventory; Red Burst A; Loop waits for first red

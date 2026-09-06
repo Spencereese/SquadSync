@@ -2,11 +2,11 @@
 
 ## now
 
-Overnight Cod CoS running. Tip `c2235885` / **3.4.136+138**. P0 auth cold-start verify in flight.
+P5 Flight done at `719cbe8`. Harness inventory + Red Burst A in flight. Loop idle.
 
 ## next
 
-P0 → P1 → P2 per overnight priority. Friends TestFlight path after P0.
+First failing friend-visible Loop slice after inventory.
 
 ## blocked-on-Spencer
 
@@ -18,10 +18,12 @@ P0 → P1 → P2 per overnight priority. Friends TestFlight path after P0.
 - TestFlight upload + internal group
 - Friend list: who is on CoD
 
+Flight parked: TEAMID/AASA host, `.env`+GoogleService on build machine, production aps on Release archive only, TestFlight upload.
+
 ## SHA
 
-`c2235885b0dcf12c71a0e1826203762d72be8017`
+`719cbe8bc4070f49a2dfbd481c827d8dc1460c01`
 
 ## version
 
-`3.4.136+138`
+`3.4.136+138` until Loop/Red bumps pubspec

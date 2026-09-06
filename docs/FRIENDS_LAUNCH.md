@@ -2,19 +2,19 @@
 
 ## now
 
-Tip ~`186215c` v3.4.138+140. P0–P2 CI green. P5 Flight done. Burst A CSPRNG landed. Burst B in flight.
+Tip `9c95267` v3.4.138+140. P0–P2 green. P5 Flight done. Red A+B done. Loop idle (no failing friend slice).
 
 ## next
 
-Red Burst B secret quarantine + docs redact; Harness sqlite verify; then MORNING_BRIEF.
+`docs/MORNING_BRIEF.md`. Workers IDLE. Optional Harness widen CI to fire on revive branch (`on:` only) — park for Spencer.
 
 ## residuals
 
-- Client secrets still read via dotenv/fromEnvironment (IGDB/Twitch/Agora/XAI) — Burst B stubbing
-- `CLOUD_RUN_DEPLOYMENT.md` previously contained literal-looking secrets — redact in Burst B
-- Portal: TEAMID/AASA/APNs/.p8/GoogleService/TestFlight still Spencer
+- Secure-storage fail hard in release
+- Existing devices keep old chat keys
+- CI workflow only on `main`/`master`
+- Portal / TestFlight still Spencer
 - Live SQL blocked
-- CI workflow still only on main/master push (revive PR may not run GH Actions until configured)
 
 ## blocked-on-Spencer
 
@@ -30,8 +30,8 @@ Flight parked: TEAMID/AASA host, `.env`+GoogleService on build machine, producti
 
 ## SHA
 
-`186215c064b96cf746ea713f6b1c44e39425e9a5`
+`9c95267900af85d170dd6d7ab87046204646c577`
 
 ## version
 
-`3.4.138+140`
+`3.4.138+140` — product tip from Red A (`186215c`). Burst B did not bump `pubspec.yaml`.

@@ -22,3 +22,11 @@ Append-only. Newest last.
 - slices: Harness LFG orphan promote PASS; Red Burst A CSPRNG sqlite key PASS
 - result: pass
 - next: Red Burst B secret quarantine + docs redact; Harness sqlite verify; then MORNING_BRIEF
+
+## 2026-09-06 04:48 America/Chicago
+
+- SHA: `9c95267`
+- slice: Red Burst B unset-secret cold start + CLOUD_RUN redact
+- result: PASS
+- Harness sqlite verify: PASS on `186215c`
+- next: MORNING_BRIEF; workers IDLE

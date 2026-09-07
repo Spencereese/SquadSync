@@ -10,8 +10,10 @@ import '../lobbies_tab/lobbies_tab.dart';
 import '../utils.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../widgets/unified_game_selection_sheet.dart';
+import '../core/app_env.dart';
 import '../core/app_theme.dart';
 import 'discovery_screen.dart';
+import 'tonight_home.dart';
 
 class LobbyTabScreen extends StatelessWidget {
   final String? lobbyId;
@@ -113,6 +115,16 @@ class _LobbyTabScreenContentState
           return KeyedSubtree(
             key: const Key('lobby-full-squad'),
             child: _buildFullSquadInterface(context, squadState),
+          );
+        }
+
+        // Friends IPA: no selected lobby + no deep-link lands Tonight empty
+        // home — not Discovery, not the 0.75 game carousel.
+        if (squadState.selectedLobbyId == null && AppEnv.friendsMode) {
+          return TonightEmptyHome(
+            key: const Key('tonight-empty-home'),
+            chatGroupId: widget.chatGroupId,
+            gameName: widget.gameName,
           );
         }
 

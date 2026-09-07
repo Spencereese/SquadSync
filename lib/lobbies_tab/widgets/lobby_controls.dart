@@ -106,6 +106,7 @@ class LobbyControls extends ConsumerWidget {
             },
           ),
           MoreActionsBlock(
+            // more-actions: voice / share / clips — not a neon Card stack
             children: [
               if (slotForTonightAction(kMoreVoiceAction) ==
                   TonightStripSlot.more)

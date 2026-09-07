@@ -48,6 +48,7 @@ String lobbyFooterActorUid(LobbyState? state) {
 
 /// LobbyControls — seat-map footer CTA, Tonight strip, More (voice / share / clips).
 /// Win/Loss and Voice live under More, not a neon Card stack under the grid.
+/// Order after seat-grid: lobby-footer-cta then more-actions.
 class LobbyControls extends ConsumerWidget {
   const LobbyControls({super.key});
 

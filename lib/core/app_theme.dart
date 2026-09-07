@@ -203,20 +203,20 @@ class AppTheme {
         color: colorScheme.onSurface.withValues(alpha: 0.8),
       ),
 
-      // Titles with Orbitron
+      // Titles: large stays Orbitron; medium/small are Inter
       titleLarge: GoogleFonts.orbitron(
         fontSize: 22,
         fontWeight: FontWeight.w600,
         letterSpacing: 0,
         color: colorScheme.onSurface,
       ),
-      titleMedium: GoogleFonts.orbitron(
+      titleMedium: GoogleFonts.inter(
         fontSize: 16,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.15,
         color: colorScheme.onSurface,
       ),
-      titleSmall: GoogleFonts.orbitron(
+      titleSmall: GoogleFonts.inter(
         fontSize: 14,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.1,
@@ -286,68 +286,39 @@ class AppTheme {
     );
   }
 
-  // Elevated button with glass fill and neon border
+  // Elevated button: filled primary, onPrimary contrast, no glass outline
   static ElevatedButtonThemeData _buildElevatedButtonTheme(
       ColorScheme colorScheme) {
-    final neonColor = colorScheme.primary;
-
     return ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        foregroundColor:
-            _isLight(colorScheme) ? colorScheme.onSurface : Colors.white,
-        backgroundColor: _glassFill(colorScheme, darkAlpha: 0.08),
+        foregroundColor: colorScheme.onPrimary,
+        backgroundColor: colorScheme.primary,
         elevation: 0,
         shadowColor: Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: neonColor.withValues(alpha: 0.4),
-            width: 1.5,
-          ),
         ),
-        textStyle: GoogleFonts.orbitron(
+        textStyle: GoogleFonts.inter(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.5,
         ),
-      ).copyWith(
-        overlayColor: WidgetStateProperty.resolveWith<Color?>((states) {
-          if (states.contains(WidgetState.hovered)) {
-            return neonColor.withValues(alpha: 0.15);
-          }
-          if (states.contains(WidgetState.pressed)) {
-            return neonColor.withValues(alpha: 0.25);
-          }
-          return null;
-        }),
-        side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
-          if (states.contains(WidgetState.hovered)) {
-            return BorderSide(
-              color: neonColor.withValues(alpha: 0.8),
-              width: 2,
-            );
-          }
-          return BorderSide(
-            color: neonColor.withValues(alpha: 0.4),
-            width: 1.5,
-          );
-        }),
       ),
     );
   }
 
-  // Card theme with glass effect
+  // Card: surface fill, 16 radius, 1px 12% white — not 20 + neon glass
   static CardThemeData _buildCardTheme(ColorScheme colorScheme) {
     return CardThemeData(
       elevation: 0,
-      color: _glassFill(colorScheme, darkAlpha: 0.08),
+      color: colorScheme.surface,
       shadowColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: colorScheme.primary.withValues(alpha: 0.4),
-          width: 1.5,
+          color: Colors.white.withValues(alpha: 0.12),
+          width: 1,
         ),
       ),
     );

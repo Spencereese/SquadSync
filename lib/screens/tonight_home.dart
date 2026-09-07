@@ -24,7 +24,7 @@ class TonightEmptyHome extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final state =
         ref.watch(lobbyNotifierProvider).valueOrNull ?? LobbyState.initial();
     final showLastLocked = hasLastLockedSession(state);
@@ -114,7 +114,7 @@ class _TonightNothingCard extends ConsumerWidget {
   final String? gameName;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       key: const Key('tonight-card-nothing'),
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),

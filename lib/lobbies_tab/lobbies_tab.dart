@@ -750,7 +750,7 @@ class _LobbyTabContentState extends ConsumerState<_LobbyTabContent> {
 
         const SliverToBoxAdapter(child: LobbySeatOfferBannerHost()),
 
-        // Lobby spots grid
+        // seat-map-hero / seat-grid first (full squad), then footer CTA, then More
         LobbyGrid(highlightSpotIndex: widget.highlightSpotIndex),
 
         // Peacock members section (conditionally shown)

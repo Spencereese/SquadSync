@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 /// Arm's-length states on the lobby spot map.
 ///
-/// Empty recedes (outline + OPEN). Filled sits mid (name + solid). Peacock
-/// pops (cyan glow + PEACOCK). Visual hierarchy only — no new services.
+/// Empty recedes (dashed outline + Claim). Filled sits mid (avatar + name).
+/// Offered peacock pops once, then stays highlighted. Visual hierarchy only.
 enum LobbySpotMapKind {
   empty,
   filled,
@@ -31,6 +31,22 @@ Key lobbySpotMapSeatKey(LobbySpotMapKind kind) {
   }
 }
 
+Key lobbySpotHeroKey({
+  required LobbySpotMapKind kind,
+  required bool isYou,
+  required bool isLocked,
+}) {
+  if (isLocked) return const Key('seat-locked');
+  switch (kind) {
+    case LobbySpotMapKind.empty:
+      return const Key('seat-empty');
+    case LobbySpotMapKind.peacock:
+      return lobbySpotMapSeatKey(kind);
+    case LobbySpotMapKind.filled:
+      return isYou ? const Key('seat-you') : const Key('seat-seated');
+  }
+}
+
 /// Presentational chrome for one lobby spot. Hosts existing trailing CTAs.
 class LobbySpotMapSeat extends StatelessWidget {
   const LobbySpotMapSeat({
@@ -45,6 +61,8 @@ class LobbySpotMapSeat extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.semanticLabel,
+    this.isYou = false,
+    this.isLocked = false,
   });
 
   final int index;
@@ -57,8 +75,14 @@ class LobbySpotMapSeat extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final String? semanticLabel;
+  final bool isYou;
+  final bool isLocked;
 
   int get seatNumber => index + 1;
+
+  bool get _isYouSeat => isYou || displayName == 'You';
+
+  bool get _isLockedSeat => isLocked || statusLabel == 'Locked';
 
   static Color accentFor(LobbySpotMapKind kind) {
     switch (kind) {
@@ -71,7 +95,8 @@ class LobbySpotMapSeat extends StatelessWidget {
     }
   }
 
-  static double borderWidthFor(LobbySpotMapKind kind) {
+  static double borderWidthFor(LobbySpotMapKind kind, {bool isYou = false}) {
+    if (isYou && kind == LobbySpotMapKind.filled) return 4.0;
     switch (kind) {
       case LobbySpotMapKind.empty:
         return 1.5;
@@ -96,7 +121,7 @@ class LobbySpotMapSeat extends StatelessWidget {
   String get primaryLabel {
     switch (kind) {
       case LobbySpotMapKind.empty:
-        return 'OPEN';
+        return 'Claim';
       case LobbySpotMapKind.filled:
         return (displayName != null && displayName!.isNotEmpty)
             ? displayName!
@@ -110,8 +135,126 @@ class LobbySpotMapSeat extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = accentFor(kind);
     final fill = fillFor(kind);
-    final borderWidth = borderWidthFor(kind);
+    final you = _isYouSeat;
+    final locked = _isLockedSeat;
+    final borderWidth = borderWidthFor(kind, isYou: you);
     final statusColor = _statusColor(statusLabel, kind);
+    final heroKey = lobbySpotHeroKey(
+      kind: kind,
+      isYou: you,
+      isLocked: locked,
+    );
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(14),
+      side: BorderSide(
+        color: kind == LobbySpotMapKind.empty
+            ? accent.withValues(alpha: 0.65)
+            : accent,
+        width: borderWidth,
+      ),
+    );
+
+    Widget seat = Material(
+      key: heroKey,
+      color: fill,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Semantics(
+          label: semanticLabel ??
+              'Spot $seatNumber: $primaryLabel, $statusLabel',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                _leading(accent),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        primaryLabel,
+                        key: kind == LobbySpotMapKind.empty
+                            ? const Key('seat-claim')
+                            : const Key('spot-map-primary'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: kind == LobbySpotMapKind.filled
+                              ? Colors.white
+                              : accent,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing:
+                              kind == LobbySpotMapKind.filled ? 0.2 : 1.6,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Spot $seatNumber',
+                        key: const Key('spot-map-seat-number'),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          if (locked) ...[
+                            Icon(Icons.lock, size: 16, color: statusColor),
+                            const SizedBox(width: 6),
+                          ],
+                          _StatusChip(
+                            label: statusLabel,
+                            color: statusColor,
+                          ),
+                          if (timerLabel != null &&
+                              timerLabel!.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              timerLabel!,
+                              key: const Key('spot-map-timer'),
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (actions != null) ...[
+                        const SizedBox(height: 8),
+                        actions!,
+                      ],
+                    ],
+                  ),
+                ),
+                if (trailing != null) trailing!,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (kind == LobbySpotMapKind.empty) {
+      seat = CustomPaint(
+        painter: _DashedSeatOutlinePainter(
+          color: accent.withValues(alpha: 0.9),
+          strokeWidth: borderWidth,
+          radius: 14,
+        ),
+        child: seat,
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
@@ -128,99 +271,9 @@ class LobbySpotMapSeat extends StatelessWidget {
                 ]
               : null,
         ),
-        child: Material(
+        child: KeyedSubtree(
           key: lobbySpotMapSeatKey(kind),
-          color: fill,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(
-              color: kind == LobbySpotMapKind.empty
-                  ? accent.withValues(alpha: 0.65)
-                  : accent,
-              width: borderWidth,
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            onLongPress: onLongPress,
-            child: Semantics(
-              label: semanticLabel ??
-                  'Spot $seatNumber: $primaryLabel, $statusLabel',
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                child: Row(
-                  children: [
-                    _leading(accent),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            primaryLabel,
-                            key: const Key('spot-map-primary'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: kind == LobbySpotMapKind.filled
-                                  ? Colors.white
-                                  : accent,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing:
-                                  kind == LobbySpotMapKind.filled ? 0.2 : 1.6,
-                              height: 1.1,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Spot $seatNumber',
-                            key: const Key('spot-map-seat-number'),
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              _StatusChip(
-                                label: statusLabel,
-                                color: statusColor,
-                              ),
-                              if (timerLabel != null &&
-                                  timerLabel!.isNotEmpty &&
-                                  timerLabel != '00:00') ...[
-                                const SizedBox(width: 8),
-                                Text(
-                                  timerLabel!,
-                                  key: const Key('spot-map-timer'),
-                                  style: TextStyle(
-                                    color: statusColor,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          if (actions != null) ...[
-                            const SizedBox(height: 8),
-                            actions!,
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (trailing != null) trailing!,
-                  ],
-                ),
-              ),
-            ),
-          ),
+          child: seat,
         ),
       ),
     );
@@ -314,5 +367,63 @@ class _StatusChip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Dashed outline for empty Claim seats (arm's-length, not a solid neon card).
+class _DashedSeatOutlinePainter extends CustomPainter {
+  _DashedSeatOutlinePainter({
+    required this.color,
+    required this.strokeWidth,
+    required this.radius,
+  });
+
+  final Color color;
+  final double strokeWidth;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    final inset = strokeWidth / 2;
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        inset,
+        inset,
+        size.width - strokeWidth,
+        size.height - strokeWidth,
+      ),
+      Radius.circular(radius),
+    );
+    final path = Path()..addRRect(rrect);
+    canvas.drawPath(_dashedPath(path, dash: 6, gap: 4), paint);
+  }
+
+  Path _dashedPath(Path source, {required double dash, required double gap}) {
+    final dest = Path();
+    for (final metric in source.computeMetrics()) {
+      var distance = 0.0;
+      var draw = true;
+      while (distance < metric.length) {
+        final len = draw ? dash : gap;
+        final end = (distance + len).clamp(0.0, metric.length);
+        if (draw) {
+          dest.addPath(metric.extractPath(distance, end), Offset.zero);
+        }
+        distance += len;
+        draw = !draw;
+      }
+    }
+    return dest;
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedSeatOutlinePainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.radius != radius;
   }
 }

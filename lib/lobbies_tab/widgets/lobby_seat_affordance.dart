@@ -378,20 +378,23 @@ class OfferedSpotPulse extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!pulse) return child;
     return KeyedSubtree(
-      key: const Key('offered-spot-pulse'),
-      child: child
-          .animate(onPlay: (controller) => controller.repeat())
-          .scale(
-            begin: const Offset(1.0, 1.0),
-            end: const Offset(1.03, 1.03),
-            duration: const Duration(milliseconds: 900),
-          )
-          .then()
-          .scale(
-            begin: const Offset(1.03, 1.03),
-            end: const Offset(1.0, 1.0),
-            duration: const Duration(milliseconds: 900),
-          ),
+      key: const Key('seat-offered'),
+      child: KeyedSubtree(
+        key: const Key('offered-spot-pulse'),
+        child: child
+            .animate(onPlay: (controller) => controller.forward())
+            .scale(
+              begin: const Offset(1.0, 1.0),
+              end: const Offset(1.03, 1.03),
+              duration: const Duration(milliseconds: 900),
+            )
+            .then()
+            .scale(
+              begin: const Offset(1.03, 1.03),
+              end: const Offset(1.0, 1.0),
+              duration: const Duration(milliseconds: 900),
+            ),
+      ),
     );
   }
 }

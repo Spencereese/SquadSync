@@ -107,24 +107,22 @@ class LobbyGrid extends ConsumerWidget {
       data: (squadState) {
         final currentGame = squadState.currentGame;
         final maxSpots = currentGame?['maxSpots'] ?? 4;
-        final bannerCount = writeError == null ? 0 : 1;
-
-        return SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              if (writeError != null && index == 0) {
-                return const SeatWriteErrorBanner(
+        return SliverToBoxAdapter(
+          key: const Key('seat-map-hero'),
+          child: Column(
+            key: const Key('seat-grid'),
+            children: [
+              if (writeError != null)
+                const SeatWriteErrorBanner(
                   surfaceKey: kSeatMapSeatWriteErrorKey,
-                );
-              }
-              final spotIndex = index - bannerCount;
-              return SpotCard(
-                key: ValueKey('spot_$spotIndex'),
-                index: spotIndex,
-                highlightSpotIndex: highlightSpotIndex,
-              );
-            },
-            childCount: maxSpots + bannerCount,
+                ),
+              for (var spotIndex = 0; spotIndex < maxSpots; spotIndex++)
+                SpotCard(
+                  key: ValueKey('spot_$spotIndex'),
+                  index: spotIndex,
+                  highlightSpotIndex: highlightSpotIndex,
+                ),
+            ],
           ),
         );
       },
@@ -217,25 +215,24 @@ class SpotCard extends ConsumerWidget {
       squadState,
       gameName: gameName,
     );
-    final isReady = occupantUid != null && readyLock.isReady(occupantUid);
+    final readyLockSnap = ref
+            .read(ln.lobbyNotifierProvider.notifier)
+            .lastReadyLockSnapshot ??
+        readyLock;
+    final isReady = occupantUid != null && readyLockSnap.isReady(occupantUid);
     final isSeated = occupantIsSeated(spotName, occupantStatus);
     final isOwnSeat = occupantUid != null && occupantUid == yourUid;
-    final lobbyLocked = readyLock.isLocked;
+    final lobbyLocked = readyLockSnap.isLocked;
 
     // Check if any buttons will be shown
     final hasTimer = index < spotTimers.length && spotTimers[index] != null;
     final isCalling = occupantIsCallingSpot(spotName, occupantStatus);
-    final allowLateJoin = emptySpotAllowsLateJoin(readyLock);
+    final allowLateJoin = emptySpotAllowsLateJoin(readyLockSnap);
     final showEmptyCtas = emptySpotShowsCtas(
       hasOccupant: hasOccupant,
       allowLateJoin: allowLateJoin,
     );
-    final hasLockButton = hasOccupant && hasTimer && isCalling && isOwnSeat;
-    final hasWalkingButton =
-        hasOccupant && hasTimer && isReady && isOwnSeat && !isSeated;
-    final hasReadyButton = isSeated && (isOwnSeat || isReady || lobbyLocked);
-    final hasAnyButton =
-        showEmptyCtas || hasLockButton || hasWalkingButton || hasReadyButton;
+    final hasAnyButton = showEmptyCtas;
 
     LobbySeatStatus? seatStatus;
     try {
@@ -262,10 +259,18 @@ class SpotCard extends ConsumerWidget {
             isCalling &&
             seatStatus?.offerPending == true &&
             seatStatus?.seatIndex == index);
-    final timerDisplay = formatTimerExpiryLabel(
-      remaining: timerRemaining,
-      queueAssigned: queueAssigned,
-    );
+    // seat-locked mm:ss from lastReadyLockSnapshot / formatLockMmSs only.
+    final String? timerDisplay = lobbyLocked && isSeated
+        ? formatLockMmSs(
+            ref
+                    .read(ln.lobbyNotifierProvider.notifier)
+                    .readyCheckRemaining() ??
+                Duration.zero,
+          )
+        : formatTimerExpiryLabel(
+            remaining: timerRemaining,
+            queueAssigned: queueAssigned,
+          );
     final statusLabel = _spotStatusLabel(
       kind: kind,
       timerRemaining: timerRemaining,
@@ -302,8 +307,10 @@ class SpotCard extends ConsumerWidget {
         statusLabel: statusLabel,
         displayName: spotDisplayName,
         timerLabel: timerDisplay,
+        isYou: isOwnSeat,
+        isLocked: lobbyLocked && isSeated,
         semanticLabel:
-            'Spot ${index + 1}: ${spotDisplayName ?? 'Open'}${isOwnSeat && lobbyLocked ? ' (locked)' : isOwnSeat && isReady ? ' (ready)' : isOwnSeat && !isReady ? ' (tap Ready)' : ''}',
+            'Spot ${index + 1}: ${spotDisplayName ?? 'Claim'}${isOwnSeat && lobbyLocked ? ' (locked)' : isOwnSeat && isReady ? ' (ready)' : ''}',
         onLongPress: () {
           if (hasOccupant) {
             ref
@@ -358,22 +365,6 @@ class SpotCard extends ConsumerWidget {
                   SpotAssignmentDialog.show(context, ref, index);
                 }
               },
-        trailing: hasOccupant
-            ? _buildSpotActions(
-                context,
-                index,
-                hasOccupant,
-                yourUid,
-                spotTimers,
-                ref,
-                gameName,
-                isCalling: isCalling,
-                isReady: isReady,
-                isSeated: isSeated,
-                isOwnSeat: isOwnSeat,
-                lobbyLocked: lobbyLocked,
-              )
-            : null,
       ),
     );
   }
@@ -400,118 +391,6 @@ class SpotCard extends ConsumerWidget {
         if (occupantStatus == 'Calling') return 'Calling';
         return 'Occupied';
     }
-  }
-
-  Widget _buildSpotActions(
-    BuildContext context,
-    int index,
-    bool hasOccupant,
-    String? yourUid,
-    List<Map<String, dynamic>?> spotTimers,
-    WidgetRef ref,
-    String gameName, {
-    required bool isCalling,
-    required bool isReady,
-    required bool isSeated,
-    required bool isOwnSeat,
-    required bool lobbyLocked,
-  }) {
-    final hasTimer = index < spotTimers.length && spotTimers[index] != null;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (hasOccupant && hasTimer && isCalling && isOwnSeat)
-          Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Colors.yellowAccent, Colors.orange],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.yellowAccent.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ElevatedButton.icon(
-              onPressed: () => ref
-                  .read(ln.lobbyNotifierProvider.notifier)
-                  .lockSpot(gameName, index),
-              icon: const Icon(Icons.lock, size: 16),
-              label: const Text('Lock'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.black,
-                elevation: 0,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                textStyle:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-            ),
-          )
-        else if (isSeated)
-          SeatedSpotReadyAffordance(
-            isReady: isReady,
-            isLocked: lobbyLocked,
-            isOwnSeat: isOwnSeat,
-            timeoutRemaining: isOwnSeat
-                ? ref
-                    .read(ln.lobbyNotifierProvider.notifier)
-                    .readyCheckRemaining()
-                : null,
-            onToggle: isOwnSeat && yourUid != null
-                ? () => _toggleSeatedReady(
-                      context,
-                      ref,
-                      userId: yourUid,
-                      gameName: gameName,
-                      spotIndex: index,
-                    )
-                : null,
-            onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
-          )
-        else if (hasOccupant && hasTimer && isReady && isOwnSeat)
-          Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Colors.redAccent, Colors.red],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.redAccent.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ElevatedButton.icon(
-              onPressed: () => ref
-                  .read(ln.lobbyNotifierProvider.notifier)
-                  .removeSpot(gameName, index),
-              icon: const Icon(Icons.directions_walk, size: 16),
-              label: const Text('Leave'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                textStyle:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-      ],
-    );
   }
 
   Future<void> _inviteEmptySpot(
@@ -622,24 +501,4 @@ class SpotCard extends ConsumerWidget {
     }
   }
 
-  Future<void> _toggleSeatedReady(
-    BuildContext context,
-    WidgetRef ref, {
-    required String userId,
-    required String gameName,
-    required int spotIndex,
-  }) async {
-    final result =
-        await ref.read(ln.lobbyNotifierProvider.notifier).toggleSeatedReady(
-              userId: userId,
-              gameName: gameName,
-              spotIndex: spotIndex,
-            );
-    final message = result?.snackbarMessage;
-    if (message != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
-    }
-  }
 }

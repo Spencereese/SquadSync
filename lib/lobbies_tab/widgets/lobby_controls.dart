@@ -4,9 +4,11 @@ import '../../chat/screens/components/chat_info_actions.dart';
 import '../../core/deep_link_routes.dart';
 import '../../core/voice_room_join.dart';
 import '../../domain/entities/lobby.dart';
+import '../../domain/entities/lobby_state.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../services/auth_service_supabase.dart';
 import '../../services/availability_ping.dart';
+import '../../services/lobby_ready_lock.dart';
 import '../dialogs/session_rating_dialog.dart';
 import '../../services/session_rating_flow.dart';
 import '../../services/session_rating_machine.dart';
@@ -16,9 +18,36 @@ import '../../widgets/grok_concierge.dart';
 import '../../widgets/lobby_surface_feedback.dart';
 import 'lobby_grid.dart';
 
-/// LobbyControls — Tonight strip (I am on / Looking for Squad / Invite),
-/// Grok concierge (three commands), gated fill swipe, Win/Loss, Voice under More.
-/// Search is not an entry. No free-chat field. No public Tinder launch.
+const kLobbyFooterImReady = "I'm Ready";
+const kLobbyFooterLock = 'Lock';
+const kLobbyFooterLocked = 'Locked';
+
+/// Footer Ready / Lock label from the ready-lock snapshot only.
+String lobbyFooterCtaLabel({
+  required LobbyReadyLockSnapshot snapshot,
+  required String uid,
+}) {
+  if (snapshot.isLocked) return kLobbyFooterLocked;
+  if (!snapshot.seatedUids.contains(uid)) return kLobbyFooterImReady;
+  if (!snapshot.isReady(uid)) return kLobbyFooterImReady;
+  final waitingOn =
+      snapshot.seatedUids.where((id) => !snapshot.isReady(id)).length;
+  if (waitingOn > 0) return 'Waiting on $waitingOn';
+  return kLobbyFooterLock;
+}
+
+String lobbyFooterActorUid(LobbyState? state) {
+  try {
+    final id = AuthServiceSupabase().currentUser?.id;
+    if (id != null && id.isNotEmpty) return id;
+  } catch (_) {}
+  final created = state?.currentLobby?.createdBy;
+  if (created != null && created.isNotEmpty) return created;
+  return '';
+}
+
+/// LobbyControls — seat-map footer CTA, Tonight strip, More (voice / share / clips).
+/// Win/Loss and Voice live under More, not a neon Card stack under the grid.
 class LobbyControls extends ConsumerWidget {
   const LobbyControls({super.key});
 
@@ -43,16 +72,7 @@ class LobbyControls extends ConsumerWidget {
     return SliverToBoxAdapter(
       child: Column(
         children: [
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _WinButton(),
-                _LossButton(),
-              ],
-            ),
-          ),
+          const _LobbyFooterCta(),
           TonightActionsBlock(
             isLoading: tonightPhase == LobbySurfacePhase.loading,
             isEmpty: tonightPhase == LobbySurfacePhase.empty,
@@ -95,11 +115,87 @@ class LobbyControls extends ConsumerWidget {
                     child: _VoiceRoomButton(key: Key('more-voice')),
                   ),
                 ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _WinButton(),
+                    _LossButton(),
+                  ],
+                ),
+              ),
               if (slotForTonightAction(kDeadSearchAction) != null)
                 const SizedBox.shrink(),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One Ready → Waiting on N → Lock → Locked button. Snapshot only.
+class _LobbyFooterCta extends ConsumerWidget {
+  const _LobbyFooterCta();
+
+  Future<void> _onPressed(WidgetRef ref, LobbyReadyLockSnapshot snapshot) async {
+    final state = ref.read(ln.lobbyNotifierProvider).valueOrNull;
+    final uid = lobbyFooterActorUid(state);
+    if (uid.isEmpty) return;
+    final gameName = state?.currentGame?['name'] as String? ??
+        state?.currentLobby?.gameName ??
+        '';
+    await ref.read(ln.lobbyNotifierProvider.notifier).toggleSeatedReady(
+          userId: uid,
+          gameName: gameName,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
+    final state = lobbyAsync.valueOrNull;
+    LobbyReadyLockSnapshot snapshot;
+    try {
+      snapshot = ref
+              .read(ln.lobbyNotifierProvider.notifier)
+              .lastReadyLockSnapshot ??
+          (state == null
+              ? LobbyReadyLockSnapshot.empty
+              : resolveLobbyReadyLockFromState(state));
+    } catch (_) {
+      snapshot = state == null
+          ? LobbyReadyLockSnapshot.empty
+          : resolveLobbyReadyLockFromState(state);
+    }
+    final uid = lobbyFooterActorUid(state);
+    final label = lobbyFooterCtaLabel(snapshot: snapshot, uid: uid);
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          key: const Key('lobby-footer-cta'),
+          onPressed: snapshot.isLocked && uid.isEmpty
+              ? null
+              : () => _onPressed(ref, snapshot),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+          child: Text(
+            label,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
       ),
     );
   }

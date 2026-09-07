@@ -110,4 +110,5 @@ jobs:
             test/presentation/notifiers/chat_notifier_lobby_bind_test.dart \
             test/lobbies_tab/widgets/lobby_seat_write_error_test.dart \
             test/screens/tonight_empty_home_test.dart \
-            test/core/app_theme_pass_test.dart
+            test/core/app_theme_pass_test.dart \
+            test/lobbies_tab/widgets/seat_map_hero_test.dart

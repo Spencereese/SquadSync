@@ -8,7 +8,7 @@
 // unshared-group visibility, AASA / OG preview title, and poll-on-pin
 // are P3 stubs — this file does not start them.
 //
-// XOR stays planPeacockSelfNotify (no notify path here).
+// One notify pipeline; do not invent a second.
 import 'package:share_plus/share_plus.dart';
 
 import '../core/deep_link_routes.dart';

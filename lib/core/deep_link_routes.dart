@@ -20,10 +20,10 @@ const kSimulatorRegisteredUrlSchemes = [
 ];
 
 /// HTTPS Universal Link host. [locationForDeepLink] maps
-/// `https://codsquad.app/l/<id>` to the same `/squad?lobby_id=` path as
-/// `codsquadapp://lobby/<id>`. Device entitlements claim applinks; AASA
-/// hosting / Apple portal still need Spencer.
-const kLobbyUniversalLinkHost = 'codsquad.app';
+/// `https://cod-squad-a4c62.web.app/l/<id>` to the same `/squad?lobby_id=`
+/// path as `codsquadapp://lobby/<id>`. Device entitlements claim applinks;
+/// AASA hosting / Apple portal still need Spencer.
+const kLobbyUniversalLinkHost = 'cod-squad-a4c62.web.app';
 
 /// URL the chat peacock card opens. [locationForDeepLink] is the parse.
 /// [spotIndex] is the offered seat (0-based) — same `spot_index` query
@@ -594,7 +594,7 @@ bool _matchesName(String host, List<String> segments, String name) {
 /// `codsquadapp://lobby/<id>` / `codsquadapp://peacock/<id>` (and
 /// `/lobby/<id>`, `/peacock/<id>`, or `/l/<id>` on https) — path is the
 /// lobby id, not a game name. Query `lobby_id` still wins when present.
-/// `https://codsquad.app/l/<id>` is the Universal Link.
+/// `https://cod-squad-a4c62.web.app/l/<id>` is the Universal Link.
 String? _lobbyIdFromPath({
   required String host,
   required List<String> segments,

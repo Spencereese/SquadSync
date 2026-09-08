@@ -15,5 +15,10 @@ const String kAppleTeamId = 'K4ZTXPQ8J9';
 /// peacock lock behavior is unchanged.
 const String kWidgetBundleId = 'com.example.codSquadApp.PeacockLockWidget';
 
+/// Firebase Hosting AASA / Universal Link host (`<projectId>.web.app`).
+/// Scaffold only — DNS / Apple CDN / device UL delivery is not live.
+/// Spencer must `firebase deploy --only hosting` the AASA file.
+const String kAasaHost = 'cod-squad-a4c62.web.app';
+
 /// OAuth / magic-link return URL. Register this exact value in Supabase.
 const String kSupabaseAuthRedirect = '$kIosBundleId://auth-callback';

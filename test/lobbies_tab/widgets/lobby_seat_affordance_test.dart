@@ -460,7 +460,7 @@ void main() {
     final payload = result.payload;
     expect(
       payload,
-      'codsquadapp://lobby/lobby-9\nhttps://codsquad.app/l/lobby-9',
+      'codsquadapp://lobby/lobby-9\nhttps://cod-squad-a4c62.web.app/l/lobby-9',
     );
     expect(copied, payload);
     expect(shared, payload);

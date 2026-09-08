@@ -49,7 +49,7 @@ void main() {
 
       expect(
         copied,
-        'codsquadapp://lobby/lobby-9\nhttps://codsquad.app/l/lobby-9',
+        'codsquadapp://lobby/lobby-9\nhttps://cod-squad-a4c62.web.app/l/lobby-9',
       );
       expect(shared, copied);
       expect(copied, contains(lobbyShareDeepLink(lobbyId: 'lobby-9')));

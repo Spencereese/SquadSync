@@ -12,7 +12,7 @@ import '../presentation/notifiers/user_notifier.dart';
 import '../widgets/unified_game_selection_sheet.dart';
 import '../core/app_env.dart';
 import '../core/app_theme.dart';
-import 'discovery_screen.dart';
+import 'lobby_tab_full_shell.dart';
 import 'tonight_home.dart';
 
 class LobbyTabScreen extends StatelessWidget {
@@ -163,11 +163,7 @@ class _LobbyTabScreenContentState
 
   Widget _buildDashboardInterface(
       BuildContext context, LobbyState squadState, WidgetRef ref) {
-    // Use the revamped Discovery screen as the Lobby tab content
-    return const KeyedSubtree(
-      key: Key('lobby-discovery'),
-      child: DiscoveryScreen(),
-    );
+    return const FullShellLobbyDashboard();
   }
 
   Widget _buildFullSquadInterface(BuildContext context, LobbyState squadState) {

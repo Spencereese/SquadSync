@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../screens/discovery_swipe_screen.dart';
 import '../screens/lobby_tab_screen.dart';
+import 'app_router_full_shell.dart';
 import '../chat/chat_groups_screen.dart';
 import '../chat/chat_screen.dart';
 import '../profile_tab.dart';
@@ -204,6 +204,22 @@ String friendsErrorHomeLocation({required bool friendsMode}) {
   return friendsMode ? '/squad' : '/';
 }
 
+// Slice CUT: friendsMode compile-out
+const friendsCompiledOutLocations = <String>{
+  '/discover-swipe',
+  '/constitution',
+  '/constitution/vote',
+  '/grok',
+  '/grok/assistant',
+  '/poll/history',
+  '/poll/create',
+};
+
+bool friendsModeCompiledOut(String location) {
+  final path = Uri.tryParse(location)?.path ?? location;
+  return friendsCompiledOutLocations.contains(path);
+}
+
 /// GoRouter configuration provider with A/B testing integration
 final goRouterProvider = Provider<GoRouter>((ref) {
   final analytics = FirebaseAnalytics.instance;
@@ -296,6 +312,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         } catch (e) {
           debugPrint('GoRouter: Error checking last chat: $e');
         }
+      }
+
+      if (AppEnv.friendsMode &&
+          friendsModeCompiledOut(state.uri.toString())) {
+        return null;
       }
 
       if (AppEnv.friendsMode &&
@@ -417,11 +438,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         name: 'clips',
         builder: (context, state) => const ClipsScreen(),
       ),
-      GoRoute(
-        path: '/discover-swipe',
-        name: 'discoverSwipe',
-        builder: (context, state) => const DiscoverySwipeScreen(),
-      ),
+      if (!AppEnv.friendsMode)
+        GoRoute(
+          path: '/discover-swipe',
+          name: 'discoverSwipe',
+          builder: (context, state) => const FullShellDiscoverySwipePage(),
+        ),
       GoRoute(
         path: '/join',
         name: 'join',

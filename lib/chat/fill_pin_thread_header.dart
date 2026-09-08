@@ -289,15 +289,17 @@ bool _lobbyIsThisGroupPin(Lobby? lobby, String threadId) {
 
 Lobby? _pinFromGameLobbies(LobbyState state, String threadId) {
   Lobby? newest;
-  state.gameLobbies.forEach((gameName, lobbies) {
-    for (final raw in lobbies) {
-      final lobby = _lobbyFromMap(raw, fallbackGame: gameName);
+  for (final entry in state.gameLobbies.entries) {
+    for (final raw in entry.value) {
+      final lobby = _lobbyFromMap(raw, fallbackGame: entry.key);
       if (!_lobbyIsThisGroupPin(lobby, threadId)) continue;
-      if (newest == null || lobby.createdAt.isAfter(newest.createdAt)) {
+      final currentNewest = newest;
+      if (currentNewest == null ||
+          lobby.createdAt.isAfter(currentNewest.createdAt)) {
         newest = lobby;
       }
     }
-  });
+  }
   return newest;
 }
 

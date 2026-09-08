@@ -52,14 +52,6 @@ LobbyState _stateWithPin(Lobby lobby, {Map<String, List<String?>>? liveSpots}) {
   );
 }
 
-class _FixedLobbyNotifier extends LobbyNotifier {
-  _FixedLobbyNotifier(this._state);
-  final LobbyState _state;
-
-  @override
-  Future<LobbyState> build() async => _state;
-}
-
 class _LiveLobbyNotifier extends LobbyNotifier {
   _LiveLobbyNotifier(this._state);
   LobbyState _state;
@@ -170,10 +162,8 @@ void main() {
   testWidgets('thread with this-group pin shows header; no pin hides it',
       (tester) async {
     final lobby = _pin(id: 'pin-1', chatGroupId: 'group-1');
-    await _pumpHeader(
-      tester,
-      create: () => _FixedLobbyNotifier(_stateWithPin(lobby)),
-    );
+    final notifier = _LiveLobbyNotifier(_stateWithPin(lobby));
+    await _pumpHeader(tester, create: () => notifier);
     await tester.pumpAndSettle();
 
     expect(find.byKey(kFillPinThreadHeaderKey), findsOneWidget);
@@ -182,11 +172,8 @@ void main() {
     expect(find.text('Alex, Chris'), findsOneWidget);
     expect(find.text('messages'), findsOneWidget);
 
-    await _pumpHeader(
-      tester,
-      create: () => _FixedLobbyNotifier(LobbyState.initial()),
-    );
-    await tester.pumpAndSettle();
+    notifier.emit(LobbyState.initial());
+    await tester.pump();
 
     expect(find.byKey(kFillPinThreadHeaderKey), findsNothing);
     expect(find.text('Warzone'), findsNothing);

@@ -8,7 +8,8 @@ import 'package:squad_sync/lobbies_tab/widgets/lobby_seat_affordance.dart';
 /// Ticket 62: remaining lobby share/copy edge units.
 /// Pairs with tickets 24/47. No QR / SMS / Universal Links hosting.
 void main() {
-  const payload = 'codsquadapp://lobby/lobby-9\nhttps://codsquad.app/l/lobby-9';
+  const payload =
+      'codsquadapp://lobby/lobby-9\nhttps://cod-squad-a4c62.web.app/l/lobby-9';
 
   Future<void> pumpShare(WidgetTester tester, LobbyShareResult result) {
     return tester.pumpWidget(

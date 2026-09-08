@@ -496,6 +496,10 @@ void main() {
   });
 
   group('lobby share / copy URI', () {
+    // Product emission host (AASA_HOST). Pin the literal so share/copy
+    // expects do not tautologically follow kLobbyUniversalLinkHost.
+    const shareHttpsFallback = 'https://cod-squad-a4c62.web.app/l/lobby-9';
+
     test('lobbyShareDeepLink is codsquadapp://lobby/<id>', () {
       expect(
         lobbyShareDeepLink(lobbyId: 'lobby-9'),
@@ -592,14 +596,14 @@ void main() {
       );
     });
 
-    test('lobbyShareHttpsLink is https://codsquad.app/l/<id>', () {
+    test('lobbyShareHttpsLink is https://cod-squad-a4c62.web.app/l/<id>', () {
       expect(
         lobbyShareHttpsLink(lobbyId: 'lobby-9'),
-        'https://codsquad.app/l/lobby-9',
+        shareHttpsFallback,
       );
       expect(
         lobbyShareHttpsLink(lobbyId: '  lobby-9  '),
-        'https://$kLobbyUniversalLinkHost/l/lobby-9',
+        shareHttpsFallback,
       );
     });
 
@@ -617,7 +621,7 @@ void main() {
         payload.split('\n'),
         [
           'codsquadapp://lobby/lobby-9',
-          'https://codsquad.app/l/lobby-9',
+          shareHttpsFallback,
         ],
       );
       expect(payload, contains(lobbyShareDeepLink(lobbyId: lobbyId)));
@@ -644,7 +648,7 @@ void main() {
         payload.split('\n'),
         [
           'codsquadapp://lobby/lobby-9',
-          'https://codsquad.app/l/lobby-9',
+          shareHttpsFallback,
         ],
       );
       expect(copied, [payload]);
@@ -689,7 +693,7 @@ void main() {
       expect(shared, isEmpty);
       expect(
         result.payload,
-        'codsquadapp://lobby/lobby-9\nhttps://codsquad.app/l/lobby-9',
+        'codsquadapp://lobby/lobby-9\n$shareHttpsFallback',
       );
       expect(
         lobbyShareMessage(result),

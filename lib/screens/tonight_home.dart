@@ -138,9 +138,11 @@ class _TonightNothingCard extends ConsumerWidget {
           const SizedBox(height: 20),
           ElevatedButton(
             key: const Key('tonight-start-lobby'),
-            onPressed: () {
+            onPressed: () async {
               final name = gameName?.trim();
-              ref.read(lobbyNotifierProvider.notifier).createLobby(
+              // Await createLobby so _landOnCreatedLobby binds
+              // selectedLobbyId before Tonight would rebuild empty.
+              await ref.read(lobbyNotifierProvider.notifier).createLobby(
                     chatGroupId: chatGroupId?.trim() ?? '',
                     gameName: (name != null && name.isNotEmpty) ? name : 'Squad',
                     maxSpots: 8,

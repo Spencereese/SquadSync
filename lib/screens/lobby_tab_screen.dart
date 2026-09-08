@@ -109,9 +109,12 @@ class _LobbyTabScreenContentState
     final squadAsync = ref.watch(ln.lobbyNotifierProvider);
     return squadAsync.when(
       data: (squadState) {
-        // gameName or lobbyId alone — do not drop lobby_id on Discovery.
+        // Deep-link args OR selectedLobbyId after createLobby — stay on
+        // that lobby (not Tonight empty / Discovery). widget.lobbyId ??
+        // squadState.selectedLobbyId is the create→see land, not UL-only.
         if (LobbyTabScreen.shouldShowFullSquad(
-            gameName: widget.gameName, lobbyId: widget.lobbyId)) {
+            gameName: widget.gameName,
+            lobbyId: widget.lobbyId ?? squadState.selectedLobbyId)) {
           return KeyedSubtree(
             key: const Key('lobby-full-squad'),
             child: _buildFullSquadInterface(context, squadState),
@@ -167,12 +170,14 @@ class _LobbyTabScreenContentState
   }
 
   Widget _buildFullSquadInterface(BuildContext context, LobbyState squadState) {
-    // Import and use the original LobbyTab widget for full squad management
+    // Import and use the original LobbyTab widget for full squad management.
+    // After Tonight create, widget.lobbyId is null — bind selectedLobbyId
+    // so header share copies https://cod-squad-a4c62.web.app/l/<id>.
     return LobbyTab(
-      lobbyId: widget.lobbyId,
-      gameName: widget.gameName,
-      game: widget.game,
-      chatGroupId: widget.chatGroupId,
+      lobbyId: widget.lobbyId ?? squadState.selectedLobbyId,
+      gameName: widget.gameName ?? squadState.currentLobby?.gameName,
+      game: widget.game ?? squadState.currentGame,
+      chatGroupId: widget.chatGroupId ?? squadState.currentLobby?.chatGroupId,
       highlightSpotIndex: widget.highlightSpotIndex,
     );
   }

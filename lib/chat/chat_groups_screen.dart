@@ -10,6 +10,7 @@ import 'chat_screen.dart';
 import '../core/app_theme.dart';
 import '../core/layout.dart';
 import '../widgets/chat_surface_feedback.dart';
+import 'fill_pin_group_row_badge.dart';
 import 'widgets/user_groups_tab.dart';
 import 'widgets/direct_messages_tab.dart';
 import 'widgets/group_chat_context_menu.dart';
@@ -537,12 +538,21 @@ class _ChatGroupsScreenState extends ConsumerState<ChatGroupsScreen> {
                         )
                       : null,
                 ),
-                title: Text(
-                  group.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        group.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    FillPinGroupRowBadge(chatGroupId: group.id),
+                  ],
                 ),
                 subtitle: Text(
                   _formatLastMessage(group),

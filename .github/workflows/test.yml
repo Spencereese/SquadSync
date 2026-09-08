@@ -113,4 +113,5 @@ jobs:
             test/core/app_theme_pass_test.dart \
             test/lobbies_tab/widgets/seat_map_hero_test.dart \
             test/chat/sqlite_cipher_key_entropy_test.dart \
-            test/lobby_notifier_cap_test.dart
+            test/lobby_notifier_cap_test.dart \
+            test/core/app_router_friends_mode_cut_test.dart

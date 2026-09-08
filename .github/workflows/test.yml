@@ -117,4 +117,5 @@ jobs:
             test/core/app_router_friends_mode_cut_test.dart \
             test/core/identity_scaffold_test.dart \
             test/screens/create_see_share_test.dart \
-            test/core/fill_pin_suggestion_parser_test.dart
+            test/core/fill_pin_suggestion_parser_test.dart \
+            test/core/last_chat_landing_test.dart

@@ -250,15 +250,15 @@ void main() {
     });
   });
 
-  group('friendsMode true — login lands on /squad', () {
-    test('login success goes to /squad, not last random chat', () {
+  group('friendsMode true — last-chat landing (PIN WAVE P0)', () {
+    test('login / cold start opens last group thread when one exists', () {
       expect(
         resolveFriendsPostLoginLocation(
           friendsMode: true,
           lastChatGroupId: 'random-chat-22',
           boundLobbyThreadId: 'lobby-thread-9',
         ),
-        '/squad',
+        '/chat/random-chat-22',
       );
       expect(
         resolveFriendsPostLoginLocation(
@@ -266,19 +266,22 @@ void main() {
           lastChatGroupId: 'random-chat-22',
           boundLobbyThreadId: null,
         ),
-        '/squad',
+        '/chat/random-chat-22',
       );
+    });
+
+    test('no last chat opens Chat groups list, not empty Tonight /squad', () {
       expect(
         resolveFriendsPostLoginLocation(
           friendsMode: true,
           lastChatGroupId: null,
           boundLobbyThreadId: null,
         ),
-        '/squad',
+        '/chat',
       );
     });
 
-    test('login may open last chat only when it is the bound lobby thread', () {
+    test('last chat opens even when it is not the bound lobby thread', () {
       expect(
         resolveFriendsPostLoginLocation(
           friendsMode: true,

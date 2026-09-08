@@ -391,7 +391,8 @@ FillPinLiveActivityPlan planFillPinLiveActivity({
 /// Sit from idle takes the seat (**I'm in**) by startComing + sit so
 /// the existing machine owns the seated phase. Coming starts the 300s
 /// hold only. Can't releases a Coming hold; seated Can't frees the seat
-/// and fires the optional spot-open nudge stub.
+/// and fires the optional spot-open nudge stub. The stub is wired
+/// through [fillPinNudgeAudience] — UIDs only, no new send pipeline.
 void Function() _needOneSpotOpenNudge({
   void Function()? onSpotOpenNudge,
   Iterable<String> memberUids = const [],
@@ -461,7 +462,7 @@ ComingHoldState applyFillPinLiveActivityAction({
         memberUids: memberUids,
         sitUids: sitUids,
         comingUids: comingUids,
-        cantUids: cantUids,
+        cantUids: [...cantUids, if (_nonEmpty(userId) != null) userId!.trim()],
       );
       if (current.phase == ComingHoldPhase.coming) {
         return reduceComingHold(
@@ -483,7 +484,7 @@ ComingHoldState applyFillPinLiveActivityAction({
 }
 
 /// Clock tick on an active Coming hold. Never auto-sits; t=0 frees the
-/// seat and may fire [onSpotOpenNudge].
+/// seat and may fire [onSpotOpenNudge] after [fillPinNudgeAudience].
 ComingHoldState tickFillPinComingHold({
   required ComingHoldState current,
   Duration? elapsed,
@@ -493,6 +494,7 @@ ComingHoldState tickFillPinComingHold({
   Iterable<String> comingUids = const [],
   Iterable<String> cantUids = const [],
 }) {
+  final holdUid = _nonEmpty(current.userId);
   return reduceComingHold(
     current: current,
     event: ComingHoldEvent.tick,
@@ -501,7 +503,7 @@ ComingHoldState tickFillPinComingHold({
       onSpotOpenNudge: onSpotOpenNudge,
       memberUids: memberUids,
       sitUids: sitUids,
-      comingUids: comingUids,
+      comingUids: [...comingUids, if (holdUid != null) holdUid],
       cantUids: cantUids,
     ),
   );
@@ -562,6 +564,10 @@ class FillPinLiveActivity {
     String? userId,
     DateTime? now,
     void Function()? onSpotOpenNudge,
+    Iterable<String> memberUids = const [],
+    Iterable<String> sitUids = const [],
+    Iterable<String> comingUids = const [],
+    Iterable<String> cantUids = const [],
   }) async {
     final action = fillPinLiveActivityActionFromId(actionId);
     if (action == null) return _hold;
@@ -572,6 +578,10 @@ class FillPinLiveActivity {
       pinId: pinId ?? snapshot?.lobbyId ?? _hold.pinId,
       userId: userId,
       onSpotOpenNudge: onSpotOpenNudge,
+      memberUids: memberUids,
+      sitUids: [...sitUids, ...?snapshot?.seatedUids],
+      comingUids: comingUids,
+      cantUids: cantUids,
     );
     await syncFromThread(
       chatGroupId: chatGroupId,
@@ -590,11 +600,19 @@ class FillPinLiveActivity {
     Duration? elapsed,
     DateTime? now,
     void Function()? onSpotOpenNudge,
+    Iterable<String> memberUids = const [],
+    Iterable<String> sitUids = const [],
+    Iterable<String> comingUids = const [],
+    Iterable<String> cantUids = const [],
   }) async {
     _hold = tickFillPinComingHold(
       current: _hold,
       elapsed: elapsed,
       onSpotOpenNudge: onSpotOpenNudge,
+      memberUids: memberUids,
+      sitUids: [...sitUids, ...?snapshot?.seatedUids],
+      comingUids: comingUids,
+      cantUids: cantUids,
     );
     await syncFromThread(
       chatGroupId: chatGroupId,

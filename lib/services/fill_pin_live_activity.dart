@@ -17,6 +17,7 @@ import '../core/deep_link_routes.dart';
 import '../core/notification_routes.dart';
 import '../data/services/live_activity_manager.dart';
 import 'coming_hold_machine.dart';
+import 'fill_pin_nudge_audience.dart';
 import 'pin_expire_machine.dart';
 
 enum FillPinLiveActivityPhase { open, coming, seated, ended }
@@ -391,6 +392,24 @@ FillPinLiveActivityPlan planFillPinLiveActivity({
 /// the existing machine owns the seated phase. Coming starts the 300s
 /// hold only. Can't releases a Coming hold; seated Can't frees the seat
 /// and fires the optional spot-open nudge stub.
+void Function()? _needOneSpotOpenNudge({
+  void Function()? onSpotOpenNudge,
+  Iterable<String> memberUids = const [],
+  Iterable<String> sitUids = const [],
+  Iterable<String> comingUids = const [],
+  Iterable<String> cantUids = const [],
+}) {
+  return () {
+    fillPinNudgeAudience(
+      memberUids: memberUids,
+      sitUids: sitUids,
+      comingUids: comingUids,
+      cantUids: cantUids,
+    );
+    onSpotOpenNudge?.call();
+  };
+}
+
 ComingHoldState applyFillPinLiveActivityAction({
   required FillPinLiveActivityAction action,
   required ComingHoldState current,
@@ -398,6 +417,10 @@ ComingHoldState applyFillPinLiveActivityAction({
   String? pinId,
   String? userId,
   void Function()? onSpotOpenNudge,
+  Iterable<String> memberUids = const [],
+  Iterable<String> sitUids = const [],
+  Iterable<String> comingUids = const [],
+  Iterable<String> cantUids = const [],
 }) {
   switch (action) {
     case FillPinLiveActivityAction.sit:
@@ -433,15 +456,22 @@ ComingHoldState applyFillPinLiveActivityAction({
       );
 
     case FillPinLiveActivityAction.cant:
+      final nudge = _needOneSpotOpenNudge(
+        onSpotOpenNudge: onSpotOpenNudge,
+        memberUids: memberUids,
+        sitUids: sitUids,
+        comingUids: comingUids,
+        cantUids: cantUids,
+      );
       if (current.phase == ComingHoldPhase.coming) {
         return reduceComingHold(
           current: current,
           event: ComingHoldEvent.release,
-          onSpotOpenNudge: onSpotOpenNudge,
+          onSpotOpenNudge: nudge,
         );
       }
       if (current.phase == ComingHoldPhase.seated) {
-        onSpotOpenNudge?.call();
+        nudge();
         return current.copyWith(
           phase: ComingHoldPhase.released,
           remaining: Duration.zero,
@@ -458,12 +488,22 @@ ComingHoldState tickFillPinComingHold({
   required ComingHoldState current,
   Duration? elapsed,
   void Function()? onSpotOpenNudge,
+  Iterable<String> memberUids = const [],
+  Iterable<String> sitUids = const [],
+  Iterable<String> comingUids = const [],
+  Iterable<String> cantUids = const [],
 }) {
   return reduceComingHold(
     current: current,
     event: ComingHoldEvent.tick,
     elapsed: elapsed,
-    onSpotOpenNudge: onSpotOpenNudge,
+    onSpotOpenNudge: _needOneSpotOpenNudge(
+      onSpotOpenNudge: onSpotOpenNudge,
+      memberUids: memberUids,
+      sitUids: sitUids,
+      comingUids: comingUids,
+      cantUids: cantUids,
+    ),
   );
 }
 

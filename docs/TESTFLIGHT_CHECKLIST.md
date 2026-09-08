@@ -9,7 +9,8 @@ or retarget PR #1. Do not commit secrets. Do not bump `pubspec.yaml`.
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-Tip:     3.4.157+159 (docs-only Spencer-click notes — pubspec not bumped)
+Tip:     3.4.169+171 product (6f2ec90) + docs-only Fill PIN LA notes
+         (pubspec not bumped)
 PR #1:   do not merge / do not retarget
 Upload:  Spencer (not this slice)
 ```
@@ -301,3 +302,40 @@ Do not rename `BUNDLE_ID_IOS = com.example.codSquadApp`.
 Out of scope for this slice: TestFlight upload itself, SQL, `.env`
 commit, bundle ID rename, Android id “fix”, merging PR #1, opening a
 new PR, flipping simulator `aps-environment` to production.
+
+---
+
+## 7. Fill PIN Live Activity (P2 Runner channel — Spencer confirms)
+
+Product tip **`6f2ec90` / 3.4.169+171** added `FillPinAttributes` plus
+start/update on the **existing** Runner channel
+`com.squadsync/live_activities` (`ios/Runner/PeacockLockLiveActivity.swift`
+only). **No new Xcode target. No bundle ID flip.** `BUNDLE_ID_IOS` stays
+`com.example.codSquadApp`. This section is device notes only — no portal
+clicks, no Apple login, no `firebase deploy`, no GATES CLOSE, no
+Universal Links claim.
+
+### Spencer confirms on a device-signed build
+
+- [ ] **`Activity.request(FillPinAttributes)` does not crash** on a
+      device-signed build (iphoneos Debug or Release — not Simulator-only)
+- [ ] Start/update **payload includes** `actions` / `actionIds` /
+      `holdLabel` / `deepLink` (Sit / Coming / Can't labels + ids, Coming
+      hold text, chat deep link)
+
+### Still waiting — do **not** claim device Live Activity UI PASS
+
+Lock-screen Sit / Coming / Can't **buttons** and tap-through still wait
+on a **Widget Extension + App Intents**. Same peacock Live Activity gate /
+`FillPinWidget` identity as `PeacockLockWidget`:
+
+```
+WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+FillPinWidget identity = com.example.codSquadApp.FillPinWidget
+```
+
+Identity only. No new App ID this week unless Apple already requires the
+widget target. **Buttons will not appear** until that extension exists.
+
+**Do not claim device Live Activity UI PASS.** This checklist does not
+close Gate 1, AASA, Universal Links, or any other gate.

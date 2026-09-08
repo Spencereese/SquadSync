@@ -199,10 +199,13 @@ enum PeacockLockLiveActivityBridge {
 
 /// PIN WAVE P2 — Fill PIN Live Activity attributes on the existing Runner
 /// target. Payload carries Sit / Coming / Can't + Coming mm:ss + chat
-/// deep link. Lock Screen *buttons* still need a Widget Extension +
-/// App Intents (`com.example.codSquadApp.FillPinWidget`) — identity only
-/// here. Flight / Spencer: verify start/update payload on device; buttons
-/// and tap-through will not appear until that extension exists.
+/// deep link. Lock Screen *buttons* + tap-through still need a Widget
+/// Extension + App Intents (`com.example.codSquadApp.FillPinWidget`) —
+/// same peacock gate / identity only. No new target. Source of truth for
+/// Spencer: docs/TESTFLIGHT_CHECKLIST.md §7 — confirm
+/// Activity.request(FillPinAttributes) does not crash on a device-signed
+/// build and payload has actions / actionIds / holdLabel / deepLink.
+/// Do not claim device Live Activity UI PASS.
 struct FillPinAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
     var phase: String

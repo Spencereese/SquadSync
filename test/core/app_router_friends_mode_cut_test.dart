@@ -103,11 +103,11 @@ List<String> _forbiddenImportsIn(String source) {
 bool _pathRegisteredInFriendsMode(String source, String path) {
   final pattern = "path: '$path'";
   var from = 0;
-  var found = false;
   while (true) {
     final idx = source.indexOf(pattern, from);
-    if (idx < 0) return found;
-    found = true;
+    // Gated-only hits are compiled out (comment above). Do not treat
+    // `if (!AppEnv.friendsMode)` / friendsCompiledOutLocations as leaked.
+    if (idx < 0) return false;
     final windowStart = idx < 500 ? 0 : idx - 500;
     final window = source.substring(windowStart, idx);
     final gated = RegExp(

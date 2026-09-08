@@ -124,4 +124,5 @@ jobs:
             test/core/last_chat_landing_test.dart \
             test/services/coming_hold_machine_test.dart \
             test/services/fill_pin_live_activity_test.dart \
-            test/services/fill_pin_nudge_audience_test.dart
+            test/services/fill_pin_nudge_audience_test.dart \
+            test/services/fill_pin_nudge_audience_wire_test.dart

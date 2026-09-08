@@ -28,13 +28,22 @@ class SQLiteHelper {
     }
   }
 
-  /// Get or generate encryption key for SQLite database
+  /// Get or generate encryption key for SQLite database.
+  /// Existing installs: a key already in flutter_secure_storage is kept
+  /// (never rotated) so the on-disk SQLCipher cache stays readable.
   Future<String> _getEncryptionKey() async {
     try {
       String? key = await _secureStorage.read(key: _encryptionKeyName);
 
       if (key == null) {
-        key = generateSecureKey();
+        // 32 bytes of CSPRNG entropy. Not DateTime / OS / locale.
+        final random = Random.secure();
+        final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+        final buffer = StringBuffer();
+        for (final b in bytes) {
+          buffer.write(b.toRadixString(16).padLeft(2, '0'));
+        }
+        key = buffer.toString();
         await _secureStorage.write(key: _encryptionKeyName, value: key);
         debugPrint('🔐 Generated new SQLite encryption key');
       }

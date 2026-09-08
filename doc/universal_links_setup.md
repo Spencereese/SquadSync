@@ -22,8 +22,8 @@ AASA + Associated Domains **repo prep** (this slice):
 - Wiring notes: `ios/associated-domains/README.md`
 - Portal/DNS is **BLOCKED** on Spencer: `ios/associated-domains/SPENCER.txt`
 
-Bundle ID stays `com.example.codSquadApp`. Replace `TEAMID` in the AASA
-files when the Team ID is pasted. Until AASA is served at
+Bundle ID stays `com.example.codSquadApp`. AASA `appIDs` is
+`K4ZTXPQ8J9.com.example.codSquadApp`. Until AASA is served at
 `https://codsquad.app/.well-known/apple-app-site-association`, Safari
 opens the https URL in the browser; the custom scheme still works.
 
@@ -53,7 +53,7 @@ Create this file at `https://lobbiesync.app/.well-known/apple-app-site-associati
     "apps": [],
     "details": [
       {
-        "appID": "TEAMID.com.example.codSquadApp",
+        "appID": "K4ZTXPQ8J9.com.example.codSquadApp",
         "paths": [
           "/join/*",
           "/chat",
@@ -66,7 +66,7 @@ Create this file at `https://lobbiesync.app/.well-known/apple-app-site-associati
 }
 ```
 
-**Important**: Replace `TEAMID` with your Apple Team ID from Apple Developer account.
+**Important**: Host `K4ZTXPQ8J9.com.example.codSquadApp` — see `docs/AASA.md`.
 
 ### 3. Verify apple-app-site-association
 - File must be served over HTTPS

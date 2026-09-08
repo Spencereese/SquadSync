@@ -3,12 +3,12 @@
     "apps": [],
     "details": [
       {
-        "appID": "TEAMID.com.example.codSquadApp",
+        "appID": "K4ZTXPQ8J9.com.example.codSquadApp",
         "paths": [
           "/l/*"
         ],
         "appIDs": [
-          "TEAMID.com.example.codSquadApp"
+          "K4ZTXPQ8J9.com.example.codSquadApp"
         ],
         "components": [
           {

@@ -916,7 +916,8 @@ void main() {
         final file = File(path);
         expect(file.existsSync(), isTrue, reason: '$path missing');
         final text = file.readAsStringSync();
-        expect(text.contains('TEAMID.com.example.codSquadApp'), isTrue);
+        expect(text.contains('K4ZTXPQ8J9.com.example.codSquadApp'), isTrue);
+        expect(text.contains('TEAMID.com.example.codSquadApp'), isFalse);
         expect(text.contains('/l/*'), isTrue);
         expect(text.contains('"applinks"'), isTrue);
       }

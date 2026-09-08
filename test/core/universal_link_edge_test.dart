@@ -492,7 +492,7 @@ void main() {
       expect(device.presentedPrompt, isFalse);
     });
 
-    test('Accept-gate mock does not rewrite AASA TEAMID placeholder', () {
+    test('Accept-gate mock does not rewrite hosted AASA appID', () {
       final gate = AppLinkAcceptGate.deviceReady();
       expect(
         gate.associatedDomainsDecision,
@@ -505,7 +505,8 @@ void main() {
       ];
       for (final path in paths) {
         final text = File(path).readAsStringSync();
-        expect(text.contains('TEAMID.com.example.codSquadApp'), isTrue);
+        expect(text.contains('K4ZTXPQ8J9.com.example.codSquadApp'), isTrue);
+        expect(text.contains('TEAMID.com.example.codSquadApp'), isFalse);
         expect(text.contains('/l/*'), isTrue);
       }
     });

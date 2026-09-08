@@ -205,5 +205,23 @@ void main() {
             'This is UL config scaffold — DNS is not live.',
       );
     });
+
+    test('AASA appIDs are APPLE_TEAM_ID.BUNDLE_ID_IOS (no TEAMID placeholder)',
+        () {
+      final expected = '$kAppleTeamId.$kBundleIdIos';
+      for (final path in _kAasaPaths) {
+        final text = _read(path);
+        expect(
+          text.contains('TEAMID.com.example.codSquadApp'),
+          isFalse,
+          reason: '$path still has TEAMID placeholder. Host $expected.',
+        );
+        expect(
+          text.contains(expected),
+          isTrue,
+          reason: '$path must use $expected.',
+        );
+      }
+    });
   });
 }

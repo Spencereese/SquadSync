@@ -6,8 +6,9 @@ import Foundation
 ///
 /// Starts / updates / ends via `com.squadsync/live_activities`.
 /// Lock Screen UI still requires a Widget Extension (separate App ID in
-/// the Apple Developer portal). This file does not change the Runner
-/// bundle ID `com.example.codSquadApp` and does not add entitlements.
+/// the Apple Developer portal): `com.example.codSquadApp.PeacockLockWidget`.
+/// Identity only — no new lock-screen UI in this file. Runner bundle ID
+/// stays `com.example.codSquadApp`.
 struct PeacockLockAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
     var phase: String

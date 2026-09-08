@@ -122,8 +122,11 @@ void main() {
         expect(decoded.containsKey('applinks'), isTrue);
         final details = (decoded['applinks'] as Map)['details'] as List;
         final first = details.first as Map;
-        expect(first['appID'], 'TEAMID.com.example.codSquadApp');
-        expect((first['appIDs'] as List).first, 'TEAMID.com.example.codSquadApp');
+        expect(first['appID'], 'K4ZTXPQ8J9.com.example.codSquadApp');
+        expect(
+          (first['appIDs'] as List).first,
+          'K4ZTXPQ8J9.com.example.codSquadApp',
+        );
         expect((first['paths'] as List).contains('/l/*'), isTrue);
         final components = first['components'] as List;
         expect(

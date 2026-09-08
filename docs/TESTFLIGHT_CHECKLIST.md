@@ -18,7 +18,7 @@ Upload:  Spencer (not this slice)
 
 ```
 APPLE_TEAM_ID = K4ZTXPQ8J9
-AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1 Universal Links blocked until Spencer points domain + hosts apple-app-site-association)
+AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold — not e2e Universal Links. Spencer must firebase deploy --only hosting. Gate 1 blocked until he deploys AASA to that host AND device PASS.)
 BUNDLE_ID_IOS = com.example.codSquadApp
 WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
 URL scheme: com.example.codSquadApp://auth-callback
@@ -27,8 +27,11 @@ FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
 
 `APPLE_TEAM_ID` is known. Write **`K4ZTXPQ8J9`** — do not leave a `TEAMID`
 placeholder for Spencer to paste later. AASA files / hosting still use
-`K4ZTXPQ8J9.com.example.codSquadApp`. Gate 1 Universal Links stay blocked
-until DNS + `apple-app-site-association` are live on `codsquad.app`.
+`K4ZTXPQ8J9.com.example.codSquadApp`. Bots do **not** publish. Spencer
+must run `firebase deploy` (hosting) himself. Gate 1 Universal Links stay
+blocked until he deploys AASA to `cod-squad-a4c62.web.app` **and** a
+device PASS. Friends tap shape:
+`https://cod-squad-a4c62.web.app/l/<id>`.
 
 ---
 
@@ -78,7 +81,7 @@ Xcode **Product → Archive** = **production** on the Release overlay.
 
 ---
 
-## 2. AASA / Associated Domains — scaffold only (`AASA_HOST` not live)
+## 2. AASA / Associated Domains — scaffold only (`AASA_HOST` Firebase Hosting)
 
 Repo AASA `appID` / `appIDs` for hosting:
 
@@ -90,12 +93,13 @@ That is `APPLE_TEAM_ID` + `BUNDLE_ID_IOS`. The Team ID is **`K4ZTXPQ8J9`**
 — write it. Do not invent a second Team ID. Do not wait to “paste Team ID
 later.”
 
-`AASA_HOST = codsquad.app` is **scaffold only — DNS NOT live; Gate 1
-Universal Links blocked until Spencer points domain + hosts
-apple-app-site-association**.
+`AASA_HOST = cod-squad-a4c62.web.app` is **Firebase Hosting scaffold —
+not e2e Universal Links. Spencer must `firebase deploy --only hosting`.**
+Bots do **not** publish. Gate 1 Universal Links stay blocked until he
+deploys AASA to that host **and** a device PASS.
 
-Files Spencer publishes **after** DNS/HTTPS is pointed at an origin
-(same `appID` string in all three):
+Files Spencer publishes with `firebase deploy` (hosting) — same `appID`
+string in all three:
 
 - `ios/associated-domains/apple-app-site-association`
 - `web/.well-known/apple-app-site-association`
@@ -110,15 +114,17 @@ Device applinks already listed on `ios/Runner/Runner.entitlements`:
 applinks:sfckxrnoiwetmzdycqaa.supabase.co
 applinks:lobbiesync.app
 applinks:www.lobbiesync.app
-applinks:codsquad.app
-applinks:www.codsquad.app
+applinks:cod-squad-a4c62.web.app
 ```
 
 Simulator entitlements must **not** claim `associated-domains`.
-Host AASA at `https://codsquad.app/.well-known/apple-app-site-association`
+Host AASA at
+`https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association`
 (HTTPS 200, `Content-Type: application/json`, no redirect, no `.json`).
-Path claimed: `/l/*`. Until that host is live, `codsquadapp://lobby/<id>`
-still works; `https://codsquad.app/l/<id>` will not open the app.
+Path claimed: `/l/*`. Friends tap shape:
+`https://cod-squad-a4c62.web.app/l/<id>`. Until Spencer deploys and a
+device PASSes, `codsquadapp://lobby/<id>` still works; the https tap
+will not open the app.
 
 ---
 
@@ -263,17 +269,20 @@ Do not rename `BUNDLE_ID_IOS = com.example.codSquadApp`.
         Services ID that does **not** change the app bundle ID
       - **Google:** Web client ID + secret; iOS OAuth client stays bundle
         `com.example.codSquadApp`
-- [ ] **15.** Host AASA (Gate 1 still blocked until this is live). Write
+- [ ] **15.** Host AASA on Firebase Hosting (Gate 1 still blocked until
+      this is live **and** device PASS). Write
       `K4ZTXPQ8J9.com.example.codSquadApp` in all three AASA files from
-      section 2. Point **`AASA_HOST = codsquad.app`** DNS + HTTPS, then
-      serve the file at
-      `https://codsquad.app/.well-known/apple-app-site-association`
-      (and www if you use it). Then delete-and-reinstall a **device-signed
-      Release** build so iOS re-fetches AASA.
-      **AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
-      Universal Links blocked until Spencer points domain + hosts
-      apple-app-site-association).** Until then,
-      `codsquadapp://lobby/<id>` still works
+      section 2. **`AASA_HOST = cod-squad-a4c62.web.app`**. Spencer must
+      run `firebase deploy` (hosting) himself — bots do not publish.
+      Serve the file at
+      `https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association`.
+      Then delete-and-reinstall a **device-signed Release** build so iOS
+      re-fetches AASA and tap
+      `https://cod-squad-a4c62.web.app/l/<id>` (friends tap shape).
+      **AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+      not e2e Universal Links. Spencer must firebase deploy --only
+      hosting. Gate 1 blocked until he deploys AASA to that host AND
+      device PASS.)** Until then, `codsquadapp://lobby/<id>` still works
 
 ---
 

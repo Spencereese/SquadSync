@@ -7,9 +7,8 @@
 	     Runner.entitlements. See docs/TESTFLIGHT_CHECKLIST.md.
 	     Slice ID (comments only — no applinks on sim):
 	     APPLE_TEAM_ID = K4ZTXPQ8J9
-	     AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
-	     Universal Links blocked until Spencer points domain + hosts
-	     apple-app-site-association)
+	     AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+	     not e2e Universal Links. Spencer must firebase deploy --only hosting.)
 	     BUNDLE_ID_IOS = com.example.codSquadApp
 	     WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
 	     URL scheme: com.example.codSquadApp://auth-callback

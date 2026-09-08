@@ -1,21 +1,22 @@
-BLOCKED — Spencer / Apple Developer portal + DNS/HTTPS for AASA
+BLOCKED — Spencer / Apple Developer portal + Firebase Hosting AASA
 
 Code prep is on branch cursor/revive-squadsync-be5c.
-https://codsquad.app/l/<id> already parses in Dart (ticket 12
+https://cod-squad-a4c62.web.app/l/<id> already parses in Dart (ticket 12
 locationForDeepLink / DeepLinkRouter.locationFor) to the same
 /squad?lobby_id=<id> route as codsquadapp://lobby/<id>.
 Custom scheme is unchanged. Simulator entitlements still have no applinks.
 Bundle ID stays com.example.codSquadApp.
 
 Universal Links will not open the app on a signed device until Spencer
-does both 1 and 2.
+does both 1 and 2. Gate 1 stays blocked until he deploys AASA to
+AASA_HOST and a device PASS.
 
 1. Apple Developer portal (Identifiers — do not change bundle ID)
    a. developer.apple.com → Certificates, Identifiers & Profiles → Identifiers
    b. Open App ID com.example.codSquadApp
    c. Enable capability "Associated Domains" if it is not already on
       (device entitlements already list applinks: for supabase +
-      lobbiesync.app + codesquad.app; this slice's template is
+      lobbiesync.app + AASA_HOST; this slice's template is
       ios/associated-domains/associated-domains.entitlements).
    d. Save the App ID
    e. Confirm Membership Team ID is APPLE_TEAM_ID = K4ZTXPQ8J9
@@ -31,36 +32,34 @@ does both 1 and 2.
       URL scheme: com.example.codSquadApp://auth-callback
       FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
 
-2. DNS + HTTPS host the AASA file (not done in this slice;
-   AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
-   Universal Links blocked until Spencer points domain + hosts
-   apple-app-site-association))
-   a. Point codesquad.app (A/AAAA or CNAME) at an HTTPS origin with a
-      valid cert covering codesquad.app
-   b. If www is used, CNAME www.codsquad.app and cover it on the cert
-   c. Publish the repo AASA file (appID K4ZTXPQ8J9.com.example.codSquadApp) at:
-        https://codsquad.app/.well-known/apple-app-site-association
-        https://www.codsquad.app/.well-known/apple-app-site-association
-          (if www is used)
+2. Host the AASA file on Firebase Hosting (not done in this slice;
+   AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+   not e2e Universal Links. Spencer must firebase deploy --only hosting.
+   Gate 1 blocked until he deploys AASA to that host AND device PASS.))
+   a. Spencer must run `firebase deploy` (hosting) himself. Bots do not
+      publish.
+   b. Publish the repo AASA file (appID K4ZTXPQ8J9.com.example.codSquadApp) at:
+        https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association
         optional fallback:
-        https://codsquad.app/apple-app-site-association
-   d. Response requirements:
+        https://cod-squad-a4c62.web.app/apple-app-site-association
+   c. Response requirements:
         - HTTPS
         - HTTP 200 (no 301/302, including http→https on this path)
         - Content-Type: application/json
         - no .json extension
         - body is the JSON file (path claimed: /l/*)
-   e. Verify:
-        curl -sI https://codsquad.app/.well-known/apple-app-site-association
-        curl -s https://codsquad.app/.well-known/apple-app-site-association
-        curl -s https://app-site-association.cdn-apple.com/a/v1/codsquad.app
+   d. Verify:
+        curl -sI https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association
+        curl -s https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association
+        curl -s https://app-site-association.cdn-apple.com/a/v1/cod-squad-a4c62.web.app
 
 3. After 1–2: delete and reinstall a device-signed build so iOS re-fetches
-   AASA. Then tap https://codsquad.app/l/<id> from Notes or Safari.
+   AASA. Then tap https://cod-squad-a4c62.web.app/l/<id> from Notes or Safari.
    (Apple CDN can cache AASA; reinstall is the reliable refresh.)
+   Friends tap shape: https://cod-squad-a4c62.web.app/l/<id>
 
-Not this slice: TestFlight, new bundle ID, buying the domain,
+Not this slice: TestFlight, new bundle ID,
 Android/Windows App Links, SQL, .env, merge.
 
-Until 1–2 are done, Safari opens https://codsquad.app/l/<id> in the
-browser. The custom scheme codsquadapp://lobby/<id> still works.
+Until 1–2 are done, Safari opens https://cod-squad-a4c62.web.app/l/<id>
+in the browser. The custom scheme codsquadapp://lobby/<id> still works.

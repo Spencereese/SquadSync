@@ -1,8 +1,10 @@
-# AASA + Associated Domains (codesquad.app)
+# AASA + Associated Domains (cod-squad-a4c62.web.app)
 
-Repo prep so `https://codsquad.app/l/<id>` can open the app after Spencer
-finishes Apple Developer portal + DNS/HTTPS hosting. Dart routing is
-already on tip from ticket 12 — do not invent a second parser.
+Repo prep so `https://cod-squad-a4c62.web.app/l/<id>` can open the app
+after Spencer finishes Apple Developer portal + Firebase Hosting deploy.
+Dart routing is already on tip from ticket 12 — do not invent a second
+parser. Bots do **not** publish. Spencer must run `firebase deploy`
+(hosting) himself.
 
 ## Existing Universal Links router (ticket 12)
 
@@ -16,13 +18,14 @@ already on tip from ticket 12 — do not invent a second parser.
 Mapping:
 
 ```
-https://codsquad.app/l/<id>
-https://www.codsquad.app/l/<id>
+https://cod-squad-a4c62.web.app/l/<id>
 codsquadapp://lobby/<id>
         →  /squad?lobby_id=<id>
 ```
 
-Simulator still swallows leftover `https://codsquad.app/…` Universal Links
+Friends tap shape: `https://cod-squad-a4c62.web.app/l/<id>`.
+
+Simulator still swallows leftover https Universal Links
 (`shouldSwallowSimulatorAppLink`). Device builds consume them.
 
 ## Host-ready AASA (write `APPLE_TEAM_ID = K4ZTXPQ8J9`)
@@ -33,7 +36,7 @@ Exact Spencer-click strings (do not invent others):
 
 ```
 APPLE_TEAM_ID = K4ZTXPQ8J9
-AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1 Universal Links blocked until Spencer points domain + hosts apple-app-site-association)
+AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold — not e2e Universal Links. Spencer must firebase deploy --only hosting. Gate 1 blocked until he deploys AASA to that host AND device PASS.)
 BUNDLE_ID_IOS = com.example.codSquadApp
 WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
 URL scheme: com.example.codSquadApp://auth-callback
@@ -47,28 +50,29 @@ Host copies (keep identical `appID` = `K4ZTXPQ8J9.com.example.codSquadApp`):
 
 Serve at:
 
-- `https://codsquad.app/.well-known/apple-app-site-association`
-- `https://www.codsquad.app/.well-known/apple-app-site-association` (if www is used)
-- optional: `https://codsquad.app/apple-app-site-association`
+- `https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association`
+- optional: `https://cod-squad-a4c62.web.app/apple-app-site-association`
 
 HTTPS 200, `Content-Type: application/json`, no redirect, no `.json` suffix.
 Path claimed: `/l/*`. If a copy still shows `TEAMID`, replace it with
-**`K4ZTXPQ8J9`** when hosting. AASA is scaffold-only until DNS/hosting is live.
+**`K4ZTXPQ8J9`** when hosting. AASA is scaffold-only until Spencer
+deploys hosting and a device PASSes.
 
 ## Associated Domains entitlement
 
 Template in this folder: `associated-domains.entitlements`
 
 ```
-applinks:codsquad.app
-applinks:www.codsquad.app
+applinks:cod-squad-a4c62.web.app
 ```
 
-Live device entitlements already list those strings
+Live device entitlements already list that string
 (`ios/Runner/Runner.entitlements`). Simulator entitlements must stay
 without `associated-domains`.
 
 ## BLOCKED
 
-Portal toggles and DNS/hosting are not done in this slice. Exact Spencer
+Portal toggles and `firebase deploy` (hosting) are not done in this
+slice. Gate 1 Universal Links stay blocked until Spencer deploys AASA
+to `cod-squad-a4c62.web.app` **and** a device PASS. Exact Spencer
 steps: `SPENCER.txt`.

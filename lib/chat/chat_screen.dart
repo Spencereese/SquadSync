@@ -22,6 +22,7 @@ import '../utils.dart';
 import '../services/background_service.dart';
 
 import 'chat_input_bar.dart';
+import 'fill_pin_thread_header.dart';
 import 'peacock_modal.dart';
 import 'poll_creation_dialog.dart';
 import 'services/chat_initialization_service.dart';
@@ -132,9 +133,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   bool get isDM => widget.chatType == ChatType.dm;
 
   String? get effectiveChatGroupId {
-    final boundId = chatIdOrNull(
-      ref.read(cn.chatNotifierProvider.notifier).activeLobbyChatBind.chatGroupId,
-    );
+    final boundId = chatIdOrNull(ref.read(cn.chatNotifierProvider.notifier).activeLobbyChatBind.chatGroupId);
     if (boundId != null) return boundId;
     return resolveActiveChatGroupId(
       widgetChatGroupId: widget.chatGroupId,
@@ -214,10 +213,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
       });
 
       final lobbyId = snapshot.lobbyId ?? currentLobby?.id ?? probeId;
-      ref.read(cn.chatNotifierProvider.notifier).bindActiveLobbyChat(
-            lobbyId: lobbyId,
-            lobbyChatGroupId: lobbyChatId ?? '',
-          );
+      ref.read(cn.chatNotifierProvider.notifier).bindActiveLobbyChat(lobbyId: lobbyId, lobbyChatGroupId: lobbyChatId ?? '');
       final resolved = resolveActiveChatGroupId(
         widgetChatGroupId: widget.chatGroupId,
         isSquad: widget.chatType == ChatType.squad,
@@ -253,9 +249,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   void _syncActiveChatThread({String? selectedLobbyId}) {
     final notifier = _notificationNotifier;
     if (notifier == null) return;
-    final boundId = chatIdOrNull(
-      ref.read(cn.chatNotifierProvider.notifier).activeLobbyChatBind.chatGroupId,
-    );
+    final boundId = chatIdOrNull(ref.read(cn.chatNotifierProvider.notifier).activeLobbyChatBind.chatGroupId);
     final id = boundId ??
         resolveActiveChatGroupId(
           widgetChatGroupId: widget.chatGroupId,
@@ -692,10 +686,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
         final squad = next.valueOrNull;
         final lobby = squad?.currentLobby;
         if (lobby != null && squad!.selectedLobbyId == lobby.id) {
-          ref.read(cn.chatNotifierProvider.notifier).bindActiveLobbyChat(
-                lobbyId: lobby.id,
-                lobbyChatGroupId: lobby.chatGroupId ?? '',
-              );
+          ref.read(cn.chatNotifierProvider.notifier).bindActiveLobbyChat(lobbyId: lobby.id, lobbyChatGroupId: lobby.chatGroupId ?? '');
         }
         if (squad != null && (!_needsLobbyBind || _lobbyBindComplete)) {
           _syncActiveChatThread(selectedLobbyId: squad.selectedLobbyId);
@@ -1874,7 +1865,9 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: NotificationListener<ScrollNotification>(
+                child: wrapFillPinThreadHeader(
+                  chatGroupId: threadChatGroupId,
+                  child: NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
                     if (notification is ScrollStartNotification) {
                       FocusScope.of(context).unfocus();
@@ -1944,6 +1937,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                       );
                     },
                   ),
+                ),
                 ),
               ),
               // Input Bar positioned at bottom - moves up with keyboard

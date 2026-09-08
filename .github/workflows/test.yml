@@ -119,5 +119,6 @@ jobs:
             test/screens/create_see_share_test.dart \
             test/core/fill_pin_suggestion_parser_test.dart \
             test/chat/widgets/fill_pin_suggestion_chip_test.dart \
+            test/chat/widgets/fill_pin_thread_header_test.dart \
             test/core/last_chat_landing_test.dart \
             test/services/coming_hold_machine_test.dart

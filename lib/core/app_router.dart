@@ -148,27 +148,19 @@ bool friendsRootAllowsLocation(
   return false;
 }
 
-/// Post-login landing. Friends IPA opens `/squad` unless last chat is
-/// the bound lobby thread. Full shell keeps last-chat → `/` fallback.
+/// Post-login landing. Chat is home: any last group thread opens
+/// `/chat/{id}`; friendsMode with no last group opens the Chat list
+/// (`/chat`). Full shell keeps last-chat → `/` fallback.
+/// [boundLobbyThreadId] is accepted for callers; last group wins.
 String resolveFriendsPostLoginLocation({
   required bool friendsMode,
   String? lastChatGroupId,
   String? boundLobbyThreadId,
 }) {
   final last = lastChatGroupId?.trim();
-  final bound = boundLobbyThreadId?.trim();
-  if (!friendsMode) {
-    if (last != null && last.isNotEmpty) return '/chat/$last';
-    return '/';
-  }
-  if (last != null &&
-      last.isNotEmpty &&
-      bound != null &&
-      bound.isNotEmpty &&
-      last == bound) {
-    return '/chat/$last';
-  }
-  return '/squad';
+  if (last != null && last.isNotEmpty) return '/chat/$last';
+  if (!friendsMode) return '/';
+  return '/chat';
 }
 
 /// Title shown on `/chat/:id` before (and if) the live group row returns.
@@ -228,7 +220,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     debugLogDiagnostics: kDebugMode,
-    initialLocation: AppEnv.friendsMode ? '/squad' : '/',
+    // Chat is home. `/` last-chat-redirects to last group or `/chat`.
+    initialLocation: '/',
     redirect: (context, state) async {
       Session? session;
       Object? restoreError;
@@ -265,8 +258,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 
       if (restore.redirectTo != null) return restore.redirectTo;
 
-      // Post-login / cold `/`: friendsMode lands /squad unless last chat
-      // is the bound lobby thread. Full shell keeps last-chat → `/`.
+      // Post-login / cold `/`: last group → `/chat/{id}`; friendsMode
+      // else Chat list `/chat`. Full shell keeps last-chat → `/`.
       if (state.matchedLocation == '/' && user != null) {
         try {
           final prefs = await SharedPreferences.getInstance();

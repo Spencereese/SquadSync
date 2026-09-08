@@ -392,7 +392,7 @@ FillPinLiveActivityPlan planFillPinLiveActivity({
 /// the existing machine owns the seated phase. Coming starts the 300s
 /// hold only. Can't releases a Coming hold; seated Can't frees the seat
 /// and fires the optional spot-open nudge stub.
-void Function()? _needOneSpotOpenNudge({
+void Function() _needOneSpotOpenNudge({
   void Function()? onSpotOpenNudge,
   Iterable<String> memberUids = const [],
   Iterable<String> sitUids = const [],

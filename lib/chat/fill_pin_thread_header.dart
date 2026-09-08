@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/lobby_state.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../services/fill_pin_share.dart';
 
 const kFillPinThreadHeaderKey = Key('fill-pin-thread-header');
 const kFillPinThreadHeaderSeatKey = Key('fill-pin-thread-header-seats');
+const kFillPinShareKey = Key('fill-pin-share');
 
 /// Compact pin header height when a this-group pin is live.
 const double kFillPinThreadHeaderHeight = 40;
@@ -114,15 +116,23 @@ class FillPinThreadHeaderHost extends ConsumerWidget {
     final snapshot =
         resolveFillPinForThread(state: state, chatGroupId: chatGroupId);
     if (snapshot == null) return const SizedBox.shrink();
-    return FillPinThreadHeader(snapshot: snapshot);
+    return FillPinThreadHeader(
+      snapshot: snapshot,
+      chatGroupId: chatGroupId,
+    );
   }
 }
 
 /// Presentational pin header. No bubble / theme rewrite.
 class FillPinThreadHeader extends StatelessWidget {
-  const FillPinThreadHeader({super.key, required this.snapshot});
+  const FillPinThreadHeader({
+    super.key,
+    required this.snapshot,
+    this.chatGroupId,
+  });
 
   final FillPinSnapshot snapshot;
+  final String? chatGroupId;
 
   @override
   Widget build(BuildContext context) {
@@ -188,9 +198,52 @@ class FillPinThreadHeader extends StatelessWidget {
                   ),
                 ),
               ],
+              _FillPinShareButton(
+                chatGroupId: chatGroupId,
+                snapshot: snapshot,
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Compact share on the pin header. Payload is pin-scoped — not chat.
+class _FillPinShareButton extends StatelessWidget {
+  const _FillPinShareButton({
+    required this.chatGroupId,
+    required this.snapshot,
+  });
+
+  final String? chatGroupId;
+  final FillPinSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    final thread = (chatGroupId ?? '').trim();
+    if (thread.isEmpty) return const SizedBox.shrink();
+    return Semantics(
+      label: 'Share pin',
+      child: IconButton(
+        key: kFillPinShareKey,
+        icon: const Icon(Icons.share, size: 16, color: Colors.white70),
+        tooltip: 'Share pin',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        visualDensity: VisualDensity.compact,
+        onPressed: () {
+          final payload = fillPinSharePayload(
+            chatGroupId: thread,
+            gameName: snapshot.gameName,
+            seated: snapshot.seated,
+            maxSpots: snapshot.maxSpots,
+            pinId: snapshot.lobbyId,
+            lobbyId: snapshot.lobbyId,
+          );
+          shareFillPin(payload: payload);
+        },
       ),
     );
   }

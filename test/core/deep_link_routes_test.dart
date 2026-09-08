@@ -890,13 +890,16 @@ void main() {
   });
 
   group('Universal Links AASA / associated-domains prep', () {
-    test('device entitlements claim applinks:codsquad.app; sim does not', () {
+    test('device entitlements claim applinks:cod-squad-a4c62.web.app; sim does not',
+        () {
+      const aasaHost = 'cod-squad-a4c62.web.app';
       final device = File('ios/Runner/Runner.entitlements').readAsStringSync();
-      expect(device.contains('<string>applinks:codsquad.app</string>'), isTrue);
       expect(
-        device.contains('<string>applinks:www.codsquad.app</string>'),
+        device.contains('<string>applinks:$aasaHost</string>'),
         isTrue,
       );
+      expect(device.contains('applinks:codsquad.app'), isFalse);
+      expect(device.contains('applinks:www.codsquad.app'), isFalse);
       expect(device.contains('com.example.codSquadApp'), isTrue);
       final sim =
           File('ios/Runner/Runner.simulator.entitlements').readAsStringSync();
@@ -907,6 +910,7 @@ void main() {
     });
 
     test('AASA prep files claim /l/* for parked bundle ID', () {
+      const aasaHost = 'cod-squad-a4c62.web.app';
       final paths = [
         'ios/associated-domains/apple-app-site-association',
         'web/.well-known/apple-app-site-association',
@@ -920,19 +924,31 @@ void main() {
         expect(text.contains('TEAMID.com.example.codSquadApp'), isFalse);
         expect(text.contains('/l/*'), isTrue);
         expect(text.contains('"applinks"'), isTrue);
+        expect(
+          text.contains(aasaHost),
+          isTrue,
+          reason: '$path must scaffold AASA_HOST = $aasaHost.',
+        );
+        expect(
+          text.contains('codsquad.app'),
+          isFalse,
+          reason: '$path still has retired AASA host codsquad.app.',
+        );
       }
     });
 
-    test('associated-domains entitlements template claims codesquad.app', () {
+    test('associated-domains entitlements template claims Firebase Hosting host',
+        () {
+      const aasaHost = 'cod-squad-a4c62.web.app';
       final template =
           File('ios/associated-domains/associated-domains.entitlements')
               .readAsStringSync();
       expect(
-          template.contains('<string>applinks:codsquad.app</string>'), isTrue);
-      expect(
-        template.contains('<string>applinks:www.codsquad.app</string>'),
+        template.contains('<string>applinks:$aasaHost</string>'),
         isTrue,
       );
+      expect(template.contains('applinks:codsquad.app'), isFalse);
+      expect(template.contains('applinks:www.codsquad.app'), isFalse);
     });
 
     test('AppDelegate sim swallow list includes codesquad.app', () {

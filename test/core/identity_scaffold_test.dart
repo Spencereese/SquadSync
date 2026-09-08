@@ -6,23 +6,26 @@ import 'package:squad_sync/core/auth_redirect.dart';
 import 'package:squad_sync/core/deep_link_routes.dart';
 import 'package:squad_sync/firebase_options.dart';
 
-/// Slice ID reds: identity scaffold constants. No product in this commit.
-/// Loop greens later in firebase_options + iOS/Android identity + AASA
-/// scaffold only. Do not bump pubspec. DNS for Universal Links is not live
-/// — these tests assert scaffold strings, not e2e UL delivery.
+/// Slice ID + Slice AASA-HOST reds: identity scaffold constants.
+/// No product in this commit. Loop greens AASA_HOST to the Firebase
+/// Hosting host (`cod-squad-a4c62.web.app`) in auth_redirect, AASA
+/// copies, and Associated Domains. Do not bump pubspec. DNS / UL e2e
+/// is not live — these tests assert scaffold strings only.
 ///
 /// Exact identity strings:
 /// - BUNDLE_ID_IOS = com.example.codSquadApp
 /// - BUNDLE_ID_ANDROID = com.example.cod_squad_app
 /// - APPLE_TEAM_ID = K4ZTXPQ8J9
-/// - AASA_HOST = codsquad.app
+/// - AASA_HOST = cod-squad-a4c62.web.app
+///   (Firebase Hosting from firebase_options projectId `cod-squad-a4c62`)
 /// - FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
 /// - FIREBASE_ANDROID_APP_ID = 1:756172684661:android:3466d7ce686fff4a70e73c
 /// - WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
 const kBundleIdIos = 'com.example.codSquadApp';
 const kBundleIdAndroid = 'com.example.cod_squad_app';
 const kAppleTeamId = 'K4ZTXPQ8J9';
-const kAasaHost = 'codsquad.app';
+const kAasaHost = 'cod-squad-a4c62.web.app';
+const kRetiredAasaHost = 'codsquad.app';
 const kFirebaseIosAppId = '1:756172684661:ios:496249d1653a47dc70e73c';
 const kFirebaseAndroidAppId =
     '1:756172684661:android:3466d7ce686fff4a70e73c';
@@ -46,6 +49,20 @@ const _kAasaPaths = [
   'ios/associated-domains/apple-app-site-association',
   'web/.well-known/apple-app-site-association',
   'web/apple-app-site-association',
+];
+
+const _kAssociatedDomainsEntitlements = [
+  'ios/associated-domains/associated-domains.entitlements',
+  'ios/Runner/Runner.entitlements',
+];
+
+/// Identity / AASA / Associated Domains / auth_redirect scaffold only.
+/// Do not scan lobby-share parsers or docs — leftover `codsquad.app` here
+/// is a hard fail for Slice AASA-HOST.
+const _kAasaHostScaffoldPaths = [
+  _kAuthRedirectSrc,
+  ..._kAasaPaths,
+  ..._kAssociatedDomainsEntitlements,
 ];
 
 String _read(String path) {
@@ -176,16 +193,29 @@ void main() {
     });
   });
 
-  group('Slice ID — AASA host / UL config scaffold (not e2e)', () {
-    test('AASA_HOST / UL config scaffolds to codsquad.app', () {
+  group('Slice AASA-HOST — Firebase Hosting host (not e2e)', () {
+    test('AASA_HOST / UL config scaffolds to $kAasaHost', () {
       // Scaffold only. DNS / Apple CDN / device UL delivery is not live.
       // Do not treat a green host string as e2e Universal Links.
+      // Lead: AASA_HOST is Firebase Hosting from projectId, not the
+      // retired custom domain.
+      expect(
+        '${DefaultFirebaseOptions.ios.projectId}.web.app',
+        kAasaHost,
+        reason: 'AASA_HOST must be <firebase_options projectId>.web.app.',
+      );
       expect(kLobbyUniversalLinkHost, kAasaHost);
       expect(isLobbyUniversalLinkHost(kAasaHost), isTrue);
-      expect(isLobbyUniversalLinkHost('www.$kAasaHost'), isTrue);
 
       final deepLinkSrc = _read(_kDeepLinkRoutesSrc);
       expect(deepLinkSrc.contains("'$kAasaHost'"), isTrue);
+
+      final authRedirect = _read(_kAuthRedirectSrc);
+      expect(
+        authRedirect.contains(kAasaHost),
+        isTrue,
+        reason: '$_kAuthRedirectSrc must scaffold AASA_HOST = $kAasaHost.',
+      );
 
       for (final path in _kAasaPaths) {
         final text = _read(path);
@@ -196,14 +226,42 @@ void main() {
         );
       }
 
-      final entitlements =
-          File('ios/Runner/Runner.entitlements').readAsStringSync();
-      expect(
-        entitlements.contains('<string>applinks:$kAasaHost</string>'),
-        isTrue,
-        reason: 'Runner.entitlements must claim applinks:$kAasaHost. '
-            'This is UL config scaffold — DNS is not live.',
-      );
+      for (final path in _kAssociatedDomainsEntitlements) {
+        final entitlements = _read(path);
+        expect(
+          entitlements.contains('<string>applinks:$kAasaHost</string>'),
+          isTrue,
+          reason: '$path must claim applinks:$kAasaHost. '
+              'This is UL config scaffold — DNS is not live.',
+        );
+      }
+    });
+
+    test('AASA host copies stay identical (web + ios associated-domains)', () {
+      String? canonical;
+      for (final path in _kAasaPaths) {
+        final text = _read(path);
+        canonical ??= text;
+        expect(text, canonical, reason: '$path drifted from canonical AASA');
+        expect(
+          text.contains(kAasaHost),
+          isTrue,
+          reason: '$path must use AASA_HOST = $kAasaHost.',
+        );
+      }
+    });
+
+    test('identity / AASA / Associated Domains / auth_redirect reject '
+        'retired host $kRetiredAasaHost', () {
+      for (final path in _kAasaHostScaffoldPaths) {
+        final text = _read(path);
+        expect(
+          text.contains(kRetiredAasaHost),
+          isFalse,
+          reason: '$path still has retired AASA host $kRetiredAasaHost. '
+              'Loop must green host to $kAasaHost.',
+        );
+      }
     });
 
     test('AASA appIDs are APPLE_TEAM_ID.BUNDLE_ID_IOS (no TEAMID placeholder)',

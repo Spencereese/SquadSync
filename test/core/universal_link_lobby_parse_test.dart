@@ -111,6 +111,7 @@ void main() {
     ];
 
     test('host copies are identical valid JSON claiming /l/*', () {
+      const aasaHost = 'cod-squad-a4c62.web.app';
       String? canonical;
       for (final path in aasaPaths) {
         final file = File(path);
@@ -118,6 +119,16 @@ void main() {
         final text = file.readAsStringSync();
         canonical ??= text;
         expect(text, canonical, reason: '$path drifted from canonical AASA');
+        expect(
+          text.contains(aasaHost),
+          isTrue,
+          reason: '$path must scaffold AASA_HOST = $aasaHost.',
+        );
+        expect(
+          text.contains('codsquad.app'),
+          isFalse,
+          reason: '$path still has retired AASA host codsquad.app.',
+        );
         final decoded = jsonDecode(text) as Map<String, dynamic>;
         expect(decoded.containsKey('applinks'), isTrue);
         final details = (decoded['applinks'] as Map)['details'] as List;
@@ -136,22 +147,25 @@ void main() {
       }
     });
 
-    test('entitlements template claims applinks:codsquad.app', () {
+    test('entitlements template claims applinks:cod-squad-a4c62.web.app', () {
+      const aasaHost = 'cod-squad-a4c62.web.app';
       final template =
           File('ios/associated-domains/associated-domains.entitlements')
               .readAsStringSync();
-      expect(template.contains('<string>applinks:codsquad.app</string>'), isTrue);
       expect(
-        template.contains('<string>applinks:www.codsquad.app</string>'),
+        template.contains('<string>applinks:$aasaHost</string>'),
         isTrue,
       );
+      expect(template.contains('applinks:codsquad.app'), isFalse);
+      expect(template.contains('applinks:www.codsquad.app'), isFalse);
       expect(template.contains('com.example.codSquadApp'), isTrue);
       final device = File('ios/Runner/Runner.entitlements').readAsStringSync();
-      expect(device.contains('<string>applinks:codsquad.app</string>'), isTrue);
       expect(
-        device.contains('<string>applinks:www.codsquad.app</string>'),
+        device.contains('<string>applinks:$aasaHost</string>'),
         isTrue,
       );
+      expect(device.contains('applinks:codsquad.app'), isFalse);
+      expect(device.contains('applinks:www.codsquad.app'), isFalse);
       final sim =
           File('ios/Runner/Runner.simulator.entitlements').readAsStringSync();
       expect(

@@ -35,6 +35,10 @@ enum SimulatorAppLinks {
       if host == "lobbiesync.app" || host.hasSuffix(".lobbiesync.app") {
         return true
       }
+      if host == "cod-squad-a4c62.web.app" ||
+          host.hasSuffix(".cod-squad-a4c62.web.app") {
+        return true
+      }
       if host == "codsquad.app" || host.hasSuffix(".codsquad.app") {
         return true
       }

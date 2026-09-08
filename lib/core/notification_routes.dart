@@ -302,8 +302,8 @@ class NotificationRoutes {
   }
 
   /// JSON, URI-decoded JSON, or `type=&lobby_id=` query string.
-  /// URLs (`codsquadapp://…`, `https://codsquad.app/l/…`) stay on
-  /// [locationForDeepLink] via [openRaw].
+  /// URLs (`codsquadapp://…`, `https://cod-squad-a4c62.web.app/l/…`) stay on
+  /// [locationForDeepLink] via [openRaw]. Leftover `codsquad.app` still parses.
   static Map<String, dynamic>? mapFromRaw(String? raw) {
     if (raw == null) return null;
     final trimmed = raw.trim();
@@ -436,6 +436,7 @@ class NotificationRoutes {
     if (v.startsWith('/squad')) return true;
     if (v.startsWith('/stats')) return true;
     if (v.startsWith('/chat')) return true;
+    if (v.startsWith('https://cod-squad-a4c62.web.app/')) return true;
     if (v.startsWith('https://codsquad.app/')) return true;
     if (v.startsWith('https://www.codsquad.app/')) return true;
     if (v.startsWith('https://lobbiesync.app/')) return true;

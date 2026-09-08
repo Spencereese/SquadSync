@@ -5,9 +5,8 @@
 	<!-- Associated Domains template for BUNDLE_ID_IOS = com.example.codSquadApp.
 	     AASA appID = K4ZTXPQ8J9.com.example.codSquadApp
 	     (APPLE_TEAM_ID = K4ZTXPQ8J9). Write K4ZTXPQ8J9; do not leave TEAMID.
-	     AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
-	     Universal Links blocked until Spencer points domain + hosts
-	     apple-app-site-association)
+	     AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+	     not e2e Universal Links. Spencer must firebase deploy --only hosting.)
 	     WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
 	     URL scheme: com.example.codSquadApp://auth-callback
 	     FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
@@ -18,8 +17,7 @@
 	     Associated Domains on the App ID and host AASA (see SPENCER.txt). -->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:codsquad.app</string>
-		<string>applinks:www.codsquad.app</string>
+		<string>applinks:cod-squad-a4c62.web.app</string>
 	</array>
 </dict>
 </plist>

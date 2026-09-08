@@ -166,10 +166,14 @@ Uri? tryParseAppLinkUri(String? link) {
 bool isLobbyUniversalLinkHost(String? host) {
   final name = host?.trim().toLowerCase() ?? '';
   if (name.isEmpty) return false;
-  return name == 'codsquad.app' || name == 'www.codsquad.app';
+  // Firebase Hosting AASA host plus leftover custom-domain parse.
+  return name == 'cod-squad-a4c62.web.app' ||
+      name == 'codsquad.app' ||
+      name == 'www.codsquad.app';
 }
 
-/// AASA-claimed Universal Link: `https://codsquad.app/l/<id>` (and www / http).
+/// AASA-claimed Universal Link: `https://cod-squad-a4c62.web.app/l/<id>`
+/// (Firebase Hosting). Leftover `codsquad.app` / www / http still parse.
 /// Other https paths may still parse in Dart; they are not associated-domains
 /// `/l/*` deliveries.
 bool isLobbyUniversalLinkUri(Uri uri) {
@@ -297,6 +301,10 @@ bool shouldSwallowSimulatorAppLink(Uri url) {
   final host = url.host.toLowerCase();
   if (scheme == 'https' || scheme == 'http') {
     if (host == 'lobbiesync.app' || host.endsWith('.lobbiesync.app')) {
+      return true;
+    }
+    if (host == 'cod-squad-a4c62.web.app' ||
+        host.endsWith('.cod-squad-a4c62.web.app')) {
       return true;
     }
     if (host == 'codsquad.app' || host.endsWith('.codsquad.app')) {

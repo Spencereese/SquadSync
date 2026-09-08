@@ -13,7 +13,7 @@
         "components": [
           {
             "/": "/l/*",
-            "comment": "Lobby Universal Link https://codsquad.app/l/<id>"
+            "comment": "Lobby Universal Link https://cod-squad-a4c62.web.app/l/<id>"
           }
         ]
       }

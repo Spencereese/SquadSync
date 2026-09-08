@@ -12,9 +12,8 @@
 	     to production.
 	     Slice ID Spencer-click notes (exact — do not invent others):
 	     APPLE_TEAM_ID = K4ZTXPQ8J9
-	     AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
-	     Universal Links blocked until Spencer points domain + hosts
-	     apple-app-site-association)
+	     AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+	     not e2e Universal Links. Spencer must firebase deploy --only hosting.)
 	     BUNDLE_ID_IOS = com.example.codSquadApp
 	     WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
 	     URL scheme: com.example.codSquadApp://auth-callback
@@ -33,10 +32,9 @@
 	     (APPLE_TEAM_ID = K4ZTXPQ8J9 + BUNDLE_ID_IOS). Write K4ZTXPQ8J9;
 	     do not leave a TEAMID placeholder.
 	     URL scheme: com.example.codSquadApp://auth-callback
-	     Universal Links: https://codsquad.app/l/<id> → /squad?lobby_id=
-	     AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
-	     Universal Links blocked until Spencer points domain + hosts
-	     apple-app-site-association)
+	     Universal Links: https://cod-squad-a4c62.web.app/l/<id> → /squad?lobby_id=
+	     AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+	     not e2e Universal Links. Spencer must firebase deploy --only hosting.)
 	     Prep: ios/associated-domains/apple-app-site-association
 	     Template: ios/associated-domains/associated-domains.entitlements
 	     Spencer: enable Associated Domains on App ID com.example.codSquadApp
@@ -46,8 +44,7 @@
 		<string>applinks:sfckxrnoiwetmzdycqaa.supabase.co</string>
 		<string>applinks:lobbiesync.app</string>
 		<string>applinks:www.lobbiesync.app</string>
-		<string>applinks:codsquad.app</string>
-		<string>applinks:www.codsquad.app</string>
+		<string>applinks:cod-squad-a4c62.web.app</string>
 	</array>
 </dict>
 </plist>

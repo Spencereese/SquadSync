@@ -56,8 +56,16 @@
 		<!-- URL schemes:
 		     codsquadapp — in-app deep links (join, chat).
 		     com.example.codSquadApp — Supabase Auth redirect
-		       (com.example.codSquadApp://auth-callback). Replaces leftover
-		       com.squadsync.app. Register that redirect in Supabase.
+		       (URL scheme: com.example.codSquadApp://auth-callback).
+		     Replaces leftover com.squadsync.app. Register that redirect
+		     in Supabase. Slice ID notes (see docs/TESTFLIGHT_CHECKLIST.md):
+		     APPLE_TEAM_ID = K4ZTXPQ8J9
+		     AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
+		     Universal Links blocked until Spencer points domain + hosts
+		     apple-app-site-association)
+		     BUNDLE_ID_IOS = com.example.codSquadApp
+		     WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+		     FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
 		     google.sign.in — REVERSED_CLIENT_ID from GoogleService-Info.plist. -->
 		<key>CFBundleURLTypes</key>
 		<array>

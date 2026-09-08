@@ -4,7 +4,16 @@
 <dict>
 	<!-- Simulator flavor: aps-environment MUST stay development.
 	     Never set production here. Never point iphonesimulator* at
-	     Runner.entitlements. See docs/TESTFLIGHT_CHECKLIST.md. -->
+	     Runner.entitlements. See docs/TESTFLIGHT_CHECKLIST.md.
+	     Slice ID (comments only — no applinks on sim):
+	     APPLE_TEAM_ID = K4ZTXPQ8J9
+	     AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
+	     Universal Links blocked until Spencer points domain + hosts
+	     apple-app-site-association)
+	     BUNDLE_ID_IOS = com.example.codSquadApp
+	     WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+	     URL scheme: com.example.codSquadApp://auth-callback
+	     FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c -->
 	<key>aps-environment</key>
 	<string>development</string>
 	<key>com.apple.developer.applesignin</key>

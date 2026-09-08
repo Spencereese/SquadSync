@@ -56,8 +56,17 @@
 		     Runner.app can openurl peacock / squad deep links (matches device
 		     Info.plist). SpringBoard may still show "Open in Cod Squad?" on
 		     first custom-scheme open; Accept is a one-time UI tap. Keep Google
-		     + com.example.codSquadApp for auth. Entitlements stay
-		     Runner.simulator.entitlements (no applinks). -->
+		     + com.example.codSquadApp for auth.
+		     URL scheme: com.example.codSquadApp://auth-callback
+		     BUNDLE_ID_IOS = com.example.codSquadApp
+		     APPLE_TEAM_ID = K4ZTXPQ8J9
+		     AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
+		     Universal Links blocked until Spencer points domain + hosts
+		     apple-app-site-association)
+		     WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+		     FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
+		     Entitlements stay Runner.simulator.entitlements (no applinks;
+		     aps-environment MUST stay development — never production). -->
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>

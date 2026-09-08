@@ -25,11 +25,22 @@ codsquadapp://lobby/<id>
 Simulator still swallows leftover `https://codsquad.app/…` Universal Links
 (`shouldSwallowSimulatorAppLink`). Device builds consume them.
 
-## Host-ready AASA (copy as-is after replacing TEAMID)
+## Host-ready AASA (write `APPLE_TEAM_ID = K4ZTXPQ8J9`)
 
 Canonical file: `apple-app-site-association` in this folder.
 
-Host copies (keep identical):
+Exact Spencer-click strings (do not invent others):
+
+```
+APPLE_TEAM_ID = K4ZTXPQ8J9
+AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1 Universal Links blocked until Spencer points domain + hosts apple-app-site-association)
+BUNDLE_ID_IOS = com.example.codSquadApp
+WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+URL scheme: com.example.codSquadApp://auth-callback
+FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
+```
+
+Host copies (keep identical `appID` = `K4ZTXPQ8J9.com.example.codSquadApp`):
 
 - `web/.well-known/apple-app-site-association`
 - `web/apple-app-site-association` (Apple root fallback)
@@ -41,8 +52,8 @@ Serve at:
 - optional: `https://codsquad.app/apple-app-site-association`
 
 HTTPS 200, `Content-Type: application/json`, no redirect, no `.json` suffix.
-Path claimed: `/l/*`. Bundle ID in the file stays `TEAMID.com.example.codSquadApp`
-until Spencer pastes the 10-character Team ID.
+Path claimed: `/l/*`. If a copy still shows `TEAMID`, replace it with
+**`K4ZTXPQ8J9`** when hosting. AASA is scaffold-only until DNS/hosting is live.
 
 ## Associated Domains entitlement
 

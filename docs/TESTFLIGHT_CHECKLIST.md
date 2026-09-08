@@ -5,14 +5,30 @@ Supabase, or App Store Connect.** Spencer clicks the portal. This agent
 does not.
 
 Bundle ID stays **`com.example.codSquadApp`**. Do not rename. Do not merge
-or retarget PR #1. Do not commit secrets.
+or retarget PR #1. Do not commit secrets. Do not bump `pubspec.yaml`.
 
 ```
 Branch:  cursor/revive-squadsync-be5c
-Tip:     3.4.136+138 (docs slice on that tip — pubspec not bumped)
+Tip:     3.4.157+159 (docs-only Spencer-click notes — pubspec not bumped)
 PR #1:   do not merge / do not retarget
 Upload:  Spencer (not this slice)
 ```
+
+## Slice ID constants (exact — do not invent others)
+
+```
+APPLE_TEAM_ID = K4ZTXPQ8J9
+AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1 Universal Links blocked until Spencer points domain + hosts apple-app-site-association)
+BUNDLE_ID_IOS = com.example.codSquadApp
+WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+URL scheme: com.example.codSquadApp://auth-callback
+FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
+```
+
+`APPLE_TEAM_ID` is known. Write **`K4ZTXPQ8J9`** — do not leave a `TEAMID`
+placeholder for Spencer to paste later. AASA files / hosting still use
+`K4ZTXPQ8J9.com.example.codSquadApp`. Gate 1 Universal Links stay blocked
+until DNS + `apple-app-site-association` are live on `codsquad.app`.
 
 ---
 
@@ -62,25 +78,31 @@ Xcode **Product → Archive** = **production** on the Release overlay.
 
 ---
 
-## 2. AASA / Associated Domains — `TEAMID` stays a placeholder
+## 2. AASA / Associated Domains — scaffold only (`AASA_HOST` not live)
 
-Repo AASA `appID` / `appIDs` stay:
+Repo AASA `appID` / `appIDs` for hosting:
 
 ```
-TEAMID.com.example.codSquadApp
+K4ZTXPQ8J9.com.example.codSquadApp
 ```
 
-Do **not** invent a Team ID in git. Spencer pastes the real
-**10-character Team ID** from the portal (step 2 of the runbook below).
-After that replace, the live value is `<TEAMID>.com.example.codSquadApp`
-(example shape only: `ABCD1234XY.com.example.codSquadApp`).
+That is `APPLE_TEAM_ID` + `BUNDLE_ID_IOS`. The Team ID is **`K4ZTXPQ8J9`**
+— write it. Do not invent a second Team ID. Do not wait to “paste Team ID
+later.”
 
-Files Spencer edits **locally** after copying Team ID (same string in all
-three):
+`AASA_HOST = codsquad.app` is **scaffold only — DNS NOT live; Gate 1
+Universal Links blocked until Spencer points domain + hosts
+apple-app-site-association**.
+
+Files Spencer publishes **after** DNS/HTTPS is pointed at an origin
+(same `appID` string in all three):
 
 - `ios/associated-domains/apple-app-site-association`
 - `web/.well-known/apple-app-site-association`
 - `web/apple-app-site-association`
+
+If a copy still shows a `TEAMID` placeholder, replace that placeholder
+with **`K4ZTXPQ8J9`** when hosting. Do not host `TEAMID.com.example.codSquadApp`.
 
 Device applinks already listed on `ios/Runner/Runner.entitlements`:
 
@@ -95,7 +117,8 @@ applinks:www.codsquad.app
 Simulator entitlements must **not** claim `associated-domains`.
 Host AASA at `https://codsquad.app/.well-known/apple-app-site-association`
 (HTTPS 200, `Content-Type: application/json`, no redirect, no `.json`).
-Path claimed: `/l/*`.
+Path claimed: `/l/*`. Until that host is live, `codsquadapp://lobby/<id>`
+still works; `https://codsquad.app/l/<id>` will not open the app.
 
 ---
 
@@ -108,7 +131,7 @@ Copy / download these locally. `.gitignore` already blocks them.
 | Path | How you get it | Why |
 | --- | --- | --- |
 | `.env` | Copy `.env.example` → `.env` and fill real values | `--dart-define-from-file=.env` (not a Flutter asset) |
-| `ios/Runner/GoogleService-Info.plist` | Firebase Console → iOS app `com.example.codSquadApp` → download | Real FCM / Analytics. Example plist is `YOUR_` placeholders only |
+| `ios/Runner/GoogleService-Info.plist` | Firebase Console → iOS app `com.example.codSquadApp` (`FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c`) → download | Real FCM / Analytics. Example plist is `YOUR_` placeholders only |
 | `android/app/google-services.json` | Firebase Android app (if you also run Android) | Gitignored. Not this week's iOS archive |
 | `*.p8` (APNs Auth Key) | Apple Developer → Keys (step 9) | Upload to Firebase Cloud Messaging. Never commit |
 | `backend/.env` | Local backend only | Not required for the IPA |
@@ -133,9 +156,9 @@ flutter build ipa \
 ```
 
 `ios/export_options.plist` already sets `method` = `app-store` and lists
-Team ID `K4ZTXPQ8J9` — Spencer confirms that Team ID matches Membership
-(step 2). If it differs, edit the plist locally; do not invent a second
-bundle ID.
+`APPLE_TEAM_ID = K4ZTXPQ8J9`. Spencer confirms Membership matches
+**`K4ZTXPQ8J9`** (step 2). If it differs, stop and ask — do not invent a
+second bundle ID.
 
 Xcode archive (same Release flavor):
 
@@ -160,7 +183,7 @@ custom-scheme prompt appears.
 Canonical Supabase / OAuth return (do not change):
 
 ```
-com.example.codSquadApp://auth-callback
+URL scheme: com.example.codSquadApp://auth-callback
 ```
 
 Verified on tip:
@@ -175,13 +198,20 @@ Verified on tip:
 In-app lobby/chat deep links stay `codsquadapp://lobby/<id>` — that is
 **not** the auth callback.
 
+Widget extension id (identity only — not a second App ID to create this
+week unless Apple already requires it for the widget target):
+
+```
+WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+```
+
 ---
 
 ## 5. Android applicationId mismatch (footnote only — do not fix)
 
 | Platform | Id | Status |
 | --- | --- | --- |
-| iOS bundle | `com.example.codSquadApp` | Parked. Do not change. |
+| iOS bundle | `com.example.codSquadApp` | Parked. Do not change. (`BUNDLE_ID_IOS`) |
 | Android `applicationId` / namespace | `com.example.cod_squad_app` | **Mismatch. Do not fix this week.** |
 
 Leave Android as-is. No `applicationId` “fix”, no Firebase Android
@@ -192,12 +222,13 @@ rename, no store listing work in this slice.
 ## 6. Fifteen-step “Spencer in the portal” runbook
 
 Spencer only. Checkbox as you click. Do not create a second App ID.
-Do not rename `com.example.codSquadApp`.
+Do not rename `BUNDLE_ID_IOS = com.example.codSquadApp`.
 
 - [ ] **1.** Open [developer.apple.com/account](https://developer.apple.com/account) and sign in as Spencer
-- [ ] **2.** Open **Membership details** (Account → Membership). Copy the
-      **10-character Team ID**. Leave git at `TEAMID.com.example.codSquadApp`
-      until you paste this id into the three AASA files (step 15)
+- [ ] **2.** Open **Membership details** (Account → Membership). Confirm
+      the **10-character Team ID** is **`APPLE_TEAM_ID = K4ZTXPQ8J9`**.
+      Write `K4ZTXPQ8J9` on AASA (`K4ZTXPQ8J9.com.example.codSquadApp`).
+      Do not leave a `TEAMID` placeholder
 - [ ] **3.** Click **Certificates, Identifiers & Profiles**
 - [ ] **4.** Click **Identifiers**. Open the existing App ID
       **`com.example.codSquadApp`**. Do **not** click the **+** button.
@@ -213,28 +244,35 @@ Do not rename `com.example.codSquadApp`.
       → **My Apps** → create or open **Cod Squad** with bundle ID
       **`com.example.codSquadApp`** (the existing App ID from step 4)
 - [ ] **11.** Open Firebase Console → project **`cod-squad-a4c62`** →
-      **Project settings** → confirm the **iOS** app bundle is
-      **`com.example.codSquadApp`**. Download the real
-      `GoogleService-Info.plist` to `ios/Runner/GoogleService-Info.plist`.
-      Confirm `BUNDLE_ID` inside is `com.example.codSquadApp`. Do not commit
+      **Project settings** → confirm the **iOS** app is
+      **`BUNDLE_ID_IOS = com.example.codSquadApp`** and
+      **`FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c`**.
+      Download the real `GoogleService-Info.plist` to
+      `ios/Runner/GoogleService-Info.plist`. Confirm `BUNDLE_ID` inside is
+      `com.example.codSquadApp` and `GOOGLE_APP_ID` is that iOS app id.
+      Do not commit
 - [ ] **12.** Same Firebase page → **Cloud Messaging** → Apple app
-      configuration → upload the `.p8` from step 9 + **Key ID** + the
-      Team ID from step 2
+      configuration → upload the `.p8` from step 9 + **Key ID** +
+      **`APPLE_TEAM_ID = K4ZTXPQ8J9`**
 - [ ] **13.** Open Supabase → project **`sfckxrnoiwetmzdycqaa`** →
       **Authentication** → **URL Configuration** → **Redirect URLs**
       must include `com.example.codSquadApp://auth-callback`.
       Do not add leftover `com.squadsync.app://…`
 - [ ] **14.** Supabase **Authentication** → **Providers**:
-      - **Apple:** Team ID (step 2), Key ID + `.p8` (step 9), Services ID
-        that does **not** change the app bundle ID
+      - **Apple:** Team ID **`K4ZTXPQ8J9`**, Key ID + `.p8` (step 9),
+        Services ID that does **not** change the app bundle ID
       - **Google:** Web client ID + secret; iOS OAuth client stays bundle
         `com.example.codSquadApp`
-- [ ] **15.** Replace the `TEAMID` placeholder in all three AASA files
-      from section 2. `TEAMID.com.example.codSquadApp` becomes
-      `<your 10-char Team ID>.com.example.codSquadApp`. Host the file at
+- [ ] **15.** Host AASA (Gate 1 still blocked until this is live). Write
+      `K4ZTXPQ8J9.com.example.codSquadApp` in all three AASA files from
+      section 2. Point **`AASA_HOST = codsquad.app`** DNS + HTTPS, then
+      serve the file at
       `https://codsquad.app/.well-known/apple-app-site-association`
       (and www if you use it). Then delete-and-reinstall a **device-signed
-      Release** build so iOS re-fetches AASA. Until DNS/AASA are live,
+      Release** build so iOS re-fetches AASA.
+      **AASA_HOST = codsquad.app (scaffold only — DNS NOT live; Gate 1
+      Universal Links blocked until Spencer points domain + hosts
+      apple-app-site-association).** Until then,
       `codsquadapp://lobby/<id>` still works
 
 ---
@@ -246,11 +284,11 @@ Do not rename `com.example.codSquadApp`.
       No health / precise location / IAP on tip
 - [ ] Export Compliance: **No** — HTTPS/TLS only.
       `ITSAppUsesNonExemptEncryption` is already `false` in Info.plist
-- [ ] Signing team on the archive = the Membership team that owns
-      App ID `com.example.codSquadApp`
+- [ ] Signing team on the archive = **`APPLE_TEAM_ID = K4ZTXPQ8J9`**
+      (the Membership team that owns App ID `com.example.codSquadApp`)
 - [ ] Release/Archive `aps-environment` = **production** via the flavor
       in section 1 — **not** a committed flip of the simulator file
 
 Out of scope for this slice: TestFlight upload itself, SQL, `.env`
 commit, bundle ID rename, Android id “fix”, merging PR #1, opening a
-new PR.
+new PR, flipping simulator `aps-environment` to production.

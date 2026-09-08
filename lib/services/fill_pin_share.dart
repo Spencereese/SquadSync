@@ -1,14 +1,14 @@
-/// PIN WAVE P2 — Share Fill PIN, not chat history.
-///
-/// Share-sheet payload is this pin only: game + n/max + sit-here deep
-/// link. Recipients open the thread/pin via [locationForDeepLink].
-/// Message bodies are never copied into the payload.
-///
-/// Pin starts in THIS group. Explicit share to another group or public,
-/// unshared-group visibility, AASA / OG preview title, and poll-on-pin
-/// are P3 stubs — this file does not start them.
-///
-/// XOR stays planPeacockSelfNotify (no notify path here).
+// PIN WAVE P2 — Share Fill PIN, not chat history.
+//
+// Share-sheet payload is this pin only: game + n/max + sit-here deep
+// link. Recipients open the thread/pin via locationForDeepLink.
+// Message bodies are never copied into the payload.
+//
+// Pin starts in THIS group. Explicit share to another group or public,
+// unshared-group visibility, AASA / OG preview title, and poll-on-pin
+// are P3 stubs — this file does not start them.
+//
+// XOR stays planPeacockSelfNotify (no notify path here).
 import 'package:share_plus/share_plus.dart';
 
 import '../core/deep_link_routes.dart';

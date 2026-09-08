@@ -252,8 +252,10 @@ void main() {
         isFalse,
       );
       final src = File('lib/services/fill_pin_share.dart').readAsStringSync();
-      expect(src.contains('planPeacockSelfNotify'), isFalse);
+      expect(src.contains('peacock_self_notify.dart'), isFalse);
       expect(src.contains('NotificationService'), isFalse);
+      expect(src.contains('FirebaseMessaging'), isFalse);
+      expect(src.contains('sendNotificationToUsers'), isFalse);
     });
   });
 }

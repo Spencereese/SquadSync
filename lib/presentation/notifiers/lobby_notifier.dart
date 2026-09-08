@@ -1,3 +1,8 @@
+// Slice CAP: public method budget 89
+// Budget recorded at tip 6c3c974. Do not add new public methods.
+// Seat writes go through LobbySeatWriter.
+// Peacock self-notify goes through planPeacockSelfNotify.
+
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';

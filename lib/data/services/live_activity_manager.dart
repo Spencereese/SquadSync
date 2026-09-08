@@ -170,4 +170,41 @@ class LiveActivityManager {
       return false;
     }
   }
+
+  /// Start a Fill PIN Live Activity payload on iOS.
+  /// No-op off iOS. Native lives on the existing Runner target.
+  Future<String?> startFillPinActivity(Map<String, dynamic> args) async {
+    if (!await isSupported()) return null;
+
+    try {
+      final activityId = await _channel.invokeMethod<String>(
+        'startFillPinActivity',
+        args,
+      );
+      debugPrint('🎭 Started fill pin Live Activity: $activityId');
+      return activityId;
+    } catch (e) {
+      debugPrint('❌ Failed to start fill pin Live Activity: $e');
+      return null;
+    }
+  }
+
+  /// Update the Fill PIN Live Activity payload (actions + Coming mm:ss).
+  Future<bool> updateFillPinActivity({
+    required String activityId,
+    required Map<String, dynamic> args,
+  }) async {
+    if (!await isSupported()) return false;
+
+    try {
+      await _channel.invokeMethod('updateFillPinActivity', {
+        ...args,
+        'activityId': activityId,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('❌ Failed to update fill pin Live Activity: $e');
+      return false;
+    }
+  }
 }

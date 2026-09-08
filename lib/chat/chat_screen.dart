@@ -42,7 +42,6 @@ import '../presentation/notifiers/lobby_notifier.dart';
 import '../presentation/notifiers/message_notifier.dart';
 import '../presentation/notifiers/notification_notifier.dart';
 import '../core/chat_messages.dart';
-import '../core/fill_pin_suggestion_parser.dart';
 import '../core/lobby_chat_bind.dart';
 import '../widgets/chat_surface_feedback.dart';
 
@@ -1080,30 +1079,6 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     // Add other commands here if needed
   }
 
-  /// Fill PIN chip tap — create in THIS group only. Typing never creates.
-  Future<void> _createFillPinFromSuggestion(
-    FillPinSuggestion suggestion,
-  ) async {
-    final chatGroupId = threadChatGroupId;
-    if (chatGroupId == null || chatGroupId.isEmpty) return;
-    try {
-      HapticFeedback.lightImpact();
-      await ref.read(lobbyNotifierProvider.notifier).createLobby(
-            chatGroupId: chatGroupId,
-            gameName: suggestion.game ?? '',
-            maxSpots: suggestion.max ?? 4,
-            chatGroupName: widget.chatGroupName ?? _chatName,
-          );
-    } catch (e) {
-      debugPrint('❌ Fill PIN create failed: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not start pin: $e')),
-        );
-      }
-    }
-  }
-
   /// Handle lobby creation from chat
   /// Opens full-screen lobby creation directly
   Future<void> _handleLobbyCreation() async {
@@ -2079,8 +2054,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                                 chatGroupId: threadChatGroupId,
                               );
                             },
-                            onFillPinSuggestionTap:
-                                _createFillPinFromSuggestion,
+                            onFillPinSuggestionTap: (s) => bindFillPin(ref, threadChatGroupId, s),
                             quickReactionEmoji: chatState.quickReactionEmoji,
                             hintText: _showImagePreview
                                 ? 'Caption'

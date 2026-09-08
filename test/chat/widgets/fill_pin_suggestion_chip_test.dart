@@ -131,25 +131,20 @@ void main() {
     final bar = File('lib/chat/chat_input_bar.dart').readAsStringSync();
     expect(bar.contains('parseFillPinSuggestion'), isTrue);
     expect(bar.contains('onFillPinSuggestionTap'), isTrue);
+    expect(bar.contains('bindFillPin'), isTrue);
     expect(
-      bar.contains('createLobby'),
-      isFalse,
-      reason: 'Composer stays presentation; create is the chat_screen bind',
+      RegExp(r'bindFillPin[\s\S]*?createLobby\(').hasMatch(bar),
+      isTrue,
+      reason: 'Tap uses existing createLobby, not a second lobby stack',
     );
 
     final screen = File('lib/chat/chat_screen.dart').readAsStringSync();
     expect(screen.contains('onFillPinSuggestionTap'), isTrue);
-    expect(screen.contains('_createFillPinFromSuggestion'), isTrue);
+    expect(screen.contains('bindFillPin'), isTrue);
     expect(
       screen.contains('threadChatGroupId'),
       isTrue,
       reason: 'Pin must bind THIS chat group, not a second lobby stack',
-    );
-    expect(
-      RegExp(
-        r'_createFillPinFromSuggestion[\s\S]*?createLobby\(',
-      ).hasMatch(screen),
-      isTrue,
     );
   });
 }

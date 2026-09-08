@@ -1,11 +1,32 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/fill_pin_suggestion_parser.dart';
+import '../presentation/notifiers/lobby_notifier.dart';
 
 const kFillPinSuggestionChipKey = Key('fill-pin-suggestion-chip');
 const kFillPinSuggestionDismissKey = Key('fill-pin-suggestion-dismiss');
+
+/// Existing [LobbyNotifier.createLobby] for THIS [chatGroupId] only.
+Future<void> bindFillPin(
+  WidgetRef ref,
+  String? chatGroupId,
+  FillPinSuggestion suggestion,
+) async {
+  final id = (chatGroupId ?? '').trim();
+  if (id.isEmpty) return;
+  try {
+    await ref.read(lobbyNotifierProvider.notifier).createLobby(
+          chatGroupId: id,
+          gameName: suggestion.game ?? '',
+          maxSpots: suggestion.max ?? 4,
+        );
+  } catch (e) {
+    debugPrint('Fill PIN create failed: $e');
+  }
+}
 
 class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;

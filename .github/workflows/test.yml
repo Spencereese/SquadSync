@@ -128,4 +128,5 @@ jobs:
             test/services/fill_pin_nudge_audience_wire_test.dart \
             test/services/fill_pin_share_test.dart \
             test/services/fill_pin_poll_test.dart \
-            test/services/fill_pin_visibility_test.dart
+            test/services/fill_pin_visibility_test.dart \
+            test/services/fill_pin_visibility_wire_test.dart

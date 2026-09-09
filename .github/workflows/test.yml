@@ -126,4 +126,5 @@ jobs:
             test/services/fill_pin_live_activity_test.dart \
             test/services/fill_pin_nudge_audience_test.dart \
             test/services/fill_pin_nudge_audience_wire_test.dart \
-            test/services/fill_pin_share_test.dart
+            test/services/fill_pin_share_test.dart \
+            test/services/fill_pin_poll_test.dart

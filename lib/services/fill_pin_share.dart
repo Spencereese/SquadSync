@@ -12,6 +12,7 @@
 import 'package:share_plus/share_plus.dart';
 
 import '../core/deep_link_routes.dart';
+import 'fill_pin_link_preview.dart';
 
 /// Cheap P3 preview stub. Live OG title / AASA card is later.
 const kFillPinShareSitHereSuffix = 'sit here';
@@ -53,14 +54,17 @@ String fillPinShareSitHereLink({
   ).toString();
 }
 
-/// Optional stub string. P3 link-preview title can reuse this later.
+/// Share / OG title stub — reuses [fillPinLinkPreviewTitle].
 String fillPinSharePreviewTitle({
   required String gameName,
   required int seated,
   required int maxSpots,
 }) {
-  final game = _nonEmpty(gameName) ?? 'Fill PIN';
-  return '$game $seated/$maxSpots · $kFillPinShareSitHereSuffix';
+  return fillPinLinkPreviewTitle(
+    game: gameName,
+    seated: seated,
+    max: maxSpots,
+  );
 }
 
 /// Pin-scoped share text. No message list. No chat history body.

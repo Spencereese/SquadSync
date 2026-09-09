@@ -339,3 +339,11 @@ widget target. **Buttons will not appear** until that extension exists.
 
 **Do not claim device Live Activity UI PASS.** This checklist does not
 close Gate 1, AASA, Universal Links, or any other gate.
+
+### P3C share / OG preview title stub
+
+Product **`3f84cea` / 3.4.177+179** — confirm on a friend share/preview.
+Do not claim device QA PASS or a live AASA/OG card.
+
+- [ ] Share / OG preview title stub uses `fillPinLinkPreviewTitle` → e.g.
+      `Warzone 2/4 · sit here` (game n/max · sit here)

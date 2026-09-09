@@ -6,10 +6,12 @@ import '../domain/entities/lobby.dart';
 import '../domain/entities/lobby_state.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../services/fill_pin_share.dart';
+import '../services/fill_pin_visibility.dart';
 
 const kFillPinThreadHeaderKey = Key('fill-pin-thread-header');
 const kFillPinThreadHeaderSeatKey = Key('fill-pin-thread-header-seats');
 const kFillPinShareKey = Key('fill-pin-share');
+const kFillPinPublicSwitchKey = Key('fill-pin-public-switch');
 
 /// Compact pin header height when a this-group pin is live.
 const double kFillPinThreadHeaderHeight = 40;
@@ -198,6 +200,7 @@ class FillPinThreadHeader extends StatelessWidget {
                   ),
                 ),
               ],
+              _FillPinPublicSwitch(snapshot: snapshot),
               _FillPinShareButton(
                 chatGroupId: chatGroupId,
                 snapshot: snapshot,
@@ -205,6 +208,53 @@ class FillPinThreadHeader extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Compact public switch on the pin header. Friends tap to flip this
+/// pin group | public (XOR, never both). Default is group. Pin-scoped.
+class _FillPinPublicSwitch extends StatefulWidget {
+  const _FillPinPublicSwitch({required this.snapshot});
+
+  final FillPinSnapshot snapshot;
+
+  @override
+  State<_FillPinPublicSwitch> createState() => _FillPinPublicSwitchState();
+}
+
+class _FillPinPublicSwitchState extends State<_FillPinPublicSwitch> {
+  void _flipGroupPublic() {
+    final pinId = widget.snapshot.lobbyId;
+    final current = resolveFillPinVisibility(pinId);
+    final next = current == FillPinVisibility.public
+        ? FillPinVisibility.group
+        : FillPinVisibility.public;
+    setFillPinVisibility(pinId, next);
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pinId = widget.snapshot.lobbyId.trim();
+    if (pinId.isEmpty) return const SizedBox.shrink();
+    final isPublic =
+        resolveFillPinVisibility(pinId) == FillPinVisibility.public;
+    return Semantics(
+      label: isPublic ? 'Public pin' : 'Group pin',
+      child: IconButton(
+        key: kFillPinPublicSwitchKey,
+        icon: Icon(
+          isPublic ? Icons.public : Icons.groups_outlined,
+          size: 16,
+          color: Colors.white70,
+        ),
+        tooltip: isPublic ? 'Public' : 'Group',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        visualDensity: VisualDensity.compact,
+        onPressed: _flipGroupPublic,
       ),
     );
   }

@@ -308,11 +308,11 @@ new PR, flipping simulator `aps-environment` to production.
 ## 7. Fill PIN Live Activity buttons (Widget Extension — Spencer clicks)
 
 Side-branch product **`3.4.178+180`** adds lock-screen Sit / Coming /
-Can't on `ios/PeacockLockWidget`. Runner bundle stays
-`com.example.codSquadApp`. Channel stays `com.squadsync/live_activities`.
-Taps enqueue an App Group inbox; Runner invokes Dart
-`FillPinLiveActivity.applyChannelAction`. **Do not claim device Live
-Activity UI PASS. Do not close Gate 1 / AASA / UL.**
+Can't on `ios/PeacockLockWidget` (Widget Extension + App Intents).
+Runner bundle stays `com.example.codSquadApp`. Channel stays
+`com.squadsync/live_activities`. Taps enqueue an App Group inbox;
+Runner invokes Dart `FillPinLiveActivity.applyChannelAction`. **Do
+not claim device Live Activity UI PASS. Do not close Gate 1 / AASA / UL.**
 
 ```
 WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
@@ -322,15 +322,21 @@ App Group = group.com.example.codSquadApp
 
 Click list (portal + Xcode): `ios/PeacockLockWidget/SPENCER.txt`
 
+### Spencer portal / Xcode clicks (mirror SPENCER.txt)
+
+- [ ] App ID **PeacockLockWidget** = `com.example.codSquadApp.PeacockLockWidget` (explicit). Do not rename Runner
+- [ ] App Groups **`group.com.example.codSquadApp`** on widget + Runner App IDs
+- [ ] Runner → Build Phases → **Embed Foundation Extensions** lists `PeacockLockWidget.appex` (not a Framework)
+
 ### Spencer confirms on a device-signed build
 
 - [ ] **`Activity.request(FillPinAttributes)` does not crash** on a
       device-signed build (iphoneos Debug or Release — not Simulator-only)
 - [ ] Start/update **payload includes** `actions` / `actionIds` /
       `holdLabel` / `deepLink`
-- [ ] Lock screen shows **Sit / Coming / Can't** (iOS 17+ interactive)
+- [ ] Lock screen shows **Sit / Coming / Can't** (Widget Extension + App Intents, iOS 17+)
 - [ ] Sit takes the seat, Coming is 300s (no auto-sit), Can't releases
-- [ ] Banner tap / hold t=0 / I'm in still opens `codsquadapp://chat/<id>`
+- [ ] Banner tap / hold t=0 / I'm in still opens `codsquadapp://chat/<id>` (tap-through / deep link)
 
 **Do not claim device Live Activity UI PASS.** This checklist does not
 close Gate 1, AASA, Universal Links, or any other gate.

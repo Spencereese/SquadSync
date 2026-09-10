@@ -538,7 +538,6 @@ class FillPinLiveActivity {
     currentUidHook = null;
     _activityId = null;
     _hold = ComingHoldState.idle;
-    LiveActivityManager.resetIncomingHandler();
   }
 
   /// Bind Native→Dart `fillPinAction` on the existing LA channel.

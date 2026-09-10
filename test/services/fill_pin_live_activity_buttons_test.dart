@@ -12,13 +12,13 @@ void main() {
   setUp(FillPinLiveActivity.resetTestHooks);
   tearDown(FillPinLiveActivity.resetTestHooks);
 
-  Future<String?> _capture(FillPinLiveActivityPlan plan) async {
+  Future<String?> capture(FillPinLiveActivityPlan plan) async {
     return plan.op == FillPinLiveActivityOp.start ? 'act-pin-1' : plan.payload.activityId;
   }
 
   group('incoming lock-screen action uses applyChannelAction', () {
     test('Coming from inbox starts 300s hold and does not sit', () async {
-      FillPinLiveActivity.invokeHook = _capture;
+      FillPinLiveActivity.invokeHook = capture;
       FillPinLiveActivity.currentUidHook = () => 'u9';
 
       await FillPinLiveActivity.syncFromThread(
@@ -45,7 +45,7 @@ void main() {
     });
 
     test('Sit from inbox takes the seat (I\'m in)', () async {
-      FillPinLiveActivity.invokeHook = _capture;
+      FillPinLiveActivity.invokeHook = capture;
       FillPinLiveActivity.currentUidHook = () => 'u2';
 
       final hold = await FillPinLiveActivity.applyIncomingChannelArgs({
@@ -59,7 +59,7 @@ void main() {
     });
 
     test('Can\'t from Coming releases via the same reducer', () async {
-      FillPinLiveActivity.invokeHook = _capture;
+      FillPinLiveActivity.invokeHook = capture;
       await FillPinLiveActivity.applyIncomingChannelArgs({
         'actionId': 'coming',
         'chatGroupId': 'group-1',

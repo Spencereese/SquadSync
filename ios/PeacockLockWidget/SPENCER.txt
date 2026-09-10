@@ -1,0 +1,51 @@
+Fill PIN Live Activity buttons — Spencer Xcode / portal clicks
+
+Code is on a side branch off cursor/revive-squadsync-be5c.
+BUNDLE_ID_IOS stays com.example.codSquadApp. Do not rename.
+WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+FillPinWidget identity (same gate, not a second target) =
+com.example.codSquadApp.FillPinWidget
+APPLE_TEAM_ID = K4ZTXPQ8J9
+App Group = group.com.example.codSquadApp
+
+This file is click notes only. Do not claim device Live Activity UI PASS.
+Do not flip Runner.simulator.entitlements aps-environment. Do not merge
+PR #1. Do not edit GATES / AASA / lobby-inc3.
+
+1. Apple Developer portal — new App ID for the widget (required)
+   a. Identifiers → App IDs → +
+   b. Bundle ID = com.example.codSquadApp.PeacockLockWidget
+      (explicit). Description: PeacockLockWidget
+   c. Enable App Groups. Create / select group.com.example.codSquadApp
+   d. Save. Team ID stays K4ZTXPQ8J9. Do not change Runner's App ID.
+
+2. Apple Developer portal — Runner App ID (existing)
+   a. Open com.example.codSquadApp
+   b. Enable App Groups if off. Add group.com.example.codSquadApp
+   c. Save. Leave Associated Domains as Spencer already configured.
+   d. Do not flip Push to production on the simulator flavor.
+
+3. Xcode (ios/Runner.xcworkspace — not .xcodeproj)
+   a. Select PeacockLockWidget target → Signing & Capabilities
+   b. Team = K4ZTXPQ8J9 (Automatic). Confirm bundle ID is
+      com.example.codSquadApp.PeacockLockWidget
+   c. Confirm App Groups = group.com.example.codSquadApp
+   d. Select Runner → Signing & Capabilities → same App Group
+   e. Runner → Build Phases → Embed Foundation Extensions should
+      already list PeacockLockWidget.appex. If missing: + → the
+      widget product. Do not embed it as a Framework.
+   f. Debug + Simulator CODE_SIGN_ENTITLEMENTS stay
+      Runner.simulator.entitlements / PeacockLockWidget.simulator.entitlements
+      (no applinks on sim). Device uses the non-simulator files.
+
+4. Confirm on a device-signed build (not Simulator-only)
+   - Fill PIN Live Activity shows Sit / Coming / Can't
+   - Sit takes the seat, Coming is 300s (no auto-sit), Can't releases
+   - Banner tap / hold t=0 / I'm in still opens codsquadapp://chat/<id>
+   Do not claim UI PASS from this checklist.
+
+Simulator: widget target uses Automatic signing and simulator
+entitlements (App Groups only). If a clone cannot sign the widget
+App ID yet, un-check PeacockLockWidget under Runner → Embed
+Foundation Extensions locally — do not commit that un-embed, and do
+not flip simulator aps-environment to production.

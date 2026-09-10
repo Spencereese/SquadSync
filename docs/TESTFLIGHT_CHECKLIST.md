@@ -305,37 +305,32 @@ new PR, flipping simulator `aps-environment` to production.
 
 ---
 
-## 7. Fill PIN Live Activity (P2 Runner channel — Spencer confirms)
+## 7. Fill PIN Live Activity buttons (Widget Extension — Spencer clicks)
 
-Product tip **`6f2ec90` / 3.4.169+171** added `FillPinAttributes` plus
-start/update on the **existing** Runner channel
-`com.squadsync/live_activities` (`ios/Runner/PeacockLockLiveActivity.swift`
-only). **No new Xcode target. No bundle ID flip.** `BUNDLE_ID_IOS` stays
-`com.example.codSquadApp`. This section is device notes only — no portal
-clicks, no Apple login, no `firebase deploy`, no GATES CLOSE, no
-Universal Links claim.
+Side-branch product **`3.4.178+180`** adds lock-screen Sit / Coming /
+Can't on `ios/PeacockLockWidget`. Runner bundle stays
+`com.example.codSquadApp`. Channel stays `com.squadsync/live_activities`.
+Taps enqueue an App Group inbox; Runner invokes Dart
+`FillPinLiveActivity.applyChannelAction`. **Do not claim device Live
+Activity UI PASS. Do not close Gate 1 / AASA / UL.**
+
+```
+WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+FillPinWidget identity = com.example.codSquadApp.FillPinWidget
+App Group = group.com.example.codSquadApp
+```
+
+Click list (portal + Xcode): `ios/PeacockLockWidget/SPENCER.txt`
 
 ### Spencer confirms on a device-signed build
 
 - [ ] **`Activity.request(FillPinAttributes)` does not crash** on a
       device-signed build (iphoneos Debug or Release — not Simulator-only)
 - [ ] Start/update **payload includes** `actions` / `actionIds` /
-      `holdLabel` / `deepLink` (Sit / Coming / Can't labels + ids, Coming
-      hold text, chat deep link)
-
-### Still waiting — do **not** claim device Live Activity UI PASS
-
-Lock-screen Sit / Coming / Can't **buttons** and tap-through still wait
-on a **Widget Extension + App Intents**. Same peacock Live Activity gate /
-`FillPinWidget` identity as `PeacockLockWidget`:
-
-```
-WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
-FillPinWidget identity = com.example.codSquadApp.FillPinWidget
-```
-
-Identity only. No new App ID this week unless Apple already requires the
-widget target. **Buttons will not appear** until that extension exists.
+      `holdLabel` / `deepLink`
+- [ ] Lock screen shows **Sit / Coming / Can't** (iOS 17+ interactive)
+- [ ] Sit takes the seat, Coming is 300s (no auto-sit), Can't releases
+- [ ] Banner tap / hold t=0 / I'm in still opens `codsquadapp://chat/<id>`
 
 **Do not claim device Live Activity UI PASS.** This checklist does not
 close Gate 1, AASA, Universal Links, or any other gate.

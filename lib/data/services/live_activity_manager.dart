@@ -13,6 +13,36 @@ class LiveActivityManager {
   LiveActivityManager._internal();
 
   bool _isSupported = false;
+  static bool _incomingBound = false;
+
+  /// Native→Dart handler on `com.squadsync/live_activities`.
+  /// Fill PIN lock-screen intents register via `ensureChannelBound`.
+  static Future<dynamic> Function(MethodCall call)? incomingHandler;
+
+  @visibleForTesting
+  static void resetIncomingHandler() {
+    incomingHandler = null;
+    _incomingBound = false;
+  }
+
+  /// Listen for `fillPinAction` and ask native to drain the App Group inbox.
+  void bindIncomingFillPinActions() {
+    if (_incomingBound) return;
+    _incomingBound = true;
+    _channel.setMethodCallHandler((call) async {
+      return incomingHandler?.call(call);
+    });
+    _drainFillPinActions();
+  }
+
+  Future<void> _drainFillPinActions() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod('drainFillPinActions');
+    } catch (e) {
+      debugPrint('⚠️ Fill PIN Live Activity drain skipped: $e');
+    }
+  }
 
   /// Check if Live Activities are supported (iOS 16.1+)
   Future<bool> isSupported() async {

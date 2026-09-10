@@ -7,10 +7,10 @@
 // (pin header already binds).
 //
 // Native start/update/end lives on the existing Runner channel
-// (com.squadsync/live_activities). Lock Screen buttons still need a
-// Widget Extension + App Intents (separate App ID) — not this target,
-// not a bundle ID change. XOR stays planPeacockSelfNotify.
+// (com.squadsync/live_activities). Lock Screen Sit / Coming / Can't
+// buttons live in ios/PeacockLockWidget (App Intents → this channel).
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../chat/fill_pin_thread_header.dart';
 import '../core/deep_link_routes.dart';
@@ -19,6 +19,7 @@ import '../data/services/live_activity_manager.dart';
 import 'coming_hold_machine.dart';
 import 'fill_pin_nudge_audience.dart';
 import 'pin_expire_machine.dart';
+import 'supabase_service.dart';
 
 enum FillPinLiveActivityPhase { open, coming, seated, ended }
 
@@ -521,6 +522,10 @@ class FillPinLiveActivity {
   @visibleForTesting
   static Future<String?> Function(FillPinLiveActivityPlan plan)? invokeHook;
 
+  /// Test hook. Production uses [SupabaseService.currentUserId].
+  @visibleForTesting
+  static String? Function()? currentUidHook;
+
   @visibleForTesting
   static String? get debugActivityId => _activityId;
 
@@ -530,9 +535,41 @@ class FillPinLiveActivity {
   @visibleForTesting
   static void resetTestHooks() {
     invokeHook = null;
+    currentUidHook = null;
     _activityId = null;
     _hold = ComingHoldState.idle;
+    LiveActivityManager.resetIncomingHandler();
   }
+
+  /// Bind Native→Dart `fillPinAction` on the existing LA channel.
+  /// Call once after [WidgetsFlutterBinding.ensureInitialized].
+  static void ensureChannelBound() {
+    LiveActivityManager.incomingHandler = _onIncomingCall;
+    LiveActivityManager().bindIncomingFillPinActions();
+  }
+
+  static Future<dynamic> _onIncomingCall(MethodCall call) async {
+    if (call.method != 'fillPinAction') return null;
+    final raw = call.arguments;
+    if (raw is! Map) return null;
+    await applyIncomingChannelArgs(Map<String, dynamic>.from(raw));
+    return true;
+  }
+
+  /// Lock-screen App Intent payload → [applyChannelAction].
+  static Future<ComingHoldState> applyIncomingChannelArgs(
+    Map<String, dynamic> args,
+  ) {
+    return applyChannelAction(
+      actionId: '${args['actionId'] ?? ''}',
+      chatGroupId: '${args['chatGroupId'] ?? ''}',
+      pinId: _nonEmpty(args['pinId']?.toString()),
+      userId: _nonEmpty(args['userId']?.toString()) ?? _currentUid(),
+    );
+  }
+
+  static String? _currentUid() =>
+      currentUidHook?.call() ?? SupabaseService.currentUserId;
 
   static Future<void> syncFromThread({
     required String chatGroupId,

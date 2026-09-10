@@ -26,6 +26,7 @@ struct PeacockLockAttributes: ActivityAttributes {
 enum PeacockLockLiveActivityBridge {
   static let channelName = "com.squadsync/live_activities"
   private static var registered = false
+  private static var channel: FlutterMethodChannel?
 
   static func register(on messenger: FlutterBinaryMessenger) {
     if registered { return }
@@ -34,9 +35,11 @@ enum PeacockLockLiveActivityBridge {
       name: channelName,
       binaryMessenger: messenger
     )
+    Self.channel = channel
     channel.setMethodCallHandler { call, result in
       handle(call, result: result)
     }
+    FillPinActionRelay.attach(channel: channel)
   }
 
   static func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -55,6 +58,9 @@ enum PeacockLockLiveActivityBridge {
       end(call.arguments, result: result)
     case "endAllActivities":
       endAll(result: result)
+    case "drainFillPinActions":
+      FillPinActionRelay.flush()
+      result(true)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -197,35 +203,13 @@ enum PeacockLockLiveActivityBridge {
   }
 }
 
-/// PIN WAVE P2 — Fill PIN Live Activity attributes on the existing Runner
-/// target. Payload carries Sit / Coming / Can't + Coming mm:ss + chat
-/// deep link. Lock Screen *buttons* + tap-through still need a Widget
-/// Extension + App Intents (`com.example.codSquadApp.FillPinWidget`) —
-/// same peacock gate / identity only. No new target. Source of truth for
-/// Spencer: docs/TESTFLIGHT_CHECKLIST.md §7 — confirm
-/// Activity.request(FillPinAttributes) does not crash on a device-signed
-/// build and payload has actions / actionIds / holdLabel / deepLink.
-/// Do not claim device Live Activity UI PASS.
-struct FillPinAttributes: ActivityAttributes {
-  public struct ContentState: Codable, Hashable {
-    var phase: String
-    var seated: Int
-    var maxSpots: Int
-    var gameName: String
-    var holdLabel: String
-    var holdRemainingSeconds: Int
-    var actions: [String]
-    var actionIds: [String]
-    var title: String
-    var body: String
-    var deepLink: String
-  }
-
-  var pinId: String
-  var chatGroupId: String
-  var lobbyId: String
-}
-
+/// PIN WAVE — Fill PIN Live Activity bridge. Attributes live in
+/// ios/Shared/FillPinAttributes.swift (Runner + PeacockLockWidget).
+/// Lock-screen Sit / Coming / Can't buttons are App Intents in the
+/// widget; taps enqueue FillPinActionInbox and this relay invokes
+/// `fillPinAction` on com.squadsync/live_activities so Dart
+/// applyChannelAction is the only reducer. Spencer clicks:
+/// ios/PeacockLockWidget/SPENCER.txt. Do not claim device UI PASS.
 enum FillPinLiveActivityBridge {
   private static func args(_ raw: Any?) -> [String: Any] {
     raw as? [String: Any] ?? [:]
@@ -339,6 +323,38 @@ enum FillPinLiveActivityBridge {
       } else {
         await activity.update(using: state)
       }
+    }
+  }
+}
+
+/// Runner-only: drain App Group inbox → Flutter `fillPinAction`.
+enum FillPinActionRelay {
+  private static var channel: FlutterMethodChannel?
+  private static var observing = false
+
+  static func attach(channel: FlutterMethodChannel) {
+    self.channel = channel
+    flush()
+    guard !observing else { return }
+    observing = true
+    CFNotificationCenterAddObserver(
+      CFNotificationCenterGetDarwinNotifyCenter(),
+      nil,
+      { _, _, _, _, _ in
+        DispatchQueue.main.async {
+          FillPinActionRelay.flush()
+        }
+      },
+      FillPinActionInbox.darwinName,
+      nil,
+      .deliverImmediately
+    )
+  }
+
+  static func flush() {
+    guard let channel else { return }
+    for item in FillPinActionInbox.drain() {
+      channel.invokeMethod("fillPinAction", arguments: item)
     }
   }
 }

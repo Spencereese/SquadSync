@@ -24,11 +24,13 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'services/background_sync_service.dart';
 import 'services/peacock_notification_service.dart';
 import 'services/auto_merge_service.dart';
+import 'services/fill_pin_live_activity.dart';
 
 void main() async {
   // Preserve native splash screen until we're ready
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  FillPinLiveActivity.ensureChannelBound();
   bindRuntimeHostedLogHandler();
   try {
     await AppEnv.load();

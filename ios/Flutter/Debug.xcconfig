@@ -1,2 +1,5 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
 #include "Generated.xcconfig"
+// Default is simulator (no applinks). Device keeps Runner.entitlements.
+CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*] = Runner/Runner.simulator.entitlements
+CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*] = Runner/Runner.entitlements

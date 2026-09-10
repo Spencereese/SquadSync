@@ -16,6 +16,7 @@ import '../domain/entities/lobby.dart';
 import '../domain/entities/message.dart';
 import '../domain/entities/game.dart';
 import '../core/app_theme.dart';
+import '../core/layout.dart';
 import '../chat/chat_screen.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
@@ -104,8 +105,10 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
         backgroundColor: Colors.black,
         appBar: AppBar(
           title: const Text('Lobbies'),
-          backgroundColor: Colors.black,
+          backgroundColor: const Color(0xFF0B0E14),
+          foregroundColor: Colors.white,
           elevation: 0,
+          systemOverlayStyle: SystemUiOverlayStyle.light,
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -266,16 +269,26 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                   );
                 },
               ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: mainTabClearanceOf(context),
+                ),
+              ),
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showCreatePublicLobbyDialog(context, ref),
-          backgroundColor: Colors.cyanAccent,
-          icon: const Icon(Icons.add, color: Colors.black),
-          label: const Text(
-            'Create Public Lobby',
-            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        floatingActionButton: Padding(
+          padding: EdgeInsets.only(
+            bottom: mainTabClearanceOf(context),
+          ),
+          child: FloatingActionButton.extended(
+            onPressed: () => _showCreatePublicLobbyDialog(context, ref),
+            backgroundColor: Colors.cyanAccent,
+            icon: const Icon(Icons.add, color: Colors.black),
+            label: const Text(
+              'Create Public Lobby',
+              style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+            ),
           ),
         ),
       ),

@@ -1,4 +1,5 @@
 import '../../services/auth_service_supabase.dart';
+import '../../services/supabase_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:squad_sync/domain/entities/app_user.dart';
@@ -106,7 +107,7 @@ class UserRepositoryImpl implements UserRepository {
     if (user == null) return;
 
     // Update Supabase user metadata
-    await Supabase.instance.client.auth.updateUser(
+    await SupabaseService.client.auth.updateUser(
       UserAttributes(data: {'photo_url': url}),
     );
 
@@ -123,7 +124,7 @@ class UserRepositoryImpl implements UserRepository {
     if (user == null) return;
 
     // Update Supabase user metadata
-    await Supabase.instance.client.auth.updateUser(
+    await SupabaseService.client.auth.updateUser(
       UserAttributes(data: {'display_name': name}),
     );
 

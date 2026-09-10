@@ -14,6 +14,14 @@ class TwitchService {
 
   TwitchService(this._dio);
 
+  static bool _isPlaceholderTwitchCred(String? value) {
+    if (value == null) return true;
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return true;
+    final lower = trimmed.toLowerCase();
+    return lower.contains('your_') || lower.startsWith('your');
+  }
+
   Future<void> initialize() async {
     if (_initialized) return;
 
@@ -21,16 +29,19 @@ class TwitchService {
       _clientId = dotenv.env['TWITCH_CLIENT_ID'];
       _clientSecret = dotenv.env['TWITCH_CLIENT_SECRET'];
 
-      if (_clientId == null || _clientSecret == null) {
-        _logger.w('Twitch credentials not found in .env file');
+      if (_isPlaceholderTwitchCred(_clientId) ||
+          _isPlaceholderTwitchCred(_clientSecret)) {
+        _logger.w('Twitch credentials not configured; skipping token');
         return;
       }
 
       await _getAccessToken();
-      _initialized = true;
-      _logger.i('Twitch API initialized successfully');
+      _initialized = _accessToken != null;
+      if (_initialized) {
+        _logger.i('Twitch API initialized successfully');
+      }
     } catch (e) {
-      _logger.e('Failed to initialize Twitch API: $e');
+      _logger.w('Twitch API skipped: token request failed');
       _initialized = false;
     }
   }
@@ -53,9 +64,11 @@ class TwitchService {
         final data = json.decode(response.data!);
         _accessToken = data['access_token'];
       }
+    } on DioException catch (e) {
+      _logger.w(
+          'Twitch token request failed (${e.response?.statusCode ?? e.type})');
     } catch (e) {
-      _logger.e('Error getting Twitch access token: $e');
-      rethrow;
+      _logger.w('Twitch token request failed');
     }
   }
 

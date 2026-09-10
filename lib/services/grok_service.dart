@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:retry/retry.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'grok_concierge_machine.dart';
 
 /// Custom exception for rate limiting
 class RateLimitException implements Exception {}
@@ -120,33 +121,45 @@ class GrokService {
     return message.replaceAll('@grok', '').trim();
   }
 
-  /// Get AI response from Grok for gaming/squad related queries via backend
+  /// Get AI response from Grok for gaming/squad related queries via backend.
+  ///
+  /// Key stays on the server (`XAI_API_KEY`). Optional [command] is one of
+  /// the three concierge ids; the backend ignores unknown commands.
   Future<String> getGrokResponse(
     String userMessage, {
     String? context,
     List<String>? recentMessages,
+    String? command,
   }) async {
     try {
+      final body = <String, dynamic>{
+        'message': userMessage,
+        'context': context,
+        'recentMessages': recentMessages,
+      };
+      final commandId = grokConciergeCommandFromId(command);
+      if (commandId != null) {
+        body['command'] = grokConciergeCommandId(commandId);
+      }
+
       final response = await http.post(
         Uri.parse('$_backendUrl/grok'),
         headers: {
           'Content-Type': 'application/json',
         },
-        body: json.encode({
-          'message': userMessage,
-          'context': context,
-          'recentMessages': recentMessages,
-        }),
+        body: json.encode(body),
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data['response'] ?? _getFallbackResponse(userMessage);
-      } else {
-        _logger.e('Backend error: ${response.statusCode} - ${response.body}');
-        // Return more specific error message
-        return "I'm having trouble connecting to my backend. Is the server running on port 8080?";
       }
+      if (response.statusCode == 429) {
+        _logger.w('Grok budget exceeded: ${response.body}');
+        return kGrokBudgetExceededCopy;
+      }
+      _logger.e('Backend error: ${response.statusCode} - ${response.body}');
+      return "I'm having trouble connecting to my backend. Is the server running on port 8080?";
     } catch (e) {
       _logger.e('Error calling backend Grok API: $e');
       return _getFallbackResponse(userMessage);
@@ -309,11 +322,11 @@ class GrokService {
 
   /// Call API with exponential backoff for rate limits using retry package
   Future<T> _callWithBackoff<T>(Future<T> Function() call) async {
-    final retryOptions = RetryOptions(
+    const retryOptions = RetryOptions(
       maxAttempts: _maxRetries,
       delayFactor: Duration(milliseconds: _baseDelayMs),
       randomizationFactor: 0.25, // Add jitter to avoid thundering herd
-      maxDelay: const Duration(seconds: 10),
+      maxDelay: Duration(seconds: 10),
     );
 
     return retryOptions.retry(

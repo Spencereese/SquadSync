@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/message_display_url.dart';
+
 /// Core message data model to replace the Map<String, dynamic> usage
 class MessageData {
   final String id;
@@ -99,8 +101,9 @@ class MessageData {
       photos: _parsePhotosFromData(data),
       videoUrl: _parseVideoFromData(data),
       audioUrl: _parseAudioFromData(data),
-      mediaUrl: data['media_url'],
-      mediaType: data['media_type'],
+      mediaUrl: resolveMessageDisplayMediaUrl(data),
+      mediaType: data['media_type']?.toString() ??
+          data['mediaType']?.toString(),
       timestamp: (() {
         DateTime parsedTimestamp;
         if (data['timestamp_ms'] is int && data['timestamp_ms'] != 0) {
@@ -108,8 +111,12 @@ class MessageData {
               DateTime.fromMillisecondsSinceEpoch(data['timestamp_ms']);
         } else if (data['timestamp'] is DateTime) {
           parsedTimestamp = data['timestamp'] as DateTime;
-        } else if (data['timestamp'] is String) {
+        } else if (data['timestamp'] is String &&
+            (data['timestamp'] as String).isNotEmpty) {
           parsedTimestamp = DateTime.parse(data['timestamp']);
+        } else if (data['created_at'] is String &&
+            (data['created_at'] as String).isNotEmpty) {
+          parsedTimestamp = DateTime.parse(data['created_at'] as String);
         } else {
           parsedTimestamp = DateTime.now();
         }
@@ -138,25 +145,7 @@ class MessageData {
           ? ClipMessageData.fromJson(data['clipData'] as Map<String, dynamic>)
           : null,
       shouldShowTimestamp: false, // Will be set by message processing logic
-      type: (() {
-        // Infer type from media fields if message_type is wrong in database
-        final mediaUrl = data['media_url'];
-        final mediaType = data['media_type'];
-        MessageType inferredType = MessageType.text;
-
-        if (mediaUrl != null && mediaUrl.toString().isNotEmpty) {
-          if (mediaType == 'image')
-            inferredType = MessageType.image;
-          else if (mediaType == 'video')
-            inferredType = MessageType.video;
-          else if (mediaType == 'audio') inferredType = MessageType.audio;
-        }
-        if (data['pollId'] != null) inferredType = MessageType.poll;
-
-        print(
-            '🔧 Type inference: id=${data['id']}, mediaUrl=$mediaUrl, mediaType=$mediaType → inferredType=$inferredType');
-        return inferredType;
-      })(),
+      type: inferMessageDataType(data),
     );
   }
 
@@ -164,6 +153,8 @@ class MessageData {
   bool get hasContent =>
       text.isNotEmpty ||
       photos.isNotEmpty ||
+      mediaUrl?.isNotEmpty == true ||
+      type == MessageType.image ||
       videoUrl?.isNotEmpty == true ||
       audioUrl?.isNotEmpty == true ||
       pollId?.isNotEmpty == true;
@@ -193,32 +184,30 @@ class MessageData {
     return value.toString();
   }
 
-  /// Parse photos from media_url/media_type format
+  /// Parse photos from media_url, then metadata.photos[0].
   static List<Map<String, dynamic>> _parsePhotosFromData(
       Map<String, dynamic> data) {
-    final mediaUrl = data['media_url'];
-    final mediaType = data['media_type'];
-    final messageType = data['message_type'];
+    final mediaUrl = resolveMessageDisplayMediaUrl(data);
+    final mediaType = data['media_type'] ?? data['mediaType'];
+    final messageType = data['message_type'] ?? data['messageType'];
 
     if (kDebugMode) {
+      final metaPhotos = asMessageMetadataMap(data['metadata'])?['photos'];
       print(
-          '📸 _parsePhotosFromData: mediaUrl=$mediaUrl, mediaType=$mediaType, messageType=$messageType');
+          '📸 _parsePhotosFromData: mediaUrl=$mediaUrl, mediaType=$mediaType, messageType=$messageType, metadata.photos=$metaPhotos');
     }
 
     // Check if media_type is 'image', OR infer from URL extension, OR check message_type
     final isImage = mediaType == 'image' ||
         messageType == 'image' ||
-        (mediaUrl is String &&
+        (mediaUrl != null &&
             (mediaUrl.contains('.jpg') ||
                 mediaUrl.contains('.jpeg') ||
                 mediaUrl.contains('.png') ||
                 mediaUrl.contains('.gif') ||
                 mediaUrl.contains('.webp')));
 
-    if (mediaUrl != null &&
-        mediaUrl is String &&
-        isImage &&
-        mediaUrl.isNotEmpty) {
+    if (mediaUrl != null && isImage && mediaUrl.isNotEmpty) {
       if (kDebugMode) {
         print('✅ Photo parsed: $mediaUrl');
       }
@@ -460,5 +449,61 @@ class ClipMessageData {
 }
 
 enum MessageType { text, image, video, audio, poll, clip, system }
+
+/// Prefer explicit media_type / message_type / metadata over a null media_url.
+MessageType inferMessageDataType(Map<String, dynamic> data) {
+  if (data['pollId'] != null || data['poll_id'] != null) {
+    return MessageType.poll;
+  }
+  final mediaType =
+      '${data['media_type'] ?? data['mediaType'] ?? ''}'.toLowerCase();
+  final messageType =
+      '${data['message_type'] ?? data['messageType'] ?? ''}'.toLowerCase();
+  final fromMedia = _normalizeMediaKind(mediaType);
+  if (fromMedia != null) return fromMedia;
+  final fromDeclared = _normalizeMediaKind(messageType);
+  if (fromDeclared != null) return fromDeclared;
+  final fromMeta = _mediaKindFromMetadata(data['metadata']);
+  if (fromMeta != null) return fromMeta;
+  final mediaUrl = data['media_url'] ?? data['mediaUrl'];
+  if (mediaUrl is String && mediaUrl.isNotEmpty) {
+    final lower = mediaUrl.toLowerCase();
+    if (lower.contains('.jpg') ||
+        lower.contains('.jpeg') ||
+        lower.contains('.png') ||
+        lower.contains('.gif') ||
+        lower.contains('.webp')) {
+      return MessageType.image;
+    }
+    if (lower.contains('.mp4') || lower.contains('.mov') || lower.contains('.webm')) {
+      return MessageType.video;
+    }
+    if (lower.contains('.m4a') || lower.contains('.mp3') || lower.contains('.wav')) {
+      return MessageType.audio;
+    }
+  }
+  return MessageType.text;
+}
+
+MessageType? _normalizeMediaKind(String raw) {
+  if (raw.contains('image') || raw == 'photo' || raw == 'photos') {
+    return MessageType.image;
+  }
+  if (raw.contains('video')) return MessageType.video;
+  if (raw.contains('audio') || raw.contains('voice')) return MessageType.audio;
+  if (raw.contains('clip')) return MessageType.clip;
+  return null;
+}
+
+MessageType? _mediaKindFromMetadata(Object? metadata) {
+  if (metadata is! Map) return null;
+  final type = _normalizeMediaKind(
+    '${metadata['media_type'] ?? metadata['mediaType'] ?? metadata['type'] ?? ''}',
+  );
+  if (type != null) return type;
+  final photos = metadata['photos'];
+  if (photos is List && photos.isNotEmpty) return MessageType.image;
+  return null;
+}
 
 enum MessageStatus { sending, sent, delivered, read, failed }

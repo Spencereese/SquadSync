@@ -80,9 +80,8 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
   }
 
   bool _isImageOnlyMessage() {
-    return (widget.messageData.mediaUrl?.isNotEmpty == true &&
-            (widget.messageData.mediaType == 'image' ||
-                widget.messageData.type == models.MessageType.image)) &&
+    return (widget.messageData.mediaType == 'image' ||
+            widget.messageData.type == models.MessageType.image) &&
         (widget.messageData.text?.isEmpty ?? true) &&
         (widget.messageData.pollId?.isEmpty ?? true);
   }

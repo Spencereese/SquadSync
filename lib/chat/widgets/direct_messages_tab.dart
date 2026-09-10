@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
+import '../../core/chat_list_loader.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
+import '../../widgets/chat_surface_feedback.dart';
 import '../chat_screen.dart';
 import '../dialogs/add_friend_dialog.dart';
 import '../../domain/entities/message.dart';
 import '../../utils.dart';
 
-class DirectMessagesTab extends ConsumerWidget {
+class DirectMessagesTab extends ConsumerStatefulWidget {
   const DirectMessagesTab({super.key});
+
+  @override
+  ConsumerState<DirectMessagesTab> createState() => _DirectMessagesTabState();
+}
+
+class _DirectMessagesTabState extends ConsumerState<DirectMessagesTab> {
+  int _loadGeneration = 0;
 
   String _formatTime(DateTime time) {
     final now = DateTime.now();
@@ -62,106 +70,68 @@ class DirectMessagesTab extends ConsumerWidget {
     );
   }
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final supabase.User currentUser = AuthServiceSupabase().currentUser!;
-
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      key: ValueKey('dm_list_${currentUser.id}'),
-      future: SupabaseService.client
+  Future<ChatListLoad<Map<String, dynamic>>> _loadDms() {
+    return loadChatList(fetch: () async {
+      final currentUser = AuthServiceSupabase().currentUser;
+      if (currentUser == null) return <Map<String, dynamic>>[];
+      final rows = await SupabaseService.client
           .from('chat_groups')
           .select()
           .contains('member_uids', [currentUser.id])
           .eq('is_dm', true)
-          .order('updated_at', ascending: false),
+          .order('updated_at', ascending: false);
+      return List<Map<String, dynamic>>.from(rows as List);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentUser = AuthServiceSupabase().currentUser;
+
+    return FutureBuilder<ChatListLoad<Map<String, dynamic>>>(
+      key: ValueKey('dm_list_${currentUser?.id}_$_loadGeneration'),
+      future: _loadDms(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              'Error: ${snapshot.error}',
-              style: const TextStyle(color: Colors.white),
-            ),
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const ChatSurfaceFeedback(
+            kind: ChatSurfaceKind.list,
+            phase: ChatSurfacePhase.loading,
           );
         }
 
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.cyanAccent),
+        if (snapshot.hasError || snapshot.data?.hasError == true) {
+          return ChatSurfaceFeedback(
+            kind: ChatSurfaceKind.list,
+            phase: ChatSurfacePhase.error,
+            error: snapshot.error ?? snapshot.data?.error,
+            onRetry: () => setState(() => _loadGeneration++),
           );
         }
 
-        final chats = snapshot.data ?? [];
+        final chats = snapshot.data?.items ?? [];
         final dmChats = chats.where((data) {
           final participants = List<String>.from(data['participants'] ?? []);
           return participants.length == 2;
         }).toList();
 
         if (dmChats.isEmpty) {
-          return Container(
-            color: Colors.black,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.message,
-                    size: 64,
-                    color: Colors.grey[600],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No direct messages yet',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Add a friend to start chatting!',
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                      fontSize: 16,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 32),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.cyanAccent,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: InkWell(
-                      onTap: () => _showAddFriendDialog(context),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.person_add,
-                            color: Colors.black,
-                            size: 20,
-                          ),
-                          SizedBox(width: 8),
-                          Text(
-                            'Add Friend',
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          return ChatSurfaceFeedback(
+            kind: ChatSurfaceKind.list,
+            phase: ChatSurfacePhase.empty,
+            message: 'No direct messages yet',
+            hint: 'Add a friend to start chatting!',
+            onAction: () => _showAddFriendDialog(context),
+            actionLabel: 'Add Friend',
+          );
+        }
+
+        if (currentUser == null) {
+          return ChatSurfaceFeedback(
+            kind: ChatSurfaceKind.list,
+            phase: ChatSurfacePhase.error,
+            error: 'Not signed in',
+            onRetry: () => setState(() => _loadGeneration++),
           );
         }
 

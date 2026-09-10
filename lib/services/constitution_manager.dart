@@ -1,13 +1,70 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../domain/entities/constitution.dart';
+import 'supabase_service.dart';
 
 /// Manages constitution enforcement and rule violations
 class ConstitutionManager {
   final SupabaseClient _supabase;
 
+  /// Prefer an injected [supabase] (Riverpod / tests). The no-arg path uses
+  /// [SupabaseService.maybeClient] and throws a clear [StateError] when
+  /// uninitialized — never [Supabase.instance] assert in a harness.
   ConstitutionManager({SupabaseClient? supabase})
-      : _supabase = supabase ?? Supabase.instance.client;
+      : _supabase = supabase ?? _clientOrThrow();
+
+  static SupabaseClient _clientOrThrow() {
+    final client = SupabaseService.maybeClient;
+    if (client == null) {
+      throw StateError(
+        'ConstitutionManager requires an injected SupabaseClient '
+        '(or initialized SupabaseService). Override '
+        'constitutionManagerProvider in unit tests — do not construct '
+        'against Supabase.instance.',
+      );
+    }
+    return client;
+  }
+
+  /// Authenticated uid, or null when there is no session.
+  String? get currentUserId => _supabase.auth.currentUser?.id;
+
+  /// Payload for a yes/no vote update. Pure — no network.
+  static Map<String, dynamic> voteUpdatePayload({
+    required Map<String, bool> existingVotes,
+    required String userId,
+    required bool yes,
+  }) {
+    final updatedVotes = Map<String, bool>.from(existingVotes);
+    updatedVotes[userId] = yes;
+    return {
+      'votes': updatedVotes,
+      'vote_count_yes': updatedVotes.values.where((v) => v).length,
+      'vote_count_no': updatedVotes.values.where((v) => !v).length,
+    };
+  }
+
+  /// Record [yes] for the current user on [vote].
+  Future<void> submitVote({
+    required ConstitutionVote vote,
+    required bool yes,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) {
+      throw StateError(
+        'Cannot submit constitution vote: no authenticated user.',
+      );
+    }
+    final payload = voteUpdatePayload(
+      existingVotes: vote.votes,
+      userId: userId,
+      yes: yes,
+    );
+    await _supabase
+        .from('constitution_votes')
+        .update(payload)
+        .eq('id', vote.id);
+  }
 
   /// Get active constitution for a chat group
   Future<ChatConstitution?> getActiveConstitution(String chatGroupId) async {

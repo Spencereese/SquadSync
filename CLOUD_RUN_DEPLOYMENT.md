@@ -30,7 +30,7 @@ gcloud run deploy squadsync-backend \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars="XAI_API_KEY=xai-YOUR_ACTUAL_XAI_API_KEY_HERE,IGDB_CLIENT_ID=yq7hidzec8wv7khe9niom9m6znzrxf,IGDB_CLIENT_SECRET=4ycghqkzf2ylgxbilypdxu4ga937u5,SUPABASE_URL=https://sfckxrnoiwetmzdycqaa.supabase.co,SUPABASE_ANON_KEY=sb_publishable_mQA06ZY-kIYL4XTnoHh6ag_Qg_7Nbwp" \
+  --set-env-vars="XAI_API_KEY=YOUR_XAI_API_KEY,IGDB_CLIENT_ID=YOUR_IGDB_CLIENT_ID,IGDB_CLIENT_SECRET=YOUR_IGDB_CLIENT_SECRET,SUPABASE_URL=https://YOUR_PROJECT.supabase.co,SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY" \
   --memory 512Mi \
   --cpu 1 \
   --timeout 60s
@@ -85,7 +85,7 @@ curl -X POST https://your-backend-url.run.app/generate-agora-token \
   -d '{
     "channelName": "test-channel",
     "uid": 12345,
-    "certificate": "1398dec50cc54ca5ade6aaf449324629"
+    "certificate": "YOUR_AGORA_APP_CERTIFICATE"
   }'
 ```
 
@@ -118,11 +118,11 @@ Your backend will have these environment variables set:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
-| `XAI_API_KEY` | `xai-BPhjjcIak...` | Grok AI smart replies |
-| `IGDB_CLIENT_ID` | `yq7hidzec8...` | Game search |
-| `IGDB_CLIENT_SECRET` | `4ycghqkzf...` | Game search auth |
-| `SUPABASE_URL` | `https://sfckxrnoiwet...` | Database |
-| `SUPABASE_ANON_KEY` | `sb_publishable_mQA...` | Auth |
+| `XAI_API_KEY` | `YOUR_XAI_API_KEY` | Grok AI smart replies |
+| `IGDB_CLIENT_ID` | `YOUR_IGDB_CLIENT_ID` | Game search |
+| `IGDB_CLIENT_SECRET` | `YOUR_IGDB_CLIENT_SECRET` | Game search auth |
+| `SUPABASE_URL` | `https://YOUR_PROJECT.supabase.co` | Database |
+| `SUPABASE_ANON_KEY` | `YOUR_SUPABASE_ANON_KEY` | Auth |
 | `PORT` | `8080` (auto-set) | Cloud Run port |
 
 ---
@@ -141,7 +141,7 @@ gcloud run deploy squadsync-backend \
 ```bash
 gcloud run services update squadsync-backend \
   --region us-central1 \
-  --update-env-vars="XAI_API_KEY=new-key-here"
+  --update-env-vars="XAI_API_KEY=YOUR_XAI_API_KEY"
 ```
 
 ### View Current Config

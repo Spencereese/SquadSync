@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../services/lobby_seat_status.dart';
+import '../services/peacock_assignment_machine.dart';
+import '../services/preferred_peacock_games.dart';
+import 'widgets/lobby_seat_affordance.dart';
 
 class PeacockTimerDisplay extends ConsumerStatefulWidget {
   final String player;
@@ -36,13 +40,12 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
         final interpolated = timerDuration;
         final progress = interpolated.inSeconds / _totalDuration.inSeconds;
 
-        // Update formatted time
-        final minutes = interpolated.inMinutes;
-        final seconds = interpolated.inSeconds % 60;
-        final formatted =
-            '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+        final queueAssigned = peacockPhaseIsAssigned(
+          PeacockAssignmentTracker.instance.stateFor(widget.player),
+        );
 
-        // Haptic feedback on expiration
+        // Haptic feedback on expiration. Server still assigns via
+        // process_expired_timers; this is display only.
         if (interpolated == Duration.zero && !_hasExpired) {
           _hasExpired = true;
           HapticFeedback.vibrate();
@@ -58,15 +61,9 @@ class _PeacockTimerDisplayState extends ConsumerState<PeacockTimerDisplay> {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              formatted,
-              style: TextStyle(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
-                fontSize: 12,
-              ),
+            LockTimerReadout(
+              remaining: interpolated,
+              queueAssigned: queueAssigned,
             ),
             const SizedBox(height: 4),
             SizedBox(
@@ -210,50 +207,7 @@ class PeacockWidgets {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Column(
         children: [
-          // Preferred Games Section
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              border:
-                  Border(bottom: BorderSide(color: Colors.grey, width: 0.5)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Preferred Peacock Games',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.cyanAccent,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [].map((game) {
-                    // squadState.availableGames
-                    final gameName = game['name'] as String;
-                    const isPreferred =
-                        false; // squadState.preferredPeacockGames.contains(gameName)
-                    return FilterChip(
-                      label: Text(gameName),
-                      selected: isPreferred,
-                      onSelected: (selected) {
-                        // if (selected) {
-                        //   squadState.addPreferredPeacockGame(gameName);
-                        // } else {
-                        //   squadState.removePreferredPeacockGame(gameName);
-                        // }
-                      },
-                      backgroundColor: Colors.grey[800],
-                      selectedColor: Colors.cyanAccent.withValues(alpha: 0.3),
-                      checkmarkColor: Colors.cyanAccent,
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ),
+          const PreferredPeacockGamesSection(),
           // Members List
           ListView.builder(
             shrinkWrap: true,
@@ -263,6 +217,213 @@ class PeacockWidgets {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Existing Preferred Peacock Games chips. Persist + filter only.
+class PreferredPeacockGamesSection extends ConsumerWidget {
+  const PreferredPeacockGamesSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final squadState = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
+    final games = preferredPeacockGameChoices(squadState);
+    final preferred = resolvedPreferredPeacockGames(squadState);
+    final store = PreferredPeacockGamesStore.instance;
+    final offers = PeacockAssignmentTracker.instance.snapshot.values
+        .where((state) => state.phase != PeacockAssignmentPhase.idle)
+        .map((state) => state.gameName);
+    final filter = mapPreferredPeacockFilter(
+      preferredPeacockGames: preferred,
+      offerGameNames: offers,
+      error: store.lastError,
+    );
+    return PreferredPeacockGamesChips(
+      games: games,
+      preferred: preferred,
+      filter: filter,
+      onRetry: () {
+        ref
+            .read(ln.lobbyNotifierProvider.notifier)
+            .retryPreferredPeacockGames();
+      },
+      onToggle: (gameName) {
+        ref
+            .read(ln.lobbyNotifierProvider.notifier)
+            .togglePreferredPeacockGame(gameName);
+      },
+    );
+  }
+}
+
+class PreferredPeacockGamesChips extends StatelessWidget {
+  const PreferredPeacockGamesChips({
+    super.key,
+    required this.games,
+    required this.preferred,
+    required this.onToggle,
+    this.filter,
+    this.error,
+    this.offerGameNames = const [],
+    this.onRetry,
+  });
+
+  static const titleLabel = kPreferredPeacockGamesTitle;
+  static const emptyLabel = kPreferredPeacockFilterNoCatalogCopy;
+
+  final List<String> games;
+  final Set<String> preferred;
+  final ValueChanged<String> onToggle;
+  final PreferredPeacockFilterResult? filter;
+  final Object? error;
+  final Iterable<String?> offerGameNames;
+  final VoidCallback? onRetry;
+
+  PreferredPeacockFilterResult get _filter =>
+      filter ??
+      mapPreferredPeacockFilter(
+        preferredPeacockGames: preferred,
+        offerGameNames: offerGameNames,
+        error: error,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final mapped = _filter;
+    final theme = Theme.of(context);
+    final failed = mapped.isFailed;
+    final statusColor = failed ? theme.colorScheme.error : Colors.white70;
+    return Container(
+      key: const Key('preferred-peacock-games'),
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey, width: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            titleLabel,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.cyanAccent,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (failed) ...[
+            _PreferredPeacockFilterStatus(
+              result: mapped,
+              color: statusColor,
+              onRetry: onRetry,
+            ),
+            if (games.isNotEmpty) const SizedBox(height: 8),
+          ] else if (games.isEmpty)
+            const Text(
+              emptyLabel,
+              key: Key('preferred-peacock-games-empty'),
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          if (games.isNotEmpty) ...[
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final gameName in games)
+                  FilterChip(
+                    key: Key('preferred-peacock-game-$gameName'),
+                    label: Text(gameName),
+                    selected: preferred.contains(gameName),
+                    onSelected: (_) => onToggle(gameName),
+                    backgroundColor: Colors.grey[800],
+                    selectedColor: Colors.cyanAccent.withValues(alpha: 0.3),
+                    checkmarkColor: Colors.cyanAccent,
+                  ),
+              ],
+            ),
+            if (!failed && mapped.isEmpty) ...[
+              const SizedBox(height: 8),
+              _PreferredPeacockFilterStatus(
+                result: mapped,
+                color: statusColor,
+                onRetry: onRetry,
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PreferredPeacockFilterStatus extends StatelessWidget {
+  const _PreferredPeacockFilterStatus({
+    required this.result,
+    required this.color,
+    this.onRetry,
+  });
+
+  final PreferredPeacockFilterResult result;
+  final Color color;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final hint = preferredPeacockFilterHint(result);
+    final detail =
+        result.isFailed ? preferredPeacockFilterErrorDetail(result.error) : '';
+    final showRetry = result.isFailed && onRetry != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          preferredPeacockFilterMessage(result),
+          key: preferredPeacockFilterKey(result),
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (hint != null && hint.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            hint,
+            key: preferredPeacockFilterHintKey(result),
+            style: TextStyle(
+              color: color.withValues(alpha: 0.85),
+              fontSize: 12,
+            ),
+          ),
+        ],
+        if (detail.isNotEmpty &&
+            detail != preferredPeacockFilterMessage(result)) ...[
+          const SizedBox(height: 2),
+          Text(
+            detail,
+            key: preferredPeacockFilterDetailKey(),
+            style: TextStyle(
+              color: color.withValues(alpha: 0.7),
+              fontSize: 12,
+            ),
+          ),
+        ],
+        if (showRetry)
+          TextButton(
+            key: preferredPeacockFilterRetryKey(),
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: color,
+              minimumSize: const Size(88, 44),
+              padding: EdgeInsets.zero,
+              alignment: Alignment.centerLeft,
+              textStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: const Text(kPreferredPeacockFilterRetryLabel),
+          ),
+      ],
     );
   }
 }

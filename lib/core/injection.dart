@@ -18,7 +18,10 @@ import 'package:squad_sync/domain/repositories/game_repository.dart';
 import 'package:squad_sync/services/igdb_auth_service.dart';
 import 'package:squad_sync/services/friends_service.dart';
 import 'package:squad_sync/services/error_handling_service.dart';
+import 'package:squad_sync/services/constitution_manager.dart';
+import 'package:squad_sync/services/supabase_service.dart';
 import 'package:squad_sync/services/auto_merge_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 
 // System imports
@@ -31,6 +34,7 @@ import 'package:squad_sync/domain/repositories/system_repository.dart';
 import 'package:squad_sync/data/datasources/lobby_local_datasource.dart';
 import 'package:squad_sync/data/datasources/lobby_remote_datasource.dart';
 import 'package:squad_sync/data/repositories/lobby_repository_impl.dart';
+import 'package:squad_sync/data/repositories/matchmaking_queue_repository.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 
 // Chat imports
@@ -182,6 +186,12 @@ final chatRepositoryProvider =
     Provider<ChatRepository>((ref) => getIt<ChatRepository>());
 final lobbyRepositoryProvider =
     Provider<LobbyRepository>((ref) => getIt<LobbyRepository>());
+final matchmakingQueueRepositoryProvider =
+    Provider<MatchmakingQueueRepository>(
+  (ref) => MatchmakingQueueRepositoryImpl(
+    client: SupabaseService.maybeClient,
+  ),
+);
 final systemRepositoryProvider =
     Provider<SystemRepository>((ref) => getIt<SystemRepository>());
 final gameRepositoryProvider =
@@ -192,8 +202,35 @@ final chatRemoteDataSourceProvider =
     Provider<ChatRemoteDataSource>((ref) => getIt<ChatRemoteDataSource>());
 
 // Service providers
-final errorHandlingServiceProvider =
-    Provider<ErrorHandlingService>((ref) => getIt<ErrorHandlingService>());
+final errorHandlingServiceProvider = Provider<ErrorHandlingService>((ref) {
+  if (getIt.isRegistered<ErrorHandlingService>()) {
+    return getIt<ErrorHandlingService>();
+  }
+  // Unit tests override this; fallback avoids GetIt NotRegisteredError when
+  // a harness forgets the override.
+  return ErrorHandlingService();
+});
+
+/// Live Supabase client. Throws [StateError] when init was skipped —
+/// never [Supabase.instance] assert in unit harnesses. Override in tests
+/// that need a client; most suites override [constitutionManagerProvider]
+/// instead and never read this.
+final supabaseClientProvider = Provider<SupabaseClient>((ref) {
+  final client = SupabaseService.maybeClient;
+  if (client == null) {
+    throw StateError(
+      'Supabase client is not initialized. '
+      'Call SupabaseService.initialize() or override supabaseClientProvider.',
+    );
+  }
+  return client;
+});
+
+/// Constitution enforcement. Default injects [supabaseClientProvider].
+/// Override in unit tests so harnesses never touch a live client.
+final constitutionManagerProvider = Provider<ConstitutionManager>((ref) {
+  return ConstitutionManager(supabase: ref.watch(supabaseClientProvider));
+});
 
 // Notifier providers are defined in their respective files (Riverpod 3.0):
 // - lobbyNotifierProvider in lobby_notifier.dart

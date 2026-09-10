@@ -53,6 +53,7 @@ abstract class LobbyRepository {
     String? notes,
   });
   Future<Map<String, dynamic>> getLobbyStats(String lobbyId);
+  Future<List<Map<String, dynamic>>> getMatchHistory(String lobbyId);
 
   // Invite management
   Future<void> createInvite(Map<String, dynamic> inviteData);

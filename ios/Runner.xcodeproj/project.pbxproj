@@ -13,6 +13,17 @@
 		3ADE59B60F056372A18A8847 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 533780A539398C29B630FE90 /* Pods_Runner.framework */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
+		8C4E1A2B3D5F708192A3B4C6 /* PeacockLockLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C4E1A2B3D5F708192A3B4C5 /* PeacockLockLiveActivity.swift */; };
+		F11F0100A1B2C3D4E5F60002 /* FillPinAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F60001 /* FillPinAttributes.swift */; };
+		F11F0100A1B2C3D4E5F60003 /* FillPinAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F60001 /* FillPinAttributes.swift */; };
+		F11F0100A1B2C3D4E5F60005 /* FillPinActionInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F60004 /* FillPinActionInbox.swift */; };
+		F11F0100A1B2C3D4E5F60006 /* FillPinActionInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F60004 /* FillPinActionInbox.swift */; };
+		F11F0100A1B2C3D4E5F60008 /* FillPinLiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F60007 /* FillPinLiveActivityIntents.swift */; };
+		F11F0100A1B2C3D4E5F60009 /* FillPinLiveActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F60007 /* FillPinLiveActivityIntents.swift */; };
+		F11F0100A1B2C3D4E5F6000B /* PeacockLockWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F6000A /* PeacockLockWidget.swift */; };
+		F11F0100A1B2C3D4E5F60010 /* PeacockLockWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F6000F /* PeacockLockWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		F11F0100A1B2C3D4E5F6001F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F6001E /* WidgetKit.framework */; };
+		F11F0100A1B2C3D4E5F60021 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F11F0100A1B2C3D4E5F60020 /* SwiftUI.framework */; };
 		7FEE75F82D985FA600BAC751 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 7FEE75F72D985FA600BAC751 /* GoogleService-Info.plist */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -27,6 +38,13 @@
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
 		};
+		F11F0100A1B2C3D4E5F6001C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F11F0100A1B2C3D4E5F60012;
+			remoteInfo = PeacockLockWidget;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -38,6 +56,17 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F11F0100A1B2C3D4E5F60011 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F11F0100A1B2C3D4E5F60010 /* PeacockLockWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -52,9 +81,22 @@
 		533780A539398C29B630FE90 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		8C4E1A2B3D5F708192A3B4C5 /* PeacockLockLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeacockLockLiveActivity.swift; sourceTree = "<group>"; };
+		F11F0100A1B2C3D4E5F60001 /* FillPinAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillPinAttributes.swift; sourceTree = "<group>"; };
+		F11F0100A1B2C3D4E5F60004 /* FillPinActionInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillPinActionInbox.swift; sourceTree = "<group>"; };
+		F11F0100A1B2C3D4E5F60007 /* FillPinLiveActivityIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillPinLiveActivityIntents.swift; sourceTree = "<group>"; };
+		F11F0100A1B2C3D4E5F6000A /* PeacockLockWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeacockLockWidget.swift; sourceTree = "<group>"; };
+		F11F0100A1B2C3D4E5F6000C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F11F0100A1B2C3D4E5F6000D /* PeacockLockWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PeacockLockWidget.entitlements; sourceTree = "<group>"; };
+		F11F0100A1B2C3D4E5F6000E /* PeacockLockWidget.simulator.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PeacockLockWidget.simulator.entitlements; sourceTree = "<group>"; };
+		F11F0100A1B2C3D4E5F6000F /* PeacockLockWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PeacockLockWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F11F0100A1B2C3D4E5F6001E /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		F11F0100A1B2C3D4E5F60020 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		7FEE75F72D985FA600BAC751 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		7FEE75F92D98629500BAC751 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
+		7FEE75FA2D98629600BAC751 /* Runner.simulator.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.simulator.entitlements; sourceTree = "<group>"; };
+		7FEE75FB2D98629700BAC752 /* Info.simulator.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.simulator.plist; sourceTree = "<group>"; };
 		8EBF524AA6948F061C1AB3D6 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		92D82DB01D3EE7EC156DBAA8 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
@@ -87,6 +129,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F11F0100A1B2C3D4E5F60015 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F11F0100A1B2C3D4E5F6001F /* WidgetKit.framework in Frameworks */,
+				F11F0100A1B2C3D4E5F60021 /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -114,6 +165,8 @@
 			children = (
 				9740EEB11CF90186004384FC /* Flutter */,
 				97C146F01CF9000F007C117D /* Runner */,
+				F11F0100A1B2C3D4E5F60016 /* Shared */,
+				F11F0100A1B2C3D4E5F60017 /* PeacockLockWidget */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				F4BED18B903F2C36DDA8E418 /* Pods */,
@@ -126,22 +179,47 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				F11F0100A1B2C3D4E5F6000F /* PeacockLockWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		F11F0100A1B2C3D4E5F60016 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F11F0100A1B2C3D4E5F60001 /* FillPinAttributes.swift */,
+				F11F0100A1B2C3D4E5F60004 /* FillPinActionInbox.swift */,
+				F11F0100A1B2C3D4E5F60007 /* FillPinLiveActivityIntents.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		F11F0100A1B2C3D4E5F60017 /* PeacockLockWidget */ = {
+			isa = PBXGroup;
+			children = (
+				F11F0100A1B2C3D4E5F6000A /* PeacockLockWidget.swift */,
+				F11F0100A1B2C3D4E5F6000C /* Info.plist */,
+				F11F0100A1B2C3D4E5F6000D /* PeacockLockWidget.entitlements */,
+				F11F0100A1B2C3D4E5F6000E /* PeacockLockWidget.simulator.entitlements */,
+			);
+			path = PeacockLockWidget;
 			sourceTree = "<group>";
 		};
 		97C146F01CF9000F007C117D /* Runner */ = {
 			isa = PBXGroup;
 			children = (
 				7FEE75F92D98629500BAC751 /* Runner.entitlements */,
+				7FEE75FA2D98629600BAC751 /* Runner.simulator.entitlements */,
 				7FEE75F72D985FA600BAC751 /* GoogleService-Info.plist */,
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
 				97C146FD1CF9000F007C117D /* Assets.xcassets */,
 				97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */,
 				97C147021CF9000F007C117D /* Info.plist */,
+				7FEE75FB2D98629700BAC752 /* Info.simulator.plist */,
 				1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */,
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
+				8C4E1A2B3D5F708192A3B4C5 /* PeacockLockLiveActivity.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -152,6 +230,8 @@
 			children = (
 				533780A539398C29B630FE90 /* Pods_Runner.framework */,
 				92D82DB01D3EE7EC156DBAA8 /* Pods_RunnerTests.framework */,
+				F11F0100A1B2C3D4E5F6001E /* WidgetKit.framework */,
+				F11F0100A1B2C3D4E5F60020 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -195,24 +275,45 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
+				A3F1C0DE5C0AD51BE5C00001 /* Copy GoogleService-Info if missing */,
 				71D7FF09F39BFC55EB17D808 /* [CP] Check Pods Manifest.lock */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				F11F0100A1B2C3D4E5F60011 /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
+				7FEE75FC2D98629800BAC753 /* Strip sim associated-domains */,
 				64CFBA277D694A7BA0A2FEC8 /* [CP] Embed Pods Frameworks */,
 				2C792992A946C736CC2B4E73 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F11F0100A1B2C3D4E5F6001D /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		F11F0100A1B2C3D4E5F60012 /* PeacockLockWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F11F0100A1B2C3D4E5F6001B /* Build configuration list for PBXNativeTarget "PeacockLockWidget" */;
+			buildPhases = (
+				F11F0100A1B2C3D4E5F60013 /* Sources */,
+				F11F0100A1B2C3D4E5F60015 /* Frameworks */,
+				F11F0100A1B2C3D4E5F60014 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PeacockLockWidget;
+			productName = PeacockLockWidget;
+			productReference = F11F0100A1B2C3D4E5F6000F /* PeacockLockWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -232,6 +333,9 @@
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
 					};
+					F11F0100A1B2C3D4E5F60012 = {
+						CreatedOnToolsVersion = 16.0;
+					};
 				};
 			};
 			buildConfigurationList = 97C146E91CF9000F007C117D /* Build configuration list for PBXProject "Runner" */;
@@ -249,12 +353,20 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				F11F0100A1B2C3D4E5F60012 /* PeacockLockWidget */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		331C807F294A63A400263BE5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F11F0100A1B2C3D4E5F60014 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -276,6 +388,23 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A3F1C0DE5C0AD51BE5C00001 /* Copy GoogleService-Info if missing */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Runner/GoogleService-Info.plist.example",
+			);
+			name = "Copy GoogleService-Info if missing";
+			outputPaths = (
+				"$(SRCROOT)/Runner/GoogleService-Info.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "PLIST=\"${SRCROOT}/Runner/GoogleService-Info.plist\"\nEXAMPLE=\"${SRCROOT}/Runner/GoogleService-Info.plist.example\"\nif [ ! -f \"$PLIST\" ] && [ -f \"$EXAMPLE\" ]; then\n  cp \"$EXAMPLE\" \"$PLIST\"\nfi\n";
+		};
 		2C792992A946C736CC2B4E73 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -292,6 +421,21 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources.sh\"\n";
 			showEnvVarsInLog = 0;
+		};
+		7FEE75FC2D98629800BAC753 /* Strip sim associated-domains */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Strip sim associated-domains";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$PLATFORM_NAME\" != \"iphonesimulator\" ]; then exit 0; fi\necho \"Cod Squad: sim CODE_SIGN_ENTITLEMENTS=${CODE_SIGN_ENTITLEMENTS}\"\nstrip_domains() {\n  f=\"$1\"\n  [ -f \"$f\" ] || return 0\n  if /usr/libexec/PlistBuddy -c \"Print :com.apple.developer.associated-domains\" \"$f\" >/dev/null 2>&1; then\n    /usr/libexec/PlistBuddy -c \"Delete :com.apple.developer.associated-domains\" \"$f\" || true\n    echo \"Cod Squad: stripped associated-domains from $f\"\n  fi\n}\nstrip_domains \"${TARGET_TEMP_DIR}/${PRODUCT_NAME}.xcent\"\nstrip_domains \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app.xcent\"\nstrip_domains \"${TARGET_BUILD_DIR}/${WRAPPER_NAME}/archived-expanded-entitlements.xcent\"\ncase \"${CODE_SIGN_ENTITLEMENTS}\" in\n  *Runner.simulator.entitlements) ;;\n  *Runner.entitlements) echo \"warning: Cod Squad sim used device entitlements; expected Runner.simulator.entitlements\" ;;\nesac\nexit 0\n";
 		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -401,7 +545,22 @@
 			buildActionMask = 2147483647;
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
+				8C4E1A2B3D5F708192A3B4C6 /* PeacockLockLiveActivity.swift in Sources */,
+				F11F0100A1B2C3D4E5F60002 /* FillPinAttributes.swift in Sources */,
+				F11F0100A1B2C3D4E5F60005 /* FillPinActionInbox.swift in Sources */,
+				F11F0100A1B2C3D4E5F60008 /* FillPinLiveActivityIntents.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F11F0100A1B2C3D4E5F60013 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F11F0100A1B2C3D4E5F6000B /* PeacockLockWidget.swift in Sources */,
+				F11F0100A1B2C3D4E5F60003 /* FillPinAttributes.swift in Sources */,
+				F11F0100A1B2C3D4E5F60006 /* FillPinActionInbox.swift in Sources */,
+				F11F0100A1B2C3D4E5F60009 /* FillPinLiveActivityIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -412,6 +571,11 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		F11F0100A1B2C3D4E5F6001D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F11F0100A1B2C3D4E5F60012 /* PeacockLockWidget */;
+			targetProxy = F11F0100A1B2C3D4E5F6001C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -483,7 +647,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
 			};
@@ -495,19 +659,22 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-				CURRENT_PROJECT_VERSION = 420;
-				DEVELOPMENT_TEAM = K4ZTXPQ8J9;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.simulator.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Runner/Runner.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Runner/Runner.simulator.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = SquadSync;
+				"INFOPLIST_FILE[sdk=iphonesimulator*]" = Runner/Info.simulator.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Cod Squad";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.69;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.codSquadApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -673,7 +840,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -687,19 +854,22 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-				CURRENT_PROJECT_VERSION = 420;
-				DEVELOPMENT_TEAM = K4ZTXPQ8J9;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.simulator.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Runner/Runner.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Runner/Runner.simulator.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = SquadSync;
+				"INFOPLIST_FILE[sdk=iphonesimulator*]" = Runner/Info.simulator.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Cod Squad";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.69;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.codSquadApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -709,25 +879,111 @@
 			};
 			name = Debug;
 		};
+		F11F0100A1B2C3D4E5F60018 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB21CF90195004384FC /* Debug.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PeacockLockWidget/PeacockLockWidget.simulator.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = PeacockLockWidget/PeacockLockWidget.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = PeacockLockWidget/PeacockLockWidget.simulator.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PeacockLockWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.codSquadApp.PeacockLockWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F11F0100A1B2C3D4E5F60019 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PeacockLockWidget/PeacockLockWidget.simulator.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = PeacockLockWidget/PeacockLockWidget.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = PeacockLockWidget/PeacockLockWidget.simulator.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PeacockLockWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.codSquadApp.PeacockLockWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F11F0100A1B2C3D4E5F6001A /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PeacockLockWidget/PeacockLockWidget.simulator.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = PeacockLockWidget/PeacockLockWidget.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = PeacockLockWidget/PeacockLockWidget.simulator.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PeacockLockWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.codSquadApp.PeacockLockWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Profile;
+		};
 		97C147071CF9000F007C117D /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-				CURRENT_PROJECT_VERSION = 420;
-				DEVELOPMENT_TEAM = K4ZTXPQ8J9;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.simulator.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Runner/Runner.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Runner/Runner.simulator.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = SquadSync;
+				"INFOPLIST_FILE[sdk=iphonesimulator*]" = Runner/Info.simulator.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Cod Squad";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.69;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.codSquadApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -755,6 +1011,16 @@
 				97C147031CF9000F007C117D /* Debug */,
 				97C147041CF9000F007C117D /* Release */,
 				249021D3217E4FDB00AE95B9 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F11F0100A1B2C3D4E5F6001B /* Build configuration list for PBXNativeTarget "PeacockLockWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F11F0100A1B2C3D4E5F60018 /* Debug */,
+				F11F0100A1B2C3D4E5F60019 /* Release */,
+				F11F0100A1B2C3D4E5F6001A /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

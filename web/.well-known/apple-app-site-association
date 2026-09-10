@@ -1,0 +1,22 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "K4ZTXPQ8J9.com.example.codSquadApp",
+        "paths": [
+          "/l/*"
+        ],
+        "appIDs": [
+          "K4ZTXPQ8J9.com.example.codSquadApp"
+        ],
+        "components": [
+          {
+            "/": "/l/*",
+            "comment": "Lobby Universal Link https://cod-squad-a4c62.web.app/l/<id>"
+          }
+        ]
+      }
+    ]
+  }
+}

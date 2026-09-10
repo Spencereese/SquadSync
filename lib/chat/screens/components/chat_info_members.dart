@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../services/presence_badges.dart';
+import '../../../widgets/presence_badge_row.dart';
 import 'chat_info_widgets.dart';
 
 /// Members section displaying horizontal scrollable list of squad members
@@ -37,7 +39,7 @@ class ChatInfoMembersSection extends StatelessWidget {
         : members;
 
     return SizedBox(
-      height: 100,
+      height: 128,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -50,6 +52,7 @@ class ChatInfoMembersSection extends StatelessWidget {
           final member = displayMembers[index];
           final isOnline = member['isOnline'] as bool? ?? false;
           final role = member['role'] as String?;
+          final uid = presenceUserIdFrom(member);
 
           return Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -59,6 +62,9 @@ class ChatInfoMembersSection extends StatelessWidget {
               isOnline: isOnline,
               role: role,
               neonColor: neonColor,
+              presenceBadges: uid == null
+                  ? null
+                  : PresenceBadgesHost(userId: uid, compact: true),
             ),
           );
         },

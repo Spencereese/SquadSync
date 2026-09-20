@@ -288,7 +288,7 @@ class FillPinThreadHeader extends StatelessWidget {
 }
 
 /// Compact Sit / Coming / Can't beside poll / public / share.
-class _FillPinSitComingCant extends StatelessWidget {
+class _FillPinSitComingCant extends StatefulWidget {
   const _FillPinSitComingCant({
     required this.chatGroupId,
     required this.snapshot,
@@ -297,19 +297,32 @@ class _FillPinSitComingCant extends StatelessWidget {
   final String? chatGroupId;
   final FillPinSnapshot snapshot;
 
-  void _apply(String actionId) {
-    final pinId = snapshot.lobbyId.trim();
+  @override
+  State<_FillPinSitComingCant> createState() => _FillPinSitComingCantState();
+}
+
+class _FillPinSitComingCantState extends State<_FillPinSitComingCant> {
+  Future<void> _apply(String actionId) async {
+    final pinId = widget.snapshot.lobbyId.trim();
     if (pinId.isEmpty) return;
-    applyFillPinHeaderAction(
+    await applyFillPinHeaderAction(
       actionId: actionId,
-      chatGroupId: (chatGroupId ?? '').trim(),
+      chatGroupId: (widget.chatGroupId ?? '').trim(),
       pinId: pinId,
+      onSpotOpenNudge: () {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Spot open')),
+        );
+        setState(() {});
+      },
     );
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final pinId = snapshot.lobbyId.trim();
+    final pinId = widget.snapshot.lobbyId.trim();
     if (pinId.isEmpty) return const SizedBox.shrink();
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -332,6 +345,7 @@ class _FillPinSitComingCant extends StatelessWidget {
           label: kFillPinHeaderCantLabel,
           onPressed: () => _apply('cant'),
         ),
+        const FillPinSpotOpenNudgeCue(),
       ],
     );
   }

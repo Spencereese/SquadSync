@@ -9,6 +9,7 @@ import '../services/coming_hold_machine.dart';
 import '../services/fill_pin_poll.dart';
 import '../services/fill_pin_share.dart';
 import '../services/fill_pin_visibility.dart';
+import 'fill_pin_header_actions.dart';
 
 const kFillPinThreadHeaderKey = Key('fill-pin-thread-header');
 const kFillPinThreadHeaderSeatKey = Key('fill-pin-thread-header-seats');
@@ -268,6 +269,10 @@ class FillPinThreadHeader extends StatelessWidget {
                   ),
                 ),
               ],
+              _FillPinSitComingCant(
+                chatGroupId: chatGroupId,
+                snapshot: snapshot,
+              ),
               _FillPinPollButton(snapshot: snapshot),
               _FillPinPublicSwitch(snapshot: snapshot),
               _FillPinShareButton(
@@ -280,6 +285,77 @@ class FillPinThreadHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Compact Sit / Coming / Can't beside poll / public / share.
+class _FillPinSitComingCant extends StatelessWidget {
+  const _FillPinSitComingCant({
+    required this.chatGroupId,
+    required this.snapshot,
+  });
+
+  final String? chatGroupId;
+  final FillPinSnapshot snapshot;
+
+  void _apply(String actionId) {
+    final pinId = snapshot.lobbyId.trim();
+    if (pinId.isEmpty) return;
+    applyFillPinHeaderAction(
+      actionId: actionId,
+      chatGroupId: (chatGroupId ?? '').trim(),
+      pinId: pinId,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pinId = snapshot.lobbyId.trim();
+    if (pinId.isEmpty) return const SizedBox.shrink();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _headerActionButton(
+          key: kFillPinSitKey,
+          icon: Icons.event_seat_outlined,
+          label: kFillPinHeaderSitLabel,
+          onPressed: () => _apply('sit'),
+        ),
+        _headerActionButton(
+          key: kFillPinComingKey,
+          icon: Icons.directions_run,
+          label: kFillPinHeaderComingLabel,
+          onPressed: () => _apply('coming'),
+        ),
+        _headerActionButton(
+          key: kFillPinCantKey,
+          icon: Icons.close,
+          label: kFillPinHeaderCantLabel,
+          onPressed: () => _apply('cant'),
+        ),
+      ],
+    );
+  }
+}
+
+Widget _headerActionButton({
+  required Key key,
+  required IconData icon,
+  required String label,
+  required VoidCallback onPressed,
+}) {
+  return Semantics(
+    label: label,
+    button: true,
+    child: IconButton(
+      key: key,
+      icon: Icon(icon, size: 16, color: Colors.white70),
+      tooltip: label,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      visualDensity: VisualDensity.compact,
+      onPressed: onPressed,
+    ),
+  );
 }
 
 /// Compact poll control on the pin header. Friends tap to stick /

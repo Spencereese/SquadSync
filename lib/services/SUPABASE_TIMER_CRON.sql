@@ -55,12 +55,16 @@ CREATE TABLE IF NOT EXISTS squad_spots (
 CREATE INDEX IF NOT EXISTS idx_squad_spots_lobby ON squad_spots(lobby_id, game_name);
 
 -- Function to process expired timers
+-- Clients display expired/assigned; this function is the assigner.
+-- Delete the expired row FIRST so a 5-minute assign insert is not
+-- removed by DELETE ... WHERE id = expired_timer.id after UPSERT.
 CREATE OR REPLACE FUNCTION process_expired_timers()
 RETURNS void AS $$
 DECLARE
     expired_timer RECORD;
     next_in_queue RECORD;
     timer_count INTEGER;
+    has_next BOOLEAN;
 BEGIN
     -- Count expired timers
     SELECT COUNT(*) INTO timer_count
@@ -79,6 +83,18 @@ BEGIN
             expired_timer.lobby_id, 
             expired_timer.game_name;
 
+        SELECT * INTO next_in_queue
+        FROM peacock_queue
+        WHERE 
+            lobby_id = expired_timer.lobby_id
+            AND game_name = expired_timer.game_name
+        ORDER BY position ASC
+        LIMIT 1;
+        has_next := FOUND;
+
+        -- Delete expired timer before assign insert (unique lobby/game/spot).
+        DELETE FROM squad_timers WHERE id = expired_timer.id;
+
         -- Free the spot
         UPDATE squad_spots 
         SET 
@@ -90,17 +106,8 @@ BEGIN
             AND game_name = expired_timer.game_name 
             AND spot_index = expired_timer.spot_index;
 
-        -- Check if there's someone in the peacock queue
-        SELECT * INTO next_in_queue
-        FROM peacock_queue
-        WHERE 
-            lobby_id = expired_timer.lobby_id
-            AND game_name = expired_timer.game_name
-        ORDER BY position ASC
-        LIMIT 1;
-
         -- If queue exists, auto-assign to next person with 5-minute lock-in timer
-        IF FOUND THEN
+        IF has_next THEN
             RAISE NOTICE 'Auto-assigning spot to next in queue: %', next_in_queue.user_uid;
 
             -- Auto-assign spot for next person (needs lock-in within 5 minutes)
@@ -129,12 +136,7 @@ BEGIN
                 next_in_queue.user_uid,
                 300, -- 5 minutes to lock in
                 NOW() + INTERVAL '5 minutes'
-            )
-            ON CONFLICT (lobby_id, game_name, spot_index) 
-            DO UPDATE SET
-                claimed_by_uid = EXCLUDED.claimed_by_uid,
-                timer_duration = EXCLUDED.timer_duration,
-                expires_at = EXCLUDED.expires_at;
+            );
 
             -- Remove from queue after assignment
             DELETE FROM peacock_queue WHERE id = next_in_queue.id;
@@ -150,9 +152,6 @@ BEGIN
             -- TODO: Send push notification to user about spot assignment
             -- Notification: "Your spot is ready! Lock in within 5 minutes."
         END IF;
-
-        -- Delete expired timer
-        DELETE FROM squad_timers WHERE id = expired_timer.id;
     END LOOP;
 
     RAISE NOTICE 'Timer processing complete';

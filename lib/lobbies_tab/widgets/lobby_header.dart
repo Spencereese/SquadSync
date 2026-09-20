@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
+import '../../core/deep_link_routes.dart';
+import '../../core/voice_room_join.dart';
 import '../dialogs/settings_dialog.dart';
 import '../../widgets/unified_game_selection_sheet.dart';
 import '../../domain/entities/game.dart';
+import 'lobby_seat_affordance.dart';
 import 'match_history_badge.dart';
 
-/// LobbyHeader component - handles navigation and game info display
-/// Extracted from the monolithic LobbyTab to improve maintainability
+/// LobbyHeader — back, game, Voice join, share, settings.
+/// Voice join uses [joinVoiceRoom] (existing VoiceRoomScreen, no restyle).
 class LobbyHeader extends ConsumerWidget {
   final String? lobbyId;
 
@@ -19,9 +22,10 @@ class LobbyHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isOffline = ref.watch(ln.lobbyNotifierProvider).hasError;
     return Padding(
-      padding: const EdgeInsets.only(
-        top: 40.0, // Add top padding to avoid phone settings/clock
+      padding: EdgeInsets.only(
+        top: MediaQuery.paddingOf(context).top,
       ),
       child: Column(
         children: [
@@ -86,10 +90,26 @@ class LobbyHeader extends ConsumerWidget {
                             const SizedBox(height: 4),
                             MatchHistoryBadge(lobbyId: lobbyId!),
                           ],
+                          const SizedBox(height: 4),
+                          const LobbySeatStatusChipHost(),
                         ],
                       );
                     },
                   ),
+                ),
+              ),
+
+              LobbyVoiceJoinHost(
+                lobbyId: lobbyId,
+                squadName: _voiceSquadName(ref),
+                isOffline: ref.watch(ln.lobbyNotifierProvider).hasError,
+              ),
+
+              LobbyShareButton(
+                onPressed: () => _shareLobbyLink(
+                  context,
+                  lobbyId,
+                  isOffline: isOffline,
                 ),
               ),
 
@@ -113,6 +133,33 @@ class LobbyHeader extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _voiceSquadName(WidgetRef ref) {
+    try {
+      final name = ref
+          .read(ln.lobbyNotifierProvider)
+          .valueOrNull
+          ?.currentLobby
+          ?.name
+          .trim();
+      if (name != null && name.isNotEmpty) return name;
+    } catch (_) {}
+    return kDefaultVoiceSquadName;
+  }
+
+  Future<void> _shareLobbyLink(
+    BuildContext context,
+    String? lobbyId, {
+    bool isOffline = false,
+  }) async {
+    HapticFeedback.lightImpact();
+    final result = await shareLobbyLink(
+      lobbyId: lobbyId,
+      isOffline: isOffline,
+    );
+    if (!context.mounted) return;
+    presentLobbyShare(context, result);
   }
 
   void _showGameSelectionDialog(BuildContext context, WidgetRef ref) async {
@@ -160,6 +207,159 @@ class LobbyHeader extends ConsumerWidget {
           }
         }
       },
+    );
+  }
+}
+
+/// Lobby header share. Live path calls [shareLobbyLink].
+class LobbyShareButton extends StatelessWidget {
+  const LobbyShareButton({
+    super.key,
+    required this.onPressed,
+  });
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Share lobby link',
+      child: IconButton(
+        key: const Key('lobby-share-link'),
+        icon: const Icon(
+          Icons.share,
+          color: Colors.cyanAccent,
+          size: 26,
+        ),
+        onPressed: onPressed,
+        tooltip: 'Share lobby',
+      ),
+    );
+  }
+}
+
+/// Live Voice join on the lobby header. Empty / offline copy, reconnect
+/// toast after drop, no stacked [VoiceRoomScreen]. Never a spinner.
+class LobbyVoiceJoinHost extends StatefulWidget {
+  const LobbyVoiceJoinHost({
+    super.key,
+    this.lobbyId,
+    this.squadName = kDefaultVoiceSquadName,
+    this.isHost = false,
+    this.isOffline = false,
+    this.session,
+    this.push,
+  });
+
+  final String? lobbyId;
+  final String squadName;
+  final bool isHost;
+  final bool isOffline;
+  final VoiceJoinSession? session;
+  final Future<void> Function(Widget page)? push;
+
+  @override
+  State<LobbyVoiceJoinHost> createState() => _LobbyVoiceJoinHostState();
+}
+
+class _LobbyVoiceJoinHostState extends State<LobbyVoiceJoinHost> {
+  VoiceLobbyHeaderPhase? _lastPhase;
+
+  VoiceJoinSession get _session => widget.session ?? voiceJoinSession;
+
+  VoiceLobbyHeaderPhase get _phase => resolveVoiceLobbyHeaderPhase(
+        lobbyId: widget.lobbyId,
+        isOffline: widget.isOffline,
+        isJoined: _session.isJoined,
+        isJoining: _session.isJoining,
+        isDropped: _session.isDropped,
+      );
+
+  void _maybeReconnectToast({
+    required VoiceLobbyHeaderPhase? previous,
+    required VoiceLobbyHeaderPhase current,
+  }) {
+    if (!shouldShowVoiceReconnectToast(
+      previous: previous,
+      current: current,
+      voiceDrop: _session.isDropped,
+    )) {
+      return;
+    }
+    if (!voiceReconnectToastGate.claim(now: DateTime.now().toUtc())) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.showSnackBar(voiceReconnectSnackBar());
+    });
+  }
+
+  Future<void> _onPressed() async {
+    HapticFeedback.lightImpact();
+    final result = await joinVoiceRoom(
+      roomId: widget.lobbyId,
+      squadName: widget.squadName,
+      isHost: widget.isHost,
+      context: widget.push == null ? context : null,
+      push: widget.push,
+      session: _session,
+      isOffline: widget.isOffline,
+    );
+    if (!mounted) return;
+    presentVoiceLobbyJoin(context, result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _session,
+      builder: (context, _) {
+        final phase = _phase;
+        final previous = _lastPhase;
+        _lastPhase = phase;
+        _maybeReconnectToast(previous: previous, current: phase);
+        return LobbyVoiceJoinButton(
+          phase: phase,
+          onPressed: _onPressed,
+        );
+      },
+    );
+  }
+}
+
+/// Lobby header Voice join. Live path calls [joinVoiceRoom].
+class LobbyVoiceJoinButton extends StatelessWidget {
+  const LobbyVoiceJoinButton({
+    super.key,
+    required this.onPressed,
+    this.phase = VoiceLobbyHeaderPhase.ready,
+  });
+
+  final VoidCallback onPressed;
+  final VoiceLobbyHeaderPhase phase;
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = voiceLobbyHeaderMessage(phase);
+    Widget button = IconButton(
+      key: const Key('lobby-voice-join'),
+      icon: const Icon(
+        Icons.headset,
+        color: Colors.cyanAccent,
+        size: 26,
+      ),
+      onPressed: onPressed,
+      tooltip: copy,
+    );
+    if (phase != VoiceLobbyHeaderPhase.ready) {
+      button = KeyedSubtree(key: voiceLobbyHeaderKey(phase), child: button);
+    }
+    return Semantics(
+      label: copy == 'Join voice' ? 'Join voice room' : copy,
+      child: button,
     );
   }
 }

@@ -1,20 +1,14 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../core/app_env.dart';
 
+/// Agora IDs/certs for voice. Unset or placeholder values never throw —
+/// callers must treat empty as "voice parked".
 class AgoraConfig {
-  static String get appId {
-    final id = dotenv.env['AGORA_APP_ID'] ?? '';
-    if (id.isEmpty && kDebugMode) {
-      throw Exception('AGORA_APP_ID is not set in .env file');
-    }
-    return id;
-  }
+  static String get appId => AppEnv.agoraAppId ?? '';
 
-  static String get appCertificate {
-    final cert = dotenv.env['AGORA_APP_CERTIFICATE'] ?? '';
-    if (cert.isEmpty && kDebugMode) {
-      throw Exception('AGORA_APP_CERTIFICATE is not set in .env file');
-    }
-    return cert;
-  }
+  static String get appCertificate => AppEnv.agoraAppCertificate ?? '';
+
+  static bool get isConfigured => AppEnv.isAgoraConfigured;
+
+  static bool get isCertificateConfigured =>
+      AppEnv.isAgoraCertificateConfigured;
 }

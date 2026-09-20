@@ -10,11 +10,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'auth_service_supabase.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:retry/retry.dart';
 import 'app_flow_manager.dart';
 import 'supabase_voice_room_service.dart';
 import '../chat/sqlite_helper.dart';
+import '../core/app_env.dart';
 import 'timer_service.dart'; // For sqliteHelperProvider
 import '../presentation/widgets/permission_dialog.dart';
 
@@ -314,26 +314,20 @@ class VoiceRoomState {
   }
 }
 
-/// Enhanced Agora configuration with validation and fallbacks
+/// Enhanced Agora configuration with validation and fallbacks.
+/// Unset / placeholder app id or certificate never throw — voice parks.
 class AgoraConfigEnhanced {
-  static const String _mockAppId = 'mock_app_id_for_development';
-  static const String _mockCertificate = 'mock_certificate_for_development';
-
   static VoiceServiceResult<String> getValidatedAppId() {
     try {
-      final id = dotenv.env['AGORA_APP_ID'] ?? '';
-      if (id.isNotEmpty) {
+      final id = AppEnv.agoraAppId;
+      if (id != null) {
         return VoiceServiceResult.success(id);
       }
 
-      if (kDebugMode) {
-        debugPrint('AGORA_APP_ID not found, using mock for development');
-        return VoiceServiceResult.success(_mockAppId);
-      }
-
+      debugPrint('AGORA_APP_ID unset; voice features parked');
       return VoiceServiceResult.failure(
         VoiceServiceError.configMissing,
-        'AGORA_APP_ID is required in production',
+        'AGORA_APP_ID is not configured; voice features are parked',
       );
     } catch (e) {
       return VoiceServiceResult.failure(
@@ -345,18 +339,12 @@ class AgoraConfigEnhanced {
 
   static VoiceServiceResult<String> getValidatedCertificate() {
     try {
-      final cert = dotenv.env['AGORA_APP_CERTIFICATE'] ?? '';
-      if (cert.isNotEmpty) {
+      final cert = AppEnv.agoraAppCertificate;
+      if (cert != null) {
         return VoiceServiceResult.success(cert);
       }
 
-      if (kDebugMode) {
-        debugPrint(
-            'AGORA_APP_CERTIFICATE not found, using mock for development');
-        return VoiceServiceResult.success(_mockCertificate);
-      }
-
-      // Certificate is optional for testing mode
+      debugPrint('AGORA_APP_CERTIFICATE unset; token generation parked');
       return VoiceServiceResult.success('');
     } catch (e) {
       return VoiceServiceResult.failure(
@@ -579,8 +567,7 @@ class VoiceService {
       return null;
     }
 
-    // Get backend URL from environment variable (runtime)
-    final backendUrl = dotenv.env['BACKEND_URL'] ??
+    final backendUrl = AppEnv.get('BACKEND_URL') ??
         'https://squadsync-backend-kinmmpi3ca-uc.a.run.app';
 
     try {

@@ -1,6 +1,32 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../core/fill_pin_suggestion_parser.dart';
+import '../presentation/notifiers/lobby_notifier.dart';
+
+const kFillPinSuggestionChipKey = Key('fill-pin-suggestion-chip');
+const kFillPinSuggestionDismissKey = Key('fill-pin-suggestion-dismiss');
+
+/// Existing [LobbyNotifier.createLobby] for THIS [chatGroupId] only.
+Future<void> bindFillPin(
+  WidgetRef ref,
+  String? chatGroupId,
+  FillPinSuggestion suggestion,
+) async {
+  final id = (chatGroupId ?? '').trim();
+  if (id.isEmpty) return;
+  try {
+    await ref.read(lobbyNotifierProvider.notifier).createLobby(
+          chatGroupId: id,
+          gameName: suggestion.game ?? '',
+          maxSpots: suggestion.max ?? 4,
+        );
+  } catch (e) {
+    debugPrint('Fill PIN create failed: $e');
+  }
+}
 
 class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;
@@ -20,6 +46,8 @@ class ChatInputBar extends StatefulWidget {
   final Map<String, String>? memberAvatars; // Map of display name to avatar URL
   final Color? backgroundColor; // Background color for adaptive glass UI
   final bool hasAttachment; // Whether an image/attachment is selected
+  /// Tap creates a pin via the caller. Typing never auto-creates.
+  final ValueChanged<FillPinSuggestion>? onFillPinSuggestionTap;
 
   const ChatInputBar({
     super.key,
@@ -39,6 +67,7 @@ class ChatInputBar extends StatefulWidget {
     this.memberAvatars,
     this.backgroundColor,
     this.hasAttachment = false,
+    this.onFillPinSuggestionTap,
   });
 
   @override
@@ -49,6 +78,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
   late final FocusNode _focusNode;
   bool _showMentions = false;
   List<String> _mentionSuggestions = [];
+  FillPinSuggestion? _fillPinSuggestion;
+  bool _fillPinDismissed = false;
+  String _dismissedFillPinText = '';
 
   @override
   void initState() {
@@ -70,8 +102,48 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   void _onTextChanged() {
-    setState(() {});
+    _syncFillPinSuggestion();
     _checkForMentions();
+    setState(() {});
+  }
+
+  void _syncFillPinSuggestion() {
+    if (widget.onFillPinSuggestionTap == null) {
+      _fillPinSuggestion = null;
+      return;
+    }
+    final text = widget.controller.text;
+    if (_fillPinDismissed && text == _dismissedFillPinText) {
+      _fillPinSuggestion = null;
+      return;
+    }
+    if (text != _dismissedFillPinText) {
+      _fillPinDismissed = false;
+    }
+    final suggestion = parseFillPinSuggestion(text);
+    _fillPinSuggestion = suggestion.shouldPropose ? suggestion : null;
+  }
+
+  void _dismissFillPinSuggestion() {
+    HapticFeedback.selectionClick();
+    _fillPinDismissed = true;
+    _dismissedFillPinText = widget.controller.text;
+    setState(() {
+      _fillPinSuggestion = null;
+    });
+  }
+
+  void _tapFillPinSuggestion() {
+    final suggestion = _fillPinSuggestion;
+    final onTap = widget.onFillPinSuggestionTap;
+    if (suggestion == null || onTap == null) return;
+    HapticFeedback.lightImpact();
+    _fillPinDismissed = true;
+    _dismissedFillPinText = widget.controller.text;
+    setState(() {
+      _fillPinSuggestion = null;
+    });
+    onTap(suggestion);
   }
 
   void _checkForMentions() {
@@ -134,6 +206,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (_fillPinSuggestion != null &&
+            _fillPinSuggestion!.shouldPropose &&
+            widget.onFillPinSuggestionTap != null)
+          _buildFillPinSuggestionChip(),
         // Mention suggestions
         if (_showMentions && _mentionSuggestions.isNotEmpty)
           _buildMentionSuggestions(),
@@ -377,6 +453,84 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     ),
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFillPinSuggestionChip() {
+    final suggestion = _fillPinSuggestion!;
+    final bgLuminance = widget.backgroundColor?.computeLuminance() ?? 0.0;
+    final isLightBackground = bgLuminance > 0.5;
+    final chipBg = isLightBackground
+        ? Colors.black.withValues(alpha: 0.55)
+        : Colors.white.withValues(alpha: 0.14);
+    final borderColor = isLightBackground
+        ? Colors.black.withValues(alpha: 0.45)
+        : Colors.white.withValues(alpha: 0.22);
+    final labelColor = isLightBackground ? Colors.white : Colors.white;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: chipBg,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Semantics(
+                button: true,
+                label: suggestion.chipLabel,
+                child: GestureDetector(
+                  key: kFillPinSuggestionChipKey,
+                  onTap: _tapFillPinSuggestion,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.push_pin_outlined,
+                        size: 16,
+                        color: labelColor,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        suggestion.chipLabel,
+                        style: TextStyle(
+                          color: labelColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Semantics(
+                button: true,
+                label: 'Dismiss fill pin suggestion',
+                child: GestureDetector(
+                  key: kFillPinSuggestionDismissKey,
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _dismissFillPinSuggestion,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 2),
+                    child: Icon(
+                      Icons.close,
+                      size: 16,
+                      color: labelColor.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

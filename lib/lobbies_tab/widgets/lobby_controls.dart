@@ -1,35 +1,399 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../chat/screens/components/chat_info_actions.dart';
+import '../../core/deep_link_routes.dart';
+import '../../core/voice_room_join.dart';
+import '../../domain/entities/lobby.dart';
+import '../../domain/entities/lobby_state.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
-import '../../presentation/notifiers/user_notifier.dart';
 import '../../services/auth_service_supabase.dart';
-import '../../screens/voice_room_screen.dart';
-import 'game_alerts_display.dart';
+import '../../services/availability_ping.dart';
+import '../../services/lobby_ready_lock.dart';
+import '../dialogs/session_rating_dialog.dart';
+import '../../services/session_rating_flow.dart';
+import '../../services/session_rating_machine.dart';
+import '../../screens/discovery_swipe_screen.dart';
+import '../../widgets/discovery_swipe_gate.dart';
+import '../../widgets/grok_concierge.dart';
+import '../../widgets/lobby_surface_feedback.dart';
+import 'lobby_grid.dart';
 
-/// LobbyControls component - handles action buttons and controls
-/// Extracted from the monolithic LobbyTab to improve maintainability
+const kLobbyFooterImReady = "I'm Ready";
+const kLobbyFooterLock = 'Lock';
+const kLobbyFooterLocked = 'Locked';
+
+/// Footer Ready / Lock label from the ready-lock snapshot only.
+String lobbyFooterCtaLabel({
+  required LobbyReadyLockSnapshot snapshot,
+  required String uid,
+}) {
+  if (snapshot.isLocked) return kLobbyFooterLocked;
+  if (!snapshot.seatedUids.contains(uid)) return kLobbyFooterImReady;
+  if (!snapshot.isReady(uid)) return kLobbyFooterImReady;
+  final waitingOn =
+      snapshot.seatedUids.where((id) => !snapshot.isReady(id)).length;
+  if (waitingOn > 0) return 'Waiting on $waitingOn';
+  return kLobbyFooterLock;
+}
+
+String lobbyFooterActorUid(LobbyState? state) {
+  try {
+    final id = AuthServiceSupabase().currentUser?.id;
+    if (id != null && id.isNotEmpty) return id;
+  } catch (_) {}
+  final created = state?.currentLobby?.createdBy;
+  if (created != null && created.isNotEmpty) return created;
+  return '';
+}
+
+/// LobbyControls — seat-map footer CTA, Tonight strip, More (voice / share / clips).
+/// Win/Loss and Voice live under More, not a neon Card stack under the grid.
+/// Order after seat-grid: lobby-footer-cta then more-actions.
 class LobbyControls extends ConsumerWidget {
   const LobbyControls({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return const SliverToBoxAdapter(
+    final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
+    final tonightError = lobbyAsyncError(lobbyAsync);
+    final tonightOffline = lobbySurfaceIsOfflineError(tonightError);
+    final tonightPhase = lobbySurfacePhaseFromAsync(
+      lobbyAsync,
+      isEmpty: tonightLobbyMissing,
+      isOffline: tonightOffline,
+    );
+    final tonightChildren = tonightPhase == LobbySurfacePhase.data
+        ? tonightStripChildren(
+            onNow: const _OnNowButton(),
+            lookingForSquad: const _LobbyLookingForSquad(),
+            invite: const _LobbyInviteButton(),
+          )
+        : const <Widget>[];
+
+    return SliverToBoxAdapter(
       child: Column(
         children: [
-          // Win/Loss/Voice buttons
-          Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _WinButton(),
-                _VoiceRoomButton(),
-                _LossButton(),
-              ],
+          const _LobbyFooterCta(),
+          TonightActionsBlock(
+            isLoading: tonightPhase == LobbySurfacePhase.loading,
+            isEmpty: tonightPhase == LobbySurfacePhase.empty,
+            isOffline:
+                tonightPhase == LobbySurfacePhase.error && tonightOffline,
+            error:
+                tonightPhase == LobbySurfacePhase.error ? tonightError : null,
+            onRetry: () => ref.invalidate(ln.lobbyNotifierProvider),
+            children: [
+              if (lobbySeatWriteErrorOf(ref) != null)
+                const SeatWriteErrorBanner(
+                  surfaceKey: kTonightSeatWriteErrorKey,
+                ),
+              ...tonightChildren,
+            ],
+          ),
+          const SizedBox(height: 16),
+          GrokConciergeSection(
+            squadId: lobbyAsync.valueOrNull?.currentLobby?.chatGroupId ??
+                lobbyAsync.valueOrNull?.selectedLobbyId ??
+                lobbyAsync.valueOrNull?.currentLobby?.id ??
+                '',
+          ),
+          DiscoverySwipeEntryButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const DiscoverySwipeScreen(),
+                ),
+              );
+            },
+          ),
+          MoreActionsBlock(
+            // more-actions: voice / share / clips — not a neon Card stack
+            children: [
+              if (slotForTonightAction(kMoreVoiceAction) ==
+                  TonightStripSlot.more)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Center(
+                    child: _VoiceRoomButton(key: Key('more-voice')),
+                  ),
+                ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _WinButton(),
+                    _LossButton(),
+                  ],
+                ),
+              ),
+              if (slotForTonightAction(kDeadSearchAction) != null)
+                const SizedBox.shrink(),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One Ready → Waiting on N → Lock → Locked button. Snapshot only.
+class _LobbyFooterCta extends ConsumerWidget {
+  const _LobbyFooterCta();
+
+  Future<void> _onPressed(WidgetRef ref, LobbyReadyLockSnapshot snapshot) async {
+    final state = ref.read(ln.lobbyNotifierProvider).valueOrNull;
+    final uid = lobbyFooterActorUid(state);
+    if (uid.isEmpty) return;
+    final gameName = state?.currentGame?['name'] as String? ??
+        state?.currentLobby?.gameName ??
+        '';
+    await ref.read(ln.lobbyNotifierProvider.notifier).toggleSeatedReady(
+          userId: uid,
+          gameName: gameName,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lobbyAsync = ref.watch(ln.lobbyNotifierProvider);
+    final state = lobbyAsync.valueOrNull;
+    LobbyReadyLockSnapshot snapshot;
+    try {
+      snapshot = ref
+              .read(ln.lobbyNotifierProvider.notifier)
+              .lastReadyLockSnapshot ??
+          (state == null
+              ? LobbyReadyLockSnapshot.empty
+              : resolveLobbyReadyLockFromState(state));
+    } catch (_) {
+      snapshot = state == null
+          ? LobbyReadyLockSnapshot.empty
+          : resolveLobbyReadyLockFromState(state);
+    }
+    final uid = lobbyFooterActorUid(state);
+    final label = lobbyFooterCtaLabel(snapshot: snapshot, uid: uid);
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          key: const Key('lobby-footer-cta'),
+          onPressed: snapshot.isLocked && uid.isEmpty
+              ? null
+              : () => _onPressed(ref, snapshot),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+          child: Text(
+            label,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
             ),
           ),
-          // Game alert section removed - moved to chat menu as friend-wide "Looking for Squad"
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Looking for Squad on the lobby Tonight strip. Same live button as chat-info.
+class _LobbyLookingForSquad extends ConsumerWidget {
+  const _LobbyLookingForSquad();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
+    final lobby = state?.currentLobby;
+    final squadId =
+        lobby?.chatGroupId ?? state?.selectedLobbyId ?? lobby?.id ?? '';
+    if (squadId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return LookingForSquadButton(
+      key: const Key('tonight-looking-for-squad'),
+      squadId: squadId,
+      neonColor: Theme.of(context).colorScheme.primary,
+    );
+  }
+}
+
+/// Tonight Invite — [shareLobbyLink], same helper as lobby header.
+class _LobbyInviteButton extends ConsumerWidget {
+  const _LobbyInviteButton();
+
+  Future<void> _onPressed(BuildContext context, WidgetRef ref) async {
+    Lobby? currentLobby;
+    String? selectedLobbyId;
+    Map<String, Lobby> userLobbies = const {};
+    try {
+      final state = ref.read(ln.lobbyNotifierProvider).valueOrNull;
+      selectedLobbyId = state?.selectedLobbyId;
+      currentLobby = state?.currentLobby;
+      userLobbies = state?.userLobbies ?? const {};
+    } catch (_) {}
+
+    final lobbyId = resolveInviteLobbyId(
+      squadId: selectedLobbyId ?? currentLobby?.id ?? '',
+      selectedLobbyId: selectedLobbyId,
+      currentLobby: currentLobby,
+      userLobbies: userLobbies,
+    );
+    final result = await shareLobbyLink(
+      lobbyId: lobbyId,
+      isOffline: lobbySurfaceIsOfflineError(
+        ref.read(ln.lobbyNotifierProvider).error,
+      ),
+    );
+    if (!context.mounted) return;
+    presentLobbyShare(context, result);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          key: const Key('tonight-invite'),
+          onPressed: () => _onPressed(context, ref),
+          icon: const Icon(Icons.share, size: 20),
+          label: const Text(
+            'Invite',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(fontSize: 18),
+            elevation: 4,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "I'm on now" from the lobby tab. Same [AvailabilityPing.dispatch]
+/// path as Looking-for-Squad chat info.
+class _OnNowButton extends ConsumerStatefulWidget {
+  const _OnNowButton();
+
+  @override
+  ConsumerState<_OnNowButton> createState() => _OnNowButtonState();
+}
+
+class _OnNowButtonState extends ConsumerState<_OnNowButton> {
+  bool _isLoading = false;
+
+  Future<void> _onPressed() async {
+    String? uid;
+    try {
+      uid = AuthServiceSupabase().currentUser?.id;
+    } catch (_) {
+      uid = null;
+    }
+    if (uid == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sign in to ping your squad'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final state = ref.read(ln.lobbyNotifierProvider).valueOrNull;
+    final lobbyId = state?.selectedLobbyId ?? state?.currentLobby?.id;
+    if (lobbyId == null || lobbyId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No lobby selected')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final result = await AvailabilityPing.dispatch(
+        senderUid: uid,
+        lobbyId: lobbyId,
+        currentLobby: state?.currentLobby,
+        userLobbies: state?.userLobbies ?? const {},
+        lobbyMemberUids: state?.lobbyMemberUids ?? const [],
+        gameName: state?.currentGame?['name'] as String? ??
+            state?.currentLobby?.gameName,
+        senderName: state?.displayName,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.snackbarMessage),
+          backgroundColor: result.sent ? Colors.green : Colors.orange,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to ping: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final squadStateAsync = ref.watch(ln.lobbyNotifierProvider);
+    final hasLobby = squadStateAsync.maybeWhen(
+      data: (state) =>
+          (state.selectedLobbyId ?? state.currentLobby?.id) != null,
+      orElse: () => false,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          key: const Key('lobby-availability-on-now'),
+          onPressed: _isLoading || !hasLobby ? null : _onPressed,
+          icon: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.campaign, size: 20),
+          label: const Text(
+            "I'm on now",
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(fontSize: 18),
+            elevation: 4,
+          ),
+        ),
       ),
     );
   }
@@ -61,15 +425,31 @@ class _WinButton extends ConsumerWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      try {
-        await ref.read(ln.lobbyNotifierProvider.notifier).recordWin(lobbyId);
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to record win: $e')),
-          );
-        }
-      }
+      final persist = await promptAndRecordEndedSession(
+        context: context,
+        ref: ref,
+        lobbyId: lobbyId,
+        result: 'win',
+      );
+      if (!context.mounted) return;
+      presentSessionRatingPersist(
+        context,
+        'win',
+        persist,
+        onRetry: persist.isFailed
+            ? () {
+                persistEndedSquadSession(
+                  ref: ref,
+                  lobbyId: lobbyId,
+                  result: 'win',
+                  sessionRating: persist.rating ?? SessionRatingState.unrated,
+                ).then((again) {
+                  if (!context.mounted) return;
+                  presentSessionRatingPersist(context, 'win', again);
+                });
+              }
+            : null,
+      );
     }
   }
 
@@ -112,7 +492,7 @@ class _WinButton extends ConsumerWidget {
 
 /// Voice room button widget - extracted for better performance
 class _VoiceRoomButton extends ConsumerWidget {
-  const _VoiceRoomButton();
+  const _VoiceRoomButton({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -120,24 +500,15 @@ class _VoiceRoomButton extends ConsumerWidget {
 
     return squadStateAsync.maybeWhen(
       data: (squadState) => ElevatedButton.icon(
-        onPressed: () {
-          if (squadState.selectedLobbyId == null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No lobby selected')),
-            );
-            return;
-          }
-
-          // Navigate to voice room screen with lobby context
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => VoiceRoomScreen(
-                roomId: squadState.selectedLobbyId!,
-                squadName: 'Squad Voice',
-                isHost: false,
-              ),
-            ),
+        onPressed: () async {
+          final result = await joinVoiceRoom(
+            context: context,
+            roomId: squadState.selectedLobbyId,
+            squadName: kDefaultVoiceSquadName,
+            isHost: false,
           );
+          if (!context.mounted) return;
+          presentVoiceLobbyJoin(context, result);
         },
         icon: const Icon(Icons.mic),
         label: const Text('Voice'),
@@ -185,15 +556,31 @@ class _LossButton extends ConsumerWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      try {
-        await ref.read(ln.lobbyNotifierProvider.notifier).recordLoss(lobbyId);
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to record loss: $e')),
-          );
-        }
-      }
+      final persist = await promptAndRecordEndedSession(
+        context: context,
+        ref: ref,
+        lobbyId: lobbyId,
+        result: 'loss',
+      );
+      if (!context.mounted) return;
+      presentSessionRatingPersist(
+        context,
+        'loss',
+        persist,
+        onRetry: persist.isFailed
+            ? () {
+                persistEndedSquadSession(
+                  ref: ref,
+                  lobbyId: lobbyId,
+                  result: 'loss',
+                  sessionRating: persist.rating ?? SessionRatingState.unrated,
+                ).then((again) {
+                  if (!context.mounted) return;
+                  presentSessionRatingPersist(context, 'loss', again);
+                });
+              }
+            : null,
+      );
     }
   }
 

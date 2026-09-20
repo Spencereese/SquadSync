@@ -2,17 +2,56 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- aps-environment flavors (see docs/TESTFLIGHT_CHECKLIST.md).
+	     This file is the iphoneos* device entitlements.
+	     Debug / local device: development (this committed value — do not
+	     silent-flip it; that breaks the simulator if it leaks to
+	     iphonesimulator*).
+	     Release / Archive / TestFlight / App Store: production on a
+	     Release-only overlay — never edit Runner.simulator.entitlements
+	     to production.
+	     Slice ID Spencer-click notes (exact — do not invent others):
+	     APPLE_TEAM_ID = K4ZTXPQ8J9
+	     AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+	     not e2e Universal Links. Spencer must firebase deploy --only hosting.)
+	     BUNDLE_ID_IOS = com.example.codSquadApp
+	     WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+	     URL scheme: com.example.codSquadApp://auth-callback
+	     FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c -->
 	<key>aps-environment</key>
 	<string>development</string>
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.squadsync.app</string>
+		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	</array>
+	<!-- AASA appID = K4ZTXPQ8J9.com.example.codSquadApp
+	     (APPLE_TEAM_ID = K4ZTXPQ8J9 + BUNDLE_ID_IOS). Write K4ZTXPQ8J9;
+	     do not leave a TEAMID placeholder.
+	     URL scheme: com.example.codSquadApp://auth-callback
+	     Universal Links: https://cod-squad-a4c62.web.app/l/<id> → /squad?lobby_id=
+	     AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+	     not e2e Universal Links. Spencer must firebase deploy --only hosting.)
+	     Prep: ios/associated-domains/apple-app-site-association
+	     Template: ios/associated-domains/associated-domains.entitlements
+	     Spencer: enable Associated Domains on App ID com.example.codSquadApp
+	     if not already; point DNS; host AASA. Do not change bundle ID. -->
+	<!-- App Groups: lock-screen Fill PIN intents → Runner channel.
+	     Spencer must enable group.com.example.codSquadApp on App ID
+	     com.example.codSquadApp (ios/PeacockLockWidget/SPENCER.txt). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.example.codSquadApp</string>
 	</array>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:sfckxrnoiwetmzdycqaa.supabase.co</string>
 		<string>applinks:lobbiesync.app</string>
 		<string>applinks:www.lobbiesync.app</string>
+		<string>applinks:cod-squad-a4c62.web.app</string>
 	</array>
 </dict>
 </plist>

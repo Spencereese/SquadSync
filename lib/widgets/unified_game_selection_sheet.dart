@@ -114,7 +114,7 @@ class UnifiedGameSelectionSheet extends ConsumerWidget {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: neonColor.withOpacity(0.5),
+                        color: neonColor.withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(2),
                         boxShadow: neonColor.neonGlow(
                           blur: 10,
@@ -168,11 +168,11 @@ class UnifiedGameSelectionSheet extends ConsumerWidget {
                             ),
                             style: IconButton.styleFrom(
                               backgroundColor:
-                                  theme.colorScheme.surface.withOpacity(0.5),
+                                  theme.colorScheme.surface.withValues(alpha: 0.5),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 side: BorderSide(
-                                  color: neonColor.withOpacity(0.3),
+                                  color: neonColor.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),

@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
+import '../core/voice_room_join.dart';
 import '../services/voice_service.dart';
 
 /// Voice room screen with spatial audio visualization
@@ -88,6 +89,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       // Initialize Agora engine with context for permission dialog
       final initResult = await voiceService.initializeEngine(context: context);
       if (initResult.isFailure) {
+        voiceJoinSession.markDropped();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -101,6 +103,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       // Join voice channel
       final joinResult = await voiceService.joinChannel(widget.roomId);
       if (joinResult.isFailure) {
+        voiceJoinSession.markDropped();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -146,6 +149,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       };
 
       voiceService.onError = (error, message) {
+        voiceJoinSession.markDropped();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Voice error: $message')),
@@ -154,6 +158,7 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
       };
     } catch (e) {
       debugPrint('Error initializing voice room: $e');
+      voiceJoinSession.markDropped();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e')),
@@ -179,8 +184,12 @@ class _VoiceRoomScreenState extends ConsumerState<VoiceRoomScreen>
     try {
       final voiceService = ref.read(voiceServiceProvider);
       await voiceService.leaveChannel();
+      if (!voiceJoinSession.isDropped) {
+        voiceJoinSession.markLeft();
+      }
     } catch (e) {
       debugPrint('Error leaving voice room: $e');
+      voiceJoinSession.markDropped();
     }
   }
 

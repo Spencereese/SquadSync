@@ -47,7 +47,7 @@ class Game with _$Game {
               .where((p) => p.isNotEmpty)
               .toList() ??
           [],
-      maxSpots: null, // Will be set from Firestore
+      maxSpots: null,
       isCached: false,
       cachedAt: null,
     );

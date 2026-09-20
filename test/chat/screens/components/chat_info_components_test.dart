@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_app_bar.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_actions.dart';
@@ -8,6 +9,14 @@ import 'package:squad_sync/chat/screens/components/chat_info_settings.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_backgrounds.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_media.dart';
 import 'package:squad_sync/chat/screens/components/chat_info_links_files.dart';
+import 'package:squad_sync/domain/entities/lobby.dart';
+import 'package:squad_sync/domain/entities/lobby_state.dart';
+import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart';
+import 'package:squad_sync/services/availability_on.dart';
+import 'package:squad_sync/services/matchmaking_queue_machine.dart';
+import 'package:squad_sync/services/presence_badges.dart';
+import 'package:squad_sync/widgets/lfg_queue_status_row.dart';
+import 'package:squad_sync/widgets/presence_badge_row.dart';
 
 void main() {
   group('ChatInfoAppBar', () {
@@ -46,85 +55,215 @@ void main() {
     });
   });
 
+  group('Tonight strip grouping', () {
+    test('I am on / Looking for Squad / Invite are Tonight; Voice+Video More',
+        () {
+      expect(
+          slotForTonightAction(kTonightOnNowAction), TonightStripSlot.tonight);
+      expect(
+        slotForTonightAction(kTonightLookingForSquadAction),
+        TonightStripSlot.tonight,
+      );
+      expect(
+          slotForTonightAction(kTonightInviteAction), TonightStripSlot.tonight);
+      expect(slotForTonightAction(kMoreVoiceAction), TonightStripSlot.more);
+      expect(slotForTonightAction(kMoreVideoAction), TonightStripSlot.more);
+    });
+
+    test('Search is omitted until it searches', () {
+      expect(slotForTonightAction(kDeadSearchAction), isNull);
+      expect(slotForTonightAction('search'), isNull);
+    });
+
+    test('tonightStripChildren keeps product order', () {
+      const onNow = Text('on');
+      const lfg = Text('lfg');
+      const invite = Text('inv');
+      final children = tonightStripChildren(
+        onNow: onNow,
+        lookingForSquad: lfg,
+        invite: invite,
+      );
+      expect(children, [onNow, lfg, invite]);
+    });
+
+    test('resolveInviteLobbyId prefers lobby bound to squad', () {
+      final bound = Lobby.create(
+        name: 'Bound',
+        gameName: 'Warzone',
+        maxSpots: 4,
+        createdBy: 'u1',
+      ).copyWith(id: 'lobby-bound', chatGroupId: 'squad-1');
+      final other = Lobby.create(
+        name: 'Other',
+        gameName: 'Warzone',
+        maxSpots: 4,
+        createdBy: 'u1',
+      ).copyWith(id: 'lobby-other');
+      expect(
+        resolveInviteLobbyId(
+          squadId: 'squad-1',
+          selectedLobbyId: 'lobby-other',
+          currentLobby: other,
+          userLobbies: {'lobby-bound': bound, 'lobby-other': other},
+        ),
+        'lobby-bound',
+      );
+    });
+
+    test('resolveInviteLobbyId falls back to squadId', () {
+      expect(
+        resolveInviteLobbyId(squadId: 'squad-1'),
+        'squad-1',
+      );
+    });
+  });
+
   group('ChatInfoActionsSection', () {
-    testWidgets('renders all three action buttons',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoActionsSection(
-              squadId: 'test-squad',
-              squadName: 'Test Squad',
-              neonColor: Colors.blue,
+    setUp(() {
+      MatchmakingQueueTracker.resetInstance();
+      LfgQueueStatusHost.scheduleDisconnectCleanup = false;
+      lfgReconnectToastGate.reset();
+    });
+    tearDown(() {
+      MatchmakingQueueTracker.resetInstance();
+      lfgReconnectToastGate.reset();
+      LfgQueueStatusHost.scheduleDisconnectCleanup = true;
+    });
+
+    Future<void> pumpActions(WidgetTester tester) {
+      return tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: ChatInfoActionsSection(
+                  squadId: 'test-squad',
+                  squadName: 'Test Squad',
+                  neonColor: Colors.blue,
+                ),
+              ),
             ),
           ),
         ),
       );
+    }
+
+    testWidgets('Tonight block shows I am on, Looking for Squad, Invite',
+        (WidgetTester tester) async {
+      await pumpActions(tester);
+
+      expect(find.byKey(const Key('tonight-actions')), findsOneWidget);
+      expect(find.text('Tonight'), findsOneWidget);
+      expect(find.text("I'm on now"), findsOneWidget);
+      expect(find.text('Looking for Squad'), findsOneWidget);
+      expect(find.text('Invite'), findsOneWidget);
+      expect(find.text(kLfgListEmptyCopy), findsOneWidget);
+      expect(find.text(kLfgListEmptyHint), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('Grok concierge is three commands with no free-chat field',
+        (WidgetTester tester) async {
+      await pumpActions(tester);
+
+      expect(find.byKey(const Key('grok-concierge')), findsOneWidget);
+      expect(find.text("Who's free tonight?"), findsOneWidget);
+      expect(find.text('Summarize this lobby chat since 8pm'), findsOneWidget);
+      expect(find.text('Draft a peacock invite'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.byType(TextFormField), findsNothing);
+    });
+
+    testWidgets('Search entry is gone (no coming-soon snackbar)',
+        (WidgetTester tester) async {
+      await pumpActions(tester);
+
+      expect(find.text('Search'), findsNothing);
+      expect(find.byIcon(Icons.search), findsNothing);
+      expect(find.text('Search feature coming soon!'), findsNothing);
+
+      await tester.tap(find.text('More'));
+      await tester.pump();
+
+      expect(find.text('Search'), findsNothing);
+      expect(find.byIcon(Icons.search), findsNothing);
+      expect(find.text('Search feature coming soon!'), findsNothing);
+    });
+
+    testWidgets('Voice + Video live under More, collapsed by default',
+        (WidgetTester tester) async {
+      await pumpActions(tester);
+
+      expect(find.text('More'), findsOneWidget);
+      expect(find.text('Voice Chat'), findsNothing);
+      expect(find.text('Video Chat'), findsNothing);
+      expect(find.text('Beta'), findsNothing);
+      expect(find.byKey(const Key('more-voice')), findsNothing);
+      expect(find.byKey(const Key('more-video')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('more-actions-toggle')));
+      await tester.pump();
 
       expect(find.text('Voice Chat'), findsOneWidget);
       expect(find.text('Video Chat'), findsOneWidget);
-      expect(find.text('Search'), findsOneWidget);
-    });
-
-    testWidgets('displays Beta badge on Video Chat',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoActionsSection(
-              squadId: 'test-squad',
-              squadName: 'Test Squad',
-              neonColor: Colors.blue,
-            ),
-          ),
-        ),
-      );
-
       expect(find.text('Beta'), findsOneWidget);
-    });
-
-    testWidgets('renders action buttons with correct layout',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoActionsSection(
-              squadId: 'test-squad',
-              squadName: 'Test Squad',
-              neonColor: Colors.blue,
-            ),
-          ),
-        ),
-      );
-
-      // Verify all buttons are present
+      expect(find.byKey(const Key('more-voice')), findsOneWidget);
+      expect(find.byKey(const Key('more-video')), findsOneWidget);
       expect(find.byIcon(Icons.headset), findsOneWidget);
       expect(find.byIcon(Icons.video_call), findsOneWidget);
-      expect(find.byIcon(Icons.search), findsOneWidget);
-
-      // Verify buttons use Row layout
-      final row = tester.widget<Row>(find.ancestor(
-        of: find.text('Search'),
-        matching: find.byType(Row),
-      ));
-      expect(row.mainAxisAlignment, MainAxisAlignment.spaceEvenly);
+      expect(find.text('Search'), findsNothing);
     });
   });
 
   group('ChatInfoMembersSection', () {
-    testWidgets('renders with empty member list', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoMembersSection(
-              squadId: 'test-squad',
-              members: const [],
-              neonColor: Colors.blue,
-              onAddMemberPressed: () {},
+    setUp(() {
+      AvailabilityOnStore.scheduleExpirySweeps = false;
+      PresenceBadgesHost.scheduleStaleCleanup = false;
+      presenceReconnectToastGate.reset();
+      MatchmakingQueueTracker.resetInstance();
+      resetAvailabilityOnStore();
+    });
+    tearDown(() {
+      MatchmakingQueueTracker.resetInstance();
+      resetAvailabilityOnStore();
+      presenceReconnectToastGate.reset();
+      PresenceBadgesHost.scheduleStaleCleanup = true;
+      AvailabilityOnStore.scheduleExpirySweeps = true;
+    });
+
+    Future<void> pumpMembers(
+      WidgetTester tester, {
+      required List<Map<String, dynamic>> members,
+      VoidCallback? onAdd,
+      LobbyState? lobbyState,
+    }) {
+      return tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            lobbyNotifierProvider.overrideWith(
+              () => _IdleLobbyNotifier(
+                lobbyState ?? LobbyState.initial(),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatInfoMembersSection(
+                squadId: 'test-squad',
+                members: members,
+                neonColor: Colors.blue,
+                onAddMemberPressed: onAdd ?? () {},
+              ),
             ),
           ),
         ),
       );
+    }
+
+    testWidgets('renders with empty member list', (WidgetTester tester) async {
+      await pumpMembers(tester, members: const []);
+      await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.person_add), findsOneWidget);
     });
@@ -135,18 +274,8 @@ void main() {
         {'id': '2', 'name': 'User 2', 'isOnline': false},
       ];
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoMembersSection(
-              squadId: 'test-squad',
-              members: members,
-              neonColor: Colors.blue,
-              onAddMemberPressed: () {},
-            ),
-          ),
-        ),
-      );
+      await pumpMembers(tester, members: members);
+      await tester.pumpAndSettle();
 
       expect(find.text('User 1'), findsOneWidget);
       expect(find.text('User 2'), findsOneWidget);
@@ -156,25 +285,54 @@ void main() {
         (WidgetTester tester) async {
       bool wasPressed = false;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ChatInfoMembersSection(
-              squadId: 'test-squad',
-              members: const [],
-              neonColor: Colors.blue,
-              onAddMemberPressed: () {
-                wasPressed = true;
-              },
-            ),
-          ),
-        ),
+      await pumpMembers(
+        tester,
+        members: const [],
+        onAdd: () {
+          wasPressed = true;
+        },
       );
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.person_add));
       await tester.pump();
 
       expect(wasPressed, true);
+    });
+
+    testWidgets('shows On / Looking / In lobby from live sources',
+        (WidgetTester tester) async {
+      availabilityOnStore.markOn('u-on');
+      MatchmakingQueueTracker.instance.startLooking('u-look');
+      final lobby = Lobby.create(
+        name: 'Squad',
+        gameName: 'Warzone',
+        maxSpots: 8,
+        createdBy: 'u-in',
+      ).copyWith(id: 'lobby-1', memberUids: const ['u-in']);
+
+      await pumpMembers(
+        tester,
+        members: const [
+          {'uid': 'u-on', 'name': 'On User', 'isOnline': true},
+          {'uid': 'u-look', 'name': 'Looking User', 'isOnline': true},
+          {'uid': 'u-in', 'name': 'Lobby User', 'isOnline': true},
+        ],
+        lobbyState: LobbyState.initial().copyWith(
+          lobbyMemberUids: const ['u-in'],
+          currentLobby: lobby,
+          userLobbies: {'lobby-1': lobby},
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('On'), findsOneWidget);
+      expect(find.text('Looking'), findsOneWidget);
+      expect(find.text('In lobby'), findsOneWidget);
+      expect(find.byKey(const Key('presence-badge-on')), findsOneWidget);
+      expect(find.byKey(const Key('presence-badge-looking')), findsOneWidget);
+      expect(find.byKey(const Key('presence-badge-in-lobby')), findsOneWidget);
     });
   });
 
@@ -318,6 +476,35 @@ void main() {
       expect(find.text('Admin User'), findsOneWidget);
       expect(find.byIcon(Icons.shield), findsOneWidget);
     });
+
+    testWidgets('displays On / Looking / In lobby presence badges',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: ChatInfoMemberAvatar(
+              name: 'Sam',
+              avatarUrl: null,
+              isOnline: true,
+              neonColor: Colors.blue,
+              presenceBadges: PresenceBadgeRow(
+                badges: PresenceBadges(
+                  isOn: true,
+                  isLooking: true,
+                  isInLobby: true,
+                ),
+                compact: true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Sam'), findsOneWidget);
+      expect(find.text('On'), findsOneWidget);
+      expect(find.text('Looking'), findsOneWidget);
+      expect(find.text('In lobby'), findsOneWidget);
+    });
   });
 
   group('Tab Wrapper Components', () {
@@ -409,4 +596,12 @@ void main() {
       expect(find.text('Links Content'), findsOneWidget);
     });
   });
+}
+
+class _IdleLobbyNotifier extends LobbyNotifier {
+  _IdleLobbyNotifier(this._state);
+  final LobbyState _state;
+
+  @override
+  Future<LobbyState> build() async => _state;
 }

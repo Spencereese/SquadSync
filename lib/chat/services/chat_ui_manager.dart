@@ -3,10 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/message_service.dart';
+import '../widgets/peacock_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' as r;
-import 'package:squad_sync/presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../domain/entities/message.dart';
 import '../../domain/entities/chat_state.dart' as cn_state;
 import '../models/message_data.dart' as md;
@@ -111,70 +111,7 @@ class ChatUIManager {
 
   /// Build the active squad header card
   Widget buildActiveLobbyHeader(BuildContext context, {String? chatGroupId}) {
-    return r.Consumer(
-      builder: (context, ref, child) {
-        final squadAsync = ref.watch(ln.lobbyNotifierProvider);
-        final squadState = squadAsync.value;
-        if (squadState == null) return const SizedBox.shrink();
-
-        final currentGame = squadState.currentGame;
-        if (currentGame == null) {
-          return const SizedBox.shrink();
-        }
-
-        final gameName = currentGame['name'] ?? 'Unknown Game';
-        final maxSpots = currentGame['maxSpots'] ?? 4;
-        final spots = squadState.gameLobbySpots[gameName] ?? [];
-        final claimed = spots.where((spot) => spot != null).length;
-
-        // Only show if there are claimed spots
-        if (claimed == 0) {
-          return const SizedBox.shrink();
-        }
-
-        return GestureDetector(
-          onTap: () {
-            // Navigate directly to spots lobby for this game
-            Navigator.pushNamed(context, '/squad', arguments: {
-              'gameName': gameName,
-              'game': currentGame,
-              'chatGroupId': chatGroupId,
-            });
-          },
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.cyanAccent.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.cyanAccent.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.flash_on, color: Colors.cyanAccent),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Your Active Lobby: $gameName - $claimed/$maxSpots spots',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const Icon(
-                  Icons.arrow_forward_ios,
-                  color: Colors.white70,
-                  size: 16,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    return const ChatPeacockCardHost();
   }
 
   /// Build the messages list with provided messages

@@ -12,11 +12,17 @@ import '../presentation/widgets/animated_theme_wrapper.dart';
 import '../presentation/hooks/game_theme_sync.dart';
 import '../services/supabase_service.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import '../core/app_env.dart';
 import '../core/app_router.dart';
+import '../core/app_theme.dart';
+import '../core/notification_routes.dart';
 
 final authStateProvider = StreamProvider<User?>((ref) {
   debugPrint('authStateProvider: Setting up auth state listener');
-  return Supabase.instance.client.auth.onAuthStateChange.map((data) {
+  if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
+    return Stream<User?>.value(null);
+  }
+  return SupabaseService.client.auth.onAuthStateChange.map((data) {
     final user = data.session?.user;
     debugPrint(
         'authStateProvider: Auth state changed - event: ${data.event}, user: ${user?.id ?? "null"}, session exists: ${data.session != null}');
@@ -37,6 +43,7 @@ class SquadSyncMaterialApp extends ConsumerWidget {
     GameThemeSync.watch(ref);
 
     final router = ref.watch(goRouterProvider);
+    NotificationRoutes.bindRouter(router, rootNavigatorKey);
 
     // Remove native splash after first frame is rendered (only once)
     if (!_splashRemoved) {
@@ -50,10 +57,19 @@ class SquadSyncMaterialApp extends ConsumerWidget {
     }
 
     return AnimatedThemeWrapper(
-      child: MaterialApp.router(
-        title: 'SquadSync',
-        routerConfig: router,
-        debugShowCheckedModeBanner: false,
+      child: Builder(
+        builder: (context) {
+          final animated = Theme.of(context);
+          final isDark = animated.brightness == Brightness.dark;
+          return MaterialApp.router(
+            title: 'Cod Squad',
+            theme: isDark ? AppTheme.light() : animated,
+            darkTheme: isDark ? animated : AppTheme.dark(),
+            themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+            routerConfig: router,
+            debugShowCheckedModeBanner: false,
+          );
+        },
       ),
     );
   }

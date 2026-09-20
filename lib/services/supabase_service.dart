@@ -1,12 +1,14 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io' show Platform;
+
+import '../core/app_env.dart';
+import '../core/auth_redirect.dart';
+import '../core/session_guard.dart';
 
 /// Supabase service for SquadSync
 ///
-/// Provides dual-client architecture alongside Firebase.
-/// Currently being integrated as a complementary data layer.
+/// Primary data layer for auth, realtime, and storage.
 ///
 /// Usage:
 /// ```dart
@@ -27,13 +29,30 @@ import 'dart:io' show Platform;
 class SupabaseService {
   static bool _isInitialized = false;
 
-  /// Supabase client instance
+  static bool get isInitialized => _isInitialized;
+
+  static bool get isReady =>
+      _isInitialized && AppEnv.isSupabaseConfigured;
+
+  /// Null when parked / init was skipped. Never throws.
+  static SupabaseClient? get maybeClient {
+    if (!_isInitialized) return null;
+    try {
+      return Supabase.instance.client;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Live client. Prefer [maybeClient] / [isReady] at call sites that
+  /// can run before init (Setup, Auth, AutoMerge).
   static SupabaseClient get client {
-    if (!_isInitialized) {
+    final existing = maybeClient;
+    if (existing == null) {
       throw StateError(
           'Supabase not initialized. Call SupabaseService.initialize() first.');
     }
-    return Supabase.instance.client;
+    return existing;
   }
 
   /// Initialize Supabase
@@ -45,13 +64,17 @@ class SupabaseService {
   ///
   /// Supabase 2.12.0+ supports idempotent initialization - safe to call multiple times
   static Future<void> initialize() async {
-    // Load credentials from environment variables
-    final supabaseUrl = dotenv.env['SUPABASE_URL'];
-    final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
+    final supabaseUrl = AppEnv.supabaseUrl;
+    final supabaseAnonKey = AppEnv.supabaseAnonKey;
 
-    if (supabaseUrl == null || supabaseAnonKey == null) {
-      throw Exception(
-          'SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env file');
+    if (!AppEnv.isSupabaseConfigured ||
+        supabaseUrl == null ||
+        supabaseAnonKey == null) {
+      debugPrint(
+        'Supabase not configured (empty or placeholder URL). '
+        'Client stays offline. flutter run --dart-define-from-file=.env',
+      );
+      return;
     }
 
     // Use anon key for proper authentication with RLS
@@ -70,48 +93,135 @@ class SupabaseService {
       debug: kDebugMode,
     );
 
-    // Wait for session to restore from storage (iOS Keychain/Android SharedPreferences)
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    final session = Supabase.instance.client.auth.currentSession;
-    if (kDebugMode) {
-      debugPrint('✅ Supabase initialized with authentication');
-      debugPrint('   Current session: ${session?.user.id ?? "none"}');
-
-      // NEW in 2.12.0: Get JWT claims for custom claim verification
-      if (session != null) {
-        try {
-          final claimsResponse =
-              await Supabase.instance.client.auth.getClaims();
-          final claims =
-              claimsResponse.claims.claims; // Access claims map via JwtPayload
-          debugPrint('   JWT Claims: ${claims.keys.toList()}');
-          debugPrint('   User role: ${claims['role']}');
-          debugPrint('   App metadata: ${claims['app_metadata']}');
-        } catch (e) {
-          debugPrint('   ⚠️ Failed to get JWT claims: $e');
-        }
-      }
-
-      if (!kIsWeb) {
-        debugPrint('   Platform: ${Platform.operatingSystem}');
-        if (Platform.isIOS) {
-          debugPrint('   iOS: Session persistence via Keychain enabled');
-        }
-      }
-    }
-
+    // Mark ready before Keychain restore so a missing/failed session still
+    // leaves sign-in available. Restore errors must not crash cold open.
     _isInitialized = true;
+
+    try {
+      // Wait for session to restore from storage (iOS Keychain/Android SharedPreferences)
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      final session = _readStoredSession();
+      if (kDebugMode) {
+        debugPrint('✅ Supabase initialized with authentication');
+        debugPrint('   Current session: ${session?.user.id ?? "none"}');
+
+        // NEW in 2.12.0: Get JWT claims for custom claim verification
+        if (session != null) {
+          try {
+            final claimsResponse =
+                await Supabase.instance.client.auth.getClaims();
+            final claims =
+                claimsResponse.claims.claims; // Access claims map via JwtPayload
+            debugPrint('   JWT claim keys: ${claims.keys.toList()}');
+          } catch (e) {
+            debugPrint('   ⚠️ Failed to get JWT claims: $e');
+          }
+        }
+
+        if (!kIsWeb) {
+          debugPrint('   Platform: ${Platform.operatingSystem}');
+          if (Platform.isIOS) {
+            debugPrint('   iOS: Session persistence via Keychain enabled');
+          }
+        }
+      }
+
+      await ensureFreshSession();
+    } catch (e) {
+      debugPrint('Keychain session restore failed: $e');
+    }
+  }
+
+  static Session? _readStoredSession() {
+    return readStoredSessionSafely(
+      () => maybeClient?.auth.currentSession,
+      onError: (e) => debugPrint('Keychain session restore failed: $e'),
+    );
+  }
+
+  /// Refresh an expired/near-expiry Keychain JWT, or [signOut] so a
+  /// dead session cannot keep opening realtime. Missing session, Keychain
+  /// restore failure, and expired refresh all return null — never throw.
+  static Future<Session?> ensureFreshSession() async {
+    try {
+      if (!isReady) return null;
+      final existing = maybeClient;
+      if (existing == null) return null;
+
+      final session = readStoredSessionSafely(
+        () => existing.auth.currentSession,
+        onError: (e) => debugPrint('Keychain session restore failed: $e'),
+      );
+      if (session == null) return null;
+
+      final phase = resolveSessionRestorePhase(
+        isConfigured: true,
+        isInitialized: true,
+        hasUser: true,
+        expiresAtSeconds: session.expiresAt,
+      );
+      if (!sessionRestoreShouldAttemptRefresh(phase)) {
+        return phase == SessionRestorePhase.usable ? session : null;
+      }
+
+      try {
+        final response = await existing.auth.refreshSession();
+        final next = response.session;
+        if (next == null ||
+            isSessionExpired(expiresAtSeconds: next.expiresAt)) {
+          await _signOutDeadSession(existing, 'refresh returned dead session');
+          return null;
+        }
+        return next;
+      } catch (e) {
+        await _signOutDeadSession(existing, e);
+        return null;
+      }
+    } catch (e) {
+      debugPrint('ensureFreshSession failed: $e');
+      return null;
+    }
+  }
+
+  static Future<void> _signOutDeadSession(
+    SupabaseClient existing,
+    Object reason,
+  ) async {
+    debugPrint(
+      'Session refresh failed; signing out dead Keychain session: $reason',
+    );
+    try {
+      await existing.auth.signOut();
+    } catch (signOutError) {
+      debugPrint('Sign-out after dead session failed: $signOutError');
+    }
   }
 
   /// Check if user is authenticated in Supabase
-  static bool get isAuthenticated => client.auth.currentUser != null;
+  static bool get isAuthenticated {
+    try {
+      return isUsableAuthSession(
+        hasUser: currentUser != null,
+        expiresAtSeconds: currentSession?.expiresAt,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
 
-  /// Get current Supabase user
-  static User? get currentUser => client.auth.currentUser;
+  /// Get current Supabase user. Keychain restore failure is null, not a throw.
+  static User? get currentUser {
+    try {
+      return maybeClient?.auth.currentUser;
+    } catch (e) {
+      debugPrint('Keychain currentUser restore failed: $e');
+      return null;
+    }
+  }
 
   /// Get current user ID
-  static String? get currentUserId => client.auth.currentUser?.id;
+  static String? get currentUserId => currentUser?.id;
 
   /// Sign in with email and password
   static Future<AuthResponse> signInWithPassword({
@@ -144,13 +254,13 @@ class SupabaseService {
   }) async {
     return await client.auth.signInWithOAuth(
       provider,
-      redirectTo: 'codsquadapp://auth-callback',
+      redirectTo: kSupabaseAuthRedirect,
       authScreenLaunchMode: LaunchMode.externalApplication,
     );
   }
 
-  /// Get current session
-  static Session? get currentSession => client.auth.currentSession;
+  /// Get current session. Keychain restore failure is null, not a throw.
+  static Session? get currentSession => _readStoredSession();
 
   /// Sign out from Supabase
   static Future<void> signOut() async {
@@ -158,7 +268,8 @@ class SupabaseService {
   }
 
   /// Get active channel count
-  static int get activeChannelCount => client.getChannels().length;
+  static int get activeChannelCount =>
+      maybeClient?.getChannels().length ?? 0;
 
   /// Check if approaching channel limit
   /// Supabase free tier typically limits to 100 channels per client
@@ -184,50 +295,18 @@ class SupabaseService {
     }
   }
 
-  /// Proactively clean up channels approaching rate limit
-  /// Returns number of channels cleaned
-  ///
-  /// Strategy: Remove ALL orphaned channels immediately to prevent buildup
-  /// This is aggressive but necessary for chat-heavy apps
+  /// No-op. Do not nuke sibling typing/lobby/messages/presence channels.
+  /// Cap is enforced by single-subscribe + one recovery.
   static Future<int> cleanupOldChannels() async {
-    try {
-      final channels = client.getChannels();
-      final channelCount = channels.length;
-
-      // AGGRESSIVE: Clean up ANY channels found (they shouldn't persist)
-      if (channelCount == 0) {
-        return 0; // No cleanup needed
-      }
-
-      debugPrint(
-          '🧹 AGGRESSIVE cleanup: $channelCount orphaned channels detected');
-
-      // Remove ALL orphaned channels - they should be tracked by subscriptions only
-      int cleaned = 0;
-      for (final channel in channels) {
-        try {
-          await client.removeChannel(channel);
-          cleaned++;
-        } catch (e) {
-          debugPrint('⚠️ Failed to remove channel: $e');
-          // Continue with other channels
-        }
-      }
-
-      if (cleaned > 0) {
-        debugPrint('✅ Aggressively cleaned $cleaned orphaned channels');
-      }
-
-      return cleaned;
-    } catch (e) {
-      debugPrint('⚠️ Error during aggressive cleanup: $e');
-      return 0;
-    }
+    // Never nuke sibling typing/lobby/messages/presence channels.
+    // Cap is enforced by single-subscribe + one recovery, not a wipe.
+    return 0;
   }
 
   /// Dispose of real-time subscriptions
   /// Call this when cleaning up
   static Future<void> dispose() async {
+    if (maybeClient == null) return;
     try {
       // Clean up any active subscriptions
       final count = activeChannelCount;
@@ -252,4 +331,4 @@ class SupabaseService {
 /// ```dart
 /// final data = await supabase.from('table').select();
 /// ```
-final supabase = SupabaseService.client;
+SupabaseClient get supabase => SupabaseService.client;

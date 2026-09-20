@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:ui';
 import '../../core/app_theme.dart';
+import '../../core/injection.dart';
 import '../../domain/entities/constitution.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Glass-themed voting sheet for constitution rule changes
 class ConstitutionVotingSheet extends ConsumerStatefulWidget {
@@ -52,13 +52,12 @@ class _ConstitutionVotingSheetState
 
   Future<void> _checkUserVote() async {
     try {
-      final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
+      final userId = ref.read(constitutionManagerProvider).currentUserId;
+      if (userId == null) return;
 
       final votes = widget.vote.votes;
-      if (votes.containsKey(user.id)) {
-        setState(() => _userVote = votes[user.id]);
+      if (votes.containsKey(userId)) {
+        setState(() => _userVote = votes[userId]);
       }
     } catch (e) {
       debugPrint('Error checking user vote: $e');
@@ -80,22 +79,10 @@ class _ConstitutionVotingSheetState
     setState(() => _isLoading = true);
 
     try {
-      final supabase = Supabase.instance.client;
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
+      final manager = ref.read(constitutionManagerProvider);
+      if (manager.currentUserId == null) return;
 
-      // Update votes
-      final updatedVotes = Map<String, bool>.from(widget.vote.votes);
-      updatedVotes[user.id] = vote;
-
-      final voteCountYes = updatedVotes.values.where((v) => v).length;
-      final voteCountNo = updatedVotes.values.where((v) => !v).length;
-
-      await supabase.from('constitution_votes').update({
-        'votes': updatedVotes,
-        'vote_count_yes': voteCountYes,
-        'vote_count_no': voteCountNo,
-      }).eq('id', widget.vote.id);
+      await manager.submitVote(vote: widget.vote, yes: vote);
 
       HapticFeedback.mediumImpact();
       await _dismiss();
@@ -396,7 +383,7 @@ class _ConstitutionVotingSheetState
               ],
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }

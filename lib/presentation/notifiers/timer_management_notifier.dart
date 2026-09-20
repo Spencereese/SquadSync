@@ -5,6 +5,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:squad_sync/domain/repositories/lobby_repository.dart';
 import 'package:squad_sync/core/injection.dart';
 
+import '../../services/peacock_assignment_machine.dart';
 import '../../services/timer_service.dart';
 
 part 'timer_management_notifier.freezed.dart';
@@ -242,10 +243,21 @@ class TimerManagementNotifier
     }
   }
 
-  /// Clean up expired peacock timers
+  /// Clean up expired peacock timers for display.
+  ///
+  /// Expire through the tracker so chips read expired. Server
+  /// [process_expired_timers] assigns the next queued uid. Client does
+  /// not assign — Realtime peacock_notifications reduce assignSpot.
   Future<void> cleanupExpiredPeacockTimers() async {
     try {
-      await _repository.processPeacockQueue();
+      final timers = state.valueOrNull?.peacockTimerStates ?? {};
+      final tracker = PeacockAssignmentTracker.instance;
+      for (final entry in timers.entries) {
+        if (entry.value.inSeconds <= 0) {
+          tracker.expire(entry.key);
+        }
+      }
+      await _repository.processExpiredTimers();
       debugPrint('✅ Cleaned up expired peacock timers');
     } catch (e) {
       debugPrint('❌ Error cleaning up peacock timers: $e');
@@ -255,7 +267,7 @@ class TimerManagementNotifier
 
 // Backward compatibility alias (riverpod generates 'timerManagementProvider')
 final timerManagementNotifierProvider = AutoDisposeAsyncNotifierProvider<
-    TimerManagementNotifier, TimerManagementState>.new(
+    TimerManagementNotifier, TimerManagementState>(
   TimerManagementNotifier.new,
 );
 

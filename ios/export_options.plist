@@ -4,6 +4,13 @@
 <dict>
   <key>method</key>
   <string>app-store</string>
+  <!-- APPLE_TEAM_ID = K4ZTXPQ8J9
+       BUNDLE_ID_IOS = com.example.codSquadApp
+       WIDGET_BUNDLE_ID = com.example.codSquadApp.PeacockLockWidget
+       URL scheme: com.example.codSquadApp://auth-callback
+       FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
+       AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+       not e2e Universal Links. Spencer must firebase deploy --only hosting.) -->
   <key>teamID</key>
   <string>K4ZTXPQ8J9</string>
   <key>uploadBitcode</key>

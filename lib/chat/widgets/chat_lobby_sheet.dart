@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/app_theme.dart';
+import '../../core/notification_routes.dart';
+import '../../domain/entities/lobby.dart';
 import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/game.dart';
 import '../../presentation/notifiers/lobby_notifier.dart';
@@ -138,25 +141,18 @@ class _ChatLobbySheetState extends ConsumerState<ChatLobbySheet> {
       final lobbyId =
           await ref.read(lobbyNotifierProvider.notifier).createLobby(
                 chatGroupId: widget.chatGroupId,
-                gameName: game['name'],
+                chatGroupName: widget.chatGroupName,
+                gameName: game['name']?.toString() ?? '',
                 maxSpots: 8, // Default max spots
                 isPublic: false,
               );
 
       if (mounted) {
         HapticFeedback.mediumImpact();
-
-        // Navigate to lobby tab screen with the new lobby ID
-        Navigator.of(context).pop();
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => LobbyTabScreen(
-              lobbyId: lobbyId,
-              gameName: game['name'],
-              game: game,
-              chatGroupId: widget.chatGroupId,
-            ),
-          ),
+        _landOnSquadLobby(
+          lobbyId,
+          gameName: game['name']?.toString(),
+          game: game,
         );
       }
     } catch (e) {
@@ -169,6 +165,40 @@ class _ChatLobbySheetState extends ConsumerState<ChatLobbySheet> {
         );
       }
     }
+  }
+
+  /// Friends and creator land on THIS lobby: `/squad?lobby_id=`.
+  void _landOnSquadLobby(
+    String lobbyId, {
+    String? gameName,
+    Map<String, dynamic>? game,
+  }) {
+    final location = '/squad?lobby_id=${Uri.encodeComponent(lobbyId)}';
+    final go = NotificationRoutes.go;
+    GoRouter? router;
+    try {
+      router = GoRouter.of(context);
+    } catch (_) {}
+    Navigator.of(context).pop();
+    if (go != null) {
+      go(location);
+      return;
+    }
+    if (router != null) {
+      router.go(location);
+      return;
+    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => LobbyTabScreen(
+          lobbyId: lobbyId,
+          gameName: gameName,
+          game: game,
+          chatGroupId: widget.chatGroupId,
+        ),
+      ),
+    );
   }
 
   @override
@@ -677,13 +707,42 @@ class _ChatLobbySheetState extends ConsumerState<ChatLobbySheet> {
       data: (lobbyState) {
         // Get active lobbies for this chat group
         final activeLobbies = <Map<String, dynamic>>[];
+        final seenIds = <String>{};
+
+        void addBoundLobby(Map<String, dynamic> lobby) {
+          final id = lobby['id']?.toString();
+          if (id != null && id.isNotEmpty && !seenIds.add(id)) return;
+          activeLobbies.add(lobby);
+        }
+
+        Map<String, dynamic> lobbyEntityToMap(Lobby lobby) => {
+              'id': lobby.id,
+              'name': lobby.name,
+              'gameName': lobby.gameName,
+              'spots': lobby.spots,
+              'maxSpots': lobby.maxSpots,
+              'chatGroupId': lobby.chatGroupId,
+              'isActive': lobby.isActive,
+            };
+
+        for (final lobby in lobbyState.userLobbies.values) {
+          if (lobby.chatGroupId == widget.chatGroupId && lobby.isActive) {
+            addBoundLobby(lobbyEntityToMap(lobby));
+          }
+        }
+        final current = lobbyState.currentLobby;
+        if (current != null &&
+            current.chatGroupId == widget.chatGroupId &&
+            current.isActive) {
+          addBoundLobby(lobbyEntityToMap(current));
+        }
 
         // Check for private lobbies in this chat group
         lobbyState.gameLobbies.forEach((gameName, lobbies) {
           for (final lobby in lobbies) {
             if (lobby['chatGroupId'] == widget.chatGroupId &&
                 lobby['isActive'] == true) {
-              activeLobbies.add(lobby);
+              addBoundLobby(lobby);
             }
           }
         });
@@ -832,6 +891,11 @@ class _ChatLobbySheetState extends ConsumerState<ChatLobbySheet> {
         child: InkWell(
           onTap: () {
             HapticFeedback.lightImpact();
+            final lobbyId = lobby['id']?.toString();
+            if (lobbyId != null && lobbyId.isNotEmpty) {
+              _landOnSquadLobby(lobbyId, gameName: gameName);
+              return;
+            }
             Navigator.of(context).pop();
             Navigator.of(context).push(
               MaterialPageRoute(

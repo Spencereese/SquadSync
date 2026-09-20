@@ -135,4 +135,5 @@ jobs:
             test/services/fill_pin_link_preview_test.dart \
             test/services/fill_pin_coming_chrome_test.dart \
             test/services/fill_pin_header_actions_test.dart \
-            test/services/fill_pin_spot_open_nudge_test.dart
+            test/services/fill_pin_spot_open_nudge_test.dart \
+            test/services/fill_pin_debug_hold_prod_ban_test.dart

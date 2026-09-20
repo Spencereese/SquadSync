@@ -9,74 +9,52 @@ import 'package:squad_sync/services/coming_hold_machine.dart';
 import 'package:squad_sync/services/fill_pin_live_activity.dart';
 import 'package:squad_sync/services/peacock_self_notify.dart';
 
-/// PIN WAVE — SPOT-OPEN NUDGE UI WIRE (RED, Tester-owned).
+/// PIN WAVE — SPOT-OPEN NUDGE expire-tick follow-up RED (Harness).
 ///
-/// [coming_hold_machine] already frees the seat and stubs
-/// [ComingHoldState.shouldNudgeSpotOpen] + [onSpotOpenNudge] on
-/// expire (Coming → tick past remaining) and Can't / release.
-/// Comments still say "UI wiring is later."
+/// Cue + Can't-from-header already land. After debugHold prod
+/// fallback drop at SHA_BASE `c18cd3a` / `3.4.183+185`,
+/// [FillPinSpotOpenNudgeCue] is pass-hold-only (null ⇒ shrink).
+/// Header `_hold` starts null (or Coming after a friend tap).
+/// [FillPinLiveActivity.tick] expires the LA hold but does **not**
+/// pass/live that hold into the cue. Can't still cues via `_apply`.
+/// A static `currentHold` / `fillPinHeaderHold` read is the same
+/// class of fallback as `debugHold` — not this cut.
 ///
-/// Prior P2 NUDGE AUDIENCE / WIRE slices filter UIDs on the LA
-/// "need one" path (`fill_pin_nudge_audience` +
-/// `fill_pin_live_activity`). This cut is **not** that, and is
-/// **not** LA Widget Ext (`fill_pin_live_activity_buttons_test`).
-/// This cut is specifically **spot-open into live friend UI** —
-/// snackbar or pin-header cue — when Coming frees a seat.
-///
-/// Friend sees: expire or Can't → nudge surfaces. Idle / Sit stay
-/// quiet (no seat-free). Reuse [reduceComingHold]. One notify
-/// pipeline only. XOR stays [planPeacockSelfNotify].
-///
-/// Preferred Loop contract (header or thin nudge helper):
-///
-/// ```
-/// String? fillPinSpotOpenNudgeCue(ComingHoldState? hold)
-/// // non-null when hold.shouldNudgeSpotOpen (expire / Can't)
-/// // null when idle / sit / coming-with-time / omitted
-///
-/// const kFillPinSpotOpenNudgeKey = Key('fill-pin-spot-open-nudge');
-/// // and/or showFillPinSpotOpenNudge snackbar helper
-/// ```
-///
-/// Wire [onSpotOpenNudge] and/or read [shouldNudgeSpotOpen] from
-/// the header (or thin helper). Do **not** import
-/// `fill_pin_live_activity.dart` from the header (cycle — live
-/// activity already imports the header). Prefer a helper under
-/// lease if apply / snackbar needs the LA path.
+/// Friend sees: Coming on the live header, then expire-tick →
+/// nudge surfaces. Idle / Sit stay quiet. One notify pipeline
+/// (`onSpotOpenNudge` / [FillPinSpotOpenNudgeCue]). XOR stays
+/// [planPeacockSelfNotify]. No [FillPinLiveActivity.debugHold].
 ///
 /// Adversarial RED asserts (FAIL until Loop greens):
 ///
-/// 1. After expire (Coming → tick past remaining) or Can't /
-///    release, the nudge flag/callback surfaces to a live UI path
-///    (header cue key/text OR snackbar helper OR
-///    [shouldNudgeSpotOpen] == true consumed by a named fill-pin
-///    nudge surface Loop will add).
-/// 2. Idle start / Sit path leaves the nudge quiet
-///    ([shouldNudgeSpotOpen] false; no cue).
-/// 3. Prefer a pure helper + source-scan that the header (or thin
-///    nudge helper) wires [onSpotOpenNudge] / reads
-///    [shouldNudgeSpotOpen] — FAIL until wired.
-/// 4. No second notify pipeline (no FirebaseMessaging /
-///    sendNotificationToUsers in the nudge surface).
-/// 5. No lobby_notifier / message_bubble / chat_info_screen
-///    dual-edit.
-/// 6. XOR [planPeacockSelfNotify] guard.
+/// 1. Header already showing Coming, then
+///    [FillPinLiveActivity.tick] past remaining → cue / snackbar
+///    surfaces **without remounting** and without debugHold.
+/// 2. Idle start / Sit path leaves the nudge quiet.
+/// 3. Source-scan: header or thin helper invokes the tick path
+///    (`FillPinLiveActivity.tick` / `tickFillPinComingHold` /
+///    `tickFillPinHeaderHold`) so hold can live into the cue.
+/// 4. Lease source must not contain `debugHold`.
+/// 5. No second notify pipeline. No lobby_notifier dual-edit.
 ///
 /// Loop lease (Harness does not edit `lib/**` or bump pubspec;
-/// still 3.4.181+183 until Loop greens → 3.4.182+184):
-/// 1. `lib/services/coming_hold_machine.dart` — only if a tiny
-///    helper is needed (prefer untouched)
-/// 2. `lib/chat/fill_pin_thread_header.dart` OR a thin nudge
-///    helper under lease (`fill_pin_spot_open_nudge.dart` /
-///    `fill_pin_header_actions.dart`)
-/// 3. `pubspec.yaml` bump to exactly `3.4.182+184` when Loop greens
+/// still 3.4.183+185 until Loop greens → 3.4.184+186):
+/// 1. `lib/chat/fill_pin_thread_header.dart` — live `_hold` from
+///    tick into [FillPinSpotOpenNudgeCue] / same
+///    [onSpotOpenNudge] snackbar as Can't
+/// 2. `lib/chat/fill_pin_header_actions.dart` — tick glue
+///    (header must not import `fill_pin_live_activity.dart`)
+/// 3. `lib/services/fill_pin_live_activity.dart` — only if tick
+///    must notify the header (prefer tiny; do not revive
+///    debugHold)
+/// 4. `pubspec.yaml` bump to exactly `3.4.184+186` when Loop greens
 ///
 /// Never dual-edit `lobby_notifier.dart`. No `message_bubble` /
 /// `chat_info_screen` rewrite. No Tonight rewrite. Do not invent
-/// a second FCM / send path. Do not duplicate LA Widget Ext.
+/// a second FCM / send path. Do not fall back to debugHold.
 ///
 /// Out of scope: GATES / AASA / Tonight / merge / device claim /
-/// pubspec bump (Tester).
+/// Groups-row Coming chrome (HOLD) / pubspec bump (Tester).
 const _kHeader = 'lib/chat/fill_pin_thread_header.dart';
 const _kComingHold = 'lib/services/coming_hold_machine.dart';
 const _kLiveActivity = 'lib/services/fill_pin_live_activity.dart';
@@ -121,6 +99,15 @@ bool _leaseHasSpotOpenSurface(String src) {
       src.contains('fillPinSpotOpenNudgeSnack') ||
       src.contains('SnackBar') ||
       src.contains('showSnackBar');
+}
+
+/// Tick must be invoked from the header/helper lease so expire can
+/// live hold into the cue. Comment-only "tick path" is not enough.
+bool _leaseWiresExpireTick(String src) {
+  return src.contains('FillPinLiveActivity.tick') ||
+      src.contains('tickFillPinComingHold') ||
+      src.contains('tickFillPinHeaderHold') ||
+      src.contains('applyFillPinHeaderTick');
 }
 
 Object? _tryDyn(Object? Function() read) {
@@ -331,6 +318,30 @@ void main() {
       },
     );
 
+    test('expire-tick path lives hold into the cue without debugHold', () {
+      final src = _nudgeLeaseSource();
+      expect(
+        src.contains('debugHold'),
+        isFalse,
+        reason:
+            'Expire-tick must not read FillPinLiveActivity.debugHold. '
+            'Pass/live hold through tick into FillPinSpotOpenNudgeCue.',
+      );
+      expect(
+        _leaseWiresExpireTick(src),
+        isTrue,
+        reason:
+            'Loop lease: header or fill_pin_header_actions must invoke '
+            'FillPinLiveActivity.tick / tickFillPinComingHold / '
+            'tickFillPinHeaderHold / applyFillPinHeaderTick so expire '
+            'can pass hold into FillPinSpotOpenNudgeCue (same '
+            'onSpotOpenNudge pipeline as Can\'t). A static '
+            'currentHold / fillPinHeaderHold read is not tick. '
+            'Do not import fill_pin_live_activity.dart from '
+            '$_kHeader (cycle). FAIL until tick is wired.',
+      );
+    });
+
     test(
       'expire / Can\'t cue hangs on snapshot, helper, header key, or snackbar',
       () {
@@ -412,11 +423,24 @@ void main() {
         (tester) async {
       FillPinLiveActivity.invokeHook = _capture;
       FillPinLiveActivity.currentUidHook = () => 'u9';
-      await FillPinLiveActivity.applyIncomingChannelArgs({
-        'actionId': 'coming',
-        'chatGroupId': 'group-1',
-        'pinId': 'pin-1',
-      });
+
+      await _pumpHeader(tester);
+      expect(find.byKey(kFillPinThreadHeaderKey), findsOneWidget);
+      expect(_liveNudgeVisible(), isFalse);
+
+      await tester.tap(find.byKey(const Key('fill-pin-coming')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(FillPinLiveActivity.debugHold.phase, ComingHoldPhase.coming);
+      expect(FillPinLiveActivity.debugHold.shouldNudgeSpotOpen, isFalse);
+      expect(
+        _liveNudgeVisible(),
+        isFalse,
+        reason:
+            'Coming-with-time must stay quiet. Expire-tick is what '
+            'frees the seat — do not cue on startComing.',
+      );
+
       await FillPinLiveActivity.tick(
         chatGroupId: 'group-1',
         snapshot: _snapshot(),
@@ -425,17 +449,24 @@ void main() {
       expect(FillPinLiveActivity.debugHold.phase, ComingHoldPhase.expired);
       expect(FillPinLiveActivity.debugHold.shouldNudgeSpotOpen, isTrue);
 
-      await _pumpHeader(tester);
+      // Do not remount. Header _hold is already Coming from the tap;
+      // tick must pass/live the expired hold into the cue (or fire
+      // the same onSpotOpenNudge snackbar as Can't). A debugHold /
+      // currentHold first-build fallback is not this path.
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byKey(kFillPinThreadHeaderKey), findsOneWidget);
 
       expect(
         _liveNudgeVisible(),
         isTrue,
         reason:
             'Friend-visible spot-open nudge missing after Coming '
-            'expires (tick past remaining). Header cue key/text or '
-            'snackbar must consume shouldNudgeSpotOpen. FAIL until '
-            'wired into live UI.',
+            'expires via FillPinLiveActivity.tick on an already-built '
+            'header. Pass/live hold through tick into '
+            'FillPinSpotOpenNudgeCue / onSpotOpenNudge. Do not remount '
+            'and do not fall back to FillPinLiveActivity.debugHold. '
+            'FAIL until expire-tick cues without debugHold.',
       );
     });
 
@@ -492,6 +523,13 @@ void main() {
       expect(_read(_kComingHold).contains('FirebaseMessaging'), isFalse);
       expect(_read(_kComingHold).contains('onSpotOpenNudge'), isTrue);
       expect(_read(_kComingHold).contains('shouldNudgeSpotOpen'), isTrue);
+      expect(
+        src.contains('debugHold'),
+        isFalse,
+        reason:
+            'Expire-tick / cue must not read FillPinLiveActivity.'
+            'debugHold from the header or helper.',
+      );
     });
 
     test('XOR stays planPeacockSelfNotify — no second self-notify path', () {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/lobby_state.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../services/fill_pin_poll.dart';
 import '../services/fill_pin_share.dart';
 import '../services/fill_pin_visibility.dart';
 
@@ -12,6 +13,7 @@ const kFillPinThreadHeaderKey = Key('fill-pin-thread-header');
 const kFillPinThreadHeaderSeatKey = Key('fill-pin-thread-header-seats');
 const kFillPinShareKey = Key('fill-pin-share');
 const kFillPinPublicSwitchKey = Key('fill-pin-public-switch');
+const kFillPinPollKey = Key('fill-pin-poll');
 
 /// Compact pin header height when a this-group pin is live.
 const double kFillPinThreadHeaderHeight = 40;
@@ -94,6 +96,23 @@ FillPinSnapshot? resolveFillPinForThread({
   );
 }
 
+/// Friend tap on the live pin header attaches the poll to this pin
+/// or resolves the one already stuck there. Pin-scoped, not chat.
+FillPinPoll attachOrResolveFillPinPoll(String pinId, {String? pollId}) {
+  final existing = resolvePollForPin(pinId);
+  if (existing != null) return existing;
+  final id = (pollId ?? '').trim();
+  return attachPollToPin(
+    pinId: pinId,
+    pollId: id.isEmpty ? 'poll-$pinId' : id,
+  );
+}
+
+/// Pin clear / end on the live header detaches the poll stuck to it.
+void endFillPinPollOnClear(String pinId) {
+  detachPollOnPinClear(pinId);
+}
+
 /// Header above the thread. Shrinks to nothing when this group has no pin.
 Widget wrapFillPinThreadHeader({
   required String? chatGroupId,
@@ -107,20 +126,56 @@ Widget wrapFillPinThreadHeader({
   );
 }
 
-class FillPinThreadHeaderHost extends ConsumerWidget {
+class FillPinThreadHeaderHost extends ConsumerStatefulWidget {
   const FillPinThreadHeaderHost({super.key, this.chatGroupId});
 
   final String? chatGroupId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FillPinThreadHeaderHost> createState() =>
+      _FillPinThreadHeaderHostState();
+}
+
+class _FillPinThreadHeaderHostState
+    extends ConsumerState<FillPinThreadHeaderHost> {
+  String? _livePinId;
+
+  void _syncPollOnPin(FillPinSnapshot? snapshot) {
+    final live = snapshot?.lobbyId.trim();
+    if (live != null && live.isNotEmpty) {
+      if (_livePinId != null && _livePinId != live) {
+        endFillPinPollOnClear(_livePinId!);
+      }
+      _livePinId = live;
+      return;
+    }
+    final ended = _livePinId;
+    if (ended == null || ended.isEmpty) return;
+    _livePinId = null;
+    endFillPinPollOnClear(ended);
+  }
+
+  @override
+  void dispose() {
+    final ended = _livePinId;
+    if (ended != null && ended.isNotEmpty) {
+      endFillPinPollOnClear(ended);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(ln.lobbyNotifierProvider).valueOrNull;
-    final snapshot =
-        resolveFillPinForThread(state: state, chatGroupId: chatGroupId);
+    final snapshot = resolveFillPinForThread(
+      state: state,
+      chatGroupId: widget.chatGroupId,
+    );
+    _syncPollOnPin(snapshot);
     if (snapshot == null) return const SizedBox.shrink();
     return FillPinThreadHeader(
       snapshot: snapshot,
-      chatGroupId: chatGroupId,
+      chatGroupId: widget.chatGroupId,
     );
   }
 }
@@ -200,6 +255,7 @@ class FillPinThreadHeader extends StatelessWidget {
                   ),
                 ),
               ],
+              _FillPinPollButton(snapshot: snapshot),
               _FillPinPublicSwitch(snapshot: snapshot),
               _FillPinShareButton(
                 chatGroupId: chatGroupId,
@@ -208,6 +264,49 @@ class FillPinThreadHeader extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Compact poll control on the pin header. Friends tap to stick /
+/// resolve the poll on this pin. Pin-scoped. Not a chat message.
+class _FillPinPollButton extends StatefulWidget {
+  const _FillPinPollButton({required this.snapshot});
+
+  final FillPinSnapshot snapshot;
+
+  @override
+  State<_FillPinPollButton> createState() => _FillPinPollButtonState();
+}
+
+class _FillPinPollButtonState extends State<_FillPinPollButton> {
+  void _onFriendTap() {
+    final pinId = widget.snapshot.lobbyId.trim();
+    if (pinId.isEmpty) return;
+    attachOrResolveFillPinPoll(pinId);
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pinId = widget.snapshot.lobbyId.trim();
+    if (pinId.isEmpty) return const SizedBox.shrink();
+    final attached = resolvePollForPin(pinId);
+    return Semantics(
+      label: attached == null ? 'Attach pin poll' : 'Pin poll',
+      child: IconButton(
+        key: kFillPinPollKey,
+        icon: Icon(
+          attached == null ? Icons.poll_outlined : Icons.poll,
+          size: 16,
+          color: Colors.white70,
+        ),
+        tooltip: attached == null ? 'Poll' : 'Poll on pin',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        visualDensity: VisualDensity.compact,
+        onPressed: _onFriendTap,
       ),
     );
   }

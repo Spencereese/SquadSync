@@ -304,6 +304,23 @@ class _FillPinSitComingCant extends StatefulWidget {
 class _FillPinSitComingCantState extends State<_FillPinSitComingCant> {
   ComingHoldState? _hold;
 
+  @override
+  void initState() {
+    super.initState();
+    listenFillPinHeaderHold(_onHold);
+  }
+
+  @override
+  void dispose() {
+    unlistenFillPinHeaderHold(_onHold);
+    super.dispose();
+  }
+
+  void _onHold(ComingHoldState hold) {
+    if (!mounted) return;
+    setState(() => _hold = hold);
+  }
+
   Future<void> _apply(String actionId) async {
     final pinId = widget.snapshot.lobbyId.trim();
     if (pinId.isEmpty) return;
@@ -348,7 +365,7 @@ class _FillPinSitComingCantState extends State<_FillPinSitComingCant> {
           label: kFillPinHeaderCantLabel,
           onPressed: () => _apply('cant'),
         ),
-        FillPinSpotOpenNudgeCue(hold: _hold ?? fillPinHeaderHold()),
+        FillPinSpotOpenNudgeCue(hold: _hold),
       ],
     );
   }

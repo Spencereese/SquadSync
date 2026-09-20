@@ -21,10 +21,6 @@ String? fillPinSpotOpenNudgeCue(ComingHoldState? hold) {
   return 'Spot open';
 }
 
-/// Live Coming hold from the LA apply / tick path. Header reads this
-/// instead of any test-only hold field.
-ComingHoldState fillPinHeaderHold() => FillPinLiveActivity.currentHold;
-
 /// Header Sit / Coming / Can't → existing LA apply (300s hold, no auto-sit).
 Future<ComingHoldState> applyFillPinHeaderAction({
   required String actionId,
@@ -45,6 +41,27 @@ Future<ComingHoldState> applyFillPinHeaderAction({
     pinId: pinId,
     onSpotOpenNudge: onSpotOpenNudge,
   );
+}
+
+/// Expire-tick glue. Header must not import live activity (cycle).
+Future<ComingHoldState> tickFillPinHeaderHold({
+  required String chatGroupId,
+  Duration? elapsed,
+  void Function()? onSpotOpenNudge,
+}) {
+  return FillPinLiveActivity.tick(
+    chatGroupId: chatGroupId,
+    elapsed: elapsed,
+    onSpotOpenNudge: onSpotOpenNudge,
+  );
+}
+
+void listenFillPinHeaderHold(void Function(ComingHoldState) onHold) {
+  FillPinLiveActivity.addHoldListener(onHold);
+}
+
+void unlistenFillPinHeaderHold(void Function(ComingHoldState) onHold) {
+  FillPinLiveActivity.removeHoldListener(onHold);
 }
 
 /// Pin-header cue. Pass hold only; null ⇒ shrink.

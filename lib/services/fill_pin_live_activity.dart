@@ -517,6 +517,26 @@ class FillPinLiveActivity {
 
   static String? _activityId;
   static ComingHoldState _hold = ComingHoldState.idle;
+  static final List<void Function(ComingHoldState)> _holdListeners = [];
+
+  /// Header Sit / Coming / Can't listens so expire-tick can live
+  /// hold into the cue without remounting.
+  static void addHoldListener(void Function(ComingHoldState) listener) {
+    _holdListeners.add(listener);
+  }
+
+  static void removeHoldListener(void Function(ComingHoldState) listener) {
+    _holdListeners.remove(listener);
+  }
+
+  static void _emitHold() {
+    final hold = _hold;
+    for (final listener in List<void Function(ComingHoldState)>.of(
+      _holdListeners,
+    )) {
+      listener(hold);
+    }
+  }
 
   /// Test hook. Production talks to [LiveActivityManager] on iOS.
   @visibleForTesting
@@ -529,10 +549,6 @@ class FillPinLiveActivity {
   @visibleForTesting
   static String? get debugActivityId => _activityId;
 
-  /// Prod hold for header Sit / Coming / Can't / spot-open cue.
-  /// Tests still use [debugHold] (`@visibleForTesting`).
-  static ComingHoldState get currentHold => _hold;
-
   @visibleForTesting
   static ComingHoldState get debugHold => _hold;
 
@@ -542,6 +558,7 @@ class FillPinLiveActivity {
     currentUidHook = null;
     _activityId = null;
     _hold = ComingHoldState.idle;
+    _holdListeners.clear();
   }
 
   /// Bind Native→Dart `fillPinAction` on the existing LA channel.
@@ -630,6 +647,7 @@ class FillPinLiveActivity {
       expire: expire,
       now: now,
     );
+    _emitHold();
     return _hold;
   }
 
@@ -661,6 +679,7 @@ class FillPinLiveActivity {
       expire: expire,
       now: now,
     );
+    _emitHold();
     return _hold;
   }
 

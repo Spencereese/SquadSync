@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/entities/lobby.dart';
 import '../domain/entities/lobby_state.dart';
+import '../domain/entities/message.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../services/coming_hold_machine.dart';
 import '../services/fill_pin_poll.dart';
@@ -11,6 +12,7 @@ import '../services/fill_pin_share.dart';
 import '../services/fill_pin_visibility.dart';
 import 'fill_pin_header_actions.dart';
 import 'fill_pin_need_one.dart';
+import 'poll_creation_dialog.dart';
 
 const kFillPinThreadHeaderKey = Key('fill-pin-thread-header');
 const kFillPinThreadHeaderSeatKey = Key('fill-pin-thread-header-seats');
@@ -274,7 +276,10 @@ class FillPinThreadHeader extends StatelessWidget {
                 chatGroupId: chatGroupId,
                 snapshot: snapshot,
               ),
-              _FillPinPollButton(snapshot: snapshot),
+              _FillPinPollButton(
+                chatGroupId: chatGroupId,
+                snapshot: snapshot,
+              ),
               _FillPinPublicSwitch(snapshot: snapshot),
               _FillPinNeedOneButton(snapshot: snapshot),
               _FillPinShareButton(
@@ -394,11 +399,15 @@ Widget _headerActionButton({
   );
 }
 
-/// Compact poll control on the pin header. Friends tap to stick /
-/// resolve the poll on this pin. Pin-scoped. Not a chat message.
+/// Compact poll control on the pin header. Friends tap to create
+/// via [PollCreationDialog], then attach the real pollId.
 class _FillPinPollButton extends StatefulWidget {
-  const _FillPinPollButton({required this.snapshot});
+  const _FillPinPollButton({
+    required this.chatGroupId,
+    required this.snapshot,
+  });
 
+  final String? chatGroupId;
   final FillPinSnapshot snapshot;
 
   @override
@@ -409,8 +418,21 @@ class _FillPinPollButtonState extends State<_FillPinPollButton> {
   void _onFriendTap() {
     final pinId = widget.snapshot.lobbyId.trim();
     if (pinId.isEmpty) return;
-    attachOrResolveFillPinPoll(pinId);
-    setState(() {});
+    final thread = (widget.chatGroupId ?? '').trim();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => PollCreationDialog(
+        chatGroupId: thread.isEmpty ? null : thread,
+        chatType: ChatType.userGroup,
+        onPollCreated: (poll) {
+          attachOrResolveFillPinPoll(pinId, pollId: poll.id);
+        },
+      ),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override

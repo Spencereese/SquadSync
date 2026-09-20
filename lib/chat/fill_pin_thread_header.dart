@@ -10,6 +10,7 @@ import '../services/fill_pin_poll.dart';
 import '../services/fill_pin_share.dart';
 import '../services/fill_pin_visibility.dart';
 import 'fill_pin_header_actions.dart';
+import 'fill_pin_need_one.dart';
 
 const kFillPinThreadHeaderKey = Key('fill-pin-thread-header');
 const kFillPinThreadHeaderSeatKey = Key('fill-pin-thread-header-seats');
@@ -275,6 +276,7 @@ class FillPinThreadHeader extends StatelessWidget {
               ),
               _FillPinPollButton(snapshot: snapshot),
               _FillPinPublicSwitch(snapshot: snapshot),
+              _FillPinNeedOneButton(snapshot: snapshot),
               _FillPinShareButton(
                 chatGroupId: chatGroupId,
                 snapshot: snapshot,
@@ -477,6 +479,39 @@ class _FillPinPublicSwitchState extends State<_FillPinPublicSwitch> {
         constraints: const BoxConstraints.tightFor(width: 28, height: 28),
         visualDensity: VisualDensity.compact,
         onPressed: _flipGroupPublic,
+      ),
+    );
+  }
+}
+
+/// Compact Need one on the pin header. Audience filter + one notify path.
+class _FillPinNeedOneButton extends StatelessWidget {
+  const _FillPinNeedOneButton({required this.snapshot});
+
+  final FillPinSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    final pinId = snapshot.lobbyId.trim();
+    if (pinId.isEmpty) return const SizedBox.shrink();
+    return Semantics(
+      label: kFillPinNeedOneLabel,
+      button: true,
+      child: IconButton(
+        key: kFillPinNeedOneKey,
+        icon: const Icon(Icons.campaign_outlined, size: 16, color: Colors.white70),
+        tooltip: kFillPinNeedOneLabel,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+        visualDensity: VisualDensity.compact,
+        onPressed: () {
+          nudgeFillPinNeedOne(
+            memberUids: snapshot.seatedUids,
+            sitUids: snapshot.seatedUids,
+            comingUids: const [],
+            cantUids: const [],
+          );
+        },
       ),
     );
   }

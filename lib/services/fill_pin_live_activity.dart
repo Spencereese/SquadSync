@@ -529,6 +529,10 @@ class FillPinLiveActivity {
   @visibleForTesting
   static String? get debugActivityId => _activityId;
 
+  /// Prod hold for header Sit / Coming / Can't / spot-open cue.
+  /// Tests still use [debugHold] (`@visibleForTesting`).
+  static ComingHoldState get currentHold => _hold;
+
   @visibleForTesting
   static ComingHoldState get debugHold => _hold;
 

@@ -348,7 +348,7 @@ class _FillPinSitComingCantState extends State<_FillPinSitComingCant> {
           label: kFillPinHeaderCantLabel,
           onPressed: () => _apply('cant'),
         ),
-        FillPinSpotOpenNudgeCue(hold: _hold),
+        FillPinSpotOpenNudgeCue(hold: _hold ?? fillPinHeaderHold()),
       ],
     );
   }

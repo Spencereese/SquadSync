@@ -15,11 +15,15 @@ const kFillPinHeaderCantLabel = kFillPinLiveActivityCantLabel;
 const kFillPinSpotOpenNudgeKey = Key('fill-pin-spot-open-nudge');
 
 /// Friend-visible cue when Coming frees a seat (expire / Can't).
-/// Idle / Sit / Coming-with-time stay quiet.
+/// Idle / Sit / Coming-with-time stay quiet. Pass hold only.
 String? fillPinSpotOpenNudgeCue(ComingHoldState? hold) {
   if (hold == null || !hold.shouldNudgeSpotOpen) return null;
   return 'Spot open';
 }
+
+/// Live Coming hold from the LA apply / tick path. Header reads this
+/// instead of any test-only hold field.
+ComingHoldState fillPinHeaderHold() => FillPinLiveActivity.currentHold;
 
 /// Header Sit / Coming / Can't → existing LA apply (300s hold, no auto-sit).
 Future<ComingHoldState> applyFillPinHeaderAction({

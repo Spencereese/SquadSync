@@ -43,7 +43,7 @@ Future<ComingHoldState> applyFillPinHeaderAction({
   );
 }
 
-/// Pin-header cue. Reads [shouldNudgeSpotOpen] from [hold] or LA debug hold.
+/// Pin-header cue. Pass hold only; null ⇒ shrink.
 class FillPinSpotOpenNudgeCue extends StatelessWidget {
   const FillPinSpotOpenNudgeCue({super.key, this.hold});
 
@@ -51,9 +51,7 @@ class FillPinSpotOpenNudgeCue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cue = fillPinSpotOpenNudgeCue(
-      hold ?? FillPinLiveActivity.debugHold,
-    );
+    final cue = fillPinSpotOpenNudgeCue(hold);
     if (cue == null) return const SizedBox.shrink();
     return Text(
       cue,

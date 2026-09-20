@@ -137,4 +137,5 @@ jobs:
             test/services/fill_pin_header_actions_test.dart \
             test/services/fill_pin_spot_open_nudge_test.dart \
             test/services/fill_pin_debug_hold_prod_ban_test.dart \
-            test/services/fill_pin_group_row_coming_chrome_test.dart
+            test/services/fill_pin_group_row_coming_chrome_test.dart \
+            test/services/fill_pin_need_one_header_test.dart

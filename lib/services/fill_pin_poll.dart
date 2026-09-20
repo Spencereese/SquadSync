@@ -45,6 +45,18 @@ FillPinPoll attachPollToPin({
   return attached;
 }
 
+/// Attach when none exists. Empty [pollId] synthesizes `poll-$pinId`.
+/// Prefer a real dialog pollId so the pin does not stay synthetic-only.
+FillPinPoll attachOrResolveFillPinPoll(String pinId, {String? pollId}) {
+  final existing = resolvePollForPin(pinId);
+  if (existing != null) return existing;
+  final id = (pollId ?? '').trim();
+  return attachPollToPin(
+    pinId: pinId,
+    pollId: id.isEmpty ? 'poll-$pinId' : id,
+  );
+}
+
 /// Attached poll for [pinId] only. Unknown / cleared pins return null.
 FillPinPoll? resolvePollForPin(String pinId) {
   final key = _pinKey(pinId);

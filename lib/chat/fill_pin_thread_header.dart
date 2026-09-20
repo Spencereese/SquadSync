@@ -113,18 +113,6 @@ FillPinSnapshot? resolveFillPinForThread({
   );
 }
 
-/// Friend tap on the live pin header attaches the poll to this pin
-/// or resolves the one already stuck there. Pin-scoped, not chat.
-FillPinPoll attachOrResolveFillPinPoll(String pinId, {String? pollId}) {
-  final existing = resolvePollForPin(pinId);
-  if (existing != null) return existing;
-  final id = (pollId ?? '').trim();
-  return attachPollToPin(
-    pinId: pinId,
-    pollId: id.isEmpty ? 'poll-$pinId' : id,
-  );
-}
-
 /// Pin clear / end on the live header detaches the poll stuck to it.
 void endFillPinPollOnClear(String pinId) {
   detachPollOnPinClear(pinId);

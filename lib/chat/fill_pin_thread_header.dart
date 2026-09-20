@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/entities/lobby.dart';
 import '../domain/entities/lobby_state.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../services/coming_hold_machine.dart';
 import '../services/fill_pin_poll.dart';
 import '../services/fill_pin_share.dart';
 import '../services/fill_pin_visibility.dart';
@@ -18,8 +19,18 @@ const kFillPinPollKey = Key('fill-pin-poll');
 /// Compact pin header height when a this-group pin is live.
 const double kFillPinThreadHeaderHeight = 40;
 
-/// Coming-hold countdown chrome is a later slice. Resolver leaves this null.
+/// Coming-hold countdown chrome. Null unless phase is Coming with time left.
 typedef FillPinComingStub = String?;
+
+/// mm:ss for an active Coming hold. Idle / expire / sit / Can't → null.
+String? fillPinComingCountdownLabel(ComingHoldState? hold) {
+  if (hold == null || hold.phase != ComingHoldPhase.coming) return null;
+  if (hold.remaining <= Duration.zero) return null;
+  final total = hold.remaining.inSeconds;
+  final minutes = total ~/ 60;
+  final seconds = total % 60;
+  return '$minutes:${seconds.toString().padLeft(2, '0')}';
+}
 
 class FillPinSnapshot {
   const FillPinSnapshot({
@@ -60,6 +71,7 @@ class FillPinSnapshot {
 FillPinSnapshot? resolveFillPinForThread({
   required LobbyState? state,
   required String? chatGroupId,
+  ComingHoldState? hold,
 }) {
   final threadId = (chatGroupId ?? '').trim();
   if (state == null || threadId.isEmpty) return null;
@@ -93,6 +105,7 @@ FillPinSnapshot? resolveFillPinForThread({
     seatedUids: seatedUids,
     displayNames: state.memberDisplayNames,
     avatarUrls: avatars,
+    comingCountdown: fillPinComingCountdownLabel(hold),
   );
 }
 

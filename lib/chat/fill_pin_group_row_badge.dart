@@ -32,11 +32,15 @@ class FillPinGroupRowBadgeView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final chrome = snapshot.comingCountdown?.trim() ?? '';
+    final label = chrome.isEmpty
+        ? '${snapshot.gameName} ${snapshot.seatLabel}'
+        : '${snapshot.gameName} ${snapshot.seatLabel} $chrome';
     return Padding(
       key: kFillPinGroupRowBadgeKey,
       padding: const EdgeInsets.only(left: 8),
       child: Text(
-        '${snapshot.gameName} ${snapshot.seatLabel}',
+        label,
         key: kFillPinGroupRowBadgeSeatKey,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

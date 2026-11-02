@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squad_sync/core/injection.dart';
 import 'package:squad_sync/core/lobby_chat_bind.dart';
 import 'package:squad_sync/presentation/notifiers/chat_notifier.dart';
 
-import 'chat_notifier_test.mocks.dart';
-import 'package:squad_sync/core/injection.dart';
+import '../../mocks/mock_repositories.mocks.dart';
 
 /// Slice G reds: ChatNotifier is the sole notifier writer of the active
 /// lobby↔thread bind. It applies [switchActiveLobbyChatBind] — it does

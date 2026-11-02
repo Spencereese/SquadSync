@@ -538,10 +538,12 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
                               subtitleText: subtitleText,
                               lastMessageTime: lastMessageTime,
                               isMuted: metadata['is_muted'] as bool? ?? false,
-                              hasUnread:
-                                  metadata['has_unread'] as bool? ?? false,
-                              unreadCount:
-                                  metadata['unread_count'] as int? ?? 0,
+                              hasUnread: _liveUnread(groupId) > 0 ||
+                                  ((metadata['has_unread'] as bool? ?? false) &&
+                                      !_hasLiveUnread(groupId)),
+                              unreadCount: _hasLiveUnread(groupId)
+                                  ? _liveUnread(groupId)
+                                  : (metadata['unread_count'] as int? ?? 0),
                               isPinned: metadata['is_pinned'] as bool? ?? false,
                             );
                           },
@@ -556,6 +558,18 @@ class _UserGroupsTabState extends ConsumerState<UserGroupsTab> {
         ],
       ),
     );
+  }
+
+  bool _hasLiveUnread(String? groupId) {
+    if (groupId == null) return false;
+    final counts = ref.watch(cn.chatNotifierProvider).valueOrNull?.unreadCounts;
+    return counts != null && counts.containsKey(groupId);
+  }
+
+  int _liveUnread(String? groupId) {
+    if (groupId == null) return 0;
+    return ref.watch(cn.chatNotifierProvider).valueOrNull?.unreadCounts[groupId] ??
+        0;
   }
 
   Widget _buildGroupTile({

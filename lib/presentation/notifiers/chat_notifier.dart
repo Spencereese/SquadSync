@@ -13,6 +13,8 @@ import 'package:squad_sync/core/realtime_subscribe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/chat_list_loader.dart';
 import '../../core/chat_surface.dart';
+import '../../core/chat_inbox.dart';
+import '../../core/chat_read_state.dart';
 import '../../core/lobby_chat_bind.dart';
 import '../../core/notification_hygiene.dart';
 import '../../services/supabase_service.dart';
@@ -1263,6 +1265,49 @@ class ChatNotifier extends AsyncNotifier<ChatState> with OfflineFirstMixin {
       data: (data) => data.unreadCounts[chatGroupId] ?? 0,
       orElse: () => 0,
     );
+  }
+
+  /// Real per-group count. Other groups stay as they are.
+  void addGroupUnread(String chatGroupId, int by) {
+    final current = state.valueOrNull;
+    if (current == null || by <= 0) return;
+    final next = addUnread(current.unreadCounts, chatGroupId, by);
+    final flags = Map<String, bool>.from(current.hasNewMessages);
+    flags[chatGroupId] = true;
+    state = AsyncData(current.copyWith(
+      unreadCounts: next,
+      hasNewMessages: flags,
+    ));
+    final uid = _authService.currentUser?.id;
+    if (uid == null) return;
+    unawaited(ChatReadStateStore.write(
+      userId: uid,
+      chatId: chatGroupId,
+      unreadCount: next[chatGroupId] ?? by,
+    ));
+  }
+
+  /// Opening a group clears only that group.
+  void clearGroupUnread(String chatGroupId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final next = clearUnread(current.unreadCounts, chatGroupId);
+    final flags = Map<String, bool>.from(current.hasNewMessages);
+    flags[chatGroupId] = false;
+    final counts = current.unreadCounts.containsKey(chatGroupId)
+        ? next
+        : {...current.unreadCounts, chatGroupId: 0};
+    state = AsyncData(current.copyWith(
+      unreadCounts: counts,
+      hasNewMessages: flags,
+    ));
+    final uid = _authService.currentUser?.id;
+    if (uid == null) return;
+    unawaited(ChatReadStateStore.write(
+      userId: uid,
+      chatId: chatGroupId,
+      unreadCount: 0,
+    ));
   }
 
   bool isUserTyping(String chatGroupId, String userId) {

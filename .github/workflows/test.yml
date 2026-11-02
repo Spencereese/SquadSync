@@ -75,6 +75,7 @@ jobs:
             test/core/chat_messages_test.dart \
             test/core/chat_send_test.dart \
             test/core/chat_history_test.dart \
+            test/core/chat_inbox_test.dart \
             test/presentation/notifiers/message_notifier_test.dart \
             test/presentation/notifiers/chat_notifier_test.dart \
             test/presentation/widgets/chat_screen_test.dart \

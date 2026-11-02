@@ -7,6 +7,7 @@ import '../../widgets/chat_surface_feedback.dart';
 import '../chat_screen.dart';
 import '../dialogs/add_friend_dialog.dart';
 import '../../domain/entities/message.dart';
+import '../../presentation/notifiers/chat_notifier.dart' as cn;
 import '../../utils.dart';
 
 class DirectMessagesTab extends ConsumerStatefulWidget {
@@ -153,8 +154,14 @@ class _DirectMessagesTabState extends ConsumerState<DirectMessagesTab> {
                 participants.firstWhere((id) => id != currentUser.id);
             final lastMessage = chatData['last_message'] ?? '';
             final lastMessageTime = chatData['last_message_time'];
-            final unreadCount =
-                (chatData['unread_count'] as Map?)?[currentUser.id] ?? 0;
+            final chatId = chatData['id']?.toString();
+            final liveCounts =
+                ref.watch(cn.chatNotifierProvider).valueOrNull?.unreadCounts;
+            final unreadCount = (chatId != null &&
+                    liveCounts != null &&
+                    liveCounts.containsKey(chatId))
+                ? (liveCounts[chatId] ?? 0)
+                : ((chatData['unread_count'] as Map?)?[currentUser.id] ?? 0);
 
             return FutureBuilder<Map<String, dynamic>?>(
               future: _getUserProfile(otherUserId),

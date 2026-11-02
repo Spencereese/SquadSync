@@ -11,8 +11,11 @@ import '../../services/supabase_service.dart';
 import '../../core/realtime_subscribe.dart';
 import '../../core/chat_list_loader.dart';
 import '../../core/chat_history.dart';
+import '../../core/chat_inbox.dart';
 import '../../core/chat_messages.dart';
+import '../../core/chat_read_state.dart';
 import '../../core/chat_send.dart';
+import '../../notification_service.dart';
 import '../../core/chat_surface.dart';
 import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -145,6 +148,9 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   Future<void> initializeMessagesStream(
       String chatGroupId, ChatType chatType) async {
     await future;
+    _currentChatGroupId = chatGroupId;
+    _currentChatType = chatType;
+    _markGroupRead(chatGroupId);
 
     final session = await SupabaseService.ensureFreshSession();
     if (session == null) {
@@ -493,12 +499,22 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       }
 
       final existingIds = existingMessages.map((m) => m.id).toSet();
-      final newCount =
-          remoteMessages.where((m) => !existingIds.contains(m.id)).length;
+      final newMessages = remoteMessages
+          .where((m) => m.id.isNotEmpty && !existingIds.contains(m.id))
+          .toList();
+      final newCount = newMessages.length;
       debugPrint(
           'MessageNotifier: Merged echo for $chatGroupId ($newCount new)');
-      if (newCount > 0 && remoteMessages.isNotEmpty) {
+      if (newCount > 0) {
         _updateChatGroupLastActivity(chatGroupId, remoteMessages);
+        final incoming = incomingFromOthers(
+          newSenderIds: newMessages.map((m) => m.senderId).toList(),
+          currentUserId: _testingUserId ?? _authService.currentUser?.id,
+          threadIsOpen: _currentChatGroupId == chatGroupId,
+        );
+        if (incoming > 0) {
+          _addGroupUnread(chatGroupId, incoming);
+        }
       }
 
       final newState = currentState.copyWith(
@@ -729,14 +745,14 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     String chatGroupId,
     String clientId,
     MessageSendResult result,
-  ) {
+  ) async {
     final confirmed = isServerConfirmed(
       success: result.success,
       isOffline: result.isOffline,
       messageId: result.messageId,
       clientId: clientId,
     );
-    return _writeThread(
+    await _writeThread(
       chatGroupId,
       (messages) => applySendResult(
         messages: messages,
@@ -744,6 +760,54 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         confirmed: confirmed,
       ),
     );
+    if (!confirmed) return;
+    final saved = messageById(
+      _readMessageState()?.messages[chatGroupId] ?? const [],
+      clientId,
+    );
+    if (saved == null) return;
+    unawaited(_notifySavedMessage(
+      chatId: chatGroupId,
+      senderId: saved.senderId,
+      text: saved.text,
+    ));
+  }
+
+  Future<void> _notifySavedMessage({
+    required String chatId,
+    required String senderId,
+    required String text,
+  }) async {
+    final notice = await noticeForSavedChat(
+      chatId: chatId,
+      senderId: senderId,
+      text: text,
+    );
+    if (notice == null) return;
+    await NotificationService.sendNotificationToUsers(
+      title: notice.title,
+      body: notice.body,
+      recipientUids: notice.recipients,
+      data: notice.payload,
+    );
+  }
+
+  void _markGroupRead(String chatGroupId) {
+    try {
+      ref.read(cn.chatNotifierProvider.notifier).clearGroupUnread(chatGroupId);
+    } catch (e) {
+      debugPrint('MessageNotifier: unread clear skipped: $e');
+    }
+  }
+
+  void _addGroupUnread(String chatGroupId, int by) {
+    try {
+      ref
+          .read(cn.chatNotifierProvider.notifier)
+          .addGroupUnread(chatGroupId, by);
+    } catch (e) {
+      debugPrint('MessageNotifier: unread bump skipped: $e');
+    }
   }
 
   MessageState? _readMessageState() {

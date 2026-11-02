@@ -51,6 +51,8 @@ app.*.map.json
 .env
 .env.*
 !.env.example
+env.json
+!env.json.example
 **/GoogleService-Info.plist
 **/google-services.json
 *.p8

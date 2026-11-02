@@ -51,7 +51,7 @@ final squadChatControllerProvider =
       SquadChatController.new,
     );
 
-/// No auth in this slice. The phone user is the squad owner.
+/// Without a signed-in user the phone acts as the squad owner (the fakes).
 class SquadChatController extends Notifier<SquadChatState> {
   StreamSubscription<List<ChatMessage>>? _echo;
   var _started = false;
@@ -83,9 +83,10 @@ class SquadChatController extends Notifier<SquadChatState> {
       if (!ref.mounted) return;
       await _echo?.cancel();
       _echo = chats.watch(squad.chatId).listen(_onEcho);
+      final signedIn = ref.read(authRepositoryProvider).currentUser?.id;
       state = SquadChatState(
         squad: squad,
-        meId: squad.ownerId,
+        meId: signedIn == null || signedIn.isEmpty ? squad.ownerId : signedIn,
         messages: page.messages,
         hasOlder: page.hasOlder,
         unread: cleared,

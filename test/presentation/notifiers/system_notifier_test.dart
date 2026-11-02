@@ -2,8 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:squad_sync/presentation/notifiers/system_notifier.dart'
-    hide systemNotifierProvider;
+import 'package:squad_sync/presentation/notifiers/system_notifier.dart';
 import 'package:squad_sync/domain/entities/system_state.dart';
 import 'package:squad_sync/domain/repositories/system_repository.dart';
 import 'package:squad_sync/core/injection.dart';
@@ -58,10 +57,8 @@ void main() {
         Exception('Failed to load system state'),
       );
 
-      final state = container.read(systemNotifierProvider);
-
       await expectLater(
-        state.future,
+        container.read(systemNotifierProvider.future),
         throwsException,
       );
     });
@@ -135,10 +132,10 @@ void main() {
       await container.read(systemNotifierProvider.future);
       final notifier = container.read(systemNotifierProvider.notifier);
 
-      await notifier.updateThemeMode(ThemeMode.light);
-
-      final state = container.read(systemNotifierProvider);
-      expect(state, isA<AsyncError>());
+      await expectLater(
+        notifier.updateThemeMode(ThemeMode.light),
+        throwsException,
+      );
     });
   });
 
@@ -319,10 +316,10 @@ void main() {
       await container.read(systemNotifierProvider.future);
       final notifier = container.read(systemNotifierProvider.notifier);
 
-      await notifier.banUser('user-123', 'Reason');
-
-      final state = container.read(systemNotifierProvider);
-      expect(state, isA<AsyncError>());
+      await expectLater(
+        notifier.banUser('user-123', 'Reason'),
+        throwsException,
+      );
     });
 
     test('should handle unban errors', () async {
@@ -333,10 +330,10 @@ void main() {
       await container.read(systemNotifierProvider.future);
       final notifier = container.read(systemNotifierProvider.notifier);
 
-      await notifier.unbanUser('user-123');
-
-      final state = container.read(systemNotifierProvider);
-      expect(state, isA<AsyncError>());
+      await expectLater(
+        notifier.unbanUser('user-123'),
+        throwsException,
+      );
     });
   });
 

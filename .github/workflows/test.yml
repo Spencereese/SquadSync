@@ -75,6 +75,14 @@ jobs:
             test/core/chat_messages_test.dart \
             test/core/chat_send_test.dart \
             test/core/chat_history_test.dart \
+            test/presentation/notifiers/message_notifier_test.dart \
+            test/presentation/notifiers/chat_notifier_test.dart \
+            test/presentation/widgets/chat_screen_test.dart \
+            test/integration/message_sending_integration_test.dart \
+            test/presentation/notifiers/user_notifier_test.dart \
+            test/presentation/notifiers/system_notifier_test.dart \
+            test/game_state_notifier_test.dart \
+            test/supabase_2_12_features_test.dart \
             test/core/sqlite_cells_test.dart \
             test/core/realtime_subscribe_test.dart \
             test/core/google_auth_config_test.dart \

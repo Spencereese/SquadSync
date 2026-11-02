@@ -82,8 +82,23 @@ class MessageState {
 /// - Typing indicators
 /// - Reply functionality
 class MessageNotifier extends AsyncNotifier<MessageState> {
+  MessageNotifier()
+      : _messageServiceOverride = null,
+        _testingUserId = null;
+
+  /// Unit tests inject the send service and the signed-in id so a bubble
+  /// can move through sending / sent / failed without a live Supabase client.
+  @visibleForTesting
+  MessageNotifier.testing({
+    MessageService? messageService,
+    String? currentUserId,
+  })  : _messageServiceOverride = messageService,
+        _testingUserId = currentUserId;
+
   late final ChatRepository _repository;
   late final MessageService _messageService;
+  final MessageService? _messageServiceOverride;
+  final String? _testingUserId;
   final AuthServiceSupabase _authService = AuthServiceSupabase();
 
   // Real-time streaming
@@ -109,7 +124,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   Future<MessageState> build() async {
     try {
       _repository = ref.read(chatRepositoryProvider);
-      _messageService = MessageService();
+      _messageService = _messageServiceOverride ?? MessageService();
 
       // Register cleanup callback
       ref.onDispose(() {
@@ -599,13 +614,13 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     String? replyTo,
     String? mediaFilePath,
   }) async {
-    final currentUser = _authService.currentUser;
-    if (currentUser == null) throw 'User not authenticated';
+    final senderId = _testingUserId ?? _authService.currentUser?.id;
+    if (senderId == null) throw 'User not authenticated';
 
     final clientId = const Uuid().v4();
     final optimistic = Message(
       id: clientId,
-      senderId: currentUser.id,
+      senderId: senderId,
       text: text,
       timestamp: DateTime.now(),
       messageType: messageType,
@@ -624,7 +639,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     try {
       final result = await _messageService.sendMessage(
         ref,
-        senderUid: currentUser.id,
+        senderUid: senderId,
         text: text,
         chatGroupId: chatGroupId,
         chatType: chatType,

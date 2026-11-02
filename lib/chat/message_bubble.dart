@@ -265,24 +265,7 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
               );
             },
           ),
-          if (widget.messageData.status == models.MessageStatus.sending)
-            Positioned(
-              bottom: -2,
-              right: widget.isMe ? 8 : null,
-              left: widget.isMe ? null : 8,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.8),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.access_time,
-                  size: 12,
-                  color: Colors.white,
-                ),
-              ),
-            ),
+          if (widget.isMe) _outboundStatusBadge(widget.messageData.status),
         ],
       )
           // Enhanced send-in animation with stagger
@@ -305,6 +288,39 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
             delay: Duration(milliseconds: widget.index * 100 + 50),
             curve: Curves.elasticOut,
           ),
+    );
+  }
+
+  Widget _outboundStatusBadge(models.MessageStatus status) {
+    late final Widget icon;
+    late final String label;
+    switch (status) {
+      case models.MessageStatus.sending:
+        label = 'Sending';
+        icon = const SizedBox(
+          width: 12,
+          height: 12,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        );
+      case models.MessageStatus.failed:
+        label = 'Not sent. Tap to retry';
+        icon = const Icon(Icons.error_outline, size: 14, color: Colors.redAccent);
+      case models.MessageStatus.sent:
+      case models.MessageStatus.delivered:
+      case models.MessageStatus.read:
+        label = 'Sent';
+        icon = const Icon(Icons.check, size: 14, color: Colors.white70);
+    }
+    return Positioned(
+      bottom: -2,
+      right: 8,
+      child: Semantics(
+        label: label,
+        child: icon,
+      ),
     );
   }
 
@@ -683,6 +699,18 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                 const SizedBox(width: 40), // 32 (avatar) + 8 (padding) = 40
             ],
           ),
+          if (widget.isMe && _messageData.status == models.MessageStatus.failed)
+            const Padding(
+              padding: EdgeInsets.only(top: 4, right: 8),
+              child: Text(
+                'Not sent. Tap to retry',
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
         ],
       ),
     );

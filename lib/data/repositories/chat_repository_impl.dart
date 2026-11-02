@@ -6,7 +6,7 @@ import 'package:squad_sync/data/datasources/chat_remote_datasource.dart';
 import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/entities/chat_group.dart';
 import 'package:squad_sync/domain/repositories/chat_repository.dart';
-import 'package:squad_sync/core/chat_messages.dart';
+import 'package:squad_sync/core/chat_history.dart';
 
 class ChatRepositoryImpl implements ChatRepository {
   final ChatLocalDataSource _localDataSource;
@@ -53,23 +53,30 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<List<Message>> loadMessages(String chatGroupId,
-      {int limit = 50, DateTime? before}) async {
+      {int limit = 50, DateTime? before, String? beforeId}) async {
     var cached = <Message>[];
     try {
       cached = await _localDataSource.getCachedMessages(chatGroupId,
-          limit: limit, before: before);
+          limit: limit, before: before, beforeId: beforeId);
     } catch (e) {
       debugPrint('Chat cache read skipped: $e');
     }
 
     try {
       final remoteMessages = await _remoteDataSource.fetchMessages(chatGroupId,
-          limit: limit, before: before);
-      final chosen =
-          preferRemoteMessagePage(cached: cached, remote: remoteMessages);
+          limit: limit, before: before, beforeId: beforeId);
+      // The open page is the newest remote window. A longer cache of the
+      // oldest rows must not hide it. Older pages are the remote window
+      // itself; a shorter last page is the end, not a reason to swap in cache.
+      final chosen = before == null
+          ? openChatPage(cached: cached, remote: remoteMessages)
+          : olderChatPage(
+              cached: cached,
+              remote: remoteMessages,
+              remoteFailed: false,
+            );
       try {
-        // Never persist a smaller remote page over a larger cache.
-        if (chosen.length >= cached.length) {
+        if (before == null && chosen.length >= cached.length) {
           await _localDataSource.cacheMessages(chatGroupId, chosen);
         }
       } catch (e) {
@@ -79,7 +86,14 @@ class ChatRepositoryImpl implements ChatRepository {
     } catch (e) {
       debugPrint('Remote message page failed; using cache: $e');
       if (cached.isEmpty) rethrow;
-      return cached;
+      if (before == null) {
+        return openChatPage(cached: cached, remote: const []);
+      }
+      return olderChatPage(
+        cached: cached,
+        remote: const [],
+        remoteFailed: true,
+      );
     }
   }
 

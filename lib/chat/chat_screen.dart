@@ -865,10 +865,28 @@ class ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _loadMoreMessages() async {
-    await _scrollControllerService.loadMoreMessages(
-      chatGroupId: threadChatGroupId,
-      onStateChanged: () => mounted ? setState(() {}) : null,
-    );
+    final chatGroupId = threadChatGroupId;
+    if (chatGroupId == null) return;
+    if (_scrollControllerService.isLoadingMore ||
+        !_scrollControllerService.hasMoreMessages) {
+      return;
+    }
+    final existing = _cachedMessageState?.messages[chatGroupId];
+    if (existing == null || existing.isEmpty) return;
+
+    _scrollControllerService.beginOlderPage();
+    if (mounted) setState(() {});
+    var hasMore = true;
+    try {
+      hasMore = await ref
+          .read(messageNotifierProvider.notifier)
+          .loadOlderMessages(chatGroupId);
+    } catch (e) {
+      debugPrint('ChatScreen: older page failed: $e');
+    } finally {
+      _scrollControllerService.endOlderPage(hasMore: hasMore);
+      if (mounted) setState(() {});
+    }
   }
 
   void _scrollToBottom() {

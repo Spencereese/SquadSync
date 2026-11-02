@@ -10,6 +10,7 @@ import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
 import '../../core/realtime_subscribe.dart';
 import '../../core/chat_list_loader.dart';
+import '../../core/chat_history.dart';
 import '../../core/chat_messages.dart';
 import '../../core/chat_send.dart';
 import '../../core/chat_surface.dart';
@@ -101,6 +102,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   Timer? _typingDebounceTimer;
   final Set<String> _currentTypingUsers = {};
   bool _useSupabase = true;
+  final Set<String> _noOlderHistory = {};
+  final Set<String> _olderPageInFlight = {};
 
   @override
   Future<MessageState> build() async {
@@ -156,7 +159,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   Future<void> _loadInitialMessages(String chatGroupId) async {
     debugPrint('MessageNotifier: Loading initial messages for $chatGroupId');
     final loaded = await loadChatList(
-      fetch: () => _repository.loadMessages(chatGroupId, limit: 100),
+      fetch: () =>
+          _repository.loadMessages(chatGroupId, limit: kOpenChatPageSize),
     );
     if (loaded.phase == ChatSurfacePhase.error) {
       debugPrint(
@@ -181,8 +185,54 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       return currentState.copyWith(messages: updatedMessages);
     });
 
+    if (loaded.items.length < kOpenChatPageSize) {
+      _noOlderHistory.add(chatGroupId);
+    } else {
+      _noOlderHistory.remove(chatGroupId);
+    }
+
     debugPrint(
-        'MessageNotifier: Loaded ${loaded.items.length} cached messages');
+        'MessageNotifier: Loaded ${loaded.items.length} newest messages');
+  }
+
+  /// Scroll-up page. Older rows join the same list. Returns whether another
+  /// older page may exist. Empty thread does not count as "no more".
+  Future<bool> loadOlderMessages(String chatGroupId) async {
+    if (_noOlderHistory.contains(chatGroupId) ||
+        _olderPageInFlight.contains(chatGroupId)) {
+      return !_noOlderHistory.contains(chatGroupId);
+    }
+    final current = _readMessageState();
+    final existing = sortThread(current?.messages[chatGroupId] ?? const []);
+    if (existing.isEmpty) return true;
+
+    _olderPageInFlight.add(chatGroupId);
+    try {
+      final cursor = existing.first;
+      final page = await _repository.loadMessages(
+        chatGroupId,
+        limit: kOlderChatPageSize,
+        before: cursor.timestamp,
+        beforeId: cursor.id,
+      );
+      final stitch = stitchOlderPage(
+        loaded: existing,
+        fetched: page,
+        limit: kOlderChatPageSize,
+      );
+      if (stitch.added == 0) {
+        _noOlderHistory.add(chatGroupId);
+        return false;
+      }
+      await _writeThread(chatGroupId, (_) => stitch.messages);
+      if (!stitch.hasMore) _noOlderHistory.add(chatGroupId);
+      return stitch.hasMore;
+    } catch (e) {
+      debugPrint('MessageNotifier: older page failed: $e');
+      return true;
+    } finally {
+      _olderPageInFlight.remove(chatGroupId);
+    }
   }
 
   Future<void> _startSupabaseMessagesStream(
@@ -206,8 +256,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           .from('chat_messages')
           .stream(primaryKey: ['id'])
           .eq('chat_id', chatGroupId)
-          .order('created_at', ascending: true)
-          .limit(100)
+          .order('created_at', ascending: false)
+          .limit(kOpenChatPageSize)
           .listen(
             (data) {
               debugPrint(
@@ -265,7 +315,8 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     _fallbackPollTimer?.cancel();
     Future<void> poll() async {
       try {
-        final page = await _repository.loadMessages(chatGroupId, limit: 100);
+        final page = await _repository.loadMessages(chatGroupId,
+            limit: kOpenChatPageSize);
         debugPrint('MessageNotifier: REST poll got ${page.length}');
         await _mergeMessages(chatGroupId, page);
       } catch (e) {

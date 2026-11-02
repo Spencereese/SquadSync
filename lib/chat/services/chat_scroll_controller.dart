@@ -9,6 +9,7 @@ class ChatScrollController {
   // Pagination state
   bool _isLoadingMore = false;
   bool _hasMoreMessages = true;
+  bool _listenerReady = false;
   int _currentOffset = 0;
   static const int _messagesPerPage = 50;
 
@@ -27,6 +28,8 @@ class ChatScrollController {
     required VoidCallback onScrollChanged,
     required VoidCallback onLoadMoreMessages,
   }) {
+    if (_listenerReady) return;
+    _listenerReady = true;
     scrollController.addListener(() {
       _handleScroll(onScrollChanged, onLoadMoreMessages);
     });
@@ -46,12 +49,22 @@ class ChatScrollController {
       });
     }
 
-    // Load more messages when scrolling near the top
-    if (scrollController.position.pixels <= 200 &&
-        !_isLoadingMore &&
-        _hasMoreMessages) {
+    // Reversed list: offset 0 is the newest (bottom). Older history is
+    // toward maxScrollExtent, so load when the user is near that edge.
+    final distanceFromOlderEdge = scrollController.position.maxScrollExtent -
+        scrollController.position.pixels;
+    if (distanceFromOlderEdge <= 200 && !_isLoadingMore && _hasMoreMessages) {
       onLoadMoreMessages();
     }
+  }
+
+  void beginOlderPage() {
+    _isLoadingMore = true;
+  }
+
+  void endOlderPage({required bool hasMore}) {
+    _isLoadingMore = false;
+    if (!hasMore) _hasMoreMessages = false;
   }
 
   /// Load more messages with pagination

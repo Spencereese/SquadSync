@@ -12,7 +12,7 @@ abstract class ChatRepository {
       String? voiceNoteUrl,
       int? voiceNoteDuration});
   Future<List<Message>> loadMessages(String chatGroupId,
-      {int limit = 50, DateTime? before});
+      {int limit = 50, DateTime? before, String? beforeId});
   Future<void> deleteMessage(String chatGroupId, String messageId);
   Future<Message> editMessage(
       String chatGroupId, String messageId, String newText);

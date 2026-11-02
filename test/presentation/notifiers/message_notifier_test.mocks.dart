@@ -160,6 +160,7 @@ class MockChatRepository extends _i1.Mock implements _i6.ChatRepository {
     String? chatGroupId, {
     int? limit = 50,
     DateTime? before,
+    String? beforeId,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -168,6 +169,7 @@ class MockChatRepository extends _i1.Mock implements _i6.ChatRepository {
           {
             #limit: limit,
             #before: before,
+            #beforeId: beforeId,
           },
         ),
         returnValue: _i7.Future<List<_i2.Message>>.value(<_i2.Message>[]),

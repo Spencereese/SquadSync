@@ -68,21 +68,33 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
 
   @override
   Future<List<Message>> getCachedMessages(String chatGroupId,
-      {int limit = 50, DateTime? before}) async {
+      {int limit = 50, DateTime? before, String? beforeId}) async {
     final db = await _openCache();
     if (db == null) return const [];
-    final whereClause = before != null
-        ? 'chat_group_id = ? AND timestamp_ms < ?'
-        : 'chat_group_id = ?';
-    final whereArgs = before != null
-        ? [chatGroupId, before.millisecondsSinceEpoch]
-        : [chatGroupId];
+    final String whereClause;
+    final List<Object?> whereArgs;
+    if (before != null && beforeId != null && beforeId.isNotEmpty) {
+      whereClause =
+          'chat_group_id = ? AND (timestamp_ms < ? OR (timestamp_ms = ? AND id < ?))';
+      whereArgs = [
+        chatGroupId,
+        before.millisecondsSinceEpoch,
+        before.millisecondsSinceEpoch,
+        beforeId,
+      ];
+    } else if (before != null) {
+      whereClause = 'chat_group_id = ? AND timestamp_ms < ?';
+      whereArgs = [chatGroupId, before.millisecondsSinceEpoch];
+    } else {
+      whereClause = 'chat_group_id = ?';
+      whereArgs = [chatGroupId];
+    }
 
     final maps = await db.query(
       'messages',
       where: whereClause,
       whereArgs: whereArgs,
-      orderBy: 'timestamp_ms DESC',
+      orderBy: 'timestamp_ms DESC, id DESC',
       limit: limit,
     );
 

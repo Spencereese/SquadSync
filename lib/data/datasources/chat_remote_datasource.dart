@@ -8,7 +8,7 @@ abstract class ChatRemoteDataSource {
   Future<Message> sendMessage(
       String chatGroupId, Message message, ChatType chatType);
   Future<List<Message>> fetchMessages(String chatGroupId,
-      {int limit = 50, DateTime? before});
+      {int limit = 50, DateTime? before, String? beforeId});
   Future<void> deleteMessage(String chatGroupId, String messageId);
   Future<void> editMessage(
       String chatGroupId, String messageId, String newText);

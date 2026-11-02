@@ -986,6 +986,21 @@ class ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
+  Future<void> _retryFailedMessage(String messageId) async {
+    final chatGroupId = threadChatGroupId;
+    if (chatGroupId == null) return;
+    await ref.read(messageNotifierProvider.notifier).retryFailedMessage(
+          ref,
+          chatGroupId,
+          messageId,
+          widget.chatType,
+        );
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollToBottom();
+    });
+  }
+
   Future<void> _sendMessage(msg.Message? replyToMessage,
       [LobbyState? squadState]) async {
     if (_messageController.text.isEmpty) {
@@ -1027,20 +1042,19 @@ class ChatScreenState extends ConsumerState<ChatScreen>
             replyTo: replyToMessage?.id,
           );
 
-      // Message sent successfully
+      // The bubble owns sending / sent / failed. Clear the composer even
+      // when the insert fails so the failed row is the thing you retry.
       _messageController.clear();
-      // Clear reply after sending
       ref.read(cn.chatNotifierProvider.notifier).clearReplyToMessage();
 
-      // Show success feedback with haptic
-      HapticFeedback.lightImpact();
-      // Add haptic feedback for successful send
       HapticFeedback.lightImpact();
       await _typingManager.onMessageSent(
         ref,
         chatGroupId: chatGroupId,
       );
-      _scrollToBottom();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToBottom();
+      });
       await _checkFirstMessage();
     } catch (e) {
       debugPrint('ChatScreen: Failed to send message: $e');
@@ -1924,6 +1938,7 @@ class ChatScreenState extends ConsumerState<ChatScreen>
                         messages: messages,
                         onMessageLongPress: () {},
                         onMessageTap: () {},
+                        onRetryFailed: _retryFailedMessage,
                         getSender: _getSender,
                         getTimestampMs: _getTimestampMs,
                         cleanText: _cleanText,

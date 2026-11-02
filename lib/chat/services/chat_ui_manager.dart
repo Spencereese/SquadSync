@@ -126,6 +126,7 @@ class ChatUIManager {
     cn_state.ChatState? chatState,
     required VoidCallback onMessageLongPress,
     required VoidCallback onMessageTap,
+    void Function(String messageId)? onRetryFailed,
     required String? Function(dynamic) getSender,
     required int? Function(dynamic) getTimestampMs,
     required String Function(String) cleanText,
@@ -141,7 +142,7 @@ class ChatUIManager {
     final messageIdsHash = messages.map((m) => m.id).join('|');
     final messagesContentHash = messages
         .map((m) =>
-            '${m.id}:${m.reactions?.toString() ?? ""}:${m.isDeleted}:${m.mediaUrl ?? ""}')
+            '${m.id}:${m.reactions?.toString() ?? ""}:${m.isDeleted}:${m.mediaUrl ?? ""}:${m.metadata?['delivery_status'] ?? ''}')
         .join('|');
 
     // CRITICAL: Always reprocess if message IDs changed (new/removed messages)
@@ -299,6 +300,7 @@ class ChatUIManager {
                                   showReadIndicator: false,
                                   onTap: onMessageTap,
                                   onLongPress: () {},
+                                  onRetryFailed: onRetryFailed,
                                   sendingStatus: {},
                                   chatGroupId: chatGroupId,
                                   chatType: chatType,

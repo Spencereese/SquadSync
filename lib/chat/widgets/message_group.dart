@@ -13,6 +13,7 @@ class MessageGroup extends StatefulWidget {
   final bool showReadIndicator;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final void Function(String messageId)? onRetryFailed;
   final Map<String, bool> sendingStatus;
   final String? chatGroupId;
   final ChatType chatType;
@@ -27,6 +28,7 @@ class MessageGroup extends StatefulWidget {
     required this.showReadIndicator,
     required this.onTap,
     required this.onLongPress,
+    this.onRetryFailed,
     required this.sendingStatus,
     this.chatGroupId,
     required this.chatType,
@@ -113,7 +115,13 @@ class _MessageGroupState extends State<MessageGroup> {
                     showReadIndicator: widget.showReadIndicator,
                     isFirstInGroup: isFirstInGroup,
                     isLastInGroup: isLastInGroup,
-                    onTap: widget.onTap,
+                    onTap: () {
+                      if (message.status == MessageStatus.failed) {
+                        widget.onRetryFailed?.call(message.id);
+                        return;
+                      }
+                      widget.onTap();
+                    },
                     onLongPress: widget.onLongPress,
                     sendingStatus: widget.sendingStatus,
                     chatGroupId: widget.chatGroupId,

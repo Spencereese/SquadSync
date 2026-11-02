@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod/riverpod.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
-import 'package:collection/collection.dart';
 import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/repositories/chat_repository.dart';
 import 'package:squad_sync/core/injection.dart';
@@ -12,7 +11,9 @@ import '../../services/supabase_service.dart';
 import '../../core/realtime_subscribe.dart';
 import '../../core/chat_list_loader.dart';
 import '../../core/chat_messages.dart';
+import '../../core/chat_send.dart';
 import '../../core/chat_surface.dart';
+import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_notifier.dart' as cn;
 
@@ -171,7 +172,12 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       final currentState = await future;
       final updatedMessages =
           Map<String, List<Message>>.from(currentState.messages);
-      updatedMessages[chatGroupId] = loaded.items;
+      final existing = updatedMessages[chatGroupId] ?? const <Message>[];
+      // Keep a failed/sending bubble if this reload's page does not echo it.
+      updatedMessages[chatGroupId] = mergeRemoteEcho(
+        local: existing,
+        remote: loaded.items,
+      );
       return currentState.copyWith(messages: updatedMessages);
     });
 
@@ -412,85 +418,21 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       }
 
       final existingMessages = currentState.messages[chatGroupId] ?? [];
-
-      // CRITICAL: Deduplicate messages to prevent unnecessary rebuilds
-      // Check if remote messages are actually different from existing ones
-      if (existingMessages.length == remoteMessages.length) {
-        final existingIds = existingMessages.map((m) => m.id).toSet();
-        final remoteIds = remoteMessages.map((m) => m.id).toSet();
-
-        if (existingIds.difference(remoteIds).isEmpty &&
-            remoteIds.difference(existingIds).isEmpty) {
-          // Same messages, check if any actually changed
-          bool hasChanges = false;
-          final existingMap = {for (var msg in existingMessages) msg.id: msg};
-
-          const deepEq = DeepCollectionEquality();
-          for (final remoteMsg in remoteMessages) {
-            final existingMsg = existingMap[remoteMsg.id];
-            if (existingMsg != null) {
-              // Compare reactions and other mutable fields using deep equality
-              if (!deepEq.equals(existingMsg.reactions, remoteMsg.reactions) ||
-                  existingMsg.text != remoteMsg.text) {
-                hasChanges = true;
-                break;
-              }
-            }
-          }
-
-          if (!hasChanges) {
-            // No actual changes - skip merge to prevent unnecessary rebuilds
-            return;
-          }
-        }
-      }
-
-      final existingMap = {for (var msg in existingMessages) msg.id: msg};
-      final mergedMessages = <Message>[];
-      mergedMessages.addAll(existingMessages);
-
-      int newCount = 0;
-      int updatedCount = 0;
-
-      const deepEq = DeepCollectionEquality();
-      for (final remoteMsg in remoteMessages) {
-        final existingMsg = existingMap[remoteMsg.id];
-        if (existingMsg == null) {
-          mergedMessages.add(remoteMsg);
-          newCount++;
-        } else {
-          // Only count as updated if reactions or text actually changed (deep equality)
-          if (!deepEq.equals(existingMsg.reactions, remoteMsg.reactions) ||
-              existingMsg.text != remoteMsg.text) {
-            final index =
-                mergedMessages.indexWhere((m) => m.id == remoteMsg.id);
-            if (index != -1) {
-              mergedMessages[index] = remoteMsg;
-              updatedCount++;
-            }
-          }
-        }
-      }
-
-      mergedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-      // CRITICAL: Only update state if there are actual new or updated messages
-      if (newCount == 0 && updatedCount == 0) {
-        // No changes - skip state update to prevent unnecessary rebuilds
-        print('⏭️ Skipping state update - no new or updated messages');
+      final mergedMessages = mergeRemoteEcho(
+        local: existingMessages,
+        remote: remoteMessages,
+      );
+      if (sameThreadSnapshot(existingMessages, mergedMessages)) {
         return;
       }
 
-      if (newCount > 0 || updatedCount > 0) {
-        debugPrint(
-            'MessageNotifier: Merging $newCount new, $updatedCount updated messages');
-        print(
-            '✅ STATE UPDATE: $newCount new messages, $updatedCount updated messages for chat $chatGroupId');
-
-        // Update the chat group's lastActivity timestamp when new messages arrive
-        if (newCount > 0 && remoteMessages.isNotEmpty) {
-          _updateChatGroupLastActivity(chatGroupId, remoteMessages);
-        }
+      final existingIds = existingMessages.map((m) => m.id).toSet();
+      final newCount =
+          remoteMessages.where((m) => !existingIds.contains(m.id)).length;
+      debugPrint(
+          'MessageNotifier: Merged echo for $chatGroupId ($newCount new)');
+      if (newCount > 0 && remoteMessages.isNotEmpty) {
+        _updateChatGroupLastActivity(chatGroupId, remoteMessages);
       }
 
       final newState = currentState.copyWith(
@@ -511,13 +453,27 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       debugPrint(
           'MessageNotifier: Recovering from error by creating fresh state');
       try {
-        final newState = MessageState(
-          messages: {chatGroupId: remoteMessages},
-          reactions: {},
-          typingUsers: {},
-          lastSyncTimestamps: {},
+        final existing = state.hasValue
+            ? (state.requireValue.messages[chatGroupId] ?? const <Message>[])
+            : const <Message>[];
+        final merged = mergeRemoteEcho(
+          local: existing,
+          remote: remoteMessages,
         );
-        state = AsyncValue.data(newState);
+        final base = state.hasValue
+            ? state.requireValue
+            : MessageState(
+                messages: const {},
+                reactions: const {},
+                typingUsers: const {},
+                lastSyncTimestamps: const {},
+              );
+        state = AsyncValue.data(base.copyWith(
+          messages: {
+            ...base.messages,
+            chatGroupId: merged,
+          },
+        ));
       } catch (recoveryError) {
         debugPrint('MessageNotifier: Failed to recover: $recoveryError');
         // Only NOW set error state as last resort
@@ -578,7 +534,9 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   // MESSAGE OPERATIONS
   // ============================================================================
 
-  /// Send a message with optimistic updates
+  /// Send a message. One client id is the server row id. The bubble stays
+  /// in the list: sending, then sent only after the insert confirms, or
+  /// failed with the same id so tap-to-retry can run again.
   Future<void> sendMessage(
     WidgetRef ref,
     String chatGroupId,
@@ -590,24 +548,29 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     String? replyTo,
     String? mediaFilePath,
   }) async {
+    final currentUser = _authService.currentUser;
+    if (currentUser == null) throw 'User not authenticated';
+
+    final clientId = const Uuid().v4();
+    final optimistic = Message(
+      id: clientId,
+      senderId: currentUser.id,
+      text: text,
+      timestamp: DateTime.now(),
+      messageType: messageType,
+      mediaUrl: mediaUrl,
+      mediaType: mediaType,
+      replyTo: replyTo,
+      reactions: const {},
+      isEdited: false,
+      isDeleted: false,
+    );
+    await _writeThread(
+      chatGroupId,
+      (messages) => appendSending(messages, optimistic),
+    );
+
     try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) throw 'User not authenticated';
-
-      // Create optimistic message
-      final optimisticMessage = Message.create(
-        senderId: currentUser.id,
-        text: text,
-        messageType: messageType,
-        mediaUrl: mediaUrl,
-        mediaType: mediaType,
-        replyTo: replyTo,
-      );
-
-      // Add to UI immediately
-      await _addOptimisticMessage(chatGroupId, optimisticMessage);
-
-      // Send via MessageService
       final result = await _messageService.sendMessage(
         ref,
         senderUid: currentUser.id,
@@ -617,79 +580,121 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         mediaFilePath: mediaFilePath,
         mediaType: mediaType,
         replyTo: replyTo,
+        clientMessageId: clientId,
+        imageUrl: messageType == MessageType.image ? mediaUrl : null,
+        videoUrl: messageType == MessageType.video ? mediaUrl : null,
+        audioUrl: messageType == MessageType.audio ||
+                messageType == MessageType.voiceNote
+            ? mediaUrl
+            : null,
       );
-
-      if (result.success) {
-        await _replaceOptimisticMessage(
-            chatGroupId, optimisticMessage.id, result.messageId!);
-      } else {
-        await _removeOptimisticMessage(chatGroupId, optimisticMessage.id);
-        throw result.errorMessage ?? 'Failed to send message';
-      }
+      await _applyServerResult(chatGroupId, clientId, result);
     } catch (e) {
       debugPrint('MessageNotifier: Send message failed: $e');
-      rethrow;
+      await _writeThread(
+        chatGroupId,
+        (messages) => applySendResult(
+          messages: messages,
+          clientId: clientId,
+          confirmed: false,
+        ),
+      );
     }
   }
 
-  Future<void> _addOptimisticMessage(
-      String chatGroupId, Message message) async {
+  /// Tap-to-retry. Same client id, so a server row that already landed
+  /// comes back as a duplicate-key confirm instead of a second bubble.
+  Future<void> retryFailedMessage(
+    WidgetRef ref,
+    String chatGroupId,
+    String messageId,
+    ChatType chatType,
+  ) async {
+    final current = _readMessageState();
+    if (current == null) return;
+    final existing = messageById(
+      current.messages[chatGroupId] ?? const [],
+      messageId,
+    );
+    if (existing == null ||
+        outboundDeliveryOf(existing) != OutboundDelivery.failed) {
+      return;
+    }
+
+    await _writeThread(
+      chatGroupId,
+      (messages) => markRetrying(messages: messages, clientId: messageId),
+    );
+
     try {
-      debugPrint('MessageNotifier: _addOptimisticMessage START');
-      final currentState = await future;
-      debugPrint('MessageNotifier: Got currentState');
-      debugPrint(
-          'MessageNotifier: currentState.messages type: ${currentState.messages.runtimeType}');
-      debugPrint(
-          'MessageNotifier: currentState.messages keys: ${currentState.messages.keys}');
-
-      // Defensive: Check if messages map has correct types
-      final cleanMessages = <String, List<Message>>{};
-      for (final entry in currentState.messages.entries) {
-        debugPrint(
-            'MessageNotifier: Entry key=${entry.key}, value type=${entry.value.runtimeType}');
-        // Type is guaranteed by state definition
-        cleanMessages[entry.key] = entry.value;
-      }
-
-      final messages = List<Message>.from(cleanMessages[chatGroupId] ?? []);
-      messages.add(message); // Add to end (newest at bottom)
-      cleanMessages[chatGroupId] = messages;
-
-      state = AsyncValue.data(currentState.copyWith(messages: cleanMessages));
-      debugPrint('MessageNotifier: _addOptimisticMessage SUCCESS');
-    } catch (e, stackTrace) {
-      debugPrint('MessageNotifier: ERROR in _addOptimisticMessage: $e');
-      debugPrint(
-          'MessageNotifier: Stack trace: ${stackTrace.toString().split('\n').take(10).join('\n')}');
-      rethrow;
+      final result = await _messageService.sendMessage(
+        ref,
+        senderUid: existing.senderId,
+        text: existing.text,
+        chatGroupId: chatGroupId,
+        chatType: chatType,
+        replyTo: existing.replyTo,
+        mediaType: existing.mediaType,
+        clientMessageId: existing.id,
+        imageUrl:
+            existing.messageType == MessageType.image ? existing.mediaUrl : null,
+        videoUrl:
+            existing.messageType == MessageType.video ? existing.mediaUrl : null,
+        audioUrl: existing.messageType == MessageType.audio ||
+                existing.messageType == MessageType.voiceNote
+            ? existing.mediaUrl
+            : null,
+      );
+      await _applyServerResult(chatGroupId, messageId, result);
+    } catch (e) {
+      debugPrint('MessageNotifier: Retry failed: $e');
+      await _writeThread(
+        chatGroupId,
+        (messages) => applySendResult(
+          messages: messages,
+          clientId: messageId,
+          confirmed: false,
+        ),
+      );
     }
   }
 
-  Future<void> _replaceOptimisticMessage(
-      String chatGroupId, String optimisticId, String finalId) async {
-    final currentState = await future;
-    final updatedMessages =
-        Map<String, List<Message>>.from(currentState.messages);
-    final messages = List<Message>.from(updatedMessages[chatGroupId] ?? []);
-
-    final index = messages.indexWhere((m) => m.id == optimisticId);
-    if (index != -1) {
-      messages[index] = messages[index].copyWith(id: finalId);
-      updatedMessages[chatGroupId] = messages;
-      state = AsyncValue.data(currentState.copyWith(messages: updatedMessages));
-    }
+  Future<void> _applyServerResult(
+    String chatGroupId,
+    String clientId,
+    MessageSendResult result,
+  ) {
+    final confirmed = isServerConfirmed(
+      success: result.success,
+      isOffline: result.isOffline,
+      messageId: result.messageId,
+      clientId: clientId,
+    );
+    return _writeThread(
+      chatGroupId,
+      (messages) => applySendResult(
+        messages: messages,
+        clientId: clientId,
+        confirmed: confirmed,
+      ),
+    );
   }
 
-  Future<void> _removeOptimisticMessage(
-      String chatGroupId, String messageId) async {
-    final currentState = await future;
+  MessageState? _readMessageState() {
+    if (state.hasValue) return state.requireValue;
+    return null;
+  }
+
+  Future<void> _writeThread(
+    String chatGroupId,
+    List<Message> Function(List<Message> messages) transform,
+  ) async {
+    final currentState = _readMessageState() ?? await future;
     final updatedMessages =
         Map<String, List<Message>>.from(currentState.messages);
-    final messages = List<Message>.from(updatedMessages[chatGroupId] ?? []);
-    messages.removeWhere((m) => m.id == messageId);
-    updatedMessages[chatGroupId] = messages;
-
+    updatedMessages[chatGroupId] = transform(
+      List<Message>.from(updatedMessages[chatGroupId] ?? const []),
+    );
     state = AsyncValue.data(currentState.copyWith(messages: updatedMessages));
   }
 

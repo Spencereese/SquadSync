@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/chat_send.dart';
 import '../../core/message_display_url.dart';
 
 /// Core message data model to replace the Map<String, dynamic> usage
@@ -146,6 +147,7 @@ class MessageData {
           : null,
       shouldShowTimestamp: false, // Will be set by message processing logic
       type: inferMessageDataType(data),
+      status: _statusFromDelivery(outboundDeliveryFromMap(data)),
     );
   }
 
@@ -507,3 +509,14 @@ MessageType? _mediaKindFromMetadata(Object? metadata) {
 }
 
 enum MessageStatus { sending, sent, delivered, read, failed }
+
+MessageStatus _statusFromDelivery(OutboundDelivery delivery) {
+  switch (delivery) {
+    case OutboundDelivery.sending:
+      return MessageStatus.sending;
+    case OutboundDelivery.failed:
+      return MessageStatus.failed;
+    case OutboundDelivery.sent:
+      return MessageStatus.sent;
+  }
+}

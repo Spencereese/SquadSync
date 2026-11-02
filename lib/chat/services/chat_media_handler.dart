@@ -70,8 +70,8 @@ class ChatMediaHandler {
 
       final timestampMs = DateTime.now().millisecondsSinceEpoch;
 
-      // Send image first (without text)
-      await _chatService.sendMessage(
+      // Send image first (without text). A failed insert must not look sent.
+      final mediaResult = await _chatService.sendMessage(
         ref,
         senderUid: user.id,
         text: '',
@@ -88,11 +88,14 @@ class ChatMediaHandler {
         chatGroupId: chatGroupId,
         chatType: chatType,
       );
+      if (!mediaResult.success || mediaResult.isOffline) {
+        throw Exception(mediaResult.errorMessage ?? 'Failed to send media');
+      }
 
       // If there's text, send it as separate message
       if (messageText != null && messageText.trim().isNotEmpty) {
         await Future.delayed(const Duration(milliseconds: 100));
-        await _chatService.sendMessage(
+        final caption = await _chatService.sendMessage(
           ref,
           senderUid: user.id,
           text: messageText.trim(),
@@ -101,6 +104,9 @@ class ChatMediaHandler {
           chatGroupId: chatGroupId,
           chatType: chatType,
         );
+        if (!caption.success || caption.isOffline) {
+          throw Exception(caption.errorMessage ?? 'Failed to send caption');
+        }
       }
 
       ref.read(chatStateProvider.notifier).setUploading(false);
@@ -265,7 +271,7 @@ class ChatMediaHandler {
           ? '🎤 $_transcription'
           : '🎤 Voice message';
 
-      await _chatService.sendMessage(
+      final audioResult = await _chatService.sendMessage(
         ref,
         senderUid: user.id,
         text: messageText,
@@ -275,6 +281,9 @@ class ChatMediaHandler {
         chatGroupId: chatGroupId,
         chatType: chatType,
       );
+      if (!audioResult.success || audioResult.isOffline) {
+        throw Exception(audioResult.errorMessage ?? 'Failed to send audio');
+      }
 
       ref.read(chatStateProvider.notifier).setUploading(false);
       _audioPath = null;

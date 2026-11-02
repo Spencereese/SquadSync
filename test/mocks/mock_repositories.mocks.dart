@@ -2451,6 +2451,7 @@ class MockMessageService extends _i1.Mock implements _i9.MessageService {
     required _i4.ChatType? chatType,
     String? mediaFilePath,
     String? mediaType,
+    String? clientMessageId,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -2472,6 +2473,7 @@ class MockMessageService extends _i1.Mock implements _i9.MessageService {
             #chatType: chatType,
             #mediaFilePath: mediaFilePath,
             #mediaType: mediaType,
+            #clientMessageId: clientMessageId,
           },
         ),
         returnValue:
@@ -2496,6 +2498,7 @@ class MockMessageService extends _i1.Mock implements _i9.MessageService {
               #chatType: chatType,
               #mediaFilePath: mediaFilePath,
               #mediaType: mediaType,
+              #clientMessageId: clientMessageId,
             },
           ),
         )),

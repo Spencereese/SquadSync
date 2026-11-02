@@ -36,6 +36,8 @@ class _Send extends Mock implements MessageService {
   bool succeed = true;
   final List<String?> clientIds = [];
   final List<String?> texts = [];
+  String? lastImageUrl;
+  String? lastAudioUrl;
 
   @override
   Future<MessageSendResult> sendMessage(
@@ -59,6 +61,8 @@ class _Send extends Mock implements MessageService {
   }) async {
     clientIds.add(clientMessageId);
     texts.add(text);
+    lastImageUrl = imageUrl;
+    lastAudioUrl = audioUrl;
     if (!succeed) return MessageSendResult.failure('insert failed');
     return MessageSendResult.success(clientMessageId ?? '');
   }
@@ -132,6 +136,47 @@ void main() {
     expect(thread.single.id, send.clientIds.first);
     expect(send.clientIds, [thread.single.id, thread.single.id]);
     expect(outboundDeliveryOf(thread.single), OutboundDelivery.sent);
+  });
+
+  testWidgets('photo and voice sends keep one id and a failed bubble',
+      (tester) async {
+    final send = _Send()..succeed = false;
+    final ref = await _pump(
+      tester: tester,
+      repo: _Repo(const []),
+      send: send,
+    );
+    final notifier = ref.read(messageNotifierProvider.notifier);
+
+    await notifier.sendMessage(
+      ref,
+      'group-1',
+      'look',
+      MessageType.image,
+      ChatType.userGroup,
+      mediaUrl: 'https://cdn.example/p.jpg',
+      mediaType: 'image',
+    );
+    await notifier.sendMessage(
+      ref,
+      'group-1',
+      '🎤 hi',
+      MessageType.audio,
+      ChatType.userGroup,
+      mediaUrl: 'https://cdn.example/v.m4a',
+      mediaType: 'audio',
+    );
+
+    final thread =
+        ref.read(messageNotifierProvider).value!.messages['group-1']!;
+    expect(thread, hasLength(2));
+    expect(thread.map((m) => m.id), send.clientIds);
+    expect(thread.every((m) => outboundDeliveryOf(m) == OutboundDelivery.failed),
+        isTrue);
+    expect(thread.first.mediaUrl, 'https://cdn.example/p.jpg');
+    expect(thread.last.mediaUrl, 'https://cdn.example/v.m4a');
+    expect(thread.first.messageType, MessageType.image);
+    expect(thread.last.messageType, MessageType.audio);
   });
 
   testWidgets('server confirm is the only path to sent', (tester) async {

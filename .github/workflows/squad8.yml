@@ -1,0 +1,60 @@
+# Phone checks for the fresh SquadSync tree.
+# Runs on push and pull request for squad8/** only.
+# Does not deploy, and does not run on main or master.
+name: squad8
+
+on:
+  push:
+    branches:
+      - squad8/main
+      - 'squad8/**'
+  pull_request:
+    branches:
+      - squad8/main
+      - 'squad8/**'
+
+concurrency:
+  group: squad8-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze-test-apk:
+    name: Analyze, test, debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 ndk;28.2.13676358'
+
+      - name: Resolve packages
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --fatal-warnings
+
+      - name: Test
+        run: flutter test
+
+      - name: Build debug APK
+        run: flutter build apk --debug

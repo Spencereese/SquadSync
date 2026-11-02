@@ -1,0 +1,21 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+  errors:
+    unused_import: warning
+    dead_code: warning
+
+linter:
+  rules:
+    prefer_final_locals: true
+    prefer_single_quotes: true
+    unawaited_futures: true
+    unnecessary_lambdas: true

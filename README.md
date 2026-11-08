@@ -38,7 +38,7 @@ iOS and Android only. There is no web or desktop target.
 1. **Tests.** Squad rules, send states, history paging, and unread.
 2. **Lockdown.** Supabase auth, `sq8_` tables, row level security, and JWT. See `supabase/migrations/README.md`.
 3. **Server timers.** Expiry and deadlines owned by the database, not the phone.
-4. **Presence.** Steam for PC players on Steam, Xbox for linked Microsoft accounts, and an honor-system check-in for PlayStation and for any session those APIs cannot see.
+4. **Presence.** Not this slice. Steam, Xbox, and PlayStation are not connected. The availability board is a separate self check-in: available now, available later at a chosen time, or unavailable. Being in the app is not available. See the completion table.
 5. **Calls, calendar, and RSVPs.**
 6. **Fact-check and squad memory.** Server-side only. The phone never holds the model key.
 
@@ -52,6 +52,7 @@ iOS and Android only. There is no web or desktop target.
 | First squad, owner seated, cap 8 | The app creates one squad and the UI will not send a second. Two overlapping creates and the eighth/ninth seat are proven on a throwaway database only after migration `0005`. That file is not applied, so the live project does not have this lock yet |
 | Send, fail, retry the same id, echo dedupe | Implemented. Widget-tested on the fake. Reload keeps a failed row |
 | Earlier messages and reload | Implemented and tested |
+| Availability board | Implemented and tested on a fake clock and a throwaway database. "Available now" lasts 60 minutes from the check-in. "Available later" is a chosen time and does not become available now when it arrives. Unavailable is explicit. No row means not checked in. Opening the app does not check anyone in. Migration `20261108_0006_check_ins.sql` is not applied, so a live project without that table shows that availability is not enabled |
 | Live OTP on a phone | Not verified. No device sign-in and no two-client session were run. The email template was not read or changed in this run |
 | App Store / TestFlight | Not done |
 

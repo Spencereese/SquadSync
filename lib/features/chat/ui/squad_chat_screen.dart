@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/auth/ui/sign_out_button.dart';
+import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
@@ -46,6 +47,23 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen> {
               icon: const Icon(Icons.person),
             ),
           if (!widget.demo) const SignOutButton(),
+          if (squad != null)
+            IconButton(
+              key: const Key('open-availability'),
+              tooltip: "Who's free",
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AvailabilityScreen(
+                      squad: squad,
+                      meId: state.meId,
+                      demo: widget.demo,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.event_available),
+            ),
           if (squad != null)
             IconButton(
               key: const Key('reload-chat'),
@@ -173,10 +191,8 @@ class _ProfileDialogState extends State<_ProfileDialog> {
         ),
         TextButton(
           key: const Key('profile-save'),
-          onPressed: () => Navigator.pop(context, (
-            name: _name.text,
-            game: _game.text,
-          )),
+          onPressed: () =>
+              Navigator.pop(context, (name: _name.text, game: _game.text)),
           child: const Text('Save'),
         ),
       ],

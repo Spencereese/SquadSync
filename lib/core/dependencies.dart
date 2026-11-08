@@ -5,6 +5,10 @@ import 'package:squadsync/core/supabase_sq8_database.dart';
 import 'package:squadsync/features/auth/data/auth_repository.dart';
 import 'package:squadsync/features/auth/data/fake_auth_repository.dart';
 import 'package:squadsync/features/auth/data/supabase_auth_repository.dart';
+import 'package:squadsync/features/availability/data/availability_repository.dart';
+import 'package:squadsync/features/availability/data/fake_availability_repository.dart';
+import 'package:squadsync/features/availability/data/supabase_availability_repository.dart';
+import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/chat/data/chat_repository.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
 import 'package:squadsync/features/chat/data/supabase_chat_repository.dart';
@@ -48,6 +52,28 @@ final chatRepositoryProvider = Provider<ChatRepository>((ref) {
   final client = ref.watch(supabaseClientProvider);
   if (client == null) return FakeChatRepository();
   return SupabaseChatRepository(SupabaseSq8Database(client));
+});
+
+final squadClockProvider = Provider<SquadClock>(
+  (ref) => const SystemSquadClock(),
+);
+
+/// Device offset used only to display a UTC instant. Storage stays UTC.
+final localOffsetProvider = Provider<Duration>(
+  (ref) => DateTime.now().timeZoneOffset,
+);
+
+/// How often an open board re-reads the clock. Expiry does not wait for a reload.
+final availabilityTickProvider = Provider<Duration>(
+  (ref) => const Duration(seconds: 30),
+);
+
+final availabilityRepositoryProvider = Provider<AvailabilityRepository>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) {
+    return FakeAvailabilityRepository(clock: ref.watch(squadClockProvider));
+  }
+  return SupabaseAvailabilityRepository(client);
 });
 
 final clientIdFactoryProvider = Provider<ClientIdFactory>(

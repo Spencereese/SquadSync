@@ -57,6 +57,12 @@ abstract class Sq8Database {
     required String defaultGame,
   });
 
+  /// Inserts the signed-in person's profile only. Does not update an existing row.
+  Future<void> insertMyProfile({
+    required String displayName,
+    required String defaultGame,
+  });
+
   Future<String?> mySquadId();
 
   /// Inserts a squad owned by the signed-in person. The database seats them.

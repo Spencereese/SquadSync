@@ -6,7 +6,6 @@ import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/auth/data/fake_auth_repository.dart';
 import 'package:squadsync/features/auth/domain/auth_user.dart';
 import 'package:squadsync/features/squad/data/fake_squad_repository.dart';
-import 'package:squadsync/features/squad/domain/member.dart';
 
 void main() {
   testWidgets('a signed-in person with no squad starts one of eight', (
@@ -84,9 +83,10 @@ void main() {
     expect(find.text('Spencer · Battlefield'), findsOneWidget);
   });
 
-  testWidgets('an account with no profile is not given a fake squad', (
+  testWidgets('a missing profile can be created and is not a fake squad', (
     tester,
   ) async {
+    final squads = FakeSquadRepository(startEmpty: true, profileMissing: true);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -96,7 +96,7 @@ void main() {
               signedIn: const AuthUser(id: 'new', email: 'new@example.com'),
             ),
           ),
-          squadRepositoryProvider.overrideWithValue(_NoProfileSquads()),
+          squadRepositoryProvider.overrideWithValue(squads),
         ],
         child: const SquadSyncApp(),
       ),
@@ -105,12 +105,61 @@ void main() {
 
     expect(find.byKey(const Key('profile-missing')), findsOneWidget);
     expect(find.byKey(const Key('composer')), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const Key('profile-recover-name')),
+      'New',
+    );
+    await tester.tap(find.byKey(const Key('profile-recover')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Start the squad'), findsOneWidget);
+    expect(find.byKey(const Key('composer')), findsNothing);
+    expect(() => squads.snapshot, throwsStateError);
+    final profile = await squads.myProfile();
+    expect(profile?.displayName, 'New');
+    expect(profile?.defaultGame, 'Call of Duty');
   });
-}
 
-class _NoProfileSquads extends FakeSquadRepository {
-  _NoProfileSquads() : super(startEmpty: true);
+  testWidgets('a refused profile recovery stays on the form', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLinkProvider.overrideWithValue(AppLink.live),
+          authRepositoryProvider.overrideWithValue(
+            FakeAuthRepository(
+              signedIn: const AuthUser(id: 'new', email: 'new@example.com'),
+            ),
+          ),
+          squadRepositoryProvider.overrideWithValue(
+            FakeSquadRepository(
+              startEmpty: true,
+              profileMissing: true,
+              failEnsure: true,
+            ),
+          ),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-  @override
-  Future<Member?> myProfile() async => null;
+    await tester.enterText(
+      find.byKey(const Key('profile-recover-name')),
+      'New',
+    );
+    await tester.tap(find.byKey(const Key('profile-recover')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'The server cannot create your profile yet. Nothing was saved.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('profile-error')), findsOneWidget);
+    expect(find.byKey(const Key('profile-missing')), findsOneWidget);
+    expect(find.text('Start the squad'), findsNothing);
+    expect(find.byKey(const Key('composer')), findsNothing);
+  });
 }

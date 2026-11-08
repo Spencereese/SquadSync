@@ -23,6 +23,9 @@ class MockSq8Database implements Sq8Database {
     defaultGame: 'Call of Duty',
   );
   var createCalls = 0;
+  var profileInserts = 0;
+  var duplicateOwner = false;
+  var duplicateProfile = false;
   var duplicate = false;
   Object? insertMemberError;
   Object? deleteMemberError;
@@ -56,8 +59,42 @@ class MockSq8Database implements Sq8Database {
   }
 
   @override
+  Future<void> insertMyProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    profileInserts += 1;
+    if (duplicateProfile) {
+      profile = const Sq8Member(
+        userId: 'user-1',
+        displayName: 'Spencer',
+        defaultGame: 'Call of Duty',
+      );
+      throw const Sq8DuplicateRow();
+    }
+    profile = Sq8Member(
+      userId: userId ?? 'user-1',
+      displayName: displayName,
+      defaultGame: defaultGame,
+    );
+  }
+
+  @override
   Future<String> createSquad() async {
     createCalls += 1;
+    if (duplicateOwner) {
+      squadId = 'kept-squad';
+      owner = userId ?? owner;
+      members = [
+        profile ??
+            Sq8Member(
+              userId: owner,
+              displayName: 'Spencer',
+              defaultGame: 'Call of Duty',
+            ),
+      ];
+      throw const Sq8DuplicateRow();
+    }
     final id = squadId ?? 'new-squad';
     squadId = id;
     final me = userId ?? owner;

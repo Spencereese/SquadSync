@@ -27,6 +27,48 @@ void main() {
     ]);
   });
 
+  test('ensure keeps an existing profile instead of writing over it', () async {
+    final db = MockSq8Database();
+    final repo = SupabaseSquadRepository(db);
+
+    final kept = await repo.ensureMyProfile(
+      displayName: 'Nope',
+      defaultGame: 'Halo',
+    );
+
+    expect(kept.displayName, 'Spencer');
+    expect(kept.defaultGame, 'Call of Duty');
+    expect(db.profileInserts, 0);
+  });
+
+  test('a duplicate profile insert keeps the server fields', () async {
+    final db = MockSq8Database()
+      ..profile = null
+      ..duplicateProfile = true;
+    final repo = SupabaseSquadRepository(db);
+
+    final kept = await repo.ensureMyProfile(
+      displayName: 'Nope',
+      defaultGame: 'Halo',
+    );
+
+    expect(kept.displayName, 'Spencer');
+    expect(kept.defaultGame, 'Call of Duty');
+  });
+
+  test('a lost create race returns the squad that won', () async {
+    final db = MockSq8Database()
+      ..squadId = null
+      ..duplicateOwner = true;
+    final repo = SupabaseSquadRepository(db);
+
+    final squad = await repo.createMine();
+
+    expect(squad.id, 'kept-squad');
+    expect(squad.members, hasLength(1));
+    expect(db.createCalls, 1);
+  });
+
   test(
     'createMine seats the owner once and does not open a second squad',
     () async {

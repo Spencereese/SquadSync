@@ -5,6 +5,13 @@ abstract class SquadRepository {
   /// Null when the signed-in person has no profile row yet.
   Future<Member?> myProfile();
 
+  /// Inserts only the signed-in person's row when it is missing.
+  /// An existing row is returned unchanged.
+  Future<Member> ensureMyProfile({
+    required String displayName,
+    required String defaultGame,
+  });
+
   Future<Member> saveProfile({
     required String displayName,
     required String defaultGame,

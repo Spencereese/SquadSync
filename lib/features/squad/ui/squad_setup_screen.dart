@@ -115,8 +115,26 @@ class _SquadSetupScreenState extends ConsumerState<SquadSetupScreen> {
   }
 }
 
-class ProfileMissingScreen extends StatelessWidget {
+class ProfileMissingScreen extends ConsumerStatefulWidget {
   const ProfileMissingScreen({super.key});
+
+  @override
+  ConsumerState<ProfileMissingScreen> createState() =>
+      _ProfileMissingScreenState();
+}
+
+class _ProfileMissingScreenState extends ConsumerState<ProfileMissingScreen> {
+  final _name = TextEditingController();
+  final _game = TextEditingController(text: 'Call of Duty');
+  var _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _game.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,17 +143,74 @@ class ProfileMissingScreen extends StatelessWidget {
         title: const Text('SquadSync'),
         actions: const [SignOutButton()],
       ),
-      body: const SafeArea(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'This account has no profile row. SquadSync will not invent one. '
-            'Sign out, then sign in again after the profile trigger has run.',
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          const Text(
+            'Create your profile',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'This account has no SquadSync profile yet. This creates only your row. '
+            'An existing name or default game is left as it is. '
+            'If the server rejects it, nothing is saved.',
             key: Key('profile-missing'),
           ),
-        ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const Key('profile-recover-name'),
+            controller: _name,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Your name',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const Key('profile-recover-game'),
+            controller: _game,
+            decoration: const InputDecoration(
+              labelText: 'Default game',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            key: const Key('profile-recover'),
+            onPressed: _busy ? null : _recover,
+            child: const Text('Create my profile'),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              key: const Key('profile-error'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ],
       ),
     );
+  }
+
+  Future<void> _recover() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(squadRepositoryProvider)
+          .ensureMyProfile(displayName: _name.text, defaultGame: _game.text);
+      if (!mounted) return;
+      ref.read(accountRevisionProvider.notifier).bump();
+    } on RepositoryFailure catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 

@@ -6,21 +6,54 @@ import 'package:squadsync/features/squad/domain/squad.dart';
 /// In-memory squad. Set [fail] and every call throws without changing state.
 /// [startEmpty] is a person with a profile and no squad yet.
 class FakeSquadRepository implements SquadRepository {
-  FakeSquadRepository({Squad? seed, this.fail = false, bool startEmpty = false})
-    : _profile = _ownerFrom(seed),
-      _squad = startEmpty ? null : (seed ?? Squad.seed());
+  FakeSquadRepository({
+    Squad? seed,
+    this.fail = false,
+    this.failEnsure = false,
+    bool startEmpty = false,
+    this.profileMissing = false,
+  }) : _profile = _ownerFrom(seed),
+       _squad = startEmpty ? null : (seed ?? Squad.seed());
 
   Member _profile;
+  bool profileMissing;
   Squad? _squad;
 
   bool fail;
+  bool failEnsure;
 
   Squad get snapshot => _squad ?? (throw StateError('no squad'));
 
   @override
   Future<Member?> myProfile() async {
     _guard('profile');
+    if (profileMissing) return null;
     return _profile;
+  }
+
+  @override
+  Future<Member> ensureMyProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    _guard('profile');
+    if (failEnsure) {
+      throw const RepositoryFailure(
+        'The server cannot create your profile yet. Nothing was saved.',
+      );
+    }
+    if (!profileMissing) return _profile;
+    final next = Member(
+      id: _profile.id,
+      displayName: displayName.trim(),
+      defaultGame: defaultGame.trim(),
+    );
+    if (!next.isValid) {
+      throw const RepositoryFailure('profile is incomplete');
+    }
+    _profile = next;
+    profileMissing = false;
+    return next;
   }
 
   @override
@@ -29,6 +62,11 @@ class FakeSquadRepository implements SquadRepository {
     required String defaultGame,
   }) async {
     _guard('profile');
+    if (profileMissing) {
+      throw const RepositoryFailure(
+        'The server cannot create your profile yet. Nothing was saved.',
+      );
+    }
     final next = Member(
       id: _profile.id,
       displayName: displayName.trim(),

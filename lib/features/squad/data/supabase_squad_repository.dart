@@ -17,6 +17,40 @@ class SupabaseSquadRepository implements SquadRepository {
   }
 
   @override
+  Future<Member> ensureMyProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    final existing = await myProfile();
+    if (existing != null) return existing;
+    final next = Member(
+      id: _db.userId ?? '',
+      displayName: displayName.trim(),
+      defaultGame: defaultGame.trim(),
+    );
+    if (!next.isValid) {
+      throw const RepositoryFailure('profile is incomplete');
+    }
+    try {
+      await _db.insertMyProfile(
+        displayName: next.displayName,
+        defaultGame: next.defaultGame,
+      );
+    } on Sq8DuplicateRow {
+      final raced = await myProfile();
+      if (raced != null) return raced;
+      rethrow;
+    }
+    final created = await myProfile();
+    if (created == null) {
+      throw const RepositoryFailure(
+        'The server cannot create your profile yet. Nothing was saved.',
+      );
+    }
+    return created;
+  }
+
+  @override
   Future<Member> saveProfile({
     required String displayName,
     required String defaultGame,
@@ -47,8 +81,14 @@ class SupabaseSquadRepository implements SquadRepository {
   Future<Squad> createMine() async {
     final existing = await findMine();
     if (existing != null) return existing;
-    final squadId = await _db.createSquad();
-    return _squad(squadId);
+    try {
+      final squadId = await _db.createSquad();
+      return await _squad(squadId);
+    } on Sq8DuplicateRow {
+      final raced = await findMine();
+      if (raced != null) return raced;
+      rethrow;
+    }
   }
 
   @override

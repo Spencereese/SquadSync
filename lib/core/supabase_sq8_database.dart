@@ -42,6 +42,28 @@ class SupabaseSq8Database implements Sq8Database {
   }
 
   @override
+  Future<void> insertMyProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    final me = _requireUser();
+    try {
+      await _client.from('sq8_profiles').insert({
+        'id': me,
+        'display_name': displayName,
+        'default_game': defaultGame,
+      });
+    } on PostgrestException catch (error) {
+      if (error.code == '42501') {
+        throw const RepositoryFailure(
+          'The server cannot create your profile yet. Nothing was saved.',
+        );
+      }
+      throw mapPostgrest(error);
+    }
+  }
+
+  @override
   Future<void> updateMyProfile({
     required String displayName,
     required String defaultGame,
@@ -58,13 +80,20 @@ class SupabaseSq8Database implements Sq8Database {
   @override
   Future<String> createSquad() async {
     final me = _requireUser();
-    final row = await _guardValue(
-      () => _client
-          .from('sq8_squads')
-          .insert({'owner_id': me})
-          .select('id')
-          .single(),
-    );
+    final Map<String, dynamic> row;
+    try {
+      row = await _guardValue(
+        () => _client
+            .from('sq8_squads')
+            .insert({'owner_id': me})
+            .select('id')
+            .single(),
+      );
+    } on Sq8DuplicateRow {
+      final existing = await mySquadId();
+      if (existing != null) return existing;
+      rethrow;
+    }
     final id = row['id'];
     if (id is! String || id.isEmpty) {
       throw const RepositoryFailure('squad was not created');

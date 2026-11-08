@@ -47,12 +47,12 @@ iOS and Android only. There is no web or desktop target.
 | Gate | State |
 | --- | --- |
 | Demo chat, labeled, not presented as live | Implemented and widget-tested |
-| Email code sign-in, session restore, sign-out | Implemented and widget-tested against a fake session. A real code still needs the email template and a device |
-| Own profile and default game | Implemented. Call of Duty is the column default. Save is widget-tested on the fake |
-| First squad, owner seated, cap 8 | Implemented in the app and in SQL. Widget-tested on the fake. The 9th member and owner removal are enforced by the database triggers |
+| Email code sign-in, session restore, sign-out | Implemented and widget-tested against a fake session. A real code on a device was not run. The email template was not opened or changed in this run |
+| Own profile and default game | Save of an existing row is implemented and widget-tested on the fake. A missing row can be created only for the signed-in person. That insert policy is in `20261108_0005_own_profile_and_squad_guard.sql` and is not applied. If the server rejects it, the form stays and nothing is saved |
+| First squad, owner seated, cap 8 | The app creates one squad and the UI will not send a second. Two overlapping creates and the eighth/ninth seat are proven on a throwaway database only after migration `0005`. That file is not applied, so the live project does not have this lock yet |
 | Send, fail, retry the same id, echo dedupe | Implemented. Widget-tested on the fake. Reload keeps a failed row |
 | Earlier messages and reload | Implemented and tested |
-| Live OTP on a phone | Not released. Signing, install, and the code email are still Spencer's |
+| Live OTP on a phone | Not verified. No device sign-in and no two-client session were run. The email template was not read or changed in this run |
 | App Store / TestFlight | Not done |
 
 ## What does not happen

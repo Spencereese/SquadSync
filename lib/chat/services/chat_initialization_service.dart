@@ -11,8 +11,9 @@ import '../chat_state_notifier.dart';
 
 /// Service responsible for complex chat initialization logic
 class ChatInitializationService {
-  /// Initializes chat with all necessary setup operations
-  Future<void> initializeChat({
+  /// Initializes chat with all necessary setup operations.
+  /// Returns `false` when lobby state is not ready so the caller can retry.
+  Future<bool> initializeChat({
     required BuildContext context,
     required WidgetRef ref,
     required String? chatGroupId,
@@ -25,23 +26,23 @@ class ChatInitializationService {
     required Function(String) sendMessage,
     required TextEditingController messageController,
     required String? initialMessage,
+    LobbyState? squadState,
   }) async {
-    final squadState = ref.read(ln.lobbyNotifierProvider).valueOrNull;
+    final resolvedSquad =
+        squadState ?? ref.read(ln.lobbyNotifierProvider).valueOrNull;
 
-    if (squadState == null) {
-      // Handle loading state
-      return;
+    if (resolvedSquad == null) {
+      debugPrint(
+          'ChatInitializationService: squadState null; caller should retry');
+      return false;
     }
-
-    // Update online status
-    _updateOnlineStatus(true, squadState);
 
     // Load chat details
     await _loadChatDetails(
       context: context,
       chatGroupId: chatGroupId,
       chatType: chatType,
-      squadState: squadState,
+      squadState: resolvedSquad,
       setChatName: setChatName,
       setChatImageUrl: setChatImageUrl,
     );
@@ -84,6 +85,7 @@ class ChatInitializationService {
         scrollToBottom();
       });
     }
+    return true;
   }
 
   Future<void> _loadChatDetails({
@@ -134,16 +136,8 @@ class ChatInitializationService {
     // This handles cases where the app was terminated while composing
   }
 
-  void _updateOnlineStatus(bool isOnline, LobbyState squadState) {
-    // Implementation moved from ChatScreen
-    // Updates user's online status in Firestore
-  }
-
-  /// Cleanup operations when chat is disposed
-  void dispose(BuildContext context, WidgetRef ref) {
-    final squadState = ref.read(ln.lobbyNotifierProvider).valueOrNull;
-    if (squadState != null) {
-      _updateOnlineStatus(false, squadState);
-    }
-  }
+  /// Cleanup operations when chat is disposed.
+  /// Presence is owned by ChatNotifier — this service does not write a
+  /// fake online flag.
+  void dispose(BuildContext context, WidgetRef ref) {}
 }

@@ -316,6 +316,7 @@ class MessageService with WidgetsBindingObserver {
     required ChatType chatType,
     String? mediaFilePath,
     String? mediaType,
+    String? clientMessageId,
   }) async {
     // Handle media upload first if present (from ChatService)
     String? finalImageUrl = imageUrl;
@@ -374,7 +375,9 @@ class MessageService with WidgetsBindingObserver {
       return MessageSendResult.failure('Cannot send empty message');
     }
 
-    final msgId = const Uuid().v4();
+    final msgId = (clientMessageId != null && clientMessageId.isNotEmpty)
+        ? clientMessageId
+        : const Uuid().v4();
     final timestamp = DateTime.now();
 
     // Determine chat_id based on chat type
@@ -445,35 +448,26 @@ class MessageService with WidgetsBindingObserver {
     };
 
     try {
-      // Check connectivity before attempting to send
-      final isConnected = await _checkConnectivity();
-      if (!isConnected) {
-        // Queue message for offline sending
-        final offlineMessageData = {
-          ...supabaseMessage,
-          'cached_at': DateTime.now().toIso8601String(),
-        };
-        _offlineMessageQueue.add(offlineMessageData);
-        _logger.d('Message queued for offline sending: $msgId');
-
-        // Save to SQLite with pending status
-        final pendingCacheData = {...cacheMessageData, 'delivered': false};
-        await _sqliteHelper.insertMessage(pendingCacheData,
-            chatGroupId: chatGroupId);
-
-        return MessageSendResult.offline(msgId);
-      }
-
-      // Send to Supabase with retry logic
+      // The row id is the client id. A duplicate-key conflict means the
+      // server already has this bubble, which is confirmation, not a second
+      // message. Nothing is parked on an in-memory queue: that queue never
+      // flushed and made a failed send look sent.
       await _retryOperation(() async {
-        await _supabase.from('chat_messages').insert(supabaseMessage);
+        try {
+          await _supabase.from('chat_messages').insert(supabaseMessage);
+        } catch (e) {
+          if (_isDuplicateInsert(e)) return;
+          rethrow;
+        }
       });
 
-      // Cache to SQLite for offline access
-      await _sqliteHelper.insertMessage(cacheMessageData,
-          chatGroupId: chatGroupId);
+      try {
+        await _sqliteHelper.insertMessage(cacheMessageData,
+            chatGroupId: chatGroupId);
+      } catch (sqliteError) {
+        _logger.e('Failed to cache message to SQLite: $sqliteError');
+      }
 
-      // Check if message is for Grok and trigger AI response
       if (text != null && text.isNotEmpty) {
         _handleGrokMessage(text, chatId, chatType, ref);
       }
@@ -482,24 +476,7 @@ class MessageService with WidgetsBindingObserver {
       return MessageSendResult.success(msgId);
     } catch (e) {
       _logger.e('Failed to send message: $e');
-
-      // Queue for retry
-      final offlineMessageData = {
-        ...supabaseMessage,
-        'cached_at': DateTime.now().toIso8601String(),
-      };
-      _offlineMessageQueue.add(offlineMessageData);
-
-      // Save to SQLite with pending status
-      try {
-        final pendingCacheData = {...cacheMessageData, 'delivered': false};
-        await _sqliteHelper.insertMessage(pendingCacheData,
-            chatGroupId: chatGroupId);
-      } catch (sqliteError) {
-        _logger.e('Failed to cache message to SQLite: $sqliteError');
-      }
-
-      return MessageSendResult.offline(msgId);
+      return MessageSendResult.failure(e.toString());
     }
   }
 
@@ -656,9 +633,9 @@ class MessageService with WidgetsBindingObserver {
         chatGroupId: chatGroupId);
   }
 
-  // Retry sending offline messages
+  // The in-memory offline queue never flushed (resume sync is a no-op).
+  // Drop anything still sitting in it. Retry lives on the failed bubble.
   Future<void> retryOfflineMessages() async {
-    await _checkConnectivity();
     await _processOfflineQueue();
   }
 
@@ -811,23 +788,21 @@ class MessageService with WidgetsBindingObserver {
     }
   }
 
-  // Process offline message queue
-  Future<void> _processOfflineQueue() async {
-    if (_offlineMessageQueue.isEmpty || !_isOnline) return;
-
-    final messagesToSend =
-        List<Map<String, dynamic>>.from(_offlineMessageQueue);
+  void _dropOfflineQueue(String reason) {
+    if (_offlineMessageQueue.isEmpty) return;
+    _logger.w(
+        'Dropping ${_offlineMessageQueue.length} unsent queued messages ($reason)');
     _offlineMessageQueue.clear();
+  }
 
-    for (final messageData in messagesToSend) {
-      try {
-        await _supabase.from('chat_messages').insert(messageData);
-        _logger.d('Successfully sent offline message: ${messageData['id']}');
-      } catch (e) {
-        _logger.e('Failed to send offline message ${messageData['id']}: $e');
-        _offlineMessageQueue.add(messageData);
-      }
-    }
+  // Neutralized. Re-queueing a failed insert made the bubble look sent.
+  Future<void> _processOfflineQueue() async {
+    _dropOfflineQueue('processOfflineQueue');
+  }
+
+  bool _isDuplicateInsert(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('23505') || text.contains('duplicate key');
   }
 
   // Retry logic with exponential backoff

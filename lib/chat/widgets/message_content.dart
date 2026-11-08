@@ -58,18 +58,16 @@ class MessageContent extends ConsumerWidget {
         if (message.replyTo?.isNotEmpty == true)
           _buildReplyPreview(context, ref),
         if (message.text.isNotEmpty) _buildTextContent(context),
-        // SIMPLIFIED: Render images directly from mediaUrl (no conversion needed)
-        if (message.mediaUrl != null &&
-            message.mediaUrl!.isNotEmpty &&
-            (message.mediaType == 'image' ||
-                message.type == MessageType.image)) ...[
-          // Debug logging
+        if (_isImageMessage(message)) ...[
           Builder(builder: (context) {
             print(
                 '🎨 UI RENDER: id=${message.id}, mediaUrl=${message.mediaUrl}, mediaType=${message.mediaType}, type=${message.type}');
             return const SizedBox.shrink();
           }),
-          _buildImageFromUrl(context, message.mediaUrl!),
+          if (message.mediaUrl != null && message.mediaUrl!.isNotEmpty)
+            _buildImageFromUrl(context, message.mediaUrl!)
+          else
+            _buildBrokenImagePlaceholder(),
         ],
         if (message.videoUrl?.isNotEmpty == true) _buildVideoContent(),
         if (message.audioUrl?.isNotEmpty == true) _buildAudioContent(),
@@ -409,6 +407,44 @@ class MessageContent extends ConsumerWidget {
     return LinkPreviewWidget(url: url, type: linkType);
   }
 
+  bool _isImageMessage(MessageData message) {
+    return message.mediaType == 'image' || message.type.name == 'image';
+  }
+
+  Widget _buildBrokenImagePlaceholder() {
+    return Semantics(
+      label: 'Broken image',
+      child: Container(
+        width: 200,
+        height: 150,
+        decoration: BoxDecoration(
+          color: Colors.grey[900]?.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[800]!, width: 1),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.broken_image_outlined,
+              color: Colors.grey[600],
+              size: 32,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Image unavailable',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[500],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// SIMPLIFIED: Build image directly from URL (no MessageData conversion)
   Widget _buildImageFromUrl(BuildContext context, String imageUrl) {
     return Padding(
@@ -424,13 +460,7 @@ class MessageContent extends ConsumerWidget {
 
     if (fixedUrl.isEmpty) {
       print('❌ Empty URL after fix');
-      return Semantics(
-        label: 'Invalid image',
-        child: const Text(
-          '[Invalid Image URL]',
-          style: TextStyle(fontSize: 14, color: Colors.white70),
-        ),
-      );
+      return _buildBrokenImagePlaceholder();
     }
 
     print('✅ Building CachedNetworkImage with URL: $fixedUrl');
@@ -472,34 +502,7 @@ class MessageContent extends ConsumerWidget {
             ),
             errorWidget: (context, url, error) {
               print('❌ CachedNetworkImage ERROR: url=$url, error=$error');
-              return Container(
-                width: 200,
-                height: 150,
-                decoration: BoxDecoration(
-                  color: Colors.grey[900]?.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[800]!, width: 1),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.grey[600],
-                      size: 32,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Image unavailable',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              );
+              return _buildBrokenImagePlaceholder();
             },
           ),
         ),

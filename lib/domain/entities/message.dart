@@ -1,6 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../core/message_display_url.dart';
+
 part 'message.freezed.dart';
 
 class TimestampConverter implements JsonConverter<DateTime, dynamic> {
@@ -15,6 +17,9 @@ class TimestampConverter implements JsonConverter<DateTime, dynamic> {
     if (json is DateTime) {
       return json;
     } else if (json is String) {
+      if (json.isEmpty) {
+        return DateTime.now();
+      }
       return DateTime.parse(json);
     } else if (json is int) {
       return DateTime.fromMillisecondsSinceEpoch(json);
@@ -105,6 +110,26 @@ class ReactionConverter
   }
 }
 
+String _asRowId(Object? value) {
+  if (value == null) return '';
+  return value.toString();
+}
+
+dynamic _nonEmptyStamp(Object? value) {
+  if (value == null) return null;
+  if (value is String && value.isEmpty) return null;
+  return value;
+}
+
+/// PostgREST/SQLite may send 0/1/'true' instead of bool.
+bool? _asBoolish(Object? value) {
+  if (value == null) return null;
+  if (value is bool) return value;
+  if (value == 1 || value == '1' || value == 'true') return true;
+  if (value == 0 || value == '0' || value == 'false') return false;
+  return null;
+}
+
 enum MessageType {
   text,
   image,
@@ -146,18 +171,9 @@ class Message with _$Message {
 
   factory Message.fromJson(Map<String, dynamic> json) {
     try {
-      // Safe metadata parsing - completely skip if it contains old array fields
-      Map<String, dynamic>? safeMetadata;
-      final metadataRaw = json['metadata'];
-      if (metadataRaw != null && metadataRaw is Map) {
-        // Skip metadata completely if it has old schema fields
-        final hasOldFields = metadataRaw.containsKey('photos') ||
-            metadataRaw.containsKey('videos') ||
-            metadataRaw.containsKey('audio');
-        if (!hasOldFields) {
-          safeMetadata = Map<String, dynamic>.from(metadataRaw);
-        }
-      }
+      // Keep metadata.photos (and other photo keys) so MessageData.fromMap
+      // can resolve a display URL after a first-pass miss.
+      final safeMetadata = asMessageMetadataMap(json['metadata']);
 
       // Safe clipData parsing - skip if it's a List
       Map<String, dynamic>? safeClipData;
@@ -167,16 +183,18 @@ class Message with _$Message {
       }
 
       return Message(
-        id: json['id'] as String? ?? '',
-        senderId: json['senderId'] ??
-            json['senderUid'] ??
-            json['sender_id'] as String? ??
-            '',
-        text: json['text'] as String? ?? '',
-        timestamp: const TimestampConverter().fromJson(json['timestamp']),
+        id: _asRowId(json['id']),
+        senderId: _asRowId(
+            json['senderId'] ?? json['senderUid'] ?? json['sender_id']),
+        text: json['text']?.toString() ?? '',
+        timestamp: const TimestampConverter().fromJson(
+            _nonEmptyStamp(json['timestamp']) ?? json['created_at']),
         messageType: const MessageTypeConverter()
             .fromJson(json['messageType'] ?? json['message_type']),
-        mediaUrl: json['mediaUrl'] ?? json['media_url'] as String?,
+        mediaUrl: resolveMessageDisplayMediaUrl({
+          ...json,
+          if (safeMetadata != null) 'metadata': safeMetadata,
+        }),
         mediaType: json['mediaType'] ?? json['media_type'] as String?,
         reactions: const ReactionConverter().fromJson(json['reactions']),
         replyTo: json['replyTo'] ?? json['reply_to'] as String?,
@@ -191,12 +209,12 @@ class Message with _$Message {
         aiResponse: json['aiResponse'] ?? json['ai_response'] as String?,
         metadata: safeMetadata,
         clipData: safeClipData,
-        isEdited: (json['isEdited'] ?? json['is_edited']) as bool?,
+        isEdited: _asBoolish(json['isEdited'] ?? json['is_edited']),
         editedAt: (json['editedAt'] ?? json['edited_at']) != null
             ? const TimestampConverter()
                 .fromJson(json['editedAt'] ?? json['edited_at'])
             : null,
-        isDeleted: (json['isDeleted'] ?? json['is_deleted']) as bool?,
+        isDeleted: _asBoolish(json['isDeleted'] ?? json['is_deleted']),
         deletedAt: (json['deletedAt'] ?? json['deleted_at']) != null
             ? const TimestampConverter()
                 .fromJson(json['deletedAt'] ?? json['deleted_at'])

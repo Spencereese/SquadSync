@@ -1,11 +1,28 @@
-import 'package:just_audio/just_audio.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:logger/logger.dart';
 import 'interfaces.dart';
 
-/// Service for handling audio playback operations
+/// Victory sting played after a win. Path is relative to `assets/`.
+const String kVictorySoundAsset = 'sounds/victory.mp3';
+
+/// Asset path (audioplayers [AssetSource], relative to `assets/`) for a
+/// streak sting, or null when the streak is too low to play anything.
+String? achievementSoundAsset(int streak) {
+  if (streak >= 10) return 'sounds/turducken.wav';
+  if (streak >= 4) return 'sounds/duck.mp3';
+  if (streak >= 3) return 'sounds/turkey.wav';
+  return null;
+}
+
+/// Service for handling audio playback operations.
+///
+/// Uses audioplayers (same stack as chat audio messages) so the app has a
+/// single playback plugin.
 class AudioService implements IAudioService {
+  AudioService({AudioPlayer? player}) : _audioPlayer = player ?? AudioPlayer();
+
   final Logger _logger = Logger();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioPlayer _audioPlayer;
   bool _isInitialized = false;
 
   /// Initialize the audio service
@@ -20,8 +37,7 @@ class AudioService implements IAudioService {
   @override
   Future<void> playVictorySound() async {
     try {
-      await _audioPlayer.setAsset('sounds/victory.mp3');
-      await _audioPlayer.play();
+      await _audioPlayer.play(AssetSource(kVictorySoundAsset));
     } catch (e) {
       _logger.e('Failed to play victory sound: $e');
     }
@@ -30,20 +46,11 @@ class AudioService implements IAudioService {
   /// Play achievement sound based on streak level
   @override
   Future<void> playAchievementSound(int streak) async {
-    try {
-      String soundAsset;
-      if (streak >= 10) {
-        soundAsset = 'sounds/turducken.wav';
-      } else if (streak >= 4) {
-        soundAsset = 'sounds/duck.mp3';
-      } else if (streak >= 3) {
-        soundAsset = 'sounds/turkey.wav';
-      } else {
-        return; // No sound for lower streaks
-      }
+    final soundAsset = achievementSoundAsset(streak);
+    if (soundAsset == null) return;
 
-      await _audioPlayer.setAsset(soundAsset);
-      await _audioPlayer.play();
+    try {
+      await _audioPlayer.play(AssetSource(soundAsset));
     } catch (e) {
       _logger.e('Failed to play achievement sound: $e');
     }

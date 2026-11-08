@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io' show Platform;
 
+import '../core/session_guard.dart';
+import 'supabase_service.dart';
+
 /// Helper class to debug and verify Supabase session persistence
 ///
 /// Usage in your app:
@@ -35,17 +38,8 @@ class SessionDebugHelper {
     if (session != null) {
       debugPrint('  ✅ Active session found');
       debugPrint('  User ID: ${session.user.id}');
-      debugPrint('  User Email: ${session.user.email ?? "N/A"}');
-      // Safely substring tokens to avoid RangeError
-      final accessTokenPreview = session.accessToken.length > 20
-          ? session.accessToken.substring(0, 20)
-          : session.accessToken;
-      debugPrint('  Access Token: $accessTokenPreview...');
-      final refreshTokenPreview =
-          session.refreshToken != null && session.refreshToken!.length > 20
-              ? session.refreshToken!.substring(0, 20)
-              : session.refreshToken ?? 'N/A';
-      debugPrint('  Refresh Token: $refreshTokenPreview...');
+      debugPrint('  Has access token: ${session.accessToken.isNotEmpty}');
+      debugPrint('  Has refresh token: ${session.refreshToken != null}');
       debugPrint(
           '  Expires At: ${session.expiresAt != null ? DateTime.fromMillisecondsSinceEpoch(session.expiresAt! * 1000) : "N/A"}');
 
@@ -57,8 +51,10 @@ class SessionDebugHelper {
         debugPrint(
             '  Time until expiry: ${timeUntilExpiry.inHours}h ${timeUntilExpiry.inMinutes % 60}m');
 
-        if (timeUntilExpiry.inHours < 1) {
-          debugPrint('  ⚠️  Session expiring soon - should auto-refresh');
+        if (shouldAttemptSessionRefresh(expiresAtSeconds: session.expiresAt)) {
+          debugPrint(
+              '  INFO session expiring soon; calling ensureFreshSession');
+          await SupabaseService.ensureFreshSession();
         }
       }
     } else {
@@ -80,7 +76,7 @@ class SessionDebugHelper {
       debugPrint('');
       debugPrint('🔐 AUTH STATE CHANGE: $event');
       if (session != null) {
-        debugPrint('   User: ${session.user.email ?? session.user.id}');
+        debugPrint('   User id: ${session.user.id}');
         debugPrint('   Session active: true');
       } else {
         debugPrint('   Session active: false');
@@ -129,7 +125,7 @@ class SessionDebugHelper {
 
       if (response.session != null) {
         debugPrint('   ✅ Sign in successful');
-        debugPrint('   User: ${response.session!.user.email}');
+        debugPrint('   User id: ${response.session!.user.id}');
 
         // Wait a moment for storage to persist
         await Future.delayed(const Duration(seconds: 2));

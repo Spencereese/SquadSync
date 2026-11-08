@@ -88,10 +88,11 @@ curl -X POST http://localhost:8080/grok/smart-reply \
    - Copy the contents and paste into Supabase
    - Or upload the file directly
 
-4. **Set Redirect URL**:
+4. **Set Redirect URL** (must match `kSupabaseAuthRedirect` / Info.plist):
    ```
-   codsquadapp://auth-callback
+   com.example.codSquadApp://auth-callback
    ```
+   Keep `codsquadapp://` for in-app deep links (join/chat). Do not use leftover `com.squadsync.app`. Bundle ID stays parked at `com.example.codSquadApp` until Spencer has an Apple team + Firebase iOS app.
 
 5. **Save Configuration**
 

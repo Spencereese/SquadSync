@@ -5,7 +5,8 @@ import 'package:squad_sync/domain/entities/chat_group.dart';
 abstract class ChatLocalDataSource {
   // Message caching
   Future<void> cacheMessages(String chatGroupId, List<Message> messages);
-  Future<List<Message>> getCachedMessages(String chatGroupId, {int limit = 50, DateTime? before});
+  Future<List<Message>> getCachedMessages(String chatGroupId,
+      {int limit = 50, DateTime? before, String? beforeId});
   Future<void> updateMessage(String chatGroupId, String messageId, Message message);
   Future<void> deleteMessage(String chatGroupId, String messageId);
 

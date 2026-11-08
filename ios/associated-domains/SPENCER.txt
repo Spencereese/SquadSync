@@ -1,0 +1,65 @@
+BLOCKED — Spencer / Apple Developer portal + Firebase Hosting AASA
+
+Code prep is on branch cursor/revive-squadsync-be5c.
+https://cod-squad-a4c62.web.app/l/<id> already parses in Dart (ticket 12
+locationForDeepLink / DeepLinkRouter.locationFor) to the same
+/squad?lobby_id=<id> route as codsquadapp://lobby/<id>.
+Custom scheme is unchanged. Simulator entitlements still have no applinks.
+Bundle ID stays com.example.codSquadApp.
+
+Universal Links will not open the app on a signed device until Spencer
+does both 1 and 2. Gate 1 stays blocked until he deploys AASA to
+AASA_HOST and a device PASS.
+
+1. Apple Developer portal (Identifiers — do not change bundle ID)
+   a. developer.apple.com → Certificates, Identifiers & Profiles → Identifiers
+   b. Open App ID com.example.codSquadApp
+   c. Enable capability "Associated Domains" if it is not already on
+      (device entitlements already list applinks: for supabase +
+      lobbiesync.app + AASA_HOST; this slice's template is
+      ios/associated-domains/associated-domains.entitlements).
+   d. Save the App ID
+   e. Confirm Membership Team ID is APPLE_TEAM_ID = K4ZTXPQ8J9
+      (known — write K4ZTXPQ8J9; do not leave a TEAMID placeholder)
+   f. Write K4ZTXPQ8J9.com.example.codSquadApp in ALL of:
+        ios/associated-domains/apple-app-site-association
+        web/.well-known/apple-app-site-association
+        web/apple-app-site-association
+      Resulting appID / appIDs value: K4ZTXPQ8J9.com.example.codSquadApp
+   g. Do NOT create a new App ID. Do NOT change BUNDLE_ID_IOS =
+      com.example.codSquadApp. WIDGET_BUNDLE_ID =
+      com.example.codSquadApp.PeacockLockWidget (identity only).
+      URL scheme: com.example.codSquadApp://auth-callback
+      FIREBASE_IOS_APP_ID = 1:756172684661:ios:496249d1653a47dc70e73c
+
+2. Host the AASA file on Firebase Hosting (not done in this slice;
+   AASA_HOST = cod-squad-a4c62.web.app (Firebase Hosting scaffold —
+   not e2e Universal Links. Spencer must firebase deploy --only hosting.
+   Gate 1 blocked until he deploys AASA to that host AND device PASS.))
+   a. Spencer must run `firebase deploy` (hosting) himself. Bots do not
+      publish.
+   b. Publish the repo AASA file (appID K4ZTXPQ8J9.com.example.codSquadApp) at:
+        https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association
+        optional fallback:
+        https://cod-squad-a4c62.web.app/apple-app-site-association
+   c. Response requirements:
+        - HTTPS
+        - HTTP 200 (no 301/302, including http→https on this path)
+        - Content-Type: application/json
+        - no .json extension
+        - body is the JSON file (path claimed: /l/*)
+   d. Verify:
+        curl -sI https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association
+        curl -s https://cod-squad-a4c62.web.app/.well-known/apple-app-site-association
+        curl -s https://app-site-association.cdn-apple.com/a/v1/cod-squad-a4c62.web.app
+
+3. After 1–2: delete and reinstall a device-signed build so iOS re-fetches
+   AASA. Then tap https://cod-squad-a4c62.web.app/l/<id> from Notes or Safari.
+   (Apple CDN can cache AASA; reinstall is the reliable refresh.)
+   Friends tap shape: https://cod-squad-a4c62.web.app/l/<id>
+
+Not this slice: TestFlight, new bundle ID,
+Android/Windows App Links, SQL, .env, merge.
+
+Until 1–2 are done, Safari opens https://cod-squad-a4c62.web.app/l/<id>
+in the browser. The custom scheme codsquadapp://lobby/<id> still works.

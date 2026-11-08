@@ -1,8 +1,63 @@
 import 'dart:developer' as developer;
+
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/supabase_service.dart';
+
+import '../managers/notification_manager.dart';
 import '../notification_service.dart';
 import '../services/auth_service_supabase.dart';
+import '../services/supabase_service.dart';
+import 'peacock_assignment_machine.dart';
+import 'preferred_peacock_games.dart';
+
+export 'peacock_self_notify.dart';
+
+/// Assignment-id dedup. Caps size and drops entries older than [ttl] so a
+/// long-lived process cannot grow unbounded.
+class PeacockIdCache {
+  PeacockIdCache({
+    this.maxSize = defaultMaxSize,
+    this.ttl = defaultTtl,
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now;
+
+  static const int defaultMaxSize = 256;
+  static const Duration defaultTtl = Duration(hours: 6);
+
+  final int maxSize;
+  final Duration ttl;
+  final DateTime Function() _clock;
+  final Map<String, DateTime> _entries = <String, DateTime>{};
+
+  bool contains(String id) {
+    prune();
+    return _entries.containsKey(id);
+  }
+
+  void add(String id) {
+    prune();
+    _entries.remove(id);
+    _entries[id] = _clock();
+    while (_entries.length > maxSize) {
+      _entries.remove(_entries.keys.first);
+    }
+  }
+
+  void clear() => _entries.clear();
+
+  Set<String> toSet() {
+    prune();
+    return _entries.keys.toSet();
+  }
+
+  @visibleForTesting
+  int get length => _entries.length;
+
+  void prune() {
+    final cutoff = _clock().subtract(ttl);
+    _entries.removeWhere((_, stamped) => !stamped.isAfter(cutoff));
+  }
+}
 
 /// Service for listening to peacock queue assignment notifications
 ///
@@ -10,16 +65,53 @@ import '../services/auth_service_supabase.dart';
 /// and sends FCM push notifications when users are auto-assigned spots
 class PeacockNotificationService {
   static RealtimeChannel? _channel;
+  static final PeacockIdCache _handledIds = PeacockIdCache();
+  static final PeacockIdCache _locallyPresentedIds = PeacockIdCache();
+
+  /// Test hook. Production uses [AuthServiceSupabase.currentUser].
+  @visibleForTesting
+  static String? Function()? currentUidHook;
+
+  /// Test hook. Production uses [WidgetsBinding] lifecycle.
+  @visibleForTesting
+  static bool Function()? isForegroundHook;
+
+  /// Test hook. Production sends via [NotificationService.sendNotificationToUsers].
+  @visibleForTesting
+  static Future<void> Function({
+    required String title,
+    required String body,
+    required List<String> recipientUids,
+    Map<String, dynamic>? data,
+  })? sendToUsersHook;
+
+  /// Test hook. Production marks `peacock_notifications.sent = true`.
+  @visibleForTesting
+  static Future<void> Function(String notificationId)? markSentHook;
+
+  @visibleForTesting
+  static void resetTestHooks() {
+    currentUidHook = null;
+    isForegroundHook = null;
+    sendToUsersHook = null;
+    markSentHook = null;
+    _handledIds.clear();
+    _locallyPresentedIds.clear();
+    PeacockAssignmentTracker.instance.clear();
+    PreferredPeacockGamesStore.instance.reset();
+  }
 
   /// Start listening for peacock queue notifications
   static Future<void> initialize() async {
-    final user = AuthServiceSupabase().currentUser;
+    final session = await SupabaseService.ensureFreshSession();
+    final user = session?.user;
     if (user == null) {
       developer.log(
           'Cannot initialize peacock notifications - user not authenticated');
       return;
     }
 
+    await PreferredPeacockGamesStore.instance.load();
     developer.log(
         '🦚 Initializing peacock notification listener for user ${user.id}');
 
@@ -38,7 +130,7 @@ class PeacockNotificationService {
           callback: (payload) async {
             developer
                 .log('🎮 Peacock notification received: ${payload.newRecord}');
-            await _handleNotification(payload.newRecord);
+            await handleNotification(payload.newRecord);
           },
         )
         .subscribe();
@@ -46,52 +138,168 @@ class PeacockNotificationService {
     developer.log('✅ Peacock notification listener active');
   }
 
-  /// Handle incoming notification
-  static Future<void> _handleNotification(Map<String, dynamic> record) async {
+  /// Handle incoming notification.
+  ///
+  /// Local for in-app Realtime, FCM only when backgrounded — never both
+  /// to the current uid for the same event_id. Always marks `sent: true`.
+  @visibleForTesting
+  static Future<void> handleNotification(Map<String, dynamic> record) async {
     try {
       final title = record['title'] as String? ?? '🎮 Spot Available';
       final body = record['body'] as String? ?? 'Your spot is ready!';
-      final data = record['data'] as Map<String, dynamic>? ?? {};
-      final notificationId = record['id'] as String;
+      final rawData = record['data'];
+      final data = rawData is Map
+          ? Map<String, dynamic>.from(rawData)
+          : <String, dynamic>{};
+      final eventId = peacockEventId(record);
+      if (eventId == null) return;
+      final rowId = _nonEmpty(record['id']) ?? eventId;
+      final type = _nonEmpty(data['type']) ?? 'peacock_assigned';
+      final lobbyId = _nonEmpty(data['lobby_id']) ?? _nonEmpty(data['lobbyId']);
+      final gameName =
+          _nonEmpty(data['game_name']) ?? _nonEmpty(data['gameName']);
+      final spotIndex = _nonEmpty(data['spot_index']);
+      final parsedSpot = spotIndex == null ? null : int.tryParse(spotIndex);
 
-      developer.log('📣 Showing notification: $title - $body');
+      final duplicate = _handledIds.contains(eventId);
+      _handledIds.add(eventId);
+      if (duplicate) {
+        await _markSent(rowId);
+        return;
+      }
 
-      // Send local notification via Firebase Messaging
-      // This will display even if app is in background/foreground
-      final user = AuthServiceSupabase().currentUser;
-      if (user != null) {
-        await NotificationService.sendNotificationToUsers(
+      final currentUid =
+          currentUidHook?.call() ?? AuthServiceSupabase().currentUser?.id;
+      if (!peacockEventIsForCurrentUid(
+        record: record,
+        currentUid: currentUid,
+      )) {
+        await _markSent(rowId);
+        return;
+      }
+      final isForeground = _isForeground();
+      final trackerUserId = currentUid ?? peacockRecordUid(record) ?? eventId;
+
+      // Realtime insert is this client's assign event when the host
+      // processed the queue elsewhere. Then notifySelf — XOR via the
+      // reducer (planPeacockSelfNotify), never a parallel plan.
+      final tracker = PeacockAssignmentTracker.instance;
+      tracker.assignSpot(
+        trackerUserId,
+        lobbyId: lobbyId,
+        gameName: gameName,
+        notificationId: eventId,
+        spotIndex: parsedSpot != null && parsedSpot >= 0 ? parsedSpot : null,
+      );
+      if (!peacockOfferAllowed(
+        gameName: gameName,
+        preferredPeacockGames: PreferredPeacockGamesStore.instance.snapshot,
+      )) {
+        await _markSent(rowId);
+        return;
+      }
+      final dispatch = tracker.notifySelf(
+        trackerUserId,
+        isForeground: isForeground,
+        currentUid: currentUid,
+        notificationId: eventId,
+      );
+      final plan = dispatch.plan;
+      final fcmUids = peacockSelfUidRecipients(
+        candidateUids: plan.recipientUids,
+        currentUid: currentUid,
+        showLocal: plan.showLocal,
+      );
+
+      if (plan.showLocal) {
+        developer.log('📣 Showing notification: $title - $body');
+        await NotificationManager().showNotification(
           title: title,
           body: body,
-          recipientUids: [user.id],
+          type: type,
+          lobbyId: lobbyId,
+          gameName: gameName,
+          payload: {
+            'event_id': eventId,
+            if (spotIndex != null) 'spot_index': spotIndex,
+          },
+        );
+        _locallyPresentedIds.add(eventId);
+      }
+
+      // Never FCM to self if this assignment was (or just was) shown locally.
+      if (plan.sendFcmToSelf &&
+          !plan.showLocal &&
+          !_locallyPresentedIds.contains(eventId) &&
+          fcmUids.isNotEmpty) {
+        final send =
+            sendToUsersHook ?? NotificationService.sendNotificationToUsers;
+        await send(
+          title: title,
+          body: body,
+          recipientUids: fcmUids,
           data: {
-            'type': data['type']?.toString() ?? 'peacock_assigned',
-            'lobby_id': data['lobby_id']?.toString() ?? '',
-            'game_name': data['game_name']?.toString() ?? '',
-            'spot_index': data['spot_index']?.toString() ?? '0',
+            'type': type,
+            'event_id': eventId,
+            if (lobbyId != null) 'lobby_id': lobbyId,
+            if (gameName != null) 'game_name': gameName,
+            if (spotIndex != null) 'spot_index': spotIndex,
           },
         );
       }
 
-      // Mark notification as sent
-      await SupabaseService.client.from('peacock_notifications').update({
-        'sent': true,
-        'updated_at': DateTime.now().toIso8601String()
-      }).eq('id', notificationId);
+      await _markSent(rowId);
 
-      developer.log('✅ Notification sent and marked as delivered');
+      developer.log('✅ Notification handled and marked as delivered');
     } catch (e) {
       developer.log('❌ Error handling peacock notification: $e');
     }
   }
 
-  /// Stop listening for notifications
-  static Future<void> dispose() async {
-    if (_channel != null) {
-      developer.log('🦚 Disposing peacock notification listener');
-      await SupabaseService.client.removeChannel(_channel!);
-      _channel = null;
+  static Future<void> _markSent(String notificationId) async {
+    final hook = markSentHook;
+    if (hook != null) {
+      await hook(notificationId);
+      return;
     }
+    await SupabaseService.client.from('peacock_notifications').update({
+      'sent': true,
+      'updated_at': DateTime.now().toIso8601String()
+    }).eq('id', notificationId);
+  }
+
+  static bool _isForeground() {
+    final hook = isForegroundHook;
+    if (hook != null) return hook();
+    try {
+      return peacockLifecycleIsForeground(
+        WidgetsBinding.instance.lifecycleState,
+      );
+    } catch (_) {
+      // No binding (plain unit tests) — Realtime path is in-app.
+      return true;
+    }
+  }
+
+  /// Stop listening for notifications. Clears id caches (logout / app dispose).
+  static Future<void> dispose() async {
+    try {
+      if (_channel != null) {
+        developer.log('🦚 Disposing peacock notification listener');
+        await SupabaseService.client.removeChannel(_channel!);
+      }
+    } finally {
+      _channel = null;
+      _handledIds.clear();
+      _locallyPresentedIds.clear();
+      PeacockAssignmentTracker.instance.clear();
+    }
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty || text == 'null') return null;
+    return text;
   }
 
   /// Fetch pending notifications on app startup
@@ -115,7 +323,7 @@ class PeacockNotificationService {
             .log('📬 Found ${response.length} pending peacock notifications');
 
         for (final notification in response) {
-          await _handleNotification(notification);
+          await handleNotification(notification);
 
           // Small delay between notifications
           await Future.delayed(const Duration(milliseconds: 500));

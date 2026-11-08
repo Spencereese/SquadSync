@@ -85,7 +85,7 @@ class GlassLobbyCard extends StatelessWidget {
         )
         .shimmer(
           duration: 2000.ms,
-          color: neonColor.withOpacity(0.1),
+          color: neonColor.withValues(alpha: 0.1),
         );
   }
 
@@ -108,8 +108,8 @@ class GlassLobbyCard extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0.3),
-                      Colors.black.withOpacity(0.7),
+                      Colors.black.withValues(alpha: 0.3),
+                      Colors.black.withValues(alpha: 0.7),
                     ],
                   ),
                 ),
@@ -120,10 +120,10 @@ class GlassLobbyCard extends StatelessWidget {
           // Glass surface with neon border
           Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
+              color: Colors.white.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: neonColor.withOpacity(0.6),
+                color: neonColor.withValues(alpha: 0.6),
                 width: 2,
               ),
               boxShadow: neonColor.neonGlow(
@@ -218,10 +218,10 @@ class GlassLobbyCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.4),
+        color: Colors.black.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: neonColor.withOpacity(0.3),
+          color: neonColor.withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: neonColor.neonGlow(blur: 15, opacity: 0.3),
@@ -250,7 +250,7 @@ class GlassLobbyCard extends StatelessWidget {
         )
         .shimmer(
           duration: 2500.ms,
-          color: neonColor.withOpacity(0.3),
+          color: neonColor.withValues(alpha: 0.3),
         );
   }
 
@@ -260,10 +260,10 @@ class GlassLobbyCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: neonColor.withOpacity(0.2),
+        color: neonColor.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: neonColor.withOpacity(0.5),
+          color: neonColor.withValues(alpha: 0.5),
           width: 1.5,
         ),
       ),
@@ -301,10 +301,10 @@ class GlassLobbyCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
+        color: Colors.black.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: neonColor.withOpacity(0.3),
+          color: neonColor.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -359,8 +359,8 @@ class GlassLobbyCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            neonColor.withOpacity(0.6),
-            neonColor.withOpacity(0.3),
+            neonColor.withValues(alpha: 0.6),
+            neonColor.withValues(alpha: 0.3),
           ],
         ),
         border: Border.all(
@@ -392,9 +392,9 @@ class GlassLobbyCard extends StatelessWidget {
       height: 56,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.black.withOpacity(0.6),
+        color: Colors.black.withValues(alpha: 0.6),
         border: Border.all(
-          color: neonColor.withOpacity(0.6),
+          color: neonColor.withValues(alpha: 0.6),
           width: 2,
         ),
       ),
@@ -417,9 +417,9 @@ class GlassLobbyCard extends StatelessWidget {
       height: 56,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         border: Border.all(
-          color: neonColor.withOpacity(0.2),
+          color: neonColor.withValues(alpha: 0.2),
           width: 2,
           strokeAlign: BorderSide.strokeAlignInside,
         ),
@@ -427,7 +427,7 @@ class GlassLobbyCard extends StatelessWidget {
       child: Icon(
         Icons.person_add_outlined,
         size: 24,
-        color: neonColor.withOpacity(0.4),
+        color: neonColor.withValues(alpha: 0.4),
       ),
     );
   }
@@ -439,10 +439,10 @@ class GlassLobbyCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.4),
+        color: Colors.black.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: neonColor.withOpacity(0.3),
+          color: neonColor.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -488,13 +488,13 @@ class GlassLobbyCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: isActive
-            ? neonColor.withOpacity(0.2)
-            : Colors.white.withOpacity(0.05),
+            ? neonColor.withValues(alpha: 0.2)
+            : Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isActive
-              ? neonColor.withOpacity(0.6)
-              : neonColor.withOpacity(0.2),
+              ? neonColor.withValues(alpha: 0.6)
+              : neonColor.withValues(alpha: 0.2),
           width: 1,
         ),
       ),
@@ -534,7 +534,7 @@ class GlassLobbyCard extends StatelessWidget {
         )
         .shimmer(
           duration: 1500.ms,
-          color: neonColor.withOpacity(0.3),
+          color: neonColor.withValues(alpha: 0.3),
         );
   }
 }
@@ -557,7 +557,7 @@ class _PeacockTimerPainter extends CustomPainter {
 
     // Background ring (dim)
     final bgPaint = Paint()
-      ..color = color.withOpacity(0.2)
+      ..color = color.withValues(alpha: 0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
       ..strokeCap = StrokeCap.round;
@@ -576,7 +576,7 @@ class _PeacockTimerPainter extends CustomPainter {
         startAngle: -90 * (3.14159 / 180),
         colors: [
           color,
-          color.withOpacity(0.5),
+          color.withValues(alpha: 0.5),
           color,
         ],
         stops: const [0.0, 0.5, 1.0],

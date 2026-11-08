@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/injection.dart';
 import '../../domain/entities/game.dart';
 import '../../presentation/notifiers/lobby_notifier.dart' as ln;
 import '../../presentation/notifiers/user_notifier.dart';
@@ -160,7 +160,7 @@ class _FullScreenLobbyCreationState
 
   Future<void> _loadTrendingTags() async {
     try {
-      final supabase = Supabase.instance.client;
+      final supabase = ref.read(supabaseClientProvider);
       final response = await supabase
           .from('tag_analytics')
           .select('tag, trending_score')
@@ -199,20 +199,13 @@ class _FullScreenLobbyCreationState
     try {
       final lobbyNotifier = ref.read(ln.lobbyNotifierProvider.notifier);
 
-      // Create lobby with tags and visibility
-      final lobbyId = await lobbyNotifier.createLobby(
+      await lobbyNotifier.createLobbyWithConstitution(
         chatGroupId: widget.chatGroupId,
         gameName: _selectedGame!.name,
         maxSpots: _maxSpots,
-        isPublic: _visibility == 'public',
+        tags: _selectedTags,
+        visibility: _visibility,
       );
-
-      // Update lobby metadata
-      final supabase = Supabase.instance.client;
-      await supabase.from('lobbies').update({
-        'tags': _selectedTags,
-        'visibility': _visibility,
-      }).eq('id', lobbyId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -606,8 +599,9 @@ class _FullScreenLobbyCreationState
                                                 },
                                                 loadingBuilder: (context, child,
                                                     loadingProgress) {
-                                                  if (loadingProgress == null)
+                                                  if (loadingProgress == null) {
                                                     return child;
+                                                  }
                                                   return Center(
                                                     child:
                                                         CircularProgressIndicator(
@@ -753,8 +747,9 @@ class _FullScreenLobbyCreationState
                                               },
                                               loadingBuilder: (context, child,
                                                   loadingProgress) {
-                                                if (loadingProgress == null)
+                                                if (loadingProgress == null) {
                                                   return child;
+                                                }
                                                 return Center(
                                                   child:
                                                       CircularProgressIndicator(

@@ -8,20 +8,24 @@ import 'package:confetti/confetti.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_theme.dart';
 import '../domain/entities/lobby.dart';
-import '../widgets/glass_lobby_card.dart';
 import '../presentation/notifiers/discovery_notifier.dart';
+import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../services/auth_service_supabase.dart';
+import '../services/discovery_swipe_gate.dart';
+import '../services/matchmaking_queue_machine.dart';
+import '../widgets/discovery_swipe_gate.dart';
+import '../widgets/glass_lobby_card.dart';
 
-/// Tinder-style lobby discovery screen with card swiping
+/// Gated fill-swipe for a squad looking for a fill.
 ///
-/// Features:
-/// - Top 4 cards visible with parallax scaling
-/// - Swipe left/right gestures for pass/like
-/// - Double tap for super like (instant join)
-/// - Auto-play mode after 8s inactivity
-/// - Confetti on successful match/join
-/// - Empty state with animated turkey
+/// Not a public Tinder-style launch. The existing card stub is shown only
+/// when looking-for-fill AND a squad vouch are both true; otherwise a
+/// clear gate / empty state.
 class DiscoverySwipeScreen extends ConsumerStatefulWidget {
-  const DiscoverySwipeScreen({super.key});
+  const DiscoverySwipeScreen({super.key, this.gateOverride});
+
+  /// Tests inject a resolved gate so auth / lobby / LFG stay unhit.
+  final DiscoverySwipeGate? gateOverride;
 
   @override
   ConsumerState<DiscoverySwipeScreen> createState() =>
@@ -68,8 +72,6 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
       duration: const Duration(milliseconds: 200),
       value: 0,
     );
-
-    _startAutoPlayTimer();
   }
 
   @override
@@ -79,6 +81,28 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
     _swipeAwayController.dispose();
     _neonIntensityController.dispose();
     super.dispose();
+  }
+
+  DiscoverySwipeGate _liveGate() {
+    final override = widget.gateOverride;
+    if (override != null) return override;
+    final uid = AuthServiceSupabase().currentUser?.id ?? '';
+    final lobby = ref.watch(ln.lobbyNotifierProvider).valueOrNull?.currentLobby;
+    final lfg = MatchmakingQueueTracker.instance.stateFor(uid);
+    return resolveDiscoverySwipeGateFromContext(
+      userId: uid,
+      lfg: lfg,
+      lobby: lobby,
+    );
+  }
+
+  void _syncAutoPlay(bool gateOpen) {
+    if (!gateOpen) {
+      _autoPlayTimer?.cancel();
+      return;
+    }
+    if (_autoPlayTimer?.isActive ?? false) return;
+    _startAutoPlayTimer();
   }
 
   void _startAutoPlayTimer() {
@@ -253,10 +277,26 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final tracker = MatchmakingQueueTracker.instance;
+    return AnimatedBuilder(
+      animation: tracker,
+      builder: (context, _) {
+        final gate = _liveGate();
+        _syncAutoPlay(gate.canShowSwipe);
+        if (!gate.canShowSwipe) {
+          return DiscoverySwipeGatePanel(gate: gate);
+        }
+        return _buildSwipeSurface(context);
+      },
+    );
+  }
+
+  Widget _buildSwipeSurface(BuildContext context) {
     final theme = Theme.of(context);
     final lobbiesAsync = ref.watch(publicLobbiesProvider);
 
     return Scaffold(
+      key: kDiscoverySwipeSurfaceKey,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
@@ -274,14 +314,14 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
         children: [
           // Background gradient
           Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  const Color(0xFF0B0E14),
-                  const Color(0xFF14181F),
-                  const Color(0xFF0B0E14),
+                  Color(0xFF0B0E14),
+                  Color(0xFF14181F),
+                  Color(0xFF0B0E14),
                 ],
               ),
             ),
@@ -599,9 +639,9 @@ class _DiscoverySwipeScreenState extends ConsumerState<DiscoverySwipeScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Animated turkey
-          Text(
+          const Text(
             '🦃',
-            style: const TextStyle(fontSize: 120),
+            style: TextStyle(fontSize: 120),
           )
               .animate(
                 onPlay: (controller) => controller.repeat(reverse: true),

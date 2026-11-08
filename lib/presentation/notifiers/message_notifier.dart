@@ -2,13 +2,22 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod/riverpod.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
-import 'package:collection/collection.dart';
 import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/repositories/chat_repository.dart';
 import 'package:squad_sync/core/injection.dart';
 import '../../services/message_service.dart';
 import '../../services/auth_service_supabase.dart';
 import '../../services/supabase_service.dart';
+import '../../core/realtime_subscribe.dart';
+import '../../core/chat_list_loader.dart';
+import '../../core/chat_history.dart';
+import '../../core/chat_inbox.dart';
+import '../../core/chat_messages.dart';
+import '../../core/chat_read_state.dart';
+import '../../core/chat_send.dart';
+import '../../notification_service.dart';
+import '../../core/chat_surface.dart';
+import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'chat_notifier.dart' as cn;
 
@@ -71,13 +80,28 @@ class MessageState {
 
 /// MessageNotifier - Handles core messaging operations:
 /// - Sending/receiving messages with optimistic updates
-/// - Real-time message streaming (Supabase + Firestore fallback)
+/// - Real-time message streaming (Supabase)
 /// - Reactions on messages
 /// - Typing indicators
 /// - Reply functionality
 class MessageNotifier extends AsyncNotifier<MessageState> {
+  MessageNotifier()
+      : _messageServiceOverride = null,
+        _testingUserId = null;
+
+  /// Unit tests inject the send service and the signed-in id so a bubble
+  /// can move through sending / sent / failed without a live Supabase client.
+  @visibleForTesting
+  MessageNotifier.testing({
+    MessageService? messageService,
+    String? currentUserId,
+  })  : _messageServiceOverride = messageService,
+        _testingUserId = currentUserId;
+
   late final ChatRepository _repository;
   late final MessageService _messageService;
+  final MessageService? _messageServiceOverride;
+  final String? _testingUserId;
   final AuthServiceSupabase _authService = AuthServiceSupabase();
 
   // Real-time streaming
@@ -87,17 +111,23 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   String? _currentChatGroupId;
   ChatType? _currentChatType;
   int _retryCount = 0;
+  int _messagesChannelErrorRetries = 0;
+  int _typingChannelErrorRetries = 0;
+  bool _subscribing = false;
   static const int _maxRetries = 3;
   Timer? _retryTimer;
+  Timer? _fallbackPollTimer;
   Timer? _typingDebounceTimer;
   final Set<String> _currentTypingUsers = {};
   bool _useSupabase = true;
+  final Set<String> _noOlderHistory = {};
+  final Set<String> _olderPageInFlight = {};
 
   @override
   Future<MessageState> build() async {
     try {
       _repository = ref.read(chatRepositoryProvider);
-      _messageService = MessageService();
+      _messageService = _messageServiceOverride ?? MessageService();
 
       // Register cleanup callback
       ref.onDispose(() {
@@ -118,69 +148,118 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   Future<void> initializeMessagesStream(
       String chatGroupId, ChatType chatType) async {
     await future;
+    _currentChatGroupId = chatGroupId;
+    _currentChatType = chatType;
+    _markGroupRead(chatGroupId);
 
-    // AGGRESSIVE cleanup BEFORE creating new channels
-    final currentChannelCount = SupabaseService.activeChannelCount;
-    debugPrint(
-        'MessageNotifier: 📊 Current channel count: $currentChannelCount');
-
-    // Force cleanup if we have ANY orphaned channels
-    if (currentChannelCount > 0) {
-      debugPrint(
-          'MessageNotifier: 🧹 Pre-emptive cleanup of $currentChannelCount channels');
-      await _disposeMessagesStream(); // Clean up our own first
-      await SupabaseService.cleanupOldChannels(); // Then global cleanup
-
-      final afterCleanup = SupabaseService.activeChannelCount;
-      debugPrint('MessageNotifier: ✅ After cleanup: $afterCleanup channels');
+    final session = await SupabaseService.ensureFreshSession();
+    if (session == null) {
+      debugPrint('MessageNotifier: no valid session; skip realtime');
+      return;
     }
 
-    // Wait a moment for cleanup to complete
-    await Future.delayed(const Duration(milliseconds: 100));
+    if (shouldNukeAllRealtimeChannels(SupabaseService.activeChannelCount)) {
+      debugPrint(
+          'MessageNotifier: near channel cap (${SupabaseService.activeChannelCount}); scoped cleanup');
+      await _disposeOwnRealtime();
+    }
 
     if (_currentChatGroupId != chatGroupId || _currentChatType != chatType) {
-      await _disposeMessagesStream();
+      await _disposeOwnRealtime();
       _currentChatGroupId = chatGroupId;
       _currentChatType = chatType;
       _retryCount = 0;
+      _messagesChannelErrorRetries = 0;
+      _typingChannelErrorRetries = 0;
     }
 
     await _loadInitialMessages(chatGroupId);
-    _startMessagesStream(chatGroupId, chatType);
+    await _startSupabaseMessagesStream(chatGroupId, chatType);
   }
 
   Future<void> _loadInitialMessages(String chatGroupId) async {
-    try {
-      debugPrint('MessageNotifier: Loading initial messages for $chatGroupId');
-      final cachedMessages =
-          await _repository.loadMessages(chatGroupId, limit: 100);
-
-      state = await AsyncValue.guard(() async {
-        final currentState = await future;
-        final updatedMessages =
-            Map<String, List<Message>>.from(currentState.messages);
-        updatedMessages[chatGroupId] = cachedMessages;
-        return currentState.copyWith(messages: updatedMessages);
-      });
-
+    debugPrint('MessageNotifier: Loading initial messages for $chatGroupId');
+    final loaded = await loadChatList(
+      fetch: () =>
+          _repository.loadMessages(chatGroupId, limit: kOpenChatPageSize),
+    );
+    if (loaded.phase == ChatSurfacePhase.error) {
       debugPrint(
-          'MessageNotifier: Loaded ${cachedMessages.length} cached messages');
-    } catch (e) {
-      debugPrint('MessageNotifier: Error loading initial messages: $e');
-      state = AsyncValue.error(e, StackTrace.current);
+          'MessageNotifier: Error loading initial messages: ${loaded.error}');
+      state = AsyncValue.error(
+        loaded.error ?? Exception("Couldn't load chat"),
+        StackTrace.current,
+      );
+      return;
     }
+
+    state = await AsyncValue.guard(() async {
+      final currentState = await future;
+      final updatedMessages =
+          Map<String, List<Message>>.from(currentState.messages);
+      final existing = updatedMessages[chatGroupId] ?? const <Message>[];
+      // Keep a failed/sending bubble if this reload's page does not echo it.
+      updatedMessages[chatGroupId] = mergeRemoteEcho(
+        local: existing,
+        remote: loaded.items,
+      );
+      return currentState.copyWith(messages: updatedMessages);
+    });
+
+    if (loaded.items.length < kOpenChatPageSize) {
+      _noOlderHistory.add(chatGroupId);
+    } else {
+      _noOlderHistory.remove(chatGroupId);
+    }
+
+    debugPrint(
+        'MessageNotifier: Loaded ${loaded.items.length} newest messages');
   }
 
-  void _startMessagesStream(String chatGroupId, ChatType chatType) {
-    if (_useSupabase) {
-      _startSupabaseMessagesStream(chatGroupId, chatType);
-    } else {
-      _startFirestoreMessagesStream(chatGroupId, chatType);
+  /// Scroll-up page. Older rows join the same list. Returns whether another
+  /// older page may exist. Empty thread does not count as "no more".
+  Future<bool> loadOlderMessages(String chatGroupId) async {
+    if (_noOlderHistory.contains(chatGroupId) ||
+        _olderPageInFlight.contains(chatGroupId)) {
+      return !_noOlderHistory.contains(chatGroupId);
+    }
+    final current = _readMessageState();
+    final existing = sortThread(current?.messages[chatGroupId] ?? const []);
+    if (existing.isEmpty) return true;
+
+    _olderPageInFlight.add(chatGroupId);
+    try {
+      final cursor = existing.first;
+      final page = await _repository.loadMessages(
+        chatGroupId,
+        limit: kOlderChatPageSize,
+        before: cursor.timestamp,
+        beforeId: cursor.id,
+      );
+      final stitch = stitchOlderPage(
+        loaded: existing,
+        fetched: page,
+        limit: kOlderChatPageSize,
+      );
+      if (stitch.added == 0) {
+        _noOlderHistory.add(chatGroupId);
+        return false;
+      }
+      await _writeThread(chatGroupId, (_) => stitch.messages);
+      if (!stitch.hasMore) _noOlderHistory.add(chatGroupId);
+      return stitch.hasMore;
+    } catch (e) {
+      debugPrint('MessageNotifier: older page failed: $e');
+      return true;
+    } finally {
+      _olderPageInFlight.remove(chatGroupId);
     }
   }
 
   Future<void> _startSupabaseMessagesStream(
       String chatGroupId, ChatType chatType) async {
+    if (_subscribing) return;
+    _subscribing = true;
     try {
       final currentUser = _authService.currentUser;
       if (currentUser == null) {
@@ -189,14 +268,17 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
         return;
       }
 
+      await _supabaseMessagesSubscription?.cancel();
+      _supabaseMessagesSubscription = null;
+
       debugPrint('MessageNotifier: Starting Supabase stream for $chatGroupId');
 
       _supabaseMessagesSubscription = supabase
           .from('chat_messages')
           .stream(primaryKey: ['id'])
           .eq('chat_id', chatGroupId)
-          .order('timestamp', ascending: true)
-          .limit(100)
+          .order('created_at', ascending: false)
+          .limit(kOpenChatPageSize)
           .listen(
             (data) {
               debugPrint(
@@ -205,22 +287,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
             },
             onError: (error) {
               debugPrint('MessageNotifier: Supabase stream error: $error');
-
-              // Handle RealtimeSubscribeException specifically
-              if (error is RealtimeSubscribeException) {
-                debugPrint(
-                    'MessageNotifier: Channel error detected - ${error.status}');
-                if (error.status == RealtimeSubscribeStatus.channelError) {
-                  debugPrint(
-                      'MessageNotifier: Channel limit likely exceeded, cleaning up');
-                  SupabaseService.cleanupOldChannels();
-                }
-              }
-
-              _useSupabase = false;
-              _supabaseMessagesSubscription?.cancel();
-              _supabaseMessagesSubscription = null;
-              _startFirestoreMessagesStream(chatGroupId, chatType);
+              _recoverDeadMessagesChannel(error, chatGroupId, chatType);
             },
           );
 
@@ -228,39 +295,60 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       debugPrint('MessageNotifier: Supabase stream initialized');
     } catch (e) {
       debugPrint('MessageNotifier: Failed to start Supabase stream: $e');
-      _useSupabase = false;
-      _startFirestoreMessagesStream(chatGroupId, chatType);
+      _subscribing = false;
+      await _recoverDeadMessagesChannel(e, chatGroupId, chatType);
+    } finally {
+      _subscribing = false;
     }
   }
 
-  void _startFirestoreMessagesStream(String chatGroupId, ChatType chatType) {
+  Future<void> _recoverDeadMessagesChannel(
+    Object error,
+    String chatGroupId,
+    ChatType chatType,
+  ) async {
+    final dead = error is RealtimeSubscribeException &&
+        isDeadRealtimeStatus(error.status);
+    if (!dead && error is! RealtimeSubscribeException) {
+      debugPrint('MessageNotifier: non-channel stream error: $error');
+    }
+    await _disposeOwnRealtime();
+    if (!shouldResubscribeAfterChannelError(_messagesChannelErrorRetries)) {
+      debugPrint(
+          'MessageNotifier: channel dead after $kMaxRealtimeResubscribe resubscribe; degraded REST poll');
+      _startFallbackMessagesPoll(chatGroupId);
+      return;
+    }
+    _messagesChannelErrorRetries++;
+    debugPrint(
+        'MessageNotifier: resubscribing live channel (attempt $_messagesChannelErrorRetries)');
+    await _startSupabaseMessagesStream(chatGroupId, chatType);
+  }
+
+  void _startFallbackMessagesPoll(String chatGroupId) {
     final currentUser = _authService.currentUser;
     if (currentUser == null) {
-      debugPrint('MessageNotifier: No authenticated user, skipping stream');
+      debugPrint('MessageNotifier: No authenticated user, skipping REST poll');
       return;
     }
 
-    debugPrint(
-        'MessageNotifier: Starting Firestore fallback stream for $chatGroupId');
+    debugPrint('MessageNotifier: Starting degraded REST poll for $chatGroupId');
+    _fallbackPollTimer?.cancel();
+    Future<void> poll() async {
+      try {
+        final page = await _repository.loadMessages(chatGroupId,
+            limit: kOpenChatPageSize);
+        debugPrint('MessageNotifier: REST poll got ${page.length}');
+        await _mergeMessages(chatGroupId, page);
+      } catch (e) {
+        debugPrint('MessageNotifier: REST poll failed: $e');
+      }
+    }
 
-    final stream = SupabaseService.client
-        .from('chat_messages')
-        .stream(primaryKey: ['id'])
-        .eq('chat_id', chatGroupId)
-        .order('timestamp', ascending: true)
-        .limit(100)
-        .map((messages) =>
-            messages.where((msg) => msg['is_deleted'] != true).toList());
-
-    _messagesSubscription = stream.listen(
-      (data) {
-        debugPrint(
-            'MessageNotifier: 🎯 Stream emitted data type: ${data.runtimeType}, count: ${(data as List).length}');
-        _onSupabaseMessagesSnapshot(data, chatGroupId);
-      },
-      onError: (error) => _onStreamError(error, chatGroupId, chatType),
-      onDone: () => debugPrint('MessageNotifier: Messages stream done'),
-    );
+    poll();
+    _fallbackPollTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      poll();
+    });
   }
 
   void _onSupabaseMessagesSnapshot(dynamic data, String chatGroupId) async {
@@ -269,12 +357,13 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       if (data is RealtimeSubscribeException) {
         debugPrint(
             'MessageNotifier: RealtimeSubscribeException received: ${data.status}');
-        if (data.status == RealtimeSubscribeStatus.channelError) {
-          debugPrint(
-              'MessageNotifier: Channel error - cleaning up and skipping');
-          await SupabaseService.cleanupOldChannels();
+        if (isDeadRealtimeStatus(data.status)) {
+          final type = _currentChatType;
+          if (type != null) {
+            await _recoverDeadMessagesChannel(data, chatGroupId, type);
+          }
         }
-        return; // Don't process further, error already logged
+        return;
       }
 
       // CRITICAL: Accept dynamic and safely cast to avoid signature-level cast errors
@@ -308,58 +397,17 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
 
           // Use dynamic map first, then convert manually field by field
           final rawMap = item;
-
-          // Manually copy each field to avoid any constructor issues
           for (final rawKey in rawMap.keys) {
             final key = rawKey.toString();
             final value = rawMap[rawKey];
             messageData[key] = value;
           }
 
-          final cleanedData = <String, dynamic>{};
-
-          // Copy only safe fields, skipping problematic JSONB columns entirely
-          for (final entry in messageData.entries) {
-            final key = entry.key;
-            final value = entry.value;
-
-            // Skip all JSONB fields that could cause type issues
-            if (key == 'metadata' ||
-                key == 'reactions' ||
-                key == 'clip_data' ||
-                key == 'clipData' ||
-                key == 'poll' ||
-                key == 'ai_response') {
-              // Only include these fields if they're the correct type
-              if (key == 'reactions') {
-                // Always include reactions regardless of type - let Message.fromJson handle it
-                cleanedData[key] = value;
-              } else if (key == 'metadata' ||
-                  key == 'clip_data' ||
-                  key == 'poll') {
-                if (value == null || value is Map) {
-                  // Check for old schema in metadata
-                  if (key == 'metadata' && value is Map) {
-                    final meta = value;
-                    if (!meta.containsKey('photos') &&
-                        !meta.containsKey('videos') &&
-                        !meta.containsKey('audio')) {
-                      cleanedData[key] = value;
-                    }
-                  } else {
-                    cleanedData[key] = value;
-                  }
-                }
-              }
-              // Skip if wrong type
-              continue;
-            }
-
-            // Copy all other fields as-is
-            cleanedData[key] = value;
-          }
-
-          final message = Message.fromJson(cleanedData);
+          final message = parseLiveChatMessage(
+            messageData,
+            expectedChatId: chatGroupId,
+          );
+          if (message == null) continue;
 
           // Log photo messages specifically
           if (message.messageType == MessageType.image ||
@@ -403,13 +451,13 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
           'MessageNotifier: RealtimeSubscribeException caught: ${e.status}');
       debugPrint('MessageNotifier: Details: ${e.details}');
 
-      if (e.status == RealtimeSubscribeStatus.channelError) {
-        debugPrint('MessageNotifier: Channel error - attempting cleanup');
-        await SupabaseService.cleanupOldChannels();
+      if (isDeadRealtimeStatus(e.status) && _currentChatGroupId != null) {
+        await _recoverDeadMessagesChannel(
+          e,
+          _currentChatGroupId!,
+          _currentChatType ?? ChatType.userGroup,
+        );
       }
-
-      // Don't set error state for channel errors - just log and continue
-      debugPrint('MessageNotifier: Continuing without throwing exception');
     } catch (e, stackTrace) {
       debugPrint('MessageNotifier: Error processing Supabase messages: $e');
       debugPrint(
@@ -442,84 +490,30 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       }
 
       final existingMessages = currentState.messages[chatGroupId] ?? [];
-
-      // CRITICAL: Deduplicate messages to prevent unnecessary rebuilds
-      // Check if remote messages are actually different from existing ones
-      if (existingMessages.length == remoteMessages.length) {
-        final existingIds = existingMessages.map((m) => m.id).toSet();
-        final remoteIds = remoteMessages.map((m) => m.id).toSet();
-
-        if (existingIds.difference(remoteIds).isEmpty &&
-            remoteIds.difference(existingIds).isEmpty) {
-          // Same messages, check if any actually changed
-          bool hasChanges = false;
-          final existingMap = {for (var msg in existingMessages) msg.id: msg};
-
-          const deepEq = DeepCollectionEquality();
-          for (final remoteMsg in remoteMessages) {
-            final existingMsg = existingMap[remoteMsg.id];
-            if (existingMsg != null) {
-              // Compare reactions and other mutable fields using deep equality
-              if (!deepEq.equals(existingMsg.reactions, remoteMsg.reactions) ||
-                  existingMsg.text != remoteMsg.text) {
-                hasChanges = true;
-                break;
-              }
-            }
-          }
-
-          if (!hasChanges) {
-            // No actual changes - skip merge to prevent unnecessary rebuilds
-            return;
-          }
-        }
-      }
-
-      final existingMap = {for (var msg in existingMessages) msg.id: msg};
-      final mergedMessages = <Message>[];
-      mergedMessages.addAll(existingMessages);
-
-      int newCount = 0;
-      int updatedCount = 0;
-
-      const deepEq = DeepCollectionEquality();
-      for (final remoteMsg in remoteMessages) {
-        final existingMsg = existingMap[remoteMsg.id];
-        if (existingMsg == null) {
-          mergedMessages.add(remoteMsg);
-          newCount++;
-        } else {
-          // Only count as updated if reactions or text actually changed (deep equality)
-          if (!deepEq.equals(existingMsg.reactions, remoteMsg.reactions) ||
-              existingMsg.text != remoteMsg.text) {
-            final index =
-                mergedMessages.indexWhere((m) => m.id == remoteMsg.id);
-            if (index != -1) {
-              mergedMessages[index] = remoteMsg;
-              updatedCount++;
-            }
-          }
-        }
-      }
-
-      mergedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-      // CRITICAL: Only update state if there are actual new or updated messages
-      if (newCount == 0 && updatedCount == 0) {
-        // No changes - skip state update to prevent unnecessary rebuilds
-        print('⏭️ Skipping state update - no new or updated messages');
+      final mergedMessages = mergeRemoteEcho(
+        local: existingMessages,
+        remote: remoteMessages,
+      );
+      if (sameThreadSnapshot(existingMessages, mergedMessages)) {
         return;
       }
 
-      if (newCount > 0 || updatedCount > 0) {
-        debugPrint(
-            'MessageNotifier: Merging $newCount new, $updatedCount updated messages');
-        print(
-            '✅ STATE UPDATE: $newCount new messages, $updatedCount updated messages for chat $chatGroupId');
-
-        // Update the chat group's lastActivity timestamp when new messages arrive
-        if (newCount > 0 && remoteMessages.isNotEmpty) {
-          _updateChatGroupLastActivity(chatGroupId, remoteMessages);
+      final existingIds = existingMessages.map((m) => m.id).toSet();
+      final newMessages = remoteMessages
+          .where((m) => m.id.isNotEmpty && !existingIds.contains(m.id))
+          .toList();
+      final newCount = newMessages.length;
+      debugPrint(
+          'MessageNotifier: Merged echo for $chatGroupId ($newCount new)');
+      if (newCount > 0) {
+        _updateChatGroupLastActivity(chatGroupId, remoteMessages);
+        final incoming = incomingFromOthers(
+          newSenderIds: newMessages.map((m) => m.senderId).toList(),
+          currentUserId: _testingUserId ?? _authService.currentUser?.id,
+          threadIsOpen: _currentChatGroupId == chatGroupId,
+        );
+        if (incoming > 0) {
+          _addGroupUnread(chatGroupId, incoming);
         }
       }
 
@@ -541,13 +535,27 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       debugPrint(
           'MessageNotifier: Recovering from error by creating fresh state');
       try {
-        final newState = MessageState(
-          messages: {chatGroupId: remoteMessages},
-          reactions: {},
-          typingUsers: {},
-          lastSyncTimestamps: {},
+        final existing = state.hasValue
+            ? (state.requireValue.messages[chatGroupId] ?? const <Message>[])
+            : const <Message>[];
+        final merged = mergeRemoteEcho(
+          local: existing,
+          remote: remoteMessages,
         );
-        state = AsyncValue.data(newState);
+        final base = state.hasValue
+            ? state.requireValue
+            : MessageState(
+                messages: const {},
+                reactions: const {},
+                typingUsers: const {},
+                lastSyncTimestamps: const {},
+              );
+        state = AsyncValue.data(base.copyWith(
+          messages: {
+            ...base.messages,
+            chatGroupId: merged,
+          },
+        ));
       } catch (recoveryError) {
         debugPrint('MessageNotifier: Failed to recover: $recoveryError');
         // Only NOW set error state as last resort
@@ -569,7 +577,7 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
       _retryTimer = Timer(delay, () {
         if (_currentChatGroupId == chatGroupId &&
             _currentChatType == chatType) {
-          _startMessagesStream(chatGroupId, chatType);
+          _startSupabaseMessagesStream(chatGroupId, chatType);
         }
       });
     } else {
@@ -578,30 +586,22 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     }
   }
 
-  Future<void> _disposeMessagesStream() async {
-    debugPrint('MessageNotifier: Disposing messages stream');
+  Future<void> _disposeOwnRealtime() async {
+    _fallbackPollTimer?.cancel();
+    _fallbackPollTimer = null;
     await _messagesSubscription?.cancel();
     _messagesSubscription = null;
     await _supabaseMessagesSubscription?.cancel();
     _supabaseMessagesSubscription = null;
-
     if (_typingChannel != null) {
       await SupabaseService.safeRemoveChannel(_typingChannel!);
       _typingChannel = null;
     }
+  }
 
-    // CRITICAL: Clean up orphaned channels created by .stream()
-    // These aren't tracked by subscriptions and cause channelratelimitreached
-    try {
-      final channels = supabase.getChannels();
-      debugPrint(
-          'MessageNotifier: Cleaning up ${channels.length} orphaned channels');
-      for (final channel in channels) {
-        await SupabaseService.safeRemoveChannel(channel);
-      }
-    } catch (e) {
-      debugPrint('MessageNotifier: Error cleaning orphaned channels: $e');
-    }
+  Future<void> _disposeMessagesStream() async {
+    debugPrint('MessageNotifier: Disposing messages stream');
+    await _disposeOwnRealtime();
 
     _retryTimer?.cancel();
     _retryTimer = null;
@@ -616,7 +616,9 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
   // MESSAGE OPERATIONS
   // ============================================================================
 
-  /// Send a message with optimistic updates
+  /// Send a message. One client id is the server row id. The bubble stays
+  /// in the list: sending, then sent only after the insert confirms, or
+  /// failed with the same id so tap-to-retry can run again.
   Future<void> sendMessage(
     WidgetRef ref,
     String chatGroupId,
@@ -628,106 +630,201 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
     String? replyTo,
     String? mediaFilePath,
   }) async {
+    final senderId = _testingUserId ?? _authService.currentUser?.id;
+    if (senderId == null) throw 'User not authenticated';
+
+    final clientId = const Uuid().v4();
+    final optimistic = Message(
+      id: clientId,
+      senderId: senderId,
+      text: text,
+      timestamp: DateTime.now(),
+      messageType: messageType,
+      mediaUrl: mediaUrl,
+      mediaType: mediaType,
+      replyTo: replyTo,
+      reactions: const {},
+      isEdited: false,
+      isDeleted: false,
+    );
+    await _writeThread(
+      chatGroupId,
+      (messages) => appendSending(messages, optimistic),
+    );
+
     try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) throw 'User not authenticated';
-
-      // Create optimistic message
-      final optimisticMessage = Message.create(
-        senderId: currentUser.id,
-        text: text,
-        messageType: messageType,
-        mediaUrl: mediaUrl,
-        mediaType: mediaType,
-        replyTo: replyTo,
-      );
-
-      // Add to UI immediately
-      await _addOptimisticMessage(chatGroupId, optimisticMessage);
-
-      // Send via MessageService
       final result = await _messageService.sendMessage(
         ref,
-        senderUid: currentUser.id,
+        senderUid: senderId,
         text: text,
         chatGroupId: chatGroupId,
         chatType: chatType,
         mediaFilePath: mediaFilePath,
         mediaType: mediaType,
         replyTo: replyTo,
+        clientMessageId: clientId,
+        imageUrl: messageType == MessageType.image ? mediaUrl : null,
+        videoUrl: messageType == MessageType.video ? mediaUrl : null,
+        audioUrl: messageType == MessageType.audio ||
+                messageType == MessageType.voiceNote
+            ? mediaUrl
+            : null,
       );
-
-      if (result.success) {
-        await _replaceOptimisticMessage(
-            chatGroupId, optimisticMessage.id, result.messageId!);
-      } else {
-        await _removeOptimisticMessage(chatGroupId, optimisticMessage.id);
-        throw result.errorMessage ?? 'Failed to send message';
-      }
+      await _applyServerResult(chatGroupId, clientId, result);
     } catch (e) {
       debugPrint('MessageNotifier: Send message failed: $e');
-      rethrow;
+      await _writeThread(
+        chatGroupId,
+        (messages) => applySendResult(
+          messages: messages,
+          clientId: clientId,
+          confirmed: false,
+        ),
+      );
     }
   }
 
-  Future<void> _addOptimisticMessage(
-      String chatGroupId, Message message) async {
+  /// Tap-to-retry. Same client id, so a server row that already landed
+  /// comes back as a duplicate-key confirm instead of a second bubble.
+  Future<void> retryFailedMessage(
+    WidgetRef ref,
+    String chatGroupId,
+    String messageId,
+    ChatType chatType,
+  ) async {
+    final current = _readMessageState();
+    if (current == null) return;
+    final existing = messageById(
+      current.messages[chatGroupId] ?? const [],
+      messageId,
+    );
+    if (existing == null ||
+        outboundDeliveryOf(existing) != OutboundDelivery.failed) {
+      return;
+    }
+
+    await _writeThread(
+      chatGroupId,
+      (messages) => markRetrying(messages: messages, clientId: messageId),
+    );
+
     try {
-      debugPrint('MessageNotifier: _addOptimisticMessage START');
-      final currentState = await future;
-      debugPrint('MessageNotifier: Got currentState');
-      debugPrint(
-          'MessageNotifier: currentState.messages type: ${currentState.messages.runtimeType}');
-      debugPrint(
-          'MessageNotifier: currentState.messages keys: ${currentState.messages.keys}');
-
-      // Defensive: Check if messages map has correct types
-      final cleanMessages = <String, List<Message>>{};
-      for (final entry in currentState.messages.entries) {
-        debugPrint(
-            'MessageNotifier: Entry key=${entry.key}, value type=${entry.value.runtimeType}');
-        // Type is guaranteed by state definition
-        cleanMessages[entry.key] = entry.value;
-      }
-
-      final messages = List<Message>.from(cleanMessages[chatGroupId] ?? []);
-      messages.add(message); // Add to end (newest at bottom)
-      cleanMessages[chatGroupId] = messages;
-
-      state = AsyncValue.data(currentState.copyWith(messages: cleanMessages));
-      debugPrint('MessageNotifier: _addOptimisticMessage SUCCESS');
-    } catch (e, stackTrace) {
-      debugPrint('MessageNotifier: ERROR in _addOptimisticMessage: $e');
-      debugPrint(
-          'MessageNotifier: Stack trace: ${stackTrace.toString().split('\n').take(10).join('\n')}');
-      rethrow;
+      final result = await _messageService.sendMessage(
+        ref,
+        senderUid: existing.senderId,
+        text: existing.text,
+        chatGroupId: chatGroupId,
+        chatType: chatType,
+        replyTo: existing.replyTo,
+        mediaType: existing.mediaType,
+        clientMessageId: existing.id,
+        imageUrl:
+            existing.messageType == MessageType.image ? existing.mediaUrl : null,
+        videoUrl:
+            existing.messageType == MessageType.video ? existing.mediaUrl : null,
+        audioUrl: existing.messageType == MessageType.audio ||
+                existing.messageType == MessageType.voiceNote
+            ? existing.mediaUrl
+            : null,
+      );
+      await _applyServerResult(chatGroupId, messageId, result);
+    } catch (e) {
+      debugPrint('MessageNotifier: Retry failed: $e');
+      await _writeThread(
+        chatGroupId,
+        (messages) => applySendResult(
+          messages: messages,
+          clientId: messageId,
+          confirmed: false,
+        ),
+      );
     }
   }
 
-  Future<void> _replaceOptimisticMessage(
-      String chatGroupId, String optimisticId, String finalId) async {
-    final currentState = await future;
-    final updatedMessages =
-        Map<String, List<Message>>.from(currentState.messages);
-    final messages = List<Message>.from(updatedMessages[chatGroupId] ?? []);
+  Future<void> _applyServerResult(
+    String chatGroupId,
+    String clientId,
+    MessageSendResult result,
+  ) async {
+    final confirmed = isServerConfirmed(
+      success: result.success,
+      isOffline: result.isOffline,
+      messageId: result.messageId,
+      clientId: clientId,
+    );
+    await _writeThread(
+      chatGroupId,
+      (messages) => applySendResult(
+        messages: messages,
+        clientId: clientId,
+        confirmed: confirmed,
+      ),
+    );
+    if (!confirmed) return;
+    final saved = messageById(
+      _readMessageState()?.messages[chatGroupId] ?? const [],
+      clientId,
+    );
+    if (saved == null) return;
+    unawaited(_notifySavedMessage(
+      chatId: chatGroupId,
+      senderId: saved.senderId,
+      text: saved.text,
+    ));
+  }
 
-    final index = messages.indexWhere((m) => m.id == optimisticId);
-    if (index != -1) {
-      messages[index] = messages[index].copyWith(id: finalId);
-      updatedMessages[chatGroupId] = messages;
-      state = AsyncValue.data(currentState.copyWith(messages: updatedMessages));
+  Future<void> _notifySavedMessage({
+    required String chatId,
+    required String senderId,
+    required String text,
+  }) async {
+    final notice = await noticeForSavedChat(
+      chatId: chatId,
+      senderId: senderId,
+      text: text,
+    );
+    if (notice == null) return;
+    await NotificationService.sendNotificationToUsers(
+      title: notice.title,
+      body: notice.body,
+      recipientUids: notice.recipients,
+      data: notice.payload,
+    );
+  }
+
+  void _markGroupRead(String chatGroupId) {
+    try {
+      ref.read(cn.chatNotifierProvider.notifier).clearGroupUnread(chatGroupId);
+    } catch (e) {
+      debugPrint('MessageNotifier: unread clear skipped: $e');
     }
   }
 
-  Future<void> _removeOptimisticMessage(
-      String chatGroupId, String messageId) async {
-    final currentState = await future;
+  void _addGroupUnread(String chatGroupId, int by) {
+    try {
+      ref
+          .read(cn.chatNotifierProvider.notifier)
+          .addGroupUnread(chatGroupId, by);
+    } catch (e) {
+      debugPrint('MessageNotifier: unread bump skipped: $e');
+    }
+  }
+
+  MessageState? _readMessageState() {
+    if (state.hasValue) return state.requireValue;
+    return null;
+  }
+
+  Future<void> _writeThread(
+    String chatGroupId,
+    List<Message> Function(List<Message> messages) transform,
+  ) async {
+    final currentState = _readMessageState() ?? await future;
     final updatedMessages =
         Map<String, List<Message>>.from(currentState.messages);
-    final messages = List<Message>.from(updatedMessages[chatGroupId] ?? []);
-    messages.removeWhere((m) => m.id == messageId);
-    updatedMessages[chatGroupId] = messages;
-
+    updatedMessages[chatGroupId] = transform(
+      List<Message>.from(updatedMessages[chatGroupId] ?? const []),
+    );
     state = AsyncValue.data(currentState.copyWith(messages: updatedMessages));
   }
 
@@ -835,10 +932,17 @@ class MessageNotifier extends AsyncNotifier<MessageState> {
               'MessageNotifier: Typing channel subscribed for $chatGroupId');
         } else if (status == RealtimeSubscribeStatus.channelError) {
           debugPrint('❌ MessageNotifier: Typing channel error: $error');
-          // Cleanup on error - don't let this block chat functionality
           if (_typingChannel != null) {
             await SupabaseService.safeRemoveChannel(_typingChannel!);
             _typingChannel = null;
+          }
+          if (shouldResubscribeAfterChannelError(_typingChannelErrorRetries)) {
+            _typingChannelErrorRetries++;
+            debugPrint('MessageNotifier: resubscribing typing channel');
+            await _initializeTypingChannel(chatGroupId);
+          } else {
+            debugPrint(
+                'MessageNotifier: typing channel dead after resubscribe; degraded');
           }
         }
       });

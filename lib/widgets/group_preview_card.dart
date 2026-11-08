@@ -78,7 +78,7 @@ class GroupPreviewCard extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
           child: Container(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             child: ListTile(
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
@@ -87,7 +87,7 @@ class GroupPreviewCard extends StatelessWidget {
 
               // Leading: Member count or game icon
               leading: CircleAvatar(
-                backgroundColor: colorScheme.primary.withOpacity(0.2),
+                backgroundColor: colorScheme.primary.withValues(alpha: 0.2),
                 radius: 24,
                 child: gameName != null
                     ? Icon(
@@ -125,7 +125,7 @@ class GroupPreviewCard extends StatelessWidget {
                   Text(
                     'Public • ${gameName ?? 'General'}',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                       fontSize: 12,
                     ),
                   ),
@@ -133,7 +133,7 @@ class GroupPreviewCard extends StatelessWidget {
                   Text(
                     'Active: ${_formatTimeAgo(group.lastActivity)}',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.white.withValues(alpha: 0.5),
                       fontSize: 11,
                     ),
                   ),
@@ -141,7 +141,7 @@ class GroupPreviewCard extends StatelessWidget {
                   Text(
                     'Invite: ...${_getMaskedInviteCode()}',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.4),
+                      color: Colors.white.withValues(alpha: 0.4),
                       fontSize: 10,
                       fontFamily: 'monospace',
                     ),
@@ -155,7 +155,7 @@ class GroupPreviewCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: [
                     BoxShadow(
-                      color: colorScheme.primary.withOpacity(0.5),
+                      color: colorScheme.primary.withValues(alpha: 0.5),
                       blurRadius: 8,
                       spreadRadius: 1,
                     ),

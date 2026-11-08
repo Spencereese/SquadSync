@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../presentation/notifiers/lobby_notifier.dart' as ln;
+import '../services/lobby_seat_status.dart';
+import '../services/peacock_assignment_machine.dart';
 import '../services/timer_service.dart';
+import 'widgets/lobby_seat_affordance.dart';
 
 class SpotTimerDisplay extends ConsumerStatefulWidget {
   final int index;
@@ -59,8 +62,15 @@ class _SpotTimerDisplayState extends ConsumerState<SpotTimerDisplay> {
         final progress = const Duration(minutes: 5).inSeconds > 0
             ? duration.inSeconds / const Duration(minutes: 5).inSeconds
             : 0.0;
+        final queueAssigned = uid.isNotEmpty &&
+            peacockPhaseIsAssigned(
+              PeacockAssignmentTracker.instance.stateFor(
+                uid.replaceAll('_calling', ''),
+              ),
+            );
 
-        // Haptic feedback on expiration
+        // Haptic feedback on expiration. Server still assigns via
+        // process_expired_timers; this is display only.
         if (duration == Duration.zero && !_hasExpired) {
           _hasExpired = true;
           HapticFeedback.vibrate();
@@ -73,23 +83,12 @@ class _SpotTimerDisplayState extends ConsumerState<SpotTimerDisplay> {
           _hasExpired = false;
         }
 
-        final minutes = duration.inMinutes;
-        final seconds = duration.inSeconds % 60;
-        final formatted =
-            '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              formatted,
-              style: TextStyle(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
-                fontSize: 12,
-              ),
+            LockTimerReadout(
+              remaining: duration,
+              queueAssigned: queueAssigned,
             ),
             const SizedBox(height: 4),
             SizedBox(

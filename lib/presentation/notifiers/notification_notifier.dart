@@ -1,8 +1,18 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/app_env.dart';
+import '../../core/chat_messages.dart';
 import '../../domain/entities/notification_priority.dart';
-import '../services/notification_service.dart';
+import '../../notification_service.dart';
+import '../../services/supabase_service.dart';
+
+/// Riverpod forbids mutating providers during [State.initState] / [build].
+void scheduleProviderWriteAfterBuild(VoidCallback write) {
+  WidgetsBinding.instance.addPostFrameCallback((_) => write());
+}
 
 /// Provider for NotificationNotifier
 final notificationNotifierProvider =
@@ -10,10 +20,219 @@ final notificationNotifierProvider =
   NotificationNotifier.new,
 );
 
+/// Skip the shared chat badge only when the open thread matches the payload.
+/// Messages with no group column still increment, even if a chat is mounted.
+bool shouldSkipChatBadgeIncrement(
+  String? activeChatGroupId,
+  Object? incomingGroup,
+) {
+  return incomingGroup != null &&
+      incomingGroup.toString() == activeChatGroupId;
+}
+
+/// ChatScreen's active thread: widget id, lobby current chat, or squad lobby id.
+/// When both a stale id and a current chat id exist, [historyCounts] picks
+/// the thread that actually has messages (no invented rows).
+String? resolveActiveChatGroupId({
+  required String? widgetChatGroupId,
+  required bool isSquad,
+  String? selectedLobbyId,
+  String? lobbyChatGroupId,
+  Map<String, int> historyCounts = const {},
+  Iterable<String?> extraChatIds = const [],
+}) {
+  final widgetId = (widgetChatGroupId != null && widgetChatGroupId.isNotEmpty)
+      ? widgetChatGroupId
+      : null;
+  final currentChat =
+      (lobbyChatGroupId != null && lobbyChatGroupId.isNotEmpty)
+          ? lobbyChatGroupId
+          : null;
+  final squadLobby = (isSquad &&
+          selectedLobbyId != null &&
+          selectedLobbyId.isNotEmpty)
+      ? selectedLobbyId
+      : null;
+
+  if (historyCounts.values.any((count) => count > 0)) {
+    return preferChatIdWithHistory(
+      candidates: [widgetId, currentChat, squadLobby, ...extraChatIds],
+      historyCounts: historyCounts,
+    );
+  }
+  if (currentChat != null) return currentChat;
+  return widgetId ?? squadLobby;
+}
+
+/// First non-null thread id should start ChatNotifier.initializeChat.
+bool shouldStartChatInitialization({
+  required bool alreadyInitialized,
+  required String? nextThreadId,
+}) {
+  return !alreadyInitialized &&
+      nextThreadId != null &&
+      nextThreadId.isNotEmpty;
+}
+
+/// Why ChatInitializationService stopped before completing.
+enum ChatInitBail { none, nullSquad, hardFailure }
+
+/// Re-run after a null-squad wait, or one bounded hard-failure retry.
+bool shouldRetryChatInitializationService({
+  required bool serviceCompleted,
+  required ChatInitBail bail,
+  required bool squadStateAvailable,
+  required int hardFailureRetries,
+  int maxHardFailureRetries = 1,
+}) {
+  if (serviceCompleted) return false;
+  switch (bail) {
+    case ChatInitBail.nullSquad:
+      return squadStateAvailable;
+    case ChatInitBail.hardFailure:
+      return hardFailureRetries < maxHardFailureRetries;
+    case ChatInitBail.none:
+      return false;
+  }
+}
+
+bool shouldShowInitFailureSnackBar(int hardFailureRetries) =>
+    hardFailureRetries == 0;
+
+/// Ignore in-flight init that finished after a lobby switch.
+bool shouldCommitInitializationCompletion({
+  required String finishingId,
+  required int finishingGeneration,
+  required String? currentRegisteredId,
+  required int currentGeneration,
+}) {
+  return finishingId == currentRegisteredId &&
+      finishingGeneration == currentGeneration;
+}
+
+bool shouldRunInitializationService({
+  required String requestedId,
+  required int requestedGeneration,
+  required String? currentRegisteredId,
+  required int currentGeneration,
+  required bool alreadyCompleted,
+}) {
+  if (alreadyCompleted) return false;
+  return shouldCommitInitializationCompletion(
+    finishingId: requestedId,
+    finishingGeneration: requestedGeneration,
+    currentRegisteredId: currentRegisteredId,
+    currentGeneration: currentGeneration,
+  );
+}
+
+/// Rate-limit delayed re-init must not outrank a newer lobby.
+/// When this returns true, ChatScreen replays scheduleChatStart
+/// (notifier + ChatInitializationService), not a raw initializeChat.
+bool shouldContinueDelayedChatReinit({
+  required bool isMounted,
+  required String scheduledId,
+  required int scheduledGeneration,
+  required String? currentRegisteredId,
+  required int currentGeneration,
+}) {
+  if (!isMounted) return false;
+  return shouldCommitInitializationCompletion(
+    finishingId: scheduledId,
+    finishingGeneration: scheduledGeneration,
+    currentRegisteredId: currentRegisteredId,
+    currentGeneration: currentGeneration,
+  );
+}
+
+/// One delayed ChannelRateLimitReached replay, then stop.
+const kMaxChatRateLimitRetries = 1;
+
+bool shouldScheduleRateLimitRetry(
+  int rateLimitRetries, {
+  int maxRateLimitRetries = kMaxChatRateLimitRetries,
+}) {
+  return rateLimitRetries < maxRateLimitRetries;
+}
+
+const kRateLimitRetrySnack = 'Too many connections. Cleaning up...';
+const kRateLimitGiveUpSnack = 'Too many connections — try again later';
+
+String rateLimitRetrySnackMessage(int rateLimitRetries) {
+  return shouldScheduleRateLimitRetry(rateLimitRetries)
+      ? kRateLimitRetrySnack
+      : kRateLimitGiveUpSnack;
+}
+
+/// Delayed replay must keep the budget; thread switch / success zeros it.
+bool shouldZeroRateLimitRetries({required bool delayedReplay}) =>
+    !delayedReplay;
+
+bool shouldCleanupPreviousThreadChannels({
+  required String? previousId,
+  required String? nextId,
+}) {
+  return previousId != null &&
+      previousId.isNotEmpty &&
+      nextId != null &&
+      nextId != previousId;
+}
+
+/// Nuke-all only when every channel topic failed to read.
+enum ChannelCleanupMode { scoped, nukeAll }
+
+ChannelCleanupMode channelCleanupMode({
+  required int readableTopicCount,
+  required int unreadableTopicCount,
+}) {
+  if (readableTopicCount == 0 && unreadableTopicCount > 0) {
+    return ChannelCleanupMode.nukeAll;
+  }
+  return ChannelCleanupMode.scoped;
+}
+
+/// Re-run name/image/settings/draft when the mounted ChatScreen switches thread.
+bool shouldRefreshChatInitializationOnNewThread({
+  required bool alreadyInitialized,
+  required bool isNewId,
+}) {
+  return alreadyInitialized && isNewId;
+}
+
+/// Chat/presence/typing/message topics for [threadId].
+/// [topic] may be `realtime:presence:<id>` or `presence:<id>`.
+/// Matches the segment after the marker, not a substring of the id.
+bool isChatThreadChannelTopic(String topic, String? threadId) {
+  final name = topic.toLowerCase().replaceFirst(RegExp(r'^realtime:'), '');
+  const colonMarkers = ['presence:', 'typing:', 'messages:'];
+  const underscoreMarkers = ['typing_', 'messages_'];
+  final isChatTopic = colonMarkers.any(name.startsWith) ||
+      underscoreMarkers.any(name.startsWith);
+  if (!isChatTopic) return false;
+  if (threadId == null || threadId.isEmpty) return true;
+  final id = threadId.toLowerCase();
+  for (final marker in colonMarkers) {
+    if (name == '$marker$id') return true;
+  }
+  for (final marker in underscoreMarkers) {
+    if (name == '$marker$id') return true;
+  }
+  return false;
+}
+
 /// Riverpod notifier for managing notifications with Supabase real-time subscriptions
 class NotificationNotifier extends AsyncNotifier<BadgeState> {
-  final _supabase = Supabase.instance.client;
   final _notificationService = NotificationService();
+
+  SupabaseClient? get _maybeClient => SupabaseService.maybeClient;
+
+  SupabaseClient get _supabase {
+    final client = _maybeClient;
+    if (client == null) {
+      throw StateError('Supabase is not configured.');
+    }
+    return client;
+  }
 
   // Subscriptions for cleanup
   RealtimeChannel? _lobbyChannel;
@@ -24,21 +243,32 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
   final Map<String, int> _lobbyPlayerCounts = {};
   final Set<String> _processedMomentumEvents = {};
 
+  /// Chat currently on screen. Incoming messages for this group do not badge.
+  String? _activeChatGroupId;
+
   @override
   Future<BadgeState> build() async {
     // Initialize notification service
-    await _notificationService.initialize();
+    await NotificationService.initialize();
 
-    // Set up real-time subscriptions for momentum detection
-    _setupLobbyMomentumSubscription();
-    _setupChatBadgeSubscription();
-
-    // Clean up on dispose
     ref.onDispose(() {
       _lobbyChannel?.unsubscribe();
       _chatChannel?.unsubscribe();
       _presenceSubscription?.cancel();
     });
+
+    if (!AppEnv.isSupabaseConfigured || !SupabaseService.isInitialized) {
+      return _notificationService.getBadgeState();
+    }
+
+    final session = await SupabaseService.ensureFreshSession();
+    if (session == null) {
+      debugPrint('NotificationNotifier: no valid session; skip realtime');
+      return _notificationService.getBadgeState();
+    }
+
+    _setupLobbyMomentumSubscription();
+    _setupChatBadgeSubscription();
 
     return _notificationService.getBadgeState();
   }
@@ -64,7 +294,6 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
 
       final lobbyId = newRecord['lobby_id'] as String?;
       final userId = newRecord['user_id'] as String?;
-      final spotIndex = newRecord['spot_index'] as int?;
 
       if (lobbyId == null || userId == null) return;
 
@@ -131,7 +360,7 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
       // Update player count tracker
       _lobbyPlayerCounts[lobbyId] = currentPlayers;
     } catch (e) {
-      print('❌ Error handling lobby momentum: $e');
+      debugPrint('Error handling lobby momentum: $e');
     }
   }
 
@@ -156,9 +385,27 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
     // Don't badge own messages
     if (senderId == currentUserId) return;
 
-    // Update badge count (low priority - badge only)
-    _notificationService.clearBadge('chat');
+    final incomingGroup = payload.newRecord['chat_group_id'] ??
+        payload.newRecord['chat_id'] ??
+        payload.newRecord['group_id'];
+    if (shouldSkipChatBadgeIncrement(_activeChatGroupId, incomingGroup)) {
+      return;
+    }
+
+    _notificationService.incrementBadge('chat');
     state = AsyncData(_notificationService.getBadgeState());
+  }
+
+  /// ChatScreen registers the open thread so badges do not increment there.
+  /// Empty string is treated as no active chat — never register `''`.
+  void setActiveChatGroup(String? chatGroupId) {
+    final id =
+        (chatGroupId == null || chatGroupId.isEmpty) ? null : chatGroupId;
+    _activeChatGroupId = id;
+    if (id != null) {
+      _notificationService.clearBadge('chat');
+      state = AsyncData(_notificationService.getBadgeState());
+    }
   }
 
   /// Send direct invite notification
@@ -215,7 +462,7 @@ class NotificationNotifier extends AsyncNotifier<BadgeState> {
       final user = await _supabase
           .from('users')
           .select('display_name')
-          .eq('id', userId)
+          .eq('uid', userId)
           .single();
       return user['display_name'] as String? ?? 'Unknown';
     } catch (e) {

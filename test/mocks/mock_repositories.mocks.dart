@@ -543,6 +543,19 @@ class MockLobbyRepository extends _i1.Mock implements _i10.LobbyRepository {
       ) as _i11.Future<Map<String, dynamic>>);
 
   @override
+  _i11.Future<List<Map<String, dynamic>>> getMatchHistory(String? lobbyId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getMatchHistory,
+          [lobbyId],
+        ),
+        returnValue: _i11.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub: _i11.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i11.Future<List<Map<String, dynamic>>>);
+
+  @override
   _i11.Future<void> createInvite(Map<String, dynamic>? inviteData) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -691,6 +704,7 @@ class MockChatRepository extends _i1.Mock implements _i12.ChatRepository {
     String? chatGroupId, {
     int? limit = 50,
     DateTime? before,
+    String? beforeId,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -699,6 +713,7 @@ class MockChatRepository extends _i1.Mock implements _i12.ChatRepository {
           {
             #limit: limit,
             #before: before,
+            #beforeId: beforeId,
           },
         ),
         returnValue: _i11.Future<List<_i4.Message>>.value(<_i4.Message>[]),
@@ -1329,23 +1344,6 @@ class MockGameRepository extends _i1.Mock implements _i14.GameRepository {
         ),
         returnValue: _i11.Future<List<_i15.Game>>.value(<_i15.Game>[]),
       ) as _i11.Future<List<_i15.Game>>);
-
-  @override
-  _i11.Future<void> syncGamesToFirestore(
-    String? query,
-    List<_i15.Game>? games,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #syncGamesToFirestore,
-          [
-            query,
-            games,
-          ],
-        ),
-        returnValue: _i11.Future<void>.value(),
-        returnValueForMissingStub: _i11.Future<void>.value(),
-      ) as _i11.Future<void>);
 
   @override
   _i11.Future<void> cacheGamesLocally(
@@ -2455,6 +2453,7 @@ class MockMessageService extends _i1.Mock implements _i9.MessageService {
     required _i4.ChatType? chatType,
     String? mediaFilePath,
     String? mediaType,
+    String? clientMessageId,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -2476,6 +2475,7 @@ class MockMessageService extends _i1.Mock implements _i9.MessageService {
             #chatType: chatType,
             #mediaFilePath: mediaFilePath,
             #mediaType: mediaType,
+            #clientMessageId: clientMessageId,
           },
         ),
         returnValue:
@@ -2500,6 +2500,7 @@ class MockMessageService extends _i1.Mock implements _i9.MessageService {
               #chatType: chatType,
               #mediaFilePath: mediaFilePath,
               #mediaType: mediaType,
+              #clientMessageId: clientMessageId,
             },
           ),
         )),

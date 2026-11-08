@@ -1,19 +1,31 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:squad_sync/chat/sqlite_helper.dart';
 import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/entities/chat_group.dart';
 import 'package:squad_sync/data/datasources/chat_local_datasource.dart';
+import 'package:squad_sync/core/sqlite_cells.dart';
 
 class ChatLocalDataSourceImpl implements ChatLocalDataSource {
   final SQLiteHelper _sqliteHelper;
 
   ChatLocalDataSourceImpl(this._sqliteHelper);
 
+  Future<Database?> _openCache() async {
+    try {
+      return await _sqliteHelper.database;
+    } catch (e) {
+      debugPrint('Chat cache unavailable; message path continues: $e');
+      return null;
+    }
+  }
+
   @override
   Future<void> cacheMessages(String chatGroupId, List<Message> messages) async {
-    final db = await _sqliteHelper.database;
+    final db = await _openCache();
+    if (db == null) return;
     final batch = db.batch();
 
     for (final message in messages) {
@@ -38,7 +50,7 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
           'voice_note_url': message.voiceNoteUrl,
           'voice_note_duration': message.voiceNoteDuration,
           'ai_response': message.aiResponse,
-          'metadata': message.metadata,
+          'metadata': encodeSqliteCell(message.metadata),
           'is_edited': (message.isEdited ?? false) ? 1 : 0,
           'edited_at': message.editedAt?.toIso8601String(),
           'is_deleted': (message.isDeleted ?? false) ? 1 : 0,
@@ -56,20 +68,33 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
 
   @override
   Future<List<Message>> getCachedMessages(String chatGroupId,
-      {int limit = 50, DateTime? before}) async {
-    final db = await _sqliteHelper.database;
-    final whereClause = before != null
-        ? 'chat_group_id = ? AND timestamp_ms < ?'
-        : 'chat_group_id = ?';
-    final whereArgs = before != null
-        ? [chatGroupId, before.millisecondsSinceEpoch]
-        : [chatGroupId];
+      {int limit = 50, DateTime? before, String? beforeId}) async {
+    final db = await _openCache();
+    if (db == null) return const [];
+    final String whereClause;
+    final List<Object?> whereArgs;
+    if (before != null && beforeId != null && beforeId.isNotEmpty) {
+      whereClause =
+          'chat_group_id = ? AND (timestamp_ms < ? OR (timestamp_ms = ? AND id < ?))';
+      whereArgs = [
+        chatGroupId,
+        before.millisecondsSinceEpoch,
+        before.millisecondsSinceEpoch,
+        beforeId,
+      ];
+    } else if (before != null) {
+      whereClause = 'chat_group_id = ? AND timestamp_ms < ?';
+      whereArgs = [chatGroupId, before.millisecondsSinceEpoch];
+    } else {
+      whereClause = 'chat_group_id = ?';
+      whereArgs = [chatGroupId];
+    }
 
     final maps = await db.query(
       'messages',
       where: whereClause,
       whereArgs: whereArgs,
-      orderBy: 'timestamp_ms DESC',
+      orderBy: 'timestamp_ms DESC, id DESC',
       limit: limit,
     );
 
@@ -113,13 +138,6 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
         'metadata': (() {
           final decoded = safeJsonDecode(map['metadata'] as String?);
           if (decoded is! Map) return null;
-          final meta = decoded;
-          // Skip metadata with old schema fields
-          if (meta.containsKey('photos') ||
-              meta.containsKey('videos') ||
-              meta.containsKey('audio')) {
-            return null;
-          }
           return decoded;
         })(),
         'isEdited': map['is_edited'] == 1,
@@ -153,7 +171,8 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
 
   @override
   Future<void> cacheChatGroups(List<ChatGroup> groups) async {
-    final db = await _sqliteHelper.database;
+    final db = await _openCache();
+    if (db == null) return;
     final batch = db.batch();
 
     for (final group in groups) {
@@ -169,12 +188,12 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
           'created_at': group.createdAt.toIso8601String(),
           'description': group.description,
           'avatar_url': group.avatarUrl,
-          'metadata': group.metadata,
+          'metadata': encodeSqliteCell(group.metadata),
           'admins': group.admins?.join(','),
           'moderators': group.moderators?.join(','),
           'is_active': group.isActive ?? true ? 1 : 0,
           'last_activity': group.lastActivity?.toIso8601String(),
-          'settings': group.settings,
+          'settings': encodeSqliteCell(group.settings),
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -185,7 +204,8 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
 
   @override
   Future<List<ChatGroup>> getCachedChatGroups() async {
-    final db = await _sqliteHelper.database;
+    final db = await _openCache();
+    if (db == null) return [];
     final maps = await db.query('chat_groups');
 
     return maps
@@ -199,7 +219,7 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
               createdAt: DateTime.parse(map['created_at'] as String),
               description: map['description'] as String?,
               avatarUrl: map['avatar_url'] as String?,
-              metadata: map['metadata'] as Map<String, dynamic>?,
+              metadata: decodeSqliteMap(map['metadata']),
               admins: map['admins'] != null
                   ? (map['admins'] as String).split(',')
                   : null,
@@ -210,7 +230,7 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
               lastActivity: map['last_activity'] != null
                   ? DateTime.parse(map['last_activity'] as String)
                   : null,
-              settings: map['settings'] as Map<String, dynamic>?,
+              settings: decodeSqliteMap(map['settings']),
             ))
         .toList();
   }
@@ -282,13 +302,6 @@ class ChatLocalDataSourceImpl implements ChatLocalDataSource {
         'metadata': (() {
           final decoded = safeJsonDecode(map['metadata'] as String?);
           if (decoded is! Map) return null;
-          final meta = decoded;
-          // Skip metadata with old schema fields
-          if (meta.containsKey('photos') ||
-              meta.containsKey('videos') ||
-              meta.containsKey('audio')) {
-            return null;
-          }
           return decoded;
         })(),
         'isEdited': map['is_edited'] == 1,

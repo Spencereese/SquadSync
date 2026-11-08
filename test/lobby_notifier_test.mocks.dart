@@ -429,6 +429,19 @@ class MockLobbyRepository extends _i1.Mock implements _i4.LobbyRepository {
       ) as _i5.Future<Map<String, dynamic>>);
 
   @override
+  _i5.Future<List<Map<String, dynamic>>> getMatchHistory(String? lobbyId) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getMatchHistory,
+          [lobbyId],
+        ),
+        returnValue: _i5.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+        returnValueForMissingStub: _i5.Future<List<Map<String, dynamic>>>.value(
+            <Map<String, dynamic>>[]),
+      ) as _i5.Future<List<Map<String, dynamic>>>);
+
+  @override
   _i5.Future<void> createInvite(Map<String, dynamic>? inviteData) =>
       (super.noSuchMethod(
         Invocation.method(

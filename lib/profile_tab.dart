@@ -15,6 +15,10 @@ import 'screens/profile_editing_screen.dart';
 import 'screens/availability_settings_screen.dart';
 import 'screens/performance_stats_screen.dart';
 import 'screens/settings_screen.dart';
+import 'widgets/last_five_rated_sessions.dart';
+import 'widgets/weekly_squad_board.dart';
+import 'services/session_rating_machine.dart';
+import 'services/weekly_squad_board.dart';
 import 'domain/entities/lobby_state.dart';
 import 'domain/entities/app_user.dart';
 import 'core/app_theme.dart';
@@ -505,6 +509,45 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
             orElse: () => const SizedBox.shrink(),
           ),
           orElse: () => const SizedBox.shrink(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLastFiveRatedSessions() {
+    final statsAsync = ref.watch(statsDashboardProvider);
+    return SliverToBoxAdapter(
+      child: statsAsync.when(
+        data: (snapshot) => YouLastFiveRatedSessions(
+          sessions: snapshot.lastFiveRatedSessions,
+        ),
+        loading: () => const YouLastFiveRatedSessions(
+          sessions: [],
+          isLoading: true,
+        ),
+        error: (error, _) => YouLastFiveRatedSessions(
+          sessions: const [],
+          errorMessage: kYouSessionHistoryErrorCopy,
+          errorDetail: sessionRatingErrorDetail(error),
+          onRetry: () => ref.invalidate(statsDashboardProvider),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeeklySquadBoard() {
+    final statsAsync = ref.watch(statsDashboardProvider);
+    return SliverToBoxAdapter(
+      child: statsAsync.when(
+        data: (snapshot) => YouWeeklySquadBoard(board: snapshot.weeklyBoard),
+        loading: () => const YouWeeklySquadBoard(
+          board: WeeklySquadBoard.empty(),
+          isLoading: true,
+        ),
+        error: (_, __) => YouWeeklySquadBoard(
+          board: const WeeklySquadBoard.empty(),
+          errorMessage: kWeeklySquadBoardErrorCopy,
+          onRetry: () => ref.invalidate(statsDashboardProvider),
         ),
       ),
     );
@@ -1196,6 +1239,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
   }
 
   Future<void> _onRefresh() async {
+    ref.invalidate(statsDashboardProvider);
     // Simulate refreshing user data
     await Future.delayed(const Duration(milliseconds: 500));
 
@@ -1251,7 +1295,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: Colors.white),
-            tooltip: 'Settings',
+            tooltip: 'Settings · quiet hours',
             onPressed: () {
               // Navigate to comprehensive settings screen
               Navigator.of(context).push(
@@ -1275,6 +1319,8 @@ class _ProfileTabState extends ConsumerState<ProfileTab>
               slivers: [
                 _buildHeroHeader(),
                 _buildStatsCards(),
+                _buildWeeklySquadBoard(),
+                _buildLastFiveRatedSessions(),
                 _buildPinnedGamesSection(),
                 _buildQuickActionsSection(),
                 // Bottom padding for comfortable scrolling

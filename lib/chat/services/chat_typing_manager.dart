@@ -9,6 +9,7 @@ import '../../presentation/notifiers/user_notifier.dart';
 class ChatTypingManager {
   StreamSubscription<String?>? _typingSubscription;
   Timer? _typingTimer;
+  String? _boundChatGroupId;
 
   /// Dispose of resources
   void dispose() {
@@ -22,6 +23,13 @@ class ChatTypingManager {
     String? chatGroupId,
     required ChatType chatType,
   }) {
+    if (chatGroupId != null &&
+        chatGroupId == _boundChatGroupId &&
+        _typingSubscription != null) {
+      return;
+    }
+    _boundChatGroupId = chatGroupId;
+
     // Cancel previous subscription to prevent memory leaks
     _typingSubscription?.cancel();
 

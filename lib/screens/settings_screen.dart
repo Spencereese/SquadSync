@@ -4,12 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../core/app_theme.dart';
+import '../core/notification_hygiene.dart';
 import '../domain/entities/app_user.dart';
 import '../domain/entities/system_state.dart';
 import '../presentation/notifiers/user_notifier.dart';
 import '../presentation/notifiers/system_notifier.dart';
 import '../services/auth_service_supabase.dart';
 import '../services/supabase_service.dart';
+import '../widgets/notification_hygiene_tiles.dart';
+import '../widgets/presence_badge_row.dart';
 
 /// Comprehensive settings screen for SquadSync
 /// Includes: Notifications, Theme, Privacy (Blocks & Friends)
@@ -25,12 +28,62 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _isLoadingFriends = false;
   List<Map<String, dynamic>> _blockedUsers = [];
   List<Map<String, dynamic>> _friends = [];
+  bool _quietHoursEnabled = false;
+  int _quietStartMinutes = NotificationHygiene.defaultStartMinutes;
+  int _quietEndMinutes = NotificationHygiene.defaultEndMinutes;
+  int _mutedSquadCount = 0;
+  Object? _hygieneError;
 
   @override
   void initState() {
     super.initState();
     _loadBlockedUsers();
     _loadFriends();
+    _loadNotificationHygiene();
+  }
+
+  Future<void> _loadNotificationHygiene() async {
+    final result = await NotificationHygieneStore.instance.load();
+    if (!mounted) return;
+    final snap = NotificationHygieneStore.instance.snapshot;
+    setState(() {
+      _quietHoursEnabled = snap.quietHoursEnabled;
+      _quietStartMinutes = snap.startMinutes;
+      _quietEndMinutes = snap.endMinutes;
+      _mutedSquadCount = snap.mutedSquadIds.length;
+      _hygieneError = result.error;
+    });
+  }
+
+  Future<void> _retryNotificationHygiene() async {
+    final result = await NotificationHygieneStore.instance.retry();
+    if (!mounted) return;
+    final snap = NotificationHygieneStore.instance.snapshot;
+    setState(() {
+      _quietHoursEnabled = snap.quietHoursEnabled;
+      _quietStartMinutes = snap.startMinutes;
+      _quietEndMinutes = snap.endMinutes;
+      _mutedSquadCount = snap.mutedSquadIds.length;
+      _hygieneError = result.error;
+    });
+  }
+
+  Future<void> _writeQuietHours({
+    bool? enabled,
+    int? startMinutes,
+    int? endMinutes,
+  }) async {
+    if (enabled != null) _quietHoursEnabled = enabled;
+    if (startMinutes != null) _quietStartMinutes = startMinutes;
+    if (endMinutes != null) _quietEndMinutes = endMinutes;
+    setState(() => _hygieneError = null);
+    final result = await NotificationHygieneStore.instance.setQuietHours(
+      enabled: enabled,
+      startMinutes: startMinutes,
+      endMinutes: endMinutes,
+    );
+    if (!mounted) return;
+    setState(() => _hygieneError = result.error);
   }
 
   Future<void> _loadBlockedUsers() async {
@@ -196,7 +249,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         // Notifications Section
-        _buildSectionHeader(theme, '🔔 Notifications'),
+        _buildSectionHeader(theme, '🔔 Notifications · quiet hours'),
         _buildNotificationsSection(theme, user),
         const SizedBox(height: 24),
 
@@ -248,6 +301,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       decoration: theme.glassyCard(),
       child: Column(
         children: [
+          const NotificationHygieneSettingsHeader(),
+          QuietHoursSettings(
+            enabled: _quietHoursEnabled,
+            startMinutes: _quietStartMinutes,
+            endMinutes: _quietEndMinutes,
+            error: _hygieneError,
+            onRetry: _retryNotificationHygiene,
+            onEnabledChanged: (value) => _writeQuietHours(enabled: value),
+            onStartChanged: (minutes) =>
+                _writeQuietHours(startMinutes: minutes),
+            onEndChanged: (minutes) => _writeQuietHours(endMinutes: minutes),
+          ),
+          MutedSquadsSettingsTile(mutedCount: _mutedSquadCount),
+          _buildDivider(theme),
           _buildSettingTile(
             theme,
             'Push Notifications',
@@ -548,6 +615,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 final friend = _friends[index];
                 final displayName = friend['display_name'] ?? 'Unknown';
                 final photoUrl = friend['photo_url'] as String?;
+                final friendUid =
+                    (friend['uid'] ?? friend['friend_uid']) as String?;
 
                 return ListTile(
                   leading: CircleAvatar(
@@ -565,6 +634,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       color: theme.colorScheme.onSurface,
                     ),
                   ),
+                  subtitle: friendUid == null
+                      ? null
+                      : PresenceBadgesHost(userId: friendUid),
                   trailing: IconButton(
                     icon: Icon(
                       Icons.person_remove,

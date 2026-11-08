@@ -7,6 +7,8 @@ import 'package:squad_sync/domain/entities/message.dart';
 import 'package:squad_sync/domain/entities/chat_group.dart';
 import 'package:squad_sync/data/datasources/chat_remote_datasource.dart';
 import 'package:squad_sync/services/supabase_service.dart';
+import 'package:squad_sync/core/chat_history.dart';
+import 'package:squad_sync/core/chat_messages.dart';
 
 class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   final SupabaseClient _supabase = SupabaseService.client;
@@ -53,72 +55,104 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     return message;
   }
 
+  Future<List<dynamic>> _selectChatMessageRows(
+    String chatGroupId, {
+    required int limit,
+    DateTime? before,
+    String? beforeId,
+    required String orderColumn,
+  }) async {
+    // Descending + limit is the newest window. Ascending + limit was the
+    // oldest window, which is why long groups opened at the start.
+    // chat_id is text. Do not .or() an int — PostgREST treats it as dead weight.
+    if (before == null) {
+      return await _supabase
+          .from('chat_messages')
+          .select()
+          .eq('chat_id', chatGroupId)
+          .order(orderColumn, ascending: false)
+          .order('id', ascending: false)
+          .limit(limit);
+    }
+
+    final stamp = before.toIso8601String();
+    final older = await _supabase
+        .from('chat_messages')
+        .select()
+        .eq('chat_id', chatGroupId)
+        .filter(orderColumn, 'lt', stamp)
+        .order(orderColumn, ascending: false)
+        .order('id', ascending: false)
+        .limit(limit);
+
+    if (beforeId == null || beforeId.isEmpty) return older;
+
+    // Rows that share the cursor timestamp but sort earlier by id.
+    // `lt` alone would skip them; `lte` alone would repeat the cursor.
+    final sameInstant = await _supabase
+        .from('chat_messages')
+        .select()
+        .eq('chat_id', chatGroupId)
+        .filter(orderColumn, 'eq', stamp)
+        .filter('id', 'lt', beforeId)
+        .order('id', ascending: false)
+        .limit(limit);
+    return [...sameInstant, ...older];
+  }
+
   @override
   Future<List<Message>> fetchMessages(String chatGroupId,
-      {int limit = 50, DateTime? before}) async {
-    // Use filter method for proper query building
-    final response = before != null
-        ? await _supabase
-            .from('chat_messages')
-            .select()
-            .eq('chat_id', chatGroupId)
-            .eq('is_deleted', false)
-            .filter('timestamp', 'lt', before.toIso8601String())
-            .order('timestamp', ascending: true)
-            .limit(limit)
-        : await _supabase
-            .from('chat_messages')
-            .select()
-            .eq('chat_id', chatGroupId)
-            .eq('is_deleted', false)
-            .order('timestamp', ascending: true)
-            .limit(limit);
+      {int limit = 50, DateTime? before, String? beforeId}) async {
+    // Do not .eq('is_deleted', false): older rows are often NULL/0 and
+    // PostgREST drops them. Do not limit(1). chat_id is text — no int .or().
+    // Prefer timestamp; fall back to created_at if that page is ≤1 row.
+    var response = await _selectChatMessageRows(
+      chatGroupId,
+      limit: limit,
+      before: before,
+      beforeId: beforeId,
+      orderColumn: 'timestamp',
+    );
+    debugPrint(
+        'PostgREST chat_messages raw=${response.length} order=timestamp desc limit=$limit');
+    if (response.length <= 1) {
+      final createdAtPage = await _selectChatMessageRows(
+        chatGroupId,
+        limit: limit,
+        before: before,
+        beforeId: beforeId,
+        orderColumn: 'created_at',
+      );
+      debugPrint(
+          'PostgREST chat_messages raw=${createdAtPage.length} order=created_at desc limit=$limit');
+      if (createdAtPage.length > response.length) {
+        response = createdAtPage;
+      }
+    }
 
     final messages = <Message>[];
     for (final item in response) {
       try {
-        final messageData = Map<String, dynamic>.from(item);
-
-        // Clean JSONB fields with incompatible data types using the same logic as stream
-        for (final key in [
-          'metadata',
-          'reactions',
-          'clip_data',
-          'clipData',
-          'poll',
-          'ai_response'
-        ]) {
-          final value = messageData[key];
-          if (value == null) continue;
-
-          // Remove if it's a List when we expect Map
-          if (key == 'reactions') {
-            if (value is List && value.isEmpty)
-              continue; // Empty list is OK for reactions
-            if (value is! Map && value is! List) messageData.remove(key);
-          } else if (key == 'metadata') {
-            if (value is List ||
-                (value is Map &&
-                    (value.containsKey('photos') ||
-                        value.containsKey('videos') ||
-                        value.containsKey('audio')))) {
-              messageData.remove(key);
-            }
-          } else {
-            // For clip_data, poll, ai_response - only Maps allowed
-            if (value is List) messageData.remove(key);
-          }
-        }
-
-        messages.add(Message.fromJson(messageData));
+        final message = parseLiveChatMessage(
+          Map<String, dynamic>.from(item as Map),
+          expectedChatId: chatGroupId,
+        );
+        if (message != null) messages.add(message);
       } catch (e) {
         debugPrint('❌ Failed to parse message in fetchMessages: $e');
-        // Skip corrupt message
-        continue;
       }
     }
 
-    return messages;
+    final page = before != null && beforeId != null && beforeId.isNotEmpty
+        ? takeOlderWindow(
+            candidates: messages,
+            before: before,
+            beforeId: beforeId,
+            limit: limit,
+          )
+        : newestHistoryPage(messages, limit: limit);
+    debugPrint('Got ${page.length} of ${response.length}');
+    return page;
   }
 
   @override
@@ -152,16 +186,18 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     return _supabase
         .from('chat_messages')
         .stream(primaryKey: ['id'])
-        .order('timestamp', ascending: true)
+        .order('created_at', ascending: false)
         .limit(100)
         .map((data) {
-          // Filter in Dart since stream builder doesn't support all filters
-          final filtered = data
-              .where((item) =>
-                  item['chat_id'] == chatGroupId &&
-                  (item['is_deleted'] == false || item['is_deleted'] == null))
-              .toList();
-          return filtered.map((item) => Message.fromJson(item)).toList();
+          final messages = <Message>[];
+          for (final item in data) {
+            final message = parseLiveChatMessage(
+              Map<String, dynamic>.from(item),
+              expectedChatId: chatGroupId,
+            );
+            if (message != null) messages.add(message);
+          }
+          return newestHistoryPage(messages, limit: 100);
         });
   }
 
@@ -854,16 +890,32 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   @override
   Future<List<Message>> fetchMessagesSince(
       String chatGroupId, DateTime since) async {
-    final response = await _supabase
+    var response = await _supabase
         .from('chat_messages')
         .select()
         .eq('chat_id', chatGroupId)
-        .eq('is_deleted', false)
         .gt('timestamp', since.toIso8601String())
         .order('timestamp', ascending: true);
+    debugPrint(
+        'PostgREST chat_messages since raw=${(response as List).length} order=timestamp');
+    if ((response as List).length <= 1) {
+      final createdAtPage = await _supabase
+          .from('chat_messages')
+          .select()
+          .eq('chat_id', chatGroupId)
+          .gt('created_at', since.toIso8601String())
+          .order('created_at', ascending: true);
+      debugPrint(
+          'PostgREST chat_messages since raw=${(createdAtPage as List).length} order=created_at');
+      if ((createdAtPage as List).length > (response as List).length) {
+        response = createdAtPage;
+      }
+    }
 
-    return (response as List<dynamic>)
-        .map((data) => Message.fromJson(data as Map<String, dynamic>))
+    return (response as List)
+        .map((data) => Map<String, dynamic>.from(data as Map))
+        .map((row) => parseLiveChatMessage(row, expectedChatId: chatGroupId))
+        .whereType<Message>()
         .toList();
   }
 

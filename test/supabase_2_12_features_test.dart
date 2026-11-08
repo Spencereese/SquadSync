@@ -38,11 +38,10 @@ void main() {
     });
 
     group('JWT Claims (getClaims)', () {
-      test('getClaims returns null when not authenticated', () {
-        // Ensure signed out
-        final claims = authService.getJWTClaims();
+      test('getClaims returns null when not authenticated', () async {
+        // getJWTClaims is async. Awaiting a missing session is null, not a Future.
+        final claims = await authService.getJWTClaims();
 
-        // Should return null or empty if not authenticated
         expect(claims == null || claims.isEmpty, isTrue);
       });
 
@@ -64,14 +63,12 @@ void main() {
       }, skip: 'Requires manual testing with credentials');
 
       test('getUserRole returns correct role', () async {
-        // Skip without auth
-        final role = authService.getUserRole();
+        final role = await authService.getUserRole();
         expect(role == null || role == 'anon', isTrue);
       });
 
-      test('verifyCustomClaim checks existence correctly', () {
-        // Should return false when not authenticated
-        final hasAdminClaim = authService.verifyCustomClaim(
+      test('verifyCustomClaim checks existence correctly', () async {
+        final hasAdminClaim = await authService.verifyCustomClaim(
           'app_metadata',
           'is_admin',
         );

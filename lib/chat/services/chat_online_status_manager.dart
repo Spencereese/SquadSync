@@ -25,7 +25,7 @@ class ChatOnlineStatusManager {
         final userResponse = await SupabaseService.client
             .from('users')
             .select('notification_settings')
-            .eq('id', uid)
+            .eq('uid', uid)
             .single();
 
         final notificationSettings =

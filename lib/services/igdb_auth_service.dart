@@ -216,6 +216,5 @@ class IgdbAuthService {
     await _storage!.setString(_clientIdKey, id);
     await _storage!.setString(_clientSecretKey, secret);
     _logger.i('✅ IGDB credentials stored');
-    _logger.i('   Client ID: ${id.substring(0, 8)}...');
   }
 }

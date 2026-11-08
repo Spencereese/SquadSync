@@ -129,7 +129,7 @@ class _LobbiesScreenState extends ConsumerState<LobbiesScreen> {
             ),
           ),
           error: (error, stack) {
-            debugPrint('Firestore error in lobbies: $error');
+            debugPrint('Lobby stream error: $error');
             return Scaffold(
               backgroundColor: Colors.black,
               body: Center(

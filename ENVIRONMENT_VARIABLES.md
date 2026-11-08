@@ -9,6 +9,21 @@
 
 SquadSync uses environment variables for all sensitive credentials following security best practices. The app uses `flutter_dotenv` for Flutter/Dart and standard `dotenv` for the Node.js backend.
 
+### iOS / Android simulator
+
+The device cannot read the gitignored repo `.env`. AppEnv loads
+`.env.example` (placeholders) then overlays `--dart-define` /
+`--dart-define-from-file=.env`. Placeholder `your-project.supabase.co`
+never wins over a real define. If the URL is still parked, auth does
+not call the network.
+
+```
+flutter run --dart-define-from-file=.env -d <device-id>
+```
+
+Dart-defines are compile-time: stop the old `flutter run` and start
+one new process with that flag. Do not commit `.env`.
+
 ---
 
 ## ✅ Security Status

@@ -8,12 +8,15 @@ import '../../notification_service.dart';
 import '../controllers/game_theme_controller.dart';
 
 class SystemNotifier extends AsyncNotifier<SystemState> {
-  late final SystemRepository _repository;
+  SystemRepository? _repositoryField;
+
+  SystemRepository get _repository => _repositoryField!;
 
   @override
   Future<SystemState> build() async {
-    // Get repository from provider
-    _repository = ref.read(systemRepositoryProvider);
+    // Get repository from provider. Re-assigned on invalidate so a failed
+    // first load can be retried.
+    _repositoryField = ref.read(systemRepositoryProvider);
 
     // Load system state first
     final systemState = await _repository.loadSystemState();

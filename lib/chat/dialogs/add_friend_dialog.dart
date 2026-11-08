@@ -6,6 +6,7 @@ import '../../utils.dart';
 import '../chat_screen.dart';
 import '../../presentation/notifiers/user_notifier.dart';
 import '../../presentation/widgets/friend_search_widget.dart';
+import '../../widgets/presence_badge_row.dart';
 
 /// Dialog for adding friends and starting direct messages
 class AddFriendDialog extends ConsumerStatefulWidget {
@@ -453,6 +454,7 @@ class _AddFriendDialogState extends ConsumerState<AddFriendDialog>
                         'Friends since ${_formatTimestamp(createdAt)}',
                         style: TextStyle(color: Colors.grey[600], fontSize: 11),
                       ),
+                    PresenceBadgesHost(userId: friendUid),
                   ],
                 ),
                 trailing: Row(

@@ -11,6 +11,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import '../../domain/entities/lobby_state.dart';
 import '../../domain/entities/message.dart';
+import '../../presentation/notifiers/message_notifier.dart';
 import '../chat_state_notifier.dart';
 import '../../services/media_service.dart';
 
@@ -68,40 +69,21 @@ class ChatMediaHandler {
       String downloadUrl =
           await mediaService.uploadMediaWithSignedUrl(file, fileName);
 
-      final timestampMs = DateTime.now().millisecondsSinceEpoch;
-
-      // Send image first (without text)
-      await _chatService.sendMessage(
-        ref,
-        senderUid: user.id,
-        text: '',
-        photos: !isVideo
-            ? [
-                {'uri': downloadUrl, 'creation_timestamp': timestampMs}
-              ]
-            : [],
-        videos: isVideo
-            ? [
-                {'uri': downloadUrl, 'creation_timestamp': timestampMs}
-              ]
-            : [],
-        chatGroupId: chatGroupId,
-        chatType: chatType,
-      );
-
-      // If there's text, send it as separate message
-      if (messageText != null && messageText.trim().isNotEmpty) {
-        await Future.delayed(const Duration(milliseconds: 100));
-        await _chatService.sendMessage(
-          ref,
-          senderUid: user.id,
-          text: messageText.trim(),
-          photos: [],
-          videos: [],
-          chatGroupId: chatGroupId,
-          chatType: chatType,
-        );
+      if (chatGroupId == null) {
+        throw Exception('Cannot send media: no chat group selected');
       }
+
+      // One bubble: clock while the row is inserting, then sent or
+      // "Not sent. Tap to retry". The caption stays on that same row.
+      await ref.read(messageNotifierProvider.notifier).sendMessage(
+            ref,
+            chatGroupId,
+            messageText?.trim() ?? '',
+            isVideo ? MessageType.video : MessageType.image,
+            chatType,
+            mediaUrl: downloadUrl,
+            mediaType: isVideo ? 'video' : 'image',
+          );
 
       ref.read(chatStateProvider.notifier).setUploading(false);
       HapticFeedback.lightImpact();
@@ -258,23 +240,23 @@ class ChatMediaHandler {
       String fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${user.id}.m4a';
       String downloadUrl = await _chatService.uploadAudio(file, fileName);
-      final timestampMs = DateTime.now().millisecondsSinceEpoch;
+      if (chatGroupId == null) {
+        throw Exception('Cannot send audio: no chat group selected');
+      }
 
-      // Use transcription as message text if available, otherwise empty
       final messageText = _transcription?.isNotEmpty == true
           ? '🎤 $_transcription'
           : '🎤 Voice message';
 
-      await _chatService.sendMessage(
-        ref,
-        senderUid: user.id,
-        text: messageText,
-        audio: [
-          {'uri': downloadUrl, 'creation_timestamp': timestampMs}
-        ],
-        chatGroupId: chatGroupId,
-        chatType: chatType,
-      );
+      await ref.read(messageNotifierProvider.notifier).sendMessage(
+            ref,
+            chatGroupId,
+            messageText,
+            MessageType.audio,
+            chatType,
+            mediaUrl: downloadUrl,
+            mediaType: 'audio',
+          );
 
       ref.read(chatStateProvider.notifier).setUploading(false);
       _audioPath = null;

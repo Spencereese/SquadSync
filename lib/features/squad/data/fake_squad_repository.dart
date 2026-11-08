@@ -4,26 +4,92 @@ import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
 /// In-memory squad. Set [fail] and every call throws without changing state.
+/// [startEmpty] is a person with a profile and no squad yet.
 class FakeSquadRepository implements SquadRepository {
-  FakeSquadRepository({Squad? seed, this.fail = false})
-    : _squad = seed ?? Squad.seed();
+  FakeSquadRepository({Squad? seed, this.fail = false, bool startEmpty = false})
+    : _profile = _ownerFrom(seed),
+      _squad = startEmpty ? null : (seed ?? Squad.seed());
 
-  Squad _squad;
+  Member _profile;
+  Squad? _squad;
 
   bool fail;
 
-  Squad get snapshot => _squad;
+  Squad get snapshot => _squad ?? (throw StateError('no squad'));
 
   @override
-  Future<Squad> load() async {
+  Future<Member?> myProfile() async {
+    _guard('profile');
+    return _profile;
+  }
+
+  @override
+  Future<Member> saveProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    _guard('profile');
+    final next = Member(
+      id: _profile.id,
+      displayName: displayName.trim(),
+      defaultGame: defaultGame.trim(),
+    );
+    if (!next.isValid) {
+      throw const RepositoryFailure('profile is incomplete');
+    }
+    _profile = next;
+    final squad = _squad;
+    if (squad != null) {
+      _squad = Squad(
+        id: squad.id,
+        ownerId: squad.ownerId,
+        members: [
+          for (final member in squad.members)
+            if (member.id == next.id) next else member,
+        ],
+      );
+    }
+    return next;
+  }
+
+  @override
+  Future<Squad?> findMine() async {
     _guard('load');
     return _squad;
   }
 
   @override
+  Future<Squad> createMine() async {
+    _guard('create');
+    final existing = _squad;
+    if (existing != null) return existing;
+    final created = Squad(
+      id: 'squad-${_profile.id}',
+      ownerId: _profile.id,
+      members: [_profile],
+    );
+    _squad = created;
+    return created;
+  }
+
+  @override
+  Future<Squad> load() async {
+    _guard('load');
+    final squad = _squad;
+    if (squad == null) {
+      throw const RepositoryFailure('not in a squad');
+    }
+    return squad;
+  }
+
+  @override
   Future<AddMember> addMember(Member member) async {
     _guard('add');
-    final result = _squad.add(member);
+    final squad = _squad;
+    if (squad == null) {
+      throw const RepositoryFailure('not in a squad');
+    }
+    final result = squad.add(member);
     if (result is AddMemberAccepted) _squad = result.squad;
     return result;
   }
@@ -31,7 +97,11 @@ class FakeSquadRepository implements SquadRepository {
   @override
   Future<RemoveMember> removeMember(String memberId) async {
     _guard('remove');
-    final result = _squad.remove(memberId);
+    final squad = _squad;
+    if (squad == null) {
+      throw const RepositoryFailure('not in a squad');
+    }
+    final result = squad.remove(memberId);
     if (result is RemoveMemberAccepted) _squad = result.squad;
     return result;
   }
@@ -39,4 +109,12 @@ class FakeSquadRepository implements SquadRepository {
   void _guard(String operation) {
     if (fail) throw RepositoryFailure('squad $operation failed');
   }
+}
+
+Member _ownerFrom(Squad? seed) {
+  if (seed == null) return spencer;
+  for (final member in seed.members) {
+    if (member.id == seed.ownerId) return member;
+  }
+  return spencer;
 }

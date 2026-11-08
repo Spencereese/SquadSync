@@ -1,6 +1,8 @@
 # Migrations
 
-These four files are the slice 2 schema. **They have not been applied.** Do not run them against the live Supabase project until Spencer says so. `supabase/tests/` is a local harness only. It is not part of the apply.
+These four files are the slice 2 schema. Spencer reported on Nov 8 that they are already applied on project `sfckxrnoiwetmzdycqaa`, with forced row level security, and that the old app tables were left in place. This checkout did not connect to that project and did not re-apply them. Running them again would fail on objects that already exist.
+
+`supabase/tests/` is a local harness only. It is not part of the apply.
 
 The old schema already has `public.squads`, `public.messages`, and `public.chat_read_states`. Every new table is prefixed `sq8_` so these files do not reuse those names. `profiles` and `squad_members` did not exist; they are still prefixed so the set stays together.
 
@@ -80,11 +82,4 @@ The app sends an email one-time code (`signInWithOtp` + `verifyOTP` with type `e
 4. **NOT DONE, only if the template still contains a link.** Authentication → URL Configuration. Add redirect URL `com.spencereese.squadsync://login-callback`. The app does not handle that link in this slice. Skip this if the template is the code-only body above.
 5. **NOT DONE.** Do not enable phone, Google, or Apple for this slice. Do not put the service-role key in the app.
 
-After the four migrations, the first squad row is still not created. Spencer signs in once (that creates his profile), then inserts the squad himself. That insert is **NOT RUN** here:
-
-```sql
-insert into public.sq8_squads (owner_id)
-values ('<spencer auth user uuid>');
-```
-
-The owner-member trigger seats him. He adds the other seven from the app, up to eight total.
+After these four migrations, signing in creates the profile (default game Call of Duty). The app can then insert `sq8_squads` with `owner_id` set to that person. The owner-member trigger seats them. A ninth member is rejected by the trigger. No extra SQL is required for the first squad. Do not hand-insert a squad row unless the app create path is blocked.

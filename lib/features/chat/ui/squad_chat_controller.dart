@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
+import 'package:squadsync/features/chat/data/chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/message_history.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
@@ -17,6 +18,7 @@ class SquadChatState {
     this.hasOlder = false,
     this.unread = const UnreadBook(),
     this.error,
+    this.linkDown = false,
   });
 
   final Squad? squad;
@@ -25,6 +27,7 @@ class SquadChatState {
   final bool hasOlder;
   final UnreadBook unread;
   final String? error;
+  final bool linkDown;
 
   bool get ready => squad != null && error == null;
 
@@ -34,6 +37,8 @@ class SquadChatState {
     bool? hasOlder,
     UnreadBook? unread,
     String? error,
+    bool clearError = false,
+    bool? linkDown,
   }) {
     return SquadChatState(
       squad: squad ?? this.squad,
@@ -41,7 +46,8 @@ class SquadChatState {
       messages: messages ?? this.messages,
       hasOlder: hasOlder ?? this.hasOlder,
       unread: unread ?? this.unread,
-      error: error ?? this.error,
+      error: clearError ? null : (error ?? this.error),
+      linkDown: linkDown ?? this.linkDown,
     );
   }
 }
@@ -55,6 +61,7 @@ final squadChatControllerProvider =
 class SquadChatController extends Notifier<SquadChatState> {
   StreamSubscription<List<ChatMessage>>? _echo;
   var _started = false;
+  var _loadingOlder = false;
 
   @override
   SquadChatState build() {
@@ -81,8 +88,7 @@ class SquadChatController extends Notifier<SquadChatState> {
       final cleared = unread.opened(squad.chatId);
       await chats.saveUnread(cleared);
       if (!ref.mounted) return;
-      await _echo?.cancel();
-      _echo = chats.watch(squad.chatId).listen(_onEcho);
+      await _listen(chats, squad.chatId);
       final signedIn = ref.read(authRepositoryProvider).currentUser?.id;
       state = SquadChatState(
         squad: squad,
@@ -97,25 +103,82 @@ class SquadChatController extends Notifier<SquadChatState> {
     }
   }
 
+  void replaceSquad(Squad squad) {
+    if (!ref.mounted) return;
+    state = state.copyWith(squad: squad);
+  }
+
+  /// Drops the in-memory thread so the next sign-in cannot show it.
+  void abandon() {
+    _started = false;
+    _loadingOlder = false;
+    final echo = _echo;
+    _echo = null;
+    if (echo != null) unawaited(echo.cancel());
+    state = const SquadChatState();
+  }
+
   Future<void> loadOlder() async {
     final current = state;
     final squad = current.squad;
-    if (squad == null || !current.hasOlder || current.messages.isEmpty) {
+    if (_loadingOlder ||
+        squad == null ||
+        !current.hasOlder ||
+        current.messages.isEmpty) {
       return;
     }
-    final page = await ref
-        .read(chatRepositoryProvider)
-        .before(squad.chatId, cursor: current.messages.first);
-    if (!ref.mounted) return;
-    final stitched = stitchOlder(
-      loaded: state.messages,
-      fetched: page.messages,
-      limit: olderPageSize,
-    );
-    state = state.copyWith(
-      messages: stitched.messages,
-      hasOlder: page.hasOlder,
-    );
+    _loadingOlder = true;
+    try {
+      final page = await ref
+          .read(chatRepositoryProvider)
+          .before(squad.chatId, cursor: current.messages.first);
+      if (!ref.mounted) return;
+      final stitched = stitchOlder(
+        loaded: state.messages,
+        fetched: page.messages,
+        limit: olderPageSize,
+      );
+      state = state.copyWith(
+        messages: stitched.messages,
+        hasOlder: page.hasOlder,
+      );
+    } on RepositoryFailure catch (error) {
+      if (!ref.mounted) return;
+      state = state.copyWith(error: error.message);
+    } finally {
+      _loadingOlder = false;
+    }
+  }
+
+  /// Refetches the newest page and subscribes again. Local failed rows stay,
+  /// and a row the server already has is not duplicated.
+  Future<void> reload() async {
+    final current = state;
+    final squad = current.squad;
+    if (squad == null) return;
+    final chats = ref.read(chatRepositoryProvider);
+    try {
+      final page = await chats.newest(squad.chatId);
+      if (!ref.mounted) return;
+      final merged = ChatThread(state.messages)
+          .mergeEcho(page.messages, meId: state.meId);
+      final unread = await chats.unread();
+      if (!ref.mounted) return;
+      final cleared = unread.opened(squad.chatId);
+      await chats.saveUnread(cleared);
+      if (!ref.mounted) return;
+      await _listen(chats, squad.chatId);
+      state = state.copyWith(
+        messages: merged.messages,
+        hasOlder: page.hasOlder,
+        unread: cleared,
+        linkDown: false,
+        clearError: true,
+      );
+    } on RepositoryFailure catch (error) {
+      if (!ref.mounted) return;
+      state = state.copyWith(error: error.message, linkDown: true);
+    }
   }
 
   Future<void> send(String text) async {
@@ -167,9 +230,20 @@ class SquadChatController extends Notifier<SquadChatState> {
     );
   }
 
+  Future<void> _listen(ChatRepository chats, String chatId) async {
+    await _echo?.cancel();
+    _echo = chats.watch(chatId).listen(_onEcho, onError: _onLinkDown);
+  }
+
+  void _onLinkDown(Object error, StackTrace stack) {
+    if (!ref.mounted) return;
+    state = state.copyWith(linkDown: true);
+  }
+
   void _onEcho(List<ChatMessage> remote) {
     if (!ref.mounted || state.squad == null) return;
     state = state.copyWith(
+      linkDown: false,
       messages: ChatThread(state.messages)
           .mergeEcho(remote, meId: state.meId)
           .messages,

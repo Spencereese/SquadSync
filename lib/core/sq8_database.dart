@@ -50,7 +50,17 @@ class Sq8OwnerProtected implements Exception {
 abstract class Sq8Database {
   String? get userId;
 
+  Future<Sq8Member?> myProfile();
+
+  Future<void> updateMyProfile({
+    required String displayName,
+    required String defaultGame,
+  });
+
   Future<String?> mySquadId();
+
+  /// Inserts a squad owned by the signed-in person. The database seats them.
+  Future<String> createSquad();
 
   Future<String> ownerId(String squadId);
 

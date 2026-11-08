@@ -27,6 +27,23 @@ void main() {
     ]);
   });
 
+  test(
+    'createMine seats the owner once and does not open a second squad',
+    () async {
+      final db = MockSq8Database()..squadId = null;
+      final repo = SupabaseSquadRepository(db);
+
+      final created = await repo.createMine();
+      final again = await repo.createMine();
+
+      expect(db.createCalls, 1);
+      expect(created.members, hasLength(1));
+      expect(created.ownerId, 'user-1');
+      expect(created.members.single.defaultGame, 'Call of Duty');
+      expect(again.id, created.id);
+    },
+  );
+
   test('a missing squad is a repository failure', () async {
     final repo = SupabaseSquadRepository(MockSq8Database()..squadId = null);
 

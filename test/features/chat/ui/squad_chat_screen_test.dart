@@ -7,6 +7,8 @@ import 'package:squadsync/core/app.dart';
 import 'package:squadsync/core/client_id.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
+import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
+import 'package:squadsync/features/chat/ui/squad_chat_screen.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/squad/data/fake_squad_repository.dart';
 import 'package:squadsync/features/squad/data/squad_repository.dart';
@@ -172,5 +174,36 @@ void main() {
 
     expect(find.text('No messages yet'), findsOneWidget);
     expect(find.byIcon(Icons.schedule), findsNothing);
+  });
+
+  testWidgets('earlier messages pulls the older page into the thread', (
+    tester,
+  ) async {
+    final start = DateTime.utc(2026, 1, 1);
+    final chats = FakeChatRepository(
+      messages: [
+        for (var i = 0; i < 45; i++)
+          ChatMessage(
+            id: 'm$i',
+            chatId: 'squad',
+            senderId: 'friend',
+            text: 'line-$i',
+            sentAt: start.add(Duration(minutes: i)),
+          ),
+      ],
+    );
+    await _pump(tester, chats: chats);
+
+    expect(find.byKey(const Key('earlier')), findsOneWidget);
+    expect(find.text('line-0'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('earlier')));
+    await tester.pumpAndSettle();
+
+    final state = ProviderScope.containerOf(
+      tester.element(find.byType(SquadChatScreen)),
+    ).read(squadChatControllerProvider);
+    expect(state.messages.first.id, 'm0');
+    expect(state.messages, hasLength(45));
   });
 }

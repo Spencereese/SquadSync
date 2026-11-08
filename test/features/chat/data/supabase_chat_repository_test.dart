@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/features/chat/data/supabase_chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
@@ -81,6 +82,21 @@ void main() {
 
     expect(await repo.send(message), const SendConfirmed('msg-1'));
     expect(db.insertedMessages.single.id, 'msg-1');
+  });
+
+  test('a store failure is not reported as sent', () async {
+    final db = MockSq8Database()..insertError = const RepositoryFailure('down');
+    final repo = SupabaseChatRepository(db);
+    final message = ChatMessage(
+      id: 'msg-1',
+      chatId: 'squad',
+      senderId: 'user-1',
+      text: 'hello',
+      sentAt: DateTime.utc(2026, 11, 2),
+      delivery: Delivery.sending,
+    );
+
+    expect(repo.send(message), throwsA(isA<RepositoryFailure>()));
   });
 
   test('an insert echo becomes one message', () async {

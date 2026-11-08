@@ -17,6 +17,12 @@ class MockSq8Database implements Sq8Database {
 
   int unread = 0;
   Sq8Cursor? cursor;
+  Sq8Member? profile = const Sq8Member(
+    userId: 'user-1',
+    displayName: 'Spencer',
+    defaultGame: 'Call of Duty',
+  );
+  var createCalls = 0;
   var duplicate = false;
   Object? insertMemberError;
   Object? deleteMemberError;
@@ -32,6 +38,40 @@ class MockSq8Database implements Sq8Database {
   final _inserts = StreamController<Sq8Message>.broadcast();
 
   void emit(Sq8Message message) => _inserts.add(message);
+
+  @override
+  Future<Sq8Member?> myProfile() async => profile;
+
+  @override
+  Future<void> updateMyProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    final current = profile;
+    profile = Sq8Member(
+      userId: current?.userId ?? userId ?? '',
+      displayName: displayName,
+      defaultGame: defaultGame,
+    );
+  }
+
+  @override
+  Future<String> createSquad() async {
+    createCalls += 1;
+    final id = squadId ?? 'new-squad';
+    squadId = id;
+    final me = userId ?? owner;
+    owner = me;
+    members = [
+      profile ??
+          Sq8Member(
+            userId: me,
+            displayName: 'Spencer',
+            defaultGame: 'Call of Duty',
+          ),
+    ];
+    return id;
+  }
 
   @override
   Future<String?> mySquadId() async => squadId;
@@ -83,8 +123,12 @@ class MockSq8Database implements Sq8Database {
     return messages.take(limit).toList();
   }
 
+  Object? insertError;
+
   @override
   Future<void> insertMessage(Sq8Message message) async {
+    final error = insertError;
+    if (error != null) throw error;
     if (duplicate) throw const Sq8DuplicateRow();
     insertedMessages.add(message);
   }

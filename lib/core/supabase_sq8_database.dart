@@ -24,6 +24,55 @@ class SupabaseSq8Database implements Sq8Database {
   String? get userId => _client.auth.currentUser?.id;
 
   @override
+  Future<Sq8Member?> myProfile() async {
+    final me = _requireUser();
+    final row = await _client
+        .from('sq8_profiles')
+        .select('id, display_name, default_game')
+        .eq('id', me)
+        .maybeSingle();
+    if (row == null) return null;
+    return memberFromRow({
+      'user_id': row['id'],
+      'sq8_profiles': {
+        'display_name': row['display_name'],
+        'default_game': row['default_game'],
+      },
+    });
+  }
+
+  @override
+  Future<void> updateMyProfile({
+    required String displayName,
+    required String defaultGame,
+  }) {
+    final me = _requireUser();
+    return _guard(
+      () => _client
+          .from('sq8_profiles')
+          .update({'display_name': displayName, 'default_game': defaultGame})
+          .eq('id', me),
+    );
+  }
+
+  @override
+  Future<String> createSquad() async {
+    final me = _requireUser();
+    final row = await _guardValue(
+      () => _client
+          .from('sq8_squads')
+          .insert({'owner_id': me})
+          .select('id')
+          .single(),
+    );
+    final id = row['id'];
+    if (id is! String || id.isEmpty) {
+      throw const RepositoryFailure('squad was not created');
+    }
+    return id;
+  }
+
+  @override
   Future<String?> mySquadId() async {
     final me = _requireUser();
     final row = await _client
@@ -145,7 +194,15 @@ class SupabaseSq8Database implements Sq8Database {
             controller.add(messageFromRow(payload.newRecord));
           },
         )
-        .subscribe();
+        .subscribe((status, error) {
+          if (controller.isClosed) return;
+          if (status == RealtimeSubscribeStatus.channelError ||
+              status == RealtimeSubscribeStatus.timedOut) {
+            controller.addError(
+              RepositoryFailure(error?.toString() ?? 'live updates stopped'),
+            );
+          }
+        });
     controller.onCancel = () {
       unawaited(_client.removeChannel(channel));
     };
@@ -205,8 +262,12 @@ class SupabaseSq8Database implements Sq8Database {
   }
 
   Future<void> _guard(Future<dynamic> Function() action) async {
+    await _guardValue(action);
+  }
+
+  Future<T> _guardValue<T>(Future<T> Function() action) async {
     try {
-      await action();
+      return await action();
     } on PostgrestException catch (error) {
       throw mapPostgrest(error);
     }

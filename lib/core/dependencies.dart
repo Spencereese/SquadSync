@@ -21,6 +21,17 @@ final squadSyncConfigProvider = Provider<SquadSyncConfig>(
 /// Null keeps every repository on its in-memory fake.
 final supabaseClientProvider = Provider<SupabaseClient?>((ref) => null);
 
+/// Demo is explicit. A configured app with no client is broken, not a demo.
+enum AppLink { demo, live, misconfigured }
+
+final appLinkProvider = Provider<AppLink>((ref) {
+  final config = ref.watch(squadSyncConfigProvider);
+  final client = ref.watch(supabaseClientProvider);
+  if (!config.isPresent) return AppLink.demo;
+  if (client == null) return AppLink.misconfigured;
+  return AppLink.live;
+});
+
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   final client = ref.watch(supabaseClientProvider);
   if (client == null) return FakeAuthRepository();

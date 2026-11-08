@@ -2,6 +2,21 @@ import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
 abstract class SquadRepository {
+  /// Null when the signed-in person has no profile row yet.
+  Future<Member?> myProfile();
+
+  Future<Member> saveProfile({
+    required String displayName,
+    required String defaultGame,
+  });
+
+  /// Null when this person is not in a squad. Does not throw for that case.
+  Future<Squad?> findMine();
+
+  /// The squad this person is already in, or a new one they own.
+  /// A second call does not create another squad.
+  Future<Squad> createMine();
+
   Future<Squad> load();
 
   Future<AddMember> addMember(Member member);

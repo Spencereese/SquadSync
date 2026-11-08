@@ -10,24 +10,71 @@ class SupabaseSquadRepository implements SquadRepository {
   final Sq8Database _db;
 
   @override
-  Future<Squad> load() async {
+  Future<Member?> myProfile() async {
+    final row = await _db.myProfile();
+    if (row == null) return null;
+    return _member(row);
+  }
+
+  @override
+  Future<Member> saveProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    final next = Member(
+      id: _db.userId ?? '',
+      displayName: displayName.trim(),
+      defaultGame: defaultGame.trim(),
+    );
+    if (!next.isValid) {
+      throw const RepositoryFailure('profile is incomplete');
+    }
+    await _db.updateMyProfile(
+      displayName: next.displayName,
+      defaultGame: next.defaultGame,
+    );
+    return next;
+  }
+
+  @override
+  Future<Squad?> findMine() async {
     final squadId = await _db.mySquadId();
-    if (squadId == null) {
+    if (squadId == null) return null;
+    return _squad(squadId);
+  }
+
+  @override
+  Future<Squad> createMine() async {
+    final existing = await findMine();
+    if (existing != null) return existing;
+    final squadId = await _db.createSquad();
+    return _squad(squadId);
+  }
+
+  @override
+  Future<Squad> load() async {
+    final squad = await findMine();
+    if (squad == null) {
       throw const RepositoryFailure('not in a squad');
     }
+    return squad;
+  }
+
+  Future<Squad> _squad(String squadId) async {
     final ownerId = await _db.ownerId(squadId);
     final members = await _db.membersOf(squadId);
     return Squad(
       id: squadId,
       ownerId: ownerId,
-      members: [
-        for (final member in members)
-          Member(
-            id: member.userId,
-            displayName: member.displayName,
-            defaultGame: member.defaultGame,
-          ),
-      ],
+      members: [for (final member in members) _member(member)],
+    );
+  }
+
+  Member _member(Sq8Member member) {
+    return Member(
+      id: member.userId,
+      displayName: member.displayName,
+      defaultGame: member.defaultGame,
     );
   }
 

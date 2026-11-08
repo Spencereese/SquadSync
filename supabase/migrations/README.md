@@ -24,6 +24,7 @@ Run these in order, in one project, as the migration role:
 3. `20261103_0003_messages.sql`
 4. `20261103_0004_read_state.sql`
 5. `20261108_0005_own_profile_and_squad_guard.sql` — **not applied**. Spencer has to approve this one before it runs. It adds an insert of only your own profile, one squad per owner, and a lock so two overlapping joins cannot pass eight members.
+6. `20261108_0006_check_ins.sql` — **not applied**. This is the availability board. It can be applied after files 1 and 2 whether or not file 5 is applied. It adds `sq8_check_ins` only.
 
 ## What each file does
 
@@ -32,12 +33,19 @@ Run these in order, in one project, as the migration role:
 3. **Messages.** `sq8_messages` uses the client UUID as the primary key, so a second insert of the same id conflicts. The paging index is `(squad_id, sent_at desc, id desc)`. Members can read. An insert must be from yourself. The table is added to the `supabase_realtime` publication.
 4. **Read state.** `sq8_chat_read_state` is one cursor per user per squad. You can read and write only your own row. Opening one squad does not write any other row.
 5. **Own profile and squad guard.** Not applied. An authenticated person may insert `sq8_profiles` only when `id` is their own auth id. A second insert does not change the name or default game. `sq8_squads.owner_id` is unique. The member cap locks the squad row before it counts, so two overlapping adds cannot both pass eight.
+6. **Check-ins.** Not applied. One row per person in `sq8_check_ins`. A member can read the squad's rows. Only that person can write or delete their own row. "Available now" is stamped to 60 minutes. "Available later" must be more than a minute ahead and within 7 days, and it is not rewritten to available now. A non-member and another squad cannot read the row. Leaving the squad deletes it.
 
 ## Rollback
 
 Run these in reverse order. This deletes the slice 2 rows. It does not touch the old tables.
 
 ```sql
+-- 6 only. Does not touch check-in rows in other tables.
+drop trigger if exists sq8_squad_members_clear_check_in on public.sq8_squad_members;
+drop table if exists public.sq8_check_ins;
+drop function if exists sq8.clear_check_in_on_leave();
+drop function if exists sq8.stamp_check_in();
+
 -- 5 only. This does not drop the cap function. It puts the unlocked count back.
 drop policy if exists sq8_profiles_insert_own on public.sq8_profiles;
 drop index if exists public.sq8_squads_one_owner;
@@ -103,7 +111,7 @@ drop table if exists public.sq8_profiles;
 drop schema if exists sq8;
 ```
 
-To undo only file 5, run the statements above the `-- 4` comment and stop. The rest deletes the slice 2 rows. `drop table` on members and squads removes the policies with the tables. The profile policy added in file 2 is dropped explicitly because the profiles table stays until step 1.
+To undo only file 6, run the statements above the `-- 5 only` comment and stop. To undo only file 5, run from `-- 5 only` through the `revoke all on function sq8.reject_ninth_member()` and stop before `-- 4`. The rest deletes the slice 2 rows. `drop table` on members and squads removes the policies with the tables. The profile policy added in file 2 is dropped explicitly because the profiles table stays until step 1.
 
 ## Auth settings — NOT DONE
 

@@ -83,6 +83,60 @@ void main() {
     expect(find.text('Spencer · Battlefield'), findsOneWidget);
   });
 
+  testWidgets(
+    'a failed profile save keeps the edits and says nothing was saved',
+    (tester) async {
+      final squads = FakeSquadRepository();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLinkProvider.overrideWithValue(AppLink.live),
+            authRepositoryProvider.overrideWithValue(
+              FakeAuthRepository(
+                signedIn: const AuthUser(
+                  id: 'spencer',
+                  email: 'spencer@example.com',
+                ),
+              ),
+            ),
+            squadRepositoryProvider.overrideWithValue(squads),
+          ],
+          child: const SquadSyncApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('edit-profile')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('profile-name')), 'New Name');
+      await tester.enterText(
+        find.byKey(const Key('profile-game')),
+        'Battlefield',
+      );
+      squads.fail = true;
+      await tester.tap(find.byKey(const Key('profile-save')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('profile-name')), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('profile-name')))
+            .controller
+            ?.text,
+        'New Name',
+      );
+      expect(find.textContaining('Nothing was saved'), findsOneWidget);
+      expect(find.text('Spencer · Call of Duty'), findsOneWidget);
+
+      squads.fail = false;
+      await tester.tap(find.byKey(const Key('profile-save')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('profile-name')), findsNothing);
+      expect(find.text('New Name · Battlefield'), findsOneWidget);
+    },
+  );
+
   testWidgets('a missing profile can be created and is not a fake squad', (
     tester,
   ) async {

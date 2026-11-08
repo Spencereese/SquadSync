@@ -135,4 +135,22 @@ void main() {
     expect((result as RemoveMemberRejected).reason, RemoveRejection.owner);
     expect(db.deletedMembers, isEmpty);
   });
+
+  test('a delete that matches no row is not treated as removed', () async {
+    final db = MockSq8Database()
+      ..owner = 'spencer'
+      ..members = [_member('spencer'), _member('friend')]
+      ..deleteMatches = false;
+    final repo = SupabaseSquadRepository(db);
+
+    final result = await repo.removeMember('friend');
+
+    expect(result, isA<RemoveMemberRejected>());
+    expect((result as RemoveMemberRejected).reason, RemoveRejection.missing);
+    expect(result.squad.members.map((member) => member.id), [
+      'spencer',
+      'friend',
+    ]);
+    expect(db.deletedMembers, isEmpty);
+  });
 }

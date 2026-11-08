@@ -206,4 +206,43 @@ void main() {
     expect(state.messages.first.id, 'm0');
     expect(state.messages, hasLength(45));
   });
+
+  testWidgets('a failed earlier page stays on screen and can be retried', (
+    tester,
+  ) async {
+    final start = DateTime.utc(2026, 1, 1);
+    final chats = FakeChatRepository(
+      messages: [
+        for (var i = 0; i < 45; i++)
+          ChatMessage(
+            id: 'm$i',
+            chatId: 'squad',
+            senderId: 'friend',
+            text: 'line-$i',
+            sentAt: start.add(Duration(minutes: i)),
+          ),
+      ],
+    );
+    await _pump(tester, chats: chats);
+    chats.fail = true;
+
+    await tester.tap(find.byKey(const Key('earlier')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('line-44'), findsOneWidget);
+    expect(find.text('line-0'), findsNothing);
+    expect(find.text('chat before failed'), findsOneWidget);
+
+    chats.fail = false;
+    await tester.tap(find.byKey(const Key('earlier')));
+    await tester.pumpAndSettle();
+
+    final state = ProviderScope.containerOf(
+      tester.element(find.byType(SquadChatScreen)),
+    ).read(squadChatControllerProvider);
+    expect(state.messages.first.id, 'm0');
+    expect(state.error, isNull);
+    expect(find.text('line-44'), findsOneWidget);
+    expect(find.text('chat before failed'), findsNothing);
+  });
 }

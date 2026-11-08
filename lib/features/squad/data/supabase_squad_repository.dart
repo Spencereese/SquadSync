@@ -139,7 +139,13 @@ class SupabaseSquadRepository implements SquadRepository {
     final decided = current.remove(memberId);
     if (decided is! RemoveMemberAccepted) return decided;
     try {
-      await _db.deleteMember(squadId: current.id, userId: memberId);
+      final removed = await _db.deleteMember(
+        squadId: current.id,
+        userId: memberId,
+      );
+      if (!removed) {
+        return RemoveMemberRejected(current, RemoveRejection.missing);
+      }
     } on Sq8OwnerProtected {
       return RemoveMemberRejected(current, RemoveRejection.owner);
     }

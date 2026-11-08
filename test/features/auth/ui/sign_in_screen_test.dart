@@ -81,6 +81,42 @@ void main() {
 
     expect(find.text('code rejected'), findsOneWidget);
     expect(find.byKey(const Key('sign-in-email')), findsOneWidget);
+    expect(find.byKey(const Key('sign-in-code')), findsOneWidget);
+  });
+
+  testWidgets('resend and a different email do not leave the code step stuck', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository();
+    await _pump(tester, auth: auth);
+
+    await tester.enterText(
+      find.byKey(const Key('sign-in-email')),
+      'spencer@example.com',
+    );
+    await tester.tap(find.byKey(const Key('sign-in-send')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('sign-in-resend')));
+    await tester.pumpAndSettle();
+
+    expect(auth.sendCount, 2);
+    expect(find.byKey(const Key('sign-in-code')), findsOneWidget);
+    expect(find.byKey(const Key('sign-in-verify')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('sign-in-change-email')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('sign-in-code')), findsNothing);
+    expect(find.byKey(const Key('sign-in-send')), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('sign-in-email')))
+          .controller
+          ?.text,
+      'spencer@example.com',
+    );
+    expect(auth.sendCount, 2);
   });
 
   testWidgets('a restored session opens the chat, and sign-out clears it', (

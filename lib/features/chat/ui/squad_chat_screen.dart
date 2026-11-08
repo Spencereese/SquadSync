@@ -69,6 +69,11 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen> {
               children: [
                 if (widget.demo) const _DemoBanner(),
                 if (state.linkDown) const _LinkDownBanner(),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text(error, key: const Key('earlier-error')),
+                  ),
                 MemberStrip(members: squad.members),
                 const Divider(height: 1),
                 if (state.hasOlder)
@@ -99,39 +104,31 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen> {
       if (member.id == meId) me = member;
     }
     final Member mine = me ?? squad.members.first;
-    final saved = await showDialog<({String name, String game})>(
+    await showDialog<void>(
       context: context,
       builder: (context) => _ProfileDialog(
         displayName: mine.displayName,
         defaultGame: mine.defaultGame,
       ),
     );
-    if (saved == null) return;
-    try {
-      await ref
-          .read(squadRepositoryProvider)
-          .saveProfile(displayName: saved.name, defaultGame: saved.game);
-      final updated = await ref.read(squadRepositoryProvider).load();
-      ref.read(squadChatControllerProvider.notifier).replaceSquad(updated);
-    } on RepositoryFailure {
-      // The chat screen keeps the previous profile. The next edit can retry.
-    }
   }
 }
 
-class _ProfileDialog extends StatefulWidget {
+class _ProfileDialog extends ConsumerStatefulWidget {
   const _ProfileDialog({required this.displayName, required this.defaultGame});
 
   final String displayName;
   final String defaultGame;
 
   @override
-  State<_ProfileDialog> createState() => _ProfileDialogState();
+  ConsumerState<_ProfileDialog> createState() => _ProfileDialogState();
 }
 
-class _ProfileDialogState extends State<_ProfileDialog> {
+class _ProfileDialogState extends ConsumerState<_ProfileDialog> {
   late final TextEditingController _name;
   late final TextEditingController _game;
+  var _busy = false;
+  String? _error;
 
   @override
   void initState() {
@@ -164,23 +161,51 @@ class _ProfileDialogState extends State<_ProfileDialog> {
             controller: _game,
             decoration: const InputDecoration(labelText: 'Default game'),
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              key: const Key('profile-save-error'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
         ],
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _busy ? null : () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
         TextButton(
           key: const Key('profile-save'),
-          onPressed: () => Navigator.pop(context, (
-            name: _name.text,
-            game: _game.text,
-          )),
+          onPressed: _busy ? null : () => unawaited(_save()),
           child: const Text('Save'),
         ),
       ],
     );
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(squadRepositoryProvider)
+          .saveProfile(displayName: _name.text, defaultGame: _game.text);
+      final updated = await ref.read(squadRepositoryProvider).load();
+      if (!mounted) return;
+      ref.read(squadChatControllerProvider.notifier).replaceSquad(updated);
+      Navigator.pop(context);
+    } on RepositoryFailure {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not save your name or game. Nothing was saved.';
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 

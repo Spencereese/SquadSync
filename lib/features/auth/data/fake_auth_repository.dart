@@ -16,6 +16,7 @@ class FakeAuthRepository implements AuthRepository {
 
   String? lastEmail;
   String? lastCode;
+  var sendCount = 0;
 
   @override
   AuthUser? get currentUser => _user;
@@ -34,6 +35,13 @@ class FakeAuthRepository implements AuthRepository {
       throw const RepositoryFailure('Enter an email.');
     }
     lastEmail = trimmed;
+    sendCount += 1;
+  }
+
+  /// Test seam. Switches the signed-in person without a code.
+  void restore(AuthUser? user) {
+    _user = user;
+    _updates.add(user);
   }
 
   @override

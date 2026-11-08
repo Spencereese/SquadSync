@@ -14,5 +14,6 @@ psql -v ON_ERROR_STOP=1 -f "$root/migrations/20261108_0005_own_profile_and_squad
 psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_rls.sql"
 psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_recovery.sql"
 bash "$root/tests/sq8_concurrency.sh"
+bash "$root/tests/sq8_cap_unlocked.sh"
 
 echo "sq8 sql tests passed"

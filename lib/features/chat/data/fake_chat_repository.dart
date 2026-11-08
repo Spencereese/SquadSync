@@ -15,6 +15,7 @@ class FakeChatRepository implements ChatRepository {
     UnreadBook? unread,
     this.fail = false,
     this.holdSends,
+    this.holdUnread,
   }) : _messages = List<ChatMessage>.of(messages ?? const []),
        _unread = unread ?? const UnreadBook();
 
@@ -24,6 +25,9 @@ class FakeChatRepository implements ChatRepository {
 
   bool fail;
   Future<void>? holdSends;
+
+  /// Pauses [unread] so a test can deliver a row while reload is waiting.
+  Future<void>? holdUnread;
 
   @override
   Future<HistoryPage> newest(String chatId, {int limit = openPageSize}) async {
@@ -80,6 +84,11 @@ class FakeChatRepository implements ChatRepository {
     _emit([message]);
   }
 
+  /// Notifies listeners about an id that is already stored. Does not add a row.
+  void replay(ChatMessage message) {
+    _emit([message]);
+  }
+
   @override
   Stream<List<ChatMessage>> watch(String chatId) {
     late StreamController<List<ChatMessage>> controller;
@@ -105,6 +114,8 @@ class FakeChatRepository implements ChatRepository {
 
   @override
   Future<UnreadBook> unread() async {
+    final hold = holdUnread;
+    if (hold != null) await hold;
     _guard('unread');
     return _unread;
   }
@@ -114,6 +125,8 @@ class FakeChatRepository implements ChatRepository {
     _guard('saveUnread');
     _unread = book;
   }
+
+  List<ChatMessage> get rows => List.unmodifiable(_messages);
 
   List<ChatMessage> _for(String chatId) {
     return [

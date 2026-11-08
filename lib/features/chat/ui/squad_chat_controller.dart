@@ -62,6 +62,7 @@ class SquadChatController extends Notifier<SquadChatState> {
   StreamSubscription<List<ChatMessage>>? _echo;
   var _started = false;
   var _loadingOlder = false;
+  var _epoch = 0;
 
   @override
   SquadChatState build() {
@@ -105,11 +106,16 @@ class SquadChatController extends Notifier<SquadChatState> {
 
   void replaceSquad(Squad squad) {
     if (!ref.mounted) return;
-    state = state.copyWith(squad: squad);
+    final switched = squad.chatId != state.squad?.chatId;
+    if (switched) _epoch++;
+    state = switched
+        ? SquadChatState(squad: squad, meId: state.meId)
+        : state.copyWith(squad: squad);
   }
 
   /// Drops the in-memory thread so the next sign-in cannot show it.
   void abandon() {
+    _epoch++;
     _started = false;
     _loadingOlder = false;
     final echo = _echo;
@@ -141,6 +147,7 @@ class SquadChatController extends Notifier<SquadChatState> {
       state = state.copyWith(
         messages: stitched.messages,
         hasOlder: page.hasOlder,
+        clearError: true,
       );
     } on RepositoryFailure catch (error) {
       if (!ref.mounted) return;
@@ -157,17 +164,21 @@ class SquadChatController extends Notifier<SquadChatState> {
     final squad = current.squad;
     if (squad == null) return;
     final chats = ref.read(chatRepositoryProvider);
+    final epoch = _epoch;
+    final chatId = squad.chatId;
     try {
-      final page = await chats.newest(squad.chatId);
-      if (!ref.mounted) return;
+      final page = await chats.newest(chatId);
+      if (!_reloadCurrent(epoch, chatId)) return;
+      final unread = await chats.unread();
+      if (!_reloadCurrent(epoch, chatId)) return;
+      final cleared = unread.opened(chatId);
+      await chats.saveUnread(cleared);
+      if (!_reloadCurrent(epoch, chatId)) return;
+      await _listen(chats, chatId);
+      if (!_reloadCurrent(epoch, chatId)) return;
+      // Merge after the awaits so a row that arrived while they ran stays.
       final merged = ChatThread(state.messages)
           .mergeEcho(page.messages, meId: state.meId);
-      final unread = await chats.unread();
-      if (!ref.mounted) return;
-      final cleared = unread.opened(squad.chatId);
-      await chats.saveUnread(cleared);
-      if (!ref.mounted) return;
-      await _listen(chats, squad.chatId);
       state = state.copyWith(
         messages: merged.messages,
         hasOlder: page.hasOlder,
@@ -228,6 +239,10 @@ class SquadChatController extends Notifier<SquadChatState> {
     state = state.copyWith(
       messages: ChatThread(state.messages).apply(clientId, outcome).messages,
     );
+  }
+
+  bool _reloadCurrent(int epoch, String chatId) {
+    return ref.mounted && epoch == _epoch && state.squad?.chatId == chatId;
   }
 
   Future<void> _listen(ChatRepository chats, String chatId) async {

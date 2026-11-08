@@ -74,7 +74,8 @@ abstract class Sq8Database {
 
   Future<void> insertMember({required String squadId, required String userId});
 
-  Future<void> deleteMember({required String squadId, required String userId});
+  /// True when a row was actually deleted. False when the delete matched nothing.
+  Future<bool> deleteMember({required String squadId, required String userId});
 
   /// Newest first.
   Future<List<Sq8Message>> newestMessages(String squadId, {required int limit});

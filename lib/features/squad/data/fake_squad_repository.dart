@@ -22,10 +22,15 @@ class FakeSquadRepository implements SquadRepository {
   bool fail;
   bool failEnsure;
 
+  /// Pauses [myProfile] so a test can switch accounts while a load is in flight.
+  Future<void>? holdProfile;
+
   Squad get snapshot => _squad ?? (throw StateError('no squad'));
 
   @override
   Future<Member?> myProfile() async {
+    final hold = holdProfile;
+    if (hold != null) await hold;
     _guard('profile');
     if (profileMissing) return null;
     return _profile;

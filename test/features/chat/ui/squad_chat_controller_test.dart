@@ -228,6 +228,98 @@ void main() {
     },
   );
 
+  test('reload keeps a row that arrives while unread is saving', () async {
+    final chats = FakeChatRepository(
+      messages: [
+        ChatMessage(
+          id: 'kept',
+          chatId: 'squad',
+          senderId: 'friend',
+          text: 'kept',
+          sentAt: DateTime.utc(2026, 11, 1),
+        ),
+      ],
+    );
+    final container = _container(chats: chats);
+    addTearDown(container.dispose);
+    final controller = container.read(squadChatControllerProvider.notifier);
+    await controller.open();
+
+    final gate = Completer<void>();
+    chats.holdUnread = gate.future;
+    final pending = controller.reload();
+    await Future<void>.delayed(Duration.zero);
+
+    chats.deliver(
+      ChatMessage(
+        id: 'late',
+        chatId: 'squad',
+        senderId: 'friend',
+        text: 'late',
+        sentAt: DateTime.utc(2026, 11, 3),
+      ),
+    );
+    chats.replay(
+      ChatMessage(
+        id: 'kept',
+        chatId: 'squad',
+        senderId: 'friend',
+        text: 'kept',
+        sentAt: DateTime.utc(2026, 11, 1),
+      ),
+    );
+    final during = container.read(squadChatControllerProvider);
+    expect(chats.rows.map((message) => message.id).toList(), ['kept', 'late']);
+    expect(during.messages.map((message) => message.id), ['kept', 'late']);
+
+    gate.complete();
+    await pending;
+    final after = container.read(squadChatControllerProvider);
+
+    expect(after.messages.map((message) => message.id), ['kept', 'late']);
+    expect(
+      chats.rows.map((message) => message.id),
+      containsAll(['kept', 'late']),
+    );
+    expect(
+      after.messages.where((message) => message.id == 'kept'),
+      hasLength(1),
+    );
+  });
+
+  test(
+    'reload does not write the old thread after the squad changes',
+    () async {
+      final chats = FakeChatRepository(
+        messages: [
+          ChatMessage(
+            id: 'kept',
+            chatId: 'squad',
+            senderId: 'friend',
+            text: 'kept',
+            sentAt: DateTime.utc(2026, 11, 1),
+          ),
+        ],
+      );
+      final container = _container(chats: chats);
+      addTearDown(container.dispose);
+      final controller = container.read(squadChatControllerProvider.notifier);
+      await controller.open();
+
+      final gate = Completer<void>();
+      chats.holdUnread = gate.future;
+      final pending = controller.reload();
+      await Future<void>.delayed(Duration.zero);
+      controller.abandon();
+      gate.complete();
+      await pending;
+      final state = container.read(squadChatControllerProvider);
+
+      expect(state.squad, isNull);
+      expect(state.messages, isEmpty);
+    },
+  );
+
   test('abandon drops an unsent row so the next open starts clean', () async {
     final chats = FakeChatRepository();
     final container = _container(

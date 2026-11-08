@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/auth/domain/auth_user.dart';
 import 'package:squadsync/features/auth/ui/sign_in_screen.dart';
+import 'package:squadsync/features/auth/ui/sign_out_button.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_screen.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/ui/squad_setup_screen.dart';
@@ -23,17 +24,19 @@ class SignInGate extends ConsumerWidget {
     return auth.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (error, _) => Scaffold(body: Center(child: Text('$error'))),
+      error: (error, _) => const _GateProblem(
+        message: 'Could not restore the session. Nothing was opened.',
+      ),
       data: (user) {
         if (user == null) return const SignInScreen();
-        return const _AccountGate();
+        return _AccountGate(key: ValueKey(user.id));
       },
     );
   }
 }
 
 class _AccountGate extends ConsumerStatefulWidget {
-  const _AccountGate();
+  const _AccountGate({super.key});
 
   @override
   ConsumerState<_AccountGate> createState() => _AccountGateState();
@@ -41,6 +44,7 @@ class _AccountGate extends ConsumerStatefulWidget {
 
 class _AccountGateState extends ConsumerState<_AccountGate> {
   var _loading = true;
+  var _generation = 0;
   Member? _profile;
   var _hasSquad = false;
   String? _error;
@@ -52,6 +56,8 @@ class _AccountGateState extends ConsumerState<_AccountGate> {
   }
 
   Future<void> _load() async {
+    final generation = ++_generation;
+    final userId = ref.read(authRepositoryProvider).currentUser?.id;
     setState(() {
       _loading = true;
       _error = null;
@@ -60,35 +66,85 @@ class _AccountGateState extends ConsumerState<_AccountGate> {
       final squads = ref.read(squadRepositoryProvider);
       final profile = await squads.myProfile();
       final squad = profile == null ? null : await squads.findMine();
-      if (!mounted) return;
+      if (!_current(generation, userId)) return;
       setState(() {
         _profile = profile;
         _hasSquad = squad != null;
         _loading = false;
       });
-    } catch (error) {
-      if (!mounted) return;
+    } on Object {
+      if (!_current(generation, userId)) return;
       setState(() {
-        _error = '$error';
+        _error = 'Could not load your squad. Nothing was opened.';
         _loading = false;
       });
     }
   }
 
+  bool _current(int generation, String? userId) {
+    return mounted &&
+        generation == _generation &&
+        ref.read(authRepositoryProvider).currentUser?.id == userId;
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(accountRevisionProvider, (previous, next) {
-      if (previous != next) _load();
+      if (previous != next) unawaited(_load());
     });
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(key: Key('gate-loading')),
+        ),
+      );
     }
     if (_error != null) {
-      return Scaffold(body: Center(child: Text(_error!)));
+      return _GateProblem(message: _error!, onRetry: () => unawaited(_load()));
     }
     final profile = _profile;
     if (profile == null) return const ProfileMissingScreen();
     if (!_hasSquad) return SquadSetupScreen(profile: profile);
     return const SquadChatScreen();
+  }
+}
+
+class _GateProblem extends ConsumerWidget {
+  const _GateProblem({required this.message, this.onRetry});
+
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('SquadSync'),
+        actions: const [SignOutButton()],
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                message,
+                key: const Key('gate-error'),
+                textAlign: TextAlign.center,
+              ),
+              if (onRetry != null) ...[
+                const SizedBox(height: 16),
+                FilledButton(
+                  key: const Key('gate-retry'),
+                  onPressed: onRetry,
+                  child: const Text('Retry'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

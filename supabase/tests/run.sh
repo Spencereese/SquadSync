@@ -16,5 +16,6 @@ psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_rls.sql"
 psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_recovery.sql"
 psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_check_ins.sql"
 bash "$root/tests/sq8_concurrency.sh"
+bash "$root/tests/sq8_cap_unlocked.sh"
 
 echo "sq8 sql tests passed"

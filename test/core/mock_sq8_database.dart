@@ -29,6 +29,9 @@ class MockSq8Database implements Sq8Database {
   var duplicate = false;
   Object? insertMemberError;
   Object? deleteMemberError;
+
+  /// When set, the delete matches no row. The call itself still succeeds.
+  var deleteMatches = true;
   var cursorWrites = 0;
   int? lastNewestLimit;
   DateTime? lastOlderBefore;
@@ -130,13 +133,15 @@ class MockSq8Database implements Sq8Database {
   }
 
   @override
-  Future<void> deleteMember({
+  Future<bool> deleteMember({
     required String squadId,
     required String userId,
   }) async {
     final error = deleteMemberError;
     if (error != null) throw error;
+    if (!deleteMatches) return false;
     deletedMembers.add(userId);
+    return true;
   }
 
   @override

@@ -148,14 +148,19 @@ class SupabaseSq8Database implements Sq8Database {
   }
 
   @override
-  Future<void> deleteMember({required String squadId, required String userId}) {
-    return _guard(
+  Future<bool> deleteMember({
+    required String squadId,
+    required String userId,
+  }) async {
+    final rows = await _guardValue(
       () => _client
           .from('sq8_squad_members')
           .delete()
           .eq('squad_id', squadId)
-          .eq('user_id', userId),
+          .eq('user_id', userId)
+          .select('user_id'),
     );
+    return rows.isNotEmpty;
   }
 
   @override

@@ -62,6 +62,19 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             onPressed: _busy ? null : (_codeSent ? _verify : _send),
             child: Text(_codeSent ? 'Verify code' : 'Send code'),
           ),
+          if (_codeSent) ...[
+            const SizedBox(height: 8),
+            TextButton(
+              key: const Key('sign-in-resend'),
+              onPressed: _busy ? null : _resend,
+              child: const Text('Resend code'),
+            ),
+            TextButton(
+              key: const Key('sign-in-change-email'),
+              onPressed: _busy ? null : _changeEmail,
+              child: const Text('Use a different email'),
+            ),
+          ],
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -80,6 +93,20 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
       await ref.read(authRepositoryProvider).sendEmailCode(_email.text);
       if (!mounted) return;
       setState(() => _codeSent = true);
+    });
+  }
+
+  Future<void> _resend() async {
+    await _run(() async {
+      await ref.read(authRepositoryProvider).sendEmailCode(_email.text);
+    });
+  }
+
+  void _changeEmail() {
+    setState(() {
+      _codeSent = false;
+      _error = null;
+      _code.clear();
     });
   }
 

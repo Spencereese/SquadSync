@@ -5,11 +5,13 @@ import 'package:squadsync/core/app.dart';
 import 'package:squadsync/core/config.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/auth/data/fake_auth_repository.dart';
+import 'package:squadsync/features/auth/domain/auth_user.dart';
 
 Future<void> _pump(WidgetTester tester, {FakeAuthRepository? auth}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        appLinkProvider.overrideWithValue(AppLink.live),
         squadSyncConfigProvider.overrideWithValue(
           const SquadSyncConfig(
             url: 'https://example.supabase.co',
@@ -32,6 +34,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('sign-in-email')), findsNothing);
+    expect(find.byKey(const Key('demo-banner')), findsOneWidget);
     expect(find.text('Spencer · Call of Duty'), findsOneWidget);
   });
 
@@ -78,5 +81,48 @@ void main() {
 
     expect(find.text('code rejected'), findsOneWidget);
     expect(find.byKey(const Key('sign-in-email')), findsOneWidget);
+  });
+
+  testWidgets('a restored session opens the chat, and sign-out clears it', (
+    tester,
+  ) async {
+    final auth = FakeAuthRepository(
+      signedIn: const AuthUser(id: 'spencer', email: 'spencer@example.com'),
+    );
+    await _pump(tester, auth: auth);
+
+    expect(find.byKey(const Key('sign-in-email')), findsNothing);
+    expect(find.byKey(const Key('demo-banner')), findsNothing);
+    expect(find.text('Spencer · Call of Duty'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('sign-out')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('sign-in-email')), findsOneWidget);
+    expect(find.text('Spencer · Call of Duty'), findsNothing);
+  });
+
+  testWidgets('a URL without a client is not a successful demo', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          squadSyncConfigProvider.overrideWithValue(
+            const SquadSyncConfig(
+              url: 'https://example.supabase.co',
+              anonKey: 'public-anon-key',
+            ),
+          ),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('link-misconfigured')), findsOneWidget);
+    expect(find.byKey(const Key('demo-banner')), findsNothing);
+    expect(find.text('Spencer · Call of Duty'), findsNothing);
+    expect(find.byKey(const Key('sign-in-send')), findsNothing);
   });
 }

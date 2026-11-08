@@ -179,4 +179,72 @@ void main() {
     expect(state.messages.single.id, 'msg-1');
     expect(state.messages.single.delivery, Delivery.sent);
   });
+
+  test(
+    'reload keeps the failed row and does not duplicate the thread',
+    () async {
+      final chats = FakeChatRepository(
+        messages: [
+          ChatMessage(
+            id: 'kept',
+            chatId: 'squad',
+            senderId: 'friend',
+            text: 'kept',
+            sentAt: DateTime.utc(2026, 11, 1),
+          ),
+        ],
+      );
+      final container = _container(
+        chats: chats,
+        ids: SequenceClientIdFactory(['msg-1']),
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(squadChatControllerProvider.notifier);
+      await controller.open();
+
+      chats.fail = true;
+      await controller.send('nope');
+      chats.fail = false;
+      chats.deliver(
+        ChatMessage(
+          id: 'kept',
+          chatId: 'squad',
+          senderId: 'friend',
+          text: 'kept',
+          sentAt: DateTime.utc(2026, 11, 1),
+        ),
+      );
+      await controller.reload();
+      final state = container.read(squadChatControllerProvider);
+      final failed = state.messages.where((message) => message.id == 'msg-1');
+
+      expect(failed, hasLength(1));
+      expect(failed.single.delivery, Delivery.failed);
+      expect(
+        state.messages.where((message) => message.id == 'kept'),
+        hasLength(1),
+      );
+      expect(state.linkDown, isFalse);
+    },
+  );
+
+  test('abandon drops an unsent row so the next open starts clean', () async {
+    final chats = FakeChatRepository();
+    final container = _container(
+      chats: chats,
+      ids: SequenceClientIdFactory(['msg-1']),
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(squadChatControllerProvider.notifier);
+    await controller.open();
+    chats.fail = true;
+    await controller.send('nope');
+    controller.abandon();
+    chats.fail = false;
+    await controller.open();
+    final state = container.read(squadChatControllerProvider);
+
+    expect(state.messages, isEmpty);
+    expect(state.error, isNull);
+  });
 }

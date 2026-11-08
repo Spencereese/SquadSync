@@ -7,7 +7,8 @@ import 'package:squadsync/features/auth/domain/auth_user.dart';
 /// In-memory sign-in. [fail] rejects the next call. A code shorter than 6
 /// digits is rejected so widget tests can show the error.
 class FakeAuthRepository implements AuthRepository {
-  FakeAuthRepository({this.fail = false});
+  FakeAuthRepository({this.fail = false, AuthUser? signedIn})
+    : _user = signedIn;
 
   bool fail;
   AuthUser? _user;

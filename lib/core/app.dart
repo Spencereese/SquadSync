@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/core/misconfigured_screen.dart';
 import 'package:squadsync/features/auth/ui/sign_in_gate.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_screen.dart';
 
@@ -9,14 +10,19 @@ class SquadSyncApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.watch(squadSyncConfigProvider);
+    final link = ref.watch(appLinkProvider);
+    final home = switch (link) {
+      AppLink.demo => const SquadChatScreen(demo: true),
+      AppLink.misconfigured => const MisconfiguredScreen(),
+      AppLink.live => const SignInGate(),
+    };
     return MaterialApp(
       title: 'SquadSync',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2457D6)),
         useMaterial3: true,
       ),
-      home: config.isPresent ? const SignInGate() : const SquadChatScreen(),
+      home: RepaintBoundary(key: const Key('app-frame'), child: home),
     );
   }
 }

@@ -10,24 +10,111 @@ class SupabaseSquadRepository implements SquadRepository {
   final Sq8Database _db;
 
   @override
-  Future<Squad> load() async {
+  Future<Member?> myProfile() async {
+    final row = await _db.myProfile();
+    if (row == null) return null;
+    return _member(row);
+  }
+
+  @override
+  Future<Member> ensureMyProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    final existing = await myProfile();
+    if (existing != null) return existing;
+    final next = Member(
+      id: _db.userId ?? '',
+      displayName: displayName.trim(),
+      defaultGame: defaultGame.trim(),
+    );
+    if (!next.isValid) {
+      throw const RepositoryFailure('profile is incomplete');
+    }
+    try {
+      await _db.insertMyProfile(
+        displayName: next.displayName,
+        defaultGame: next.defaultGame,
+      );
+    } on Sq8DuplicateRow {
+      final raced = await myProfile();
+      if (raced != null) return raced;
+      rethrow;
+    }
+    final created = await myProfile();
+    if (created == null) {
+      throw const RepositoryFailure(
+        'The server cannot create your profile yet. Nothing was saved.',
+      );
+    }
+    return created;
+  }
+
+  @override
+  Future<Member> saveProfile({
+    required String displayName,
+    required String defaultGame,
+  }) async {
+    final next = Member(
+      id: _db.userId ?? '',
+      displayName: displayName.trim(),
+      defaultGame: defaultGame.trim(),
+    );
+    if (!next.isValid) {
+      throw const RepositoryFailure('profile is incomplete');
+    }
+    await _db.updateMyProfile(
+      displayName: next.displayName,
+      defaultGame: next.defaultGame,
+    );
+    return next;
+  }
+
+  @override
+  Future<Squad?> findMine() async {
     final squadId = await _db.mySquadId();
-    if (squadId == null) {
+    if (squadId == null) return null;
+    return _squad(squadId);
+  }
+
+  @override
+  Future<Squad> createMine() async {
+    final existing = await findMine();
+    if (existing != null) return existing;
+    try {
+      final squadId = await _db.createSquad();
+      return await _squad(squadId);
+    } on Sq8DuplicateRow {
+      final raced = await findMine();
+      if (raced != null) return raced;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Squad> load() async {
+    final squad = await findMine();
+    if (squad == null) {
       throw const RepositoryFailure('not in a squad');
     }
+    return squad;
+  }
+
+  Future<Squad> _squad(String squadId) async {
     final ownerId = await _db.ownerId(squadId);
     final members = await _db.membersOf(squadId);
     return Squad(
       id: squadId,
       ownerId: ownerId,
-      members: [
-        for (final member in members)
-          Member(
-            id: member.userId,
-            displayName: member.displayName,
-            defaultGame: member.defaultGame,
-          ),
-      ],
+      members: [for (final member in members) _member(member)],
+    );
+  }
+
+  Member _member(Sq8Member member) {
+    return Member(
+      id: member.userId,
+      displayName: member.displayName,
+      defaultGame: member.defaultGame,
     );
   }
 
